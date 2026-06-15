@@ -1,4 +1,4 @@
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel
 from typing import Optional
 from enum import Enum
 
@@ -10,7 +10,6 @@ class CondicionEnum(str, Enum):
 class TipoAnimalEnum(str, Enum):
     perro = "perro"
     gato = "gato"
-    ave = "ave"
     otro = "otro"
 
 class TamanioEnum(str, Enum):
@@ -18,11 +17,37 @@ class TamanioEnum(str, Enum):
     mediano = "mediano"
     grande = "grande"
 
+class SexoEnum(str, Enum):
+    macho = "macho"
+    hembra = "hembra"
+    desconocido = "desconocido"
+
+class EdadEnum(str, Enum):
+    cachorro = "cachorro"
+    joven = "joven"
+    adulto = "adulto"
+    senior = "senior"
+    desconocido = "desconocido"
+
 class ContactoEmergencia(BaseModel):
     nombre: str
     telefono: str
     descripcion: Optional[str] = None
     tipo: Optional[str] = None
+
+class AnimalResponse(BaseModel):
+    tipo_animal: Optional[str] = None
+    condicion: Optional[str] = None
+    tamanio: Optional[str] = None
+    sexo: Optional[str] = None
+    edad_aproximada: Optional[str] = None
+    tiene_collar: Optional[bool] = None
+    esta_prenada: Optional[bool] = None
+    es_agresivo: Optional[bool] = None
+    es_domestico_probable: Optional[bool] = None
+    raza: Optional[str] = None
+    especie_descripcion: Optional[str] = None
+    descripcion: Optional[str] = None
 
 class ReportResponse(BaseModel):
     id: str
@@ -30,3 +55,14 @@ class ReportResponse(BaseModel):
     asociacion_asignada: Optional[str] = None
     contactos_emergencia: Optional[list[ContactoEmergencia]] = None
     created_at: str
+
+class ReportListItem(BaseModel):
+    id: str
+    estado: Optional[str] = None
+    latitud: Optional[float] = None
+    longitud: Optional[float] = None
+    municipio: Optional[str] = None
+    colonia: Optional[str] = None
+    created_at: str
+    animal: Optional[AnimalResponse] = None
+    

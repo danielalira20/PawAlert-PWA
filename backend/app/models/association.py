@@ -5,7 +5,6 @@ from enum import Enum
 class TipoAnimalEnum(str, Enum):
     perro = "perro"
     gato = "gato"
-    ave = "ave"
     otro = "otro"
 
 class AssociationCreate(BaseModel):
@@ -29,7 +28,7 @@ class AssociationPublicResponse(BaseModel):
     nombre: str
     contacto_telefono: str
     contacto_email: str
-    tipos_animales: List[str]
+    tipos_animales: Optional[List[str]] = None
     latitud: float
     longitud: float
     radio_km: float

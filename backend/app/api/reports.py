@@ -1,7 +1,7 @@
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
-from typing import Optional
-from app.models.report import ReportResponse, CondicionEnum, TipoAnimalEnum, TamanioEnum
+from app.models.report import ReportResponse, CondicionEnum, TipoAnimalEnum, TamanioEnum, SexoEnum, EdadEnum, ReportListItem
 from app.services.report_service import crear_reporte, obtener_reportes, cambiar_estado_reporte
+from typing import Optional, List
 
 router = APIRouter()
 
@@ -12,7 +12,8 @@ async def create_report(
     apellido_materno: Optional[str] = Form(None),
     telefono: str = Form(...),
     email: Optional[str] = Form(None),
-    foto: UploadFile = File(...),
+    fotos: Optional[List[UploadFile]] = File(None),
+    fotos_ordenes: Optional[str] = Form(None),
     condicion: CondicionEnum = Form(...),
     tipo_animal: TipoAnimalEnum = Form(...),
     tamanio: TamanioEnum = Form(...),
@@ -23,35 +24,46 @@ async def create_report(
     municipio: Optional[str] = Form(None),
     referencia: Optional[str] = Form(None),
     descripcion: Optional[str] = Form(None),
+    # Campos nuevos del animal
+    sexo: Optional[SexoEnum] = Form(None),
+    edad_aproximada: Optional[EdadEnum] = Form(None),
+    tiene_collar: Optional[bool] = Form(None),
+    esta_prenada: Optional[bool] = Form(None),
+    es_agresivo: Optional[bool] = Form(None),
+    es_domestico_probable: Optional[bool] = Form(None),
+    raza_clave: Optional[str] = Form(None),
+    tipo_animal_otro_clave: Optional[str] = Form(None),
+    especie_descripcion: Optional[str] = Form(None),
 ):
-        # Validar que viene ubicación de algún tipo
+    
     if not latitud and not longitud and not municipio:
         raise HTTPException(
             status_code=422,
             detail="Debes proporcionar coordenadas GPS o municipio como mínimo"
         )
 
-    # Validar tipo de archivo
-    if foto.content_type not in ["image/jpeg", "image/png", "image/jpg", "image/webp"]:
+    if fotos:
+        for foto in fotos:
+            if foto.content_type not in ["image/jpeg", "image/png", "image/jpg", "image/webp"]:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Todas las fotos deben ser imágenes JPG, PNG o WEBP"
+                )
+
+    if descripcion and len(descripcion) > 300:
         raise HTTPException(
             status_code=422,
-            detail="La foto debe ser una imagen JPG, PNG o WEBP"
+            detail="La descripción no puede superar 300 caracteres"
         )
 
-    # Validar descripción
-    if descripcion and len(descripcion) > 200:
-        raise HTTPException(
-            status_code=422,
-            detail="La descripción no puede superar 200 caracteres"
-        )
-    
     return await crear_reporte(
         nombre=nombre,
         apellido_paterno=apellido_paterno,
         apellido_materno=apellido_materno,
         telefono=telefono,
         email=email,
-        foto=foto,
+        fotos=fotos,
+        fotos_ordenes=fotos_ordenes,
         tipo_animal=tipo_animal,
         tamanio=tamanio,
         latitud=latitud,
@@ -62,9 +74,18 @@ async def create_report(
         colonia=colonia,
         municipio=municipio,
         referencia=referencia,
+        sexo=sexo,
+        edad_aproximada=edad_aproximada,
+        tiene_collar=tiene_collar,
+        esta_prenada=esta_prenada,
+        es_agresivo=es_agresivo,
+        es_domestico_probable=es_domestico_probable,
+        raza_clave=raza_clave,
+        tipo_animal_otro_clave=tipo_animal_otro_clave,
+        especie_descripcion=especie_descripcion,
     )
 
-@router.get("", status_code=200)
+@router.get("", response_model=list[ReportListItem], status_code=200)
 async def get_reports():
     return await obtener_reportes()
 
