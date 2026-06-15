@@ -25,6 +25,7 @@ interface ReportFormScreenProps {
 }
 
 export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
+  // --- Estados y Lógica (Sin Modificar) ---
   const [nombre, setNombre] = useState('');
   const [apellidoPaterno, setApellidoPaterno] = useState('');
   const [apellidoMaterno, setApellidoMaterno] = useState('');
@@ -223,9 +224,10 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
     );
   };
 
+  // --- Renderizado Modificado para cumplir F3 ---
   return (
     <View style={{ flex: 1, backgroundColor: '#F5F5F5' }}>
-      {/* Header del Modal con la X para cerrar */}
+      {/* Header del Modal */}
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#E5E7EB' }}>
         <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#2C3E50' }}>Nuevo Reporte</Text>
         {onClose && (
@@ -240,12 +242,34 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
           Ayúdanos a rescatar a este animalito llenando los datos.
         </Text>
 
+        {/* CARD 1: INFORMACIÓN DEL REPORTANTE */}
         <Card>
+          <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#2C3E50', marginBottom: 12 }}>
+            Información del Reportante
+          </Text>
+          
           <Input label="Nombre(s)" placeholder="Ej. Ana" value={nombre} onChangeText={setNombre} required />
           <Input label="Apellido Paterno" placeholder="Ej. Pérez" value={apellidoPaterno} onChangeText={setApellidoPaterno} required />
           <Input label="Apellido Materno (Opcional)" placeholder="Ej. López" value={apellidoMaterno} onChangeText={setApellidoMaterno} />
+          
           <Input label="Teléfono de contacto" placeholder="Ej. 222 123 4567" value={telefono} onChangeText={setTelefono} required />
+          {/* Microcopy F3 */}
+          <Text style={{ fontSize: 12, color: '#7F8C8D', marginTop: -8, marginBottom: 16 }}>
+            Lo usamos para contactarte sobre el estado de tu reporte.
+          </Text>
+
           <Input label="Correo Electrónico (Opcional)" placeholder="Ej. correo@ejemplo.com" value={email} onChangeText={setEmail} />
+        </Card>
+
+        {/* CARD 2: INFORMACIÓN DEL ANIMAL */}
+        <Card>
+          <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#2C3E50', marginBottom: 4 }}>
+            Información del Animal
+          </Text>
+          {/* Microcopy F3 */}
+          <Text style={{ fontSize: 12, color: '#7F8C8D', marginBottom: 16 }}>
+            Describe lo mejor posible la situación actual para asignar la ayuda adecuada.
+          </Text>
 
           <View style={{ marginBottom: 20 }}>
             <Text style={{ fontSize: 14, fontWeight: '600', color: '#2C3E50', marginBottom: 8 }}>Tipo de Animal <Text style={{ color: '#E74C3C' }}>*</Text></Text>
@@ -262,40 +286,6 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
             </View>
           </View>
 
-          <View style={{ marginBottom: 8 }}>
-            <Text style={{ fontSize: 14, fontWeight: '600', color: '#2C3E50', marginBottom: 8 }}>Foto del animalito <Text style={{ color: '#E74C3C' }}>*</Text></Text>
-            {photoUri ? (
-              <View style={{ position: 'relative' }}>
-                <Image source={{ uri: photoUri }} style={{ width: '100%', height: 192, borderRadius: 12 }} />
-                <TouchableOpacity onPress={() => { setPhotoUri(null); setSelectedPhoto(null); }} style={{ position: 'absolute', top: 8, right: 8, backgroundColor: '#FFFFFF', padding: 8, borderRadius: 20 }}>
-                  <Text style={{ color: '#E74C3C', fontWeight: 'bold', fontSize: 12 }}>Eliminar</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <TouchableOpacity onPress={showImageOptions} style={{ width: '100%', height: 128, backgroundColor: '#ECF0F1', borderRadius: 12, borderWidth: 1, borderStyle: 'dashed', borderColor: '#95A5A6', alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ color: '#95A5A6', fontWeight: '500' }}>Toca para tomar o subir foto</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </Card>
-
-        <Card>
-          <View style={{ marginBottom: 16 }}>
-            <Text style={{ fontSize: 14, fontWeight: '600', color: '#2C3E50', marginBottom: 8 }}>Método de Ubicación <Text style={{ color: '#E74C3C' }}>*</Text></Text>
-            <View style={{ flexDirection: 'row', backgroundColor: '#ECF0F1', padding: 4, borderRadius: 12 }}>
-              <TouchableOpacity onPress={() => setUbicacionFuente('automatica')} style={{ flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center', backgroundColor: ubicacionFuente === 'automatica' ? '#FFFFFF' : 'transparent' }}>
-                <Text style={{ fontWeight: '600', fontSize: 14, color: ubicacionFuente === 'automatica' ? '#3498DB' : '#95A5A6' }}>GPS Automático</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setUbicacionFuente('manual')} style={{ flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center', backgroundColor: ubicacionFuente === 'manual' ? '#FFFFFF' : 'transparent' }}>
-                <Text style={{ fontWeight: '600', fontSize: 14, color: ubicacionFuente === 'manual' ? '#3498DB' : '#95A5A6' }}>Ingreso Manual</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-          {renderUbicacion()}
-          <Input label="Referencia (Opcional)" placeholder="Ej. Frente a la tienda de abarrotes..." value={referencia} onChangeText={setReferencia} />
-        </Card>
-
-        <Card>
           <View style={{ marginBottom: 20 }}>
             <Text style={{ fontSize: 14, fontWeight: '600', color: '#2C3E50', marginBottom: 8 }}>Condición (Semáforo) <Text style={{ color: '#E74C3C' }}>*</Text></Text>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}>
@@ -322,10 +312,53 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
             </View>
           </View>
 
+          <View style={{ marginBottom: 20 }}>
+            <Text style={{ fontSize: 14, fontWeight: '600', color: '#2C3E50', marginBottom: 8 }}>Foto del animalito <Text style={{ color: '#E74C3C' }}>*</Text></Text>
+            {photoUri ? (
+              <View style={{ position: 'relative' }}>
+                <Image source={{ uri: photoUri }} style={{ width: '100%', height: 192, borderRadius: 12 }} />
+                <TouchableOpacity onPress={() => { setPhotoUri(null); setSelectedPhoto(null); }} style={{ position: 'absolute', top: 8, right: 8, backgroundColor: '#FFFFFF', padding: 8, borderRadius: 20 }}>
+                  <Text style={{ color: '#E74C3C', fontWeight: 'bold', fontSize: 12 }}>Eliminar</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity onPress={showImageOptions} style={{ width: '100%', height: 128, backgroundColor: '#ECF0F1', borderRadius: 12, borderWidth: 1, borderStyle: 'dashed', borderColor: '#95A5A6', alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ color: '#95A5A6', fontWeight: '500' }}>Toca para tomar o subir foto</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
           <View style={{ marginBottom: 8 }}>
             <Input label="Descripción adicional (Opcional)" placeholder="Detalles sobre el animal o la situación..." value={description} onChangeText={setDescription} multiline maxLength={300} numberOfLines={3} style={{ height: 80, textAlignVertical: 'top' }} />
             <Text style={{ textAlign: 'right', color: '#95A5A6', fontSize: 12 }}>{description.length}/300</Text>
           </View>
+        </Card>
+
+        {/* CARD 3: UBICACIÓN DEL REPORTE */}
+        <Card>
+          <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#2C3E50', marginBottom: 4 }}>
+            Ubicación del Reporte
+          </Text>
+          {/* Microcopy F3 */}
+          <Text style={{ fontSize: 12, color: '#7F8C8D', marginBottom: 16 }}>
+            Indica el lugar donde viste al animal, no donde estás ahora.
+          </Text>
+
+          <View style={{ marginBottom: 16 }}>
+            <Text style={{ fontSize: 14, fontWeight: '600', color: '#2C3E50', marginBottom: 8 }}>Método de Ubicación <Text style={{ color: '#E74C3C' }}>*</Text></Text>
+            <View style={{ flexDirection: 'row', backgroundColor: '#ECF0F1', padding: 4, borderRadius: 12 }}>
+              <TouchableOpacity onPress={() => setUbicacionFuente('automatica')} style={{ flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center', backgroundColor: ubicacionFuente === 'automatica' ? '#FFFFFF' : 'transparent' }}>
+                <Text style={{ fontWeight: '600', fontSize: 14, color: ubicacionFuente === 'automatica' ? '#3498DB' : '#95A5A6' }}>GPS Automático</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setUbicacionFuente('manual')} style={{ flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center', backgroundColor: ubicacionFuente === 'manual' ? '#FFFFFF' : 'transparent' }}>
+                <Text style={{ fontWeight: '600', fontSize: 14, color: ubicacionFuente === 'manual' ? '#3498DB' : '#95A5A6' }}>Ingreso Manual</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+          
+          {renderUbicacion()}
+          
+          <Input label="Referencia (Opcional)" placeholder="Ej. Frente a la tienda de abarrotes..." value={referencia} onChangeText={setReferencia} />
         </Card>
 
         <Button label="Enviar Reporte" onPress={handleSubmit} disabled={!isFormValid()} />
