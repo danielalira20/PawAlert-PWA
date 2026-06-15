@@ -8,11 +8,14 @@ import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
 import { API_URL } from '../constants/api';
+// IMPORTANTE: Importamos el nuevo componente
+import LocationPickerMap from './LocationPickerMap';
 
 type TipoAnimal = 'Perro' | 'Gato' | 'Otro' | null;
 type Condition = 'green' | 'yellow' | 'red' | null;
 type Size = 'Pequeño' | 'Mediano' | 'Grande' | null;
-type UbicacionFuente = 'automatica' | 'manual';
+// ACTUALIZADO: Cambiamos 'manual' por 'pin'
+type UbicacionFuente = 'automatica' | 'pin';
 
 type SelectedPhoto = {
   uri: string;
@@ -40,16 +43,17 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
   const [isLoadingGps, setIsLoadingGps] = useState(false);
 
-  const [calle, setCalle] = useState('');
-  const [colonia, setColonia] = useState('');
-  const [municipio, setMunicipio] = useState('');
-  const [referencia, setReferencia] = useState('');
+  // ACTUALIZADO: Estado para la ubicación del pin interactivo (Por defecto en el centro de Puebla)
+  const [pinLocation, setPinLocation] = useState<{ latitud: number; longitud: number }>({
+    latitud: 19.0414,
+    longitud: -98.2063,
+  });
 
+  const [referencia, setReferencia] = useState('');
   const [condition, setCondition] = useState<Condition>(null);
   const [size, setSize] = useState<Size>(null);
   const [description, setDescription] = useState('');
 
-  // --- NUEVO: Estado para manejar errores específicos ---
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
   const normalizePickedImage = async (asset: ImagePicker.ImagePickerAsset) => {
@@ -86,49 +90,42 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('GPS Denegado', 'Usa la opción manual para ingresar la dirección.');
-        setUbicacionFuente('manual');
+        Alert.alert('GPS Denegado', 'Por favor usa el Pin en el mapa para indicar la ubicación.');
+        setUbicacionFuente('pin');
         return;
       }
       const currentLocation = await Location.getCurrentPositionAsync({});
       setLocation(currentLocation);
-      setErrors((prev) => ({ ...prev, ubicacion: '' })); // Limpiar error si hay
+      setErrors((prev) => ({ ...prev, ubicacion: '' }));
     } catch (error) {
-      Alert.alert('Error', 'No pudimos obtener tu ubicación.');
-      setUbicacionFuente('manual');
+      Alert.alert('Error', 'No pudimos obtener tu ubicación GPS.');
+      setUbicacionFuente('pin');
     } finally {
       setIsLoadingGps(false);
     }
   };
 
-  // --- NUEVO: Validador estricto F1 ---
   const validateForm = () => {
     const newErrors: { [key: string]: string } = {};
 
     if (!nombre.trim()) newErrors.nombre = 'El nombre es obligatorio.';
     if (!apellidoPaterno.trim()) newErrors.apellidoPaterno = 'El apellido paterno es obligatorio.';
-
     if (!telefono.trim()) {
       newErrors.telefono = 'El teléfono de contacto es obligatorio.';
     } else if (!/^\d{10}$/.test(telefono.trim())) {
       newErrors.telefono = 'El teléfono debe tener exactamente 10 dígitos numéricos.';
     }
-
     if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
       newErrors.email = 'Ingresa un correo electrónico válido.';
     }
-
     if (!tipoAnimal) newErrors.tipoAnimal = 'Selecciona un tipo de animal.';
     if (!condition) newErrors.condition = 'Indica la condición del animal.';
     if (!size) newErrors.size = 'Indica el tamaño del animal.';
     if (!selectedPhoto) newErrors.foto = 'Debes adjuntar una foto del animal.';
 
-    if (ubicacionFuente === 'manual') {
-      if (!calle.trim()) newErrors.calle = 'La calle es obligatoria.';
-      if (!colonia.trim()) newErrors.colonia = 'La colonia es obligatoria.';
-      if (!municipio.trim()) newErrors.municipio = 'El municipio es obligatorio.';
-    } else {
-      if (!location) newErrors.ubicacion = 'Por favor, obtén tu ubicación actual con el GPS ó escribe la dirección manualmente.';
+    // ACTUALIZADO: Ya no validamos campos de texto de ubicación manual
+    if (ubicacionFuente === 'automatica' && !location) {
+      newErrors.ubicacion = 'Por favor, obtén tu ubicación actual con el GPS o selecciona el Pin.';
     }
 
     setErrors(newErrors);
@@ -159,15 +156,15 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
       formData.append('condicion', mapCondicion(condition));
       formData.append('tamanio', mapTamanio(size));
       if (description.trim()) formData.append('descripcion', description);
+      if (referencia.trim()) formData.append('referencia', referencia);
 
+      // ACTUALIZADO: Envío estricto de latitud y longitud según la fuente elegida
       if (ubicacionFuente === 'automatica' && location) {
         formData.append('latitud', String(location.coords.latitude));
         formData.append('longitud', String(location.coords.longitude));
-      } else {
-        formData.append('calle', calle);
-        formData.append('colonia', colonia);
-        formData.append('municipio', municipio);
-        if (referencia.trim()) formData.append('referencia', referencia);
+      } else if (ubicacionFuente === 'pin') {
+        formData.append('latitud', String(pinLocation.latitud));
+        formData.append('longitud', String(pinLocation.longitud));
       }
 
       const response = await axios.post(`${API_URL}/reports`, formData, { headers: { 'Content-Type': 'multipart/form-data' }});
@@ -181,6 +178,9 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
       } else {
         Alert.alert('¡Reporte enviado!', 'Tu reporte fue publicado. Te avisaremos cuando una asociación lo atienda.', [{ text: 'OK' }]);
       }
+      
+      if (onClose) onClose();
+      
     } catch (error: any) {
       const mensaje = error?.response?.data?.detail || error?.message || 'Error desconocido';
       Alert.alert('Error', mensaje);
@@ -196,12 +196,11 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
         </View>
       );
     }
+    // ACTUALIZADO: Renderizamos el mapa con el pin arrastrable
     return (
-      <View style={{ marginTop: 8 }}>
-        <Input label="Calle y número" placeholder="Ej. Av. Reforma 123" value={calle} onChangeText={setCalle} error={errors.calle} required />
-        <Input label="Colonia" placeholder="Ej. Centro Histórico" value={colonia} onChangeText={setColonia} error={errors.colonia} required />
-        <Input label="Municipio / Ciudad" placeholder="Ej. Puebla" value={municipio} onChangeText={setMunicipio} error={errors.municipio} required />
-      </View>
+      <LocationPickerMap
+        onLocationSelect={(latitud, longitud) => setPinLocation({ latitud, longitud })}
+      />
     );
   };
 
@@ -224,10 +223,8 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
           <Input label="Nombre(s)" placeholder="Ej. Ana" value={nombre} onChangeText={setNombre} error={errors.nombre} required />
           <Input label="Apellido Paterno" placeholder="Ej. Pérez" value={apellidoPaterno} onChangeText={setApellidoPaterno} error={errors.apellidoPaterno} required />
           <Input label="Apellido Materno (Opcional)" placeholder="Ej. López" value={apellidoMaterno} onChangeText={setApellidoMaterno} />
-          
           <Input label="Teléfono de contacto" placeholder="Ej. 2221234567" value={telefono} onChangeText={setTelefono} error={errors.telefono} keyboardType="numeric" maxLength={10} required />
           <Text style={{ fontSize: 12, color: '#7F8C8D', marginTop: -8, marginBottom: 16 }}>Lo usamos para contactarte sobre el estado de tu reporte.</Text>
-
           <Input label="Correo Electrónico (Opcional)" placeholder="Ej. correo@ejemplo.com" value={email} onChangeText={setEmail} error={errors.email} keyboardType="email-address" autoCapitalize="none" />
         </Card>
 
@@ -299,8 +296,8 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
           <View style={{ marginBottom: 16 }}>
             <Text style={{ fontSize: 14, fontWeight: '600', color: '#2C3E50', marginBottom: 8 }}>Método de Ubicación <Text style={{ color: '#E74C3C' }}>*</Text></Text>
             <View style={{ flexDirection: 'row', backgroundColor: '#ECF0F1', padding: 4, borderRadius: 12 }}>
-              <TouchableOpacity onPress={() => setUbicacionFuente('automatica')} style={{ flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center', backgroundColor: ubicacionFuente === 'automatica' ? '#FFFFFF' : 'transparent' }}><Text style={{ fontWeight: '600', fontSize: 14, color: ubicacionFuente === 'automatica' ? '#3498DB' : '#95A5A6' }}>GPS Automático</Text></TouchableOpacity>
-              <TouchableOpacity onPress={() => setUbicacionFuente('manual')} style={{ flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center', backgroundColor: ubicacionFuente === 'manual' ? '#FFFFFF' : 'transparent' }}><Text style={{ fontWeight: '600', fontSize: 14, color: ubicacionFuente === 'manual' ? '#3498DB' : '#95A5A6' }}>Ingreso Manual</Text></TouchableOpacity>
+              <TouchableOpacity onPress={() => setUbicacionFuente('automatica')} style={{ flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center', backgroundColor: ubicacionFuente === 'automatica' ? '#FFFFFF' : 'transparent' }}><Text style={{ fontWeight: '600', fontSize: 14, color: ubicacionFuente === 'automatica' ? '#3498DB' : '#95A5A6' }}>Mi Ubicación Actual</Text></TouchableOpacity>
+              <TouchableOpacity onPress={() => setUbicacionFuente('pin')} style={{ flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center', backgroundColor: ubicacionFuente === 'pin' ? '#FFFFFF' : 'transparent' }}><Text style={{ fontWeight: '600', fontSize: 14, color: ubicacionFuente === 'pin' ? '#3498DB' : '#95A5A6' }}>Pin en el Mapa</Text></TouchableOpacity>
             </View>
           </View>
           
@@ -309,7 +306,6 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
           <Input label="Referencia (Opcional)" placeholder="Ej. Frente a la tienda de abarrotes..." value={referencia} onChangeText={setReferencia} />
         </Card>
 
-        {/* El botón ya no está bloqueado, para que dispare la alerta de errores */}
         <Button label="Enviar Reporte" onPress={handleSubmit} />
       </ScrollView>
     </View>
