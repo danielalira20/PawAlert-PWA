@@ -1,11 +1,14 @@
+import axios from 'axios';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { Dimensions, Image, Modal, Text, TouchableOpacity, View } from 'react-native';
 import { Card } from '../components/ui/Card';
-import { Reporte, reportesFalsos } from '../mocks/reportesMock';
+import { API_URL } from '../constants/api';
 import AssociationFormScreen from './AssociationFormScreen';
 import ReportFormScreen from './ReportFormScreen';
+import { Reporte } from '../types/reporte';
+
 
 const LeafletMap = lazy(() => import('./LeafletMap'));
 
@@ -25,9 +28,12 @@ export default function MapScreen() {
   useEffect(() => {
     const fetchReportes = async () => {
       try {
-        setReportes(reportesFalsos);
+        const response = await axios.get(`${API_URL}/reports`);
+        // Filtramos solo los reportes que tienen latitud y longitud válidas para el mapa
+        const validReports = response.data.filter((r: Reporte) => r.latitud && r.longitud);
+        setReportes(validReports);
       } catch (error) {
-        console.error("Error cargando reportes:", error);
+        console.error("Error cargando reportes reales:", error);
       }
     };
     fetchReportes();
@@ -90,17 +96,11 @@ export default function MapScreen() {
               />
               <View className="flex-1 ml-4 justify-center">
                 <View className="flex-row justify-between items-center mb-2">
-                  <Text
-                    style={{ backgroundColor: getMarkerColor(selectedReport.estado_reporte) }}
-                    className="text-white text-[10px] font-bold py-1 px-2 rounded-lg overflow-hidden"
-                  >
+                  <Text style={{ backgroundColor: getMarkerColor(selectedReport.estado_reporte) }} className="text-white text-[10px] font-bold py-1 px-2 rounded-lg overflow-hidden">
                     {getEstadoLabel(selectedReport.estado_reporte)}
                   </Text>
                   <View className="flex-row items-center">
-                    <View
-                      style={{ backgroundColor: getCondicionColor(selectedReport.condicion) }}
-                      className="w-2.5 h-2.5 rounded-full mr-1"
-                    />
+                    <View style={{ backgroundColor: getCondicionColor(selectedReport.condicion) }} className="w-2.5 h-2.5 rounded-full mr-1" />
                     <Text className="text-xs text-gray-500 font-medium">Salud</Text>
                   </View>
                 </View>
@@ -118,33 +118,12 @@ export default function MapScreen() {
 
       <TouchableOpacity
         onPress={() => setIsFormVisible(true)}
-        style={{
-          position: 'absolute',
-          bottom: selectedReport ? 140 : 30,
-          right: 20,
-          backgroundColor: '#3498DB',
-          paddingVertical: 12,
-          paddingHorizontal: 20,
-          borderRadius: 30,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.3,
-          shadowRadius: 3,
-          elevation: 5,
-          zIndex: 1000,
-        }}
+        style={{ position: 'absolute', bottom: selectedReport ? 140 : 30, right: 20, backgroundColor: '#3498DB', paddingVertical: 12, paddingHorizontal: 20, borderRadius: 30, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 3, elevation: 5, zIndex: 1000 }}
       >
-        <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>
-          + Crear Reporte
-        </Text>
+        <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>+ Crear Reporte</Text>
       </TouchableOpacity>
 
-      <Modal
-        visible={isFormVisible}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setIsFormVisible(false)}
-      >
+      <Modal visible={isFormVisible} animationType="slide" transparent={true} onRequestClose={() => setIsFormVisible(false)}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 16, paddingTop: 60, paddingBottom: 40 }}>
           <View style={{ flex: 1, backgroundColor: '#F5F5F5', borderRadius: 20, overflow: 'hidden' }}>
             <ReportFormScreen onClose={() => setIsFormVisible(false)} />
@@ -154,34 +133,12 @@ export default function MapScreen() {
 
       <TouchableOpacity
         onPress={() => setIsAssociationFormVisible(true)}
-        style={{
-          position: 'absolute',
-          bottom: selectedReport ? 140 : 30,
-          right: 20,
-          marginBottom: 60,
-          backgroundColor: '#27AE60',
-          paddingVertical: 12,
-          paddingHorizontal: 20,
-          borderRadius: 30,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.3,
-          shadowRadius: 3,
-          elevation: 5,
-          zIndex: 1000,
-        }}
+        style={{ position: 'absolute', bottom: selectedReport ? 140 : 30, right: 20, marginBottom: 60, backgroundColor: '#27AE60', paddingVertical: 12, paddingHorizontal: 20, borderRadius: 30, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 3, elevation: 5, zIndex: 1000 }}
       >
-        <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>
-          + Registrar Asociación
-        </Text>
+        <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>+ Registrar Asociación</Text>
       </TouchableOpacity>
 
-      <Modal
-        visible={isAssociationFormVisible}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setIsAssociationFormVisible(false)}
-      >
+      <Modal visible={isAssociationFormVisible} animationType="slide" transparent={true} onRequestClose={() => setIsAssociationFormVisible(false)}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 16, paddingTop: 60, paddingBottom: 40 }}>
           <View style={{ flex: 1, backgroundColor: '#F5F5F5', borderRadius: 20, overflow: 'hidden' }}>
             <AssociationFormScreen onClose={() => setIsAssociationFormVisible(false)} />
