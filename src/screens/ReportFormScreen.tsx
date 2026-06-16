@@ -8,14 +8,16 @@ import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
 import { API_URL } from '../constants/api';
-// IMPORTANTE: Importamos el nuevo componente
 import LocationPickerMap from './LocationPickerMap';
 
 type TipoAnimal = 'Perro' | 'Gato' | 'Otro' | null;
 type Condition = 'green' | 'yellow' | 'red' | null;
 type Size = 'Pequeño' | 'Mediano' | 'Grande' | null;
-// ACTUALIZADO: Cambiamos 'manual' por 'pin'
 type UbicacionFuente = 'automatica' | 'pin';
+
+// --- NUEVOS TIPOS PARA F5 ---
+type Sexo = 'Macho' | 'Hembra' | 'Desconocido' | null;
+type Edad = 'Cachorro' | 'Joven' | 'Adulto' | 'Desconocido' | null;
 
 type SelectedPhoto = {
   uri: string;
@@ -31,19 +33,32 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
   const [nombre, setNombre] = useState('');
   const [apellidoPaterno, setApellidoPaterno] = useState('');
   const [apellidoMaterno, setApellidoMaterno] = useState('');
-
   const [telefono, setTelefono] = useState('');
   const [email, setEmail] = useState('');
 
   const [tipoAnimal, setTipoAnimal] = useState<TipoAnimal>(null);
+  
+  // --- NUEVOS ESTADOS F5 ---
+  const [sexo, setSexo] = useState<Sexo>(null);
+  const [edad, setEdad] = useState<Edad>(null);
+  
+  // Específicos Perro/Gato
+  const [tieneCollar, setTieneCollar] = useState<boolean | null>(null);
+  const [estaPrenada, setEstaPrenada] = useState<boolean | null>(null);
+  const [esAgresivo, setEsAgresivo] = useState<boolean | null>(null);
+  const [esDomestico, setEsDomestico] = useState<boolean | null>(null);
+  const [raza, setRaza] = useState<string | null>(null);
+  
+  // Específicos Otro
+  const [subcategoria, setSubcategoria] = useState<string | null>(null);
+  const [especieDescripcion, setEspecieDescripcion] = useState('');
+
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [selectedPhoto, setSelectedPhoto] = useState<SelectedPhoto | null>(null);
 
   const [ubicacionFuente, setUbicacionFuente] = useState<UbicacionFuente>('automatica');
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
   const [isLoadingGps, setIsLoadingGps] = useState(false);
-
-  // ACTUALIZADO: Estado para la ubicación del pin interactivo (Por defecto en el centro de Puebla)
   const [pinLocation, setPinLocation] = useState<{ latitud: number; longitud: number }>({
     latitud: 19.0414,
     longitud: -98.2063,
@@ -55,6 +70,18 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
   const [description, setDescription] = useState('');
 
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
+
+  // Reset de campos específicos cuando se cambia el tipo de animal
+  const handleTipoAnimalChange = (t: TipoAnimal) => {
+    setTipoAnimal(t);
+    setRaza(null);
+    setTieneCollar(null);
+    setEsAgresivo(null);
+    setEsDomestico(null);
+    setSubcategoria(null);
+    setEspecieDescripcion('');
+    // Mantenemos sexo, edad y preñada ya que aplican a ambos
+  };
 
   const normalizePickedImage = async (asset: ImagePicker.ImagePickerAsset) => {
     const manipulated = await manipulateAsync(asset.uri, [], { compress: 0.8, format: SaveFormat.JPEG });
@@ -111,19 +138,38 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
     if (!nombre.trim()) newErrors.nombre = 'El nombre es obligatorio.';
     if (!apellidoPaterno.trim()) newErrors.apellidoPaterno = 'El apellido paterno es obligatorio.';
     if (!telefono.trim()) {
-      newErrors.telefono = 'El teléfono de contacto es obligatorio.';
+      newErrors.telefono = 'El teléfono es obligatorio.';
     } else if (!/^\d{10}$/.test(telefono.trim())) {
       newErrors.telefono = 'El teléfono debe tener exactamente 10 dígitos numéricos.';
     }
     if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
       newErrors.email = 'Ingresa un correo electrónico válido.';
     }
+    
     if (!tipoAnimal) newErrors.tipoAnimal = 'Selecciona un tipo de animal.';
+    if (!sexo) newErrors.sexo = 'Indica el sexo del animal.';
+    if (!edad) newErrors.edad = 'Indica la edad aproximada.';
+
+    // Validaciones F5 por tipo de animal
+    if (tipoAnimal === 'Perro') {
+      if (tieneCollar === null) newErrors.tieneCollar = 'Indica si tiene collar.';
+      if (esAgresivo === null) newErrors.esAgresivo = 'Indica si parece agresivo.';
+      if (!raza) newErrors.raza = 'Selecciona la raza aproximada.';
+      if (sexo === 'Hembra' && estaPrenada === null) newErrors.estaPrenada = 'Indica si está preñada.';
+    } else if (tipoAnimal === 'Gato') {
+      if (tieneCollar === null) newErrors.tieneCollar = 'Indica si tiene collar.';
+      if (esDomestico === null) newErrors.esDomestico = 'Indica si es dócil/doméstico.';
+      if (!raza) newErrors.raza = 'Selecciona la raza aproximada.';
+      if (sexo === 'Hembra' && estaPrenada === null) newErrors.estaPrenada = 'Indica si está preñada.';
+    } else if (tipoAnimal === 'Otro') {
+      if (!subcategoria) newErrors.subcategoria = 'Selecciona la subcategoría.';
+      if (subcategoria === 'Otro' && !especieDescripcion.trim()) newErrors.especieDescripcion = 'Describe la especie del animal.';
+    }
+
     if (!condition) newErrors.condition = 'Indica la condición del animal.';
     if (!size) newErrors.size = 'Indica el tamaño del animal.';
     if (!selectedPhoto) newErrors.foto = 'Debes adjuntar una foto del animal.';
 
-    // ACTUALIZADO: Ya no validamos campos de texto de ubicación manual
     if (ubicacionFuente === 'automatica' && !location) {
       newErrors.ubicacion = 'Por favor, obtén tu ubicación actual con el GPS o selecciona el Pin.';
     }
@@ -135,6 +181,22 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
   const mapCondicion = (c: Condition): string => ({ green: 'estable', yellow: 'herido', red: 'grave' }[c!]);
   const mapTipoAnimal = (t: TipoAnimal): string => t!.toLowerCase();
   const mapTamanio = (s: Size): string => ({ Pequeño: 'pequeno', Mediano: 'mediano', Grande: 'grande' }[s!]);
+
+  // Mapeos de catálogos B3
+  const mapRaza = (r: string, tipo: TipoAnimal) => {
+    if (tipo === 'Perro') {
+      const map: any = { 'Mestizo': 'mestizo', 'Labrador': 'labrador', 'Pitbull': 'pitbull', 'Pastor Alemán': 'pastor aleman', 'Chihuahua': 'chihuahua', 'Otro': 'otro_perro' };
+      return map[r];
+    } else {
+      const map: any = { 'Común': 'comun', 'Siamés': 'siames', 'Persa': 'persa', 'Otro': 'otro_gato' };
+      return map[r];
+    }
+  };
+
+  const mapSubcategoria = (s: string) => {
+    const map: any = { 'Ave': 'ave', 'Reptil': 'reptil', 'Roedor': 'roedor', 'Fauna silvestre': 'fauna silvestre', 'Otro': 'otro' };
+    return map[s];
+  };
 
   const handleSubmit = async () => {
     if (!validateForm()) {
@@ -155,10 +217,25 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
       formData.append('tipo_animal', mapTipoAnimal(tipoAnimal));
       formData.append('condicion', mapCondicion(condition));
       formData.append('tamanio', mapTamanio(size));
+      
+      // Mapeo de campos F5 para el Backend (B3)
+      formData.append('sexo', sexo ? sexo.toLowerCase() : 'desconocido');
+      formData.append('edad_aproximada', edad ? edad.toLowerCase() : 'desconocido');
+
+      if (tipoAnimal === 'Perro' || tipoAnimal === 'Gato') {
+        formData.append('tiene_collar', String(tieneCollar));
+        formData.append('raza_clave', mapRaza(raza!, tipoAnimal)); // Enviamos la clave para el backend
+        if (sexo === 'Hembra' && estaPrenada !== null) formData.append('esta_prenada', String(estaPrenada));
+        if (tipoAnimal === 'Perro') formData.append('es_agresivo', String(esAgresivo));
+        if (tipoAnimal === 'Gato') formData.append('es_domestico_probable', String(esDomestico));
+      } else if (tipoAnimal === 'Otro') {
+        formData.append('subcategoria_clave', mapSubcategoria(subcategoria!));
+        if (subcategoria === 'Otro') formData.append('especie_descripcion', especieDescripcion);
+      }
+
       if (description.trim()) formData.append('descripcion', description);
       if (referencia.trim()) formData.append('referencia', referencia);
 
-      // ACTUALIZADO: Envío estricto de latitud y longitud según la fuente elegida
       if (ubicacionFuente === 'automatica' && location) {
         formData.append('latitud', String(location.coords.latitude));
         formData.append('longitud', String(location.coords.longitude));
@@ -196,13 +273,38 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
         </View>
       );
     }
-    // ACTUALIZADO: Renderizamos el mapa con el pin arrastrable
     return (
       <LocationPickerMap
-        onLocationSelect={(latitud, longitud) => setPinLocation({ latitud, longitud })}
+        onLocationSelect={(latitud: number, longitud: number) => setPinLocation({ latitud, longitud })}
       />
     );
   };
+
+  // UI Helpers para limpiar el render
+  const renderSelector = (label: string, options: string[], stateValue: any, setState: any, error?: string) => (
+    <View style={{ marginBottom: 20 }}>
+      <Text style={{ fontSize: 14, fontWeight: '600', color: '#2C3E50', marginBottom: 8 }}>{label} <Text style={{ color: '#E74C3C' }}>*</Text></Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+        {options.map((opt) => (
+          <TouchableOpacity key={opt} onPress={() => setState(opt)} style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, borderWidth: 1, backgroundColor: stateValue === opt ? '#3498DB' : '#FFFFFF', borderColor: error ? '#E74C3C' : (stateValue === opt ? '#3498DB' : '#BDC3C7'), alignItems: 'center' }}>
+            <Text style={{ textAlign: 'center', fontWeight: '500', fontSize: 14, color: stateValue === opt ? '#FFFFFF' : '#7F8C8D' }}>{opt}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      {error && <Text style={{ color: '#E74C3C', fontSize: 12, marginTop: 4 }}>{error}</Text>}
+    </View>
+  );
+
+  const renderBooleanSelector = (label: string, value: boolean | null, setValue: (v: boolean) => void, error?: string) => (
+    <View style={{ marginBottom: 20 }}>
+      <Text style={{ fontSize: 14, fontWeight: '600', color: '#2C3E50', marginBottom: 8 }}>{label} <Text style={{ color: '#E74C3C' }}>*</Text></Text>
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        <TouchableOpacity onPress={() => setValue(true)} style={{ flex: 1, paddingVertical: 8, borderRadius: 8, borderWidth: 1, backgroundColor: value === true ? '#3498DB' : '#FFFFFF', borderColor: error ? '#E74C3C' : (value === true ? '#3498DB' : '#BDC3C7'), alignItems: 'center' }}><Text style={{ color: value === true ? '#FFFFFF' : '#7F8C8D', fontWeight: '500' }}>Sí</Text></TouchableOpacity>
+        <TouchableOpacity onPress={() => setValue(false)} style={{ flex: 1, paddingVertical: 8, borderRadius: 8, borderWidth: 1, backgroundColor: value === false ? '#3498DB' : '#FFFFFF', borderColor: error ? '#E74C3C' : (value === false ? '#3498DB' : '#BDC3C7'), alignItems: 'center' }}><Text style={{ color: value === false ? '#FFFFFF' : '#7F8C8D', fontWeight: '500' }}>No</Text></TouchableOpacity>
+      </View>
+      {error && <Text style={{ color: '#E74C3C', fontSize: 12, marginTop: 4 }}>{error}</Text>}
+    </View>
+  );
 
   return (
     <View style={{ flex: 1, backgroundColor: '#F5F5F5' }}>
@@ -232,17 +334,44 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
           <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#2C3E50', marginBottom: 4 }}>Información del Animal</Text>
           <Text style={{ fontSize: 12, color: '#7F8C8D', marginBottom: 16 }}>Describe lo mejor posible la situación actual para asignar la ayuda adecuada.</Text>
 
-          <View style={{ marginBottom: 20 }}>
-            <Text style={{ fontSize: 14, fontWeight: '600', color: '#2C3E50', marginBottom: 8 }}>Tipo de Animal <Text style={{ color: '#E74C3C' }}>*</Text></Text>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}>
-              {(['Perro', 'Gato', 'Otro'] as TipoAnimal[]).map((t) => (
-                <TouchableOpacity key={t} onPress={() => setTipoAnimal(t)} style={{ flex: 1, paddingVertical: 8, borderRadius: 8, borderWidth: 1, backgroundColor: tipoAnimal === t ? '#3498DB' : '#FFFFFF', borderColor: errors.tipoAnimal ? '#E74C3C' : (tipoAnimal === t ? '#3498DB' : '#BDC3C7'), alignItems: 'center' }}>
-                  <Text style={{ textAlign: 'center', fontWeight: '500', fontSize: 14, color: tipoAnimal === t ? '#FFFFFF' : '#7F8C8D' }}>{t}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            {errors.tipoAnimal && <Text style={{ color: '#E74C3C', fontSize: 12, marginTop: 4 }}>{errors.tipoAnimal}</Text>}
-          </View>
+          {renderSelector('Tipo de Animal', ['Perro', 'Gato', 'Otro'], tipoAnimal, handleTipoAnimalChange, errors.tipoAnimal)}
+
+          {tipoAnimal && (
+            <>
+              {renderSelector('Sexo', ['Macho', 'Hembra', 'Desconocido'], sexo, setSexo, errors.sexo)}
+              {renderSelector('Edad Aproximada', ['Cachorro', 'Joven', 'Adulto', 'Senior', 'Desconocido'], edad, setEdad, errors.edad)}
+
+              {/* CAMPOS ESPECÍFICOS PERRO */}
+              {tipoAnimal === 'Perro' && (
+                <>
+                  {renderSelector('Raza', ['Mestizo', 'Labrador', 'Pitbull', 'Pastor Alemán', 'Chihuahua', 'Otro'], raza, setRaza, errors.raza)}
+                  {renderBooleanSelector('¿Tiene collar?', tieneCollar, setTieneCollar, errors.tieneCollar)}
+                  {renderBooleanSelector('¿Parece agresivo?', esAgresivo, setEsAgresivo, errors.esAgresivo)}
+                  {sexo === 'Hembra' && renderBooleanSelector('¿Parece estar preñada?', estaPrenada, setEstaPrenada, errors.estaPrenada)}
+                </>
+              )}
+
+              {/* CAMPOS ESPECÍFICOS GATO */}
+              {tipoAnimal === 'Gato' && (
+                <>
+                  {renderSelector('Raza', ['Común', 'Siamés', 'Persa', 'Otro'], raza, setRaza, errors.raza)}
+                  {renderBooleanSelector('¿Tiene collar?', tieneCollar, setTieneCollar, errors.tieneCollar)}
+                  {renderBooleanSelector('¿Es doméstico / se deja acercar?', esDomestico, setEsDomestico, errors.esDomestico)}
+                  {sexo === 'Hembra' && renderBooleanSelector('¿Parece estar preñada?', estaPrenada, setEstaPrenada, errors.estaPrenada)}
+                </>
+              )}
+
+              {/* CAMPOS ESPECÍFICOS OTRO */}
+              {tipoAnimal === 'Otro' && (
+                <>
+                  {renderSelector('Categoría', ['Ave', 'Reptil', 'Roedor', 'Fauna silvestre', 'Otro'], subcategoria, setSubcategoria, errors.subcategoria)}
+                  {subcategoria === 'Otro' && (
+                    <Input label="Describe la especie *" placeholder="Ej. Tlacuache, caballo, etc." value={especieDescripcion} onChangeText={setEspecieDescripcion} error={errors.especieDescripcion} />
+                  )}
+                </>
+              )}
+            </>
+          )}
 
           <View style={{ marginBottom: 20 }}>
             <Text style={{ fontSize: 14, fontWeight: '600', color: '#2C3E50', marginBottom: 8 }}>Condición (Semáforo) <Text style={{ color: '#E74C3C' }}>*</Text></Text>
@@ -254,17 +383,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
             {errors.condition && <Text style={{ color: '#E74C3C', fontSize: 12, marginTop: 4 }}>{errors.condition}</Text>}
           </View>
 
-          <View style={{ marginBottom: 20 }}>
-            <Text style={{ fontSize: 14, fontWeight: '600', color: '#2C3E50', marginBottom: 8 }}>Tamaño <Text style={{ color: '#E74C3C' }}>*</Text></Text>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}>
-              {(['Pequeño', 'Mediano', 'Grande'] as Size[]).map((s) => (
-                <TouchableOpacity key={s} onPress={() => setSize(s)} style={{ flex: 1, paddingVertical: 8, borderRadius: 8, borderWidth: 1, backgroundColor: size === s ? '#3498DB' : '#FFFFFF', borderColor: errors.size ? '#E74C3C' : (size === s ? '#3498DB' : '#BDC3C7'), alignItems: 'center' }}>
-                  <Text style={{ textAlign: 'center', fontWeight: '500', fontSize: 14, color: size === s ? '#FFFFFF' : '#7F8C8D' }}>{s}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            {errors.size && <Text style={{ color: '#E74C3C', fontSize: 12, marginTop: 4 }}>{errors.size}</Text>}
-          </View>
+          {renderSelector('Tamaño', ['Pequeño', 'Mediano', 'Grande'], size, setSize, errors.size)}
 
           <View style={{ marginBottom: 20 }}>
             <Text style={{ fontSize: 14, fontWeight: '600', color: '#2C3E50', marginBottom: 8 }}>Foto del animalito <Text style={{ color: '#E74C3C' }}>*</Text></Text>
