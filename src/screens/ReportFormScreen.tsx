@@ -150,7 +150,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
   const mapTipoAnimal = (t: TipoAnimal): string => t!.toLowerCase();
   const mapTamanio = (s: Size): string => ({ Pequeño: 'pequeno', Mediano: 'mediano', Grande: 'grande' }[s!]);
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (esDuplicadoConfirmado: boolean = false, reporteOriginalId?: string) => {
     try {
       if (fotos.length === 0) {
         Alert.alert('Falta la foto', 'Sube al menos una foto antes de enviar.');
@@ -188,8 +188,47 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
         if (referencia.trim()) formData.append('referencia', referencia);
       }
 
+      if (esDuplicadoConfirmado) {
+        formData.append('es_duplicado_confirmado', 'true');
+      }
+      if (reporteOriginalId) {
+        formData.append('reporte_original_id', reporteOriginalId);
+      }
+
       const response = await axios.post(`${API_URL}/reports`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
       const data = response.data;
+
+      if (data.posible_duplicado) {
+        const existente = data.reporte_existente;
+        const fechaReporte = new Date(existente.created_at);
+        const ahora = new Date();
+        const diffMs = ahora.getTime() - fechaReporte.getTime();
+        const minutosTranscurridos = Math.round(diffMs / 60000);
+
+        let tiempoTexto = `${minutosTranscurridos} minutos`;
+        if (minutosTranscurridos >= 60) {
+          const horas = Math.floor(minutosTranscurridos / 60);
+          const minutos = minutosTranscurridos % 60;
+          tiempoTexto = `${horas} hora(s) y ${minutos} minuto(s)`;
+        }
+
+        Alert.alert(
+          'Posible reporte duplicado',
+          `Se reportó un ${existente.tipo_animal || 'animal'} en condición ${existente.condicion || 'desconocida'} en ${existente.colonia || existente.municipio} hace ${tiempoTexto}.\n\n¿Es el mismo animal?`,
+          [
+            { text: 'Cancelar', style: 'cancel' },
+            {
+              text: 'Vincular al caso existente',
+              onPress: () => handleSubmit(true, existente.id)
+            },
+            {
+              text: 'Crear un reporte nuevo',
+              onPress: () => handleSubmit(true)
+            }
+          ]
+        );
+        return;
+      }
 
       if (data.asociacion_asignada) {
         Alert.alert(
@@ -381,7 +420,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
           </View>
         </Card>
 
-        <Button label="Enviar Reporte" onPress={handleSubmit} disabled={!isFormValid()} />
+        <Button label="Enviar Reporte" onPress={() => handleSubmit(false)} disabled={!isFormValid()} />
       </ScrollView>
     </View>
   );
