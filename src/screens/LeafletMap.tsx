@@ -1,7 +1,7 @@
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { MapContainer, Marker, TileLayer, useMapEvents } from 'react-leaflet';
-import { Reporte } from '../mocks/reportesMock';
+import { Reporte } from '../types/reporte';
 
 const INITIAL_CENTER: [number, number] = [19.0414, -98.2063];
 const INITIAL_ZOOM = 13;

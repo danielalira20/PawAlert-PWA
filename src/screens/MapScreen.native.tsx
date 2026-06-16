@@ -1,12 +1,14 @@
+import axios from 'axios';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useEffect, useState } from 'react';
 import { Dimensions, Image, Modal, Text, TouchableOpacity, View } from 'react-native';
 import MapView, { Marker, Region } from 'react-native-maps';
 import { Card } from '../components/ui/Card';
-import { Reporte, reportesFalsos } from '../mocks/reportesMock';
+import { API_URL } from '../constants/api';
 import AssociationFormScreen from './AssociationFormScreen';
 import ReportFormScreen from './ReportFormScreen';
+import { Reporte } from '../types/reporte';
 
 const { width, height } = Dimensions.get('window');
 
@@ -26,9 +28,12 @@ export default function MapScreen() {
   useEffect(() => {
     const fetchReportes = async () => {
       try {
-        setReportes(reportesFalsos);
+        const response = await axios.get(`${API_URL}/reports`);
+        // Filtramos solo los reportes que tienen latitud y longitud válidas para el mapa
+        const validReports = response.data.filter((r: Reporte) => r.latitud && r.longitud);
+        setReportes(validReports);
       } catch (error) {
-        console.error("Error cargando reportes:", error);
+        console.error("Error cargando reportes reales:", error);
       }
     };
     fetchReportes();
@@ -119,21 +124,9 @@ export default function MapScreen() {
 
       <TouchableOpacity
         onPress={() => setIsFormVisible(true)}
-        style={{
-          position: 'absolute',
-          bottom: selectedReport ? 140 : 30,
-          right: 20,
-          backgroundColor: '#3498DB',
-          paddingVertical: 12,
-          paddingHorizontal: 20,
-          borderRadius: 30,
-          elevation: 5,
-          zIndex: 1000,
-        }}
+        style={{ position: 'absolute', bottom: selectedReport ? 140 : 30, right: 20, backgroundColor: '#3498DB', paddingVertical: 12, paddingHorizontal: 20, borderRadius: 30, elevation: 5, zIndex: 1000 }}
       >
-        <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>
-          + Crear Reporte
-        </Text>
+        <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>+ Crear Reporte</Text>
       </TouchableOpacity>
 
       <Modal visible={isFormVisible} animationType="slide" transparent onRequestClose={() => setIsFormVisible(false)}>
@@ -146,22 +139,9 @@ export default function MapScreen() {
 
       <TouchableOpacity
         onPress={() => setIsAssociationFormVisible(true)}
-        style={{
-          position: 'absolute',
-          bottom: selectedReport ? 140 : 30,
-          right: 20,
-          marginBottom: 60,
-          backgroundColor: '#27AE60',
-          paddingVertical: 12,
-          paddingHorizontal: 20,
-          borderRadius: 30,
-          elevation: 5,
-          zIndex: 1000,
-        }}
+        style={{ position: 'absolute', bottom: selectedReport ? 140 : 30, right: 20, marginBottom: 60, backgroundColor: '#27AE60', paddingVertical: 12, paddingHorizontal: 20, borderRadius: 30, elevation: 5, zIndex: 1000 }}
       >
-        <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>
-          + Registrar Asociación
-        </Text>
+        <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>+ Registrar Asociación</Text>
       </TouchableOpacity>
 
       <Modal visible={isAssociationFormVisible} animationType="slide" transparent onRequestClose={() => setIsAssociationFormVisible(false)}>
