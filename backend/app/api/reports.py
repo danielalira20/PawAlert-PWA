@@ -5,7 +5,7 @@ from typing import Optional, List
 
 router = APIRouter()
 
-@router.post("", response_model=ReportResponse, status_code=201)
+@router.post("", status_code=201)
 async def create_report(
     nombre: str = Form(...),
     apellido_paterno: str = Form(...),
@@ -24,7 +24,6 @@ async def create_report(
     municipio: Optional[str] = Form(None),
     referencia: Optional[str] = Form(None),
     descripcion: Optional[str] = Form(None),
-    # Campos nuevos del animal
     sexo: Optional[SexoEnum] = Form(None),
     edad_aproximada: Optional[EdadEnum] = Form(None),
     tiene_collar: Optional[bool] = Form(None),
@@ -34,8 +33,9 @@ async def create_report(
     raza_clave: Optional[str] = Form(None),
     tipo_animal_otro_clave: Optional[str] = Form(None),
     especie_descripcion: Optional[str] = Form(None),
+    es_duplicado_confirmado: Optional[bool] = Form(None),
+    reporte_original_id: Optional[str] = Form(None),
 ):
-    
     if not latitud and not longitud and not municipio:
         raise HTTPException(
             status_code=422,
@@ -83,6 +83,8 @@ async def create_report(
         raza_clave=raza_clave,
         tipo_animal_otro_clave=tipo_animal_otro_clave,
         especie_descripcion=especie_descripcion,
+        es_duplicado_confirmado=es_duplicado_confirmado,
+        reporte_original_id=reporte_original_id,
     )
 
 @router.get("", response_model=list[ReportListItem], status_code=200)

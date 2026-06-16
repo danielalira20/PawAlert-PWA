@@ -3,6 +3,7 @@ from fastapi import UploadFile, HTTPException
 from app.db.supabase import supabase
 from app.services.storage_service import subir_foto
 from app.services.assignment_service import asignar_asociacion, obtener_contactos_emergencia
+from datetime import datetime, timezone, timedelta
 import json
 
 def obtener_id_catalogo(tabla: str, clave: str) -> str | None:
@@ -26,6 +27,24 @@ def registrar_historial(reporte_id: str, tipo_evento: str, descripcion: str, usu
         "descripcion": descripcion,
         "datos_extra": datos_extra,
     }).execute()
+
+def verificar_duplicados(municipio: str | None, colonia: str | None) -> list:
+    """Busca reportes activos en el mismo municipio/colonia creados en las últimas 2 horas."""
+    if not municipio:
+        return []
+
+    hace_dos_horas = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+
+    query = supabase.table("reportes").select(
+        "id, estado_reporte, municipio, colonia, created_at, "
+        "animal(tipo_animal_catalogo(clave), condicion_catalogo(clave))"
+    ).neq("estado_reporte", "cerrado").gte("created_at", hace_dos_horas).eq("municipio", municipio)
+
+    if colonia:
+        query = query.eq("colonia", colonia)
+
+    resultado = query.execute()
+    return resultado.data if resultado.data else []
 
 async def crear_reporte(
     nombre: str,
@@ -54,7 +73,26 @@ async def crear_reporte(
     raza_clave: str | None = None,
     tipo_animal_otro_clave: str | None = None,
     especie_descripcion: str | None = None,
+    es_duplicado_confirmado: bool | None = None,
+    reporte_original_id: str | None = None,
 ) -> dict:
+    
+    # 0 — Verificar duplicados (solo si no viene confirmación del usuario)
+    if es_duplicado_confirmado is None:
+        posibles_duplicados = verificar_duplicados(municipio, colonia)
+        if posibles_duplicados:
+            return {
+                "posible_duplicado": True,
+                "reporte_existente": {
+                    "id": posibles_duplicados[0]["id"],
+                    "municipio": posibles_duplicados[0]["municipio"],
+                    "colonia": posibles_duplicados[0]["colonia"],
+                    "created_at": str(posibles_duplicados[0]["created_at"]),
+                    "tipo_animal": posibles_duplicados[0].get("animal", {}).get("tipo_animal_catalogo", {}).get("clave"),
+                    "condicion": posibles_duplicados[0].get("animal", {}).get("condicion_catalogo", {}).get("clave"),
+                },
+                "total_duplicados": len(posibles_duplicados)
+            }
 
     # 1 — Crear o reutilizar usuario
     resultado = supabase.table("usuarios").select("id").eq("telefono", telefono).execute()
@@ -102,6 +140,7 @@ async def crear_reporte(
         "colonia": colonia,
         "municipio": municipio,
         "referencia": referencia,
+        "reporte_original_id": reporte_original_id, 
     }
 
     reporte = supabase.table("reportes").insert(reporte_data).execute()
