@@ -14,11 +14,12 @@ type Condition = 'green' | 'yellow' | 'red' | null;
 type Size = 'Pequeño' | 'Mediano' | 'Grande' | null;
 type UbicacionFuente = 'automatica' | 'manual';
 
-type SelectedPhoto = {
-  uri: string;
-  fileName: string;
-  mimeType: string;
-};
+interface AnimalFoto {
+  id: string;
+  foto_url: string;
+  descripcion: string;
+  orden: number;
+}
 
 interface ReportFormScreenProps {
   onClose?: () => void;
@@ -33,8 +34,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
   const [email, setEmail] = useState('');
 
   const [tipoAnimal, setTipoAnimal] = useState<TipoAnimal>(null);
-  const [photoUri, setPhotoUri] = useState<string | null>(null);
-  const [selectedPhoto, setSelectedPhoto] = useState<SelectedPhoto | null>(null);
+  const [fotos, setFotos] = useState<AnimalFoto[]>([]);
 
   const [ubicacionFuente, setUbicacionFuente] = useState<UbicacionFuente>('automatica');
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
@@ -49,58 +49,63 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
   const [size, setSize] = useState<Size>(null);
   const [description, setDescription] = useState('');
 
-  const normalizePickedImage = async (asset: ImagePicker.ImagePickerAsset) => {
-    const manipulated = await manipulateAsync(
-      asset.uri,
-      [],
-      { compress: 0.8, format: SaveFormat.JPEG }
-    );
-    const filename = `upload_${Date.now()}.jpg`;
-    const normalizedPhoto: SelectedPhoto = {
-      uri: manipulated.uri,
-      fileName: filename,
-      mimeType: 'image/jpeg',
-    };
+  const captureFoto = async (fromCamera: boolean) => {
+    const requestPermission = fromCamera
+      ? ImagePicker.requestCameraPermissionsAsync
+      : ImagePicker.requestMediaLibraryPermissionsAsync;
 
-    console.log('imagen convertida:', JSON.stringify(normalizedPhoto, null, 2));
-    setPhotoUri(manipulated.uri);
-    setSelectedPhoto(normalizedPhoto);
-  };
-
-  const handlePickImage = async () => {
-    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    const permissionResult = await requestPermission();
     if (!permissionResult.granted) {
-      Alert.alert('Permiso denegado', 'Necesitamos acceso a tu galería.');
+      Alert.alert('Permiso denegado', 'Necesitamos los permisos necesarios para realizar esta acción.');
       return;
     }
-    const result = await ImagePicker.launchImageLibraryAsync({
+
+    const launchMethod = fromCamera
+      ? ImagePicker.launchCameraAsync
+      : ImagePicker.launchImageLibraryAsync;
+
+    const result = await launchMethod({
       mediaTypes: ['images'],
       allowsEditing: false,
       quality: 1,
     });
-    if (!result.canceled) await normalizePickedImage(result.assets[0]);
-  };
 
-  const handleTakePhoto = async () => {
-    const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permissionResult.granted) {
-      Alert.alert('Permiso denegado', 'Necesitamos acceso a tu cámara.');
-      return;
+    if (!result.canceled) {
+      const asset = result.assets[0];
+      const manipulated = await manipulateAsync(
+        asset.uri,
+        [],
+        { compress: 0.8, format: SaveFormat.JPEG }
+      );
+
+      const newFoto: AnimalFoto = {
+        id: Math.random().toString(36).substring(2, 9),
+        foto_url: manipulated.uri,
+        descripcion: '',
+        orden: fotos.length + 1,
+      };
+      setFotos([...fotos, newFoto]);
     }
-    const result = await ImagePicker.launchCameraAsync({
-      allowsEditing: false,
-      quality: 1,
-    });
-    if (!result.canceled) 
-      await normalizePickedImage(result.assets[0]);
   };
 
-  const showImageOptions = () => {
-    Alert.alert('Foto del animalito', '¿Qué deseas hacer?', [
-      { text: 'Tomar Foto', onPress: handleTakePhoto },
-      { text: 'Elegir de Galería', onPress: handlePickImage },
-      { text: 'Cancelar', style: 'cancel' },
-    ]);
+  const handleAddFoto = () => {
+    Alert.alert(
+      'Agregar Foto del animalito',
+      '¿Qué deseas hacer?',
+      [
+        { text: 'Tomar Foto', onPress: () => captureFoto(true) },
+        { text: 'Elegir de Galería', onPress: () => captureFoto(false) },
+        { text: 'Cancelar', style: 'cancel' }
+      ]
+    );
+  };
+
+  const handleUpdateFotoDesc = (id: string, text: string) => {
+    setFotos(fotos.map(f => f.id === id ? { ...f, descripcion: text } : f));
+  };
+
+  const handleDeleteFoto = (id: string) => {
+    setFotos(fotos.filter(f => f.id !== id));
   };
 
   const handleGetLocation = async () => {
@@ -124,11 +129,11 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
   };
 
   const isFormValid = () => {
-    const hasBaseInfo = 
-      nombre.trim().length > 0 && 
-      apellidoPaterno.trim().length > 0 && 
-      telefono.trim().length > 0 && 
-      selectedPhoto !== null && 
+    const hasBaseInfo =
+      nombre.trim().length > 0 &&
+      apellidoPaterno.trim().length > 0 &&
+      telefono.trim().length > 0 &&
+      fotos.length > 0 &&
       tipoAnimal !== null;
 
     const hasStatusInfo = condition !== null && size !== null;
@@ -147,8 +152,8 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
 
   const handleSubmit = async () => {
     try {
-      if (!selectedPhoto) {
-        Alert.alert('Falta la foto', 'Selecciona una foto antes de enviar.');
+      if (fotos.length === 0) {
+        Alert.alert('Falta la foto', 'Sube al menos una foto antes de enviar.');
         return;
       }
       const formData = new FormData();
@@ -158,8 +163,16 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
       formData.append('telefono', telefono);
       if (email.trim()) formData.append('email', email);
 
-      const photoFile = { uri: selectedPhoto.uri, name: selectedPhoto.fileName, type: selectedPhoto.mimeType };
-      formData.append('foto', photoFile as any);
+      fotos.forEach((f) => {
+        formData.append('fotos', {
+          uri: f.foto_url,
+          name: `foto_${f.id}_${Date.now()}.jpg`,
+          type: 'image/jpeg',
+        } as any);
+      });
+      formData.append('fotos_descripciones', JSON.stringify(fotos.map(f => f.descripcion || null)));
+      formData.append('fotos_ordenes', JSON.stringify(fotos.map(f => f.orden)));
+
       formData.append('tipo_animal', mapTipoAnimal(tipoAnimal));
       formData.append('condicion', mapCondicion(condition));
       formData.append('tamanio', mapTamanio(size));
@@ -175,31 +188,31 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
         if (referencia.trim()) formData.append('referencia', referencia);
       }
 
-      const response = await axios.post(`${API_URL}/reports`, formData, { headers: { 'Content-Type': 'multipart/form-data' }});
+      const response = await axios.post(`${API_URL}/reports`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
       const data = response.data;
 
-    if (data.asociacion_asignada) {
-      Alert.alert(
-        '¡Reporte enviado!',
-        `Tu reporte fue asignado a: ${data.asociacion_asignada}`,
-        [{ text: 'OK' }]
-      )
-    } else if (data.contactos_emergencia && data.contactos_emergencia.length > 0) {
-      const contactos = data.contactos_emergencia
-        .map((c: any) => `${c.nombre}: ${c.telefono}`)
-        .join('\n')
-      Alert.alert(
-        '¡Reporte enviado!',
-        `No hay asociaciones disponibles en tu zona.\n\nContactos de emergencia:\n${contactos}`,
-        [{ text: 'OK' }]
-      )
-    } else {
-      Alert.alert(
-        '¡Reporte enviado!',
-        'Tu reporte fue publicado. Te avisaremos cuando una asociación lo atienda.',
-        [{ text: 'OK' }]
-      )
-    }
+      if (data.asociacion_asignada) {
+        Alert.alert(
+          '¡Reporte enviado!',
+          `Tu reporte fue asignado a: ${data.asociacion_asignada}`,
+          [{ text: 'OK' }]
+        )
+      } else if (data.contactos_emergencia && data.contactos_emergencia.length > 0) {
+        const contactos = data.contactos_emergencia
+          .map((c: any) => `${c.nombre}: ${c.telefono}`)
+          .join('\n')
+        Alert.alert(
+          '¡Reporte enviado!',
+          `No hay asociaciones disponibles en tu zona.\n\nContactos de emergencia:\n${contactos}`,
+          [{ text: 'OK' }]
+        )
+      } else {
+        Alert.alert(
+          '¡Reporte enviado!',
+          'Tu reporte fue publicado. Te avisaremos cuando una asociación lo atienda.',
+          [{ text: 'OK' }]
+        )
+      }
     } catch (error: any) {
       const mensaje = error?.response?.data?.detail || error?.message || 'Error desconocido';
       Alert.alert('Error', mensaje);
@@ -262,20 +275,60 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
             </View>
           </View>
 
-          <View style={{ marginBottom: 8 }}>
-            <Text style={{ fontSize: 14, fontWeight: '600', color: '#2C3E50', marginBottom: 8 }}>Foto del animalito <Text style={{ color: '#E74C3C' }}>*</Text></Text>
-            {photoUri ? (
-              <View style={{ position: 'relative' }}>
-                <Image source={{ uri: photoUri }} style={{ width: '100%', height: 192, borderRadius: 12 }} />
-                <TouchableOpacity onPress={() => { setPhotoUri(null); setSelectedPhoto(null); }} style={{ position: 'absolute', top: 8, right: 8, backgroundColor: '#FFFFFF', padding: 8, borderRadius: 20 }}>
-                  <Text style={{ color: '#E74C3C', fontWeight: 'bold', fontSize: 12 }}>Eliminar</Text>
-                </TouchableOpacity>
+          <View style={{ marginBottom: 16 }}>
+            <Text style={{ fontSize: 14, fontWeight: '600', color: '#2C3E50', marginBottom: 8 }}>Fotos del animalito <Text style={{ color: '#E74C3C' }}>*</Text></Text>
+            <Text style={{ fontSize: 13, color: '#7F8C8D', marginBottom: 16 }}>
+              Agrega una o más imágenes para que el rescate sea más fácil.
+            </Text>
+
+            {fotos.map((f, index) => (
+              <View
+                key={f.id}
+                style={{
+                  borderBottomWidth: index === fotos.length - 1 ? 0 : 1,
+                  borderBottomColor: '#ECF0F1',
+                  paddingBottom: 16,
+                  marginBottom: 16
+                }}
+              >
+                <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+                  <Image
+                    source={{ uri: f.foto_url }}
+                    style={{ width: 80, height: 80, borderRadius: 8 }}
+                  />
+                  <View style={{ flex: 1, gap: 4 }}>
+                    <Input
+                      placeholder="Descripción de la foto..."
+                      value={f.descripcion}
+                      onChangeText={(text) => handleUpdateFotoDesc(f.id, text)}
+                      style={{ height: 38, paddingVertical: 4, fontSize: 13 }}
+                    />
+                    <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'flex-end' }}>
+                      <TouchableOpacity
+                        onPress={() => handleDeleteFoto(f.id)}
+                        style={{
+                          backgroundColor: '#FADBD8',
+                          paddingVertical: 10,
+                          paddingHorizontal: 16,
+                          borderRadius: 8,
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                          minHeight: 40,
+                        }}
+                      >
+                        <Text style={{ color: '#E63946', fontWeight: 'bold', fontSize: 13 }}>Eliminar</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </View>
               </View>
-            ) : (
-              <TouchableOpacity onPress={showImageOptions} style={{ width: '100%', height: 128, backgroundColor: '#ECF0F1', borderRadius: 12, borderWidth: 1, borderStyle: 'dashed', borderColor: '#95A5A6', alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ color: '#95A5A6', fontWeight: '500' }}>Toca para tomar o subir foto</Text>
-              </TouchableOpacity>
-            )}
+            ))}
+
+            <Button
+              label="Agregar Foto del animalito"
+              variant="secondary"
+              onPress={handleAddFoto}
+            />
           </View>
         </Card>
 
