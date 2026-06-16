@@ -1,13 +1,15 @@
 import axios from 'axios';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
+import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, Image, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
 import { API_URL } from '../constants/api';
+import { useAuth } from '../context/AuthContext';
 import LocationPickerMap from './LocationPickerMap';
 
 type TipoAnimal = 'Perro' | 'Gato' | 'Otro' | null;
@@ -29,11 +31,49 @@ interface ReportFormScreenProps {
 }
 
 export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
+  const { user, isLoggedIn } = useAuth();
+
+  const [errors, setErrors] = useState<{ [key: string]: string }>({});
+
   const [nombre, setNombre] = useState('');
   const [apellidoPaterno, setApellidoPaterno] = useState('');
   const [apellidoMaterno, setApellidoMaterno] = useState('');
   const [telefono, setTelefono] = useState('');
   const [email, setEmail] = useState('');
+  const [isLookingUp, setIsLookingUp] = useState(false);
+  const [guestFound, setGuestFound] = useState(false);
+
+  useEffect(() => {
+    if (isLoggedIn && user) {
+      setNombre(user.nombre);
+      setApellidoPaterno(user.apellido_paterno);
+      setApellidoMaterno(user.apellido_materno ?? '');
+      setTelefono(user.telefono);
+      setEmail(user.email);
+    }
+  }, [isLoggedIn, user]);
+
+  const handleTelefonoChange = async (val: string) => {
+    setTelefono(val);
+    setGuestFound(false);
+    setErrors((prev) => ({ ...prev, telefono: '' }));
+    const clean = val.replace(/\s|-/g, '');
+    if (clean.length === 10) {
+      setIsLookingUp(true);
+      try {
+        const res = await axios.get(`${API_URL}/users/phone/${clean}`);
+        setNombre(res.data.nombre);
+        setApellidoPaterno(res.data.apellido_paterno);
+        setApellidoMaterno(res.data.apellido_materno ?? '');
+        setEmail(res.data.email ?? '');
+        setGuestFound(true);
+      } catch {
+        // No existe, el usuario llena manualmente
+      } finally {
+        setIsLookingUp(false);
+      }
+    }
+  };
 
   const [tipoAnimal, setTipoAnimal] = useState<TipoAnimal>(null);
 
@@ -64,8 +104,6 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
   const [condition, setCondition] = useState<Condition>(null);
   const [size, setSize] = useState<Size>(null);
   const [description, setDescription] = useState('');
-
-  const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
   const handleTipoAnimalChange = (t: TipoAnimal) => {
     setTipoAnimal(t);
@@ -369,12 +407,43 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
 
         <Card>
           <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#2C3E50', marginBottom: 12 }}>Información del Reportante</Text>
-          <Input label="Nombre(s)" placeholder="Ej. Ana" value={nombre} onChangeText={setNombre} error={errors.nombre} required />
-          <Input label="Apellido Paterno" placeholder="Ej. Pérez" value={apellidoPaterno} onChangeText={setApellidoPaterno} error={errors.apellidoPaterno} required />
-          <Input label="Apellido Materno (Opcional)" placeholder="Ej. López" value={apellidoMaterno} onChangeText={setApellidoMaterno} />
-          <Input label="Teléfono de contacto" placeholder="Ej. 2221234567" value={telefono} onChangeText={setTelefono} error={errors.telefono} keyboardType="numeric" maxLength={10} required />
-          <Text style={{ fontSize: 12, color: '#7F8C8D', marginTop: -8, marginBottom: 16 }}>Lo usamos para contactarte sobre el estado de tu reporte.</Text>
-          <Input label="Correo Electrónico (Opcional)" placeholder="Ej. correo@ejemplo.com" value={email} onChangeText={setEmail} error={errors.email} keyboardType="email-address" autoCapitalize="none" />
+
+          {isLoggedIn && user ? (
+            <View style={{ marginBottom: 16 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#EAF6FF', padding: 14, borderRadius: 10, marginBottom: 8 }}>
+                <Text style={{ fontSize: 20, marginRight: 10 }}>👋</Text>
+                <View>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: '#2C3E50' }}>
+                    Hola, {user.nombre} {user.apellido_paterno}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: '#7F8C8D' }}>{user.telefono}</Text>
+                </View>
+              </View>
+              <TouchableOpacity onPress={() => router.push('/login')} style={{ alignSelf: 'flex-end' }}>
+                <Text style={{ fontSize: 12, color: '#E74C3C' }}>No soy yo</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <>
+              <Input label="Teléfono de contacto" placeholder="Ej. 2221234567" value={telefono} onChangeText={handleTelefonoChange} error={errors.telefono} keyboardType="numeric" maxLength={10} required />
+              <Text style={{ fontSize: 12, color: '#7F8C8D', marginTop: -8, marginBottom: 8 }}>Lo usamos para contactarte sobre el estado de tu reporte.</Text>
+              {isLookingUp && (
+                <Text style={{ fontSize: 12, color: '#7F8C8D', marginBottom: 8 }}>Buscando datos...</Text>
+              )}
+              {guestFound && (
+                <View style={{ backgroundColor: '#EAFAF1', padding: 10, borderRadius: 8, marginBottom: 12 }}>
+                  <Text style={{ fontSize: 12, color: '#27AE60', fontWeight: '600' }}>✓ Datos encontrados y autorellenados</Text>
+                </View>
+              )}
+              <Input label="Nombre(s)" placeholder="Ej. Ana" value={nombre} onChangeText={setNombre} error={errors.nombre} required />
+              <Input label="Apellido Paterno" placeholder="Ej. Pérez" value={apellidoPaterno} onChangeText={setApellidoPaterno} error={errors.apellidoPaterno} required />
+              <Input label="Apellido Materno (Opcional)" placeholder="Ej. López" value={apellidoMaterno} onChangeText={setApellidoMaterno} />
+              <Input label="Correo Electrónico (Opcional)" placeholder="Ej. correo@ejemplo.com" value={email} onChangeText={setEmail} error={errors.email} keyboardType="email-address" autoCapitalize="none" />
+              <TouchableOpacity onPress={() => router.push('/login')} style={{ alignItems: 'center', paddingVertical: 8, marginBottom: 8 }}>
+                <Text style={{ color: '#3498DB', fontSize: 13, fontWeight: '600' }}>¿Tienes cuenta? Inicia sesión</Text>
+              </TouchableOpacity>
+            </>
+          )}
         </Card>
 
         <Card>

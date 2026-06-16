@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.api import reports, associations, catalogos
+from app.api import reports, associations,catalogos, auth, users, report_acceptance
 
 app = FastAPI(
     title="PawAlert API",
@@ -9,6 +9,9 @@ app = FastAPI(
 app.include_router(reports.router, prefix="/reports", tags=["Reportes"])
 app.include_router(associations.router, prefix="/associations", tags=["Asociaciones"])
 app.include_router(catalogos.router, prefix="/catalogos", tags=["Catálogos"])
+app.include_router(auth.router, prefix="/auth", tags=["Auth"])
+app.include_router(users.router, prefix="/users", tags=["Usuarios"])
+app.include_router(report_acceptance.router, prefix="/reports", tags=["Aceptación"])
 
 @app.get("/")
 def health_check():

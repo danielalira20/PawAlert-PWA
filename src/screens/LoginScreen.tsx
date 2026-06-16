@@ -1,182 +1,154 @@
+import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, SafeAreaView, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, SafeAreaView, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useAuth } from '../context/AuthContext';
 
-type Role = 'reportante' | 'voluntario' | 'patrocinador';
+type Tab = 'login' | 'register';
 
 export default function LoginScreen() {
-  const [selectedRole, setSelectedRole] = useState<Role>('reportante');
-
-  // Estados preparados para conectar con FastAPI
-  const [contact, setContact] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [extraData, setExtraData] = useState('');
-  const [orgType, setOrgType] = useState('');
-  
+  const { login, register } = useAuth();
+  const params = useLocalSearchParams<{ tab?: string }>();
+  const [tab, setTab] = useState<Tab>(params.tab === 'register' ? 'register' : 'login');
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleLogin = () => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+
+  const [nombre, setNombre] = useState('');
+  const [apellidoPaterno, setApellidoPaterno] = useState('');
+  const [apellidoMaterno, setApellidoMaterno] = useState('');
+  const [telefono, setTelefono] = useState('');
+  const [regEmail, setRegEmail] = useState('');
+  const [regPassword, setRegPassword] = useState('');
+  const [regPassword2, setRegPassword2] = useState('');
+
+  const handleLogin = async () => {
+    if (!email.trim() || !password.trim()) {
+      Alert.alert('Datos incompletos', 'Ingresa tu correo y contraseña.');
+      return;
+    }
     setIsLoading(true);
-    console.log(`Payload preparado para rol: ${selectedRole}`);
-    setTimeout(() => setIsLoading(false), 1000); 
+    try {
+      await login(email.trim(), password);
+      router.back();
+    } catch (error: any) {
+      Alert.alert('Error', error?.response?.data?.detail || 'Correo o contraseña incorrectos');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
+  const handleRegister = async () => {
+    if (!nombre.trim() || !apellidoPaterno.trim() || !telefono.trim() || !regEmail.trim() || !regPassword.trim()) {
+      Alert.alert('Datos incompletos', 'Llena todos los campos requeridos.');
+      return;
+    }
+    if (regPassword !== regPassword2) {
+      Alert.alert('Error', 'Las contraseñas no coinciden.');
+      return;
+    }
+    if (regPassword.length < 6) {
+      Alert.alert('Error', 'La contraseña debe tener al menos 6 caracteres.');
+      return;
+    }
+    setIsLoading(true);
+    try {
+      await register({
+        email: regEmail.trim(),
+        password: regPassword,
+        nombre: nombre.trim(),
+        apellido_paterno: apellidoPaterno.trim(),
+        apellido_materno: apellidoMaterno.trim() || undefined,
+        telefono: telefono.replace(/\s|-/g, ''),
+      });
+      router.back();
+    } catch (error: any) {
+      Alert.alert('Error', error?.response?.data?.detail || 'Error al crear la cuenta');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const inputStyle = {
+    borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8,
+    padding: 12, marginBottom: 12, color: '#2C3E50', fontSize: 14,
+  };
+  const labelStyle = { fontSize: 12, color: '#7F8C8D', marginBottom: 4, fontWeight: '600' as const };
+
   return (
-    <SafeAreaView className="flex-1 bg-brand-lightBg">
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#F5F5F5' }}>
       <ScrollView contentContainerStyle={{ padding: 24, flexGrow: 1, justifyContent: 'center' }}>
-        
-        {/* Encabezado */}
-        <View className="items-center mb-8">
-          <Text className="text-primary-500 font-bold text-4xl mb-2">PawAlert</Text>
-          <Text className="text-text-gray text-base text-center px-4">
-            Plataforma Inteligente de Coordinación de Rescate Animal
+
+        <View style={{ alignItems: 'center', marginBottom: 32 }}>
+          <Text style={{ color: '#3498DB', fontWeight: 'bold', fontSize: 36, marginBottom: 8 }}>PawAlert</Text>
+          <Text style={{ color: '#7F8C8D', fontSize: 14, textAlign: 'center' }}>
+            Inicia sesión para reportar más fácil
           </Text>
         </View>
 
-        {/* Selector de Rol */}
-        <View className="flex-row bg-brand-white p-1 rounded-card mb-8 shadow-sm">
-          {(['reportante', 'voluntario', 'patrocinador'] as Role[]).map((role) => (
+        <View style={{ flexDirection: 'row', backgroundColor: '#FFFFFF', padding: 4, borderRadius: 12, marginBottom: 24 }}>
+          {(['login', 'register'] as Tab[]).map((t) => (
             <TouchableOpacity
-              key={role}
-              onPress={() => setSelectedRole(role)}
-              className={`flex-1 py-2.5 rounded-[8px] items-center ${
-                selectedRole === role ? 'bg-primary-500' : 'bg-transparent'
-              }`}
+              key={t}
+              onPress={() => setTab(t)}
+              style={{ flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center', backgroundColor: tab === t ? '#3498DB' : 'transparent' }}
             >
-              <Text 
-                className={`font-semibold capitalize text-sm ${
-                  selectedRole === role ? 'text-brand-white' : 'text-text-gray'
-                }`}
-              >
-                {role}
+              <Text style={{ fontWeight: '600', color: tab === t ? '#FFFFFF' : '#7F8C8D' }}>
+                {t === 'login' ? 'Iniciar Sesión' : 'Registrarse'}
               </Text>
             </TouchableOpacity>
           ))}
         </View>
 
-        {/* Formularios */}
-        <View className="bg-brand-white p-6 rounded-card shadow-sm border border-brand-lightBg">
-          
-          {selectedRole === 'reportante' && (
+        <View style={{ backgroundColor: '#FFFFFF', padding: 20, borderRadius: 16 }}>
+          {tab === 'login' ? (
             <View>
-              <Text className="text-text-dark font-bold text-xl mb-4">Acceso Rápido</Text>
-              <Text className="text-text-gray text-sm mb-5">
-                No necesitas contraseña. Solo ingresa tu dato de contacto para generar o dar seguimiento a tus reportes.
-              </Text>
-              
-              <View className="w-full mb-4">
-                <Text className="text-text-dark font-semibold text-sm mb-1.5">Teléfono o Correo <Text className="text-urgency-high">*</Text></Text>
-                <TextInput 
-                  placeholder="Ej. 222 123 4567 o email@..." 
-                  placeholderTextColor="#7F8C8D"
-                  value={contact}
-                  onChangeText={setContact}
-                  className="w-full bg-brand-white px-4 py-3 rounded-[8px] border border-brand-lightBg focus:border-primary-500 text-base text-text-dark min-h-[44px]"
-                />
-              </View>
+              <Text style={labelStyle}>Correo electrónico *</Text>
+              <TextInput placeholder="correo@ejemplo.com" keyboardType="email-address" autoCapitalize="none"
+                value={email} onChangeText={setEmail} style={inputStyle} />
+              <Text style={labelStyle}>Contraseña *</Text>
+              <TextInput placeholder="••••••••" secureTextEntry value={password} onChangeText={setPassword}
+                style={{ ...inputStyle, marginBottom: 24 }} />
+            </View>
+          ) : (
+            <View>
+              <Text style={labelStyle}>Nombre(s) *</Text>
+              <TextInput placeholder="Ej. Ana" value={nombre} onChangeText={setNombre} style={inputStyle} />
+              <Text style={labelStyle}>Apellido Paterno *</Text>
+              <TextInput placeholder="Ej. Pérez" value={apellidoPaterno} onChangeText={setApellidoPaterno} style={inputStyle} />
+              <Text style={labelStyle}>Apellido Materno (Opcional)</Text>
+              <TextInput placeholder="Ej. López" value={apellidoMaterno} onChangeText={setApellidoMaterno} style={inputStyle} />
+              <Text style={labelStyle}>Teléfono *</Text>
+              <TextInput placeholder="2221234567" keyboardType="phone-pad" value={telefono} onChangeText={setTelefono} style={inputStyle} />
+              <Text style={labelStyle}>Correo electrónico *</Text>
+              <TextInput placeholder="correo@ejemplo.com" keyboardType="email-address" autoCapitalize="none"
+                value={regEmail} onChangeText={setRegEmail} style={inputStyle} />
+              <Text style={labelStyle}>Contraseña *</Text>
+              <TextInput placeholder="Mínimo 6 caracteres" secureTextEntry value={regPassword} onChangeText={setRegPassword} style={inputStyle} />
+              <Text style={labelStyle}>Confirmar Contraseña *</Text>
+              <TextInput placeholder="Repite tu contraseña" secureTextEntry value={regPassword2} onChangeText={setRegPassword2}
+                style={{ ...inputStyle, marginBottom: 24 }} />
             </View>
           )}
 
-          {selectedRole === 'voluntario' && (
-            <View>
-              <Text className="text-text-dark font-bold text-xl mb-4">Acceso Voluntario</Text>
-              
-              <View className="w-full mb-4">
-                <Text className="text-text-dark font-semibold text-sm mb-1.5">Correo electrónico <Text className="text-urgency-high">*</Text></Text>
-                <TextInput 
-                  placeholder="correo@ejemplo.com"
-                  placeholderTextColor="#7F8C8D"
-                  keyboardType="email-address"
-                  value={email}
-                  onChangeText={setEmail}
-                  className="w-full bg-brand-white px-4 py-3 rounded-[8px] border border-brand-lightBg focus:border-primary-500 text-base text-text-dark min-h-[44px]"
-                />
-              </View>
-
-              <View className="w-full mb-4">
-                <Text className="text-text-dark font-semibold text-sm mb-1.5">Contraseña <Text className="text-urgency-high">*</Text></Text>
-                <TextInput 
-                  placeholder="********" 
-                  placeholderTextColor="#7F8C8D"
-                  secureTextEntry
-                  value={password}
-                  onChangeText={setPassword}
-                  className="w-full bg-brand-white px-4 py-3 rounded-[8px] border border-brand-lightBg focus:border-primary-500 text-base text-text-dark min-h-[44px]"
-                />
-              </View>
-
-              <View className="w-full mb-4">
-                <Text className="text-text-dark font-semibold text-sm mb-1.5">Datos adicionales (Vehículo/Experiencia)</Text>
-                <TextInput 
-                  placeholder="Auto, Moto, Bicicleta..." 
-                  placeholderTextColor="#7F8C8D"
-                  value={extraData}
-                  onChangeText={setExtraData}
-                  className="w-full bg-brand-white px-4 py-3 rounded-[8px] border border-brand-lightBg focus:border-primary-500 text-base text-text-dark min-h-[44px]"
-                />
-              </View>
-            </View>
-          )}
-
-          {selectedRole === 'patrocinador' && (
-            <View>
-              <Text className="text-text-dark font-bold text-xl mb-4">Acceso Patrocinador</Text>
-              
-              <View className="w-full mb-4">
-                <Text className="text-text-dark font-semibold text-sm mb-1.5">Correo electrónico <Text className="text-urgency-high">*</Text></Text>
-                <TextInput 
-                  placeholder="correo@empresa.com"
-                  placeholderTextColor="#7F8C8D"
-                  keyboardType="email-address"
-                  value={email}
-                  onChangeText={setEmail}
-                  className="w-full bg-brand-white px-4 py-3 rounded-[8px] border border-brand-lightBg focus:border-primary-500 text-base text-text-dark min-h-[44px]"
-                />
-              </View>
-
-              <View className="w-full mb-4">
-                <Text className="text-text-dark font-semibold text-sm mb-1.5">Contraseña <Text className="text-urgency-high">*</Text></Text>
-                <TextInput 
-                  placeholder="********" 
-                  placeholderTextColor="#7F8C8D"
-                  secureTextEntry
-                  value={password}
-                  onChangeText={setPassword}
-                  className="w-full bg-brand-white px-4 py-3 rounded-[8px] border border-brand-lightBg focus:border-primary-500 text-base text-text-dark min-h-[44px]"
-                />
-              </View>
-
-              <View className="w-full mb-4">
-                <Text className="text-text-dark font-semibold text-sm mb-1.5">Tipo de organización <Text className="text-urgency-high">*</Text></Text>
-                <TextInput 
-                  placeholder="Clínica, Refugio, Negocio..." 
-                  placeholderTextColor="#7F8C8D"
-                  value={orgType}
-                  onChangeText={setOrgType}
-                  className="w-full bg-brand-white px-4 py-3 rounded-[8px] border border-brand-lightBg focus:border-primary-500 text-base text-text-dark min-h-[44px]"
-                />
-              </View>
-            </View>
-          )}
-
-          {/* Botón */}
-          <View className="mt-6">
-            <TouchableOpacity
-              onPress={handleLogin}
-              disabled={isLoading}
-              className={`w-full py-3.5 px-4 rounded-[8px] flex-row justify-center items-center min-h-[44px] bg-primary-500 active:bg-primary-600 ${isLoading ? 'opacity-50' : ''}`}
-            >
-              {isLoading ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <Text className="text-brand-white font-semibold text-base text-center">
-                  {selectedRole === 'reportante' ? 'Continuar al Mapa' : 'Iniciar Sesión'}
+          <TouchableOpacity
+            onPress={tab === 'login' ? handleLogin : handleRegister}
+            disabled={isLoading}
+            style={{ backgroundColor: '#3498DB', paddingVertical: 14, borderRadius: 8, alignItems: 'center', opacity: isLoading ? 0.6 : 1 }}
+          >
+            {isLoading
+              ? <ActivityIndicator color="#FFFFFF" />
+              : <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 16 }}>
+                  {tab === 'login' ? 'Iniciar Sesión' : 'Crear Cuenta'}
                 </Text>
-              )}
-            </TouchableOpacity>
-          </View>
-          
+            }
+          </TouchableOpacity>
         </View>
+
+        <TouchableOpacity onPress={() => router.back()} style={{ alignItems: 'center', marginTop: 20 }}>
+          <Text style={{ color: '#7F8C8D', fontSize: 14 }}>Continuar como invitado</Text>
+        </TouchableOpacity>
+
       </ScrollView>
     </SafeAreaView>
   );
