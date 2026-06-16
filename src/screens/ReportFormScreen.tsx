@@ -1,13 +1,15 @@
 import axios from 'axios';
+import { router } from 'expo-router';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, Image, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
 import { API_URL } from '../constants/api';
+import { useAuth } from '../context/AuthContext';
 
 type TipoAnimal = 'Perro' | 'Gato' | 'Otro' | null;
 type Condition = 'green' | 'yellow' | 'red' | null;
@@ -25,12 +27,47 @@ interface ReportFormScreenProps {
 }
 
 export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
+  const { user, isLoggedIn } = useAuth();
+
   const [nombre, setNombre] = useState('');
   const [apellidoPaterno, setApellidoPaterno] = useState('');
   const [apellidoMaterno, setApellidoMaterno] = useState('');
 
   const [telefono, setTelefono] = useState('');
   const [email, setEmail] = useState('');
+  const [isLookingUp, setIsLookingUp] = useState(false);
+  const [guestFound, setGuestFound] = useState(false);
+
+  useEffect(() => {
+    if (isLoggedIn && user) {
+      setNombre(user.nombre);
+      setApellidoPaterno(user.apellido_paterno);
+      setApellidoMaterno(user.apellido_materno ?? '');
+      setTelefono(user.telefono);
+      setEmail(user.email);
+    }
+  }, [isLoggedIn, user]);
+
+  const handleTelefonoChange = async (val: string) => {
+    setTelefono(val);
+    setGuestFound(false);
+    const clean = val.replace(/\s|-/g, '');
+    if (clean.length === 10) {
+      setIsLookingUp(true);
+      try {
+        const res = await axios.get(`${API_URL}/users/phone/${clean}`);
+        setNombre(res.data.nombre);
+        setApellidoPaterno(res.data.apellido_paterno);
+        setApellidoMaterno(res.data.apellido_materno ?? '');
+        setEmail(res.data.email ?? '');
+        setGuestFound(true);
+      } catch {
+        // No existe, el usuario llena manualmente
+      } finally {
+        setIsLookingUp(false);
+      }
+    }
+  };
 
   const [tipoAnimal, setTipoAnimal] = useState<TipoAnimal>(null);
   const [photoUri, setPhotoUri] = useState<string | null>(null);
@@ -241,11 +278,51 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
         </Text>
 
         <Card>
-          <Input label="Nombre(s)" placeholder="Ej. Ana" value={nombre} onChangeText={setNombre} required />
-          <Input label="Apellido Paterno" placeholder="Ej. Pérez" value={apellidoPaterno} onChangeText={setApellidoPaterno} required />
-          <Input label="Apellido Materno (Opcional)" placeholder="Ej. López" value={apellidoMaterno} onChangeText={setApellidoMaterno} />
-          <Input label="Teléfono de contacto" placeholder="Ej. 222 123 4567" value={telefono} onChangeText={setTelefono} required />
-          <Input label="Correo Electrónico (Opcional)" placeholder="Ej. correo@ejemplo.com" value={email} onChangeText={setEmail} />
+          {isLoggedIn && user ? (
+            <View style={{ marginBottom: 16 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#EAF6FF', padding: 14, borderRadius: 10, marginBottom: 8 }}>
+                <Text style={{ fontSize: 20, marginRight: 10 }}>👋</Text>
+                <View>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: '#2C3E50' }}>
+                    Hola, {user.nombre} {user.apellido_paterno}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: '#7F8C8D' }}>{user.telefono}</Text>
+                </View>
+              </View>
+              <TouchableOpacity onPress={() => router.push('/login')} style={{ alignSelf: 'flex-end' }}>
+                <Text style={{ fontSize: 12, color: '#E74C3C' }}>No soy yo</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View>
+              <Input
+                label="Teléfono de contacto"
+                placeholder="Ej. 2221234567"
+                value={telefono}
+                onChangeText={handleTelefonoChange}
+                required
+              />
+              {isLookingUp && (
+                <Text style={{ fontSize: 12, color: '#7F8C8D', marginBottom: 8 }}>Buscando datos...</Text>
+              )}
+              {guestFound && (
+                <View style={{ backgroundColor: '#EAFAF1', padding: 10, borderRadius: 8, marginBottom: 12 }}>
+                  <Text style={{ fontSize: 12, color: '#27AE60', fontWeight: '600' }}>
+                    ✓ Datos encontrados y autorellenados
+                  </Text>
+                </View>
+              )}
+              <Input label="Nombre(s)" placeholder="Ej. Ana" value={nombre} onChangeText={setNombre} required />
+              <Input label="Apellido Paterno" placeholder="Ej. Pérez" value={apellidoPaterno} onChangeText={setApellidoPaterno} required />
+              <Input label="Apellido Materno (Opcional)" placeholder="Ej. López" value={apellidoMaterno} onChangeText={setApellidoMaterno} />
+              <Input label="Correo Electrónico (Opcional)" placeholder="Ej. correo@ejemplo.com" value={email} onChangeText={setEmail} />
+              <TouchableOpacity onPress={() => router.push('/login')} style={{ alignItems: 'center', paddingVertical: 8, marginBottom: 8 }}>
+                <Text style={{ color: '#3498DB', fontSize: 13, fontWeight: '600' }}>
+                  ¿Tienes cuenta? Inicia sesión
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           <View style={{ marginBottom: 20 }}>
             <Text style={{ fontSize: 14, fontWeight: '600', color: '#2C3E50', marginBottom: 8 }}>Tipo de Animal <Text style={{ color: '#E74C3C' }}>*</Text></Text>

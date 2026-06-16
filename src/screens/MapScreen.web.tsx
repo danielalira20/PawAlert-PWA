@@ -1,8 +1,11 @@
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { router } from 'expo-router';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { Dimensions, Image, Modal, Text, TouchableOpacity, View } from 'react-native';
+import AuthGateModal from '../components/AuthGateModal';
 import { Card } from '../components/ui/Card';
+import { useAuth } from '../context/AuthContext';
 import { Reporte, reportesFalsos } from '../mocks/reportesMock';
 import AssociationFormScreen from './AssociationFormScreen';
 import ReportFormScreen from './ReportFormScreen';
@@ -12,11 +15,21 @@ const LeafletMap = lazy(() => import('./LeafletMap'));
 const { width, height } = Dimensions.get('window');
 
 export default function MapScreen() {
+  const { user, isLoggedIn, logout } = useAuth();
   const [isClient, setIsClient] = useState(false);
   const [reportes, setReportes] = useState<Reporte[]>([]);
   const [selectedReport, setSelectedReport] = useState<Reporte | null>(null);
   const [isFormVisible, setIsFormVisible] = useState(false);
+  const [isAuthGateVisible, setIsAuthGateVisible] = useState(false);
   const [isAssociationFormVisible, setIsAssociationFormVisible] = useState(false);
+
+  const handleCrearReporte = () => {
+    if (isLoggedIn) {
+      setIsFormVisible(true);
+    } else {
+      setIsAuthGateVisible(true);
+    }
+  };
 
   useEffect(() => {
     setIsClient(true);
@@ -64,6 +77,25 @@ export default function MapScreen() {
 
   return (
     <View className="flex-1 bg-white">
+
+      {/* Botón de auth — esquina superior derecha */}
+      <View style={{ position: 'absolute', top: 50, right: 16, zIndex: 2000 }}>
+        {isLoggedIn && user ? (
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <View style={{ backgroundColor: '#1ABC9C', paddingVertical: 8, paddingHorizontal: 18, borderRadius: 30, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 4, elevation: 5 }}>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: '#FFFFFF' }}>{user.nombre}</Text>
+            </View>
+            <TouchableOpacity onPress={logout} style={{ backgroundColor: '#E74C3C', paddingVertical: 8, paddingHorizontal: 18, borderRadius: 30, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 4, elevation: 5 }}>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: '#FFFFFF' }}>Salir</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <TouchableOpacity onPress={() => router.push('/login')} style={{ backgroundColor: '#1ABC9C', paddingVertical: 8, paddingHorizontal: 18, borderRadius: 30, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 6, elevation: 5 }}>
+            <Text style={{ fontSize: 13, fontWeight: '700', color: '#FFFFFF' }}>Iniciar sesión</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
       {isClient ? (
         <Suspense fallback={<View style={{ width, height, backgroundColor: '#E5E7EB' }} />}>
           <LeafletMap
@@ -116,8 +148,14 @@ export default function MapScreen() {
         </View>
       )}
 
+      <AuthGateModal
+        visible={isAuthGateVisible}
+        onClose={() => setIsAuthGateVisible(false)}
+        onGuest={() => setIsFormVisible(true)}
+      />
+
       <TouchableOpacity
-        onPress={() => setIsFormVisible(true)}
+        onPress={handleCrearReporte}
         style={{
           position: 'absolute',
           bottom: selectedReport ? 140 : 30,

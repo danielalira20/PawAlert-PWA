@@ -2,9 +2,9 @@
 // API endpoint URLs
 import { Platform } from 'react-native'
 
-const DEV_URL = Platform.select({ // Use localhost for iOS and the special IP for Android emulators
-  ios: 'http://localhost:8000',
-  android: 'http://10.0.2.2:8000',
+const DEV_URL = Platform.select({
+  ios: 'http://192.168.100.9:8000',
+  android: 'http://192.168.100.9:8000',
   default: 'http://localhost:8000'
 })
 
