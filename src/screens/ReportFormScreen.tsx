@@ -14,16 +14,15 @@ type TipoAnimal = 'Perro' | 'Gato' | 'Otro' | null;
 type Condition = 'green' | 'yellow' | 'red' | null;
 type Size = 'Pequeño' | 'Mediano' | 'Grande' | null;
 type UbicacionFuente = 'automatica' | 'pin';
-
-// --- NUEVOS TIPOS PARA F5 ---
 type Sexo = 'Macho' | 'Hembra' | 'Desconocido' | null;
 type Edad = 'Cachorro' | 'Joven' | 'Adulto' | 'Desconocido' | null;
 
-type SelectedPhoto = {
-  uri: string;
-  fileName: string;
-  mimeType: string;
-};
+interface AnimalFoto {
+  id: string;
+  foto_url: string;
+  descripcion: string;
+  orden: number;
+}
 
 interface ReportFormScreenProps {
   onClose?: () => void;
@@ -37,25 +36,22 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
   const [email, setEmail] = useState('');
 
   const [tipoAnimal, setTipoAnimal] = useState<TipoAnimal>(null);
-  
-  // --- NUEVOS ESTADOS F5 ---
+
+  // --- F5: campos ampliados del animal ---
   const [sexo, setSexo] = useState<Sexo>(null);
   const [edad, setEdad] = useState<Edad>(null);
-  
-  // Específicos Perro/Gato
   const [tieneCollar, setTieneCollar] = useState<boolean | null>(null);
   const [estaPrenada, setEstaPrenada] = useState<boolean | null>(null);
   const [esAgresivo, setEsAgresivo] = useState<boolean | null>(null);
   const [esDomestico, setEsDomestico] = useState<boolean | null>(null);
   const [raza, setRaza] = useState<string | null>(null);
-  
-  // Específicos Otro
   const [subcategoria, setSubcategoria] = useState<string | null>(null);
   const [especieDescripcion, setEspecieDescripcion] = useState('');
 
-  const [photoUri, setPhotoUri] = useState<string | null>(null);
-  const [selectedPhoto, setSelectedPhoto] = useState<SelectedPhoto | null>(null);
+  // --- F6: múltiples fotos ---
+  const [fotos, setFotos] = useState<AnimalFoto[]>([]);
 
+  // --- F4: ubicación por GPS o pin ---
   const [ubicacionFuente, setUbicacionFuente] = useState<UbicacionFuente>('automatica');
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
   const [isLoadingGps, setIsLoadingGps] = useState(false);
@@ -71,7 +67,6 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
 
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
-  // Reset de campos específicos cuando se cambia el tipo de animal
   const handleTipoAnimalChange = (t: TipoAnimal) => {
     setTipoAnimal(t);
     setRaza(null);
@@ -80,36 +75,55 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
     setEsDomestico(null);
     setSubcategoria(null);
     setEspecieDescripcion('');
-    // Mantenemos sexo, edad y preñada ya que aplican a ambos
   };
 
-  const normalizePickedImage = async (asset: ImagePicker.ImagePickerAsset) => {
-    const manipulated = await manipulateAsync(asset.uri, [], { compress: 0.8, format: SaveFormat.JPEG });
-    const filename = `upload_${Date.now()}.jpg`;
-    setPhotoUri(manipulated.uri);
-    setSelectedPhoto({ uri: manipulated.uri, fileName: filename, mimeType: 'image/jpeg' });
+  // --- F6: manejo de múltiples fotos ---
+  const captureFoto = async (fromCamera: boolean) => {
+    const requestPermission = fromCamera
+      ? ImagePicker.requestCameraPermissionsAsync
+      : ImagePicker.requestMediaLibraryPermissionsAsync;
+
+    const permissionResult = await requestPermission();
+    if (!permissionResult.granted) {
+      Alert.alert('Permiso denegado', 'Necesitamos los permisos necesarios para realizar esta acción.');
+      return;
+    }
+
+    const launchMethod = fromCamera
+      ? ImagePicker.launchCameraAsync
+      : ImagePicker.launchImageLibraryAsync;
+
+    const result = await launchMethod({ mediaTypes: ['images'], allowsEditing: false, quality: 1 });
+
+    if (!result.canceled) {
+      const asset = result.assets[0];
+      const manipulated = await manipulateAsync(asset.uri, [], { compress: 0.8, format: SaveFormat.JPEG });
+
+      const newFoto: AnimalFoto = {
+        id: Math.random().toString(36).substring(2, 9),
+        foto_url: manipulated.uri,
+        descripcion: '',
+        orden: fotos.length + 1,
+      };
+      setFotos([...fotos, newFoto]);
+      setErrors((prev) => ({ ...prev, foto: '' }));
+    }
   };
 
-  const handlePickImage = async () => {
-    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permissionResult.granted) { Alert.alert('Permiso denegado', 'Necesitamos acceso a tu galería.'); return; }
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: false, quality: 1 });
-    if (!result.canceled) await normalizePickedImage(result.assets[0]);
-  };
-
-  const handleTakePhoto = async () => {
-    const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permissionResult.granted) { Alert.alert('Permiso denegado', 'Necesitamos acceso a tu cámara.'); return; }
-    const result = await ImagePicker.launchCameraAsync({ allowsEditing: false, quality: 1 });
-    if (!result.canceled) await normalizePickedImage(result.assets[0]);
-  };
-
-  const showImageOptions = () => {
-    Alert.alert('Foto del animalito', '¿Qué deseas hacer?', [
-      { text: 'Tomar Foto', onPress: handleTakePhoto },
-      { text: 'Elegir de Galería', onPress: handlePickImage },
+  const handleAddFoto = () => {
+    Alert.alert('Agregar Foto del animalito', '¿Qué deseas hacer?', [
+      { text: 'Tomar Foto', onPress: () => captureFoto(true) },
+      { text: 'Elegir de Galería', onPress: () => captureFoto(false) },
       { text: 'Cancelar', style: 'cancel' },
     ]);
+  };
+
+  const handleUpdateFotoDesc = (id: string, text: string) => {
+    setFotos(fotos.map((f) => (f.id === id ? { ...f, descripcion: text } : f)));
+  };
+
+  const handleDeleteFoto = (id: string) => {
+    setFotos(fotos.filter((f) => f.id !== id));
   };
 
   const handleGetLocation = async () => {
@@ -145,12 +159,11 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
     if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
       newErrors.email = 'Ingresa un correo electrónico válido.';
     }
-    
+
     if (!tipoAnimal) newErrors.tipoAnimal = 'Selecciona un tipo de animal.';
     if (!sexo) newErrors.sexo = 'Indica el sexo del animal.';
     if (!edad) newErrors.edad = 'Indica la edad aproximada.';
 
-    // Validaciones F5 por tipo de animal
     if (tipoAnimal === 'Perro') {
       if (tieneCollar === null) newErrors.tieneCollar = 'Indica si tiene collar.';
       if (esAgresivo === null) newErrors.esAgresivo = 'Indica si parece agresivo.';
@@ -168,7 +181,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
 
     if (!condition) newErrors.condition = 'Indica la condición del animal.';
     if (!size) newErrors.size = 'Indica el tamaño del animal.';
-    if (!selectedPhoto) newErrors.foto = 'Debes adjuntar una foto del animal.';
+    if (fotos.length === 0) newErrors.foto = 'Debes adjuntar al menos una foto del animal.';
 
     if (ubicacionFuente === 'automatica' && !location) {
       newErrors.ubicacion = 'Por favor, obtén tu ubicación actual con el GPS o selecciona el Pin.';
@@ -182,24 +195,23 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
   const mapTipoAnimal = (t: TipoAnimal): string => t!.toLowerCase();
   const mapTamanio = (s: Size): string => ({ Pequeño: 'pequeno', Mediano: 'mediano', Grande: 'grande' }[s!]);
 
-  // Mapeos de catálogos B3
   const mapRaza = (r: string, tipo: TipoAnimal) => {
     if (tipo === 'Perro') {
-      const map: any = { 'Mestizo': 'mestizo', 'Labrador': 'labrador', 'Pitbull': 'pitbull', 'Pastor Alemán': 'pastor aleman', 'Chihuahua': 'chihuahua', 'Otro': 'otro_perro' };
+      const map: any = { Mestizo: 'mestizo', Labrador: 'labrador', Pitbull: 'pitbull', 'Pastor Alemán': 'pastor aleman', Chihuahua: 'chihuahua', Otro: 'otro_perro' };
       return map[r];
     } else {
-      const map: any = { 'Común': 'comun', 'Siamés': 'siames', 'Persa': 'persa', 'Otro': 'otro_gato' };
+      const map: any = { Común: 'comun', Siamés: 'siames', Persa: 'persa', Otro: 'otro_gato' };
       return map[r];
     }
   };
 
   const mapSubcategoria = (s: string) => {
-    const map: any = { 'Ave': 'ave', 'Reptil': 'reptil', 'Roedor': 'roedor', 'Fauna silvestre': 'fauna silvestre', 'Otro': 'otro' };
+    const map: any = { Ave: 'ave', Reptil: 'reptil', Roedor: 'roedor', 'Fauna silvestre': 'fauna silvestre', Otro: 'otro' };
     return map[s];
   };
 
-  const handleSubmit = async () => {
-    if (!validateForm()) {
+  const handleSubmit = async (esDuplicadoConfirmado: boolean = false, reporteOriginalId?: string) => {
+    if (!esDuplicadoConfirmado && !validateForm()) {
       Alert.alert('Formulario Incompleto', 'Revisa los campos marcados en rojo para continuar.');
       return;
     }
@@ -212,24 +224,30 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
       formData.append('telefono', telefono);
       if (email.trim()) formData.append('email', email);
 
-      const photoFile = { uri: selectedPhoto!.uri, name: selectedPhoto!.fileName, type: selectedPhoto!.mimeType };
-      formData.append('foto', photoFile as any);
+      fotos.forEach((f) => {
+        formData.append('fotos', {
+          uri: f.foto_url,
+          name: `foto_${f.id}_${Date.now()}.jpg`,
+          type: 'image/jpeg',
+        } as any);
+      });
+      formData.append('fotos_descripciones', JSON.stringify(fotos.map((f) => f.descripcion || null)));
+      formData.append('fotos_ordenes', JSON.stringify(fotos.map((f) => f.orden)));
+
       formData.append('tipo_animal', mapTipoAnimal(tipoAnimal));
       formData.append('condicion', mapCondicion(condition));
       formData.append('tamanio', mapTamanio(size));
-      
-      // Mapeo de campos F5 para el Backend (B3)
       formData.append('sexo', sexo ? sexo.toLowerCase() : 'desconocido');
       formData.append('edad_aproximada', edad ? edad.toLowerCase() : 'desconocido');
 
       if (tipoAnimal === 'Perro' || tipoAnimal === 'Gato') {
         formData.append('tiene_collar', String(tieneCollar));
-        formData.append('raza_clave', mapRaza(raza!, tipoAnimal)); // Enviamos la clave para el backend
+        formData.append('raza_clave', mapRaza(raza!, tipoAnimal));
         if (sexo === 'Hembra' && estaPrenada !== null) formData.append('esta_prenada', String(estaPrenada));
         if (tipoAnimal === 'Perro') formData.append('es_agresivo', String(esAgresivo));
         if (tipoAnimal === 'Gato') formData.append('es_domestico_probable', String(esDomestico));
       } else if (tipoAnimal === 'Otro') {
-        formData.append('subcategoria_clave', mapSubcategoria(subcategoria!));
+        formData.append('tipo_animal_otro_clave', mapSubcategoria(subcategoria!));
         if (subcategoria === 'Otro') formData.append('especie_descripcion', especieDescripcion);
       }
 
@@ -244,20 +262,54 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
         formData.append('longitud', String(pinLocation.longitud));
       }
 
-      const response = await axios.post(`${API_URL}/reports`, formData, { headers: { 'Content-Type': 'multipart/form-data' }});
+      if (esDuplicadoConfirmado) formData.append('es_duplicado_confirmado', 'true');
+      if (reporteOriginalId) formData.append('reporte_original_id', reporteOriginalId);
+
+      const response = await axios.post(`${API_URL}/reports`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
       const data = response.data;
 
+      if (data.posible_duplicado) {
+        const existente = data.reporte_existente;
+        const fechaReporte = new Date(existente.created_at);
+        const ahora = new Date();
+        const diffMs = ahora.getTime() - fechaReporte.getTime();
+        const minutosTranscurridos = Math.round(diffMs / 60000);
+
+        let tiempoTexto = `${minutosTranscurridos} minutos`;
+        if (minutosTranscurridos >= 60) {
+          const horas = Math.floor(minutosTranscurridos / 60);
+          const minutos = minutosTranscurridos % 60;
+          tiempoTexto = `${horas} hora(s) y ${minutos} minuto(s)`;
+        }
+
+        Alert.alert(
+          'Posible reporte duplicado',
+          `Se reportó un ${existente.tipo_animal || 'animal'} en condición ${existente.condicion || 'desconocida'} en ${existente.colonia || existente.municipio || 'esta zona'} hace ${tiempoTexto}.\n\n¿Es el mismo animal?`,
+          [
+            { text: 'Cancelar', style: 'cancel' },
+            { text: 'Vincular al caso existente', onPress: () => handleSubmit(true, existente.id) },
+            { text: 'Crear un reporte nuevo', onPress: () => handleSubmit(true) },
+          ]
+        );
+        return;
+      }
+
       if (data.asociacion_asignada) {
-        Alert.alert('¡Reporte enviado!', `Tu reporte fue asignado a: ${data.asociacion_asignada}`, [{ text: 'OK' }]);
+        Alert.alert('¡Reporte enviado!', `Tu reporte fue asignado a: ${data.asociacion_asignada}`, [
+          { text: 'OK', onPress: () => { if (onClose) onClose(); } },
+        ]);
       } else if (data.contactos_emergencia && data.contactos_emergencia.length > 0) {
         const contactos = data.contactos_emergencia.map((c: any) => `${c.nombre}: ${c.telefono}`).join('\n');
-        Alert.alert('¡Reporte enviado!', `No hay asociaciones disponibles en tu zona.\n\nContactos de emergencia:\n${contactos}`, [{ text: 'OK' }]);
+        Alert.alert(
+          '¡Reporte enviado!',
+          `No hay asociaciones disponibles en tu zona.\n\nContactos de emergencia:\n${contactos}`,
+          [{ text: 'OK', onPress: () => { if (onClose) onClose(); } }]
+        );
       } else {
-        Alert.alert('¡Reporte enviado!', 'Tu reporte fue publicado. Te avisaremos cuando una asociación lo atienda.', [{ text: 'OK' }]);
+        Alert.alert('¡Reporte enviado!', 'Tu reporte fue publicado. Te avisaremos cuando una asociación lo atienda.', [
+          { text: 'OK', onPress: () => { if (onClose) onClose(); } },
+        ]);
       }
-      
-      if (onClose) onClose();
-      
     } catch (error: any) {
       const mensaje = error?.response?.data?.detail || error?.message || 'Error desconocido';
       Alert.alert('Error', mensaje);
@@ -273,14 +325,9 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
         </View>
       );
     }
-    return (
-      <LocationPickerMap
-        onLocationSelect={(latitud: number, longitud: number) => setPinLocation({ latitud, longitud })}
-      />
-    );
+    return <LocationPickerMap onLocationSelect={(latitud: number, longitud: number) => setPinLocation({ latitud, longitud })} />;
   };
 
-  // UI Helpers para limpiar el render
   const renderSelector = (label: string, options: string[], stateValue: any, setState: any, error?: string) => (
     <View style={{ marginBottom: 20 }}>
       <Text style={{ fontSize: 14, fontWeight: '600', color: '#2C3E50', marginBottom: 8 }}>{label} <Text style={{ color: '#E74C3C' }}>*</Text></Text>
@@ -341,7 +388,6 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
               {renderSelector('Sexo', ['Macho', 'Hembra', 'Desconocido'], sexo, setSexo, errors.sexo)}
               {renderSelector('Edad Aproximada', ['Cachorro', 'Joven', 'Adulto', 'Senior', 'Desconocido'], edad, setEdad, errors.edad)}
 
-              {/* CAMPOS ESPECÍFICOS PERRO */}
               {tipoAnimal === 'Perro' && (
                 <>
                   {renderSelector('Raza', ['Mestizo', 'Labrador', 'Pitbull', 'Pastor Alemán', 'Chihuahua', 'Otro'], raza, setRaza, errors.raza)}
@@ -351,7 +397,6 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
                 </>
               )}
 
-              {/* CAMPOS ESPECÍFICOS GATO */}
               {tipoAnimal === 'Gato' && (
                 <>
                   {renderSelector('Raza', ['Común', 'Siamés', 'Persa', 'Otro'], raza, setRaza, errors.raza)}
@@ -361,7 +406,6 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
                 </>
               )}
 
-              {/* CAMPOS ESPECÍFICOS OTRO */}
               {tipoAnimal === 'Otro' && (
                 <>
                   {renderSelector('Categoría', ['Ave', 'Reptil', 'Roedor', 'Fauna silvestre', 'Otro'], subcategoria, setSubcategoria, errors.subcategoria)}
@@ -385,21 +429,28 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
 
           {renderSelector('Tamaño', ['Pequeño', 'Mediano', 'Grande'], size, setSize, errors.size)}
 
-          <View style={{ marginBottom: 20 }}>
-            <Text style={{ fontSize: 14, fontWeight: '600', color: '#2C3E50', marginBottom: 8 }}>Foto del animalito <Text style={{ color: '#E74C3C' }}>*</Text></Text>
-            {photoUri ? (
-              <View style={{ position: 'relative' }}>
-                <Image source={{ uri: photoUri }} style={{ width: '100%', height: 192, borderRadius: 12 }} />
-                <TouchableOpacity onPress={() => { setPhotoUri(null); setSelectedPhoto(null); }} style={{ position: 'absolute', top: 8, right: 8, backgroundColor: '#FFFFFF', padding: 8, borderRadius: 20 }}>
-                  <Text style={{ color: '#E74C3C', fontWeight: 'bold', fontSize: 12 }}>Eliminar</Text>
-                </TouchableOpacity>
+          <View style={{ marginBottom: 16 }}>
+            <Text style={{ fontSize: 14, fontWeight: '600', color: '#2C3E50', marginBottom: 8 }}>Fotos del animalito <Text style={{ color: '#E74C3C' }}>*</Text></Text>
+            <Text style={{ fontSize: 13, color: '#7F8C8D', marginBottom: 16 }}>Agrega una o más imágenes para que el rescate sea más fácil.</Text>
+
+            {fotos.map((f, index) => (
+              <View key={f.id} style={{ borderBottomWidth: index === fotos.length - 1 ? 0 : 1, borderBottomColor: '#ECF0F1', paddingBottom: 16, marginBottom: 16 }}>
+                <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+                  <Image source={{ uri: f.foto_url }} style={{ width: 80, height: 80, borderRadius: 8 }} />
+                  <View style={{ flex: 1, gap: 4 }}>
+                    <Input placeholder="Descripción de la foto..." value={f.descripcion} onChangeText={(text) => handleUpdateFotoDesc(f.id, text)} style={{ height: 38, paddingVertical: 4, fontSize: 13 }} />
+                    <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'flex-end' }}>
+                      <TouchableOpacity onPress={() => handleDeleteFoto(f.id)} style={{ backgroundColor: '#FADBD8', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, justifyContent: 'center', alignItems: 'center', minHeight: 40 }}>
+                        <Text style={{ color: '#E63946', fontWeight: 'bold', fontSize: 13 }}>Eliminar</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </View>
               </View>
-            ) : (
-              <TouchableOpacity onPress={showImageOptions} style={{ width: '100%', height: 128, backgroundColor: '#ECF0F1', borderRadius: 12, borderWidth: 1, borderStyle: 'dashed', borderColor: errors.foto ? '#E74C3C' : '#95A5A6', alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ color: errors.foto ? '#E74C3C' : '#95A5A6', fontWeight: '500' }}>Toca para tomar o subir foto</Text>
-              </TouchableOpacity>
-            )}
-            {errors.foto && <Text style={{ color: '#E74C3C', fontSize: 12, marginTop: 4 }}>{errors.foto}</Text>}
+            ))}
+
+            <Button label="Agregar Foto del animalito" variant="secondary" onPress={handleAddFoto} />
+            {errors.foto && <Text style={{ color: '#E74C3C', fontSize: 12, marginTop: 8 }}>{errors.foto}</Text>}
           </View>
 
           <View style={{ marginBottom: 8 }}>
@@ -415,17 +466,21 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
           <View style={{ marginBottom: 16 }}>
             <Text style={{ fontSize: 14, fontWeight: '600', color: '#2C3E50', marginBottom: 8 }}>Método de Ubicación <Text style={{ color: '#E74C3C' }}>*</Text></Text>
             <View style={{ flexDirection: 'row', backgroundColor: '#ECF0F1', padding: 4, borderRadius: 12 }}>
-              <TouchableOpacity onPress={() => setUbicacionFuente('automatica')} style={{ flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center', backgroundColor: ubicacionFuente === 'automatica' ? '#FFFFFF' : 'transparent' }}><Text style={{ fontWeight: '600', fontSize: 14, color: ubicacionFuente === 'automatica' ? '#3498DB' : '#95A5A6' }}>Mi Ubicación Actual</Text></TouchableOpacity>
-              <TouchableOpacity onPress={() => setUbicacionFuente('pin')} style={{ flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center', backgroundColor: ubicacionFuente === 'pin' ? '#FFFFFF' : 'transparent' }}><Text style={{ fontWeight: '600', fontSize: 14, color: ubicacionFuente === 'pin' ? '#3498DB' : '#95A5A6' }}>Pin en el Mapa</Text></TouchableOpacity>
+              <TouchableOpacity onPress={() => setUbicacionFuente('automatica')} style={{ flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center', backgroundColor: ubicacionFuente === 'automatica' ? '#FFFFFF' : 'transparent' }}>
+                <Text style={{ fontWeight: '600', fontSize: 14, color: ubicacionFuente === 'automatica' ? '#3498DB' : '#95A5A6' }}>Mi Ubicación Actual</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setUbicacionFuente('pin')} style={{ flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center', backgroundColor: ubicacionFuente === 'pin' ? '#FFFFFF' : 'transparent' }}>
+                <Text style={{ fontWeight: '600', fontSize: 14, color: ubicacionFuente === 'pin' ? '#3498DB' : '#95A5A6' }}>Pin en el Mapa</Text>
+              </TouchableOpacity>
             </View>
           </View>
-          
+
           {renderUbicacion()}
-          
+
           <Input label="Referencia (Opcional)" placeholder="Ej. Frente a la tienda de abarrotes..." value={referencia} onChangeText={setReferencia} />
         </Card>
 
-        <Button label="Enviar Reporte" onPress={handleSubmit} />
+        <Button label="Enviar Reporte" onPress={() => handleSubmit(false)} />
       </ScrollView>
     </View>
   );

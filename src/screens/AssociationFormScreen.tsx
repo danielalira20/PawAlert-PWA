@@ -236,9 +236,23 @@ export default function AssociationFormScreen({ onClose }: Props) {
   };
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: '#F5F5F5' }} contentContainerStyle={{ padding: 24, paddingBottom: 40 }}>
-      <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#2C3E50', marginBottom: 8 }}>Registro de Asociación</Text>
-      <Text style={{ fontSize: 14, color: '#7F8C8D', marginBottom: 24 }}>Registra tu asociación para comenzar a recibir reportes de rescate en tu zona.</Text>
+    <View style={{ flex: 1, backgroundColor: '#F5F5F5' }}>
+      {/* Header del Modal con la X para cerrar */}
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#E5E7EB' }}>
+        <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#2C3E50' }}>Registro de Asociación</Text>
+        {onClose && (
+          <TouchableOpacity onPress={onClose} style={{ padding: 4 }}>
+            <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#95A5A6' }}>✕</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      <ScrollView 
+        contentContainerStyle={{ padding: 24, paddingBottom: 40 }}
+      >
+        <Text style={{ fontSize: 14, color: '#7F8C8D', marginBottom: 24 }}>
+          Registra tu asociación para comenzar a recibir reportes de rescate en tu zona.
+        </Text>
 
       <Card>
         <Input label="Nombre de la Asociación" placeholder="Ej. Huellitas de Amor A.C." value={nombre} onChangeText={setNombre} error={errors.nombre} required />
@@ -318,8 +332,12 @@ export default function AssociationFormScreen({ onClose }: Props) {
         <Button label="Agregar Foto de la Asociación" variant="secondary" onPress={handleAddFoto} />
       </Card>
 
-      {/* Botón liberado para permitir ver errores */}
-      <Button label="Registrar Asociación" onPress={handleSubmit} />
-    </ScrollView>
+      <Button 
+        label="Registrar Asociación" 
+        onPress={handleSubmit}
+        disabled={!isFormValid()}
+      />
+      </ScrollView>
+    </View>
   );
 }
