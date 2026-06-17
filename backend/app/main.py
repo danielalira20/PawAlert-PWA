@@ -1,9 +1,18 @@
 from fastapi import FastAPI
-from app.api import reports, associations,catalogos, auth, users, report_acceptance
+from fastapi.middleware.cors import CORSMiddleware
+from app.api import reports, associations, catalogos, auth, users, report_acceptance
 
 app = FastAPI(
     title="PawAlert API",
     version="1.0.0"
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # para desarrollo; en producción se restringe al dominio real
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(reports.router, prefix="/reports", tags=["Reportes"])

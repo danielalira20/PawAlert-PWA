@@ -242,22 +242,19 @@ ESTADOS_VALIDOS = ["pendiente", "asignado", "en_atencion", "rescatado", "cerrado
 
 async def obtener_reportes() -> list:
     resultado = supabase.table("reportes").select(
-    "id, estado_reporte, estado_id, latitud, longitud, municipio, colonia, created_at, "
-    "animal(tipo_animal_id, condicion_id, tamanio_id, sexo, edad_aproximada, descripcion, "
-    "tipo_animal_catalogo(clave), condicion_catalogo(clave), tamanio_catalogo(clave), "
-    "animal_fotos(foto_url, orden))"
-).neq("estado_reporte", "cerrado").execute()
+        "id, estado_reporte, estado_id, latitud, longitud, municipio, colonia, created_at, "
+        "animal(tipo_animal_id, condicion_id, tamanio_id, sexo, edad_aproximada, descripcion, "
+        "tipo_animal_catalogo(clave), condicion_catalogo(clave), tamanio_catalogo(clave), "
+        "animal_fotos(foto_url, orden))"
+    ).neq("estado_reporte", "cerrado").execute()
 
     reportes = []
     for r in resultado.data:
         animal = r.get("animal")
         animal_data = None
+        foto_url = None
 
         if animal:
-            fotos = animal.get("animal_fotos", [])
-            print(f"Fotos del animal: {fotos}")
-            foto_principal = sorted(fotos, key=lambda f: f.get("orden", 1))[0]["foto_url"] if fotos else None
-            print(f"Foto principal: {foto_principal}")
             animal_data = {
                 "tipo_animal": animal.get("tipo_animal_catalogo", {}).get("clave"),
                 "condicion": animal.get("condicion_catalogo", {}).get("clave"),
@@ -265,23 +262,26 @@ async def obtener_reportes() -> list:
                 "sexo": animal.get("sexo"),
                 "edad_aproximada": animal.get("edad_aproximada"),
                 "descripcion": animal.get("descripcion"),
-                "foto_url": foto_principal,
             }
+
+            fotos = animal.get("animal_fotos") or []
+            if fotos:
+                fotos_ordenadas = sorted(fotos, key=lambda f: f.get("orden", 0))
+                foto_url = fotos_ordenadas[0]["foto_url"]
 
         reportes.append({
             "id": r["id"],
-            "estado": r.get("estado_reporte"),
-            "foto_url": animal_data.get("foto_url") if animal_data else None,
+            "estado_reporte": r.get("estado_reporte"),
             "latitud": r.get("latitud"),
             "longitud": r.get("longitud"),
             "municipio": r.get("municipio"),
             "colonia": r.get("colonia"),
             "created_at": str(r["created_at"]),
+            "foto_url": foto_url,
             "animal": animal_data,
         })
 
     return reportes
-
 
 async def cambiar_estado_reporte(reporte_id: str, nuevo_estado: str) -> dict:
     resultado = supabase.table("reportes").select(

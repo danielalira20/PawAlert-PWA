@@ -58,11 +58,12 @@ class ReportResponse(BaseModel):
 
 class ReportListItem(BaseModel):
     id: str
-    estado: Optional[str] = None
+    estado_reporte: Optional[str] = None
     latitud: Optional[float] = None
     longitud: Optional[float] = None
     municipio: Optional[str] = None
     colonia: Optional[str] = None
     created_at: str
+    foto_url: Optional[str] = None
     animal: Optional[AnimalResponse] = None
     
