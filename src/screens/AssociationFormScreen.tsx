@@ -235,6 +235,20 @@ export default function AssociationFormScreen({ onClose }: Props) {
     }
   };
 
+  const isFormValid = () => {
+  return (
+    nombre.trim().length > 0 &&
+    nombreResponsable.trim().length > 0 &&
+    telefono.trim().length > 0 &&
+    email.trim().length > 0 &&
+    tiposAnimales.length > 0 &&
+    radioKm.trim().length > 0 &&
+    (ubicacionFuente === 'manual' 
+      ? calle.trim().length > 0 && municipio.trim().length > 0
+      : latitud.length > 0 && longitud.length > 0)
+  )
+}
+
   return (
     <View style={{ flex: 1, backgroundColor: '#F5F5F5' }}>
       {/* Header del Modal con la X para cerrar */}

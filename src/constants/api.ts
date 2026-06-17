@@ -3,8 +3,8 @@
 import { Platform } from 'react-native'
 
 const DEV_URL = Platform.select({
-  ios: 'http://192.168.100.9:8000',
-  android: 'http://192.168.100.9:8000',
+  ios: 'http://192.168.56.1:8000',
+  android: 'http://10.0.2.2:8000',
   default: 'http://localhost:8000'
 })
 

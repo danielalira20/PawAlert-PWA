@@ -83,7 +83,6 @@ export default function MapScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: 'white' }}>
 
-      {/* Botón de auth — esquina superior derecha */}
       <View style={{ position: 'absolute', top: 60, right: 16, zIndex: 2000, flexDirection: 'row', gap: 8 }}>
         {isLoggedIn && user ? (
           <>
@@ -110,10 +109,10 @@ export default function MapScreen() {
           <Marker
             key={reporte.id}
             coordinate={{
-              latitude: reporte.latitud,
-              longitude: reporte.longitud,
+              latitude: reporte.latitud as number,
+              longitude: reporte.longitud as number,
             }}
-            pinColor={getMarkerColor(reporte.estado_reporte)}
+            pinColor={getMarkerColor(reporte.estado ?? '')}
             onPress={(e) => {
               e.stopPropagation();
               setSelectedReport(reporte);
@@ -127,17 +126,17 @@ export default function MapScreen() {
           <Card className="m-0 shadow-lg border-0 p-3">
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <Image
-                source={{ uri: selectedReport.foto_url }}
+                source={{ uri: selectedReport.foto_url ?? undefined }}
                 style={{ width: 96, height: 96, borderRadius: 12 }}
                 resizeMode="cover"
               />
               <View style={{ flex: 1, marginLeft: 16, justifyContent: 'center' }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <Text style={{ backgroundColor: getMarkerColor(selectedReport.estado_reporte), color: 'white', fontSize: 10, fontWeight: 'bold', paddingVertical: 4, paddingHorizontal: 8, borderRadius: 8 }}>
-                    {getEstadoLabel(selectedReport.estado_reporte)}
+                  <Text style={{ backgroundColor: getMarkerColor(selectedReport.estado ?? ''), color: 'white', fontSize: 10, fontWeight: 'bold', paddingVertical: 4, paddingHorizontal: 8, borderRadius: 8 }}>
+                    {getEstadoLabel(selectedReport.estado ?? '')}
                   </Text>
                   <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <View style={{ backgroundColor: getCondicionColor(selectedReport.condicion), width: 10, height: 10, borderRadius: 5, marginRight: 4 }} />
+                    <View style={{ backgroundColor: getCondicionColor(selectedReport.condicion ?? ''), width: 10, height: 10, borderRadius: 5, marginRight: 4 }} />
                     <Text style={{ fontSize: 12, color: '#6B7280' }}>Salud</Text>
                   </View>
                 </View>
