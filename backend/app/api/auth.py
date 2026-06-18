@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, EmailStr
-from app.db.supabase import supabase, supabase_admin
+from app.db.supabase import supabase, supabase_admin, get_fresh_client
 
 router = APIRouter()
 
@@ -25,9 +25,14 @@ async def register(body: RegisterRequest):
     if not telefono_limpio.isdigit() or len(telefono_limpio) != 10:
         raise HTTPException(status_code=422, detail="El teléfono debe tener exactamente 10 dígitos")
 
-    existe = supabase.table("usuarios").select("id").eq("telefono", telefono_limpio).execute()
+    existe = supabase.table("usuarios").select("id, auth_user_id").eq("telefono", telefono_limpio).execute()
+
+    usuario_invitado_id = None
     if existe.data:
-        raise HTTPException(status_code=409, detail="Ya existe una cuenta con ese teléfono")
+        registro_existente = existe.data[0]
+        if registro_existente.get("auth_user_id"):
+            raise HTTPException(status_code=409, detail="Ya existe una cuenta con ese teléfono")
+        usuario_invitado_id = registro_existente["id"]
 
     try:
         auth_response = supabase_admin.auth.admin.create_user({
@@ -44,19 +49,28 @@ async def register(body: RegisterRequest):
     auth_user_id = auth_response.user.id
 
     try:
-        usuario = supabase.table("usuarios").insert({
-            "auth_user_id": auth_user_id,
-            "nombre": body.nombre,
-            "apellido_paterno": body.apellido_paterno,
-            "apellido_materno": body.apellido_materno,
-            "email": body.email,
-            "telefono": telefono_limpio,
-        }).execute()
+        if usuario_invitado_id:
+            usuario = supabase.table("usuarios").update({
+                "auth_user_id": auth_user_id,
+                "nombre": body.nombre,
+                "apellido_paterno": body.apellido_paterno,
+                "apellido_materno": body.apellido_materno,
+                "email": body.email,
+            }).eq("id", usuario_invitado_id).execute()
+        else:
+            usuario = supabase.table("usuarios").insert({
+                "auth_user_id": auth_user_id,
+                "nombre": body.nombre,
+                "apellido_paterno": body.apellido_paterno,
+                "apellido_materno": body.apellido_materno,
+                "email": body.email,
+                "telefono": telefono_limpio,
+            }).execute()
     except Exception as e:
         supabase_admin.auth.admin.delete_user(auth_user_id)
         raise HTTPException(status_code=500, detail="Error al guardar datos del usuario")
 
-    login_response = supabase.auth.sign_in_with_password({
+    login_response = get_fresh_client().auth.sign_in_with_password({
         "email": body.email,
         "password": body.password,
     })
@@ -73,11 +87,10 @@ async def register(body: RegisterRequest):
         }
     }
 
-
 @router.post("/login", status_code=200)
 async def login(body: LoginRequest):
     try:
-        response = supabase.auth.sign_in_with_password({
+        response = get_fresh_client().auth.sign_in_with_password({
             "email": body.email,
             "password": body.password,
         })
