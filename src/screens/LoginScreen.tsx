@@ -10,6 +10,7 @@ export default function LoginScreen() {
   const params = useLocalSearchParams<{ tab?: string }>();
   const [tab, setTab] = useState<Tab>(params.tab === 'register' ? 'register' : 'login');
   const [isLoading, setIsLoading] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -22,6 +23,13 @@ export default function LoginScreen() {
   const [regPassword, setRegPassword] = useState('');
   const [regPassword2, setRegPassword2] = useState('');
 
+  const showSuccessAndRedirect = (message: string) => {
+    setSuccessMessage(message);
+    setTimeout(() => {
+      router.replace('/');
+    }, 1400);
+  };
+
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
       Alert.alert('Datos incompletos', 'Ingresa tu correo y contraseña.');
@@ -30,7 +38,7 @@ export default function LoginScreen() {
     setIsLoading(true);
     try {
       await login(email.trim(), password);
-      router.back();
+      showSuccessAndRedirect('¡Bienvenida de vuelta! Redirigiendo al mapa...');
     } catch (error: any) {
       Alert.alert('Error', error?.response?.data?.detail || 'Correo o contraseña incorrectos');
     } finally {
@@ -61,7 +69,7 @@ export default function LoginScreen() {
         apellido_materno: apellidoMaterno.trim() || undefined,
         telefono: telefono.replace(/\s|-/g, ''),
       });
-      router.back();
+      showSuccessAndRedirect('¡Cuenta creada! Redirigiendo al mapa...');
     } catch (error: any) {
       Alert.alert('Error', error?.response?.data?.detail || 'Error al crear la cuenta');
     } finally {
@@ -77,6 +85,18 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F5F5F5' }}>
+      {successMessage && (
+        <View style={{
+          position: 'absolute', top: 0, left: 0, right: 0, zIndex: 999,
+          backgroundColor: '#27AE60', paddingVertical: 14, paddingHorizontal: 20,
+          alignItems: 'center',
+        }}>
+          <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>
+            ✓ {successMessage}
+          </Text>
+        </View>
+      )}
+
       <ScrollView contentContainerStyle={{ padding: 24, flexGrow: 1, justifyContent: 'center' }}>
 
         <View style={{ alignItems: 'center', marginBottom: 32 }}>
@@ -145,7 +165,7 @@ export default function LoginScreen() {
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity onPress={() => router.back()} style={{ alignItems: 'center', marginTop: 20 }}>
+        <TouchableOpacity onPress={() => router.replace('/')} style={{ alignItems: 'center', marginTop: 20 }}>
           <Text style={{ color: '#7F8C8D', fontSize: 14 }}>Continuar como invitado</Text>
         </TouchableOpacity>
 
