@@ -4,7 +4,7 @@ import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { useEffect, useState } from 'react';
-import { Alert, Image, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Image, Modal, Platform, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
@@ -26,6 +26,11 @@ interface AnimalFoto {
   orden: number;
 }
 
+interface DuplicadoInfo {
+  existente: any;
+  tiempoTexto: string;
+}
+
 interface ReportFormScreenProps {
   onClose?: () => void;
 }
@@ -42,6 +47,10 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
   const [email, setEmail] = useState('');
   const [isLookingUp, setIsLookingUp] = useState(false);
   const [guestFound, setGuestFound] = useState(false);
+
+  // Estado para el modal propio de "posible duplicado" (reemplaza el Alert de 3 botones,
+  // que no es confiable en web: ver nota junto a handleSubmit más abajo).
+  const [duplicadoInfo, setDuplicadoInfo] = useState<DuplicadoInfo | null>(null);
 
   useEffect(() => {
     if (isLoggedIn && user) {
@@ -149,6 +158,14 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
   };
 
   const handleAddFoto = () => {
+    // En web no existe acceso a cámara vía expo-image-picker, y el Alert con varios
+    // botones (Tomar Foto / Elegir de Galería / Cancelar) no dispara onPress de forma
+    // confiable en react-native-web. Por eso en web saltamos directo al selector de
+    // archivos del sistema (equivalente a "Elegir de Galería").
+    if (Platform.OS === 'web') {
+      captureFoto(false);
+      return;
+    }
     Alert.alert('Agregar Foto del animalito', '¿Qué deseas hacer?', [
       { text: 'Tomar Foto', onPress: () => captureFoto(true) },
       { text: 'Elegir de Galería', onPress: () => captureFoto(false) },
@@ -307,6 +324,11 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
       const data = response.data;
 
       if (data.posible_duplicado) {
+        // Nota: este caso necesita que la persona elija entre 3 acciones reales
+        // (Cancelar / Vincular / Crear nuevo), no es solo un aviso. Un Alert.alert
+        // con varios botones no es confiable en web, así que en vez de mostrarlo
+        // aquí, guardamos la info en estado y renderizamos un modal propio abajo
+        // (ver <Modal visible={!!duplicadoInfo}> al final del archivo).
         const existente = data.reporte_existente;
         const fechaReporte = new Date(existente.created_at);
         const ahora = new Date();
@@ -320,33 +342,27 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
           tiempoTexto = `${horas} hora(s) y ${minutos} minuto(s)`;
         }
 
-        Alert.alert(
-          'Posible reporte duplicado',
-          `Se reportó un ${existente.tipo_animal || 'animal'} en condición ${existente.condicion || 'desconocida'} en ${existente.colonia || existente.municipio || 'esta zona'} hace ${tiempoTexto}.\n\n¿Es el mismo animal?`,
-          [
-            { text: 'Cancelar', style: 'cancel' },
-            { text: 'Vincular al caso existente', onPress: () => handleSubmit(true, existente.id) },
-            { text: 'Crear un reporte nuevo', onPress: () => handleSubmit(true) },
-          ]
-        );
+        setDuplicadoInfo({ existente, tiempoTexto });
         return;
       }
 
+      // Nota: los Alert de abajo ya NO usan botones con onPress para cerrar el
+      // formulario (esa variante tampoco es confiable en web). En vez de eso,
+      // mostramos el mensaje simple y llamamos onClose() inmediatamente después,
+      // sin esperar a que se presione el botón — mismo patrón que en LoginScreen.
       if (data.asociacion_asignada) {
-        Alert.alert('¡Reporte enviado!', `Tu reporte fue asignado a: ${data.asociacion_asignada}`, [
-          { text: 'OK', onPress: () => { if (onClose) onClose(); } },
-        ]);
+        Alert.alert('¡Reporte enviado!', `Tu reporte fue asignado a: ${data.asociacion_asignada}`);
+        if (onClose) onClose();
       } else if (data.contactos_emergencia && data.contactos_emergencia.length > 0) {
         const contactos = data.contactos_emergencia.map((c: any) => `${c.nombre}: ${c.telefono}`).join('\n');
         Alert.alert(
           '¡Reporte enviado!',
-          `No hay asociaciones disponibles en tu zona.\n\nContactos de emergencia:\n${contactos}`,
-          [{ text: 'OK', onPress: () => { if (onClose) onClose(); } }]
+          `No hay asociaciones disponibles en tu zona.\n\nContactos de emergencia:\n${contactos}`
         );
+        if (onClose) onClose();
       } else {
-        Alert.alert('¡Reporte enviado!', 'Tu reporte fue publicado. Te avisaremos cuando una asociación lo atienda.', [
-          { text: 'OK', onPress: () => { if (onClose) onClose(); } },
-        ]);
+        Alert.alert('¡Reporte enviado!', 'Tu reporte fue publicado. Te avisaremos cuando una asociación lo atienda.');
+        if (onClose) onClose();
       }
     } catch (error: any) {
       const mensaje = error?.response?.data?.detail || error?.message || 'Error desconocido';
@@ -551,6 +567,51 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
 
         <Button label="Enviar Reporte" onPress={() => handleSubmit(false)} />
       </ScrollView>
+
+      {/* Modal propio de "posible duplicado" — reemplaza el Alert de 3 botones,
+          que no dispara onPress de forma confiable en react-native-web. */}
+      <Modal visible={!!duplicadoInfo} transparent animationType="fade" onRequestClose={() => setDuplicadoInfo(null)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
+          <View style={{ backgroundColor: '#FFFFFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 28, paddingBottom: 44 }}>
+            <Text style={{ fontSize: 18, fontWeight: '700', color: '#2C3E50', textAlign: 'center', marginBottom: 12 }}>
+              Posible reporte duplicado
+            </Text>
+            {duplicadoInfo && (
+              <Text style={{ fontSize: 14, color: '#566573', textAlign: 'center', marginBottom: 24, lineHeight: 20 }}>
+                Se reportó un {duplicadoInfo.existente.tipo_animal || 'animal'} en condición{' '}
+                {duplicadoInfo.existente.condicion || 'desconocida'} en{' '}
+                {duplicadoInfo.existente.colonia || duplicadoInfo.existente.municipio || 'esta zona'} hace{' '}
+                {duplicadoInfo.tiempoTexto}.{'\n\n'}¿Es el mismo animal?
+              </Text>
+            )}
+
+            <TouchableOpacity
+              onPress={() => {
+                const info = duplicadoInfo;
+                setDuplicadoInfo(null);
+                if (info) handleSubmit(true, info.existente.id);
+              }}
+              style={{ backgroundColor: '#3498DB', paddingVertical: 16, borderRadius: 12, alignItems: 'center', marginBottom: 12 }}
+            >
+              <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 15 }}>Vincular al caso existente</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => {
+                setDuplicadoInfo(null);
+                handleSubmit(true);
+              }}
+              style={{ borderWidth: 1.5, borderColor: '#BDC3C7', paddingVertical: 16, borderRadius: 12, alignItems: 'center', marginBottom: 16 }}
+            >
+              <Text style={{ color: '#2C3E50', fontWeight: '700', fontSize: 15 }}>Crear un reporte nuevo</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={() => setDuplicadoInfo(null)} style={{ alignItems: 'center' }}>
+              <Text style={{ color: '#95A5A6', fontSize: 14 }}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
