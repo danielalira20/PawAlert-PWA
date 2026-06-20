@@ -209,6 +209,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
             latitud: currentLocation.coords.latitude,
             longitud: currentLocation.coords.longitude,
           });
+          setUbicacionConfirmada(true);
           reverseGeocode(currentLocation.coords.latitude, currentLocation.coords.longitude);
         }
       } catch {

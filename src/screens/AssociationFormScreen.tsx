@@ -243,6 +243,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
             latitud: currentLocation.coords.latitude,
             longitud: currentLocation.coords.longitude,
           });
+          setUbicacionConfirmada(true);
           reverseGeocode(currentLocation.coords.latitude, currentLocation.coords.longitude);
         }
       } catch {
