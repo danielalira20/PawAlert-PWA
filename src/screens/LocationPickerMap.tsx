@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Text, View } from 'react-native';
 import MapView, { Marker, Region } from 'react-native-maps';
 
 interface Props {
   onLocationSelect: (lat: number, lng: number) => void;
+  selectedPosition?: { latitud: number; longitud: number } | null;
 }
 
 const PUEBLA_CENTER = {
@@ -11,8 +12,13 @@ const PUEBLA_CENTER = {
   longitude: -98.2063,
 };
 
-export default function LocationPickerMap({ onLocationSelect }: Props) {
-  const [markerCoord, setMarkerCoord] = useState(PUEBLA_CENTER);
+export default function LocationPickerMap({ onLocationSelect, selectedPosition }: Props) {
+  const mapRef = useRef<MapView>(null);
+  const [markerCoord, setMarkerCoord] = useState(
+    selectedPosition
+      ? { latitude: selectedPosition.latitud, longitude: selectedPosition.longitud }
+      : PUEBLA_CENTER
+  );
 
   const handleDragEnd = (e: any) => {
     const { latitude, longitude } = e.nativeEvent.coordinate;
@@ -20,17 +26,25 @@ export default function LocationPickerMap({ onLocationSelect }: Props) {
     onLocationSelect(latitude, longitude);
   };
 
+  useEffect(() => {
+    if (!selectedPosition) return;
+    const next = { latitude: selectedPosition.latitud, longitude: selectedPosition.longitud };
+    setMarkerCoord(next);
+    mapRef.current?.animateToRegion({ ...next, latitudeDelta: 0.01, longitudeDelta: 0.01 }, 500);
+  }, [selectedPosition?.latitud, selectedPosition?.longitud]);
+
   return (
     <View style={{ marginTop: 8 }}>
       <View style={{ height: 200, width: '100%', borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: '#E5E7EB' }}>
         <MapView
+          ref={mapRef}
           style={{ flex: 1 }}
           initialRegion={{
-            ...PUEBLA_CENTER,
+            ...markerCoord,
             latitudeDelta: 0.05,
             longitudeDelta: 0.05,
           }}
-          onPress={(e) => handleDragEnd(e)} // Permite mover el pin tocando el mapa
+          onPress={(e) => handleDragEnd(e)}
         >
           <Marker
             draggable

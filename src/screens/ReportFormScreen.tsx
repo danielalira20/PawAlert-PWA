@@ -1,3 +1,4 @@
+import { Feather } from '@expo/vector-icons';
 import axios from 'axios';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { router } from 'expo-router';
@@ -15,7 +16,6 @@ import LocationPickerMap from './LocationPickerMap';
 type TipoAnimal = 'Perro' | 'Gato' | 'Otro' | null;
 type Condition = 'green' | 'yellow' | 'red' | null;
 type Size = 'Pequeño' | 'Mediano' | 'Grande' | null;
-type UbicacionFuente = 'automatica' | 'pin';
 type Sexo = 'Macho' | 'Hembra' | 'Desconocido' | null;
 type Edad = 'Cachorro' | 'Joven' | 'Adulto' | 'Desconocido' | null;
 
@@ -48,8 +48,6 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
   const [isLookingUp, setIsLookingUp] = useState(false);
   const [guestFound, setGuestFound] = useState(false);
 
-  // Estado para el modal propio de "posible duplicado" (reemplaza el Alert de 3 botones,
-  // que no es confiable en web: ver nota junto a handleSubmit más abajo).
   const [duplicadoInfo, setDuplicadoInfo] = useState<DuplicadoInfo | null>(null);
 
   useEffect(() => {
@@ -86,7 +84,6 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
 
   const [tipoAnimal, setTipoAnimal] = useState<TipoAnimal>(null);
 
-  // --- F5: campos ampliados del animal ---
   const [sexo, setSexo] = useState<Sexo>(null);
   const [edad, setEdad] = useState<Edad>(null);
   const [tieneCollar, setTieneCollar] = useState<boolean | null>(null);
@@ -97,17 +94,151 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
   const [subcategoria, setSubcategoria] = useState<string | null>(null);
   const [especieDescripcion, setEspecieDescripcion] = useState('');
 
-  // --- F6: múltiples fotos ---
   const [fotos, setFotos] = useState<AnimalFoto[]>([]);
 
-  // --- F4: ubicación por GPS o pin ---
-  const [ubicacionFuente, setUbicacionFuente] = useState<UbicacionFuente>('automatica');
-  const [location, setLocation] = useState<Location.LocationObject | null>(null);
-  const [isLoadingGps, setIsLoadingGps] = useState(false);
   const [pinLocation, setPinLocation] = useState<{ latitud: number; longitud: number }>({
     latitud: 19.0414,
     longitud: -98.2063,
   });
+  const [ubicacionConfirmada, setUbicacionConfirmada] = useState(false);
+  const [isLoadingGps, setIsLoadingGps] = useState(false);
+  const [calleNombre, setCalleNombre] = useState('');
+  const [numero, setNumero] = useState('');
+  const [colonia, setColonia] = useState('');
+  const [municipio, setMunicipio] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [direccionConfirmada, setDireccionConfirmada] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+
+  useEffect(() => {
+    if (searchQuery.trim().length < 4) {
+      setSearchResults([]);
+      return;
+    }
+    const timeout = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const res = await axios.get('https://nominatim.openstreetmap.org/search', {
+          params: {
+            q: searchQuery,
+            format: 'json',
+            addressdetails: 1,
+            limit: 6,
+            countrycodes: 'mx',
+          },
+        });
+        setSearchResults(res.data);
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 600);
+    return () => clearTimeout(timeout);
+  }, [searchQuery]);
+
+  const reverseGeocode = async (lat: number, lon: number) => {
+    try {
+      const res = await axios.get('https://nominatim.openstreetmap.org/reverse', {
+        params: { lat, lon, format: 'json', addressdetails: 1 },
+      });
+      const address = res.data.address || {};
+      setCalleNombre(address.road || '');
+      setNumero(address.house_number || '');
+      setColonia(address.suburb || address.neighbourhood || address.colonia || '');
+      setMunicipio(address.city || address.town || address.municipality || address.county || '');
+      setDireccionConfirmada(res.data.display_name || '');
+    } catch {
+      // Si falla la geocodificación inversa no bloqueamos el flujo.
+    }
+  };
+
+  const handleGeocodeManualFields = async () => {
+    const calleCompleta = [calleNombre, numero].filter((p) => p.trim()).join(' ');
+    const query = [calleCompleta, colonia, municipio].filter((p) => p.trim()).join(', ');
+    if (!query.trim()) return;
+    try {
+      const res = await axios.get('https://nominatim.openstreetmap.org/search', {
+        params: { q: query, format: 'json', addressdetails: 1, limit: 1, countrycodes: 'mx' },
+      });
+      if (res.data && res.data.length > 0) {
+        const result = res.data[0];
+        setPinLocation({ latitud: parseFloat(result.lat), longitud: parseFloat(result.lon) });
+        setUbicacionConfirmada(true);
+        setDireccionConfirmada(result.display_name);
+        setErrors((prev) => ({ ...prev, ubicacion: '' }));
+      } else {
+        Alert.alert('No encontrado', 'No pudimos ubicar esa dirección exacta. Ajusta el pin manualmente en el mapa.');
+      }
+    } catch {
+      Alert.alert('Error', 'No pudimos buscar esa dirección. Ajusta el pin manualmente en el mapa.');
+    }
+  };
+
+  const handlePinLocationSelect = (latitud: number, longitud: number) => {
+    setPinLocation({ latitud, longitud });
+    setUbicacionConfirmada(true);
+    setErrors((prev) => ({ ...prev, ubicacion: '' }));
+    reverseGeocode(latitud, longitud);
+  };
+
+  const handleSelectSearchResult = (result: any) => {
+    const lat = parseFloat(result.lat);
+    const lon = parseFloat(result.lon);
+    const address = result.address || {};
+    setPinLocation({ latitud: lat, longitud: lon });
+    setUbicacionConfirmada(true);
+    setCalleNombre(address.road || '');
+    setNumero(address.house_number || '');
+    setColonia(address.suburb || address.neighbourhood || address.colonia || '');
+    setMunicipio(address.city || address.town || address.municipality || address.county || '');
+    setDireccionConfirmada(result.display_name);
+    setSearchQuery('');
+    setSearchResults([]);
+    setErrors((prev) => ({ ...prev, ubicacion: '' }));
+  };
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { status } = await Location.getForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const currentLocation = await Location.getCurrentPositionAsync({});
+          setPinLocation({
+            latitud: currentLocation.coords.latitude,
+            longitud: currentLocation.coords.longitude,
+          });
+          reverseGeocode(currentLocation.coords.latitude, currentLocation.coords.longitude);
+        }
+      } catch {
+        // Si falla, el mapa simplemente se queda en el centro de Puebla por default.
+      }
+    })();
+  }, []);
+
+  const handleGetLocation = async () => {
+    setIsLoadingGps(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('GPS Denegado', 'Ajusta el pin directamente en el mapa para indicar la ubicación.');
+        return;
+      }
+      const currentLocation = await Location.getCurrentPositionAsync({});
+      setPinLocation({
+        latitud: currentLocation.coords.latitude,
+        longitud: currentLocation.coords.longitude,
+      });
+      setUbicacionConfirmada(true);
+      setErrors((prev) => ({ ...prev, ubicacion: '' }));
+      reverseGeocode(currentLocation.coords.latitude, currentLocation.coords.longitude);
+    } catch (error) {
+      Alert.alert('Error', 'No pudimos obtener tu ubicación GPS. Ajusta el pin directamente en el mapa.');
+    } finally {
+      setIsLoadingGps(false);
+    }
+  };
 
   const [referencia, setReferencia] = useState('');
   const [condition, setCondition] = useState<Condition>(null);
@@ -124,7 +255,6 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
     setEspecieDescripcion('');
   };
 
-  // --- F6: manejo de múltiples fotos ---
   const captureFoto = async (fromCamera: boolean) => {
     const requestPermission = fromCamera
       ? ImagePicker.requestCameraPermissionsAsync
@@ -158,10 +288,6 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
   };
 
   const handleAddFoto = () => {
-    // En web no existe acceso a cámara vía expo-image-picker, y el Alert con varios
-    // botones (Tomar Foto / Elegir de Galería / Cancelar) no dispara onPress de forma
-    // confiable en react-native-web. Por eso en web saltamos directo al selector de
-    // archivos del sistema (equivalente a "Elegir de Galería").
     if (Platform.OS === 'web') {
       captureFoto(false);
       return;
@@ -179,26 +305,6 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
 
   const handleDeleteFoto = (id: string) => {
     setFotos(fotos.filter((f) => f.id !== id));
-  };
-
-  const handleGetLocation = async () => {
-    setIsLoadingGps(true);
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('GPS Denegado', 'Por favor usa el Pin en el mapa para indicar la ubicación.');
-        setUbicacionFuente('pin');
-        return;
-      }
-      const currentLocation = await Location.getCurrentPositionAsync({});
-      setLocation(currentLocation);
-      setErrors((prev) => ({ ...prev, ubicacion: '' }));
-    } catch (error) {
-      Alert.alert('Error', 'No pudimos obtener tu ubicación GPS.');
-      setUbicacionFuente('pin');
-    } finally {
-      setIsLoadingGps(false);
-    }
   };
 
   const validateForm = () => {
@@ -238,8 +344,8 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
     if (!size) newErrors.size = 'Indica el tamaño del animal.';
     if (fotos.length === 0) newErrors.foto = 'Debes adjuntar al menos una foto del animal.';
 
-    if (ubicacionFuente === 'automatica' && !location) {
-      newErrors.ubicacion = 'Por favor, obtén tu ubicación actual con el GPS o selecciona el Pin.';
+    if (!ubicacionConfirmada) {
+      newErrors.ubicacion = 'Busca la dirección, usa el GPS, o ajusta el pin en el mapa.';
     }
 
     setErrors(newErrors);
@@ -279,13 +385,22 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
       formData.append('telefono', telefono);
       if (email.trim()) formData.append('email', email);
 
-      fotos.forEach((f) => {
-        formData.append('fotos', {
-          uri: f.foto_url,
-          name: `foto_${f.id}_${Date.now()}.jpg`,
-          type: 'image/jpeg',
-        } as any);
-      });
+      if (Platform.OS === 'web') {
+        for (const f of fotos) {
+          const res = await fetch(f.foto_url);
+          const blob = await res.blob();
+          formData.append('fotos', blob, `foto_${f.id}_${Date.now()}.jpg`);
+        }
+      } else {
+        fotos.forEach((f) => {
+          formData.append('fotos', {
+            uri: f.foto_url,
+            name: `foto_${f.id}_${Date.now()}.jpg`,
+            type: 'image/jpeg',
+          } as any);
+        });
+      }
+
       formData.append('fotos_descripciones', JSON.stringify(fotos.map((f) => f.descripcion || null)));
       formData.append('fotos_ordenes', JSON.stringify(fotos.map((f) => f.orden)));
 
@@ -309,13 +424,13 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
       if (description.trim()) formData.append('descripcion', description);
       if (referencia.trim()) formData.append('referencia', referencia);
 
-      if (ubicacionFuente === 'automatica' && location) {
-        formData.append('latitud', String(location.coords.latitude));
-        formData.append('longitud', String(location.coords.longitude));
-      } else if (ubicacionFuente === 'pin') {
-        formData.append('latitud', String(pinLocation.latitud));
-        formData.append('longitud', String(pinLocation.longitud));
+      formData.append('latitud', String(pinLocation.latitud));
+      formData.append('longitud', String(pinLocation.longitud));
+      if (calleNombre.trim() || numero.trim()) {
+        formData.append('calle', [calleNombre, numero].filter((p) => p.trim()).join(' '));
       }
+      if (colonia.trim()) formData.append('colonia', colonia.trim());
+      if (municipio.trim()) formData.append('municipio', municipio.trim());
 
       if (esDuplicadoConfirmado) formData.append('es_duplicado_confirmado', 'true');
       if (reporteOriginalId) formData.append('reporte_original_id', reporteOriginalId);
@@ -324,11 +439,6 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
       const data = response.data;
 
       if (data.posible_duplicado) {
-        // Nota: este caso necesita que la persona elija entre 3 acciones reales
-        // (Cancelar / Vincular / Crear nuevo), no es solo un aviso. Un Alert.alert
-        // con varios botones no es confiable en web, así que en vez de mostrarlo
-        // aquí, guardamos la info en estado y renderizamos un modal propio abajo
-        // (ver <Modal visible={!!duplicadoInfo}> al final del archivo).
         const existente = data.reporte_existente;
         const fechaReporte = new Date(existente.created_at);
         const ahora = new Date();
@@ -346,10 +456,6 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
         return;
       }
 
-      // Nota: los Alert de abajo ya NO usan botones con onPress para cerrar el
-      // formulario (esa variante tampoco es confiable en web). En vez de eso,
-      // mostramos el mensaje simple y llamamos onClose() inmediatamente después,
-      // sin esperar a que se presione el botón — mismo patrón que en LoginScreen.
       if (data.asociacion_asignada) {
         Alert.alert('¡Reporte enviado!', `Tu reporte fue asignado a: ${data.asociacion_asignada}`);
         if (onClose) onClose();
@@ -368,18 +474,6 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
       const mensaje = error?.response?.data?.detail || error?.message || 'Error desconocido';
       Alert.alert('Error', mensaje);
     }
-  };
-
-  const renderUbicacion = () => {
-    if (ubicacionFuente === 'automatica') {
-      return (
-        <View style={{ marginBottom: 16, marginTop: 8 }}>
-          <Button label={location ? 'Ubicación obtenida correctamente' : 'Obtener mi ubicación actual'} variant={location ? 'success' : 'secondary'} onPress={handleGetLocation} isLoading={isLoadingGps} />
-          {errors.ubicacion && <Text style={{ color: '#E74C3C', fontSize: 12, marginTop: 4 }}>{errors.ubicacion}</Text>}
-        </View>
-      );
-    }
-    return <LocationPickerMap onLocationSelect={(latitud: number, longitud: number) => setPinLocation({ latitud, longitud })} />;
   };
 
   const renderSelector = (label: string, options: string[], stateValue: any, setState: any, error?: string) => (
@@ -545,22 +639,70 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
         </Card>
 
         <Card>
-          <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#2C3E50', marginBottom: 4 }}>Ubicación del Reporte</Text>
+          <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#2C3E50', marginBottom: 4 }}>Ubicación del Reporte <Text style={{ color: '#E74C3C' }}>*</Text></Text>
           <Text style={{ fontSize: 12, color: '#7F8C8D', marginBottom: 16 }}>Indica el lugar donde viste al animal, no donde estás ahora.</Text>
 
-          <View style={{ marginBottom: 16 }}>
-            <Text style={{ fontSize: 14, fontWeight: '600', color: '#2C3E50', marginBottom: 8 }}>Método de Ubicación <Text style={{ color: '#E74C3C' }}>*</Text></Text>
-            <View style={{ flexDirection: 'row', backgroundColor: '#ECF0F1', padding: 4, borderRadius: 12 }}>
-              <TouchableOpacity onPress={() => setUbicacionFuente('automatica')} style={{ flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center', backgroundColor: ubicacionFuente === 'automatica' ? '#FFFFFF' : 'transparent' }}>
-                <Text style={{ fontWeight: '600', fontSize: 14, color: ubicacionFuente === 'automatica' ? '#3498DB' : '#95A5A6' }}>Mi Ubicación Actual</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setUbicacionFuente('pin')} style={{ flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center', backgroundColor: ubicacionFuente === 'pin' ? '#FFFFFF' : 'transparent' }}>
-                <Text style={{ fontWeight: '600', fontSize: 14, color: ubicacionFuente === 'pin' ? '#3498DB' : '#95A5A6' }}>Pin en el Mapa</Text>
-              </TouchableOpacity>
+          <Input
+            placeholder="Buscar dirección, ej. Avenida Reforma, Puebla"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+          {isSearching && <Text style={{ fontSize: 12, color: '#7F8C8D', marginTop: 4 }}>Buscando...</Text>}
+          {searchResults.length > 0 && (
+            <View style={{ backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, marginTop: 4, marginBottom: 4 }}>
+              {searchResults.map((result, idx) => (
+                <TouchableOpacity
+                  key={idx}
+                  onPress={() => handleSelectSearchResult(result)}
+                  style={{ padding: 12, borderBottomWidth: idx === searchResults.length - 1 ? 0 : 1, borderBottomColor: '#ECF0F1' }}
+                >
+                  <Text style={{ fontSize: 13, color: '#2C3E50' }}>{result.display_name}</Text>
+                </TouchableOpacity>
+              ))}
             </View>
-          </View>
+          )}
 
-          {renderUbicacion()}
+          <TouchableOpacity onPress={handleGetLocation} style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, marginBottom: 12 }}>
+            <Feather name="map-pin" size={14} color="#3498DB" style={{ marginRight: 6 }} />
+            <Text style={{ fontSize: 13, color: '#3498DB', fontWeight: '600' }}>
+              {isLoadingGps ? 'Obteniendo tu ubicación...' : 'Usar mi ubicación actual'}
+            </Text>
+          </TouchableOpacity>
+
+          <Text style={{ fontSize: 12, color: '#7F8C8D', marginBottom: 8 }}>
+            O ajusta directamente arrastrando el pin en el mapa:
+          </Text>
+          <LocationPickerMap
+            selectedPosition={pinLocation}
+            onLocationSelect={handlePinLocationSelect}
+          />
+          {errors.ubicacion && <Text style={{ color: '#E74C3C', fontSize: 12, marginTop: 4 }}>{errors.ubicacion}</Text>}
+
+          {direccionConfirmada !== '' && (
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start', backgroundColor: '#EAF6FF', padding: 10, borderRadius: 8, marginTop: 8 }}>
+              <Feather name="map-pin" size={14} color="#2C3E50" style={{ marginRight: 6, marginTop: 2 }} />
+              <Text style={{ fontSize: 12, color: '#2C3E50', flex: 1 }}>
+                Ubicación seleccionada: <Text style={{ fontWeight: '600' }}>{direccionConfirmada}</Text>
+              </Text>
+            </View>
+          )}
+
+          <View style={{ marginTop: 16 }}>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <View style={{ flex: 2 }}>
+                <Input label="Calle" placeholder="Ej. Francisco I. Madero" value={calleNombre} onChangeText={setCalleNombre} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Input label="Número" placeholder="Ej. 2912" value={numero} onChangeText={setNumero} keyboardType="numeric" />
+              </View>
+            </View>
+            <Input label="Colonia" placeholder="Ej. Viveros" value={colonia} onChangeText={setColonia} />
+            <Input label="Municipio" placeholder="Ej. Puebla" value={municipio} onChangeText={setMunicipio} />
+            <TouchableOpacity onPress={handleGeocodeManualFields} style={{ flexDirection: 'row', alignItems: 'center', marginTop: -8, marginBottom: 8 }}>
+              <Feather name="refresh-cw" size={13} color="#3498DB" style={{ marginRight: 6 }} />
+              <Text style={{ fontSize: 12, color: '#3498DB', fontWeight: '600' }}>Mover el pin a esta dirección</Text>
+            </TouchableOpacity>
+          </View>
 
           <Input label="Referencia (Opcional)" placeholder="Ej. Frente a la tienda de abarrotes..." value={referencia} onChangeText={setReferencia} />
         </Card>
@@ -568,8 +710,6 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
         <Button label="Enviar Reporte" onPress={() => handleSubmit(false)} />
       </ScrollView>
 
-      {/* Modal propio de "posible duplicado" — reemplaza el Alert de 3 botones,
-          que no dispara onPress de forma confiable en react-native-web. */}
       <Modal visible={!!duplicadoInfo} transparent animationType="fade" onRequestClose={() => setDuplicadoInfo(null)}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
           <View style={{ backgroundColor: '#FFFFFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 28, paddingBottom: 44 }}>
