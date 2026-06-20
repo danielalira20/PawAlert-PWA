@@ -49,6 +49,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
   const [guestFound, setGuestFound] = useState(false);
 
   const [duplicadoInfo, setDuplicadoInfo] = useState<DuplicadoInfo | null>(null);
+  const [resultadoEnvio, setResultadoEnvio] = useState<string | null>(null);
 
   useEffect(() => {
     if (isLoggedIn && user) {
@@ -457,18 +458,12 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
       }
 
       if (data.asociacion_asignada) {
-        Alert.alert('¡Reporte enviado!', `Tu reporte fue asignado a: ${data.asociacion_asignada}`);
-        if (onClose) onClose();
+        setResultadoEnvio(`Tu reporte fue asignado a: ${data.asociacion_asignada}`);
       } else if (data.contactos_emergencia && data.contactos_emergencia.length > 0) {
         const contactos = data.contactos_emergencia.map((c: any) => `${c.nombre}: ${c.telefono}`).join('\n');
-        Alert.alert(
-          '¡Reporte enviado!',
-          `No hay asociaciones disponibles en tu zona.\n\nContactos de emergencia:\n${contactos}`
-        );
-        if (onClose) onClose();
+        setResultadoEnvio(`No hay asociaciones disponibles en tu zona.\n\nContactos de emergencia:\n${contactos}`);
       } else {
-        Alert.alert('¡Reporte enviado!', 'Tu reporte fue publicado. Te avisaremos cuando una asociación lo atienda.');
-        if (onClose) onClose();
+        setResultadoEnvio('Tu reporte fue publicado. Te avisaremos cuando una asociación lo atienda.');
       }
     } catch (error: any) {
       const mensaje = error?.response?.data?.detail || error?.message || 'Error desconocido';
@@ -748,6 +743,28 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
 
             <TouchableOpacity onPress={() => setDuplicadoInfo(null)} style={{ alignItems: 'center' }}>
               <Text style={{ color: '#95A5A6', fontSize: 14 }}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={resultadoEnvio !== null} transparent animationType="fade" onRequestClose={() => {}}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 24 }}>
+          <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16, padding: 28 }}>
+            <Text style={{ fontSize: 18, fontWeight: '700', color: '#2C3E50', textAlign: 'center', marginBottom: 12 }}>
+              ¡Reporte enviado!
+            </Text>
+            <Text style={{ fontSize: 14, color: '#566573', textAlign: 'center', lineHeight: 20, marginBottom: 24 }}>
+              {resultadoEnvio}
+            </Text>
+            <TouchableOpacity
+              onPress={() => {
+                setResultadoEnvio(null);
+                if (onClose) onClose();
+              }}
+              style={{ backgroundColor: '#3498DB', paddingVertical: 14, borderRadius: 12, alignItems: 'center' }}
+            >
+              <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 16 }}>Entendido</Text>
             </TouchableOpacity>
           </View>
         </View>
