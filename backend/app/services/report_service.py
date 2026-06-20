@@ -195,7 +195,7 @@ async def crear_reporte(
             "reporte_id": reporte_id,
             "asociacion_id": asociacion_id,
             "estado_id": estado_asignacion_id,
-            "estado": "aceptado",
+            "estado": "notificada",
         }).execute()
 
         tipo_notif_id = obtener_id_catalogo("notificacion_tipos", "nuevo_reporte")
