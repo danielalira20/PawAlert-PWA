@@ -3,7 +3,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Alert, Image, Platform, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Image, Modal, Platform, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
@@ -29,11 +29,11 @@ export default function AssociationFormScreen({ onClose }: Props) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [password2, setPassword2] = useState('');
-  const [horarioAtencion, setHorarioAtencion] = useState('');
+  const [diasSeleccionados, setDiasSeleccionados] = useState<string[]>([]);
+  const [horaApertura, setHoraApertura] = useState('');
+  const [horaCierre, setHoraCierre] = useState('');
   const [tiposAnimales, setTiposAnimales] = useState<TipoAnimal[]>([]);
 
-  // --- Ubicación: misma vista unificada (buscador + mapa con pin) que ya
-  // usamos en el formulario de reportes, en vez del toggle GPS/Manual viejo.
   const [pinLocation, setPinLocation] = useState<{ latitud: number; longitud: number }>({
     latitud: 19.0414,
     longitud: -98.2063,
@@ -55,6 +55,49 @@ export default function AssociationFormScreen({ onClose }: Props) {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
+  const [campoHorarioActivo, setCampoHorarioActivo] = useState<'apertura' | 'cierre' | null>(null);
+
+  const formatHour = (h: number): string => {
+    const period = h < 12 ? 'AM' : 'PM';
+    let hour12 = h % 12;
+    if (hour12 === 0) hour12 = 12;
+    return `${hour12}:00 ${period}`;
+  };
+
+  const HORAS_DISPONIBLES = Array.from({ length: 24 }, (_, h) => formatHour(h));
+
+  const handleSeleccionarHora = (hora: string) => {
+    if (campoHorarioActivo === 'apertura') setHoraApertura(hora);
+    if (campoHorarioActivo === 'cierre') setHoraCierre(hora);
+    setCampoHorarioActivo(null);
+  };
+
+  const DIAS_ORDEN = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+
+  const toggleDia = (dia: string) => {
+    if (diasSeleccionados.includes(dia)) {
+      setDiasSeleccionados(diasSeleccionados.filter((d) => d !== dia));
+    } else {
+      setDiasSeleccionados([...diasSeleccionados, dia]);
+    }
+  };
+
+  const formatearHorario = (): string => {
+    if (diasSeleccionados.length === 0 || !horaApertura.trim() || !horaCierre.trim()) return '';
+
+    const ordenados = DIAS_ORDEN.filter((d) => diasSeleccionados.includes(d));
+    let textoDias: string;
+
+    if (ordenados.length === 7) {
+      textoDias = 'Todos los días';
+    } else {
+      const indices = ordenados.map((d) => DIAS_ORDEN.indexOf(d));
+      const esConsecutivo = indices.length > 1 && indices.every((idx, i) => i === 0 || idx === indices[i - 1] + 1);
+      textoDias = esConsecutivo ? `${ordenados[0]} a ${ordenados[ordenados.length - 1]}` : ordenados.join(', ');
+    }
+
+    return `${textoDias} de ${horaApertura.trim()} a ${horaCierre.trim()}`;
+  };
 
   const toggleTipoAnimal = (tipo: TipoAnimal) => {
     if (tiposAnimales.includes(tipo)) {
@@ -80,9 +123,6 @@ export default function AssociationFormScreen({ onClose }: Props) {
   };
 
   const showLogoOptions = () => {
-    // En web no hay cámara vía expo-image-picker, y el Alert con varios
-    // botones no dispara onPress de forma confiable en react-native-web —
-    // mismo problema que ya resolvimos en el formulario de reportes.
     if (Platform.OS === 'web') {
       handlePickLogo();
       return;
@@ -112,7 +152,6 @@ export default function AssociationFormScreen({ onClose }: Props) {
   };
 
   const handleUpdateFotoDesc = (id: string, text: string) => setFotos(fotos.map(f => f.id === id ? { ...f, descripcion: text } : f));
-  const handleUpdateFotoOrden = (id: string, text: string) => { const parsed = parseInt(text, 10); setFotos(fotos.map(f => f.id === id ? { ...f, orden: isNaN(parsed) ? 1 : parsed } : f)); };
   const handleDeleteFoto = (id: string) => setFotos(fotos.filter(f => f.id !== id));
 
   useEffect(() => {
@@ -194,9 +233,6 @@ export default function AssociationFormScreen({ onClose }: Props) {
     }
   };
 
-  // Al abrir el formulario, si el permiso de ubicación ya estaba concedido de
-  // antes, centramos el mapa silenciosamente en la posición actual — sin
-  // marcar la ubicación como confirmada todavía.
   useEffect(() => {
     (async () => {
       try {
@@ -255,7 +291,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
 
   const handleResetForm = () => {
     setNombre(''); setNombreResponsable(''); setApellidoResponsable(''); setAcercaDe(''); setLogoUrl('');
-    setTelefono(''); setEmail(''); setPassword(''); setPassword2(''); setHorarioAtencion(''); setTiposAnimales([]);
+    setTelefono(''); setEmail(''); setPassword(''); setPassword2(''); setDiasSeleccionados([]); setHoraApertura(''); setHoraCierre(''); setTiposAnimales([]);
     setCalle(''); setColonia(''); setMunicipio(''); setReferencia(''); setRadioKm('');
     setPinLocation({ latitud: 19.0414, longitud: -98.2063 }); setUbicacionConfirmada(false);
     setSearchQuery(''); setDireccionConfirmada(''); setFotos([]); setErrors({});
@@ -326,7 +362,8 @@ export default function AssociationFormScreen({ onClose }: Props) {
       formData.append('longitud', String(pinLocation.longitud));
       formData.append('radio_km', radioKm);
       if (acercaDe.trim()) formData.append('acerca_de', acercaDe.trim());
-      if (horarioAtencion.trim()) formData.append('horario_atencion', horarioAtencion.trim());
+      const horario = formatearHorario();
+      if (horario) formData.append('horario_atencion', horario);
       if (calle.trim()) formData.append('calle', calle.trim());
       if (colonia.trim()) formData.append('colonia', colonia.trim());
       if (municipio.trim()) formData.append('municipio', municipio.trim());
@@ -413,7 +450,34 @@ export default function AssociationFormScreen({ onClose }: Props) {
           <Input label="Correo Electrónico de contacto" placeholder="Ej. contacto@asociacion.org" value={email} onChangeText={setEmail} error={errors.email} keyboardType="email-address" autoCapitalize="none" required />
           <Input label="Contraseña" placeholder="Mínimo 6 caracteres" value={password} onChangeText={setPassword} error={errors.password} secureTextEntry required />
           <Input label="Confirmar Contraseña" placeholder="Repite tu contraseña" value={password2} onChangeText={setPassword2} error={errors.password2} secureTextEntry required />
-          <Input label="Horario de Atención (Opcional)" placeholder="Ej. Lunes a Viernes de 9:00 AM a 6:00 PM" value={horarioAtencion} onChangeText={setHorarioAtencion} />
+
+          <View style={{ marginBottom: 16 }}>
+            <Text style={{ fontSize: 14, fontWeight: '600', color: '#2C3E50', marginBottom: 8 }}>Horario de Atención (Opcional)</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+              {DIAS_ORDEN.map((dia) => {
+                const isSelected = diasSeleccionados.includes(dia);
+                return (
+                  <TouchableOpacity key={dia} onPress={() => toggleDia(dia)} style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, borderWidth: 1, backgroundColor: isSelected ? '#1F77B4' : '#FFFFFF', borderColor: isSelected ? '#1F77B4' : '#BDC3C7' }}>
+                    <Text style={{ fontWeight: '500', fontSize: 13, color: isSelected ? '#FFFFFF' : '#7F8C8D' }}>{dia.slice(0, 3)}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 12, color: '#7F8C8D', marginBottom: 4, fontWeight: '600' }}>Apertura</Text>
+                <TouchableOpacity onPress={() => setCampoHorarioActivo('apertura')} style={{ borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, padding: 12 }}>
+                  <Text style={{ color: horaApertura ? '#2C3E50' : '#95A5A6', fontSize: 14 }}>{horaApertura || 'Selecciona'}</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 12, color: '#7F8C8D', marginBottom: 4, fontWeight: '600' }}>Cierre</Text>
+                <TouchableOpacity onPress={() => setCampoHorarioActivo('cierre')} style={{ borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, padding: 12 }}>
+                  <Text style={{ color: horaCierre ? '#2C3E50' : '#95A5A6', fontSize: 14 }}>{horaCierre || 'Selecciona'}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
 
           <View style={{ marginBottom: 8 }}>
             <Text style={{ fontSize: 14, fontWeight: '600', color: '#2C3E50', marginBottom: 8 }}>Tipos de animales que rescatan <Text style={{ color: '#E74C3C' }}>*</Text></Text>
@@ -500,10 +564,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
                 <Image source={{ uri: f.foto_url }} style={{ width: 80, height: 80, borderRadius: 8 }} />
                 <View style={{ flex: 1, gap: 4 }}>
                   <Input placeholder="Descripción de la foto..." value={f.descripcion} onChangeText={(text) => handleUpdateFotoDesc(f.id, text)} style={{ height: 38, paddingVertical: 4, fontSize: 13 }} />
-                  <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-                    <View style={{ flex: 1 }}><Input placeholder="Orden" value={f.orden.toString()} onChangeText={(text) => handleUpdateFotoOrden(f.id, text)} keyboardType="numeric" style={{ height: 38, paddingVertical: 4, fontSize: 13, textAlign: 'center' }} /></View>
-                    <TouchableOpacity onPress={() => handleDeleteFoto(f.id)} style={{ backgroundColor: '#FADBD8', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, justifyContent: 'center', alignItems: 'center', minHeight: 40 }}><Text style={{ color: '#E63946', fontWeight: 'bold', fontSize: 13 }}>Eliminar</Text></TouchableOpacity>
-                  </View>
+                  <TouchableOpacity onPress={() => handleDeleteFoto(f.id)} style={{ backgroundColor: '#FADBD8', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, alignItems: 'center', alignSelf: 'flex-end' }}><Text style={{ color: '#E63946', fontWeight: 'bold', fontSize: 13 }}>Eliminar</Text></TouchableOpacity>
                 </View>
               </View>
             </View>
@@ -517,6 +578,26 @@ export default function AssociationFormScreen({ onClose }: Props) {
           isLoading={isSubmitting}
         />
       </ScrollView>
+
+      <Modal visible={campoHorarioActivo !== null} transparent animationType="fade" onRequestClose={() => setCampoHorarioActivo(null)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
+          <View style={{ backgroundColor: '#FFFFFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, maxHeight: '70%' }}>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: '#2C3E50', textAlign: 'center', marginBottom: 16 }}>
+              {campoHorarioActivo === 'apertura' ? 'Hora de apertura' : 'Hora de cierre'}
+            </Text>
+            <ScrollView>
+              {HORAS_DISPONIBLES.map((hora) => (
+                <TouchableOpacity key={hora} onPress={() => handleSeleccionarHora(hora)} style={{ paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#ECF0F1' }}>
+                  <Text style={{ fontSize: 15, color: '#2C3E50', textAlign: 'center' }}>{hora}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <TouchableOpacity onPress={() => setCampoHorarioActivo(null)} style={{ alignItems: 'center', marginTop: 12 }}>
+              <Text style={{ color: '#95A5A6', fontSize: 14 }}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }

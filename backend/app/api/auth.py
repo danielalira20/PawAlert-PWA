@@ -98,7 +98,7 @@ async def login(body: LoginRequest):
         raise HTTPException(status_code=401, detail="Correo o contraseña incorrectos")
 
     resultado = supabase.table("usuarios").select(
-        "id, nombre, apellido_paterno, apellido_materno, email, telefono"
+        "id, nombre, apellido_paterno, apellido_materno, email, telefono, asociacion_id"
     ).eq("auth_user_id", response.user.id).execute()
 
     if not resultado.data:

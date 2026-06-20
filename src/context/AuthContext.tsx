@@ -80,7 +80,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = () => {
     setUser(null);
     setToken(null);
-    AsyncStorage.multiRemove([STORAGE_KEY_TOKEN, STORAGE_KEY_USER]);
+    AsyncStorage.removeItem(STORAGE_KEY_TOKEN).catch(() => {});
+    AsyncStorage.removeItem(STORAGE_KEY_USER).catch(() => {});
   };
 
   return (
@@ -95,3 +96,4 @@ export function useAuth() {
   if (!ctx) throw new Error('useAuth debe usarse dentro de AuthProvider');
   return ctx;
 }
+
