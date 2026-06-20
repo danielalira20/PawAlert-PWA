@@ -1,19 +1,44 @@
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Header
+from pydantic import BaseModel
 from typing import Optional, List
-from app.models.association import AssociationResponse, AssociationPublicResponse
-from app.db.supabase import supabase
+from app.db.supabase import supabase, supabase_admin, get_fresh_client
 from app.services.storage_service import subir_foto
 from app.services.report_service import obtener_id_catalogo
 import json
 
 router = APIRouter()
 
-@router.post("", response_model=AssociationResponse, status_code=201)
+
+def _obtener_usuario_autenticado(authorization: str | None) -> dict:
+    """Valida el JWT de Supabase mandado en el header Authorization y regresa
+    el registro correspondiente en la tabla usuarios (incluye asociacion_id)."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="No autenticado")
+
+    token = authorization.replace("Bearer ", "")
+    try:
+        auth_response = supabase.auth.get_user(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Token inválido o expirado")
+
+    resultado = supabase.table("usuarios").select("id, asociacion_id").eq(
+        "auth_user_id", auth_response.user.id
+    ).execute()
+
+    if not resultado.data:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    return resultado.data[0]
+
+
+@router.post("", status_code=201)
 async def create_association(
     nombre: str = Form(...),
     nombre_responsable: str = Form(...),
+    apellido_responsable: str = Form(...),
     contacto_telefono: str = Form(...),
     contacto_email: str = Form(...),
+    password: str = Form(...),
     tipos_animales: str = Form(...),
     latitud: float = Form(...),
     longitud: float = Form(...),
@@ -36,8 +61,6 @@ async def create_association(
             raise HTTPException(status_code=422, detail="El logo debe ser una imagen JPG, PNG o WEBP")
         logo_url = await subir_foto(logo, carpeta="asociaciones/logos")
 
-    # Parsear tipos de animales
-    print(f"tipos_animales recibido: '{tipos_animales}'")
     # Parsear tipos de animales — acepta JSON array o string separado por comas
     if not tipos_animales or not tipos_animales.strip():
         raise HTTPException(status_code=422, detail="Debes seleccionar al menos un tipo de animal")
@@ -46,11 +69,11 @@ async def create_association(
         tipos = json.loads(tipos_animales)
     except json.JSONDecodeError:
         tipos = [t.strip() for t in tipos_animales.split(",") if t.strip()]
-    
+
     # Insertar asociación
     resultado = supabase.table("asociaciones").insert({
         "nombre": nombre,
-        "nombre_responsable": nombre_responsable,
+        "nombre_responsable": f"{nombre_responsable} {apellido_responsable}".strip(),
         "contacto_telefono": contacto_telefono,
         "contacto_email": contacto_email,
         "tipos_animales": tipos,
@@ -70,7 +93,59 @@ async def create_association(
 
     asociacion_id = resultado.data[0]["id"]
 
-    # Insertar en ASOCIACION_TIPO_ANIMAL
+    # Crear la cuenta del primer representante (el responsable que registra
+    # la asociación), vinculada vía usuarios.asociacion_id. Si falla, se
+    # revierte la creación de la asociación para no dejar datos huérfanos.
+    try:
+        auth_response = supabase_admin.auth.admin.create_user({
+            "email": contacto_email,
+            "password": password,
+            "email_confirm": True,
+        })
+    except Exception as e:
+        supabase.table("asociaciones").delete().eq("id", asociacion_id).execute()
+        msg = str(e).lower()
+        if "already" in msg or "exists" in msg:
+            raise HTTPException(status_code=409, detail="Ya existe una cuenta con ese correo")
+        raise HTTPException(status_code=400, detail=f"Error al crear cuenta del responsable: {e}")
+
+    auth_user_id = auth_response.user.id
+    telefono_limpio = contacto_telefono.replace(" ", "").replace("-", "")
+
+    try:
+        existente = supabase.table("usuarios").select("id, auth_user_id").eq(
+            "telefono", telefono_limpio
+        ).execute()
+
+        if existente.data and not existente.data[0].get("auth_user_id"):
+            usuario_id = existente.data[0]["id"]
+            supabase.table("usuarios").update({
+                "auth_user_id": auth_user_id,
+                "nombre": nombre_responsable,
+                "apellido_paterno": apellido_responsable,
+                "email": contacto_email,
+                "asociacion_id": asociacion_id,
+            }).eq("id", usuario_id).execute()
+        else:
+            usuario_insertado = supabase.table("usuarios").insert({
+                "auth_user_id": auth_user_id,
+                "nombre": nombre_responsable,
+                "apellido_paterno": apellido_responsable,
+                "email": contacto_email,
+                "telefono": telefono_limpio,
+                "asociacion_id": asociacion_id,
+            }).execute()
+            usuario_id = usuario_insertado.data[0]["id"]
+    except Exception:
+        supabase_admin.auth.admin.delete_user(auth_user_id)
+        supabase.table("asociaciones").delete().eq("id", asociacion_id).execute()
+        raise HTTPException(status_code=500, detail="Error al guardar datos del responsable")
+
+    login_response = get_fresh_client().auth.sign_in_with_password({
+        "email": contacto_email,
+        "password": password,
+    })
+
     for tipo_clave in tipos:
         tipo_id = obtener_id_catalogo("tipo_animal_catalogo", tipo_clave)
         if tipo_id:
@@ -79,7 +154,6 @@ async def create_association(
                 "tipo_animal_id": tipo_id,
             }).execute()
 
-    # Subir fotos adicionales si existen
     if fotos:
         descripciones = json.loads(fotos_descripciones) if fotos_descripciones and fotos_descripciones.strip() else []
         ordenes = json.loads(fotos_ordenes) if fotos_ordenes and fotos_ordenes.strip() else []
@@ -94,7 +168,19 @@ async def create_association(
                     "orden": ordenes[i] if i < len(ordenes) else i + 1,
                 }).execute()
 
-    return AssociationResponse()
+    return {
+        "mensaje": "Asociación registrada. Tu cuenta quedará activa para recibir reportes cuando sea aprobada.",
+        "access_token": login_response.session.access_token,
+        "usuario": {
+            "id": usuario_id,
+            "nombre": nombre_responsable,
+            "apellido_paterno": apellido_responsable,
+            "email": contacto_email,
+            "telefono": telefono_limpio,
+            "asociacion_id": asociacion_id,
+        },
+    }
+
 
 @router.get("", status_code=200)
 async def get_associations():
@@ -128,3 +214,77 @@ async def get_associations():
         })
 
     return asociaciones
+
+
+@router.get("/me", status_code=200)
+async def get_mi_asociacion(authorization: str = Header(None)):
+    usuario = _obtener_usuario_autenticado(authorization)
+
+    if not usuario.get("asociacion_id"):
+        raise HTTPException(status_code=404, detail="Este usuario no está vinculado a ninguna asociación")
+
+    resultado = supabase.table("asociaciones").select(
+        "id, nombre, verificado, motivo_rechazo"
+    ).eq("id", usuario["asociacion_id"]).execute()
+
+    if not resultado.data:
+        raise HTTPException(status_code=404, detail="Asociación no encontrada")
+
+    asociacion = resultado.data[0]
+
+    if asociacion["verificado"]:
+        estado = "aprobada"
+    elif asociacion.get("motivo_rechazo"):
+        estado = "rechazada"
+    else:
+        estado = "pendiente"
+
+    return {
+        "id": asociacion["id"],
+        "nombre": asociacion["nombre"],
+        "estado": estado,
+        "motivo_rechazo": asociacion.get("motivo_rechazo"),
+    }
+
+
+class NuevoRepresentante(BaseModel):
+    nombre: str
+    apellido_paterno: str
+    apellido_materno: str | None = None
+    telefono: str
+    email: str | None = None
+
+
+@router.post("/{asociacion_id}/representantes", status_code=201)
+async def agregar_representante(asociacion_id: str, body: NuevoRepresentante, authorization: str = Header(None)):
+    usuario = _obtener_usuario_autenticado(authorization)
+
+    if usuario.get("asociacion_id") != asociacion_id:
+        raise HTTPException(status_code=403, detail="No tienes permiso sobre esta asociación")
+
+    asociacion = supabase.table("asociaciones").select("verificado").eq("id", asociacion_id).execute()
+    if not asociacion.data or not asociacion.data[0]["verificado"]:
+        raise HTTPException(status_code=403, detail="Tu asociación todavía no ha sido aprobada")
+
+    telefono_limpio = body.telefono.replace(" ", "").replace("-", "")
+    existente = supabase.table("usuarios").select("id, auth_user_id").eq(
+        "telefono", telefono_limpio
+    ).execute()
+
+    if existente.data:
+        if existente.data[0].get("auth_user_id"):
+            raise HTTPException(status_code=409, detail="Ese teléfono ya pertenece a una cuenta con acceso")
+        supabase.table("usuarios").update({
+            "asociacion_id": asociacion_id,
+        }).eq("id", existente.data[0]["id"]).execute()
+    else:
+        supabase.table("usuarios").insert({
+            "nombre": body.nombre,
+            "apellido_paterno": body.apellido_paterno,
+            "apellido_materno": body.apellido_materno,
+            "telefono": telefono_limpio,
+            "email": body.email,
+            "asociacion_id": asociacion_id,
+        }).execute()
+
+    return {"mensaje": "Representante agregado. Podrá iniciar sesión registrándose con ese mismo teléfono."}
