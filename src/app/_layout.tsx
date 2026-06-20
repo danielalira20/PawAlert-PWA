@@ -8,6 +8,7 @@ export default function RootLayout() {
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="association" />
+        <Stack.Screen name="association-status" />
         <Stack.Screen name="login" options={{ presentation: 'modal' }} />
       </Stack>
     </AuthProvider>
