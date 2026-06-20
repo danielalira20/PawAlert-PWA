@@ -43,14 +43,16 @@ export default function LeafletMap({ reportes, getMarkerColor, onSelectReport, o
         url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
         />
       <MapClickHandler onMapClick={onMapClick} />
-      {reportes.map((reporte) => (
-        <Marker
-          key={reporte.id}
-          position={[reporte.latitud, reporte.longitud]}
-          icon={createColoredIcon(getMarkerColor(reporte.estado_reporte))}
-          eventHandlers={{ click: () => onSelectReport(reporte) }}
-        />
-      ))}
+      {reportes
+        .filter((r): r is typeof r & { latitud: number; longitud: number } => r.latitud !== null && r.longitud !== null)
+        .map((reporte) => (
+          <Marker
+            key={reporte.id}
+            position={[reporte.latitud, reporte.longitud]}
+            icon={createColoredIcon(getMarkerColor(reporte.estado_reporte ?? 'pendiente'))}
+            eventHandlers={{ click: () => onSelectReport(reporte) }}
+          />
+        ))}
     </MapContainer>
   );
 }
