@@ -23,10 +23,10 @@ export default function LoginScreen() {
   const [regPassword, setRegPassword] = useState('');
   const [regPassword2, setRegPassword2] = useState('');
 
-  const showSuccessAndRedirect = (message: string) => {
+  const showSuccessAndRedirect = (message: string, destino: string = '/') => {
     setSuccessMessage(message);
     setTimeout(() => {
-      router.replace('/');
+      router.replace(destino as any);
     }, 1400);
   };
 
@@ -37,8 +37,9 @@ export default function LoginScreen() {
     }
     setIsLoading(true);
     try {
-      await login(email.trim(), password);
-      showSuccessAndRedirect('¡Bienvenida de vuelta! Redirigiendo al mapa...');
+      const usuario = await login(email.trim(), password);
+      const destino = usuario.asociacion_id ? '/association-status' : '/';
+      showSuccessAndRedirect('¡Bienvenida de vuelta! Redirigiendo...', destino);
     } catch (error: any) {
       Alert.alert('Error', error?.response?.data?.detail || 'Correo o contraseña incorrectos');
     } finally {
@@ -61,7 +62,7 @@ export default function LoginScreen() {
     }
     setIsLoading(true);
     try {
-      await register({
+      const usuario = await register({
         email: regEmail.trim(),
         password: regPassword,
         nombre: nombre.trim(),
@@ -69,7 +70,8 @@ export default function LoginScreen() {
         apellido_materno: apellidoMaterno.trim() || undefined,
         telefono: telefono.replace(/\s|-/g, ''),
       });
-      showSuccessAndRedirect('¡Cuenta creada! Redirigiendo al mapa...');
+      const destino = usuario.asociacion_id ? '/association-status' : '/';
+      showSuccessAndRedirect('¡Cuenta creada! Redirigiendo...', destino);
     } catch (error: any) {
       Alert.alert('Error', error?.response?.data?.detail || 'Error al crear la cuenta');
     } finally {

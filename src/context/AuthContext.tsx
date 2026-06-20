@@ -10,6 +10,7 @@ interface Usuario {
   apellido_materno?: string;
   email: string;
   telefono: string;
+  asociacion_id?: string | null;
 }
 
 interface RegisterData {
@@ -25,8 +26,9 @@ interface AuthContextType {
   user: Usuario | null;
   token: string | null;
   isLoggedIn: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  register: (data: RegisterData) => Promise<void>;
+  login: (email: string, password: string) => Promise<Usuario>;
+  register: (data: RegisterData) => Promise<Usuario>;
+  setSession: (usuario: Usuario, accessToken: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -39,9 +41,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<Usuario | null>(null);
   const [token, setToken] = useState<string | null>(null);
 
-  // Al abrir la app (o recargar la página en web), restaura la sesión
-  // guardada si existe — antes esto vivía solo en useState, así que
-  // cualquier recarga la borraba por completo.
   useEffect(() => {
     (async () => {
       try {
@@ -59,20 +58,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })();
   }, []);
 
+  const setSession = async (usuario: Usuario, accessToken: string) => {
+    setUser(usuario);
+    setToken(accessToken);
+    await AsyncStorage.setItem(STORAGE_KEY_TOKEN, accessToken);
+    await AsyncStorage.setItem(STORAGE_KEY_USER, JSON.stringify(usuario));
+  };
+
   const login = async (email: string, password: string) => {
     const res = await axios.post(`${API_URL}/auth/login`, { email, password });
-    setUser(res.data.usuario);
-    setToken(res.data.access_token);
-    await AsyncStorage.setItem(STORAGE_KEY_TOKEN, res.data.access_token);
-    await AsyncStorage.setItem(STORAGE_KEY_USER, JSON.stringify(res.data.usuario));
+    await setSession(res.data.usuario, res.data.access_token);
+    return res.data.usuario as Usuario;
   };
 
   const register = async (data: RegisterData) => {
     const res = await axios.post(`${API_URL}/auth/register`, data);
-    setUser(res.data.usuario);
-    setToken(res.data.access_token);
-    await AsyncStorage.setItem(STORAGE_KEY_TOKEN, res.data.access_token);
-    await AsyncStorage.setItem(STORAGE_KEY_USER, JSON.stringify(res.data.usuario));
+    await setSession(res.data.usuario, res.data.access_token);
+    return res.data.usuario as Usuario;
   };
 
   const logout = () => {
@@ -82,7 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, isLoggedIn: !!user, login, register, logout }}>
+    <AuthContext.Provider value={{ user, token, isLoggedIn: !!user, login, register, setSession, logout }}>
       {children}
     </AuthContext.Provider>
   );
