@@ -18,6 +18,8 @@ def _aceptar_asignacion(asignacion_id: str, reporte_id: str, notas: str | None):
     supabase.table("reporte_asignaciones").update({
         "accepted_at": "now()",
         "notas": notas,
+        "estado": "aceptada",
+        "estado_id": "77a2e8ea-7ad6-4a65-bb25-f781d0074947"
     }).eq("id", asignacion_id).execute()
 
     supabase.table("reportes").update({
@@ -29,6 +31,8 @@ def _rechazar_asignacion(asignacion_id: str, reporte_id: str, notas: str | None)
     supabase.table("reporte_asignaciones").update({
         "closed_at": "now()",
         "notas": notas,
+        "estado": "rechazada",
+        "estado_id": "54a8005a-4e1f-49b8-8858-12c5a2474daa"
     }).eq("id", asignacion_id).execute()
 
     supabase.table("reportes").update({

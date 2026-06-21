@@ -333,32 +333,49 @@ async def get_reportes_asignados(authorization: str = Header(None)):
     if not asociacion.data or not asociacion.data[0]["verificado"]:
         raise HTTPException(status_code=403, detail="Tu asociación todavía no ha sido aprobada")
 
-    resultado = supabase.table("reportes").select(
-        "id, estado_reporte, municipio, colonia, calle, created_at, "
+    resultado = supabase.table("reporte_asignaciones").select(
+        "id, assigned_at, accepted_at, closed_at, notas, "
+        "asignacion_estados!reporte_asignaciones_estado_id_fkey(clave, descripcion), "
+        "reportes(id, estado_reporte, municipio, colonia, calle, created_at, "
         "animal(id, sexo, edad_aproximada, descripcion, "
         "tipo_animal_catalogo(clave), condicion_catalogo(clave), tamanio_catalogo(clave), "
-        "animal_fotos(foto_url, orden))"
-    ).eq("asociacion_asignada_id", usuario["asociacion_id"]).neq(
-        "estado_reporte", "cerrado"
-    ).order("created_at", desc=True).execute()
+        "animal_fotos(foto_url, orden)))"
+    ).eq("asociacion_id", usuario["asociacion_id"]).order("assigned_at", desc=True).execute()
 
     reportes = []
     for r in resultado.data:
-        animal = r.get("animal") or {}
+        rep = r.get("reportes")
+        if not rep:
+            continue
+            
+        estado_asignacion_clave = "notificada"
+        if r.get("asignacion_estados"):
+            estado_asignacion_clave = r["asignacion_estados"].get("clave", "notificada")
+        elif r.get("closed_at"):
+            estado_asignacion_clave = "rechazada"
+        elif r.get("accepted_at"):
+            estado_asignacion_clave = "aceptada"
+
+        animal = rep.get("animal") or {}
         fotos = animal.get("animal_fotos") or []
         foto_url = None
+        fotos_urls = []
         if fotos:
             fotos_ordenadas = sorted(fotos, key=lambda f: f.get("orden", 0))
             foto_url = fotos_ordenadas[0]["foto_url"]
+            fotos_urls = [f["foto_url"] for f in fotos_ordenadas if f.get("foto_url")]
 
         reportes.append({
-            "id": r["id"],
-            "estado_reporte": r.get("estado_reporte"),
-            "municipio": r.get("municipio"),
-            "colonia": r.get("colonia"),
-            "calle": r.get("calle"),
-            "created_at": str(r["created_at"]),
+            "asignacion_id": r["id"],
+            "reporte_id": rep["id"],
+            "estado_asignacion_clave": estado_asignacion_clave,
+            "estado_reporte": rep.get("estado_reporte"),
+            "municipio": rep.get("municipio"),
+            "colonia": rep.get("colonia"),
+            "calle": rep.get("calle"),
+            "created_at": str(rep["created_at"]),
             "foto_url": foto_url,
+            "fotos_urls": fotos_urls,
             "animal": {
                 "tipo_animal": animal.get("tipo_animal_catalogo", {}).get("clave"),
                 "condicion": animal.get("condicion_catalogo", {}).get("clave"),
