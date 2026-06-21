@@ -685,12 +685,92 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
 
           <View style={{ marginBottom: 20 }}>
             <Text style={{ fontSize: 14, fontWeight: '600', color: '#2C3E50', marginBottom: 8 }}>Condición (Semáforo) <Text style={{ color: '#E74C3C' }}>*</Text></Text>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}>
-              <TouchableOpacity onPress={() => { setCondition('green'); setErrors(prev => ({ ...prev, condition: '' })); }} style={{ flex: 1, paddingVertical: 12, borderRadius: 8, borderWidth: 1, backgroundColor: condition === 'green' ? '#27AE60' : '#FFFFFF', borderColor: errors.condition ? '#E74C3C' : (condition === 'green' ? '#27AE60' : '#BDC3C7'), alignItems: 'center' }}><Text style={{ textAlign: 'center', fontWeight: '500', fontSize: 12, color: condition === 'green' ? '#FFFFFF' : '#2C3E50' }}>Estable</Text></TouchableOpacity>
-              <TouchableOpacity onPress={() => { setCondition('yellow'); setErrors(prev => ({ ...prev, condition: '' })); }} style={{ flex: 1, paddingVertical: 12, borderRadius: 8, borderWidth: 1, backgroundColor: condition === 'yellow' ? '#F39C12' : '#FFFFFF', borderColor: errors.condition ? '#E74C3C' : (condition === 'yellow' ? '#F39C12' : '#BDC3C7'), alignItems: 'center' }}><Text style={{ textAlign: 'center', fontWeight: '500', fontSize: 12, color: condition === 'yellow' ? '#FFFFFF' : '#2C3E50' }}>Herido</Text></TouchableOpacity>
-              <TouchableOpacity onPress={() => { setCondition('red'); setErrors(prev => ({ ...prev, condition: '' })); }} style={{ flex: 1, paddingVertical: 12, borderRadius: 8, borderWidth: 1, backgroundColor: condition === 'red' ? '#E74C3C' : '#FFFFFF', borderColor: errors.condition ? '#E74C3C' : (condition === 'red' ? '#E74C3C' : '#BDC3C7'), alignItems: 'center' }}><Text style={{ textAlign: 'center', fontWeight: '500', fontSize: 12, color: condition === 'red' ? '#FFFFFF' : '#2C3E50' }}>Grave</Text></TouchableOpacity>
+            
+            {/* Contenedor estilo semáforo horizontal */}
+            <View style={{ 
+              flexDirection: 'row', 
+              justifyContent: 'space-evenly', 
+              alignItems: 'center', 
+              backgroundColor: '#ECF0F1', 
+              paddingVertical: 14, 
+              borderRadius: 40, 
+              borderWidth: errors.condition ? 1 : 0, 
+              borderColor: '#E74C3C' 
+            }}>
+              
+              {/* Luz Verde (Estable) */}
+              <TouchableOpacity onPress={() => setCondition('green')} style={{ alignItems: 'center' }}>
+                <View style={{ 
+                  width: 64, height: 64, borderRadius: 32, 
+                  backgroundColor: condition === 'green' ? '#27AE60' : '#A9DFBF', 
+                  borderWidth: condition === 'green' ? 4 : 2, 
+                  borderColor: condition === 'green' ? '#1E8449' : '#FFFFFF', 
+                  justifyContent: 'center', alignItems: 'center',
+                  shadowColor: condition === 'green' ? '#27AE60' : 'transparent',
+                  shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.8, shadowRadius: 8, elevation: condition === 'green' ? 10 : 0 
+                }}>
+                   <Text style={{ fontWeight: 'bold', fontSize: 11, color: condition === 'green' ? '#FFFFFF' : '#1E8449' }}>Estable</Text>
+                </View>
+              </TouchableOpacity>
+
+              {/* Luz Amarilla (Herido) */}
+              <TouchableOpacity onPress={() => setCondition('yellow')} style={{ alignItems: 'center' }}>
+                <View style={{ 
+                  width: 64, height: 64, borderRadius: 32, 
+                  backgroundColor: condition === 'yellow' ? '#F39C12' : '#F9E79F', 
+                  borderWidth: condition === 'yellow' ? 4 : 2, 
+                  borderColor: condition === 'yellow' ? '#D68910' : '#FFFFFF', 
+                  justifyContent: 'center', alignItems: 'center',
+                  shadowColor: condition === 'yellow' ? '#F39C12' : 'transparent',
+                  shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.8, shadowRadius: 8, elevation: condition === 'yellow' ? 10 : 0 
+                }}>
+                   <Text style={{ fontWeight: 'bold', fontSize: 11, color: condition === 'yellow' ? '#FFFFFF' : '#D68910' }}>Herido</Text>
+                </View>
+              </TouchableOpacity>
+
+              {/* Luz Roja (Grave) */}
+              <TouchableOpacity onPress={() => setCondition('red')} style={{ alignItems: 'center' }}>
+                <View style={{ 
+                  width: 64, height: 64, borderRadius: 32, 
+                  backgroundColor: condition === 'red' ? '#E74C3C' : '#F5B7B1', 
+                  borderWidth: condition === 'red' ? 4 : 2, 
+                  borderColor: condition === 'red' ? '#CB4335' : '#FFFFFF', 
+                  justifyContent: 'center', alignItems: 'center',
+                  shadowColor: condition === 'red' ? '#E74C3C' : 'transparent',
+                  shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.8, shadowRadius: 8, elevation: condition === 'red' ? 10 : 0 
+                }}>
+                   <Text style={{ fontWeight: 'bold', fontSize: 11, color: condition === 'red' ? '#FFFFFF' : '#CB4335' }}>Grave</Text>
+                </View>
+              </TouchableOpacity>
             </View>
-            {errors.condition && <Text style={{ color: '#E74C3C', fontSize: 12, marginTop: 4 }}>{errors.condition}</Text>}
+
+            {/* Retroalimentación visual interactiva con imágenes ajustadas */}
+            {condition === 'green' && (
+              <View style={{ marginTop: 12, backgroundColor: '#EAFAF1', padding: 12, borderRadius: 8, borderLeftWidth: 4, borderLeftColor: '#27AE60', flexDirection: 'row', alignItems: 'center' }}>
+                <Image source={require('../../assets/images/estable.png')} style={{ width: 75, height: 75, marginRight: 12 }} resizeMode="contain" />
+                <Text style={{ flex: 1, fontSize: 13, color: '#1E8449', lineHeight: 18 }}>
+                  <Text style={{ fontWeight: 'bold' }}>Estable:</Text> Animal caminando, alerta, sin heridas visibles, aparentemente sano pero probablemente extraviado.
+                </Text>
+              </View>
+            )}
+            {condition === 'yellow' && (
+              <View style={{ marginTop: 12, backgroundColor: '#FEF9E7', padding: 12, borderRadius: 8, borderLeftWidth: 4, borderLeftColor: '#F39C12', flexDirection: 'row', alignItems: 'center' }}>
+                <Image source={require('../../assets/images/herido.png')} style={{ width: 75, height: 75, marginRight: 12 }} resizeMode="contain" />
+                <Text style={{ flex: 1, fontSize: 13, color: '#D68910', lineHeight: 18 }}>
+                  <Text style={{ fontWeight: 'bold' }}>Herido:</Text> Animal cojeando, con heridas superficiales, desnutrición muy visible o desorientado.
+                </Text>
+              </View>
+            )}
+            {condition === 'red' && (
+              <View style={{ marginTop: 12, backgroundColor: '#FDEDEC', padding: 12, borderRadius: 8, borderLeftWidth: 4, borderLeftColor: '#E74C3C', flexDirection: 'row', alignItems: 'center' }}>
+                <Image source={require('../../assets/images/grave.png')} style={{ width: 75, height: 75, marginRight: 12 }} resizeMode="contain" />
+                <Text style={{ flex: 1, fontSize: 13, color: '#CB4335', lineHeight: 18 }}>
+                  <Text style={{ fontWeight: 'bold' }}>Grave:</Text> Animal atropellado, incapaz de moverse, con sangrado activo o en riesgo inminente de perder la vida.
+                </Text>
+              </View>
+            )}
+
+            {errors.condition && <Text style={{ color: '#E74C3C', fontSize: 12, marginTop: 6 }}>{errors.condition}</Text>}
           </View>
 
           {renderSelector('Tamaño', ['Pequeño', 'Mediano', 'Grande'], size, (val: any) => { setSize(val); setErrors(prev => ({ ...prev, size: '' })); }, errors.size)}
