@@ -1,6 +1,7 @@
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from app.models.report import ReportResponse, CondicionEnum, TipoAnimalEnum, TamanioEnum, SexoEnum, EdadEnum, ReportListItem
 from app.services.report_service import crear_reporte, obtener_reportes, cambiar_estado_reporte
+from app.utils.validators import validar_telefono, validar_email
 from typing import Optional, List
 
 router = APIRouter()
@@ -36,6 +37,18 @@ async def create_report(
     es_duplicado_confirmado: Optional[bool] = Form(None),
     reporte_original_id: Optional[str] = Form(None),
 ):
+    if not validar_telefono(telefono):
+        raise HTTPException(
+            status_code=422,
+            detail="El teléfono debe tener exactamente 10 dígitos numéricos."
+        )
+
+    if email and not validar_email(email):
+        raise HTTPException(
+            status_code=422,
+            detail="Ingresa un correo electrónico válido."
+        )
+
     if not latitud and not longitud and not municipio:
         raise HTTPException(
             status_code=422,
