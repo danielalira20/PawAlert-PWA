@@ -59,6 +59,90 @@ export default function AssociationFormScreen({ onClose }: Props) {
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [campoHorarioActivo, setCampoHorarioActivo] = useState<'apertura' | 'cierre' | null>(null);
 
+  const handleNombreChange = (val: string) => {
+    setNombre(val);
+    if (!val.trim()) setErrors(prev => ({ ...prev, nombre: 'El nombre de la asociación es obligatorio.' }));
+    else setErrors(prev => ({ ...prev, nombre: '' }));
+  };
+
+  const handleNombreResponsableChange = (val: string) => {
+    setNombreResponsable(val);
+    if (!val.trim()) setErrors(prev => ({ ...prev, nombreResponsable: 'El nombre del responsable es obligatorio.' }));
+    else if (/\d/.test(val)) setErrors(prev => ({ ...prev, nombreResponsable: 'El nombre no debe contener números.' }));
+    else setErrors(prev => ({ ...prev, nombreResponsable: '' }));
+  };
+
+  const handleApellidoResponsableChange = (val: string) => {
+    setApellidoResponsable(val);
+    if (!val.trim()) setErrors(prev => ({ ...prev, apellidoResponsable: 'El apellido del responsable es obligatorio.' }));
+    else if (/\d/.test(val)) setErrors(prev => ({ ...prev, apellidoResponsable: 'El apellido no debe contener números.' }));
+    else setErrors(prev => ({ ...prev, apellidoResponsable: '' }));
+  };
+
+  const handleTelefonoChange = (val: string) => {
+    setTelefono(val);
+    if (!val.trim()) {
+      setErrors(prev => ({ ...prev, telefono: 'El teléfono de contacto es obligatorio.' }));
+    } else if (/[a-zA-Z]/.test(val)) {
+      setErrors(prev => ({ ...prev, telefono: 'El teléfono no puede contener letras.' }));
+    } else if (!/^\d{10}$/.test(val.trim())) {
+      setErrors(prev => ({ ...prev, telefono: 'El teléfono debe tener exactamente 10 dígitos numéricos.' }));
+    } else {
+      setErrors(prev => ({ ...prev, telefono: '' }));
+    }
+  };
+
+  const handleEmailChange = (val: string) => {
+    setEmail(val);
+    if (!val.trim()) {
+      setErrors(prev => ({ ...prev, email: 'El correo electrónico es obligatorio.' }));
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val.trim())) {
+      setErrors(prev => ({ ...prev, email: 'Ingresa un correo electrónico válido.' }));
+    } else {
+      setErrors(prev => ({ ...prev, email: '' }));
+    }
+  };
+
+  const handlePasswordChange = (val: string) => {
+    setPassword(val);
+    if (!val.trim()) {
+      setErrors(prev => ({ ...prev, password: 'La contraseña es obligatoria.' }));
+    } else {
+      const resultadoPassword = validarPassword(val);
+      if (!resultadoPassword.valido) {
+        setErrors(prev => ({ ...prev, password: resultadoPassword.mensaje }));
+      } else {
+        setErrors(prev => ({ ...prev, password: '' }));
+      }
+    }
+    if (password2 && val !== password2) {
+      setErrors(prev => ({ ...prev, password2: 'Las contraseñas no coinciden.' }));
+    } else if (password2 && val === password2) {
+      setErrors(prev => ({ ...prev, password2: '' }));
+    }
+  };
+
+  const handlePassword2Change = (val: string) => {
+    setPassword2(val);
+    if (val !== password) {
+      setErrors(prev => ({ ...prev, password2: 'Las contraseñas no coinciden.' }));
+    } else {
+      setErrors(prev => ({ ...prev, password2: '' }));
+    }
+  };
+
+  const handleRadioKmChange = (val: string) => {
+    setRadioKm(val);
+    const radVal = parseInt(val, 10);
+    if (!val.trim()) {
+      setErrors(prev => ({ ...prev, radioKm: 'El radio de cobertura es obligatorio.' }));
+    } else if (isNaN(radVal) || radVal <= 0) {
+      setErrors(prev => ({ ...prev, radioKm: 'Ingresa un número válido mayor a 0.' }));
+    } else {
+      setErrors(prev => ({ ...prev, radioKm: '' }));
+    }
+  };
+
   const formatHour = (h: number): string => {
     const period = h < 12 ? 'AM' : 'PM';
     let hour12 = h % 12;
@@ -425,9 +509,9 @@ export default function AssociationFormScreen({ onClose }: Props) {
         </Text>
 
         <Card>
-          <Input label="Nombre de la Asociación" placeholder="Ej. Huellitas de Amor A.C." value={nombre} onChangeText={setNombre} error={errors.nombre} required />
-          <Input label="Nombre(s) del Responsable" placeholder="Ej. Juan" value={nombreResponsable} onChangeText={setNombreResponsable} error={errors.nombreResponsable} required />
-          <Input label="Apellido del Responsable" placeholder="Ej. Pérez" value={apellidoResponsable} onChangeText={setApellidoResponsable} error={errors.apellidoResponsable} required />
+          <Input label="Nombre de la Asociación" placeholder="Ej. Huellitas de Amor A.C." value={nombre} onChangeText={handleNombreChange} error={errors.nombre} required />
+          <Input label="Nombre(s) del Responsable" placeholder="Ej. Juan" value={nombreResponsable} onChangeText={handleNombreResponsableChange} error={errors.nombreResponsable} required />
+          <Input label="Apellido del Responsable" placeholder="Ej. Pérez" value={apellidoResponsable} onChangeText={handleApellidoResponsableChange} error={errors.apellidoResponsable} required />
           <Input label="Acerca de la Asociación (Opcional)" placeholder="Describe la misión o actividades de la asociación..." value={acercaDe} onChangeText={setAcercaDe} multiline maxLength={300} numberOfLines={3} style={{ height: 80, textAlignVertical: 'top' }} />
           <Text style={{ textAlign: 'right', color: '#95A5A6', fontSize: 12, marginBottom: 16 }}>{acercaDe.length}/300</Text>
 
@@ -449,13 +533,13 @@ export default function AssociationFormScreen({ onClose }: Props) {
         <Card>
           <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#2C3E50', marginBottom: 4 }}>Cuenta del Responsable</Text>
           <Text style={{ fontSize: 12, color: '#7F8C8D', marginBottom: 16 }}>Con esta contraseña podrás iniciar sesión y gestionar tu asociación.</Text>
-          <Input label="Teléfono de contacto" placeholder="Ej. 2221234567" value={telefono} onChangeText={setTelefono} error={errors.telefono} keyboardType="numeric" maxLength={10} required />
-          <Input label="Correo Electrónico de contacto" placeholder="Ej. contacto@asociacion.org" value={email} onChangeText={setEmail} error={errors.email} keyboardType="email-address" autoCapitalize="none" required />
-          <Input label="Contraseña" placeholder="8+ caracteres, mayúscula, minúscula y número" value={password} onChangeText={setPassword} error={errors.password} secureTextEntry required />
+          <Input label="Teléfono de contacto" placeholder="Ej. 2221234567" value={telefono} onChangeText={handleTelefonoChange} error={errors.telefono} keyboardType="numeric" maxLength={10} required />
+          <Input label="Correo Electrónico de contacto" placeholder="Ej. contacto@asociacion.org" value={email} onChangeText={handleEmailChange} error={errors.email} keyboardType="email-address" autoCapitalize="none" required />
+          <Input label="Contraseña" placeholder="8+ caracteres, mayúscula, minúscula y número" value={password} onChangeText={handlePasswordChange} error={errors.password} secureTextEntry required />
           <Text style={{ fontSize: 11, color: '#95A5A6', marginTop: -8, marginBottom: 12 }}>
             Mínimo 8 caracteres, con al menos una mayúscula, una minúscula y un número.
           </Text>
-          <Input label="Confirmar Contraseña" placeholder="Repite tu contraseña" value={password2} onChangeText={setPassword2} error={errors.password2} secureTextEntry required />
+          <Input label="Confirmar Contraseña" placeholder="Repite tu contraseña" value={password2} onChangeText={handlePassword2Change} error={errors.password2} secureTextEntry required />
 
           <View style={{ marginBottom: 16 }}>
             <Text style={{ fontSize: 14, fontWeight: '600', color: '#2C3E50', marginBottom: 8 }}>Horario de Atención (Opcional)</Text>
@@ -558,7 +642,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
           </View>
 
           <Input label="Referencia de Ubicación (Opcional)" placeholder="Ej. Frente al parque central" value={referencia} onChangeText={setReferencia} />
-          <Input label="Radio de Cobertura de Rescate (KM)" placeholder="Ej. 15" value={radioKm} onChangeText={setRadioKm} error={errors.radioKm} keyboardType="numeric" required />
+          <Input label="Radio de Cobertura de Rescate (KM)" placeholder="Ej. 15" value={radioKm} onChangeText={handleRadioKmChange} error={errors.radioKm} keyboardType="numeric" required />
         </Card>
 
         <Card>

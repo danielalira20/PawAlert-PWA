@@ -71,7 +71,17 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
   const handleTelefonoChange = async (val: string) => {
     setTelefono(val);
     setGuestFound(false);
-    setErrors((prev) => ({ ...prev, telefono: '' }));
+    
+    if (!val.trim()) {
+      setErrors((prev) => ({ ...prev, telefono: 'El teléfono es obligatorio.' }));
+    } else if (/[a-zA-Z]/.test(val)) {
+      setErrors((prev) => ({ ...prev, telefono: 'El teléfono no puede contener letras.' }));
+    } else if (!/^\d{10}$/.test(val.trim())) {
+      setErrors((prev) => ({ ...prev, telefono: 'El teléfono debe tener exactamente 10 dígitos numéricos.' }));
+    } else {
+      setErrors((prev) => ({ ...prev, telefono: '' }));
+    }
+
     const clean = val.replace(/\s|-/g, '');
     if (clean.length === 10) {
       setIsLookingUp(true);
@@ -82,11 +92,42 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
         setApellidoMaterno(res.data.apellido_materno ?? '');
         setEmail(res.data.email ?? '');
         setGuestFound(true);
+        // Clean errors for auto-filled fields
+        setErrors((prev) => ({ ...prev, nombre: '', apellidoPaterno: '', email: '' }));
       } catch {
         // No existe, el usuario llena manualmente
       } finally {
         setIsLookingUp(false);
       }
+    }
+  };
+
+  const handleNombreChange = (val: string) => {
+    setNombre(val);
+    if (!val.trim()) setErrors(prev => ({ ...prev, nombre: 'El nombre es obligatorio.' }));
+    else if (/\d/.test(val)) setErrors(prev => ({ ...prev, nombre: 'El nombre no debe contener números.' }));
+    else setErrors(prev => ({ ...prev, nombre: '' }));
+  };
+
+  const handleApellidoPaternoChange = (val: string) => {
+    setApellidoPaterno(val);
+    if (!val.trim()) setErrors(prev => ({ ...prev, apellidoPaterno: 'El apellido paterno es obligatorio.' }));
+    else if (/\d/.test(val)) setErrors(prev => ({ ...prev, apellidoPaterno: 'El apellido no debe contener números.' }));
+    else setErrors(prev => ({ ...prev, apellidoPaterno: '' }));
+  };
+
+  const handleApellidoMaternoChange = (val: string) => {
+    setApellidoMaterno(val);
+    if (/\d/.test(val)) setErrors(prev => ({ ...prev, apellidoMaterno: 'El apellido no debe contener números.' }));
+    else setErrors(prev => ({ ...prev, apellidoMaterno: '' }));
+  };
+
+  const handleEmailChange = (val: string) => {
+    setEmail(val);
+    if (val.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val.trim())) {
+      setErrors(prev => ({ ...prev, email: 'Ingresa un correo electrónico válido.' }));
+    } else {
+      setErrors(prev => ({ ...prev, email: '' }));
     }
   };
 
@@ -256,6 +297,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
 
   const handleTipoAnimalChange = (t: TipoAnimal) => {
     setTipoAnimal(t);
+    setErrors(prev => ({ ...prev, tipoAnimal: '' }));
     setRaza(null);
     setTieneCollar(null);
     setEsAgresivo(null);
@@ -551,10 +593,10 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
                   <Text style={{ fontSize: 12, color: '#27AE60', fontWeight: '600' }}>✓ Datos encontrados y autorellenados</Text>
                 </View>
               )}
-              <Input label="Nombre(s)" placeholder="Ej. Ana" value={nombre} onChangeText={setNombre} error={errors.nombre} required />
-              <Input label="Apellido Paterno" placeholder="Ej. Pérez" value={apellidoPaterno} onChangeText={setApellidoPaterno} error={errors.apellidoPaterno} required />
-              <Input label="Apellido Materno (Opcional)" placeholder="Ej. López" value={apellidoMaterno} onChangeText={setApellidoMaterno} />
-              <Input label="Correo Electrónico (Opcional)" placeholder="Ej. correo@ejemplo.com" value={email} onChangeText={setEmail} error={errors.email} keyboardType="email-address" autoCapitalize="none" />
+              <Input label="Nombre(s)" placeholder="Ej. Ana" value={nombre} onChangeText={handleNombreChange} error={errors.nombre} required />
+              <Input label="Apellido Paterno" placeholder="Ej. Pérez" value={apellidoPaterno} onChangeText={handleApellidoPaternoChange} error={errors.apellidoPaterno} required />
+              <Input label="Apellido Materno (Opcional)" placeholder="Ej. López" value={apellidoMaterno} onChangeText={handleApellidoMaternoChange} error={errors.apellidoMaterno} />
+              <Input label="Correo Electrónico (Opcional)" placeholder="Ej. correo@ejemplo.com" value={email} onChangeText={handleEmailChange} error={errors.email} keyboardType="email-address" autoCapitalize="none" />
               <TouchableOpacity 
                 onPress={() => {
                   if (onClose) onClose();
@@ -576,32 +618,32 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
 
           {tipoAnimal && (
             <>
-              {renderSelector('Sexo', ['Macho', 'Hembra', 'Desconocido'], sexo, setSexo, errors.sexo)}
-              {renderSelector('Edad Aproximada', ['Cachorro', 'Joven', 'Adulto', 'Senior', 'Desconocido'], edad, setEdad, errors.edad)}
+              {renderSelector('Sexo', ['Macho', 'Hembra', 'Desconocido'], sexo, (val: any) => { setSexo(val); setErrors(prev => ({ ...prev, sexo: '' })); }, errors.sexo)}
+              {renderSelector('Edad Aproximada', ['Cachorro', 'Joven', 'Adulto', 'Senior', 'Desconocido'], edad, (val: any) => { setEdad(val); setErrors(prev => ({ ...prev, edad: '' })); }, errors.edad)}
 
               {tipoAnimal === 'Perro' && (
                 <>
-                  {renderSelector('Raza', ['Mestizo', 'Labrador', 'Pitbull', 'Pastor Alemán', 'Chihuahua', 'Otro'], raza, setRaza, errors.raza)}
-                  {renderBooleanSelector('¿Tiene collar?', tieneCollar, setTieneCollar, errors.tieneCollar)}
-                  {renderBooleanSelector('¿Parece agresivo?', esAgresivo, setEsAgresivo, errors.esAgresivo)}
-                  {sexo === 'Hembra' && renderBooleanSelector('¿Parece estar preñada?', estaPrenada, setEstaPrenada, errors.estaPrenada)}
+                  {renderSelector('Raza', ['Mestizo', 'Labrador', 'Pitbull', 'Pastor Alemán', 'Chihuahua', 'Otro'], raza, (val: any) => { setRaza(val); setErrors(prev => ({ ...prev, raza: '' })); }, errors.raza)}
+                  {renderBooleanSelector('¿Tiene collar?', tieneCollar, (val: any) => { setTieneCollar(val); setErrors(prev => ({ ...prev, tieneCollar: '' })); }, errors.tieneCollar)}
+                  {renderBooleanSelector('¿Parece agresivo?', esAgresivo, (val: any) => { setEsAgresivo(val); setErrors(prev => ({ ...prev, esAgresivo: '' })); }, errors.esAgresivo)}
+                  {sexo === 'Hembra' && renderBooleanSelector('¿Parece estar preñada?', estaPrenada, (val: any) => { setEstaPrenada(val); setErrors(prev => ({ ...prev, estaPrenada: '' })); }, errors.estaPrenada)}
                 </>
               )}
 
               {tipoAnimal === 'Gato' && (
                 <>
-                  {renderSelector('Raza', ['Común', 'Siamés', 'Persa', 'Otro'], raza, setRaza, errors.raza)}
-                  {renderBooleanSelector('¿Tiene collar?', tieneCollar, setTieneCollar, errors.tieneCollar)}
-                  {renderBooleanSelector('¿Es doméstico / se deja acercar?', esDomestico, setEsDomestico, errors.esDomestico)}
-                  {sexo === 'Hembra' && renderBooleanSelector('¿Parece estar preñada?', estaPrenada, setEstaPrenada, errors.estaPrenada)}
+                  {renderSelector('Raza', ['Común', 'Siamés', 'Persa', 'Otro'], raza, (val: any) => { setRaza(val); setErrors(prev => ({ ...prev, raza: '' })); }, errors.raza)}
+                  {renderBooleanSelector('¿Tiene collar?', tieneCollar, (val: any) => { setTieneCollar(val); setErrors(prev => ({ ...prev, tieneCollar: '' })); }, errors.tieneCollar)}
+                  {renderBooleanSelector('¿Es doméstico / se deja acercar?', esDomestico, (val: any) => { setEsDomestico(val); setErrors(prev => ({ ...prev, esDomestico: '' })); }, errors.esDomestico)}
+                  {sexo === 'Hembra' && renderBooleanSelector('¿Parece estar preñada?', estaPrenada, (val: any) => { setEstaPrenada(val); setErrors(prev => ({ ...prev, estaPrenada: '' })); }, errors.estaPrenada)}
                 </>
               )}
 
               {tipoAnimal === 'Otro' && (
                 <>
-                  {renderSelector('Categoría', ['Ave', 'Reptil', 'Roedor', 'Fauna silvestre', 'Otro'], subcategoria, setSubcategoria, errors.subcategoria)}
+                  {renderSelector('Categoría', ['Ave', 'Reptil', 'Roedor', 'Fauna silvestre', 'Otro'], subcategoria, (val: any) => { setSubcategoria(val); setErrors(prev => ({ ...prev, subcategoria: '' })); }, errors.subcategoria)}
                   {subcategoria === 'Otro' && (
-                    <Input label="Describe la especie *" placeholder="Ej. Tlacuache, caballo, etc." value={especieDescripcion} onChangeText={setEspecieDescripcion} error={errors.especieDescripcion} />
+                    <Input label="Describe la especie *" placeholder="Ej. Tlacuache, caballo, etc." value={especieDescripcion} onChangeText={(val) => { setEspecieDescripcion(val); if(val.trim()) setErrors(prev => ({ ...prev, especieDescripcion: '' })); }} error={errors.especieDescripcion} />
                   )}
                 </>
               )}
@@ -611,14 +653,14 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
           <View style={{ marginBottom: 20 }}>
             <Text style={{ fontSize: 14, fontWeight: '600', color: '#2C3E50', marginBottom: 8 }}>Condición (Semáforo) <Text style={{ color: '#E74C3C' }}>*</Text></Text>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}>
-              <TouchableOpacity onPress={() => setCondition('green')} style={{ flex: 1, paddingVertical: 12, borderRadius: 8, borderWidth: 1, backgroundColor: condition === 'green' ? '#27AE60' : '#FFFFFF', borderColor: errors.condition ? '#E74C3C' : (condition === 'green' ? '#27AE60' : '#BDC3C7'), alignItems: 'center' }}><Text style={{ textAlign: 'center', fontWeight: '500', fontSize: 12, color: condition === 'green' ? '#FFFFFF' : '#2C3E50' }}>Estable</Text></TouchableOpacity>
-              <TouchableOpacity onPress={() => setCondition('yellow')} style={{ flex: 1, paddingVertical: 12, borderRadius: 8, borderWidth: 1, backgroundColor: condition === 'yellow' ? '#F39C12' : '#FFFFFF', borderColor: errors.condition ? '#E74C3C' : (condition === 'yellow' ? '#F39C12' : '#BDC3C7'), alignItems: 'center' }}><Text style={{ textAlign: 'center', fontWeight: '500', fontSize: 12, color: condition === 'yellow' ? '#FFFFFF' : '#2C3E50' }}>Herido</Text></TouchableOpacity>
-              <TouchableOpacity onPress={() => setCondition('red')} style={{ flex: 1, paddingVertical: 12, borderRadius: 8, borderWidth: 1, backgroundColor: condition === 'red' ? '#E74C3C' : '#FFFFFF', borderColor: errors.condition ? '#E74C3C' : (condition === 'red' ? '#E74C3C' : '#BDC3C7'), alignItems: 'center' }}><Text style={{ textAlign: 'center', fontWeight: '500', fontSize: 12, color: condition === 'red' ? '#FFFFFF' : '#2C3E50' }}>Grave</Text></TouchableOpacity>
+              <TouchableOpacity onPress={() => { setCondition('green'); setErrors(prev => ({ ...prev, condition: '' })); }} style={{ flex: 1, paddingVertical: 12, borderRadius: 8, borderWidth: 1, backgroundColor: condition === 'green' ? '#27AE60' : '#FFFFFF', borderColor: errors.condition ? '#E74C3C' : (condition === 'green' ? '#27AE60' : '#BDC3C7'), alignItems: 'center' }}><Text style={{ textAlign: 'center', fontWeight: '500', fontSize: 12, color: condition === 'green' ? '#FFFFFF' : '#2C3E50' }}>Estable</Text></TouchableOpacity>
+              <TouchableOpacity onPress={() => { setCondition('yellow'); setErrors(prev => ({ ...prev, condition: '' })); }} style={{ flex: 1, paddingVertical: 12, borderRadius: 8, borderWidth: 1, backgroundColor: condition === 'yellow' ? '#F39C12' : '#FFFFFF', borderColor: errors.condition ? '#E74C3C' : (condition === 'yellow' ? '#F39C12' : '#BDC3C7'), alignItems: 'center' }}><Text style={{ textAlign: 'center', fontWeight: '500', fontSize: 12, color: condition === 'yellow' ? '#FFFFFF' : '#2C3E50' }}>Herido</Text></TouchableOpacity>
+              <TouchableOpacity onPress={() => { setCondition('red'); setErrors(prev => ({ ...prev, condition: '' })); }} style={{ flex: 1, paddingVertical: 12, borderRadius: 8, borderWidth: 1, backgroundColor: condition === 'red' ? '#E74C3C' : '#FFFFFF', borderColor: errors.condition ? '#E74C3C' : (condition === 'red' ? '#E74C3C' : '#BDC3C7'), alignItems: 'center' }}><Text style={{ textAlign: 'center', fontWeight: '500', fontSize: 12, color: condition === 'red' ? '#FFFFFF' : '#2C3E50' }}>Grave</Text></TouchableOpacity>
             </View>
             {errors.condition && <Text style={{ color: '#E74C3C', fontSize: 12, marginTop: 4 }}>{errors.condition}</Text>}
           </View>
 
-          {renderSelector('Tamaño', ['Pequeño', 'Mediano', 'Grande'], size, setSize, errors.size)}
+          {renderSelector('Tamaño', ['Pequeño', 'Mediano', 'Grande'], size, (val: any) => { setSize(val); setErrors(prev => ({ ...prev, size: '' })); }, errors.size)}
 
           <View style={{ marginBottom: 16 }}>
             <Text style={{ fontSize: 14, fontWeight: '600', color: '#2C3E50', marginBottom: 8 }}>Fotos del animalito <Text style={{ color: '#E74C3C' }}>*</Text></Text>
