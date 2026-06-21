@@ -717,14 +717,32 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
             <Text style={{ fontSize: 18, fontWeight: '700', color: '#2C3E50', textAlign: 'center', marginBottom: 12 }}>
               Posible reporte duplicado
             </Text>
-            {duplicadoInfo && (
-              <Text style={{ fontSize: 14, color: '#566573', textAlign: 'center', marginBottom: 24, lineHeight: 20 }}>
-                Se reportó un {duplicadoInfo.existente.tipo_animal || 'animal'} en condición{' '}
-                {duplicadoInfo.existente.condicion || 'desconocida'} en{' '}
-                {duplicadoInfo.existente.colonia || duplicadoInfo.existente.municipio || 'esta zona'} hace{' '}
-                {duplicadoInfo.tiempoTexto}.{'\n\n'}¿Es el mismo animal?
-              </Text>
+
+            {duplicadoInfo?.existente?.foto_url && (
+              <View style={{ alignItems: 'center', marginBottom: 16 }}>
+                <Image
+                  source={{ uri: duplicadoInfo.existente.foto_url }}
+                  style={{ width: 140, height: 140, borderRadius: 12, backgroundColor: '#ECF0F1' }}
+                  resizeMode="cover"
+                />
+              </View>
             )}
+
+            {duplicadoInfo && (
+            <Text style={{ fontSize: 14, color: '#566573', textAlign: 'center', marginBottom: 24, lineHeight: 20 }}>
+              {'Se reportó un '}
+              {duplicadoInfo.existente.tipo_animal || 'animal'}
+              {' en condición '}
+              {duplicadoInfo.existente.condicion || 'desconocida'}
+              {' en '}
+              {duplicadoInfo.existente.colonia || duplicadoInfo.existente.municipio || 'esta zona'}
+              {' hace '}
+              {duplicadoInfo.tiempoTexto}
+              {'.'}
+              {'\n\n'}
+              {'¿Es el mismo animal?'}
+            </Text>
+          )}
 
             <TouchableOpacity
               onPress={() => {
