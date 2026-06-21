@@ -39,7 +39,7 @@ export default function LoginScreen() {
     setIsLoading(true);
     try {
       const usuario = await login(email.trim(), password);
-      const destino = usuario.asociacion_id ? '/association-status' : '/';
+      const destino = usuario.es_admin ? '/admin' : (usuario.asociacion_id ? '/association-status' : '/');
       showSuccessAndRedirect('¡Bienvenida de vuelta! Redirigiendo...', destino);
     } catch (error: any) {
       Alert.alert('Error', error?.response?.data?.detail || 'Correo o contraseña incorrectos');
@@ -72,7 +72,7 @@ export default function LoginScreen() {
         apellido_materno: apellidoMaterno.trim() || undefined,
         telefono: telefono.replace(/\s|-/g, ''),
       });
-      const destino = usuario.asociacion_id ? '/association-status' : '/';
+      const destino = usuario.es_admin ? '/admin' : (usuario.asociacion_id ? '/association-status' : '/');
       showSuccessAndRedirect('¡Cuenta creada! Redirigiendo...', destino);
     } catch (error: any) {
       Alert.alert('Error', error?.response?.data?.detail || 'Error al crear la cuenta');

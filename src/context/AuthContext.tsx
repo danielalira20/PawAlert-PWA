@@ -11,6 +11,7 @@ interface Usuario {
   email: string;
   telefono: string;
   asociacion_id?: string | null;
+  es_admin?: boolean;
 }
 
 interface RegisterData {
@@ -96,4 +97,3 @@ export function useAuth() {
   if (!ctx) throw new Error('useAuth debe usarse dentro de AuthProvider');
   return ctx;
 }
-
