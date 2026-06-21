@@ -28,7 +28,7 @@ const LOCAL_IP = '192.168.0.121'
 const DEV_URL = Platform.select({
   ios: `http://${LOCAL_IP}:8000`,
   android: `http://${LOCAL_IP}:8000`,
-  default: `http://${LOCAL_IP}:8000`
+  default: 'http://localhost:8000'
 })
 
 const PROD_URL = '' // URL pública de Railway (se llena este sábado tras el deploy)

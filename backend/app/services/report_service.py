@@ -28,23 +28,47 @@ def registrar_historial(reporte_id: str, tipo_evento: str, descripcion: str, usu
         "datos_extra": datos_extra,
     }).execute()
 
-def verificar_duplicados(municipio: str | None, colonia: str | None) -> list:
-    """Busca reportes activos en el mismo municipio/colonia creados en las últimas 2 horas."""
+def verificar_duplicados(municipio: str | None, colonia: str | None, tipo_animal: str | None) -> list:
     if not municipio:
         return []
 
     hace_dos_horas = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
 
+    # Resolver el ID del tipo de animal para filtrar
+    tipo_animal_id = None
+    if tipo_animal:
+        tipo_animal_id = obtener_id_catalogo("tipo_animal_catalogo", tipo_animal)
+
     query = supabase.table("reportes").select(
         "id, estado_reporte, municipio, colonia, created_at, "
-        "animal(tipo_animal_catalogo(clave), condicion_catalogo(clave))"
+        "animal(id, tipo_animal_id, tipo_animal_catalogo(clave), condicion_catalogo(clave))"
     ).neq("estado_reporte", "cerrado").gte("created_at", hace_dos_horas).eq("municipio", municipio)
 
     if colonia:
         query = query.eq("colonia", colonia)
 
     resultado = query.execute()
-    return resultado.data if resultado.data else []
+    duplicados = resultado.data if resultado.data else []
+
+    # Filtrar por tipo de animal en Python ya que el join anidado no permite WHERE en subrelación
+    if tipo_animal_id:
+        duplicados = [
+            d for d in duplicados
+            if d.get("animal", {}).get("tipo_animal_id") == tipo_animal_id
+        ]
+
+    # Query separada para la foto
+    for duplicado in duplicados:
+        animal = duplicado.get("animal")
+        if animal and animal.get("id"):
+            fotos_result = supabase.table("animal_fotos").select(
+                "foto_url, orden"
+            ).eq("animal_id", animal["id"]).order("orden").limit(1).execute()
+            duplicado["foto_url"] = fotos_result.data[0]["foto_url"] if fotos_result.data else None
+        else:
+            duplicado["foto_url"] = None
+
+    return duplicados
 
 async def crear_reporte(
     nombre: str,
@@ -77,23 +101,32 @@ async def crear_reporte(
     reporte_original_id: str | None = None,
 ) -> dict:
     
+    print("=== DEBUG DUPLICADOS ===")
+    print("municipio:", municipio)
+    print("colonia:", colonia)
+    print("tipo_animal:", tipo_animal)
+    print("========================")
+
     # 0 — Verificar duplicados (solo si no viene confirmación del usuario)
     if es_duplicado_confirmado is None:
-        posibles_duplicados = verificar_duplicados(municipio, colonia)
+        posibles_duplicados = verificar_duplicados(municipio, colonia, tipo_animal)
+        
         if posibles_duplicados:
+            duplicado = posibles_duplicados[0]
+
             return {
                 "posible_duplicado": True,
                 "reporte_existente": {
-                    "id": posibles_duplicados[0]["id"],
-                    "municipio": posibles_duplicados[0]["municipio"],
-                    "colonia": posibles_duplicados[0]["colonia"],
-                    "created_at": str(posibles_duplicados[0]["created_at"]),
-                    "tipo_animal": posibles_duplicados[0].get("animal", {}).get("tipo_animal_catalogo", {}).get("clave"),
-                    "condicion": posibles_duplicados[0].get("animal", {}).get("condicion_catalogo", {}).get("clave"),
+                    "id": duplicado["id"],
+                    "municipio": duplicado["municipio"],
+                    "colonia": duplicado["colonia"],
+                    "created_at": str(duplicado["created_at"]),
+                    "tipo_animal": duplicado.get("animal", {}).get("tipo_animal_catalogo", {}).get("clave"),
+                    "condicion": duplicado.get("animal", {}).get("condicion_catalogo", {}).get("clave"),
+                    "foto_url": duplicado.get("foto_url"),  # ← viene de verificar_duplicados
                 },
                 "total_duplicados": len(posibles_duplicados)
             }
-
     # 1 — Crear o reutilizar usuario
     resultado = supabase.table("usuarios").select("id").eq("telefono", telefono).execute()
     if resultado.data and len(resultado.data) > 0:
