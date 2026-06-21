@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
@@ -15,6 +15,24 @@ interface AsociacionInfo {
   motivo_rechazo: string | null;
 }
 
+interface ReporteAsignado {
+  id: string;
+  estado_reporte: string;
+  municipio: string | null;
+  colonia: string | null;
+  calle: string | null;
+  created_at: string;
+  foto_url: string | null;
+  animal: {
+    tipo_animal: string | null;
+    condicion: string | null;
+    tamanio: string | null;
+    sexo: string | null;
+    edad_aproximada: string | null;
+    descripcion: string | null;
+  };
+}
+
 export default function AssociationStatusScreen() {
   const { token, logout } = useAuth();
   const [info, setInfo] = useState<AsociacionInfo | null>(null);
@@ -26,6 +44,35 @@ export default function AssociationStatusScreen() {
   const [emailRep, setEmailRep] = useState('');
   const [isAdding, setIsAdding] = useState(false);
 
+  const [reportes, setReportes] = useState<ReporteAsignado[]>([]);
+  const [isLoadingReportes, setIsLoadingReportes] = useState(false);
+
+  const cargarReportes = async () => {
+    setIsLoadingReportes(true);
+    try {
+      const res = await axios.get(`${API_URL}/associations/me/reportes`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setReportes(res.data);
+    } catch {
+      // Si falla no bloqueamos la pantalla
+    } finally {
+      setIsLoadingReportes(false);
+    }
+  };
+
+  const handleCambiarEstadoReporte = async (reporteId: string, nuevoEstado: string) => {
+  try {
+    await axios.patch(
+      `${API_URL}/reports/${reporteId}/status`,
+      { estado: nuevoEstado }, 
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    await cargarReportes();
+  } catch (error: any) {
+    Alert.alert('Error', error?.response?.data?.detail || 'No pudimos actualizar el reporte.');
+  }
+};
   const cargarEstado = async () => {
     setIsLoading(true);
     try {
@@ -43,6 +90,12 @@ export default function AssociationStatusScreen() {
   useEffect(() => {
     cargarEstado();
   }, []);
+
+  useEffect(() => {
+  if (info?.estado === 'aprobada') {
+    cargarReportes();
+  }
+}, [info]);
 
   const handleAgregarRepresentante = async () => {
     if (!nombreRep.trim() || !apellidoRep.trim() || !telefonoRep.trim()) {
@@ -137,6 +190,95 @@ export default function AssociationStatusScreen() {
             <Text style={{ fontSize: 14, color: '#566573', lineHeight: 20 }}>
               Tu asociación ya puede recibir reportes de animales en tu zona.
             </Text>
+          </Card>
+
+          <Card>
+            <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#2C3E50', marginBottom: 4 }}>
+              Reportes asignados
+            </Text>
+            <Text style={{ fontSize: 12, color: '#7F8C8D', marginBottom: 16 }}>
+              Animales en tu zona que esperan atención.
+            </Text>
+
+            {isLoadingReportes ? (
+              <ActivityIndicator size="small" color="#3498DB" />
+            ) : reportes.length === 0 ? (
+              <Text style={{ fontSize: 14, color: '#95A5A6', textAlign: 'center', paddingVertical: 16 }}>
+                No hay reportes asignados por el momento.
+              </Text>
+            ) : (
+              reportes.map((reporte) => (
+                <View key={reporte.id} style={{
+                  borderWidth: 1, borderColor: '#ECF0F1', borderRadius: 12,
+                  marginBottom: 12, overflow: 'hidden'
+                }}>
+                  {reporte.foto_url && (
+                    <Image
+                      source={{ uri: reporte.foto_url }}
+                      style={{ width: '100%', height: 160 }}
+                      resizeMode="cover"
+                    />
+                  )}
+                  <View style={{ padding: 12 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <Text style={{ fontSize: 15, fontWeight: '700', color: '#2C3E50', textTransform: 'capitalize' }}>
+                        {reporte.animal?.tipo_animal || 'Animal'}
+                      </Text>
+                      <View style={{
+                        paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6,
+                        backgroundColor:
+                          reporte.animal?.condicion === 'grave' ? '#FADBD8' :
+                          reporte.animal?.condicion === 'herido' ? '#FDEBD0' : '#EAFAF1'
+                      }}>
+                        <Text style={{
+                          fontSize: 11, fontWeight: '600', textTransform: 'capitalize',
+                          color:
+                            reporte.animal?.condicion === 'grave' ? '#E74C3C' :
+                            reporte.animal?.condicion === 'herido' ? '#F39C12' : '#27AE60'
+                        }}>
+                          {reporte.animal?.condicion || 'desconocida'}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <Text style={{ fontSize: 12, color: '#7F8C8D', marginBottom: 4 }}>
+                      {[reporte.calle, reporte.colonia, reporte.municipio].filter(Boolean).join(', ')}
+                    </Text>
+
+                    <Text style={{ fontSize: 11, color: '#BDC3C7', marginBottom: 12 }}>
+                      {new Date(reporte.created_at).toLocaleDateString('es-MX', {
+                        day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit'
+                      })}
+                    </Text>
+
+                    {reporte.estado_reporte === 'asignado' && (
+                      <View style={{ flexDirection: 'row', gap: 8 }}>
+                        <TouchableOpacity
+                          onPress={() => handleCambiarEstadoReporte(reporte.id, 'en_atencion')}
+                          style={{ flex: 1, backgroundColor: '#3498DB', paddingVertical: 10, borderRadius: 8, alignItems: 'center' }}
+                        >
+                          <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 13 }}>Aceptar</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => handleCambiarEstadoReporte(reporte.id, 'pendiente')}
+                          style={{ flex: 1, borderWidth: 1.5, borderColor: '#E74C3C', paddingVertical: 10, borderRadius: 8, alignItems: 'center' }}
+                        >
+                          <Text style={{ color: '#E74C3C', fontWeight: '700', fontSize: 13 }}>Rechazar</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+
+                    {reporte.estado_reporte === 'en_atencion' && (
+                      <View style={{ backgroundColor: '#EAF6FF', padding: 8, borderRadius: 8 }}>
+                        <Text style={{ fontSize: 12, color: '#3498DB', fontWeight: '600', textAlign: 'center' }}>
+                          En atención
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              ))
+            )}
           </Card>
 
           <Card>

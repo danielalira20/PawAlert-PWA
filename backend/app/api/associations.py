@@ -318,3 +318,55 @@ async def agregar_representante(asociacion_id: str, body: NuevoRepresentante, au
         }).execute()
 
     return {"mensaje": "Representante agregado. Podrá iniciar sesión registrándose con ese mismo teléfono."}
+
+@router.get("/me/reportes", status_code=200)
+async def get_reportes_asignados(authorization: str = Header(None)):
+    usuario = _obtener_usuario_autenticado(authorization)
+
+    if not usuario.get("asociacion_id"):
+        raise HTTPException(status_code=404, detail="Este usuario no está vinculado a ninguna asociación")
+
+    asociacion = supabase.table("asociaciones").select("verificado").eq(
+        "id", usuario["asociacion_id"]
+    ).execute()
+
+    if not asociacion.data or not asociacion.data[0]["verificado"]:
+        raise HTTPException(status_code=403, detail="Tu asociación todavía no ha sido aprobada")
+
+    resultado = supabase.table("reportes").select(
+        "id, estado_reporte, municipio, colonia, calle, created_at, "
+        "animal(id, sexo, edad_aproximada, descripcion, "
+        "tipo_animal_catalogo(clave), condicion_catalogo(clave), tamanio_catalogo(clave), "
+        "animal_fotos(foto_url, orden))"
+    ).eq("asociacion_asignada_id", usuario["asociacion_id"]).neq(
+        "estado_reporte", "cerrado"
+    ).order("created_at", desc=True).execute()
+
+    reportes = []
+    for r in resultado.data:
+        animal = r.get("animal") or {}
+        fotos = animal.get("animal_fotos") or []
+        foto_url = None
+        if fotos:
+            fotos_ordenadas = sorted(fotos, key=lambda f: f.get("orden", 0))
+            foto_url = fotos_ordenadas[0]["foto_url"]
+
+        reportes.append({
+            "id": r["id"],
+            "estado_reporte": r.get("estado_reporte"),
+            "municipio": r.get("municipio"),
+            "colonia": r.get("colonia"),
+            "calle": r.get("calle"),
+            "created_at": str(r["created_at"]),
+            "foto_url": foto_url,
+            "animal": {
+                "tipo_animal": animal.get("tipo_animal_catalogo", {}).get("clave"),
+                "condicion": animal.get("condicion_catalogo", {}).get("clave"),
+                "tamanio": animal.get("tamanio_catalogo", {}).get("clave"),
+                "sexo": animal.get("sexo"),
+                "edad_aproximada": animal.get("edad_aproximada"),
+                "descripcion": animal.get("descripcion"),
+            }
+        })
+
+    return reportes
