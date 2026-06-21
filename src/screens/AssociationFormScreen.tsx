@@ -58,6 +58,28 @@ export default function AssociationFormScreen({ onClose }: Props) {
 
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [campoHorarioActivo, setCampoHorarioActivo] = useState<'apertura' | 'cierre' | null>(null);
+  const [showSubmitError, setShowSubmitError] = useState(false);
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
+
+  const [subcategoriaOtro, setSubcategoriaOtro] = useState<string | null>(null);
+  const [especieDescripcionOtro, setEspecieDescripcionOtro] = useState('');
+
+  useEffect(() => {
+    const hasErrors = Object.values(errors).some(e => e !== '');
+    if (!hasErrors) setShowSubmitError(false);
+  }, [errors]);
+
+  const hasUnsavedChanges = () => {
+    return nombre.trim() !== '' || nombreResponsable.trim() !== '' || telefono.trim() !== '' || tiposAnimales.length > 0 || fotos.length > 0;
+  };
+
+  const handleCloseRequest = () => {
+    if (hasUnsavedChanges()) {
+      setShowCloseConfirm(true);
+    } else {
+      if (onClose) onClose();
+    }
+  };
 
   const handleNombreChange = (val: string) => {
     setNombre(val);
@@ -188,6 +210,11 @@ export default function AssociationFormScreen({ onClose }: Props) {
   const toggleTipoAnimal = (tipo: TipoAnimal) => {
     if (tiposAnimales.includes(tipo)) {
       setTiposAnimales(tiposAnimales.filter((t) => t !== tipo));
+      if (tipo === 'otro') {
+        setSubcategoriaOtro(null);
+        setEspecieDescripcionOtro('');
+        setErrors((prev) => { const { subcategoriaOtro, especieDescripcionOtro, ...rest } = prev; return rest; });
+      }
     } else {
       setTiposAnimales([...tiposAnimales, tipo]);
     }
@@ -414,6 +441,11 @@ export default function AssociationFormScreen({ onClose }: Props) {
 
     if (tiposAnimales.length === 0) newErrors.tiposAnimales = 'Selecciona al menos un tipo de animal que rescatan.';
 
+    if (tiposAnimales.includes('otro')) {
+      if (!subcategoriaOtro) newErrors.subcategoriaOtro = 'Selecciona la categoría del animal.';
+      if (subcategoriaOtro === 'Otro' && !especieDescripcionOtro.trim()) newErrors.especieDescripcionOtro = 'Describe la especie que rescatan.';
+    }
+
     const radVal = parseInt(radioKm, 10);
     if (!radioKm.trim()) {
       newErrors.radioKm = 'El radio de cobertura es obligatorio.';
@@ -431,9 +463,10 @@ export default function AssociationFormScreen({ onClose }: Props) {
 
   const handleSubmit = async () => {
     if (!validateForm()) {
-      Alert.alert('Formulario Incompleto', 'Revisa los campos marcados en rojo para continuar.');
+      setShowSubmitError(true);
       return;
     }
+    setShowSubmitError(false);
 
     setIsSubmitting(true);
     try {
@@ -444,7 +477,14 @@ export default function AssociationFormScreen({ onClose }: Props) {
       formData.append('contacto_telefono', telefono.trim());
       formData.append('contacto_email', email.trim());
       formData.append('password', password);
-      formData.append('tipos_animales', JSON.stringify(tiposAnimales));
+
+      const finalTiposAnimales: string[] = tiposAnimales.filter((t) => t !== 'otro');
+      if (tiposAnimales.includes('otro')) {
+        if (subcategoriaOtro === 'Otro') finalTiposAnimales.push(especieDescripcionOtro.trim().toLowerCase());
+        else if (subcategoriaOtro) finalTiposAnimales.push(subcategoriaOtro.toLowerCase());
+      }
+      formData.append('tipos_animales', JSON.stringify(finalTiposAnimales));
+
       formData.append('latitud', String(pinLocation.latitud));
       formData.append('longitud', String(pinLocation.longitud));
       formData.append('radio_km', radioKm);
@@ -497,7 +537,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#E5E7EB' }}>
         <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#2C3E50' }}>Registro de Asociación</Text>
         {onClose && (
-          <TouchableOpacity onPress={onClose} style={{ padding: 4 }}>
+          <TouchableOpacity onPress={handleCloseRequest} style={{ padding: 4 }}>
             <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#95A5A6' }}>✕</Text>
           </TouchableOpacity>
         )}
@@ -582,6 +622,26 @@ export default function AssociationFormScreen({ onClose }: Props) {
               })}
             </View>
             {errors.tiposAnimales && <Text style={{ color: '#E74C3C', fontSize: 12, marginTop: 4 }}>{errors.tiposAnimales}</Text>}
+
+            {tiposAnimales.includes('otro') && (
+              <View style={{ marginTop: 12 }}>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: '#2C3E50', marginBottom: 8 }}>Específica la categoría <Text style={{ color: '#E74C3C' }}>*</Text></Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                  {['Reptil', 'Roedor', 'Fauna silvestre', 'Otro'].map((subcat) => (
+                    <TouchableOpacity key={subcat} onPress={() => { setSubcategoriaOtro(subcat); setErrors(prev => ({ ...prev, subcategoriaOtro: '' })); }} style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, borderWidth: 1, backgroundColor: subcategoriaOtro === subcat ? '#1F77B4' : '#FFFFFF', borderColor: errors.subcategoriaOtro ? '#E74C3C' : (subcategoriaOtro === subcat ? '#1F77B4' : '#BDC3C7') }}>
+                      <Text style={{ fontWeight: '500', fontSize: 13, color: subcategoriaOtro === subcat ? '#FFFFFF' : '#7F8C8D' }}>{subcat}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                {errors.subcategoriaOtro && <Text style={{ color: '#E74C3C', fontSize: 12, marginTop: 4 }}>{errors.subcategoriaOtro}</Text>}
+
+                {subcategoriaOtro === 'Otro' && (
+                  <View style={{ marginTop: 12 }}>
+                    <Input label="Describe la especie *" placeholder="Ej. Tlacuache, caballo, etc." value={especieDescripcionOtro} onChangeText={(val) => { setEspecieDescripcionOtro(val); if (val.trim()) setErrors(prev => ({ ...prev, especieDescripcionOtro: '' })); }} error={errors.especieDescripcionOtro} />
+                  </View>
+                )}
+              </View>
+            )}
           </View>
         </Card>
 
@@ -662,6 +722,11 @@ export default function AssociationFormScreen({ onClose }: Props) {
           <Button label="Agregar Foto de la Asociación" variant="secondary" onPress={handleAddFoto} />
         </Card>
 
+        {showSubmitError && (
+          <Text style={{ color: '#E74C3C', textAlign: 'center', marginBottom: 12, fontWeight: '600', fontSize: 14 }}>
+            Faltan campos por llenar
+          </Text>
+        )}
         <Button
           label="Registrar Asociación"
           onPress={handleSubmit}
@@ -685,6 +750,27 @@ export default function AssociationFormScreen({ onClose }: Props) {
             <TouchableOpacity onPress={() => setCampoHorarioActivo(null)} style={{ alignItems: 'center', marginTop: 12 }}>
               <Text style={{ color: '#95A5A6', fontSize: 14 }}>Cancelar</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={showCloseConfirm} transparent animationType="fade" onRequestClose={() => setShowCloseConfirm(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 24 }}>
+          <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16, padding: 24 }}>
+            <Text style={{ fontSize: 18, fontWeight: '700', color: '#2C3E50', textAlign: 'center', marginBottom: 12 }}>
+              ¿Estás seguro de cerrarlo?
+            </Text>
+            <Text style={{ fontSize: 14, color: '#566573', textAlign: 'center', marginBottom: 24 }}>
+              Los datos ingresados se perderán y tendrás que empezar de nuevo.
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <TouchableOpacity onPress={() => setShowCloseConfirm(false)} style={{ flex: 1, paddingVertical: 12, borderRadius: 8, borderWidth: 1, borderColor: '#BDC3C7', alignItems: 'center' }}>
+                <Text style={{ color: '#7F8C8D', fontWeight: '600' }}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => { setShowCloseConfirm(false); if (onClose) onClose(); }} style={{ flex: 1, paddingVertical: 12, borderRadius: 8, backgroundColor: '#E74C3C', alignItems: 'center' }}>
+                <Text style={{ color: '#FFFFFF', fontWeight: '600' }}>Sí, cerrar</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>

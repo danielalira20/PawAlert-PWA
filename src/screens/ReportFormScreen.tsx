@@ -50,6 +50,38 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
 
   const [duplicadoInfo, setDuplicadoInfo] = useState<DuplicadoInfo | null>(null);
   const [resultadoEnvio, setResultadoEnvio] = useState<string | null>(null);
+  const [showSubmitError, setShowSubmitError] = useState(false);
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
+
+  useEffect(() => {
+    const hasErrors = Object.values(errors).some(e => e !== '');
+    if (!hasErrors) setShowSubmitError(false);
+  }, [errors]);
+
+  const hasUnsavedChanges = () => {
+    const initialNombre = (isLoggedIn && user) ? user.nombre : '';
+    const initialApellidoPaterno = (isLoggedIn && user) ? user.apellido_paterno : '';
+    const initialApellidoMaterno = (isLoggedIn && user) ? (user.apellido_materno || '') : '';
+    const initialTelefono = (isLoggedIn && user) ? user.telefono : '';
+    const initialEmail = (isLoggedIn && user) ? user.email : '';
+
+    const changedContactInfo =
+      nombre.trim() !== initialNombre ||
+      apellidoPaterno.trim() !== initialApellidoPaterno ||
+      apellidoMaterno.trim() !== initialApellidoMaterno ||
+      telefono.trim() !== initialTelefono ||
+      email.trim() !== initialEmail;
+
+    return changedContactInfo || tipoAnimal !== null || fotos.length > 0 || condition !== null || description.trim() !== '' || referencia.trim() !== '';
+  };
+
+  const handleCloseRequest = () => {
+    if (hasUnsavedChanges()) {
+      setShowCloseConfirm(true);
+    } else {
+      if (onClose) onClose();
+    }
+  };
 
   useEffect(() => {
     if (isLoggedIn && user) {
@@ -71,7 +103,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
   const handleTelefonoChange = async (val: string) => {
     setTelefono(val);
     setGuestFound(false);
-    
+
     if (!val.trim()) {
       setErrors((prev) => ({ ...prev, telefono: 'El teléfono es obligatorio.' }));
     } else if (/[a-zA-Z]/.test(val)) {
@@ -424,9 +456,10 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
 
   const handleSubmit = async (esDuplicadoConfirmado: boolean = false, reporteOriginalId?: string) => {
     if (!esDuplicadoConfirmado && !validateForm()) {
-      Alert.alert('Formulario Incompleto', 'Revisa los campos marcados en rojo para continuar.');
+      setShowSubmitError(true);
       return;
     }
+    setShowSubmitError(false);
 
     try {
       const formData = new FormData();
@@ -551,7 +584,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#E5E7EB' }}>
         <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#2C3E50' }}>Nuevo Reporte</Text>
         {onClose && (
-          <TouchableOpacity onPress={onClose} style={{ padding: 4 }}>
+          <TouchableOpacity onPress={handleCloseRequest} style={{ padding: 4 }}>
             <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#95A5A6' }}>✕</Text>
           </TouchableOpacity>
         )}
@@ -574,8 +607,8 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
                   <Text style={{ fontSize: 12, color: '#7F8C8D' }}>{user.telefono}</Text>
                 </View>
               </View>
-              <TouchableOpacity 
-                onPress={logout}  
+              <TouchableOpacity
+                onPress={logout}
                 style={{ alignSelf: 'flex-end' }}
               >
                 <Text style={{ fontSize: 12, color: '#E74C3C' }}>No soy yo</Text>
@@ -597,11 +630,11 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
               <Input label="Apellido Paterno" placeholder="Ej. Pérez" value={apellidoPaterno} onChangeText={handleApellidoPaternoChange} error={errors.apellidoPaterno} required />
               <Input label="Apellido Materno (Opcional)" placeholder="Ej. López" value={apellidoMaterno} onChangeText={handleApellidoMaternoChange} error={errors.apellidoMaterno} />
               <Input label="Correo Electrónico (Opcional)" placeholder="Ej. correo@ejemplo.com" value={email} onChangeText={handleEmailChange} error={errors.email} keyboardType="email-address" autoCapitalize="none" />
-              <TouchableOpacity 
+              <TouchableOpacity
                 onPress={() => {
                   if (onClose) onClose();
                   router.push('/login');
-                }} 
+                }}
                 style={{ alignItems: 'center', paddingVertical: 8, marginBottom: 8 }}
               >
                 <Text style={{ color: '#3498DB', fontSize: 13, fontWeight: '600' }}>¿Tienes cuenta? Inicia sesión</Text>
@@ -643,7 +676,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
                 <>
                   {renderSelector('Categoría', ['Ave', 'Reptil', 'Roedor', 'Fauna silvestre', 'Otro'], subcategoria, (val: any) => { setSubcategoria(val); setErrors(prev => ({ ...prev, subcategoria: '' })); }, errors.subcategoria)}
                   {subcategoria === 'Otro' && (
-                    <Input label="Describe la especie *" placeholder="Ej. Tlacuache, caballo, etc." value={especieDescripcion} onChangeText={(val) => { setEspecieDescripcion(val); if(val.trim()) setErrors(prev => ({ ...prev, especieDescripcion: '' })); }} error={errors.especieDescripcion} />
+                    <Input label="Describe la especie *" placeholder="Ej. Tlacuache, caballo, etc." value={especieDescripcion} onChangeText={(val) => { setEspecieDescripcion(val); if (val.trim()) setErrors(prev => ({ ...prev, especieDescripcion: '' })); }} error={errors.especieDescripcion} />
                   )}
                 </>
               )}
@@ -761,6 +794,11 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
           <Input label="Referencia (Opcional)" placeholder="Ej. Frente a la tienda de abarrotes..." value={referencia} onChangeText={setReferencia} />
         </Card>
 
+        {showSubmitError && (
+          <Text style={{ color: '#E74C3C', textAlign: 'center', marginBottom: 12, fontWeight: '600', fontSize: 14 }}>
+            Faltan campos por llenar
+          </Text>
+        )}
         <Button label="Enviar Reporte" onPress={() => handleSubmit(false)} />
       </ScrollView>
 
@@ -782,20 +820,20 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
             )}
 
             {duplicadoInfo && (
-            <Text style={{ fontSize: 14, color: '#566573', textAlign: 'center', marginBottom: 24, lineHeight: 20 }}>
-              {'Se reportó un '}
-              {duplicadoInfo.existente.tipo_animal || 'animal'}
-              {' en condición '}
-              {duplicadoInfo.existente.condicion || 'desconocida'}
-              {' en '}
-              {duplicadoInfo.existente.colonia || duplicadoInfo.existente.municipio || 'esta zona'}
-              {' hace '}
-              {duplicadoInfo.tiempoTexto}
-              {'.'}
-              {'\n\n'}
-              {'¿Es el mismo animal?'}
-            </Text>
-          )}
+              <Text style={{ fontSize: 14, color: '#566573', textAlign: 'center', marginBottom: 24, lineHeight: 20 }}>
+                {'Se reportó un '}
+                {duplicadoInfo.existente.tipo_animal || 'animal'}
+                {' en condición '}
+                {duplicadoInfo.existente.condicion || 'desconocida'}
+                {' en '}
+                {duplicadoInfo.existente.colonia || duplicadoInfo.existente.municipio || 'esta zona'}
+                {' hace '}
+                {duplicadoInfo.tiempoTexto}
+                {'.'}
+                {'\n\n'}
+                {'¿Es el mismo animal?'}
+              </Text>
+            )}
 
             <TouchableOpacity
               onPress={() => {
@@ -825,7 +863,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
         </View>
       </Modal>
 
-      <Modal visible={resultadoEnvio !== null} transparent animationType="fade" onRequestClose={() => {}}>
+      <Modal visible={resultadoEnvio !== null} transparent animationType="fade" onRequestClose={() => { }}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 24 }}>
           <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16, padding: 28 }}>
             <Text style={{ fontSize: 18, fontWeight: '700', color: '#2C3E50', textAlign: 'center', marginBottom: 12 }}>
@@ -841,8 +879,29 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
               }}
               style={{ backgroundColor: '#3498DB', paddingVertical: 14, borderRadius: 12, alignItems: 'center' }}
             >
-              <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 16 }}>Entendido</Text>
+              <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 15 }}>Entendido</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={showCloseConfirm} transparent animationType="fade" onRequestClose={() => setShowCloseConfirm(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 24 }}>
+          <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16, padding: 24 }}>
+            <Text style={{ fontSize: 18, fontWeight: '700', color: '#2C3E50', textAlign: 'center', marginBottom: 12 }}>
+              ¿Estás seguro de cerrarlo?
+            </Text>
+            <Text style={{ fontSize: 14, color: '#566573', textAlign: 'center', marginBottom: 24 }}>
+              Los datos ingresados se perderán y tendrás que empezar de nuevo.
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <TouchableOpacity onPress={() => setShowCloseConfirm(false)} style={{ flex: 1, paddingVertical: 12, borderRadius: 8, borderWidth: 1, borderColor: '#BDC3C7', alignItems: 'center' }}>
+                <Text style={{ color: '#7F8C8D', fontWeight: '600' }}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => { setShowCloseConfirm(false); if (onClose) onClose(); }} style={{ flex: 1, paddingVertical: 12, borderRadius: 8, backgroundColor: '#E74C3C', alignItems: 'center' }}>
+                <Text style={{ color: '#FFFFFF', fontWeight: '600' }}>Sí, cerrar</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
