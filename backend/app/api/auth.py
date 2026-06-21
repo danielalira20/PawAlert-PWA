@@ -1,4 +1,3 @@
-
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, EmailStr
 from app.db.supabase import supabase, supabase_admin, get_fresh_client
@@ -104,14 +103,18 @@ async def login(body: LoginRequest):
         raise HTTPException(status_code=401, detail="Correo o contraseña incorrectos")
 
     resultado = supabase.table("usuarios").select(
-        "id, nombre, apellido_paterno, apellido_materno, email, telefono, asociacion_id"
+        "id, nombre, apellido_paterno, apellido_materno, email, telefono, asociacion_id, roles(nombre)"
     ).eq("auth_user_id", response.user.id).execute()
 
     if not resultado.data:
         raise HTTPException(status_code=404, detail="Usuario no encontrado en el sistema")
 
+    usuario_data = resultado.data[0]
+    rol = usuario_data.pop("roles", None)
+    usuario_data["es_admin"] = bool(rol and rol.get("nombre") == "admin")
+
     return {
         "access_token": response.session.access_token,
         "token_type": "bearer",
-        "usuario": resultado.data[0]
+        "usuario": usuario_data
     }
