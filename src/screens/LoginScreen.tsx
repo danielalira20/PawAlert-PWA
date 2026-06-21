@@ -2,6 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Alert, SafeAreaView, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../context/AuthContext';
+import { validarPassword } from '../utils/validators';
 
 type Tab = 'login' | 'register';
 
@@ -56,8 +57,9 @@ export default function LoginScreen() {
       Alert.alert('Error', 'Las contraseñas no coinciden.');
       return;
     }
-    if (regPassword.length < 6) {
-      Alert.alert('Error', 'La contraseña debe tener al menos 6 caracteres.');
+    const resultadoPassword = validarPassword(regPassword);
+    if (!resultadoPassword.valido) {
+      Alert.alert('Error', resultadoPassword.mensaje);
       return;
     }
     setIsLoading(true);
@@ -146,7 +148,7 @@ export default function LoginScreen() {
               <TextInput placeholder="correo@ejemplo.com" keyboardType="email-address" autoCapitalize="none"
                 value={regEmail} onChangeText={setRegEmail} style={inputStyle} />
               <Text style={labelStyle}>Contraseña *</Text>
-              <TextInput placeholder="Mínimo 6 caracteres" secureTextEntry value={regPassword} onChangeText={setRegPassword} style={inputStyle} />
+              <TextInput placeholder="8+ caracteres, mayúscula, minúscula y número" secureTextEntry value={regPassword} onChangeText={setRegPassword} style={inputStyle} />
               <Text style={labelStyle}>Confirmar Contraseña *</Text>
               <TextInput placeholder="Repite tu contraseña" secureTextEntry value={regPassword2} onChangeText={setRegPassword2}
                 style={{ ...inputStyle, marginBottom: 24 }} />

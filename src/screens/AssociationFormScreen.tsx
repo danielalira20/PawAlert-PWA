@@ -1,3 +1,4 @@
+
 import axios from 'axios';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
@@ -10,6 +11,7 @@ import { Input } from '../components/ui/Input';
 import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
 import LocationPickerMap from './LocationPickerMap';
+import { validarPassword } from '../utils/validators';
 
 type TipoAnimal = 'perro' | 'gato' | 'ave' | 'otro';
 
@@ -243,7 +245,6 @@ export default function AssociationFormScreen({ onClose }: Props) {
             latitud: currentLocation.coords.latitude,
             longitud: currentLocation.coords.longitude,
           });
-          setUbicacionConfirmada(true);
           reverseGeocode(currentLocation.coords.latitude, currentLocation.coords.longitude);
         }
       } catch {
@@ -319,8 +320,9 @@ export default function AssociationFormScreen({ onClose }: Props) {
 
     if (!password.trim()) {
       newErrors.password = 'La contraseña es obligatoria.';
-    } else if (password.length < 6) {
-      newErrors.password = 'La contraseña debe tener al menos 6 caracteres.';
+    } else {
+      const resultadoPassword = validarPassword(password);
+      if (!resultadoPassword.valido) newErrors.password = resultadoPassword.mensaje;
     }
     if (password !== password2) {
       newErrors.password2 = 'Las contraseñas no coinciden.';
@@ -449,7 +451,10 @@ export default function AssociationFormScreen({ onClose }: Props) {
           <Text style={{ fontSize: 12, color: '#7F8C8D', marginBottom: 16 }}>Con esta contraseña podrás iniciar sesión y gestionar tu asociación.</Text>
           <Input label="Teléfono de contacto" placeholder="Ej. 2221234567" value={telefono} onChangeText={setTelefono} error={errors.telefono} keyboardType="numeric" maxLength={10} required />
           <Input label="Correo Electrónico de contacto" placeholder="Ej. contacto@asociacion.org" value={email} onChangeText={setEmail} error={errors.email} keyboardType="email-address" autoCapitalize="none" required />
-          <Input label="Contraseña" placeholder="Mínimo 6 caracteres" value={password} onChangeText={setPassword} error={errors.password} secureTextEntry required />
+          <Input label="Contraseña" placeholder="8+ caracteres, mayúscula, minúscula y número" value={password} onChangeText={setPassword} error={errors.password} secureTextEntry required />
+          <Text style={{ fontSize: 11, color: '#95A5A6', marginTop: -8, marginBottom: 12 }}>
+            Mínimo 8 caracteres, con al menos una mayúscula, una minúscula y un número.
+          </Text>
           <Input label="Confirmar Contraseña" placeholder="Repite tu contraseña" value={password2} onChangeText={setPassword2} error={errors.password2} secureTextEntry required />
 
           <View style={{ marginBottom: 16 }}>
