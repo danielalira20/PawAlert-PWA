@@ -1,6 +1,8 @@
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, EmailStr
 from app.db.supabase import supabase, supabase_admin, get_fresh_client
+from app.utils.validators import validar_telefono, validar_password
 
 router = APIRouter()
 
@@ -22,8 +24,12 @@ class LoginRequest(BaseModel):
 @router.post("/register", status_code=201)
 async def register(body: RegisterRequest):
     telefono_limpio = body.telefono.replace(" ", "").replace("-", "")
-    if not telefono_limpio.isdigit() or len(telefono_limpio) != 10:
-        raise HTTPException(status_code=422, detail="El teléfono debe tener exactamente 10 dígitos")
+    if not validar_telefono(telefono_limpio):
+        raise HTTPException(status_code=422, detail="El teléfono debe tener exactamente 10 dígitos numéricos.")
+
+    password_valida, password_mensaje = validar_password(body.password)
+    if not password_valida:
+        raise HTTPException(status_code=422, detail=password_mensaje)
 
     existe = supabase.table("usuarios").select("id, auth_user_id").eq("telefono", telefono_limpio).execute()
 
