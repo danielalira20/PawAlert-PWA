@@ -1,9 +1,11 @@
+
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Header
 from pydantic import BaseModel
 from typing import Optional, List
 from app.db.supabase import supabase, supabase_admin, get_fresh_client
 from app.services.storage_service import subir_foto
 from app.services.report_service import obtener_id_catalogo
+from app.utils.validators import validar_telefono, validar_email
 import json
 
 router = APIRouter()
@@ -54,6 +56,24 @@ async def create_association(
     fotos_descripciones: Optional[str] = Form(None),
     fotos_ordenes: Optional[str] = Form(None),
 ):
+    if not validar_telefono(contacto_telefono):
+        raise HTTPException(
+            status_code=422,
+            detail="El teléfono debe tener exactamente 10 dígitos numéricos."
+        )
+
+    if not validar_email(contacto_email):
+        raise HTTPException(
+            status_code=422,
+            detail="Ingresa un correo electrónico válido."
+        )
+
+    if len(password) < 6:
+        raise HTTPException(
+            status_code=422,
+            detail="La contraseña debe tener al menos 6 caracteres."
+        )
+
     # Subir logo si existe
     logo_url = None
     if logo and logo.filename:
@@ -257,6 +277,11 @@ class NuevoRepresentante(BaseModel):
 
 @router.post("/{asociacion_id}/representantes", status_code=201)
 async def agregar_representante(asociacion_id: str, body: NuevoRepresentante, authorization: str = Header(None)):
+    """Permite a un representante ya logueado agregar a alguien más como
+    representante de la misma asociación. No crea contraseña aquí — solo deja
+    la fila lista para que esa persona se registre normal en /auth/register
+    con el mismo teléfono, momento en el que el flujo de reclamo de cuenta
+    de invitado (ya existente) la vincula automáticamente."""
     usuario = _obtener_usuario_autenticado(authorization)
 
     if usuario.get("asociacion_id") != asociacion_id:
@@ -267,6 +292,11 @@ async def agregar_representante(asociacion_id: str, body: NuevoRepresentante, au
         raise HTTPException(status_code=403, detail="Tu asociación todavía no ha sido aprobada")
 
     telefono_limpio = body.telefono.replace(" ", "").replace("-", "")
+    if not validar_telefono(telefono_limpio):
+        raise HTTPException(status_code=422, detail="El teléfono debe tener exactamente 10 dígitos numéricos.")
+    if body.email and not validar_email(body.email):
+        raise HTTPException(status_code=422, detail="Ingresa un correo electrónico válido.")
+
     existente = supabase.table("usuarios").select("id, auth_user_id").eq(
         "telefono", telefono_limpio
     ).execute()
