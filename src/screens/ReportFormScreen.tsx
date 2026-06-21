@@ -36,7 +36,7 @@ interface ReportFormScreenProps {
 }
 
 export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
-  const { user, isLoggedIn } = useAuth();
+  const { user, isLoggedIn, logout } = useAuth();
 
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
@@ -57,6 +57,13 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
       setApellidoMaterno(user.apellido_materno ?? '');
       setTelefono(user.telefono);
       setEmail(user.email);
+    } else {
+      // ← limpiar cuando cierra sesión
+      setNombre('');
+      setApellidoPaterno('');
+      setApellidoMaterno('');
+      setTelefono('');
+      setEmail('');
     }
   }, [isLoggedIn, user]);
 
@@ -530,7 +537,10 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
                   <Text style={{ fontSize: 12, color: '#7F8C8D' }}>{user.telefono}</Text>
                 </View>
               </View>
-              <TouchableOpacity onPress={() => router.push('/login')} style={{ alignSelf: 'flex-end' }}>
+              <TouchableOpacity 
+                onPress={logout}  
+                style={{ alignSelf: 'flex-end' }}
+              >
                 <Text style={{ fontSize: 12, color: '#E74C3C' }}>No soy yo</Text>
               </TouchableOpacity>
             </View>
@@ -550,7 +560,13 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
               <Input label="Apellido Paterno" placeholder="Ej. Pérez" value={apellidoPaterno} onChangeText={setApellidoPaterno} error={errors.apellidoPaterno} required />
               <Input label="Apellido Materno (Opcional)" placeholder="Ej. López" value={apellidoMaterno} onChangeText={setApellidoMaterno} />
               <Input label="Correo Electrónico (Opcional)" placeholder="Ej. correo@ejemplo.com" value={email} onChangeText={setEmail} error={errors.email} keyboardType="email-address" autoCapitalize="none" />
-              <TouchableOpacity onPress={() => router.push('/login')} style={{ alignItems: 'center', paddingVertical: 8, marginBottom: 8 }}>
+              <TouchableOpacity 
+                onPress={() => {
+                  if (onClose) onClose();
+                  router.push('/login');
+                }} 
+                style={{ alignItems: 'center', paddingVertical: 8, marginBottom: 8 }}
+              >
                 <Text style={{ color: '#3498DB', fontSize: 13, fontWeight: '600' }}>¿Tienes cuenta? Inicia sesión</Text>
               </TouchableOpacity>
             </>
