@@ -22,7 +22,6 @@
 
 import { Platform } from 'react-native'
 
-// Cambiar este valor por la IP local de quien esté corriendo el backend
 const LOCAL_IP = '192.168.0.187'
 
 const DEV_URL = Platform.select({
@@ -31,6 +30,6 @@ const DEV_URL = Platform.select({
   default: 'http://localhost:8000'
 })
 
-const PROD_URL = '' // URL pública de Railway (se llena este sábado tras el deploy)
+const PROD_URL = 'https://pawalert-pwa-production.up.railway.app'
 
 export const API_URL = __DEV__ ? DEV_URL : PROD_URL
