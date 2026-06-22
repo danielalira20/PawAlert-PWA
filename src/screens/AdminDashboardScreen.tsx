@@ -1,4 +1,3 @@
-
 import axios from 'axios';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -16,7 +15,12 @@ interface AsociacionPendiente {
   created_at: string;
 }
 
-export default function AdminDashboardScreen() {
+// 1. Agregamos la interfaz para recibir onClose
+interface Props {
+  onClose?: () => void;
+}
+
+export default function AdminDashboardScreen({ onClose }: Props) {
   const { token, logout } = useAuth();
   const [asociaciones, setAsociaciones] = useState<AsociacionPendiente[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -88,9 +92,17 @@ export default function AdminDashboardScreen() {
     <View style={{ flex: 1, backgroundColor: '#F5F5F5' }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#E5E7EB' }}>
         <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#2C3E50' }}>Panel de Administrador</Text>
-        <TouchableOpacity onPress={handleLogout}>
-          <Text style={{ color: '#E74C3C', fontSize: 13, fontWeight: '600' }}>Cerrar sesión</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+          <TouchableOpacity onPress={handleLogout}>
+            <Text style={{ color: '#E74C3C', fontSize: 13, fontWeight: '600' }}>Salir</Text>
+          </TouchableOpacity>
+          {/* Botón para cerrar la tarjeta */}
+          {onClose && (
+            <TouchableOpacity onPress={onClose} style={{ padding: 4 }}>
+              <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#95A5A6' }}>✕</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={{ padding: 24 }}>
