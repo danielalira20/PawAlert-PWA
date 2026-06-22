@@ -31,20 +31,18 @@ export default function MapScreen() {
     }
   };
 
-  useEffect(() => {
-    setIsClient(true);
-  }, []);
+  const fetchReportes = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/reports`);
+      const validReports = response.data.filter((r: Reporte) => r.latitud && r.longitud);
+      setReportes(validReports);
+    } catch (error) {
+      console.error("Error cargando reportes reales:", error);
+    }
+  };
 
   useEffect(() => {
-    const fetchReportes = async () => {
-      try {
-        const response = await axios.get(`${API_URL}/reports`);
-        const validReports = response.data.filter((r: Reporte) => r.latitud && r.longitud);
-        setReportes(validReports);
-      } catch (error) {
-        console.error("Error cargando reportes reales:", error);
-      }
-    };
+    setIsClient(true);
     fetchReportes();
   }, []);
 
@@ -171,7 +169,12 @@ export default function MapScreen() {
       >
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 16, paddingTop: 60, paddingBottom: 40 }}>
           <View style={{ flex: 1, backgroundColor: '#F5F5F5', borderRadius: 20, overflow: 'hidden' }}>
-            <ReportFormScreen onClose={() => setIsFormVisible(false)} />
+            <ReportFormScreen
+              onClose={() => {
+                setIsFormVisible(false);
+                setTimeout(fetchReportes, 400);
+              }}
+            />
           </View>
         </View>
       </Modal>

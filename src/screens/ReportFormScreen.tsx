@@ -955,7 +955,9 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
             <TouchableOpacity
               onPress={() => {
                 setResultadoEnvio(null);
-                if (onClose) onClose();
+                setTimeout(() => {
+                  if (onClose) onClose();
+                }, 300);
               }}
               style={{ backgroundColor: '#3498DB', paddingVertical: 14, borderRadius: 12, alignItems: 'center' }}
             >
