@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Image, ScrollView, Text, TouchableOpacity, View, Modal, TextInput } from 'react-native';
+import { ActivityIndicator, Alert, Image, ScrollView, Text, TouchableOpacity, View, Modal, TextInput, Dimensions } from 'react-native';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
@@ -25,6 +25,7 @@ interface ReporteAsignado {
   calle: string | null;
   created_at: string;
   foto_url: string | null;
+  fotos_urls: string[];
   animal: {
     tipo_animal: string | null;
     condicion: string | null;
@@ -36,6 +37,14 @@ interface ReporteAsignado {
 }
 
 type FiltroAsignacion = 'todas' | 'pendientes' | 'aceptadas' | 'rechazadas';
+
+const SHADOW_STYLE = {
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 4 },
+  shadowOpacity: 0.05,
+  shadowRadius: 8,
+  elevation: 3,
+};
 
 export default function AssociationStatusScreen() {
   const { token, logout } = useAuth();
@@ -57,6 +66,12 @@ export default function AssociationStatusScreen() {
   const [reporteRechazoId, setReporteRechazoId] = useState<string | null>(null);
   const [notasRechazo, setNotasRechazo] = useState('');
   const [isRejecting, setIsRejecting] = useState(false);
+
+  // Modal Detalles
+  const [reporteSeleccionado, setReporteSeleccionado] = useState<ReporteAsignado | null>(null);
+  const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
+
+  const screenWidth = Dimensions.get('window').width;
 
   const cargarReportes = async () => {
     setIsLoadingReportes(true);
@@ -229,10 +244,10 @@ export default function AssociationStatusScreen() {
             </Card>
 
             <View style={{ marginBottom: 24 }}>
-              <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#2C3E50', marginBottom: 4 }}>
+              <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#2C3E50', marginBottom: 4 }}>
                 Reportes asignados
               </Text>
-              <Text style={{ fontSize: 12, color: '#7F8C8D', marginBottom: 16 }}>
+              <Text style={{ fontSize: 14, color: '#7F8C8D', marginBottom: 16 }}>
                 Historial y casos pendientes en tu zona.
               </Text>
 
@@ -265,66 +280,82 @@ export default function AssociationStatusScreen() {
                   No hay reportes en esta categoría.
                 </Text>
               ) : (
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'space-between' }}>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'flex-start' }}>
                   {reportesFiltrados.map((reporte) => (
                     <View key={reporte.asignacion_id} style={{
-                      width: '31%',
+                      width: screenWidth > 768 ? '23.5%' : '48%',
                       borderWidth: 1, borderColor: '#ECF0F1', borderRadius: 12,
-                      marginBottom: 12, overflow: 'hidden', backgroundColor: '#FFF'
+                      marginBottom: 16, backgroundColor: '#FFF',
+                      ...SHADOW_STYLE
                     }}>
-                      {reporte.foto_url ? (
-                        <Image
-                          source={{ uri: reporte.foto_url }}
-                          style={{ width: '100%', aspectRatio: 1 }}
-                          resizeMode="cover"
-                        />
-                      ) : (
-                        <View style={{ width: '100%', aspectRatio: 1, backgroundColor: '#EAEDED', alignItems: 'center', justifyContent: 'center' }}>
-                          <Text style={{ color: '#BDC3C7', fontSize: 12 }}>Sin foto</Text>
+                      {/* Floating Badge */}
+                      <View style={{ position: 'relative' }}>
+                        {reporte.foto_url ? (
+                          <Image
+                            source={{ uri: reporte.foto_url }}
+                            style={{ width: '100%', aspectRatio: 1.5, borderTopLeftRadius: 12, borderTopRightRadius: 12 }}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <View style={{ width: '100%', aspectRatio: 1.5, backgroundColor: '#EAEDED', alignItems: 'center', justifyContent: 'center', borderTopLeftRadius: 12, borderTopRightRadius: 12 }}>
+                            <Text style={{ color: '#BDC3C7', fontSize: 13 }}>Sin foto</Text>
+                          </View>
+                        )}
+                        <View style={{
+                          position: 'absolute', top: 10, left: 10,
+                          backgroundColor: reporte.animal?.condicion === 'grave' ? 'rgba(231, 76, 60, 0.9)' : 'rgba(243, 156, 18, 0.9)',
+                          paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12
+                        }}>
+                          <Text style={{ color: '#FFF', fontSize: 13, fontWeight: 'bold', textTransform: 'uppercase' }}>
+                            {reporte.animal?.condicion || 'Desconocida'}
+                          </Text>
                         </View>
-                      )}
-                      <View style={{ padding: 10 }}>
-                        <Text style={{ fontSize: 14, fontWeight: '700', color: '#2C3E50', textTransform: 'capitalize', marginBottom: 2 }} numberOfLines={1}>
+                      </View>
+
+                      <View style={{ padding: 12 }}>
+                        <Text style={{ fontSize: 18, fontWeight: '800', color: '#2C3E50', textTransform: 'capitalize', marginBottom: 4 }} numberOfLines={1}>
                           {reporte.animal?.tipo_animal || 'Animal'}
                         </Text>
-
-                        <Text style={{ fontSize: 11, color: reporte.animal?.condicion === 'grave' ? '#E74C3C' : '#F39C12', fontWeight: '600', marginBottom: 4 }}>
-                          {reporte.animal?.condicion || 'Desconocida'}
-                        </Text>
-
-                        <Text style={{ fontSize: 11, color: '#7F8C8D', marginBottom: 4 }} numberOfLines={2}>
+                        <Text style={{ fontSize: 15, color: '#566573', marginBottom: 4, lineHeight: 18 }} numberOfLines={2}>
                           {[reporte.calle, reporte.colonia, reporte.municipio].filter(Boolean).join(', ')}
                         </Text>
-
-                        <Text style={{ fontSize: 10, color: '#BDC3C7', marginBottom: 8 }}>
+                        <Text style={{ fontSize: 13, color: '#95A5A6', marginBottom: 12 }}>
                           {new Date(reporte.created_at).toLocaleDateString('es-MX', {
                             day: 'numeric', month: 'short'
                           })}
                         </Text>
 
+                        {/* Botón Ver Detalles */}
+                        <TouchableOpacity
+                          onPress={() => { setReporteSeleccionado(reporte); setCurrentPhotoIndex(0); }}
+                          style={{ backgroundColor: '#F0F3F4', paddingVertical: 8, borderRadius: 8, alignItems: 'center', marginBottom: 10 }}
+                        >
+                          <Text style={{ color: '#34495E', fontWeight: '700', fontSize: 15 }}>Ver detalles</Text>
+                        </TouchableOpacity>
+
                         {reporte.estado_asignacion_clave === 'notificada' ? (
-                          <View style={{ flexDirection: 'column', gap: 6 }}>
+                          <View style={{ flexDirection: 'row', gap: 8 }}>
                             <TouchableOpacity
                               onPress={() => handleAccionReporte(reporte.reporte_id, 'accept-staff')}
-                              style={{ backgroundColor: '#27AE60', paddingVertical: 6, borderRadius: 6, alignItems: 'center' }}
+                              style={{ flex: 1, backgroundColor: '#27AE60', paddingVertical: 8, borderRadius: 8, alignItems: 'center' }}
                             >
-                              <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 12 }}>Aceptar</Text>
+                              <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 15 }}>Aceptar</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
                               onPress={() => handleRechazarClick(reporte.reporte_id)}
-                              style={{ borderWidth: 1, borderColor: '#E74C3C', paddingVertical: 6, borderRadius: 6, alignItems: 'center' }}
+                              style={{ flex: 1, borderWidth: 1, borderColor: '#E74C3C', paddingVertical: 8, borderRadius: 8, alignItems: 'center' }}
                             >
-                              <Text style={{ color: '#E74C3C', fontWeight: '700', fontSize: 12 }}>Rechazar</Text>
+                              <Text style={{ color: '#E74C3C', fontWeight: '700', fontSize: 15 }}>Rechazar</Text>
                             </TouchableOpacity>
                           </View>
                         ) : (
                           <View style={{
                             backgroundColor: ['aceptada', 'completada'].includes(reporte.estado_asignacion_clave) ? '#EAFAF1' : '#FDEDEC',
-                            paddingVertical: 6, borderRadius: 6, alignItems: 'center'
+                            paddingVertical: 8, borderRadius: 8, alignItems: 'center'
                           }}>
                             <Text style={{
                               color: ['aceptada', 'completada'].includes(reporte.estado_asignacion_clave) ? '#27AE60' : '#E74C3C',
-                              fontWeight: '700', fontSize: 11, textTransform: 'uppercase'
+                              fontWeight: '800', fontSize: 14, textTransform: 'uppercase'
                             }}>
                               {reporte.estado_asignacion_clave}
                             </Text>
@@ -357,6 +388,90 @@ export default function AssociationStatusScreen() {
           <Text style={{ color: '#95A5A6', fontSize: 14 }}>Cerrar sesión</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Modal Detalles del Reporte */}
+      {reporteSeleccionado && (
+        <Modal visible={true} transparent animationType="slide">
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+            <View style={{ backgroundColor: '#FFF', borderRadius: 16, width: '100%', maxWidth: 500, maxHeight: '90%', overflow: 'hidden' }}>
+              <ScrollView>
+                {(() => {
+                  const fotos = reporteSeleccionado.fotos_urls?.length
+                    ? reporteSeleccionado.fotos_urls
+                    : (reporteSeleccionado.foto_url ? [reporteSeleccionado.foto_url] : []);
+
+                  if (fotos.length > 0) {
+                    return (
+                      <View style={{ width: '100%', height: 300, position: 'relative' }}>
+                        <Image
+                          source={{ uri: fotos[currentPhotoIndex] }}
+                          style={{ width: '100%', height: 300 }}
+                          resizeMode="cover"
+                        />
+                        {fotos.length > 1 && (
+                          <>
+                            <TouchableOpacity
+                              style={{ position: 'absolute', left: 10, top: '50%', marginTop: -20, backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 20, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}
+                              onPress={() => setCurrentPhotoIndex(prev => prev > 0 ? prev - 1 : fotos.length - 1)}
+                            >
+                              <Text style={{ color: '#FFF', fontSize: 24, fontWeight: 'bold' }}>‹</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={{ position: 'absolute', right: 10, top: '50%', marginTop: -20, backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 20, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}
+                              onPress={() => setCurrentPhotoIndex(prev => prev < fotos.length - 1 ? prev + 1 : 0)}
+                            >
+                              <Text style={{ color: '#FFF', fontSize: 24, fontWeight: 'bold' }}>›</Text>
+                            </TouchableOpacity>
+                            <View style={{ position: 'absolute', bottom: 10, width: '100%', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
+                              {fotos.map((_, idx) => (
+                                <View key={idx} style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: idx === currentPhotoIndex ? '#FFF' : 'rgba(255,255,255,0.5)' }} />
+                              ))}
+                            </View>
+                          </>
+                        )}
+                      </View>
+                    );
+                  }
+                  return (
+                    <View style={{ width: '100%', height: 200, backgroundColor: '#EAEDED', alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ color: '#BDC3C7' }}>Sin fotos disponibles</Text>
+                    </View>
+                  );
+                })()}
+
+                <View style={{ padding: 20 }}>
+                  <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#2C3E50', textTransform: 'capitalize', marginBottom: 4 }}>
+                    {reporteSeleccionado.animal?.tipo_animal || 'Animal'}
+                  </Text>
+                  <Text style={{ fontSize: 14, color: reporteSeleccionado.animal?.condicion === 'grave' ? '#E74C3C' : '#F39C12', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: 16 }}>
+                    {reporteSeleccionado.animal?.condicion}
+                  </Text>
+
+                  <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#34495E', marginTop: 8 }}>Detalles Adicionales</Text>
+                  <Text style={{ fontSize: 14, color: '#566573', marginTop: 4 }}>• Tamaño: <Text style={{ fontWeight: '500', textTransform: 'capitalize' }}>{reporteSeleccionado.animal?.tamanio || 'No especificado'}</Text></Text>
+                  <Text style={{ fontSize: 14, color: '#566573', marginTop: 2 }}>• Sexo: <Text style={{ fontWeight: '500', textTransform: 'capitalize' }}>{reporteSeleccionado.animal?.sexo || 'No especificado'}</Text></Text>
+                  <Text style={{ fontSize: 14, color: '#566573', marginTop: 2 }}>• Edad: <Text style={{ fontWeight: '500', textTransform: 'capitalize' }}>{reporteSeleccionado.animal?.edad_aproximada || 'No especificada'}</Text></Text>
+
+                  <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#34495E', marginTop: 16 }}>Descripción del Reporte</Text>
+                  <Text style={{ fontSize: 14, color: '#566573', marginTop: 4, lineHeight: 20 }}>{reporteSeleccionado.animal?.descripcion || 'Sin descripción adicional brindada por el usuario.'}</Text>
+
+                  <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#34495E', marginTop: 16 }}>Ubicación Exacta</Text>
+                  <Text style={{ fontSize: 14, color: '#566573', marginTop: 4 }}>{[reporteSeleccionado.calle, reporteSeleccionado.colonia, reporteSeleccionado.municipio].filter(Boolean).join(', ')}</Text>
+                </View>
+              </ScrollView>
+
+              <View style={{ padding: 16, borderTopWidth: 1, borderColor: '#ECF0F1' }}>
+                <TouchableOpacity
+                  style={{ backgroundColor: '#3498DB', paddingVertical: 12, borderRadius: 8, alignItems: 'center' }}
+                  onPress={() => setReporteSeleccionado(null)}
+                >
+                  <Text style={{ color: '#FFF', fontWeight: 'bold' }}>Cerrar Detalles</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
 
       {/* Modal Rechazo */}
       <Modal visible={showRejectModal} transparent animationType="fade">
