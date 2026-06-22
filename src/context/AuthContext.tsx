@@ -60,17 +60,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setSession = async (usuario: Usuario, accessToken: string) => {
-    setUser(usuario);
-    setToken(accessToken);
-    //await AsyncStorage.setItem(STORAGE_KEY_TOKEN, accessToken);
-    //await AsyncStorage.setItem(STORAGE_KEY_USER, JSON.stringify(usuario));
-    try {
-      await AsyncStorage.setItem(STORAGE_KEY_TOKEN, accessToken);
-      await AsyncStorage.setItem(STORAGE_KEY_USER, JSON.stringify(usuario));
-    } catch (storageError) {
-      console.warn('No se pudo persistir la sesión en AsyncStorage:', storageError);
-    }
-  };
+  setUser(usuario);
+  setToken(accessToken);
+  try {
+    await AsyncStorage.setItem(STORAGE_KEY_TOKEN, accessToken);
+    await AsyncStorage.setItem(STORAGE_KEY_USER, JSON.stringify(usuario));
+  } catch {
+    // Si falla el storage local, la sesión sigue activa en memoria
+  }
+};
 
   const login = async (email: string, password: string) => {
     const res = await axios.post(`${API_URL}/auth/login`, { email, password });

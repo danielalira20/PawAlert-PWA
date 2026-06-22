@@ -1,14 +1,19 @@
-import React, { useRef, useEffect } from 'react';
-import { Animated, View, Text, TouchableOpacity, Image, Platform, Dimensions } from 'react-native';
+import React, { useRef, useEffect, useState } from 'react';
+import { Animated, View, Text, TouchableOpacity, Image, Platform, Dimensions, Modal } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
+// Importamos la pantalla del administrador
+import AdminDashboardScreen from '../../screens/AdminDashboardScreen'; // Asegúrate de que esta ruta sea correcta
 
 const { width } = Dimensions.get('window');
 const isWeb = Platform.OS === 'web';
 
 export default function ProfileScreen() {
   const { user, isLoggedIn, logout } = useAuth();
+  
+  // Estado para controlar el Modal
+  const [isAdminVisible, setIsAdminVisible] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(24)).current;
@@ -111,10 +116,10 @@ export default function ProfileScreen() {
           ))}
         </View>
 
-        {/* Admin link */}
+        {/* Admin link: Modificado para abrir el Modal */}
         {user.es_admin && (
           <TouchableOpacity
-            onPress={() => router.push('/admin')}
+            onPress={() => setIsAdminVisible(true)}
             style={{ backgroundColor: '#FFFFFF', borderRadius: 20, padding: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: '#DBEAFE' }}
             activeOpacity={0.8}
           >
@@ -138,6 +143,18 @@ export default function ProfileScreen() {
           <Text style={{ color: '#EF4444', fontSize: 15, fontWeight: '700' }}>Cerrar sesión</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Modal para el Panel de Administrador */}
+      <Modal visible={isAdminVisible} animationType="slide" transparent onRequestClose={() => setIsAdminVisible(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 16, paddingTop: 60, paddingBottom: 40 }}>
+          <View style={{ flex: 1, backgroundColor: '#F5F5F5', borderRadius: 20, overflow: 'hidden' }}>
+            {isAdminVisible && (
+              <AdminDashboardScreen onClose={() => setIsAdminVisible(false)} />
+            )}
+          </View>
+        </View>
+      </Modal>
+
     </Animated.View>
   );
 }
