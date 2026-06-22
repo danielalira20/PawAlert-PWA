@@ -1,7 +1,7 @@
+import { Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Dimensions, Image, Modal, Text, TouchableOpacity, View } from 'react-native';
 import MapView, { Marker, Region } from 'react-native-maps';
@@ -10,7 +10,6 @@ import { Card } from '../components/ui/Card';
 import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
 import { Reporte } from '../types/reporte';
-import AssociationFormScreen from './AssociationFormScreen';
 import ReportFormScreen from './ReportFormScreen';
 
 const { width, height } = Dimensions.get('window');
@@ -23,12 +22,11 @@ const INITIAL_REGION: Region = {
 };
 
 export default function MapScreen() {
-  const { user, isLoggedIn, logout } = useAuth();
+  const { isLoggedIn } = useAuth();
   const [reportes, setReportes] = useState<Reporte[]>([]);
   const [selectedReport, setSelectedReport] = useState<Reporte | null>(null);
   const [isFormVisible, setIsFormVisible] = useState(false);
   const [isAuthGateVisible, setIsAuthGateVisible] = useState(false);
-  const [isAssociationFormVisible, setIsAssociationFormVisible] = useState(false);
 
   const handleCrearReporte = () => {
     if (isLoggedIn) {
@@ -83,23 +81,6 @@ export default function MapScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: 'white' }}>
 
-      <View style={{ position: 'absolute', top: 60, right: 16, zIndex: 2000, flexDirection: 'row', gap: 8 }}>
-        {isLoggedIn && user ? (
-          <>
-            <View style={{ backgroundColor: '#1ABC9C', paddingVertical: 8, paddingHorizontal: 18, borderRadius: 30, elevation: 5 }}>
-              <Text style={{ fontSize: 13, fontWeight: '700', color: '#FFFFFF' }}>{user.nombre}</Text>
-            </View>
-            <TouchableOpacity onPress={logout} style={{ backgroundColor: '#E74C3C', paddingVertical: 8, paddingHorizontal: 18, borderRadius: 30, elevation: 5 }}>
-              <Text style={{ fontSize: 13, fontWeight: '700', color: '#FFFFFF' }}>Salir</Text>
-            </TouchableOpacity>
-          </>
-        ) : (
-          <TouchableOpacity onPress={() => router.push('/login')} style={{ backgroundColor: '#1ABC9C', paddingVertical: 8, paddingHorizontal: 18, borderRadius: 30, elevation: 5 }}>
-            <Text style={{ fontSize: 13, fontWeight: '700', color: '#FFFFFF' }}>Iniciar sesión</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-
       <MapView
         style={{ width, height }}
         initialRegion={INITIAL_REGION}
@@ -112,7 +93,7 @@ export default function MapScreen() {
               latitude: reporte.latitud as number,
               longitude: reporte.longitud as number,
             }}
-            pinColor={getMarkerColor(reporte.estado ?? '')}
+            pinColor={getMarkerColor(reporte.estado_reporte ?? '')}
             onPress={(e) => {
               e.stopPropagation();
               setSelectedReport(reporte);
@@ -132,8 +113,8 @@ export default function MapScreen() {
               />
               <View style={{ flex: 1, marginLeft: 16, justifyContent: 'center' }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <Text style={{ backgroundColor: getMarkerColor(selectedReport.estado ?? ''), color: 'white', fontSize: 10, fontWeight: 'bold', paddingVertical: 4, paddingHorizontal: 8, borderRadius: 8 }}>
-                    {getEstadoLabel(selectedReport.estado ?? '')}
+                  <Text style={{ backgroundColor: getMarkerColor(selectedReport.estado_reporte ?? ''), color: 'white', fontSize: 10, fontWeight: 'bold', paddingVertical: 4, paddingHorizontal: 8, borderRadius: 8 }}>
+                    {getEstadoLabel(selectedReport.estado_reporte ?? '')}
                   </Text>
                   <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                     <View style={{ backgroundColor: getCondicionColor(selectedReport.condicion ?? ''), width: 10, height: 10, borderRadius: 5, marginRight: 4 }} />
@@ -158,57 +139,36 @@ export default function MapScreen() {
         onGuest={() => setIsFormVisible(true)}
       />
 
+      {/* FAB: + Crear Reporte (Circular y con iconos) */}
       <TouchableOpacity
         onPress={handleCrearReporte}
         style={{
           position: 'absolute',
-          bottom: selectedReport ? 140 : 30,
+          bottom: selectedReport ? 160 : 40,
           right: 20,
           backgroundColor: '#3498DB',
-          paddingVertical: 12,
-          paddingHorizontal: 20,
-          borderRadius: 30,
-          elevation: 5,
+          width: 64,
+          height: 64,
+          borderRadius: 32,
+          justifyContent: 'center',
+          alignItems: 'center',
+          flexDirection: 'row',
+          elevation: 6,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 3 },
+          shadowOpacity: 0.3,
+          shadowRadius: 4,
           zIndex: 1000,
         }}
       >
-        <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>
-          + Crear Reporte
-        </Text>
+        <Ionicons name="paw" size={20} color="#FFFFFF" style={{ marginRight: -4 }} />
+        <Ionicons name="add" size={26} color="#FFFFFF" />
       </TouchableOpacity>
 
       <Modal visible={isFormVisible} animationType="slide" transparent onRequestClose={() => setIsFormVisible(false)}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 16, paddingTop: 60, paddingBottom: 40 }}>
           <View style={{ flex: 1, backgroundColor: '#F5F5F5', borderRadius: 20, overflow: 'hidden' }}>
             <ReportFormScreen onClose={() => setIsFormVisible(false)} />
-          </View>
-        </View>
-      </Modal>
-
-      <TouchableOpacity
-        onPress={() => setIsAssociationFormVisible(true)}
-        style={{
-          position: 'absolute',
-          bottom: selectedReport ? 140 : 30,
-          right: 20,
-          marginBottom: 60,
-          backgroundColor: '#27AE60',
-          paddingVertical: 12,
-          paddingHorizontal: 20,
-          borderRadius: 30,
-          elevation: 5,
-          zIndex: 1000,
-        }}
-      >
-        <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>
-          + Registrar Asociación
-        </Text>
-      </TouchableOpacity>
-
-      <Modal visible={isAssociationFormVisible} animationType="slide" transparent onRequestClose={() => setIsAssociationFormVisible(false)}>
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 16, paddingTop: 60, paddingBottom: 40 }}>
-          <View style={{ flex: 1, backgroundColor: '#F5F5F5', borderRadius: 20, overflow: 'hidden' }}>
-            <AssociationFormScreen onClose={() => setIsAssociationFormVisible(false)} />
           </View>
         </View>
       </Modal>
