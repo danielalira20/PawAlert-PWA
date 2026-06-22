@@ -20,8 +20,16 @@ export default function LocationPickerMap({ onLocationSelect, selectedPosition }
   useEffect(() => {
     if (!isClient || !mapRef.current) return
 
+    // Inyectar el CSS de Leaflet desde CDN para evitar el bug de Metro Bundler en Web
+    const link = document.createElement('link')
+    link.rel = 'stylesheet'
+    link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'
+    link.crossOrigin = ''
+    document.head.appendChild(link)
+
     import('leaflet').then(L => {
-      import('leaflet/dist/leaflet.css')
+      // Ya no importamos el CSS localmente
+      // import('leaflet/dist/leaflet.css')
 
       const startCenter: [number, number] = selectedPosition
         ? [selectedPosition.latitud, selectedPosition.longitud]
@@ -66,6 +74,11 @@ export default function LocationPickerMap({ onLocationSelect, selectedPosition }
         map.remove()
       }
     })
+
+    // Limpiar el CSS al desmontar el componente (opcional pero buena práctica)
+    return () => {
+      document.head.removeChild(link)
+    }
   }, [isClient])
 
   useEffect(() => {
