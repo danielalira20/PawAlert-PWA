@@ -76,6 +76,7 @@ export default function LoginScreen() {
       showSuccessAndRedirect('¡Cuenta creada! Redirigiendo...', destino);
     } catch (error: any) {
       Alert.alert('Error', error?.response?.data?.detail || 'Error al crear la cuenta');
+      
     } finally {
       setIsLoading(false);
     }

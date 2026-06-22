@@ -62,8 +62,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const setSession = async (usuario: Usuario, accessToken: string) => {
     setUser(usuario);
     setToken(accessToken);
-    await AsyncStorage.setItem(STORAGE_KEY_TOKEN, accessToken);
-    await AsyncStorage.setItem(STORAGE_KEY_USER, JSON.stringify(usuario));
+    //await AsyncStorage.setItem(STORAGE_KEY_TOKEN, accessToken);
+    //await AsyncStorage.setItem(STORAGE_KEY_USER, JSON.stringify(usuario));
+    try {
+      await AsyncStorage.setItem(STORAGE_KEY_TOKEN, accessToken);
+      await AsyncStorage.setItem(STORAGE_KEY_USER, JSON.stringify(usuario));
+    } catch (storageError) {
+      console.warn('No se pudo persistir la sesión en AsyncStorage:', storageError);
+    }
   };
 
   const login = async (email: string, password: string) => {
