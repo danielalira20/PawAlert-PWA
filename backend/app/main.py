@@ -20,5 +20,9 @@ app.include_router(users.router, prefix="/users", tags=["Usuarios"])
 app.include_router(report_acceptance.router, prefix="/reports", tags=["Aceptación"])
 app.include_router(admin.router, prefix="/admin", tags=["Administración"])
 @app.get("/")
-def health_check():
+def root():
     return {"status": "ok", "message": "PawAlert API corriendo"}
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
