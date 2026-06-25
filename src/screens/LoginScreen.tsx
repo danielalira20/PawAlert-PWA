@@ -1,6 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, Alert, SafeAreaView, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, SafeAreaView, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Toast, useToast } from '../components/Toast';
 import { useAuth } from '../context/AuthContext';
 import { validarPassword } from '../utils/validators';
 
@@ -8,6 +9,7 @@ type Tab = 'login' | 'register';
 
 export default function LoginScreen() {
   const { login, register } = useAuth();
+  const { toast, translateY, showToast } = useToast();
   const params = useLocalSearchParams<{ tab?: string }>();
   const [tab, setTab] = useState<Tab>(params.tab === 'register' ? 'register' : 'login');
   const [isLoading, setIsLoading] = useState(false);
@@ -144,18 +146,17 @@ export default function LoginScreen() {
 
     if (hasErrors) {
       setErrors(prev => ({ ...prev, ...newErrors }));
-      Alert.alert('Datos incompletos', 'Revisa los campos marcados en rojo.');
+      showToast({ type: 'warning', title: 'Datos incompletos', message: 'Revisa los campos marcados en rojo.' });
       return;
     }
 
     setIsLoading(true);
     try {
       const usuario = await login(email.trim(), password);
-      // ¡CORRECCIÓN AQUÍ! Redirigir a '/profile' en lugar de '/perfil'
       const destino = usuario.es_admin ? '/profile' : (usuario.asociacion_id ? '/association-status' : '/');
       showSuccessAndRedirect('¡Bienvenida de vuelta! Redirigiendo...', destino);
     } catch (error: any) {
-      Alert.alert('Error', error?.response?.data?.detail || 'Correo o contraseña incorrectos');
+      showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'Correo o contraseña incorrectos' });
     } finally {
       setIsLoading(false);
     }
@@ -187,7 +188,7 @@ export default function LoginScreen() {
 
     if (hasErrors) {
       setErrors(prev => ({ ...prev, ...newErrors }));
-      Alert.alert('Datos incompletos o inválidos', 'Revisa los campos marcados en rojo.');
+      showToast({ type: 'warning', title: 'Datos incompletos o inválidos', message: 'Revisa los campos marcados en rojo.' });
       return;
     }
 
@@ -201,11 +202,10 @@ export default function LoginScreen() {
         apellido_materno: apellidoMaterno.trim() || undefined,
         telefono: telefono.replace(/\s|-/g, ''),
       });
-      // ¡CORRECCIÓN AQUÍ! Redirigir a '/profile' en lugar de '/perfil'
       const destino = usuario.es_admin ? '/profile' : (usuario.asociacion_id ? '/association-status' : '/');
       showSuccessAndRedirect('¡Cuenta creada! Redirigiendo...', destino);
     } catch (error: any) {
-      Alert.alert('Error', error?.response?.data?.detail || 'Error al crear la cuenta');
+      showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'Error al crear la cuenta' });
     } finally {
       setIsLoading(false);
     }
@@ -219,6 +219,7 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F5F5F5' }}>
+      <Toast toast={toast} translateY={translateY} />
       {successMessage && (
         <View style={{
           position: 'absolute', top: 0, left: 0, right: 0, zIndex: 999,

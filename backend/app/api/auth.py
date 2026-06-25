@@ -85,8 +85,8 @@ async def register(body: RegisterRequest):
             "reportante_apellido_materno": None,
             "reportante_telefono": None,
         }).eq("reportante_telefono", telefono_limpio).is_("usuario_id", "null").execute()
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[WARN] No se pudieron vincular reportes de invitado para {telefono_limpio}: {e}")
 
     login_response = get_fresh_client().auth.sign_in_with_password({
         "email": body.email,
