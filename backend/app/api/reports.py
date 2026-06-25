@@ -1,4 +1,5 @@
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from fastapi.responses import JSONResponse
 from app.models.report import ReportResponse, CondicionEnum, TipoAnimalEnum, TamanioEnum, SexoEnum, EdadEnum, ReportListItem
 from app.services.report_service import crear_reporte, obtener_reportes, cambiar_estado_reporte
 from app.utils.validators import validar_telefono, validar_email
@@ -76,7 +77,7 @@ async def create_report(
             detail="La descripción no puede superar 300 caracteres"
         )
 
-    return await crear_reporte(
+    resultado = await crear_reporte(
         nombre=nombre,
         apellido_paterno=apellido_paterno,
         apellido_materno=apellido_materno,
@@ -107,6 +108,11 @@ async def create_report(
         es_duplicado_confirmado=es_duplicado_confirmado,
         reporte_original_id=reporte_original_id,
     )
+
+    if resultado.get("posible_duplicado"):
+        return JSONResponse(status_code=200, content=resultado)
+
+    return resultado
 
 @router.get("", response_model=list[ReportListItem], status_code=200)
 async def get_reports():

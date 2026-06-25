@@ -13,3 +13,11 @@ export function validarPassword(password: string): { valido: boolean; mensaje: s
   }
   return { valido: true, mensaje: '' };
 }
+
+export function validarTelefono(telefono: string): boolean {
+  return /^\d{10}$/.test(telefono.trim());
+}
+
+export function validarEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+}
