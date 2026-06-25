@@ -75,6 +75,19 @@ async def register(body: RegisterRequest):
         supabase_admin.auth.admin.delete_user(auth_user_id)
         raise HTTPException(status_code=500, detail="Error al guardar datos del usuario")
 
+    # Vincular reportes de invitado creados antes de tener cuenta (M-03)
+    nuevo_usuario_id = usuario.data[0]["id"]
+    try:
+        supabase.table("reportes").update({
+            "usuario_id": nuevo_usuario_id,
+            "reportante_nombre": None,
+            "reportante_apellido_paterno": None,
+            "reportante_apellido_materno": None,
+            "reportante_telefono": None,
+        }).eq("reportante_telefono", telefono_limpio).is_("usuario_id", "null").execute()
+    except Exception:
+        pass
+
     login_response = get_fresh_client().auth.sign_in_with_password({
         "email": body.email,
         "password": body.password,

@@ -8,11 +8,12 @@ router = APIRouter()
 
 @router.post("", status_code=201)
 async def create_report(
-    nombre: str = Form(...),
-    apellido_paterno: str = Form(...),
+    nombre: Optional[str] = Form(None),
+    apellido_paterno: Optional[str] = Form(None),
     apellido_materno: Optional[str] = Form(None),
-    telefono: str = Form(...),
+    telefono: Optional[str] = Form(None),
     email: Optional[str] = Form(None),
+    usuario_id: Optional[str] = Form(None),
     fotos: Optional[List[UploadFile]] = File(None),
     fotos_ordenes: Optional[str] = Form(None),
     condicion: CondicionEnum = Form(...),
@@ -37,7 +38,13 @@ async def create_report(
     es_duplicado_confirmado: Optional[bool] = Form(None),
     reporte_original_id: Optional[str] = Form(None),
 ):
-    if not validar_telefono(telefono):
+    if not usuario_id and not nombre:
+        raise HTTPException(status_code=422, detail="Se requiere nombre o usuario_id")
+
+    if not usuario_id and not telefono:
+        raise HTTPException(status_code=422, detail="Se requiere teléfono o usuario_id")
+
+    if telefono and not validar_telefono(telefono):
         raise HTTPException(
             status_code=422,
             detail="El teléfono debe tener exactamente 10 dígitos numéricos."
@@ -75,6 +82,7 @@ async def create_report(
         apellido_materno=apellido_materno,
         telefono=telefono,
         email=email,
+        usuario_id=usuario_id,
         fotos=fotos,
         fotos_ordenes=fotos_ordenes,
         tipo_animal=tipo_animal,
