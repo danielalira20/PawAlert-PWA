@@ -47,9 +47,9 @@ async def register(body: RegisterRequest):
         })
     except Exception as e:
         msg = str(e).lower()
-        if "already" in msg or "exists" in msg:
-            raise HTTPException(status_code=409, detail="Ya existe una cuenta con ese correo")
-        raise HTTPException(status_code=400, detail=f"Error al crear cuenta: {e}")
+        if any(w in msg for w in ["already", "exists", "registered", "duplicate", "unique"]):
+            raise HTTPException(status_code=409, detail="Ya existe una cuenta con ese correo electrónico.")
+        raise HTTPException(status_code=400, detail="No pudimos crear tu cuenta. Intenta de nuevo.")
 
     auth_user_id = auth_response.user.id
 
