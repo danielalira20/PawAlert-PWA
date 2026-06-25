@@ -22,6 +22,8 @@ export default function MapScreen() {
   const [selectedReport, setSelectedReport] = useState<Reporte | null>(null);
   const [isFormVisible, setIsFormVisible] = useState(false);
   const [isAuthGateVisible, setIsAuthGateVisible] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [, setTick] = useState(0);
 
   const handleCrearReporte = () => {
     if (isLoggedIn) {
@@ -36,6 +38,7 @@ export default function MapScreen() {
       const response = await axios.get(`${API_URL}/reports`);
       const validReports = response.data.filter((r: Reporte) => r.latitud && r.longitud);
       setReportes(validReports);
+      setLastUpdated(new Date());
     } catch (error) {
       console.error("Error cargando reportes reales:", error);
     }
@@ -44,6 +47,12 @@ export default function MapScreen() {
   useEffect(() => {
     setIsClient(true);
     fetchReportes();
+    const fetchInterval = setInterval(fetchReportes, 600000);
+    const tickInterval = setInterval(() => setTick((t) => t + 1), 60000);
+    return () => {
+      clearInterval(fetchInterval);
+      clearInterval(tickInterval);
+    };
   }, []);
 
   const getMarkerColor = (estado: string) => {
@@ -90,6 +99,14 @@ export default function MapScreen() {
         </Suspense>
       ) : (
         <View style={{ width, height, backgroundColor: '#E5E7EB' }} />
+      )}
+
+      {lastUpdated && (
+        <View style={{ position: 'absolute', top: 12, left: 12, backgroundColor: 'rgba(0,0,0,0.45)', paddingVertical: 4, paddingHorizontal: 10, borderRadius: 20, zIndex: 1000 }}>
+          <Text style={{ color: '#FFFFFF', fontSize: 11 }}>
+            Actualizado {formatDistanceToNow(lastUpdated, { addSuffix: true, locale: es })}
+          </Text>
+        </View>
       )}
 
       {selectedReport && (
