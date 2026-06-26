@@ -71,10 +71,10 @@ def verificar_duplicados(municipio: str | None, colonia: str | None, tipo_animal
     return duplicados
 
 async def crear_reporte(
-    nombre: str,
-    apellido_paterno: str,
+    nombre: str | None,
+    apellido_paterno: str | None,
     apellido_materno: str | None,
-    telefono: str,
+    telefono: str | None,
     email: str | None,
     condicion: str,
     tipo_animal: str,
@@ -97,6 +97,7 @@ async def crear_reporte(
     raza_clave: str | None = None,
     tipo_animal_otro_clave: str | None = None,
     especie_descripcion: str | None = None,
+    usuario_id: str | None = None,
     es_duplicado_confirmado: bool | None = None,
     reporte_original_id: str | None = None,
 ) -> dict:
@@ -127,19 +128,8 @@ async def crear_reporte(
                 },
                 "total_duplicados": len(posibles_duplicados)
             }
-    # 1 — Crear o reutilizar usuario
-    resultado = supabase.table("usuarios").select("id").eq("telefono", telefono).execute()
-    if resultado.data and len(resultado.data) > 0:
-        usuario_id = resultado.data[0]["id"]
-    else:
-        usuario_nuevo = supabase.table("usuarios").insert({
-            "nombre": nombre,
-            "apellido_paterno": apellido_paterno,
-            "apellido_materno": apellido_materno,
-            "telefono": telefono,
-            "email": email,
-        }).execute()
-        usuario_id = usuario_nuevo.data[0]["id"]
+    # 1 — Resolver usuario: con sesión usa usuario_id directo, invitado queda None
+    # (los datos del invitado se guardan en el reporte)
 
     # 2 — Resolver IDs de catálogos
     tipo_animal_id = obtener_id_catalogo("tipo_animal_catalogo", tipo_animal)
@@ -163,6 +153,10 @@ async def crear_reporte(
 
     reporte_data = {
         "usuario_id": usuario_id,
+        "reportante_nombre": nombre if not usuario_id else None,
+        "reportante_apellido_paterno": apellido_paterno if not usuario_id else None,
+        "reportante_apellido_materno": apellido_materno if not usuario_id else None,
+        "reportante_telefono": telefono if not usuario_id else None,
         "estado_id": estado_asignado_id if asociacion_id else estado_id,
         "estado_reporte": "asignado" if asociacion_id else "pendiente",
         "asociacion_asignada_id": asociacion_id,
@@ -244,7 +238,7 @@ async def crear_reporte(
         reporte_id=reporte_id,
         usuario_id=usuario_id,
         tipo_evento="reporte_creado",
-        descripcion=f"Reporte creado por {nombre} {apellido_paterno}",
+        descripcion=f"Reporte creado por {nombre or 'usuario'} {apellido_paterno or ''}".strip(),
         datos_extra={"tipo_animal": tipo_animal, "condicion": condicion, "municipio": municipio}
     )
 

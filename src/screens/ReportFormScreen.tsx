@@ -5,7 +5,8 @@ import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { useEffect, useState } from 'react';
-import { Alert, Image, Modal, Platform, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { Image, Modal, Platform, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { Toast, useToast } from '../components/Toast';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
@@ -37,6 +38,7 @@ interface ReportFormScreenProps {
 
 export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
   const { user, isLoggedIn, logout } = useAuth();
+  const { toast, translateY, showToast } = useToast();
 
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
@@ -250,10 +252,10 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
         setDireccionConfirmada(result.display_name);
         setErrors((prev) => ({ ...prev, ubicacion: '' }));
       } else {
-        Alert.alert('No encontrado', 'No pudimos ubicar esa dirección exacta. Ajusta el pin manualmente en el mapa.');
+        showToast({ type: 'warning', title: 'No encontrado', message: 'No pudimos ubicar esa dirección exacta. Ajusta el pin manualmente en el mapa.' });
       }
     } catch {
-      Alert.alert('Error', 'No pudimos buscar esa dirección. Ajusta el pin manualmente en el mapa.');
+      showToast({ type: 'error', title: 'Error', message: 'No pudimos buscar esa dirección. Ajusta el pin manualmente en el mapa.' });
     }
   };
 
@@ -304,7 +306,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('GPS Denegado', 'Ajusta el pin directamente en el mapa para indicar la ubicación.');
+        showToast({ type: 'warning', title: 'GPS Denegado', message: 'Ajusta el pin directamente en el mapa para indicar la ubicación.' });
         return;
       }
       const currentLocation = await Location.getCurrentPositionAsync({});
@@ -316,7 +318,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
       setErrors((prev) => ({ ...prev, ubicacion: '' }));
       reverseGeocode(currentLocation.coords.latitude, currentLocation.coords.longitude);
     } catch (error) {
-      Alert.alert('Error', 'No pudimos obtener tu ubicación GPS. Ajusta el pin directamente en el mapa.');
+      showToast({ type: 'error', title: 'Error', message: 'No pudimos obtener tu ubicación GPS. Ajusta el pin directamente en el mapa.' });
     } finally {
       setIsLoadingGps(false);
     }
@@ -345,7 +347,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
 
     const permissionResult = await requestPermission();
     if (!permissionResult.granted) {
-      Alert.alert('Permiso denegado', 'Necesitamos los permisos necesarios para realizar esta acción.');
+      showToast({ type: 'warning', title: 'Permiso denegado', message: 'Necesitamos los permisos necesarios para realizar esta acción.' });
       return;
     }
 
@@ -550,7 +552,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
       }
     } catch (error: any) {
       const mensaje = error?.response?.data?.detail || error?.message || 'Error desconocido';
-      Alert.alert('Error', mensaje);
+      showToast({ type: 'error', title: 'Error', message: mensaje });
     }
   };
 
@@ -581,6 +583,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
 
   return (
     <View style={{ flex: 1, backgroundColor: '#F5F5F5' }}>
+      <Toast toast={toast} translateY={translateY} />
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#E5E7EB' }}>
         <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#2C3E50' }}>Nuevo Reporte</Text>
         {onClose && (

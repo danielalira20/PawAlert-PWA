@@ -1,5 +1,6 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from app.api import reports, associations, catalogos, auth, users, report_acceptance, admin
 app = FastAPI(
     title="PawAlert API",
@@ -19,6 +20,18 @@ app.include_router(auth.router, prefix="/auth", tags=["Auth"])
 app.include_router(users.router, prefix="/users", tags=["Usuarios"])
 app.include_router(report_acceptance.router, prefix="/reports", tags=["Aceptación"])
 app.include_router(admin.router, prefix="/admin", tags=["Administración"])
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    print(f"[ERROR] {request.method} {request.url} — {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Error interno del servidor. Intenta de nuevo más tarde."},
+    )
+
 @app.get("/")
-def health_check():
+def root():
     return {"status": "ok", "message": "PawAlert API corriendo"}
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}

@@ -47,9 +47,9 @@ async def register(body: RegisterRequest):
         })
     except Exception as e:
         msg = str(e).lower()
-        if "already" in msg or "exists" in msg:
-            raise HTTPException(status_code=409, detail="Ya existe una cuenta con ese correo")
-        raise HTTPException(status_code=400, detail=f"Error al crear cuenta: {e}")
+        if any(w in msg for w in ["already", "exists", "registered", "duplicate", "unique"]):
+            raise HTTPException(status_code=409, detail="Ya existe una cuenta con ese correo electrónico.")
+        raise HTTPException(status_code=400, detail="No pudimos crear tu cuenta. Intenta de nuevo.")
 
     auth_user_id = auth_response.user.id
 
@@ -74,6 +74,19 @@ async def register(body: RegisterRequest):
     except Exception as e:
         supabase_admin.auth.admin.delete_user(auth_user_id)
         raise HTTPException(status_code=500, detail="Error al guardar datos del usuario")
+
+    # Vincular reportes de invitado creados antes de tener cuenta (M-03)
+    nuevo_usuario_id = usuario.data[0]["id"]
+    try:
+        supabase.table("reportes").update({
+            "usuario_id": nuevo_usuario_id,
+            "reportante_nombre": None,
+            "reportante_apellido_paterno": None,
+            "reportante_apellido_materno": None,
+            "reportante_telefono": None,
+        }).eq("reportante_telefono", telefono_limpio).is_("usuario_id", "null").execute()
+    except Exception as e:
+        print(f"[WARN] No se pudieron vincular reportes de invitado para {telefono_limpio}: {e}")
 
     login_response = get_fresh_client().auth.sign_in_with_password({
         "email": body.email,

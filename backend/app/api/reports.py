@@ -1,4 +1,5 @@
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from fastapi.responses import JSONResponse
 from app.models.report import ReportResponse, CondicionEnum, TipoAnimalEnum, TamanioEnum, SexoEnum, EdadEnum, ReportListItem
 from app.services.report_service import crear_reporte, obtener_reportes, cambiar_estado_reporte
 from app.utils.validators import validar_telefono, validar_email
@@ -8,11 +9,12 @@ router = APIRouter()
 
 @router.post("", status_code=201)
 async def create_report(
-    nombre: str = Form(...),
-    apellido_paterno: str = Form(...),
+    nombre: Optional[str] = Form(None),
+    apellido_paterno: Optional[str] = Form(None),
     apellido_materno: Optional[str] = Form(None),
-    telefono: str = Form(...),
+    telefono: Optional[str] = Form(None),
     email: Optional[str] = Form(None),
+    usuario_id: Optional[str] = Form(None),
     fotos: Optional[List[UploadFile]] = File(None),
     fotos_ordenes: Optional[str] = Form(None),
     condicion: CondicionEnum = Form(...),
@@ -37,7 +39,13 @@ async def create_report(
     es_duplicado_confirmado: Optional[bool] = Form(None),
     reporte_original_id: Optional[str] = Form(None),
 ):
-    if not validar_telefono(telefono):
+    if not usuario_id and not nombre:
+        raise HTTPException(status_code=422, detail="Se requiere nombre o usuario_id")
+
+    if not usuario_id and not telefono:
+        raise HTTPException(status_code=422, detail="Se requiere teléfono o usuario_id")
+
+    if telefono and not validar_telefono(telefono):
         raise HTTPException(
             status_code=422,
             detail="El teléfono debe tener exactamente 10 dígitos numéricos."
@@ -69,12 +77,13 @@ async def create_report(
             detail="La descripción no puede superar 300 caracteres"
         )
 
-    return await crear_reporte(
+    resultado = await crear_reporte(
         nombre=nombre,
         apellido_paterno=apellido_paterno,
         apellido_materno=apellido_materno,
         telefono=telefono,
         email=email,
+        usuario_id=usuario_id,
         fotos=fotos,
         fotos_ordenes=fotos_ordenes,
         tipo_animal=tipo_animal,
@@ -99,6 +108,11 @@ async def create_report(
         es_duplicado_confirmado=es_duplicado_confirmado,
         reporte_original_id=reporte_original_id,
     )
+
+    if resultado.get("posible_duplicado"):
+        return JSONResponse(status_code=200, content=resultado)
+
+    return resultado
 
 @router.get("", response_model=list[ReportListItem], status_code=200)
 async def get_reports():

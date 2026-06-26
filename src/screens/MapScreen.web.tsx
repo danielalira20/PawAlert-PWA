@@ -2,8 +2,8 @@ import { Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { lazy, Suspense, useEffect, useState } from 'react';
-import { Dimensions, Image, Modal, Text, TouchableOpacity, View } from 'react-native';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { Animated, Dimensions, Image, Modal, Text, TouchableOpacity, View } from 'react-native';
 import AuthGateModal from '../components/AuthGateModal';
 import { Card } from '../components/ui/Card';
 import { API_URL } from '../constants/api';
@@ -22,6 +22,27 @@ export default function MapScreen() {
   const [selectedReport, setSelectedReport] = useState<Reporte | null>(null);
   const [isFormVisible, setIsFormVisible] = useState(false);
   const [isAuthGateVisible, setIsAuthGateVisible] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [, setTick] = useState(0);
+  const [refreshExpanded, setRefreshExpanded] = useState(false);
+  const refreshWidth = useRef(new Animated.Value(40)).current;
+  const refreshOpacity = useRef(new Animated.Value(0)).current;
+
+  const expandRefresh = () => {
+    Animated.parallel([
+      Animated.spring(refreshWidth, { toValue: 210, useNativeDriver: false }),
+      Animated.timing(refreshOpacity, { toValue: 1, duration: 200, useNativeDriver: false }),
+    ]).start();
+    setRefreshExpanded(true);
+  };
+
+  const collapseRefresh = () => {
+    Animated.parallel([
+      Animated.spring(refreshWidth, { toValue: 40, useNativeDriver: false }),
+      Animated.timing(refreshOpacity, { toValue: 0, duration: 100, useNativeDriver: false }),
+    ]).start();
+    setRefreshExpanded(false);
+  };
 
   const handleCrearReporte = () => {
     if (isLoggedIn) {
@@ -36,6 +57,7 @@ export default function MapScreen() {
       const response = await axios.get(`${API_URL}/reports`);
       const validReports = response.data.filter((r: Reporte) => r.latitud && r.longitud);
       setReportes(validReports);
+      setLastUpdated(new Date());
     } catch (error) {
       console.error("Error cargando reportes reales:", error);
     }
@@ -44,6 +66,12 @@ export default function MapScreen() {
   useEffect(() => {
     setIsClient(true);
     fetchReportes();
+    const fetchInterval = setInterval(fetchReportes, 600000);
+    const tickInterval = setInterval(() => setTick((t) => t + 1), 60000);
+    return () => {
+      clearInterval(fetchInterval);
+      clearInterval(tickInterval);
+    };
   }, []);
 
   const getMarkerColor = (estado: string) => {
@@ -83,13 +111,28 @@ export default function MapScreen() {
             reportes={reportes}
             getMarkerColor={getMarkerColor}
             onSelectReport={setSelectedReport}
-            onMapClick={() => setSelectedReport(null)}
+            onMapClick={() => { setSelectedReport(null); collapseRefresh(); }}
             width={width}
             height={height}
           />
         </Suspense>
       ) : (
         <View style={{ width, height, backgroundColor: '#E5E7EB' }} />
+      )}
+
+      {lastUpdated && (
+        <TouchableOpacity
+          onPress={() => refreshExpanded ? collapseRefresh() : expandRefresh()}
+          style={{ position: 'absolute', bottom: 60, left: 20, zIndex: 1000 }}
+          activeOpacity={0.8}
+        >
+          <Animated.View style={{ width: refreshWidth, height: 40, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 20, flexDirection: 'row', alignItems: 'center', overflow: 'hidden', paddingHorizontal: 10 }}>
+            <Ionicons name="time-outline" size={20} color="#FFFFFF" />
+            <Animated.Text style={{ color: '#FFFFFF', fontSize: 12, marginLeft: 6, opacity: refreshOpacity }} numberOfLines={1}>
+              {formatDistanceToNow(lastUpdated, { addSuffix: true, locale: es })}
+            </Animated.Text>
+          </Animated.View>
+        </TouchableOpacity>
       )}
 
       {selectedReport && (

@@ -1,7 +1,8 @@
 import axios from 'axios';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Image, ScrollView, Text, TouchableOpacity, View, Modal, TextInput, Dimensions } from 'react-native';
+import { ActivityIndicator, Image, ScrollView, Text, TouchableOpacity, View, Modal, TextInput, Dimensions } from 'react-native';
+import { Toast, useToast } from '../components/Toast';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
@@ -48,6 +49,7 @@ const SHADOW_STYLE = {
 
 export default function AssociationStatusScreen() {
   const { token, logout } = useAuth();
+  const { toast, translateY, showToast } = useToast();
   const [info, setInfo] = useState<AsociacionInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -96,7 +98,7 @@ export default function AssociationStatusScreen() {
       );
       await cargarReportes();
     } catch (error: any) {
-      Alert.alert('Error', error?.response?.data?.detail || 'No pudimos actualizar el reporte.');
+      showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'No pudimos actualizar el reporte.' });
     }
   };
 
@@ -123,7 +125,7 @@ export default function AssociationStatusScreen() {
       });
       setInfo(res.data);
     } catch (error: any) {
-      Alert.alert('Error', error?.response?.data?.detail || 'No pudimos cargar el estado de tu asociación.');
+      showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'No pudimos cargar el estado de tu asociación.' });
     } finally {
       setIsLoading(false);
     }
@@ -141,7 +143,7 @@ export default function AssociationStatusScreen() {
 
   const handleAgregarRepresentante = async () => {
     if (!nombreRep.trim() || !apellidoRep.trim() || !telefonoRep.trim()) {
-      Alert.alert('Datos incompletos', 'Nombre, apellido y teléfono son obligatorios.');
+      showToast({ type: 'warning', title: 'Datos incompletos', message: 'Nombre, apellido y teléfono son obligatorios.' });
       return;
     }
     if (!info) return;
@@ -157,13 +159,13 @@ export default function AssociationStatusScreen() {
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      Alert.alert('¡Listo!', 'Esa persona ya puede registrarse con ese mismo teléfono para tener acceso.');
+      showToast({ type: 'success', title: '¡Listo!', message: 'Esa persona ya puede registrarse con ese mismo teléfono para tener acceso.' });
       setNombreRep('');
       setApellidoRep('');
       setTelefonoRep('');
       setEmailRep('');
     } catch (error: any) {
-      Alert.alert('Error', error?.response?.data?.detail || 'No pudimos agregar al representante.');
+      showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'No pudimos agregar al representante.' });
     } finally {
       setIsAdding(false);
     }
@@ -205,6 +207,7 @@ export default function AssociationStatusScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: '#F5F5F5' }}>
+      <Toast toast={toast} translateY={translateY} />
       <ScrollView contentContainerStyle={{ padding: 24 }}>
         <Text style={{ fontSize: 22, fontWeight: 'bold', color: '#2C3E50', marginBottom: 4 }}>{info.nombre}</Text>
         <Text style={{ fontSize: 14, color: '#7F8C8D', marginBottom: 24 }}>Estado de tu asociación</Text>

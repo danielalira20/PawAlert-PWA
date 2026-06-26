@@ -90,14 +90,46 @@ backend/
 
 ## Endpoints disponibles
 
+### GET /health
+
+Verifica que el servidor está en línea. Usado por UptimeRobot para evitar que Railway duerma el backend.
+
+- **Auth:** ninguna
+- **URL producción:** `https://pawalert-pwa-production.up.railway.app/health`
+
+**Response 200:**
+```json
+{ "status": "ok" }
+```
+
+---
+
 ### POST /reports
 
-Crea un nuevo reporte de animal en riesgo.
+Crea un nuevo reporte de animal en riesgo. Soporta usuarios registrados e invitados.
 
 - **Auth:** ninguna
 - **Content-Type:** multipart/form-data
-- **Campos obligatorios:** nombre, apellido_paterno, contacto, foto, condicion
-- **Campos opcionales:** apellido_materno, latitud, longitud, ubicacion_texto, descripcion
+
+**Con sesión (usuario registrado):**
+| Campo | Tipo | Requerido |
+|---|---|---|
+| usuario_id | string (UUID) | Sí |
+| foto | archivo | Sí |
+| condicion | string | Sí |
+| latitud | float | Sí |
+| longitud | float | Sí |
+
+**Sin sesión (invitado):**
+| Campo | Tipo | Requerido |
+|---|---|---|
+| nombre | string | Sí |
+| apellido_paterno | string | Sí |
+| telefono | string (10 dígitos) | Sí |
+| foto | archivo | Sí |
+| condicion | string | Sí |
+| latitud | float | Sí |
+| longitud | float | Sí |
 
 **Response 201:**
 ```json
@@ -108,6 +140,13 @@ Crea un nuevo reporte de animal en riesgo.
   "created_at": "timestamp"
 }
 ```
+
+**Response 200** (reporte duplicado detectado — misma foto en misma ubicación):
+```json
+{ "detail": "Reporte duplicado detectado" }
+```
+
+---
 
 ### POST /associations
 
