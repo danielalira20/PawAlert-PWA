@@ -4,7 +4,8 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Alert, Image, Modal, Platform, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { Image, Modal, Platform, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { Toast, useToast } from '../components/Toast';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
@@ -20,6 +21,7 @@ interface Props { onClose?: () => void; }
 
 export default function AssociationFormScreen({ onClose }: Props) {
   const { setSession } = useAuth();
+  const { toast, translateY, showToast } = useToast();
 
   const [nombre, setNombre] = useState('');
   const [nombreResponsable, setNombreResponsable] = useState('');
@@ -223,14 +225,14 @@ export default function AssociationFormScreen({ onClose }: Props) {
 
   const handlePickLogo = async () => {
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permissionResult.granted) { Alert.alert('Permiso denegado', 'Necesitamos acceso a tu galería para subir la foto.'); return; }
+    if (!permissionResult.granted) { showToast({ type: 'warning', title: 'Permiso denegado', message: 'Necesitamos acceso a tu galería para subir la foto.' }); return; }
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.8 });
     if (!result.canceled) setLogoUrl(result.assets[0].uri);
   };
 
   const handleTakeLogo = async () => {
     const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permissionResult.granted) { Alert.alert('Permiso denegado', 'Necesitamos acceso a tu cámara para tomar la foto.'); return; }
+    if (!permissionResult.granted) { showToast({ type: 'warning', title: 'Permiso denegado', message: 'Necesitamos acceso a tu cámara para tomar la foto.' }); return; }
     const result = await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.8 });
     if (!result.canceled) setLogoUrl(result.assets[0].uri);
   };
@@ -246,7 +248,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
   const captureFoto = async (fromCamera: boolean) => {
     const requestPermission = fromCamera ? ImagePicker.requestCameraPermissionsAsync : ImagePicker.requestMediaLibraryPermissionsAsync;
     const permissionResult = await requestPermission();
-    if (!permissionResult.granted) { Alert.alert('Permiso denegado', 'Necesitamos los permisos necesarios.'); return; }
+    if (!permissionResult.granted) { showToast({ type: 'warning', title: 'Permiso denegado', message: 'Necesitamos los permisos necesarios.' }); return; }
     const launchMethod = fromCamera ? ImagePicker.launchCameraAsync : ImagePicker.launchImageLibraryAsync;
     const result = await launchMethod({ mediaTypes: ['images'], allowsEditing: true, aspect: [4, 3], quality: 0.8 });
 
@@ -339,10 +341,10 @@ export default function AssociationFormScreen({ onClose }: Props) {
         setDireccionConfirmada(result.display_name);
         setErrors((prev) => ({ ...prev, ubicacion: '' }));
       } else {
-        Alert.alert('No encontrado', 'No pudimos ubicar esa dirección exacta. Ajusta el pin manualmente en el mapa.');
+        showToast({ type: 'warning', title: 'No encontrado', message: 'No pudimos ubicar esa dirección exacta. Ajusta el pin manualmente en el mapa.' });
       }
     } catch {
-      Alert.alert('Error', 'No pudimos buscar esa dirección. Ajusta el pin manualmente en el mapa.');
+      showToast({ type: 'error', title: 'Error', message: 'No pudimos buscar esa dirección. Ajusta el pin manualmente en el mapa.' });
     }
   };
 
@@ -379,7 +381,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
         },
         (error) => {
           setIsLoadingGps(false);
-          Alert.alert('Error', 'No pudimos obtener la ubicación. Verifica que tu dispositivo tenga activado el GPS.');
+          showToast({ type: 'error', title: 'Error', message: 'No pudimos obtener la ubicación. Verifica que tu dispositivo tenga activado el GPS.' });
         },
         { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
       );
@@ -387,7 +389,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
     }
     try {
       let { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') { Alert.alert('GPS Denegado', 'Ajusta el pin directamente en el mapa.'); setIsLoadingGps(false); return; }
+      if (status !== 'granted') { showToast({ type: 'warning', title: 'GPS Denegado', message: 'Ajusta el pin directamente en el mapa.' }); setIsLoadingGps(false); return; }
       let currentLocation = await Location.getCurrentPositionAsync({});
       const lat = currentLocation.coords.latitude;
       const lon = currentLocation.coords.longitude;
@@ -396,7 +398,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
       setErrors((prev) => ({ ...prev, ubicacion: '' }));
       reverseGeocode(lat, lon);
     } catch (error) {
-      Alert.alert('Error', 'No pudimos obtener tu ubicación.');
+      showToast({ type: 'error', title: 'Error', message: 'No pudimos obtener tu ubicación.' });
     } finally {
       setIsLoadingGps(false);
     }
@@ -520,13 +522,13 @@ export default function AssociationFormScreen({ onClose }: Props) {
       const response = await axios.post(`${API_URL}/associations`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
 
       await setSession(response.data.usuario, response.data.access_token);
-      Alert.alert('¡Registro exitoso!', response.data.mensaje || 'Tu solicitud ha sido registrada.');
+      showToast({ type: 'success', title: '¡Registro exitoso!', message: response.data.mensaje || 'Tu solicitud ha sido registrada.' });
       handleResetForm();
       if (onClose) onClose();
       router.replace('/association-status' as any);
     } catch (error: any) {
       const mensaje = error?.response?.data?.detail || error?.message || 'Error desconocido';
-      Alert.alert('Error', mensaje);
+      showToast({ type: 'error', title: 'Error', message: mensaje });
     } finally {
       setIsSubmitting(false);
     }
@@ -534,6 +536,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
 
   return (
     <View style={{ flex: 1, backgroundColor: '#F5F5F5' }}>
+      <Toast toast={toast} translateY={translateY} />
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#E5E7EB' }}>
         <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#2C3E50' }}>Registro de Asociación</Text>
         {onClose && (

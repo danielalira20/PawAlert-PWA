@@ -1,7 +1,8 @@
 import axios from 'axios';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Modal, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Modal, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Toast, useToast } from '../components/Toast';
 import { Card } from '../components/ui/Card';
 import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
@@ -22,6 +23,7 @@ interface Props {
 
 export default function AdminDashboardScreen({ onClose }: Props) {
   const { token, logout } = useAuth();
+  const { toast, translateY, showToast } = useToast();
   const [asociaciones, setAsociaciones] = useState<AsociacionPendiente[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [rechazoActivo, setRechazoActivo] = useState<string | null>(null);
@@ -35,7 +37,7 @@ export default function AdminDashboardScreen({ onClose }: Props) {
       });
       setAsociaciones(res.data);
     } catch (error: any) {
-      Alert.alert('Error', error?.response?.data?.detail || 'No pudimos cargar las asociaciones pendientes.');
+      showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'No pudimos cargar las asociaciones pendientes.' });
     } finally {
       setIsLoading(false);
     }
@@ -51,15 +53,15 @@ export default function AdminDashboardScreen({ onClose }: Props) {
         headers: { Authorization: `Bearer ${token}` },
       });
       setAsociaciones((prev) => prev.filter((a) => a.id !== id));
-      Alert.alert('Aprobada', 'La asociación fue aprobada y ya puede recibir reportes.');
+      showToast({ type: 'success', title: 'Aprobada', message: 'La asociación fue aprobada y ya puede recibir reportes.' });
     } catch (error: any) {
-      Alert.alert('Error', error?.response?.data?.detail || 'No pudimos aprobar la asociación.');
+      showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'No pudimos aprobar la asociación.' });
     }
   };
 
   const handleRechazar = async () => {
     if (!rechazoActivo || !motivo.trim()) {
-      Alert.alert('Falta el motivo', 'Escribe el motivo del rechazo.');
+      showToast({ type: 'warning', title: 'Falta el motivo', message: 'Escribe el motivo del rechazo.' });
       return;
     }
     try {
@@ -69,9 +71,9 @@ export default function AdminDashboardScreen({ onClose }: Props) {
       setAsociaciones((prev) => prev.filter((a) => a.id !== rechazoActivo));
       setRechazoActivo(null);
       setMotivo('');
-      Alert.alert('Rechazada', 'La asociación fue rechazada. El motivo quedó guardado para que lo vea.');
+      showToast({ type: 'info', title: 'Rechazada', message: 'La asociación fue rechazada. El motivo quedó guardado para que lo vea.' });
     } catch (error: any) {
-      Alert.alert('Error', error?.response?.data?.detail || 'No pudimos rechazar la asociación.');
+      showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'No pudimos rechazar la asociación.' });
     }
   };
 
@@ -90,6 +92,7 @@ export default function AdminDashboardScreen({ onClose }: Props) {
 
   return (
     <View style={{ flex: 1, backgroundColor: '#F5F5F5' }}>
+      <Toast toast={toast} translateY={translateY} />
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#E5E7EB' }}>
         <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#2C3E50' }}>Panel de Administrador</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
