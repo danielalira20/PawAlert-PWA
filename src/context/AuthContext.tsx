@@ -27,6 +27,7 @@ interface AuthContextType {
   user: Usuario | null;
   token: string | null;
   isLoggedIn: boolean;
+  isLoading: boolean;
   login: (email: string, password: string) => Promise<Usuario>;
   register: (data: RegisterData) => Promise<Usuario>;
   setSession: (usuario: Usuario, accessToken: string) => Promise<void>;
@@ -41,7 +42,7 @@ const STORAGE_KEY_USER = '@pawalert_user';
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<Usuario | null>(null);
   const [token, setToken] = useState<string | null>(null);
-
+  const [isLoading, setIsLoading] = useState(true);
   useEffect(() => {
     (async () => {
       try {
@@ -55,6 +56,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       } catch {
         // Si falla la lectura, simplemente no se restaura sesión automática.
+      } finally {
+        setIsLoading(false); // ← siempre se ejecuta al terminar
       }
     })();
   }, []);
@@ -90,7 +93,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, isLoggedIn: !!user, login, register, setSession, logout }}>
+    <AuthContext.Provider value={{ user, token, isLoggedIn: !!user, isLoading, login, register, setSession, logout }}>
       {children}
     </AuthContext.Provider>
   );

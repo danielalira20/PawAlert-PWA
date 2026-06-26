@@ -48,10 +48,11 @@ const SHADOW_STYLE = {
 };
 
 export default function AssociationStatusScreen() {
-  const { token, logout } = useAuth();
+  const { token, logout, isLoading  } = useAuth();
   const { toast, translateY, showToast } = useToast();
   const [info, setInfo] = useState<AsociacionInfo | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  //const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingInfo, setIsLoadingInfo] = useState(true);
 
   const [nombreRep, setNombreRep] = useState('');
   const [apellidoRep, setApellidoRep] = useState('');
@@ -74,6 +75,7 @@ export default function AssociationStatusScreen() {
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
 
   const screenWidth = Dimensions.get('window').width;
+  
 
   const cargarReportes = async () => {
     setIsLoadingReportes(true);
@@ -118,7 +120,7 @@ export default function AssociationStatusScreen() {
   };
 
   const cargarEstado = async () => {
-    setIsLoading(true);
+    setIsLoadingInfo(true);
     try {
       const res = await axios.get(`${API_URL}/associations/me`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -127,13 +129,15 @@ export default function AssociationStatusScreen() {
     } catch (error: any) {
       showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'No pudimos cargar el estado de tu asociación.' });
     } finally {
-      setIsLoading(false);
+      setIsLoadingInfo(false);
     }
   };
 
   useEffect(() => {
-    cargarEstado();
-  }, []);
+    if (!isLoading) {
+      cargarEstado();
+    }
+  }, [isLoading]);
 
   useEffect(() => {
     if (info?.estado === 'aprobada') {
@@ -176,7 +180,7 @@ export default function AssociationStatusScreen() {
     router.replace('/');
   };
 
-  if (isLoading) {
+  if (isLoadingInfo) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F5F5F5' }}>
         <ActivityIndicator size="large" color="#3498DB" />
