@@ -29,6 +29,17 @@ class EdadEnum(str, Enum):
     senior = "senior"
     desconocido = "desconocido"
 
+class EstadoReporteEnum(str, Enum):
+    pendiente = "pendiente"
+    asignado = "asignado"
+    en_camino = "en_camino"
+    en_atencion = "en_atencion"
+    rescatado = "rescatado"
+    cerrado = "cerrado"
+    sin_cobertura = "sin_cobertura"
+    duplicado = "duplicado"
+    muerto = "muerto"
+
 class ContactoEmergencia(BaseModel):
     nombre: str
     telefono: str
@@ -58,7 +69,7 @@ class ReportResponse(BaseModel):
 
 class ReportListItem(BaseModel):
     id: str
-    estado_reporte: Optional[str] = None
+    estado_reporte: Optional[EstadoReporteEnum] = None
     latitud: Optional[float] = None
     longitud: Optional[float] = None
     municipio: Optional[str] = None
