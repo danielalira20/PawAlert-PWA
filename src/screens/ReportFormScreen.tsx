@@ -629,10 +629,10 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
                   <Text style={{ fontSize: 12, color: '#27AE60', fontWeight: '600' }}>✓ Datos encontrados y autorellenados</Text>
                 </View>
               )}
-              <Input label="Nombre(s)" placeholder="Ej. Ana" value={nombre} onChangeText={handleNombreChange} error={errors.nombre} required />
-              <Input label="Apellido Paterno" placeholder="Ej. Pérez" value={apellidoPaterno} onChangeText={handleApellidoPaternoChange} error={errors.apellidoPaterno} required />
-              <Input label="Apellido Materno (Opcional)" placeholder="Ej. López" value={apellidoMaterno} onChangeText={handleApellidoMaternoChange} error={errors.apellidoMaterno} />
-              <Input label="Correo Electrónico (Opcional)" placeholder="Ej. correo@ejemplo.com" value={email} onChangeText={handleEmailChange} error={errors.email} keyboardType="email-address" autoCapitalize="none" />
+              <Input label="Nombre(s)" placeholder="Ej. Ana" value={nombre} onChangeText={handleNombreChange} error={errors.nombre} maxLength={30} required />
+              <Input label="Apellido Paterno" placeholder="Ej. Pérez" value={apellidoPaterno} onChangeText={handleApellidoPaternoChange} error={errors.apellidoPaterno} maxLength={30} required />
+              <Input label="Apellido Materno (Opcional)" placeholder="Ej. López" value={apellidoMaterno} onChangeText={handleApellidoMaternoChange} error={errors.apellidoMaterno} maxLength={30} />
+              <Input label="Correo Electrónico (Opcional)" placeholder="Ej. correo@ejemplo.com" value={email} onChangeText={handleEmailChange} error={errors.email} keyboardType="email-address" autoCapitalize="none" maxLength={50} />
               <TouchableOpacity
                 onPress={() => {
                   if (onClose) onClose();
@@ -679,7 +679,10 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
                 <>
                   {renderSelector('Categoría', ['Ave', 'Reptil', 'Roedor', 'Fauna silvestre', 'Otro'], subcategoria, (val: any) => { setSubcategoria(val); setErrors(prev => ({ ...prev, subcategoria: '' })); }, errors.subcategoria)}
                   {subcategoria === 'Otro' && (
-                    <Input label="Describe la especie *" placeholder="Ej. Tlacuache, caballo, etc." value={especieDescripcion} onChangeText={(val) => { setEspecieDescripcion(val); if (val.trim()) setErrors(prev => ({ ...prev, especieDescripcion: '' })); }} error={errors.especieDescripcion} />
+                    <View>
+                      <Input label="Describe la especie *" placeholder="Ej. Tlacuache, caballo, etc." value={especieDescripcion} onChangeText={(val) => { setEspecieDescripcion(val); if (val.trim()) setErrors(prev => ({ ...prev, especieDescripcion: '' })); }} error={errors.especieDescripcion} maxLength={100} />
+                      <Text style={{ textAlign: 'right', color: '#95A5A6', fontSize: 12, marginTop: -12, marginBottom: 8 }}>{especieDescripcion.length}/100</Text>
+                    </View>
                   )}
                 </>
               )}
@@ -787,7 +790,8 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
                 <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
                   <Image source={{ uri: f.foto_url }} style={{ width: 80, height: 80, borderRadius: 8 }} />
                   <View style={{ flex: 1, gap: 4 }}>
-                    <Input placeholder="Descripción de la foto..." value={f.descripcion} onChangeText={(text) => handleUpdateFotoDesc(f.id, text)} style={{ height: 38, paddingVertical: 4, fontSize: 13 }} />
+                    <Input placeholder="Descripción de la foto..." value={f.descripcion} onChangeText={(text) => handleUpdateFotoDesc(f.id, text)} style={{ height: 38, paddingVertical: 4, fontSize: 13 }} maxLength={100} />
+                    <Text style={{ textAlign: 'right', color: '#95A5A6', fontSize: 11 }}>{f.descripcion.length}/100</Text>
                     <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'flex-end' }}>
                       <TouchableOpacity onPress={() => handleDeleteFoto(f.id)} style={{ backgroundColor: '#FADBD8', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, justifyContent: 'center', alignItems: 'center', minHeight: 40 }}>
                         <Text style={{ color: '#E63946', fontWeight: 'bold', fontSize: 13 }}>Eliminar</Text>
@@ -860,21 +864,24 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
           <View style={{ marginTop: 16 }}>
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <View style={{ flex: 2 }}>
-                <Input label="Calle" placeholder="Ej. Francisco I. Madero" value={calleNombre} onChangeText={setCalleNombre} />
+                <Input label="Calle" placeholder="Ej. Francisco I. Madero" value={calleNombre} onChangeText={setCalleNombre} maxLength={100} />
               </View>
               <View style={{ flex: 1 }}>
-                <Input label="Número" placeholder="Ej. 2912" value={numero} onChangeText={setNumero} keyboardType="numeric" />
+                <Input label="Número" placeholder="Ej. 2912" value={numero} onChangeText={setNumero} keyboardType="numeric" maxLength={10} />
               </View>
             </View>
-            <Input label="Colonia" placeholder="Ej. Viveros" value={colonia} onChangeText={setColonia} />
-            <Input label="Municipio" placeholder="Ej. Puebla" value={municipio} onChangeText={setMunicipio} />
+            <Input label="Colonia" placeholder="Ej. Viveros" value={colonia} onChangeText={setColonia} maxLength={50} />
+            <Input label="Municipio" placeholder="Ej. Puebla" value={municipio} onChangeText={setMunicipio} maxLength={50} />
             <TouchableOpacity onPress={handleGeocodeManualFields} style={{ flexDirection: 'row', alignItems: 'center', marginTop: -8, marginBottom: 8 }}>
               <Feather name="refresh-cw" size={13} color="#3498DB" style={{ marginRight: 6 }} />
               <Text style={{ fontSize: 12, color: '#3498DB', fontWeight: '600' }}>Mover el pin a esta dirección</Text>
             </TouchableOpacity>
           </View>
 
-          <Input label="Referencia (Opcional)" placeholder="Ej. Frente a la tienda de abarrotes..." value={referencia} onChangeText={setReferencia} />
+          <View>
+            <Input label="Referencia (Opcional)" placeholder="Ej. Frente a la tienda de abarrotes..." value={referencia} onChangeText={setReferencia} maxLength={150} />
+            <Text style={{ textAlign: 'right', color: '#95A5A6', fontSize: 12, marginTop: -12, marginBottom: 8 }}>{referencia.length}/150</Text>
+          </View>
         </Card>
 
         {showSubmitError && (
@@ -993,3 +1000,4 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
     </View>
   );
 }
+

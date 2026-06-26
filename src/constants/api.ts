@@ -22,7 +22,8 @@
 
 import { Platform } from 'react-native'
 
-const LOCAL_IP = '192.168.100.9'
+// Cambiar este valor por la IP local de quien esté corriendo el backend
+const LOCAL_IP = '192.168.0.144'
 
 const DEV_URL = Platform.select({
   ios: `http://${LOCAL_IP}:8000`,
