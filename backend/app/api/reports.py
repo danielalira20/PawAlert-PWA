@@ -1,6 +1,6 @@
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Header
 from fastapi.responses import JSONResponse
-from app.models.report import ReportResponse, CondicionEnum, TipoAnimalEnum, TamanioEnum, SexoEnum, EdadEnum, ReportListItem, HitoRequest
+from app.models.report import ReportResponse, CondicionEnum, TipoAnimalEnum, TamanioEnum, SexoEnum, EdadEnum, ReportListItem, HitoRequest, RechazarReporteRequest
 from app.services.report_service import crear_reporte, obtener_reportes, cambiar_estado_reporte
 from app.utils.validators import validar_telefono, validar_email
 from typing import Optional, List
@@ -352,6 +352,160 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
     }
 
 ### FIN endpoind: staff registra avances del rescate 
+
+### Endpoint: logica post rechazo de reportes 
+@router.patch("/{reporte_id}/rechazar", status_code=200)
+async def rechazar_reporte(reporte_id: str, body: RechazarReporteRequest, authorization: str = Header(None)):
+    """El representante rechaza un reporte. El sistema busca automáticamente
+    la siguiente asociación más cercana."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="No autenticado")
+
+    token = authorization.replace("Bearer ", "")
+    try:
+        auth_response = supabase.auth.get_user(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Token inválido o expirado")
+
+    usuario = supabase.table("usuarios").select(
+        "id, asociacion_id"
+    ).eq("auth_user_id", auth_response.user.id).execute()
+
+    if not usuario.data:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    usuario = usuario.data[0]
+    asociacion_id = usuario.get("asociacion_id")
+
+    if not asociacion_id:
+        raise HTTPException(status_code=403, detail="No estás vinculado a ninguna asociación")
+
+    # Verificar que el reporte existe y pertenece a esta asociación
+    reporte = supabase.table("reportes").select(
+        "id, estado_reporte, asociacion_asignada_id, latitud, longitud, municipio"
+    ).eq("id", reporte_id).execute()
+
+    if not reporte.data:
+        raise HTTPException(status_code=404, detail="Reporte no encontrado")
+
+    reporte = reporte.data[0]
+
+    if reporte["asociacion_asignada_id"] != asociacion_id:
+        raise HTTPException(status_code=403, detail="Este reporte no pertenece a tu asociación")
+
+    if reporte["estado_reporte"] != "asignado":
+        raise HTTPException(status_code=400, detail="Solo puedes rechazar reportes en estado asignado")
+
+    # Registrar rechazo en historial
+    from app.services.report_service import registrar_historial
+    registrar_historial(
+        reporte_id=reporte_id,
+        usuario_id=usuario["id"],
+        tipo_evento="reporte_rechazado",
+        descripcion=f"Reporte rechazado por la asociación. Motivo: {body.motivo}",
+        datos_extra={"motivo": body.motivo, "comentario": body.comentario, "asociacion_id": asociacion_id}
+    )
+
+    # Actualizar estado de asignación actual a rechazada
+    estado_rechazada_id = supabase.table("asignacion_estados").select(
+        "id"
+    ).eq("clave", "rechazada").execute()
+
+    if estado_rechazada_id.data:
+        supabase.table("reporte_asignaciones").update({
+            "estado_id": estado_rechazada_id.data[0]["id"],
+            "estado": "rechazada",
+        }).eq("reporte_id", reporte_id).eq("asociacion_id", asociacion_id).execute()
+
+    # Buscar siguiente asociación más cercana excluyendo las que ya rechazaron
+    asociaciones_rechazadas = supabase.table("reporte_asignaciones").select(
+        "asociacion_id"
+    ).eq("reporte_id", reporte_id).execute()
+
+    ids_rechazadas = [r["asociacion_id"] for r in (asociaciones_rechazadas.data or [])]
+
+    # Intentar reasignar
+    from app.services.assignment_service import asignar_asociacion, obtener_contactos_emergencia
+    nueva_asociacion = None
+
+    if reporte.get("latitud") and reporte.get("longitud"):
+        candidata = asignar_asociacion(reporte["latitud"], reporte["longitud"])
+        if candidata and candidata["id"] not in ids_rechazadas:
+            nueva_asociacion = candidata
+
+    if nueva_asociacion:
+        # Asignar a nueva asociación
+        estado_asignado_id = supabase.table("reporte_estados").select(
+            "id"
+        ).eq("clave", "asignado").execute()
+
+        supabase.table("reportes").update({
+            "asociacion_asignada_id": nueva_asociacion["id"],
+            "estado_reporte": "asignado",
+            "estado_id": estado_asignado_id.data[0]["id"],
+            "staff_asignado_id": None,
+        }).eq("id", reporte_id).execute()
+
+        # Crear nueva asignación
+        estado_notificada_id = supabase.table("asignacion_estados").select(
+            "id"
+        ).eq("clave", "notificada").execute()
+
+        supabase.table("reporte_asignaciones").insert({
+            "reporte_id": reporte_id,
+            "asociacion_id": nueva_asociacion["id"],
+            "estado_id": estado_notificada_id.data[0]["id"],
+            "estado": "notificada",
+        }).execute()
+
+        registrar_historial(
+            reporte_id=reporte_id,
+            usuario_id=None,
+            tipo_evento="reasignacion_automatica",
+            descripcion=f"Reasignado automáticamente a {nueva_asociacion['nombre']}",
+            datos_extra={"nueva_asociacion_id": nueva_asociacion["id"], "nueva_asociacion_nombre": nueva_asociacion["nombre"]}
+        )
+
+        return {
+            "mensaje": "Reporte rechazado y reasignado automáticamente.",
+            "nueva_asociacion": nueva_asociacion["nombre"],
+            "estado": "asignado"
+        }
+
+    else:
+        # Sin cobertura
+        estado_sin_cobertura_id = supabase.table("reporte_estados").select(
+            "id"
+        ).eq("clave", "sin_cobertura").execute()
+
+        supabase.table("reportes").update({
+            "asociacion_asignada_id": None,
+            "estado_reporte": "sin_cobertura",
+            "estado_id": estado_sin_cobertura_id.data[0]["id"],
+            "staff_asignado_id": None,
+        }).eq("id", reporte_id).execute()
+
+        registrar_historial(
+            reporte_id=reporte_id,
+            usuario_id=None,
+            tipo_evento="sin_cobertura",
+            descripcion="No hay más asociaciones disponibles en la zona",
+            datos_extra={"motivo_rechazo": body.motivo}
+        )
+
+        contactos = obtener_contactos_emergencia(
+            tipo_animal="perro",
+            municipio=reporte.get("municipio")
+        )
+
+        return {
+            "mensaje": "Reporte rechazado. No hay más asociaciones disponibles en la zona.",
+            "contactos_emergencia": contactos,
+            "estado": "sin_cobertura"
+        }
+
+### FIN: postrechazo de reportes
+
 
 @router.get("", response_model=list[ReportListItem], status_code=200)
 async def get_reports():

@@ -86,3 +86,10 @@ class HitoRequest(BaseModel):
     foto_url: Optional[str] = None
     latitud: Optional[float] = None
     longitud: Optional[float] = None
+
+
+## Cuando el encargado de asociacion RECHACE reporte
+class RechazarReporteRequest(BaseModel):
+    motivo: str
+    comentario: Optional[str] = None
+    
