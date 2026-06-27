@@ -91,7 +91,12 @@ export default function AssociationStatusScreen({ onClose }: Props) {
   const [fotoHito, setFotoHito] = useState<string | null>(null);
 
   const screenWidth = Dimensions.get('window').width;
-
+ 
+  /// Estadode conexion para staff 
+  const [showStaffModal, setShowStaffModal] = useState(false);
+  const [staffList, setStaffList] = useState<any[]>([]);
+  const [staffSeleccionado, setStaffSeleccionado] = useState<string | null>(null);
+  
   const MOTIVOS_RECHAZO = [
     'No tenemos capacidad disponible ahora mismo',
     'El animal ya no está en el lugar reportado',
@@ -211,24 +216,49 @@ export default function AssociationStatusScreen({ onClose }: Props) {
     setNotasHito(''); setFotoHito(null); setReporteAccionId(null);
   };
 
-  // ─── CONEXIÓN A ENDPOINTS REALES ───
+  // ─── CONEXIÓN A ENDPOINTS REALES: ASINGACION DE STAFF POST ACEPTACION ───
 
   const confirmarAceptacion = async () => {
-    if (!reporteAccionId) return;
-    setIsSubmittingAccion(true);
-    try {
-      // CORRECCIÓN: Mandamos 'en_camino' como especifica el Sprint y tu BD
-      await axios.patch(`${API_URL}/reports/${reporteAccionId}/status`, { estado: 'en_camino' }, { headers: { Authorization: `Bearer ${token}` } });
-      await cargarReportes();
-      showToast({ type: 'success', title: 'Reporte aceptado', message: 'Notificaremos que vas en camino.' });
-    } catch (error: any) {
-      showToast({ type: 'error', title: 'Error al aceptar', message: error?.response?.data?.detail || 'No pudimos actualizar el estado. Avísale al backend.' });
-    } finally {
-      setShowAcceptModal(false);
-      resetModales();
-      setIsSubmittingAccion(false);
-    }
-  };
+  if (!reporteAccionId) return;
+  setIsSubmittingAccion(true);
+  try {
+    // Cargar staff disponible
+    const res = await axios.get(`${API_URL}/associations/me/staff`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    setStaffList(res.data);
+    setShowAcceptModal(false);
+    setShowStaffModal(true); // ← abrir modal de staff
+  } catch (error: any) {
+    showToast({ type: 'error', title: 'Error', message: 'No pudimos cargar el staff disponible.' });
+  } finally {
+    setIsSubmittingAccion(false);
+  }
+};
+
+const confirmarAsignacionStaff = async () => {
+  if (!reporteAccionId || !staffSeleccionado) {
+    showToast({ type: 'warning', title: 'Faltan datos', message: 'Selecciona un miembro del staff.' });
+    return;
+  }
+  setIsSubmittingAccion(true);
+  try {
+    await axios.post(
+      `${API_URL}/reports/${reporteAccionId}/asignar-staff`,
+      { staff_id: staffSeleccionado },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    await cargarReportes();
+    showToast({ type: 'success', title: 'Reporte aceptado', message: 'Staff asignado. Notificaremos que van en camino.' });
+  } catch (error: any) {
+    showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'No pudimos asignar el staff.' });
+  } finally {
+    setShowStaffModal(false);
+    resetModales();
+    setStaffSeleccionado(null);
+    setIsSubmittingAccion(false);
+  }
+};
 
   const confirmarRechazo = async () => {
     if (!reporteAccionId || !motivoRechazo) {
@@ -256,12 +286,15 @@ export default function AssociationStatusScreen({ onClose }: Props) {
     }
     setIsSubmittingAccion(true);
     try {
-      const formData = new FormData();
-      formData.append('estado_animal', estadoEncontre);
-      if (notasHito) formData.append('comentarios', notasHito.trim());
-      if (fotoHito) formData.append('foto', { uri: fotoHito, name: `hito_${Date.now()}.jpg`, type: 'image/jpeg' } as any);
-      
-      await axios.post(`${API_URL}/reports/${reporteAccionId}/hitos`, formData, { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' } });
+    await axios.post(
+      `${API_URL}/reports/${reporteAccionId}/hitos`,
+        {
+          tipo_hito: "encontre_animal",
+          condicion_observada: estadoEncontre,
+          comentario: notasHito.trim() || null,
+        },
+        { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } }
+      );
       await cargarReportes();
       showToast({ type: 'success', title: 'Hito registrado', message: 'El avance ha sido guardado exitosamente.' });
     } catch (error: any) {
@@ -446,7 +479,7 @@ export default function AssociationStatusScreen({ onClose }: Props) {
                               <TouchableOpacity onPress={() => { setReporteAccionId(reporte.reporte_id); setShowAcceptModal(true); }} style={{ flex: 1, backgroundColor: '#27AE60', paddingVertical: 8, borderRadius: 8, alignItems: 'center' }}>
                                 <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 13 }}>Aceptar</Text>
                               </TouchableOpacity>
-                              <TouchableOpacity onPress={() => { setReporteAccionId(reporte.reporte_id); resetModales(); setShowRejectModal(true); }} style={{ flex: 1, borderWidth: 1, borderColor: '#E74C3C', paddingVertical: 8, borderRadius: 8, alignItems: 'center' }}>
+                              <TouchableOpacity onPress={() => { setReporteAccionId(reporte.reporte_id); setMotivoRechazo(''); setNotasRechazo(''); setShowRejectModal(true); }} style={{ flex: 1, borderWidth: 1, borderColor: '#E74C3C', paddingVertical: 8, borderRadius: 8, alignItems: 'center' }}>
                                 <Text style={{ color: '#E74C3C', fontWeight: '700', fontSize: 13 }}>Rechazar</Text>
                               </TouchableOpacity>
                             </View>
@@ -456,10 +489,10 @@ export default function AssociationStatusScreen({ onClose }: Props) {
                                 <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 13 }}>Cómo llegar</Text>
                               </TouchableOpacity>
                               <View style={{ flexDirection: 'row', gap: 8 }}>
-                                <TouchableOpacity onPress={() => { setReporteAccionId(reporte.reporte_id); resetModales(); setShowEncontreModal(true); }} style={{ flex: 1, backgroundColor: '#F39C12', paddingVertical: 8, borderRadius: 8, alignItems: 'center' }}>
+                                <TouchableOpacity onPress={() => { setReporteAccionId(reporte.reporte_id); setEstadoEncontre(''); setShowEncontreModal(true); }} style={{ flex: 1, backgroundColor: '#F39C12', paddingVertical: 8, borderRadius: 8, alignItems: 'center' }}>
                                   <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 13 }}>Hito rescate</Text>
                                 </TouchableOpacity>
-                                <TouchableOpacity onPress={() => { setReporteAccionId(reporte.reporte_id); resetModales(); setShowCerrarModal(true); }} style={{ flex: 1, backgroundColor: '#8E44AD', paddingVertical: 8, borderRadius: 8, alignItems: 'center' }}>
+                                <TouchableOpacity onPress={() => { setReporteAccionId(reporte.reporte_id); setEstadoCierre(''); setShowCerrarModal(true); }} style={{ flex: 1, backgroundColor: '#8E44AD', paddingVertical: 8, borderRadius: 8, alignItems: 'center' }}>
                                   <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 13 }}>Cerrar caso</Text>
                                 </TouchableOpacity>
                               </View>
@@ -631,6 +664,58 @@ export default function AssociationStatusScreen({ onClose }: Props) {
           </View>
         </View>
       </Modal>
+
+      {/* Modal seleccion de staff */}
+      <Modal visible={showStaffModal} transparent animationType="fade">
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+            <View style={{ backgroundColor: '#FFF', borderRadius: 12, padding: 20, width: '100%', maxWidth: 400 }}>
+              <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#2C3E50', marginBottom: 16 }}>
+                ¿Quién atenderá este caso?
+              </Text>
+              {staffList.map((miembro) => (
+                <TouchableOpacity
+                  key={miembro.id}
+                  onPress={() => miembro.disponible && setStaffSeleccionado(miembro.id)}
+                  style={{
+                    padding: 12, borderWidth: 1, borderRadius: 8, marginBottom: 8,
+                    borderColor: staffSeleccionado === miembro.id ? '#27AE60' : '#ECF0F1',
+                    backgroundColor: !miembro.disponible ? '#F8F9FA' : staffSeleccionado === miembro.id ? '#EAFAF1' : '#FFF',
+                    opacity: miembro.disponible ? 1 : 0.5
+                  }}
+                >
+                  <Text style={{ fontWeight: '600', color: '#2C3E50' }}>
+                    {miembro.nombre} {miembro.apellido_paterno}
+                  </Text>
+                  {!miembro.disponible && (
+                    <Text style={{ fontSize: 12, color: '#E74C3C', marginTop: 2 }}>
+                      {miembro.motivo_no_disponible}
+                    </Text>
+                  )}
+                  {miembro.disponible && (
+                    <Text style={{ fontSize: 12, color: '#27AE60', marginTop: 2 }}>
+                      Disponible — {miembro.casos_activos} casos activos
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              ))}
+              <View style={{ flexDirection: 'row', gap: 12, marginTop: 8 }}>
+                <TouchableOpacity
+                  style={{ flex: 1, paddingVertical: 12, alignItems: 'center', borderRadius: 8, backgroundColor: '#EAEDED' }}
+                  onPress={() => { setShowStaffModal(false); resetModales(); }}
+                >
+                  <Text style={{ color: '#7F8C8D', fontWeight: 'bold' }}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={{ flex: 1, paddingVertical: 12, alignItems: 'center', borderRadius: 8, backgroundColor: '#27AE60' }}
+                  onPress={confirmarAsignacionStaff}
+                  disabled={isSubmittingAccion}
+                >
+                  {isSubmittingAccion ? <ActivityIndicator color="#FFF" /> : <Text style={{ color: '#FFF', fontWeight: 'bold' }}>Asignar y confirmar</Text>}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
 
     </View>
   );

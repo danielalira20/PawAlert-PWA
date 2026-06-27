@@ -334,14 +334,14 @@ async def get_reportes_asignados(authorization: str = Header(None)):
         raise HTTPException(status_code=403, detail="Tu asociación todavía no ha sido aprobada")
 
     resultado = supabase.table("reporte_asignaciones").select(
-        "id, assigned_at, accepted_at, closed_at, notas, "
-        "asignacion_estados!reporte_asignaciones_estado_id_fkey(clave, descripcion), "
-        "reportes(id, estado_reporte, municipio, colonia, calle, created_at, "
-        "animal(id, sexo, edad_aproximada, descripcion, "
-        "tipo_animal_catalogo(clave), condicion_catalogo(clave), tamanio_catalogo(clave), "
-        "animal_fotos(foto_url, orden)))"
+    "id, assigned_at, accepted_at, closed_at, notas, "
+    "asignacion_estados!reporte_asignaciones_estado_id_fkey(clave, descripcion), "
+    "reportes(id, estado_reporte, municipio, colonia, calle, latitud, longitud, created_at, "  # ← agregar latitud, longitud
+    "animal(id, sexo, edad_aproximada, descripcion, "
+    "tipo_animal_catalogo(clave), condicion_catalogo(clave), tamanio_catalogo(clave), "
+    "animal_fotos(foto_url, orden)))"
     ).eq("asociacion_id", usuario["asociacion_id"]).order("assigned_at", desc=True).execute()
-
+    
     reportes = []
     for r in resultado.data:
         rep = r.get("reportes")
@@ -373,6 +373,8 @@ async def get_reportes_asignados(authorization: str = Header(None)):
             "municipio": rep.get("municipio"),
             "colonia": rep.get("colonia"),
             "calle": rep.get("calle"),
+            "latitud": rep.get("latitud"),    
+            "longitud": rep.get("longitud"),
             "created_at": str(rep["created_at"]),
             "foto_url": foto_url,
             "fotos_urls": fotos_urls,
