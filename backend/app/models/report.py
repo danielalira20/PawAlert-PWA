@@ -77,4 +77,12 @@ class ReportListItem(BaseModel):
     created_at: str
     foto_url: Optional[str] = None
     animal: Optional[AnimalResponse] = None
-    
+
+## Lo usa el staff para registrar el avance del rescate
+class HitoRequest(BaseModel):
+    tipo_hito: str  # "encontre_animal" o "llegue_refugio"
+    condicion_observada: Optional[str] = None
+    comentario: Optional[str] = None
+    foto_url: Optional[str] = None
+    latitud: Optional[float] = None
+    longitud: Optional[float] = None

@@ -1,10 +1,11 @@
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Header
 from fastapi.responses import JSONResponse
-from app.models.report import ReportResponse, CondicionEnum, TipoAnimalEnum, TamanioEnum, SexoEnum, EdadEnum, ReportListItem
+from app.models.report import ReportResponse, CondicionEnum, TipoAnimalEnum, TamanioEnum, SexoEnum, EdadEnum, ReportListItem, HitoRequest
 from app.services.report_service import crear_reporte, obtener_reportes, cambiar_estado_reporte
 from app.utils.validators import validar_telefono, validar_email
 from typing import Optional, List
 from app.db.supabase import supabase
+
 
 router = APIRouter()
 
@@ -234,6 +235,123 @@ async def asignar_staff(reporte_id: str, body: dict, authorization: str = Header
         "estado": "en_camino"
     }
 #### FIN endpoint: Representante selecciona staff
+
+### Enpoint para staff en donde registra avances del rescate 
+@router.post("/{reporte_id}/hitos", status_code=201)
+async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str = Header(None)):
+    """El staff registra el avance del rescate."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="No autenticado")
+
+    token = authorization.replace("Bearer ", "")
+    try:
+        auth_response = supabase.auth.get_user(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Token inválido o expirado")
+
+    usuario = supabase.table("usuarios").select(
+        "id, asociacion_id"
+    ).eq("auth_user_id", auth_response.user.id).execute()
+
+    if not usuario.data:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    usuario = usuario.data[0]
+
+    # Verificar que el reporte existe y está asignado a este staff
+    reporte = supabase.table("reportes").select(
+        "id, estado_reporte, staff_asignado_id, asociacion_asignada_id"
+    ).eq("id", reporte_id).execute()
+
+    if not reporte.data:
+        raise HTTPException(status_code=404, detail="Reporte no encontrado")
+
+    reporte = reporte.data[0]
+
+    if reporte["staff_asignado_id"] != usuario["id"]:
+        raise HTTPException(status_code=403, detail="No tienes permiso para registrar hitos en este reporte")
+
+    # Validar tipo de hito
+    if body.tipo_hito not in ["encontre_animal", "llegue_refugio"]:
+        raise HTTPException(status_code=422, detail="Tipo de hito inválido")
+
+    # Validar flujo de estados
+    if body.tipo_hito == "encontre_animal" and reporte["estado_reporte"] != "en_camino":
+        raise HTTPException(status_code=400, detail="El reporte debe estar en estado en_camino para registrar este hito")
+
+    if body.tipo_hito == "llegue_refugio" and reporte["estado_reporte"] != "en_atencion":
+        raise HTTPException(status_code=400, detail="El reporte debe estar en estado en_atencion para registrar este hito")
+
+    # Validación GPS obligatoria para llegue_refugio
+    if body.tipo_hito == "llegue_refugio":
+        if not body.latitud or not body.longitud:
+            raise HTTPException(status_code=422, detail="La ubicación GPS es obligatoria para registrar la llegada al refugio")
+
+        if not body.foto_url:
+            raise HTTPException(status_code=422, detail="La foto es obligatoria para registrar la llegada al refugio")
+
+        # Obtener ubicación del refugio
+        asociacion = supabase.table("asociaciones").select(
+            "latitud, longitud"
+        ).eq("id", reporte["asociacion_asignada_id"]).execute()
+
+        if not asociacion.data:
+            raise HTTPException(status_code=404, detail="Asociación no encontrada")
+
+        refugio_lat = float(asociacion.data[0]["latitud"])
+        refugio_lon = float(asociacion.data[0]["longitud"])
+
+        # Calcular distancia en metros usando fórmula de Haversine
+        import math
+        R = 6371000  # radio de la tierra en metros
+        lat1, lon1 = math.radians(body.latitud), math.radians(body.longitud)
+        lat2, lon2 = math.radians(refugio_lat), math.radians(refugio_lon)
+        dlat = lat2 - lat1
+        dlon = lon2 - lon1
+        a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
+        distancia_metros = R * 2 * math.asin(math.sqrt(a))
+
+        if distancia_metros > 200:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Tu ubicación no coincide con el refugio. Estás a {round(distancia_metros)} metros. Debes estar dentro de 200 metros."
+            )
+
+    # Determinar nuevo estado
+    nuevo_estado = "en_atencion" if body.tipo_hito == "encontre_animal" else "rescatado"
+    estado_id = supabase.table("reporte_estados").select("id").eq("clave", nuevo_estado).execute()
+
+    if not estado_id.data:
+        raise HTTPException(status_code=500, detail=f"Error al resolver estado {nuevo_estado}")
+
+    # Actualizar estado del reporte
+    supabase.table("reportes").update({
+        "estado_reporte": nuevo_estado,
+        "estado_id": estado_id.data[0]["id"],
+    }).eq("id", reporte_id).execute()
+
+    # Registrar en historial
+    from app.services.report_service import registrar_historial
+    registrar_historial(
+        reporte_id=reporte_id,
+        usuario_id=usuario["id"],
+        tipo_evento=f"hito_{body.tipo_hito}",
+        descripcion=f"Hito registrado: {body.tipo_hito}",
+        datos_extra={
+            "condicion_observada": body.condicion_observada,
+            "comentario": body.comentario,
+            "foto_url": body.foto_url,
+            "latitud": body.latitud,
+            "longitud": body.longitud,
+        }
+    )
+
+    return {
+        "mensaje": f"Hito '{body.tipo_hito}' registrado correctamente.",
+        "estado": nuevo_estado
+    }
+
+### FIN endpoind: staff registra avances del rescate 
 
 @router.get("", response_model=list[ReportListItem], status_code=200)
 async def get_reports():
