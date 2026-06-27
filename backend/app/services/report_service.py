@@ -265,7 +265,11 @@ async def crear_reporte(
     }
 
 
-ESTADOS_VALIDOS = ["pendiente", "asignado", "en_atencion", "rescatado", "cerrado"]
+ESTADOS_VALIDOS = ["pendiente", "asignado", "en_camino", "en_atencion", "rescatado", "cerrado", "sin_cobertura", "duplicado", "muerto"]
+
+TRANSICIONES_PERMITIDAS = {
+    "rescatado": "cerrado",  # representante cierra el caso
+}
 
 async def obtener_reportes() -> list:
     resultado = supabase.table("reportes").select(
@@ -321,14 +325,16 @@ async def cambiar_estado_reporte(reporte_id: str, nuevo_estado: str) -> dict:
     estado_actual = resultado.data[0]["estado_reporte"]
     usuario_id = resultado.data[0]["usuario_id"]
 
-    if estado_actual not in ESTADOS_VALIDOS or nuevo_estado not in ESTADOS_VALIDOS:
+    if nuevo_estado not in ESTADOS_VALIDOS:
         raise HTTPException(status_code=400, detail="Estado no válido")
 
-    indice_actual = ESTADOS_VALIDOS.index(estado_actual)
-    indice_nuevo = ESTADOS_VALIDOS.index(nuevo_estado)
-
-    if indice_nuevo != indice_actual + 1:
-        raise HTTPException(status_code=400, detail="Cambio de estado no permitido")
+    # Validar que la transición está permitida
+    transicion_permitida = TRANSICIONES_PERMITIDAS.get(estado_actual)
+    if transicion_permitida != nuevo_estado:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No se puede cambiar de '{estado_actual}' a '{nuevo_estado}'"
+        )
 
     nuevo_estado_id = obtener_id_catalogo("reporte_estados", nuevo_estado)
 
