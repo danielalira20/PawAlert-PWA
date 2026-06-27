@@ -1,9 +1,10 @@
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Header
 from fastapi.responses import JSONResponse
 from app.models.report import ReportResponse, CondicionEnum, TipoAnimalEnum, TamanioEnum, SexoEnum, EdadEnum, ReportListItem
 from app.services.report_service import crear_reporte, obtener_reportes, cambiar_estado_reporte
 from app.utils.validators import validar_telefono, validar_email
 from typing import Optional, List
+from app.db.supabase import supabase
 
 router = APIRouter()
 
@@ -113,6 +114,126 @@ async def create_report(
         return JSONResponse(status_code=200, content=resultado)
 
     return resultado
+
+### Endpoint para que el representante pueda seleccionar STAFF
+@router.post("/{reporte_id}/asignar-staff", status_code=200)
+async def asignar_staff(reporte_id: str, body: dict, authorization: str = Header(None)):
+    """El representante acepta un reporte y asigna a un miembro del staff."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="No autenticado")
+
+    token = authorization.replace("Bearer ", "")
+    try:
+        auth_response = supabase.auth.get_user(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Token inválido o expirado")
+
+    usuario = supabase.table("usuarios").select(
+        "id, asociacion_id"
+    ).eq("auth_user_id", auth_response.user.id).execute()
+
+    if not usuario.data:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    usuario = usuario.data[0]
+    asociacion_id = usuario.get("asociacion_id")
+
+    if not asociacion_id:
+        raise HTTPException(status_code=403, detail="No estás vinculado a ninguna asociación")
+
+
+    
+    # Verificar que el reporte le pertenece a esta asociación
+    reporte = supabase.table("reportes").select(
+        "id, estado_reporte, asociacion_asignada_id"
+    ).eq("id", reporte_id).execute()
+
+
+    
+    if not reporte.data:
+        raise HTTPException(status_code=404, detail="Reporte no encontrado")
+
+    reporte = reporte.data[0]
+
+    if reporte["asociacion_asignada_id"] != asociacion_id:
+        raise HTTPException(status_code=403, detail="Este reporte no pertenece a tu asociación")
+
+    if reporte["estado_reporte"] != "asignado":
+        raise HTTPException(status_code=400, detail="Este reporte ya fue aceptado o no está disponible")
+
+    # Obtener y validar staff_id del body
+    staff_id = body.get("staff_id")
+    if not staff_id:
+        raise HTTPException(status_code=422, detail="Debes seleccionar un miembro del staff")
+
+    # Verificar que el staff pertenece a la misma asociación
+    staff = supabase.table("usuarios").select(
+        "id, nombre, apellido_paterno, rol_id"
+    ).eq("id", staff_id).eq("asociacion_id", asociacion_id).execute()
+
+    if not staff.data:
+        raise HTTPException(status_code=404, detail="El miembro del staff no existe o no pertenece a tu asociación")
+
+    # Verificar disponibilidad del staff
+    casos_activos = supabase.table("reportes").select(
+        "id, animal(condicion_catalogo(clave))"
+    ).eq("staff_asignado_id", staff_id).in_(
+        "estado_reporte", ["en_camino", "en_atencion"]
+    ).execute()
+
+    casos = casos_activos.data or []
+    tiene_caso_grave = any(
+        c.get("animal", {}).get("condicion_catalogo", {}).get("clave") == "grave"
+        for c in casos
+    )
+
+    if tiene_caso_grave:
+        raise HTTPException(status_code=400, detail="Este miembro del staff tiene un caso grave activo")
+    if len(casos) >= 2:
+        raise HTTPException(status_code=400, detail="Este miembro del staff tiene 2 o más casos activos")
+
+    # Asignar staff y cambiar estado a en_camino
+    estado_en_camino_id = supabase.table("reporte_estados").select(
+        "id"
+    ).eq("clave", "en_camino").execute()
+
+    if not estado_en_camino_id.data:
+        raise HTTPException(status_code=500, detail="Error al resolver estado en_camino")
+
+    supabase.table("reportes").update({
+        "staff_asignado_id": staff_id,
+        "estado_reporte": "en_camino",
+        "estado_id": estado_en_camino_id.data[0]["id"],
+    }).eq("id", reporte_id).execute()
+
+    # Actualizar estado de asignación
+    estado_aceptada_id = supabase.table("asignacion_estados").select(
+        "id"
+    ).eq("clave", "aceptada").execute()
+
+    if estado_aceptada_id.data:
+        supabase.table("reporte_asignaciones").update({
+            "estado_id": estado_aceptada_id.data[0]["id"],
+            "estado": "aceptada",
+        }).eq("reporte_id", reporte_id).eq("asociacion_id", asociacion_id).execute()
+
+    # Registrar en historial
+    from app.services.report_service import registrar_historial
+    staff_nombre = f"{staff.data[0]['nombre']} {staff.data[0]['apellido_paterno']}"
+    registrar_historial(
+        reporte_id=reporte_id,
+        usuario_id=usuario["id"],
+        tipo_evento="staff_asignado",
+        descripcion=f"Reporte asignado a {staff_nombre}",
+        datos_extra={"staff_id": staff_id, "staff_nombre": staff_nombre}
+    )
+
+    return {
+        "mensaje": f"Reporte asignado a {staff_nombre}. Estado actualizado a en_camino.",
+        "staff_asignado": staff_nombre,
+        "estado": "en_camino"
+    }
+#### FIN endpoint: Representante selecciona staff
 
 @router.get("", response_model=list[ReportListItem], status_code=200)
 async def get_reports():
