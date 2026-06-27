@@ -33,4 +33,6 @@ const DEV_URL = Platform.select({
 
 const PROD_URL = 'https://pawalert-pwa-production.up.railway.app'
 
+//export const API_URL = __DEV__ ? DEV_URL : PROD_URL
+//export const API_URL = PROD_URL // forzar Railway para demo
 export const API_URL = __DEV__ ? DEV_URL : PROD_URL

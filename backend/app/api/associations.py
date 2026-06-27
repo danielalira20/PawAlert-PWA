@@ -387,3 +387,72 @@ async def get_reportes_asignados(authorization: str = Header(None)):
         })
 
     return reportes
+
+
+
+@router.get("/me/staff", status_code=200)
+async def get_staff_asociacion(authorization: str = Header(None)):
+    """Devuelve la lista de miembros del staff de la asociacion del usuario logueado,
+    indicando si cada uno esta disponible para recibir nuevos casos."""
+    usuario = _obtener_usuario_autenticado(authorization)
+
+    if not usuario.get("asociacion_id"):
+        raise HTTPException(status_code=404, detail="Este usuario no está vinculado a ninguna asociación")
+
+    asociacion = supabase.table("asociaciones").select("verificado").eq(
+        "id", usuario["asociacion_id"]
+    ).execute()
+
+    if not asociacion.data or not asociacion.data[0]["verificado"]:
+        raise HTTPException(status_code=403, detail="Tu asociación todavía no ha sido aprobada")
+
+    # Obtener rol de staff
+    rol_staff = supabase.table("roles").select("id").eq("nombre", "staff").execute()
+    if not rol_staff.data:
+        return []
+    rol_staff_id = rol_staff.data[0]["id"]
+
+    # Obtener miembros del staff de la asociacion
+    staff = supabase.table("usuarios").select(
+        "id, nombre, apellido_paterno, email, telefono"
+    ).eq("asociacion_id", usuario["asociacion_id"]).eq("rol_id", rol_staff_id).execute()
+
+    if not staff.data:
+        return []
+
+    # Verificar disponibilidad de cada miembro
+    resultado = []
+    for miembro in staff.data:
+        # Contar casos activos del miembro
+        casos_activos = supabase.table("reportes").select(
+            "id, estado_reporte, animal(condicion_catalogo(clave))"
+        ).eq("staff_asignado_id", miembro["id"]).in_(
+            "estado_reporte", ["en_camino", "en_atencion"]
+        ).execute()
+
+        casos = casos_activos.data or []
+        tiene_caso_grave = any(
+            c.get("animal", {}).get("condicion_catalogo", {}).get("clave") == "grave"
+            for c in casos
+        )
+        total_casos_activos = len(casos)
+
+        disponible = not tiene_caso_grave and total_casos_activos < 2
+        motivo_no_disponible = None
+        if tiene_caso_grave:
+            motivo_no_disponible = "Tiene un caso grave activo"
+        elif total_casos_activos >= 2:
+            motivo_no_disponible = "Tiene 2 o más casos activos"
+
+        resultado.append({
+            "id": miembro["id"],
+            "nombre": miembro["nombre"],
+            "apellido_paterno": miembro["apellido_paterno"],
+            "email": miembro.get("email"),
+            "telefono": miembro.get("telefono"),
+            "disponible": disponible,
+            "casos_activos": total_casos_activos,
+            "motivo_no_disponible": motivo_no_disponible,
+        })
+
+    return resultado
