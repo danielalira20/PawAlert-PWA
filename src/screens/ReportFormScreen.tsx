@@ -102,6 +102,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
   const [direccionConfirmada, setDireccionConfirmada] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [estadoUbicacion, setEstadoUbicacion] = useState('');
 
   // ─── Pre-rellenar con datos del usuario logueado ───
   useEffect(() => {
@@ -173,6 +174,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
       setNumero(address.house_number || '');
       setColonia(address.suburb || address.neighbourhood || address.colonia || '');
       setMunicipio(address.city || address.town || address.municipality || address.county || '');
+      setEstadoUbicacion(address.state || '');
       setDireccionConfirmada(res.data.display_name || '');
     } catch {
       // Si falla no bloqueamos el flujo.
@@ -461,6 +463,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
       }
       if (colonia.trim()) formData.append('colonia', colonia.trim());
       if (municipio.trim()) formData.append('municipio', municipio.trim());
+      if (estadoUbicacion.trim()) formData.append('estado_ubicacion', estadoUbicacion.trim());
       if (esDuplicadoConfirmado) formData.append('es_duplicado_confirmado', 'true');
       if (reporteOriginalId) formData.append('reporte_original_id', reporteOriginalId);
 
@@ -487,7 +490,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
         const contactos = data.contactos_emergencia.map((c: any) => `${c.nombre}: ${c.telefono}`).join('\n');
         setResultadoEnvio(`No hay asociaciones disponibles en tu zona.\n\nContactos de emergencia:\n${contactos}`);
       } else {
-        setResultadoEnvio('Tu reporte fue publicado. Te avisaremos cuando una asociación lo atienda.');
+        setResultadoEnvio('Tu reporte fue publicado. No encontramos asociaciones ni contactos de emergencia en tu zona. Te recomendamos contactar a tu Ayuntamiento local o Protección Civil municipal.');
       }
     } catch (error: any) {
       const mensaje = error?.response?.data?.detail || error?.message || 'Error desconocido';
@@ -749,6 +752,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
           </View>
           <Input label="Colonia" placeholder="Ej. Viveros" value={colonia} onChangeText={setColonia} maxLength={50} />
           <Input label="Municipio" placeholder="Ej. Puebla" value={municipio} onChangeText={setMunicipio} maxLength={50} />
+          <Input label="Estado" placeholder="Ej. Puebla" value={estadoUbicacion} onChangeText={setEstadoUbicacion} maxLength={50} />
           <TouchableOpacity onPress={handleGeocodeManualFields} style={{ flexDirection: 'row', alignItems: 'center', marginTop: -8, marginBottom: 8 }}>
             <Feather name="refresh-cw" size={13} color="#3498DB" style={{ marginRight: 6 }} />
             <Text style={{ fontSize: 12, color: '#3498DB', fontWeight: '600' }}>Mover el pin a esta dirección</Text>

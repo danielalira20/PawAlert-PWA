@@ -88,6 +88,7 @@ async def crear_reporte(
     descripcion: str | None,
     fotos: list | None = None,
     fotos_ordenes: str | None = None,
+    estado_ubicacion: str | None = None,
     sexo: str | None = None,
     edad_aproximada: str | None = None,
     tiene_collar: bool | None = None,
@@ -166,6 +167,7 @@ async def crear_reporte(
         "calle": calle,
         "colonia": colonia,
         "municipio": municipio,
+        "estado_ubicacion": estado_ubicacion,
         "referencia": referencia,
         "reporte_original_id": reporte_original_id, 
     }
@@ -254,8 +256,11 @@ async def crear_reporte(
     # 9 — Obtener contactos de emergencia si no hay asociación
     contactos = []
     if not asociacion_id:
-        contactos = obtener_contactos_emergencia(tipo_animal, municipio)
-
+        contactos = obtener_contactos_emergencia(
+            tipo_animal=tipo_animal,
+            municipio=municipio,
+            estado=estado_ubicacion
+        )
     return {
         "id": reporte_id,
         "estado": "asignado" if asociacion_id else "pendiente",

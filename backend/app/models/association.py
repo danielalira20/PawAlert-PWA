@@ -38,3 +38,5 @@ class AssociationPublicResponse(BaseModel):
 class RespuestaApelacionBody(BaseModel):
     decision: str  # "aprobar" o "rechazar"
     respuesta: str | None = None
+
+    

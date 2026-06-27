@@ -13,16 +13,34 @@ def asignar_asociacion(latitud: float, longitud: float) -> dict | None:
         return resultado.data[0]
     return None
 
-def obtener_contactos_emergencia(tipo_animal: str, municipio: str | None) -> list:
+def obtener_contactos_emergencia(tipo_animal: str, municipio: str | None, estado: str | None = None) -> list:
     resultado = supabase.table("contactos_emergencia").select("*").eq("activo", True).execute()
 
     if not resultado.data:
         return []
 
-    contactos_filtrados = [
-        c for c in resultado.data
-        if (c["tipos_animales"] is None or tipo_animal in c["tipos_animales"])
-        and (c["municipio"] is None or municipio is None or c["municipio"].lower() == municipio.lower())
-    ]
+    def aplica_tipo(c):
+        return c["tipos_animales"] is None or tipo_animal in c["tipos_animales"]
 
-    return contactos_filtrados[:3]
+    # Nivel 1 — municipio exacto
+    por_municipio = [
+        c for c in resultado.data
+        if aplica_tipo(c) and c.get("municipio") and municipio
+        and c["municipio"].lower() == municipio.lower()
+        and not c.get("estado")
+    ]
+    if por_municipio:
+        return por_municipio[:3]
+
+    # Nivel 2 — estado
+    por_estado = [
+        c for c in resultado.data
+        if aplica_tipo(c) and c.get("estado") and estado
+        and c["estado"].lower() == estado.lower()
+        and not c.get("municipio")
+    ]
+    if por_estado:
+        return por_estado[:3]
+
+    # Nivel 3 — mensaje genérico (lista vacía)
+    return []
