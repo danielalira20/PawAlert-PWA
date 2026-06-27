@@ -1,11 +1,27 @@
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Header
 from fastapi.responses import JSONResponse
 from app.models.report import ReportResponse, CondicionEnum, TipoAnimalEnum, TamanioEnum, SexoEnum, EdadEnum, ReportListItem
-from app.services.report_service import crear_reporte, obtener_reportes, cambiar_estado_reporte
+from app.services.report_service import crear_reporte, obtener_reportes, cambiar_estado_reporte, obtener_reportes_usuario
 from app.utils.validators import validar_telefono, validar_email
 from typing import Optional, List
 
+
 router = APIRouter()
+def _obtener_usuario_autenticado(authorization: str | None) -> dict:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="No autenticado")
+    token = authorization.replace("Bearer ", "")
+    try:
+        from app.db.supabase import supabase
+        auth_response = supabase.auth.get_user(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Token inválido o expirado")
+    resultado = supabase.table("usuarios").select("id, asociacion_id").eq(
+        "auth_user_id", auth_response.user.id
+    ).execute()
+    if not resultado.data:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    return resultado.data[0]
 
 @router.post("", status_code=201)
 async def create_report(
@@ -121,3 +137,8 @@ async def get_reports():
 @router.patch("/{reporte_id}/status", status_code=200)
 async def update_report_status(reporte_id: str, body: dict):
     return await cambiar_estado_reporte(reporte_id, body.get("estado"))
+
+@router.get("/me", status_code=200)
+async def get_mis_reportes(authorization: str = Header(None)):
+    usuario = _obtener_usuario_autenticado(authorization)
+    return await obtener_reportes_usuario(usuario["id"])

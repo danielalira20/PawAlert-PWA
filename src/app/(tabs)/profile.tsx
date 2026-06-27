@@ -3,9 +3,9 @@ import { Animated, View, Text, TouchableOpacity, Image, Platform, Dimensions, Mo
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
-// Importamos las pantallas especializadas
 import AdminDashboardScreen from '../../screens/AdminDashboardScreen';
 import AssociationStatusScreen from '../../screens/AssociationStatusScreen';
+import MisReportesScreen from '../../screens/MisReportesScreen';
 
 const { width } = Dimensions.get('window');
 const isWeb = Platform.OS === 'web';
@@ -13,9 +13,9 @@ const isWeb = Platform.OS === 'web';
 export default function ProfileScreen() {
   const { user, isLoggedIn, logout } = useAuth();
   
-  // Estados para controlar los Modales
   const [isAdminVisible, setIsAdminVisible] = useState(false);
   const [isAssociationVisible, setIsAssociationVisible] = useState(false);
+  const [isMisReportesVisible, setIsMisReportesVisible] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(24)).current;
@@ -30,7 +30,6 @@ export default function ProfileScreen() {
   if (!isLoggedIn || !user) {
     return (
       <Animated.View style={{ flex: 1, backgroundColor: '#F8FAFC', opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
-        {/* Header */}
         <View style={{ backgroundColor: '#0F172A', paddingTop: 60, paddingBottom: 40, paddingHorizontal: 28, borderBottomLeftRadius: 32, borderBottomRightRadius: 32 }}>
           <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
             <Ionicons name="person-outline" size={32} color="rgba(255,255,255,0.6)" />
@@ -123,6 +122,21 @@ export default function ProfileScreen() {
           ))}
         </View>
 
+        {/* Mis Reportes — visible para todos los usuarios logueados */}
+        <TouchableOpacity
+          onPress={() => setIsMisReportesVisible(true)}
+          style={{ backgroundColor: '#FFFFFF', borderRadius: 20, padding: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: '#DBEAFE' }}
+          activeOpacity={0.8}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: '#EFF6FF', alignItems: 'center', justifyContent: 'center' }}>
+              <Ionicons name="paw-outline" size={18} color="#1F77B4" />
+            </View>
+            <Text style={{ fontSize: 15, color: '#1E293B', fontWeight: '700' }}>Mis Reportes</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+        </TouchableOpacity>
+
         {/* Panel de Administrador */}
         {user.es_admin && (
           <TouchableOpacity
@@ -149,7 +163,7 @@ export default function ProfileScreen() {
           >
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
               <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: '#ECFDF5', alignItems: 'center', justifyContent: 'center' }}>
-                <Ionicons name="paw-outline" size={18} color="#27AE60" />
+                <Ionicons name="business-outline" size={18} color="#27AE60" />
               </View>
               <Text style={{ fontSize: 15, color: '#1E293B', fontWeight: '700' }}>Panel de asociación</Text>
             </View>
@@ -168,7 +182,18 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Modal para el Panel de Administrador */}
+      {/* Modal: Mis Reportes */}
+      <Modal visible={isMisReportesVisible} animationType="slide" transparent onRequestClose={() => setIsMisReportesVisible(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 16, paddingTop: 60, paddingBottom: 40 }}>
+          <View style={{ flex: 1, borderRadius: 20, overflow: 'hidden' }}>
+            {isMisReportesVisible && (
+              <MisReportesScreen onClose={() => setIsMisReportesVisible(false)} />
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal: Panel de Administrador */}
       <Modal visible={isAdminVisible} animationType="slide" transparent onRequestClose={() => setIsAdminVisible(false)}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 16, paddingTop: 60, paddingBottom: 40 }}>
           <View style={{ flex: 1, backgroundColor: '#F5F5F5', borderRadius: 20, overflow: 'hidden' }}>
@@ -179,7 +204,7 @@ export default function ProfileScreen() {
         </View>
       </Modal>
 
-      {/* Modal para el Panel de Asociación */}
+      {/* Modal: Panel de Asociación */}
       <Modal visible={isAssociationVisible} animationType="slide" transparent onRequestClose={() => setIsAssociationVisible(false)}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 16, paddingTop: 60, paddingBottom: 40 }}>
           <View style={{ flex: 1, backgroundColor: '#F5F5F5', borderRadius: 20, overflow: 'hidden' }}>
