@@ -458,3 +458,104 @@ async def get_staff_asociacion(authorization: str = Header(None)):
         })
 
     return resultado
+
+### Endpoint: POST para APELAR
+@router.post("/me/apelar", status_code=201)
+async def apelar_rechazo(
+    mensaje: str = Form(...),
+    documentos: Optional[List[UploadFile]] = File(None),
+    authorization: str = Header(None)
+):
+    """Permite a una asociación rechazada enviar una apelación con mensaje y documentos."""
+    usuario = _obtener_usuario_autenticado(authorization)
+
+    if not usuario.get("asociacion_id"):
+        raise HTTPException(status_code=404, detail="Este usuario no está vinculado a ninguna asociación")
+
+    asociacion = supabase.table("asociaciones").select(
+        "id, nombre, verificado, motivo_rechazo"
+    ).eq("id", usuario["asociacion_id"]).execute()
+
+    if not asociacion.data:
+        raise HTTPException(status_code=404, detail="Asociación no encontrada")
+
+    asociacion = asociacion.data[0]
+
+    if asociacion["verificado"]:
+        raise HTTPException(status_code=400, detail="Tu asociación ya está aprobada")
+
+    if not asociacion.get("motivo_rechazo"):
+        raise HTTPException(status_code=400, detail="Tu asociación no ha sido rechazada")
+
+    # Verificar que no tenga apelación pendiente
+    apelacion_existente = supabase.table("apelaciones").select("id, estado").eq(
+        "asociacion_id", usuario["asociacion_id"]
+    ).eq("estado", "pendiente").execute()
+
+    if apelacion_existente.data:
+        raise HTTPException(status_code=409, detail="Ya tienes una apelación en revisión")
+
+    # Validar mensaje
+    if not mensaje.strip():
+        raise HTTPException(status_code=422, detail="El mensaje de apelación es obligatorio")
+
+    if len(mensaje) > 300:
+        raise HTTPException(status_code=422, detail="El mensaje no puede superar 300 caracteres")
+
+    # Subir documentos si existen
+    documentos_urls = []
+    if documentos:
+        if len(documentos) > 3:
+            raise HTTPException(status_code=422, detail="Puedes subir máximo 3 documentos")
+
+        for doc in documentos:
+            if doc and doc.filename:
+                if doc.content_type not in ["image/jpeg", "image/png", "image/jpg", "image/webp", "application/pdf"]:
+                    raise HTTPException(status_code=422, detail="Solo se permiten imágenes JPG, PNG, WEBP o PDF")
+                doc_url = await subir_foto(doc, carpeta="asociaciones/apelaciones")
+                documentos_urls.append(doc_url)
+
+    # Guardar apelación
+    supabase.table("apelaciones").insert({
+        "asociacion_id": usuario["asociacion_id"],
+        "mensaje": mensaje.strip(),
+        "documentos_urls": documentos_urls,
+        "estado": "pendiente",
+    }).execute()
+
+    return {
+        "mensaje": "Tu apelación fue enviada correctamente. El equipo de PawAlert la revisará y te notificará por correo.",
+        "documentos_subidos": len(documentos_urls),
+        "estado": "pendiente"
+    }
+
+### FIN: POST apelar 
+
+### Endpoind: Para que el representante sepa elstatus de su apelacion 
+@router.get("/me/apelacion", status_code=200)
+async def get_apelacion(authorization: str = Header(None)):
+    """Devuelve la apelación más reciente de la asociación si existe."""
+    usuario = _obtener_usuario_autenticado(authorization)
+
+    if not usuario.get("asociacion_id"):
+        raise HTTPException(status_code=404, detail="Este usuario no está vinculado a ninguna asociación")
+
+    apelacion = supabase.table("apelaciones").select(
+        "id, estado, mensaje, created_at"
+    ).eq("asociacion_id", usuario["asociacion_id"]).order(
+        "created_at", desc=True
+    ).limit(1).execute()
+
+    if not apelacion.data:
+        return {"tiene_apelacion": False}
+
+    return {
+        "tiene_apelacion": True,
+        "estado": apelacion.data[0]["estado"],
+        "mensaje": apelacion.data[0]["mensaje"],
+        "created_at": str(apelacion.data[0]["created_at"])
+    }
+
+### Fin: endpoint para status apleacion 
+
+

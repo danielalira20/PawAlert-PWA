@@ -34,3 +34,7 @@ class AssociationPublicResponse(BaseModel):
     radio_km: float
     horario_atencion: Optional[str] = None
     activo: bool
+
+class RespuestaApelacionBody(BaseModel):
+    decision: str  # "aprobar" o "rechazar"
+    respuesta: str | None = None

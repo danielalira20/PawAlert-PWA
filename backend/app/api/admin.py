@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
 from app.db.supabase import supabase
+from app.models.association import RespuestaApelacionBody
 
 router = APIRouter()
 
@@ -61,3 +62,64 @@ async def rechazar_asociacion(asociacion_id: str, body: RechazoBody, authorizati
     supabase.table("asociaciones").update({"motivo_rechazo": body.motivo}).eq("id", asociacion_id).execute()
     return {"mensaje": "Asociación rechazada"}
 
+
+### Endpoint: listar asociaciones con apleacion pedniente 
+@router.get("/apelaciones", status_code=200)
+async def listar_apelaciones(authorization: str = Header(None)):
+    """Lista todas las apelaciones pendientes con datos de la asociación."""
+    _verificar_admin(authorization)
+
+    resultado = supabase.table("apelaciones").select(
+        "id, mensaje, documentos_urls, estado, created_at, "
+        "asociaciones(id, nombre, nombre_responsable, contacto_email, motivo_rechazo)"
+    ).eq("estado", "pendiente").order("created_at", desc=False).execute()
+
+    return resultado.data
+### FIN: apelaciones pendientes 
+
+### ENDPOINT: Admin aprueba o rechaza apelacion 
+@router.patch("/apelaciones/{apelacion_id}", status_code=200)
+async def resolver_apelacion(apelacion_id: str, body: RespuestaApelacionBody, authorization: str = Header(None)):
+    """El admin aprueba o rechaza una apelación."""
+    _verificar_admin(authorization)
+
+    if body.decision not in ["aprobar", "rechazar"]:
+        raise HTTPException(status_code=422, detail="La decisión debe ser 'aprobar' o 'rechazar'")
+
+    # Obtener apelación
+    apelacion = supabase.table("apelaciones").select(
+        "id, asociacion_id, estado"
+    ).eq("id", apelacion_id).execute()
+
+    if not apelacion.data:
+        raise HTTPException(status_code=404, detail="Apelación no encontrada")
+
+    if apelacion.data[0]["estado"] != "pendiente":
+        raise HTTPException(status_code=400, detail="Esta apelación ya fue resuelta")
+
+    asociacion_id = apelacion.data[0]["asociacion_id"]
+
+    if body.decision == "aprobar":
+        # Aprobar asociación
+        supabase.table("asociaciones").update({
+            "verificado": True,
+            "motivo_rechazo": None,
+        }).eq("id", asociacion_id).execute()
+
+        supabase.table("apelaciones").update({
+            "estado": "aprobada",
+            "respuesta_admin": body.respuesta,
+        }).eq("id", apelacion_id).execute()
+
+        return {"mensaje": "Apelación aprobada. La asociación ha sido verificada."}
+
+    else:
+        # Rechazar apelación
+        supabase.table("apelaciones").update({
+            "estado": "rechazada",
+            "respuesta_admin": body.respuesta,
+        }).eq("id", apelacion_id).execute()
+
+        return {"mensaje": "Apelación rechazada."}
+    
+### FIN: admin rechaza o acepta apelacion 
