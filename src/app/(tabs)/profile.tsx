@@ -95,12 +95,17 @@ export default function ProfileScreen() {
             <Text style={{ color: '#93C5FD', fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 }}>Administrador</Text>
           </View>
         )}
-        {user.asociacion_id && (
+        {user.asociacion_id && user.rol === 'staff' && (
+          <View style={{ backgroundColor: 'rgba(243,156,18,0.2)', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 100, alignSelf: 'flex-start', marginTop: 8, borderWidth: 1, borderColor: 'rgba(243,156,18,0.3)' }}>
+            <Text style={{ color: '#FCD34D', fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 }}>Staff</Text>
+          </View>
+        )}
+        {user.asociacion_id && user.rol === 'asociacion' && (
           <View style={{ backgroundColor: 'rgba(39,174,96,0.2)', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 100, alignSelf: 'flex-start', marginTop: 8, borderWidth: 1, borderColor: 'rgba(39,174,96,0.3)' }}>
             <Text style={{ color: '#86EFAC', fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 }}>Asociación</Text>
           </View>
         )}
-      </View>
+        </View>
 
       <View style={{ padding: 24, gap: 12 }}>
         {/* Info card */}
@@ -123,6 +128,7 @@ export default function ProfileScreen() {
         </View>
 
         {/* Mis Reportes — visible para todos los usuarios logueados */}
+        {(!user.asociacion_id && !user.es_admin) && (
         <TouchableOpacity
           onPress={() => setIsMisReportesVisible(true)}
           style={{ backgroundColor: '#FFFFFF', borderRadius: 20, padding: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: '#DBEAFE' }}
@@ -136,7 +142,8 @@ export default function ProfileScreen() {
           </View>
           <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
         </TouchableOpacity>
-
+        )}
+        
         {/* Panel de Administrador */}
         {user.es_admin && (
           <TouchableOpacity
@@ -155,7 +162,7 @@ export default function ProfileScreen() {
         )}
 
         {/* Panel de Asociación */}
-        {user.asociacion_id && (
+        {user.asociacion_id && user.rol === 'asociacion' && (
           <TouchableOpacity
             onPress={() => setIsAssociationVisible(true)}
             style={{ backgroundColor: '#FFFFFF', borderRadius: 20, padding: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: '#D1FAE5' }}
@@ -166,6 +173,23 @@ export default function ProfileScreen() {
                 <Ionicons name="business-outline" size={18} color="#27AE60" />
               </View>
               <Text style={{ fontSize: 15, color: '#1E293B', fontWeight: '700' }}>Panel de asociación</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+          </TouchableOpacity>
+        )}
+
+        {/* Panel para staff  (falta actualiza panel)*/}
+        {user.rol === 'staff' && (
+        <TouchableOpacity
+            onPress={() => setIsAssociationVisible(true)}
+            style={{ backgroundColor: '#FFFFFF', borderRadius: 20, padding: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: '#D1FAE5' }}
+            activeOpacity={0.8}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: '#ECFDF5', alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name="business-outline" size={18} color="#27AE60" />
+              </View>
+              <Text style={{ fontSize: 15, color: '#1E293B', fontWeight: '700' }}>Panel de staff</Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
           </TouchableOpacity>

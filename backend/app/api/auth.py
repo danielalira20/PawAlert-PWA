@@ -53,6 +53,10 @@ async def register(body: RegisterRequest):
 
     auth_user_id = auth_response.user.id
 
+    # obtener rol de reportante
+    rol_reportante = supabase.table("roles").select("id").eq("nombre", "reportante").execute()
+    rol_reportante_id = rol_reportante.data[0]["id"] if rol_reportante.data else None
+
     try:
         if usuario_invitado_id:
             usuario = supabase.table("usuarios").update({
@@ -61,6 +65,7 @@ async def register(body: RegisterRequest):
                 "apellido_paterno": body.apellido_paterno,
                 "apellido_materno": body.apellido_materno,
                 "email": body.email,
+                "rol_id": rol_reportante_id,
             }).eq("id", usuario_invitado_id).execute()
         else:
             usuario = supabase.table("usuarios").insert({
@@ -70,6 +75,7 @@ async def register(body: RegisterRequest):
                 "apellido_materno": body.apellido_materno,
                 "email": body.email,
                 "telefono": telefono_limpio,
+                "rol_id": rol_reportante_id,
             }).execute()
     except Exception as e:
         supabase_admin.auth.admin.delete_user(auth_user_id)
@@ -93,6 +99,15 @@ async def register(body: RegisterRequest):
         "password": body.password,
     })
 
+    ###obtener rol del usurio registrado
+    rol_result = supabase.table("usuarios").select(
+        "roles(nombre)"
+    ).eq("id", nuevo_usuario_id).execute()
+    rol_nombre = "reportante"
+    if rol_result.data and rol_result.data[0].get("roles"):
+        rol_nombre = rol_result.data[0]["roles"]["nombre"]
+        
+
     return {
         "access_token": login_response.session.access_token,
         "token_type": "bearer",
@@ -102,6 +117,9 @@ async def register(body: RegisterRequest):
             "apellido_paterno": body.apellido_paterno,
             "email": body.email,
             "telefono": telefono_limpio,
+            "asociacion_id": usuario.data[0].get("asociacion_id"),
+            "rol": rol_nombre,  
+            "es_admin": rol_nombre == "admin",
         }
     }
 
@@ -125,6 +143,7 @@ async def login(body: LoginRequest):
     usuario_data = resultado.data[0]
     rol = usuario_data.pop("roles", None)
     usuario_data["es_admin"] = bool(rol and rol.get("nombre") == "admin")
+    usuario_data["rol"] = rol.get("nombre") if rol else "reportante"
 
     return {
         "access_token": response.session.access_token,

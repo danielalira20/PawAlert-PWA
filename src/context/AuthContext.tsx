@@ -12,6 +12,7 @@ interface Usuario {
   telefono: string;
   asociacion_id?: string | null;
   es_admin?: boolean;
+  rol?: string;
 }
 
 interface RegisterData {

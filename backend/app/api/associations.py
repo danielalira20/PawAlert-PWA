@@ -132,6 +132,10 @@ async def create_association(
     auth_user_id = auth_response.user.id
     telefono_limpio = contacto_telefono.replace(" ", "").replace("-", "")
 
+    # Obtener rol de asociacion
+    rol_asociacion = supabase.table("roles").select("id").eq("nombre", "asociacion").execute()
+    rol_asociacion_id = rol_asociacion.data[0]["id"] if rol_asociacion.data else None
+    
     try:
         existente = supabase.table("usuarios").select("id, auth_user_id").eq(
             "telefono", telefono_limpio
@@ -145,6 +149,7 @@ async def create_association(
                 "apellido_paterno": apellido_responsable,
                 "email": contacto_email,
                 "asociacion_id": asociacion_id,
+                "rol_id": rol_asociacion_id,
             }).eq("id", usuario_id).execute()
         else:
             usuario_insertado = supabase.table("usuarios").insert({
@@ -154,6 +159,7 @@ async def create_association(
                 "email": contacto_email,
                 "telefono": telefono_limpio,
                 "asociacion_id": asociacion_id,
+                "rol_id": rol_asociacion_id,
             }).execute()
             usuario_id = usuario_insertado.data[0]["id"]
     except Exception:
@@ -297,6 +303,9 @@ async def agregar_representante(asociacion_id: str, body: NuevoRepresentante, au
     if body.email and not validar_email(body.email):
         raise HTTPException(status_code=422, detail="Ingresa un correo electrónico válido.")
 
+    rol_asociacion = supabase.table("roles").select("id").eq("nombre", "asociacion").execute()
+    rol_asociacion_id = rol_asociacion.data[0]["id"] if rol_asociacion.data else None
+
     existente = supabase.table("usuarios").select("id, auth_user_id").eq(
         "telefono", telefono_limpio
     ).execute()
@@ -306,6 +315,7 @@ async def agregar_representante(asociacion_id: str, body: NuevoRepresentante, au
             raise HTTPException(status_code=409, detail="Ese teléfono ya pertenece a una cuenta con acceso")
         supabase.table("usuarios").update({
             "asociacion_id": asociacion_id,
+            "rol_id": rol_asociacion_id, 
         }).eq("id", existente.data[0]["id"]).execute()
     else:
         supabase.table("usuarios").insert({
@@ -315,6 +325,7 @@ async def agregar_representante(asociacion_id: str, body: NuevoRepresentante, au
             "telefono": telefono_limpio,
             "email": body.email,
             "asociacion_id": asociacion_id,
+            "rol_id": rol_asociacion_id,
         }).execute()
 
     return {"mensaje": "Representante agregado. Podrá iniciar sesión registrándose con ese mismo teléfono."}
