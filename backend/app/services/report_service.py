@@ -356,3 +356,52 @@ async def cambiar_estado_reporte(reporte_id: str, nuevo_estado: str) -> dict:
         "estado": nuevo_estado,
         "updated_at": str(actualizado.data[0]["updated_at"])
     }
+
+async def obtener_reportes_usuario(usuario_id: str) -> list:
+    resultado = supabase.table("reportes").select(
+        "id, estado_reporte, latitud, longitud, municipio, colonia, calle, created_at, "
+        "asociacion_asignada_id, "
+        "animal(id, tipo_animal_id, condicion_id, sexo, edad_aproximada, descripcion, "
+        "tipo_animal_catalogo(clave), condicion_catalogo(clave), tamanio_catalogo(clave), "
+        "animal_fotos(foto_url, orden)), "
+        "asociaciones!reportes_asociacion_asignada_id_fkey(nombre)"
+    ).eq("usuario_id", usuario_id).order("created_at", desc=True).execute()
+
+    reportes = []
+    for r in resultado.data:
+        animal = r.get("animal")
+        animal_data = None
+        foto_url = None
+
+        if animal:
+            animal_data = {
+                "tipo_animal": animal.get("tipo_animal_catalogo", {}).get("clave") if animal.get("tipo_animal_catalogo") else None,
+                "condicion": animal.get("condicion_catalogo", {}).get("clave") if animal.get("condicion_catalogo") else None,
+                "tamanio": animal.get("tamanio_catalogo", {}).get("clave") if animal.get("tamanio_catalogo") else None,
+                "sexo": animal.get("sexo"),
+                "edad_aproximada": animal.get("edad_aproximada"),
+                "descripcion": animal.get("descripcion"),
+            }
+            fotos = animal.get("animal_fotos") or []
+            if fotos:
+                fotos_ordenadas = sorted(fotos, key=lambda f: f.get("orden", 0))
+                foto_url = fotos_ordenadas[0]["foto_url"]
+
+        asociacion = r.get("asociaciones")
+        asociacion_nombre = asociacion.get("nombre") if asociacion else None
+
+        reportes.append({
+            "id": r["id"],
+            "estado_reporte": r.get("estado_reporte"),
+            "latitud": r.get("latitud"),
+            "longitud": r.get("longitud"),
+            "municipio": r.get("municipio"),
+            "colonia": r.get("colonia"),
+            "calle": r.get("calle"),
+            "created_at": str(r["created_at"]),
+            "foto_url": foto_url,
+            "animal": animal_data,
+            "asociacion_nombre": asociacion_nombre,
+        })
+
+    return reportes

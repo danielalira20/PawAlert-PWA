@@ -153,10 +153,11 @@ export default function LoginScreen() {
     setIsLoading(true);
     try {
       const usuario = await login(email.trim(), password);
-      const destino = usuario.es_admin ? '/profile' : (usuario.asociacion_id ? '/association-status' : '/');
+      // ✅ CAMBIO: Tanto admin como asociación van a /profile
+      const destino = usuario.es_admin || usuario.asociacion_id ? '/profile' : '/';
       showSuccessAndRedirect('¡Bienvenida de vuelta! Redirigiendo...', destino);
     } catch (error: any) {
-      showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'Correo o contraseña incorrectos' });
+      showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'Error al iniciar sesión' });
     } finally {
       setIsLoading(false);
     }
@@ -202,7 +203,8 @@ export default function LoginScreen() {
         apellido_materno: apellidoMaterno.trim() || undefined,
         telefono: telefono.replace(/\s|-/g, ''),
       });
-      const destino = usuario.es_admin ? '/profile' : (usuario.asociacion_id ? '/association-status' : '/');
+      // ✅ CAMBIO: Tanto admin como asociación van a /profile
+      const destino = usuario.es_admin || usuario.asociacion_id ? '/profile' : '/';
       showSuccessAndRedirect('¡Cuenta creada! Redirigiendo...', destino);
     } catch (error: any) {
       showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'Error al crear la cuenta' });
