@@ -262,13 +262,6 @@ export default function AssociationStatusScreen({ onClose }: Props) {
     try {
       const formData = new FormData();
       formData.append('mensaje', apelacionTexto.trim());
-      
-      console.log('docs a enviar:', apelacionDocs);
-    for (const doc of apelacionDocs) {
-      console.log('doc uri:', doc.uri);
-      const res = await fetch(doc.uri);
-      console.log('fetch status:', res.status, res.ok);
-    }
 
       if (Platform.OS === 'web') {
           for (const doc of apelacionDocs) {

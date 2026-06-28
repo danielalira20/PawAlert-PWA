@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
 from app.db.supabase import supabase
 from app.models.association import RespuestaApelacionBody
-
+from app.services.email_service import (email_asociacion_aprobada, email_asociacion_rechazada, email_apelacion_aprobada, email_apelacion_rechazada)
 router = APIRouter()
 
 
@@ -51,7 +51,20 @@ class RechazoBody(BaseModel):
 async def aprobar_asociacion(asociacion_id: str, authorization: str = Header(None)):
     _verificar_admin(authorization)
 
+    # Obtener datos de la asociación para el email
+    asociacion = supabase.table("asociaciones").select(
+        "nombre, contacto_email"
+    ).eq("id", asociacion_id).execute()
+
     supabase.table("asociaciones").update({"verificado": True}).eq("id", asociacion_id).execute()
+    
+    # Enviar email
+    if asociacion.data:
+        email_asociacion_aprobada(
+            nombre_asociacion=asociacion.data[0]["nombre"],
+            email=asociacion.data[0]["contacto_email"]
+        )
+
     return {"mensaje": "Asociación aprobada"}
 
 
@@ -59,7 +72,21 @@ async def aprobar_asociacion(asociacion_id: str, authorization: str = Header(Non
 async def rechazar_asociacion(asociacion_id: str, body: RechazoBody, authorization: str = Header(None)):
     _verificar_admin(authorization)
 
+    #obtener datos de la asocacion para el email 
+    asociacion = supabase.table("asociaciones").select(
+        "nombre, contacto_email"
+    ).eq("id", asociacion_id).execute()
+
     supabase.table("asociaciones").update({"motivo_rechazo": body.motivo}).eq("id", asociacion_id).execute()
+    
+    #Enviar Email 
+    if asociacion.data:
+        email_asociacion_rechazada(
+            nombre_asociacion=asociacion.data[0]["nombre"],
+            email=asociacion.data[0]["contacto_email"],
+            motivo=body.motivo
+        )
+
     return {"mensaje": "Asociación rechazada"}
 
 
@@ -99,6 +126,11 @@ async def resolver_apelacion(apelacion_id: str, body: RespuestaApelacionBody, au
 
     asociacion_id = apelacion.data[0]["asociacion_id"]
 
+    # Obtener datos de la asociación
+    asociacion = supabase.table("asociaciones").select(
+        "nombre, contacto_email"
+    ).eq("id", asociacion_id).execute()
+
     if body.decision == "aprobar":
         # Aprobar asociación
         supabase.table("asociaciones").update({
@@ -111,6 +143,13 @@ async def resolver_apelacion(apelacion_id: str, body: RespuestaApelacionBody, au
             "respuesta_admin": body.respuesta,
         }).eq("id", apelacion_id).execute()
 
+        #envio de email
+        if asociacion.data:
+            email_apelacion_aprobada(
+                nombre_asociacion=asociacion.data[0]["nombre"],
+                email=asociacion.data[0]["contacto_email"]
+            )
+
         return {"mensaje": "Apelación aprobada. La asociación ha sido verificada."}
 
     else:
@@ -119,6 +158,14 @@ async def resolver_apelacion(apelacion_id: str, body: RespuestaApelacionBody, au
             "estado": "rechazada",
             "respuesta_admin": body.respuesta,
         }).eq("id", apelacion_id).execute()
+
+        #rechazo email
+        if asociacion.data:
+            email_apelacion_rechazada(
+                nombre_asociacion=asociacion.data[0]["nombre"],
+                email=asociacion.data[0]["contacto_email"],
+                respuesta=body.respuesta
+            )
 
         return {"mensaje": "Apelación rechazada."}
     

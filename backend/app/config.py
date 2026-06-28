@@ -5,6 +5,7 @@ class Settings(BaseSettings):
     supabase_key: str
     supabase_service_key: str
     supabase_bucket: str = "pawalert-fotos"
+    brevo_api_key: str = "" 
 
     class Config:
         env_file = ".env"
