@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
+import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -61,27 +62,36 @@ export default function AssociationStatusScreen({ onClose }: Props) {
   const [info, setInfo] = useState<AsociacionInfo | null>(null);
   const [isLoadingInfo, setIsLoadingInfo] = useState(true);
 
+  // Formulario Representantes
   const [nombreRep, setNombreRep] = useState('');
   const [apellidoRep, setApellidoRep] = useState('');
   const [telefonoRep, setTelefonoRep] = useState('');
   const [emailRep, setEmailRep] = useState('');
   const [isAdding, setIsAdding] = useState(false);
 
+  // Reportes y Filtros
   const [reportes, setReportes] = useState<ReporteAsignado[]>([]);
   const [isLoadingReportes, setIsLoadingReportes] = useState(false);
   const [filtro, setFiltro] = useState<FiltroAsignacion>('pendientes');
   const [nuevosReportes, setNuevosReportes] = useState(0);
 
+  // Modal Detalles
   const [reporteSeleccionado, setReporteSeleccionado] = useState<ReporteAsignado | null>(null);
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
 
+  // Modales de Interacción
   const [showAcceptModal, setShowAcceptModal] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [showEncontreModal, setShowEncontreModal] = useState(false);
   const [showCerrarModal, setShowCerrarModal] = useState(false);
+  const [showStaffModal, setShowStaffModal] = useState(false);
   
   const [reporteAccionId, setReporteAccionId] = useState<string | null>(null);
   const [isSubmittingAccion, setIsSubmittingAccion] = useState(false);
+
+  const [staffList, setStaffList] = useState<any[]>([]);
+  const [staffSeleccionado, setStaffSeleccionado] = useState<string | null>(null);
+  const [esStaff, setEsStaff] = useState(false);
 
   const [motivoRechazo, setMotivoRechazo] = useState('');
   const [notasRechazo, setNotasRechazo] = useState('');
@@ -90,13 +100,13 @@ export default function AssociationStatusScreen({ onClose }: Props) {
   const [notasHito, setNotasHito] = useState('');
   const [fotoHito, setFotoHito] = useState<string | null>(null);
 
+  // ─── Estados para Apelación ───
+  const [apelacionTexto, setApelacionTexto] = useState('');
+  const [apelacionDocs, setApelacionDocs] = useState<any[]>([]);
+  const [isApelando, setIsApelando] = useState(false);
+  const [apelacionEnviada, setApelacionEnviada] = useState(false);
+
   const screenWidth = Dimensions.get('window').width;
- 
-  /// Estadode conexion para staff 
-  const [showStaffModal, setShowStaffModal] = useState(false);
-  const [staffList, setStaffList] = useState<any[]>([]);
-  const [staffSeleccionado, setStaffSeleccionado] = useState<string | null>(null);
-  const [esStaff, setEsStaff] = useState(false);
 
   const MOTIVOS_RECHAZO = [
     'No tenemos capacidad disponible ahora mismo',
@@ -170,14 +180,92 @@ export default function AssociationStatusScreen({ onClose }: Props) {
     }
   };
 
+  // ─── LÓGICA DE VERIFICACIÓN DE APELACIÓN (Endpoint GET) ───
+  const verificarApelacion = async () => {
+    try {
+      const res = await axios.get(`${API_URL}/associations/me/apelacion`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.data && res.data.tiene_apelacion) {
+        setApelacionEnviada(true);
+      }
+    } catch (error) {
+      // Error silencioso, si falla asumimos que no tiene apelación aún
+      console.log('Error al verificar apelación previa', error);
+    }
+  };
+
   useEffect(() => {
     if (!isLoading) cargarEstado();
   }, [isLoading]);
 
   useEffect(() => {
-    if (info?.estado === 'aprobada') cargarReportes();
+    if (info?.estado === 'aprobada') {
+      cargarReportes();
+    } else if (info?.estado === 'rechazada') {
+      verificarApelacion(); // Verifica si ya existe una apelación cuando está rechazada
+    }
   }, [info]);
 
+  // ─── LÓGICA DE APELACIÓN (Endpoint POST) ───
+  const handlePickDocument = async () => {
+    if (apelacionDocs.length >= 3) {
+      showToast({ type: 'warning', title: 'Límite alcanzado', message: 'Solo puedes adjuntar hasta 3 archivos.' });
+      return;
+    }
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'image/*'],
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (!result.canceled && result.assets) {
+        setApelacionDocs(prev => [...prev, result.assets[0]]);
+      }
+    } catch (err) {
+      console.log(err);
+    }
+  };
+
+  const removeDoc = (index: number) => {
+    setApelacionDocs(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const enviarApelacion = async () => {
+    if (!apelacionTexto.trim()) {
+      showToast({ type: 'warning', title: 'Faltan datos', message: 'Escribe un mensaje para tu apelación.' });
+      return;
+    }
+    setIsApelando(true);
+    try {
+      const formData = new FormData();
+      formData.append('mensaje', apelacionTexto.trim());
+      
+      apelacionDocs.forEach((doc, index) => {
+        formData.append('documentos', {
+          uri: doc.uri,
+          name: doc.name || `documento_${index}`,
+          type: doc.mimeType || 'application/octet-stream'
+        } as any);
+      });
+
+      await axios.post(`${API_URL}/associations/me/apelar`, formData, {
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'multipart/form-data' 
+        }
+      });
+      
+      setApelacionEnviada(true);
+      showToast({ type: 'success', title: 'Apelación enviada', message: 'Tus documentos están en revisión.' });
+    } catch (error: any) {
+      showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'No pudimos enviar la apelación.' });
+    } finally {
+      setIsApelando(false);
+    }
+  };
+
+  // ─── LÓGICA EXISTENTE DE STAFF E HITOS ───
   const handleAgregarRepresentante = async () => {
     if (!nombreRep.trim() || !apellidoRep.trim() || !telefonoRep.trim()) {
       showToast({ type: 'warning', title: 'Datos incompletos', message: 'Nombre, apellido y teléfono son obligatorios.' });
@@ -218,49 +306,46 @@ export default function AssociationStatusScreen({ onClose }: Props) {
     setNotasHito(''); setFotoHito(null); setReporteAccionId(null);
   };
 
-  // ─── CONEXIÓN A ENDPOINTS REALES: ASINGACION DE STAFF POST ACEPTACION ───
-
   const confirmarAceptacion = async () => {
-  if (!reporteAccionId) return;
-  setIsSubmittingAccion(true);
-  try {
-    // Cargar staff disponible
-    const res = await axios.get(`${API_URL}/associations/me/staff`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    setStaffList(res.data);
-    setShowAcceptModal(false);
-    setShowStaffModal(true); // ← abrir modal de staff
-  } catch (error: any) {
-    showToast({ type: 'error', title: 'Error', message: 'No pudimos cargar el staff disponible.' });
-  } finally {
-    setIsSubmittingAccion(false);
-  }
-};
+    if (!reporteAccionId) return;
+    setIsSubmittingAccion(true);
+    try {
+      const res = await axios.get(`${API_URL}/associations/me/staff`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setStaffList(res.data);
+      setShowAcceptModal(false);
+      setShowStaffModal(true);
+    } catch (error: any) {
+      showToast({ type: 'error', title: 'Error', message: 'No pudimos cargar el staff disponible.' });
+    } finally {
+      setIsSubmittingAccion(false);
+    }
+  };
 
-const confirmarAsignacionStaff = async () => {
-  if (!reporteAccionId || !staffSeleccionado) {
-    showToast({ type: 'warning', title: 'Faltan datos', message: 'Selecciona un miembro del staff.' });
-    return;
-  }
-  setIsSubmittingAccion(true);
-  try {
-    await axios.post(
-      `${API_URL}/reports/${reporteAccionId}/asignar-staff`,
-      { staff_id: staffSeleccionado },
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    await cargarReportes();
-    showToast({ type: 'success', title: 'Reporte aceptado', message: 'Staff asignado. Notificaremos que van en camino.' });
-  } catch (error: any) {
-    showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'No pudimos asignar el staff.' });
-  } finally {
-    setShowStaffModal(false);
-    resetModales();
-    setStaffSeleccionado(null);
-    setIsSubmittingAccion(false);
-  }
-};
+  const confirmarAsignacionStaff = async () => {
+    if (!reporteAccionId || !staffSeleccionado) {
+      showToast({ type: 'warning', title: 'Faltan datos', message: 'Selecciona un miembro del staff.' });
+      return;
+    }
+    setIsSubmittingAccion(true);
+    try {
+      await axios.post(
+        `${API_URL}/reports/${reporteAccionId}/asignar-staff`,
+        { staff_id: staffSeleccionado },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      await cargarReportes();
+      showToast({ type: 'success', title: 'Reporte aceptado', message: 'Staff asignado. Notificaremos que van en camino.' });
+    } catch (error: any) {
+      showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'No pudimos asignar el staff.' });
+    } finally {
+      setShowStaffModal(false);
+      resetModales();
+      setStaffSeleccionado(null);
+      setIsSubmittingAccion(false);
+    }
+  };
 
   const confirmarRechazo = async () => {
     if (!reporteAccionId || !motivoRechazo) {
@@ -288,8 +373,8 @@ const confirmarAsignacionStaff = async () => {
     }
     setIsSubmittingAccion(true);
     try {
-    await axios.post(
-      `${API_URL}/reports/${reporteAccionId}/hitos`,
+      await axios.post(
+        `${API_URL}/reports/${reporteAccionId}/hitos`,
         {
           tipo_hito: "encontre_animal",
           condicion_observada: estadoEncontre,
@@ -357,7 +442,6 @@ const confirmarAsignacionStaff = async () => {
     <View style={{ flex: 1, backgroundColor: '#F5F5F5' }}>
       <Toast toast={toast} translateY={translateY} />
 
-      {/* Cabecera con Botón de Cierre */}
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#E5E7EB' }}>
         <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#2C3E50' }}>Panel de Asociación</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
@@ -382,13 +466,74 @@ const confirmarAsignacionStaff = async () => {
           </Card>
         )}
 
+        {/* ─── FLUJO DE APELACIÓN ─── */}
         {info.estado === 'rechazada' && (
-          <Card>
-            <Text style={{ fontSize: 16, fontWeight: '700', color: '#E74C3C', marginBottom: 8 }}>Solicitud rechazada</Text>
-            <Text style={{ fontSize: 14, color: '#566573', lineHeight: 20 }}>{info.motivo_rechazo || 'No se especificó motivo.'}</Text>
-          </Card>
+          <>
+            <Card>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: '#E74C3C', marginBottom: 8 }}>Solicitud rechazada</Text>
+              <Text style={{ fontSize: 14, color: '#566573', lineHeight: 20 }}>{info.motivo_rechazo || 'No se especificó motivo.'}</Text>
+            </Card>
+
+            {!apelacionEnviada ? (
+              <>
+                <View style={{ marginTop: 24, marginBottom: 24, backgroundColor: '#FFFFFF', padding: 20, borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB' }}>
+                  <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#2C3E50', marginBottom: 12 }}>Requisitos para aprobación</Text>
+                  <Text style={{ fontSize: 14, color: '#566573', marginBottom: 6 }}>• Acta constitutiva o registro formal</Text>
+                  <Text style={{ fontSize: 14, color: '#566573', marginBottom: 6 }}>• Redes sociales activas con evidencia de rescates</Text>
+                  <Text style={{ fontSize: 14, color: '#566573', marginBottom: 6 }}>• Fotos del refugio o instalaciones</Text>
+                  <Text style={{ fontSize: 14, color: '#566573' }}>• RFC o registro ante autoridad</Text>
+                </View>
+
+                <Card>
+                  <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#2C3E50', marginBottom: 12 }}>Enviar Apelación</Text>
+                  <TextInput
+                    style={{ borderWidth: 1, borderColor: '#BDC3C7', borderRadius: 8, padding: 12, fontSize: 14, color: '#2C3E50', minHeight: 100, textAlignVertical: 'top' }}
+                    multiline
+                    maxLength={300}
+                    placeholder="Explica por qué deberíamos reconsiderar tu solicitud..."
+                    value={apelacionTexto}
+                    onChangeText={setApelacionTexto}
+                  />
+                  <Text style={{ textAlign: 'right', fontSize: 12, color: '#7F8C8D', marginTop: 4, marginBottom: 16 }}>{apelacionTexto.length}/300</Text>
+
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: '#34495E', marginBottom: 8 }}>Documentos de soporte (Máx. 3)</Text>
+                  
+                  {apelacionDocs.map((doc, idx) => (
+                    <View key={idx} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#F8F9FA', padding: 10, borderRadius: 8, marginBottom: 8, borderWidth: 1, borderColor: '#EAEDED' }}>
+                      <Text style={{ fontSize: 13, color: '#2C3E50', flex: 1 }} numberOfLines={1}>{doc.name}</Text>
+                      <TouchableOpacity onPress={() => removeDoc(idx)}>
+                        <Text style={{ color: '#E74C3C', fontWeight: 'bold', marginLeft: 10 }}>✕</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+
+                  {apelacionDocs.length < 3 && (
+                    <TouchableOpacity onPress={handlePickDocument} style={{ padding: 12, backgroundColor: '#EAEDED', borderRadius: 8, alignItems: 'center', marginBottom: 16 }}>
+                      <Text style={{ color: '#34495E', fontWeight: '600' }}>+ Adjuntar PDF o Imagen</Text>
+                    </TouchableOpacity>
+                  )}
+
+                  <TouchableOpacity
+                    style={{ backgroundColor: '#3498DB', paddingVertical: 14, borderRadius: 8, alignItems: 'center', opacity: isApelando ? 0.7 : 1 }}
+                    onPress={enviarApelacion}
+                    disabled={isApelando}
+                  >
+                    {isApelando ? <ActivityIndicator color="#FFF" /> : <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 15 }}>Enviar apelación</Text>}
+                  </TouchableOpacity>
+                </Card>
+              </>
+            ) : (
+              <View style={{ marginTop: 24, backgroundColor: '#EAFAF1', padding: 20, borderRadius: 12, borderWidth: 1, borderColor: '#A2D9CE', alignItems: 'center' }}>
+                <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#27AE60', marginBottom: 8 }}>Apelación enviada</Text>
+                <Text style={{ fontSize: 14, color: '#2C3E50', textAlign: 'center', lineHeight: 20 }}>
+                  Tu apelación está en revisión. Te notificaremos por correo cuando haya una respuesta.
+                </Text>
+              </View>
+            )}
+          </>
         )}
 
+        {/* ─── ASOCIACIÓN APROBADA (Intacto) ─── */}
         {info.estado === 'aprobada' && (
           <>
             <Card>
@@ -481,7 +626,7 @@ const confirmarAsignacionStaff = async () => {
                               <TouchableOpacity onPress={() => { setReporteAccionId(reporte.reporte_id); setShowAcceptModal(true); }} style={{ flex: 1, backgroundColor: '#27AE60', paddingVertical: 8, borderRadius: 8, alignItems: 'center' }}>
                                 <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 13 }}>Aceptar</Text>
                               </TouchableOpacity>
-                              <TouchableOpacity onPress={() => { setReporteAccionId(reporte.reporte_id); setMotivoRechazo(''); setNotasRechazo(''); setShowRejectModal(true); }} style={{ flex: 1, borderWidth: 1, borderColor: '#E74C3C', paddingVertical: 8, borderRadius: 8, alignItems: 'center' }}>
+                              <TouchableOpacity onPress={() => { setReporteAccionId(reporte.reporte_id); resetModales(); setShowRejectModal(true); }} style={{ flex: 1, borderWidth: 1, borderColor: '#E74C3C', paddingVertical: 8, borderRadius: 8, alignItems: 'center' }}>
                                 <Text style={{ color: '#E74C3C', fontWeight: '700', fontSize: 13 }}>Rechazar</Text>
                               </TouchableOpacity>
                             </View>
@@ -491,10 +636,10 @@ const confirmarAsignacionStaff = async () => {
                                 <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 13 }}>Cómo llegar</Text>
                               </TouchableOpacity>
                               <View style={{ flexDirection: 'row', gap: 8 }}>
-                                <TouchableOpacity onPress={() => { setReporteAccionId(reporte.reporte_id); setEstadoEncontre(''); setShowEncontreModal(true); }} style={{ flex: 1, backgroundColor: '#F39C12', paddingVertical: 8, borderRadius: 8, alignItems: 'center' }}>
+                                <TouchableOpacity onPress={() => { setReporteAccionId(reporte.reporte_id); resetModales(); setShowEncontreModal(true); }} style={{ flex: 1, backgroundColor: '#F39C12', paddingVertical: 8, borderRadius: 8, alignItems: 'center' }}>
                                   <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 13 }}>Hito rescate</Text>
                                 </TouchableOpacity>
-                                <TouchableOpacity onPress={() => { setReporteAccionId(reporte.reporte_id); setEstadoCierre(''); setShowCerrarModal(true); }} style={{ flex: 1, backgroundColor: '#8E44AD', paddingVertical: 8, borderRadius: 8, alignItems: 'center' }}>
+                                <TouchableOpacity onPress={() => { setReporteAccionId(reporte.reporte_id); resetModales(); setShowCerrarModal(true); }} style={{ flex: 1, backgroundColor: '#8E44AD', paddingVertical: 8, borderRadius: 8, alignItems: 'center' }}>
                                   <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 13 }}>Cerrar caso</Text>
                                 </TouchableOpacity>
                               </View>
