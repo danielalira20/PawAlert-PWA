@@ -96,7 +96,8 @@ export default function AssociationStatusScreen({ onClose }: Props) {
   const [showStaffModal, setShowStaffModal] = useState(false);
   const [staffList, setStaffList] = useState<any[]>([]);
   const [staffSeleccionado, setStaffSeleccionado] = useState<string | null>(null);
-  
+  const [esStaff, setEsStaff] = useState(false);
+
   const MOTIVOS_RECHAZO = [
     'No tenemos capacidad disponible ahora mismo',
     'El animal ya no está en el lugar reportado',
@@ -192,11 +193,12 @@ export default function AssociationStatusScreen({ onClose }: Props) {
           apellido_paterno: apellidoRep.trim(),
           telefono: telefonoRep.replace(/\s|-/g, ''),
           email: emailRep.trim() || undefined,
+          es_staff: esStaff,
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       showToast({ type: 'success', title: '¡Listo!', message: 'Persona agregada correctamente.' });
-      setNombreRep(''); setApellidoRep(''); setTelefonoRep(''); setEmailRep('');
+      setNombreRep(''); setApellidoRep(''); setTelefonoRep(''); setEmailRep(''); setEsStaff(false);
     } catch (error: any) {
       showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'No pudimos agregar al representante.' });
     } finally {
@@ -513,16 +515,38 @@ const confirmarAsignacionStaff = async () => {
             {/* Formulario de Representantes */}
             <Card>
               <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#2C3E50', marginBottom: 4 }}>
-                Agregar representante
+                Agregar miembro
               </Text>
               <Text style={{ fontSize: 12, color: '#7F8C8D', marginBottom: 16 }}>
                 Esa persona podrá iniciar sesión registrándose con el mismo teléfono que pongas aquí.
               </Text>
+              
+              {/* Selector de rol */}
+              <Text style={{ fontSize: 14, fontWeight: '600', color: '#2C3E50', marginBottom: 8 }}>Tipo de miembro</Text>
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+                <TouchableOpacity
+                  onPress={() => setEsStaff(false)}
+                  style={{ flex: 1, paddingVertical: 10, borderRadius: 8, borderWidth: 1, alignItems: 'center',
+                    backgroundColor: !esStaff ? '#3498DB' : '#FFF',
+                    borderColor: !esStaff ? '#3498DB' : '#BDC3C7' }}
+                >
+                  <Text style={{ color: !esStaff ? '#FFF' : '#7F8C8D', fontWeight: '600' }}>Representante</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => setEsStaff(true)}
+                  style={{ flex: 1, paddingVertical: 10, borderRadius: 8, borderWidth: 1, alignItems: 'center',
+                    backgroundColor: esStaff ? '#F39C12' : '#FFF',
+                    borderColor: esStaff ? '#F39C12' : '#BDC3C7' }}
+                >
+                  <Text style={{ color: esStaff ? '#FFF' : '#7F8C8D', fontWeight: '600' }}>Staff</Text>
+                </TouchableOpacity>
+              </View>
+
               <Input label="Nombre(s)" placeholder="Ej. Ana" value={nombreRep} onChangeText={setNombreRep} />
               <Input label="Apellido" placeholder="Ej. Pérez" value={apellidoRep} onChangeText={setApellidoRep} />
               <Input label="Teléfono" placeholder="Ej. 2221234567" value={telefonoRep} onChangeText={setTelefonoRep} keyboardType="numeric" maxLength={10} />
               <Input label="Correo (Opcional)" placeholder="Ej. correo@ejemplo.com" value={emailRep} onChangeText={setEmailRep} keyboardType="email-address" autoCapitalize="none" />
-              <Button label="Agregar representante" onPress={handleAgregarRepresentante} isLoading={isAdding} />
+              <Button label={esStaff ? "Agregar staff" : "Agregar representante"} onPress={handleAgregarRepresentante} isLoading={isAdding} />
             </Card>
           </>
         )}

@@ -279,6 +279,7 @@ class NuevoRepresentante(BaseModel):
     apellido_materno: str | None = None
     telefono: str
     email: str | None = None
+    es_staff: bool = False
 
 
 @router.post("/{asociacion_id}/representantes", status_code=201)
@@ -303,8 +304,9 @@ async def agregar_representante(asociacion_id: str, body: NuevoRepresentante, au
     if body.email and not validar_email(body.email):
         raise HTTPException(status_code=422, detail="Ingresa un correo electrónico válido.")
 
-    rol_asociacion = supabase.table("roles").select("id").eq("nombre", "asociacion").execute()
-    rol_asociacion_id = rol_asociacion.data[0]["id"] if rol_asociacion.data else None
+    rol_nombre = "staff" if body.es_staff else "asociacion"
+    rol_result = supabase.table("roles").select("id").eq("nombre", rol_nombre).execute()
+    rol_id = rol_result.data[0]["id"] if rol_result.data else None
 
     existente = supabase.table("usuarios").select("id, auth_user_id").eq(
         "telefono", telefono_limpio
@@ -315,7 +317,7 @@ async def agregar_representante(asociacion_id: str, body: NuevoRepresentante, au
             raise HTTPException(status_code=409, detail="Ese teléfono ya pertenece a una cuenta con acceso")
         supabase.table("usuarios").update({
             "asociacion_id": asociacion_id,
-            "rol_id": rol_asociacion_id, 
+            "rol_id": rol_id, 
         }).eq("id", existente.data[0]["id"]).execute()
     else:
         supabase.table("usuarios").insert({
@@ -325,7 +327,7 @@ async def agregar_representante(asociacion_id: str, body: NuevoRepresentante, au
             "telefono": telefono_limpio,
             "email": body.email,
             "asociacion_id": asociacion_id,
-            "rol_id": rol_asociacion_id,
+            "rol_id": rol_id,
         }).execute()
 
     return {"mensaje": "Representante agregado. Podrá iniciar sesión registrándose con ese mismo teléfono."}
