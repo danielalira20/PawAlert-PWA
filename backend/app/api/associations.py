@@ -479,6 +479,13 @@ async def apelar_rechazo(
     documentos: Optional[List[UploadFile]] = File(None),
     authorization: str = Header(None)
 ):
+    print("=== DEBUG APELAR ===")
+    print("mensaje:", mensaje)
+    print("documentos recibidos:", len(documentos) if documentos else 0)
+    for i, doc in enumerate(documentos or []):
+        print(f"doc {i}: {doc.filename}, {doc.content_type}, size: {doc.size}")
+    print("====================")
+
     """Permite a una asociación rechazada enviar una apelación con mensaje y documentos."""
     usuario = _obtener_usuario_autenticado(authorization)
 

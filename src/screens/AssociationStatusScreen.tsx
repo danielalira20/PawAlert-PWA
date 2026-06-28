@@ -4,7 +4,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Dimensions, Image, Linking, Modal, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Dimensions, Image, Linking, Modal, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Toast, useToast } from '../components/Toast';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
@@ -186,8 +186,10 @@ export default function AssociationStatusScreen({ onClose }: Props) {
       const res = await axios.get(`${API_URL}/associations/me/apelacion`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (res.data && res.data.tiene_apelacion) {
+      if (res.data && res.data.tiene_apelacion && res.data.estado === 'pendiente') {
         setApelacionEnviada(true);
+      } else {
+        setApelacionEnviada(false);
       }
     } catch (error) {
       // Error silencioso, si falla asumimos que no tiene apelación aún
@@ -209,10 +211,29 @@ export default function AssociationStatusScreen({ onClose }: Props) {
 
   // ─── LÓGICA DE APELACIÓN (Endpoint POST) ───
   const handlePickDocument = async () => {
-    if (apelacionDocs.length >= 3) {
-      showToast({ type: 'warning', title: 'Límite alcanzado', message: 'Solo puedes adjuntar hasta 3 archivos.' });
-      return;
-    }
+  if (apelacionDocs.length >= 3) {
+    showToast({ type: 'warning', title: 'Límite alcanzado', message: 'Solo puedes adjuntar hasta 3 archivos.' });
+    return;
+  }
+
+  if (Platform.OS === 'web') {
+    // En web usar input nativo
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/pdf,image/*';
+    input.onchange = (e: any) => {
+      const file = e.target.files[0];
+      if (file) {
+        setApelacionDocs(prev => [...prev, {
+          uri: URL.createObjectURL(file),
+          name: file.name,
+          mimeType: file.type,
+          file: file  // ← guardar el File object original
+        }]);
+      }
+    };
+    input.click();
+  } else {
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: ['application/pdf', 'image/*'],
@@ -225,7 +246,8 @@ export default function AssociationStatusScreen({ onClose }: Props) {
     } catch (err) {
       console.log(err);
     }
-  };
+  }
+};
 
   const removeDoc = (index: number) => {
     setApelacionDocs(prev => prev.filter((_, i) => i !== index));
@@ -241,13 +263,33 @@ export default function AssociationStatusScreen({ onClose }: Props) {
       const formData = new FormData();
       formData.append('mensaje', apelacionTexto.trim());
       
-      apelacionDocs.forEach((doc, index) => {
-        formData.append('documentos', {
-          uri: doc.uri,
-          name: doc.name || `documento_${index}`,
-          type: doc.mimeType || 'application/octet-stream'
-        } as any);
-      });
+      console.log('docs a enviar:', apelacionDocs);
+    for (const doc of apelacionDocs) {
+      console.log('doc uri:', doc.uri);
+      const res = await fetch(doc.uri);
+      console.log('fetch status:', res.status, res.ok);
+    }
+
+      if (Platform.OS === 'web') {
+          for (const doc of apelacionDocs) {
+            if (doc.file) {
+              // File object nativo del browser
+              formData.append('documentos', doc.file, doc.name);
+            } else {
+              const res = await fetch(doc.uri);
+              const blob = await res.blob();
+              formData.append('documentos', blob, doc.name || 'documento');
+            }
+          }
+        } else {
+          apelacionDocs.forEach((doc, index) => {
+            formData.append('documentos', {
+              uri: doc.uri,
+              name: doc.name || `documento_${index}`,
+              type: doc.mimeType || 'application/octet-stream'
+            } as any);
+          });
+        }
 
       await axios.post(`${API_URL}/associations/me/apelar`, formData, {
         headers: { 
@@ -259,7 +301,9 @@ export default function AssociationStatusScreen({ onClose }: Props) {
       setApelacionEnviada(true);
       showToast({ type: 'success', title: 'Apelación enviada', message: 'Tus documentos están en revisión.' });
     } catch (error: any) {
-      showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'No pudimos enviar la apelación.' });
+        const detalle = error?.response?.data?.detail;
+        const mensaje = typeof detalle === 'string' ? detalle : 'No pudimos enviar la apelación.';
+       showToast({ type: 'error', title: 'Error', message: mensaje });
     } finally {
       setIsApelando(false);
     }
