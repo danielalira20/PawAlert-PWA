@@ -6,6 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import AdminDashboardScreen from '../../screens/AdminDashboardScreen';
 import AssociationStatusScreen from '../../screens/AssociationStatusScreen';
 import MisReportesScreen from '../../screens/MisReportesScreen';
+import StaffDashboardScreen from '../../screens/StaffDashboardScreen';
 
 const { width } = Dimensions.get('window');
 const isWeb = Platform.OS === 'web';
@@ -16,6 +17,7 @@ export default function ProfileScreen() {
   const [isAdminVisible, setIsAdminVisible] = useState(false);
   const [isAssociationVisible, setIsAssociationVisible] = useState(false);
   const [isMisReportesVisible, setIsMisReportesVisible] = useState(false);
+  const [isStaffVisible, setIsStaffVisible] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(24)).current;
@@ -181,7 +183,7 @@ export default function ProfileScreen() {
         {/* Panel para staff  (falta actualiza panel)*/}
         {user.rol === 'staff' && (
         <TouchableOpacity
-            onPress={() => setIsAssociationVisible(true)}
+            onPress={() => setIsStaffVisible(true)} // <-- CAMBIO AQUÍ
             style={{ backgroundColor: '#FFFFFF', borderRadius: 20, padding: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: '#D1FAE5' }}
             activeOpacity={0.8}
           >
@@ -234,6 +236,17 @@ export default function ProfileScreen() {
           <View style={{ flex: 1, backgroundColor: '#F5F5F5', borderRadius: 20, overflow: 'hidden' }}>
             {isAssociationVisible && (
               <AssociationStatusScreen onClose={() => setIsAssociationVisible(false)} />
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal: Panel de Staff */}
+      <Modal visible={isStaffVisible} animationType="slide" transparent onRequestClose={() => setIsStaffVisible(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 16, paddingTop: 60, paddingBottom: 40 }}>
+          <View style={{ flex: 1, backgroundColor: '#F5F5F5', borderRadius: 20, overflow: 'hidden' }}>
+            {isStaffVisible && (
+              <StaffDashboardScreen onClose={() => setIsStaffVisible(false)} />
             )}
           </View>
         </View>
