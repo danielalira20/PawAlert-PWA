@@ -235,6 +235,24 @@ async def crear_reporte(
             "tipo": "nuevo_reporte",
         }).execute()
 
+        #Email si condicion es grave
+        condicion_str = condicion.value if hasattr(condicion, 'value') else str(condicion)
+        if condicion_str == "grave":
+            try:
+                asociacion_data = supabase.table("asociaciones").select(
+                    "nombre, contacto_email"
+                ).eq("id", asociacion_id).execute()
+                if asociacion_data.data:
+                    from app.services.email_service import email_reporte_grave
+                    email_reporte_grave(
+                        nombre_asociacion=asociacion_data.data[0]["nombre"],
+                        email=asociacion_data.data[0]["contacto_email"],
+                        municipio=municipio,
+                        tipo_animal=condicion_str
+                    )
+            except Exception as e:
+                print(f"[WARN] No se pudo enviar email de reporte grave: {e}")
+
     # 8 — Registrar en historial
     registrar_historial(
         reporte_id=reporte_id,
