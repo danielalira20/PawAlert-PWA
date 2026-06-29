@@ -253,6 +253,35 @@ async def asignar_staff(reporte_id: str, body: dict, authorization: str = Header
     }
 #### FIN endpoint: Representante selecciona staff
 
+
+# Endpoind: POST hitos fotos 
+@router.post("/{reporte_id}/hitos/foto", status_code=200)
+async def subir_foto_hito(
+    reporte_id: str,
+    foto: UploadFile = File(...),
+    authorization: str = Header(None)
+):
+    """Sube una foto para un hito y devuelve la URL en Supabase Storage."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="No autenticado")
+
+    token = authorization.replace("Bearer ", "")
+    try:
+        auth_response = supabase.auth.get_user(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Token inválido o expirado")
+
+    if foto.content_type not in ["image/jpeg", "image/png", "image/jpg", "image/webp"]:
+        raise HTTPException(status_code=422, detail="La foto debe ser JPG, PNG o WEBP")
+
+    from app.services.storage_service import subir_foto
+    foto_url = await subir_foto(foto, carpeta="reportes/hitos")
+
+    return {"foto_url": foto_url}
+
+#FIN: endpoind hitos fotos
+
+
 ### Enpoint para staff en donde registra avances del rescate 
 @router.post("/{reporte_id}/hitos", status_code=201)
 async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str = Header(None)):
@@ -522,7 +551,6 @@ async def rechazar_reporte(reporte_id: str, body: RechazarReporteRequest, author
         }
 
 ### FIN: postrechazo de reportes
-
 
 @router.get("", response_model=list[ReportListItem], status_code=200)
 async def get_reports():

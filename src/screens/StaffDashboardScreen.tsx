@@ -10,6 +10,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  Platform,
 } from 'react-native';
 import axios from 'axios';
 import * as ImagePicker from 'expo-image-picker';
@@ -121,19 +122,13 @@ export default function StaffDashboardScreen({ onClose }: Props) {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      console.log('Respuesta del backend (Staff):', JSON.stringify(res.data, null, 2));
-
+      
       // Procesar la respuesta correctamente
       if (res.data) {
         setReportesPendientes(res.data.pendientes || []);
         setReportesEnAccion(res.data.en_accion || []);
         setReportesCompletados(res.data.completados || []);
-        
-        console.log('✓ Reportes cargados:', {
-          pendientes: res.data.pendientes?.length || 0,
-          en_accion: res.data.en_accion?.length || 0,
-          completados: res.data.completados?.length || 0,
-        });
+      
       } else {
         throw new Error('Formato de respuesta no esperado');
       }
@@ -221,19 +216,17 @@ export default function StaffDashboardScreen({ onClose }: Props) {
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ['images'],
         quality: 0.8,
-        base64: true,
+
       });
 
       if (!result.canceled) {
-        const base64 = result.assets[0].base64;
-        const fotoData = `data:image/jpeg;base64,${base64}`;
-        
-        if (showEncontreModal) {
-          setFotoEncontre(fotoData);
-        } else if (showRefugioModal) {
-          setFotoRefugio(fotoData);
+         const uri = result.assets[0].uri; // ← solo URI
+          if (showEncontreModal) {
+            setFotoEncontre(uri);
+          } else if (showRefugioModal) {
+            setFotoRefugio(uri);
+          }
         }
-      }
     } catch (error: any) {
       console.error('Error usando cámara:', error);
       showToast({
@@ -249,16 +242,42 @@ export default function StaffDashboardScreen({ onClose }: Props) {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       quality: 0.8,
-      base64: true,
     });
 
     if (!result.canceled) {
-      const base64 = result.assets[0].base64;
-      const fotoData = `data:image/jpeg;base64,${base64}`;
-      
-      if (showEncontreModal) {
-        setFotoEncontre(fotoData);
+       const uri = result.assets[0].uri;
+        if (showEncontreModal) {
+          setFotoEncontre(uri);
       }
+    }
+  };
+
+  const subirFotoHito = async (reporteId: string, fotoUri: string): Promise<string | null> => {
+    try {
+      const formData = new FormData();
+
+      if (Platform.OS === 'web') {
+      // En web, fetch el blob y crear File object
+      const res = await fetch(fotoUri);
+      const blob = await res.blob();
+      const file = new File([blob], `hito_${Date.now()}.jpg`, { type: 'image/jpeg' });
+      formData.append('foto', file);
+    } else {
+      formData.append('foto', {
+        uri: fotoUri,
+        name: `hito_${Date.now()}.jpg`,
+        type: 'image/jpeg',
+      } as any);
+    }
+      const res = await axios.post(
+        `${API_URL}/reports/${reporteId}/hitos/foto`,
+        formData,
+        { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' } }
+      );
+      return res.data.foto_url;
+    } catch (error) {
+      console.error('Error subiendo foto hito:', error);
+      return null;
     }
   };
 
@@ -274,13 +293,17 @@ export default function StaffDashboardScreen({ onClose }: Props) {
 
     setIsSubmitting(true);
     try {
+       let foto_url = null;
+        if (fotoEncontre) {
+          foto_url = await subirFotoHito(reporteSeleccionado.id, fotoEncontre);
+        }
       await axios.post(
         `${API_URL}/reports/${reporteSeleccionado.id}/hitos`,
         {
           tipo_hito: 'encontre_animal',
           condicion_observada: estadoEncontre,
           comentario: notasEncontre || null,
-          foto_url: fotoEncontre || null,
+          foto_url: foto_url || null,
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -341,13 +364,19 @@ export default function StaffDashboardScreen({ onClose }: Props) {
 
     setIsSubmitting(true);
     try {
+      const foto_url = await subirFotoHito(reporteSeleccionado.id, fotoRefugio);
+      console.log('foto_url devuelta:', foto_url);
+      if (!foto_url) {
+      showToast({ type: 'error', title: 'Error', message: 'No pudimos subir la foto. Intenta de nuevo.' });
+      return;
+    }
       await axios.post(
         `${API_URL}/reports/${reporteSeleccionado.id}/hitos`,
         {
           tipo_hito: 'llegue_refugio',
           condicion_observada: estadoRefugio,
           comentario: notasRefugio || null,
-          foto_url: fotoRefugio,
+          foto_url: foto_url,
           latitud: ubicacionActual.latitude,
           longitud: ubicacionActual.longitude,
         },
