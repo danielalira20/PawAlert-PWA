@@ -26,17 +26,15 @@ def enviar_email(destinatario_email: str, destinatario_nombre: str, asunto: str,
         
         send_smtp_email = sib_api_v3_sdk.SendSmtpEmail(
             to=[{"email": destinatario_email, "name": destinatario_nombre}],
-            sender={"email": "w4gkfzkj67@privaterelay.appleid.com", "name": "PawAlert"},
+            sender={"email": "rojasdiego133@gmail.com", "name": "PawAlert"},
             subject=asunto,
             html_content=contenido_html
         )
         
         api_instance.send_transac_email(send_smtp_email)
-        print(f"[EMAIL] Enviado a {destinatario_email}: {asunto}")
-        
+       
     except ApiException as e:
         print(f"[EMAIL ERROR] {e}")
-
 
 def email_asociacion_aprobada(nombre_asociacion: str, email: str):
     html = f"""
