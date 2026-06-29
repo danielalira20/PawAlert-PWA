@@ -47,6 +47,7 @@ async def register(body: RegisterRequest):
         })
     except Exception as e:
         msg = str(e).lower()
+        print(f"[REGISTER ERROR] {str(e)}")
         if any(w in msg for w in ["already", "exists", "registered", "duplicate", "unique"]):
             raise HTTPException(status_code=409, detail="Ya existe una cuenta con ese correo electrónico.")
         raise HTTPException(status_code=400, detail="No pudimos crear tu cuenta. Intenta de nuevo.")
@@ -59,14 +60,24 @@ async def register(body: RegisterRequest):
 
     try:
         if usuario_invitado_id:
-            usuario = supabase.table("usuarios").update({
+
+            # Verificar si el usuario invitado ya tiene rol asignado
+            usuario_existente = supabase.table("usuarios").select("rol_id, asociacion_id").eq("id", usuario_invitado_id).execute()
+            tiene_rol = usuario_existente.data and usuario_existente.data[0].get("rol_id")
+
+            update_data = {
                 "auth_user_id": auth_user_id,
                 "nombre": body.nombre,
                 "apellido_paterno": body.apellido_paterno,
                 "apellido_materno": body.apellido_materno,
                 "email": body.email,
-                "rol_id": rol_reportante_id,
-            }).eq("id", usuario_invitado_id).execute()
+            }
+
+            # Solo asignar rol_reportante si no tiene rol previo
+            if not tiene_rol:
+                update_data["rol_id"] = rol_reportante_id
+
+            usuario = supabase.table("usuarios").update(update_data).eq("id", usuario_invitado_id).execute()
         else:
             usuario = supabase.table("usuarios").insert({
                 "auth_user_id": auth_user_id,
