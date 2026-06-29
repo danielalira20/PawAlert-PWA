@@ -115,7 +115,7 @@ export default function MapScreen() {
         initialRegion={INITIAL_REGION}
         onPress={() => { setSelectedReport(null); collapseRefresh(); }}
       >
-        {reportes.map((reporte) => (
+        {reportes.filter(r => r.estado_reporte !== 'rescatado').map((reporte) => (
           <Marker
             key={reporte.id}
             coordinate={{
@@ -145,6 +145,26 @@ export default function MapScreen() {
           </Animated.View>
         </TouchableOpacity>
       )}
+
+      {/* Leyenda de Colores - Superior Derecha */}
+      <View style={{ position: 'absolute', top: 50, right: 20, backgroundColor: 'white', borderRadius: 12, padding: 12, zIndex: 999, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4, elevation: 4 }}>
+        <Text style={{ fontSize: 11, fontWeight: '700', color: '#1F2937', marginBottom: 8 }}>Condición</Text>
+        
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+          <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#27AE60', marginRight: 6 }} />
+          <Text style={{ fontSize: 10, color: '#4B5563' }}>Estable</Text>
+        </View>
+        
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+          <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#F39C12', marginRight: 6 }} />
+          <Text style={{ fontSize: 10, color: '#4B5563' }}>Herido</Text>
+        </View>
+        
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#E74C3C', marginRight: 6 }} />
+          <Text style={{ fontSize: 10, color: '#4B5563' }}>Grave</Text>
+        </View>
+      </View>
 
       {selectedReport && (
         <View style={{ position: 'absolute', bottom: 32, width: '100%', paddingHorizontal: 16, zIndex: 1000 }}>
