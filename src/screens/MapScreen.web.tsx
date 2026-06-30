@@ -74,13 +74,12 @@ export default function MapScreen() {
     };
   }, []);
 
-  const getMarkerColor = (estado: string) => {
-    switch (estado) {
-      case 'pendiente': return 'orange';
-      case 'asignado': return 'green';
-      case 'en_atencion': return 'blue';
-      case 'cerrado': return 'gray';
-      default: return 'orange';
+  const getMarkerColor = (condicion: string) => {
+    switch (condicion?.toLowerCase()) {
+      case 'estable': return '#27AE60';
+      case 'herido': return '#F39C12';
+      case 'grave': return '#E74C3C';
+      default: return '#95A5A6';
     }
   };
 
@@ -167,7 +166,7 @@ export default function MapScreen() {
               <View className="flex-1 ml-4 justify-center">
                 <View className="flex-row justify-between items-center mb-2">
                   <Text
-                    style={{ backgroundColor: getMarkerColor(selectedReport.estado_reporte) }}
+                    style={{ backgroundColor: getMarkerColor(selectedReport.animal?.condicion ?? '') }}
                     className="text-white text-[10px] font-bold py-1 px-2 rounded-lg overflow-hidden"
                   >
                     {getEstadoLabel(selectedReport.estado_reporte)}

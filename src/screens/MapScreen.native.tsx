@@ -78,13 +78,22 @@ export default function MapScreen() {
     };
   }, []);
 
-  const getMarkerColor = (estado: string) => {
-    switch (estado) {
-      case 'pendiente': return 'orange';
-      case 'asignado': return 'green';
-      case 'en_atencion': return 'blue';
-      case 'cerrado': return 'gray';
-      default: return 'orange';
+  const getMarkerColorNative = (condicion: string) => {
+    switch (condicion?.toLowerCase()) {
+      case 'estable': return 'green';
+      case 'herido': return 'orange';
+      case 'grave': return 'red';
+      default: return 'gray';
+    }
+  };
+
+  const getMarkerColor = (condicion: string) => {
+    // Para uso en tarjetas y estilos que sí soportan hex
+    switch (condicion?.toLowerCase()) {
+      case 'estable': return '#27AE60';
+      case 'herido': return '#F39C12';
+      case 'grave': return '#E74C3C';
+      default: return '#95A5A6';
     }
   };
 
@@ -122,7 +131,7 @@ export default function MapScreen() {
               latitude: reporte.latitud as number,
               longitude: reporte.longitud as number,
             }}
-            pinColor={getMarkerColor(reporte.estado_reporte ?? '')}
+            pinColor={getMarkerColorNative(reporte.animal?.condicion ?? '')}
             onPress={(e) => {
               e.stopPropagation();
               setSelectedReport(reporte);
@@ -177,7 +186,7 @@ export default function MapScreen() {
               />
               <View style={{ flex: 1, marginLeft: 16, justifyContent: 'center' }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <Text style={{ backgroundColor: getMarkerColor(selectedReport.estado_reporte ?? ''), color: 'white', fontSize: 10, fontWeight: 'bold', paddingVertical: 4, paddingHorizontal: 8, borderRadius: 8 }}>
+                  <Text style={{ backgroundColor: getMarkerColor(selectedReport.animal?.condicion ?? ''), color: 'white', fontSize: 10, fontWeight: 'bold', paddingVertical: 4, paddingHorizontal: 8, borderRadius: 8 }}>
                     {getEstadoLabel(selectedReport.estado_reporte ?? '')}
                   </Text>
                   <View style={{ flexDirection: 'row', alignItems: 'center' }}>

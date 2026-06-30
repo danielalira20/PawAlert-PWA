@@ -49,7 +49,7 @@ export default function LeafletMap({ reportes, getMarkerColor, onSelectReport, o
           <Marker
             key={reporte.id}
             position={[reporte.latitud, reporte.longitud]}
-            icon={createColoredIcon(getMarkerColor(reporte.estado_reporte ?? 'pendiente'))}
+            icon={createColoredIcon(getMarkerColor(reporte.animal?.condicion ?? ''))}
             eventHandlers={{ click: () => onSelectReport(reporte) }}
           />
         ))}
