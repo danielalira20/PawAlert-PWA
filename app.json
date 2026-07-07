@@ -25,26 +25,27 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
-  "expo-router",
-  [
-    "expo-splash-screen",
-    {
-      "backgroundColor": "#208AEF",
-      "android": {
-        "image": "./assets/images/splash-icon.png",
-        "imageWidth": 76
-      }
-    }
-  ],
-  [
-    "expo-build-properties",
-    {
-      "ios": {
-        "NSAllowsArbitraryLoads": true
-      }
-    }
-  ]
-],
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#208AEF",
+          "android": {
+            "image": "./assets/images/splash-icon.png",
+            "imageWidth": 76
+          }
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "NSAllowsArbitraryLoads": true
+          }
+        }
+      ],
+      "expo-font"
+    ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
