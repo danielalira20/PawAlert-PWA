@@ -8,7 +8,7 @@ import { AssocAvatar } from '../admin-dashboard/AssocAvatar';
 import { RoleBadge } from './RoleBadge';
 import { AccountDataCard } from './AccountDataCard';
 import { AccessRow } from './AccessRow';
-import { PawPatternBackground } from './PawPatternBackGround';
+import { PawPatternBackground } from './PawPatternBackground';
 import { DecoPaw } from './DecoPaw';
 
 const DESKTOP_BREAKPOINT = 900;
