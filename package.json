@@ -9,6 +9,7 @@
     "axios": "^1.17.0",
     "date-fns": "^4.4.0",
     "expo": "~54.0.0",
+    "expo-blur": "~15.0.8",
     "expo-build-properties": "~1.0.10",
     "expo-constants": "~18.0.13",
     "expo-device": "~8.0.10",
