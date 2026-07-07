@@ -7,6 +7,7 @@ import AdminDashboardScreen from '../../screens/AdminDashboardScreen';
 import AssociationStatusScreen from '../../screens/AssociationStatusScreen';
 import MisReportesScreen from '../../screens/MisReportesScreen';
 import StaffDashboardScreen from '../../screens/StaffDashboardScreen';
+import { AppModal } from '@/components/AppModal';
 
 const { width } = Dimensions.get('window');
 const isWeb = Platform.OS === 'web';
@@ -242,15 +243,9 @@ export default function ProfileScreen() {
       </Modal>
 
       {/* Modal: Panel de Staff */}
-      <Modal visible={isStaffVisible} animationType="slide" transparent onRequestClose={() => setIsStaffVisible(false)}>
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 16, paddingTop: 60, paddingBottom: 40 }}>
-          <View style={{ flex: 1, backgroundColor: '#F5F5F5', borderRadius: 20, overflow: 'hidden' }}>
-            {isStaffVisible && (
-              <StaffDashboardScreen onClose={() => setIsStaffVisible(false)} />
-            )}
-          </View>
-        </View>
-      </Modal>
+      <AppModal visible={isStaffVisible} onClose={() => setIsStaffVisible(false)}>
+        {isStaffVisible && <StaffDashboardScreen onClose={() => setIsStaffVisible(false)} />}
+      </AppModal>
 
     </Animated.View>
   );
