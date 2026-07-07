@@ -727,7 +727,7 @@ const styles = StyleSheet.create({
   detailResponsable: { fontSize: 13, color: Brand.textMuted, marginTop: 2 },
   detailBody: { paddingHorizontal: 18 },
 
-  direccionText: { fontSize: 13, color: Brand.textDark, lineHeight: 19 },
+  direccionText: { fontSize: 13, fontWeight: '800', color: Brand.textDark, lineHeight: 19 },
   direccionVacia: { fontSize: 13, color: Brand.textFaint },
   radioText: { fontSize: 11, color: Brand.secondary, fontWeight: '700', marginTop: 4 },
 
