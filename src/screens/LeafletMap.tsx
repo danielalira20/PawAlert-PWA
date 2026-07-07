@@ -132,6 +132,9 @@ function MapClickHandler({ onMapClick }: { onMapClick: () => void }) {
 interface LeafletMapProps {
   reportes: Reporte[];
   selectedReportId?: string | null;
+  getMarkerColor?: (reporte: Reporte) => string;
+  width?: string | number;
+  height?: string | number;
   onSelectReport: (reporte: Reporte) => void;
   onMapClick: () => void;
 }
