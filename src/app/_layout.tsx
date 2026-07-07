@@ -11,6 +11,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import '../../global.css';
 import { AuthProvider } from '../context/AuthContext';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -30,6 +31,7 @@ export default function RootLayout() {
   if (!fontsLoaded) return null;
 
   return (
+     <GestureHandlerRootView style={{ flex: 1 }}>
     <AuthProvider>
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" />
@@ -39,5 +41,6 @@ export default function RootLayout() {
         <Stack.Screen name="association" />
       </Stack>
     </AuthProvider>
+    </GestureHandlerRootView>
   );
 }

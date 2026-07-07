@@ -62,3 +62,45 @@ export const Spacing = {
 
 export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
 export const MaxContentWidth = 800;
+
+
+
+{/* ESTILOS PARA DASHBOARD STAFF*/}
+
+export const Brand = {
+  primary: '#EC802B', // naranja — CTAs, acentos principales, stat card hero
+  primaryDark: '#D4621A', // para degradados (LinearGradient) con el naranja
+  secondary: '#66BCB4', // verde-azulado — acciones positivas, "ver detalle"
+  accent: '#EDC55B', // amarillo — destacados, badges medios
+  backgroundWarm: '#E8CCAD', // crema — fondo cálido de pantalla
+  cardWarm: '#F5EAD8', // crema más claro — fondo de cards sobre el fondo cálido
+  textDark: '#2E2A26', // texto principal sobre fondos cálidos
+  textMuted: '#7A6A5E', // texto secundario sobre fondos cálidos
+  textFaint: '#9B8B7E', // texto terciario (labels chicos)
+  danger: '#D94025', // rojo — condición grave, alertas
+} as const;
+
+export const CondicionColors = {
+  estable: Brand.secondary,
+  herido: Brand.accent,
+  grave: Brand.danger,
+} as const;
+
+export type Condicion = keyof typeof CondicionColors;
+
+export const EstadoReporteColors = {
+  pendiente: '#94A3B8',
+  asignado: Brand.primary,
+  en_camino: Brand.secondary,
+  en_atencion: Brand.accent,
+  cerrado: '#9B8B7E',
+  sin_cobertura: Brand.danger,
+} as const;
+
+export type EstadoReporte = keyof typeof EstadoReporteColors;
+
+export function normalizeCondicion(raw: string | null | undefined): Condicion | null {
+  const v = raw?.toLowerCase().trim();
+  if (v === 'estable' || v === 'herido' || v === 'grave') return v;
+  return null;
+}
