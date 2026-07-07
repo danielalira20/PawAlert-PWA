@@ -6,6 +6,7 @@
     "@expo-google-fonts/fraunces": "^0.4.1",
     "@expo-google-fonts/fredoka": "^0.4.1",
     "@expo-google-fonts/poppins": "^0.4.1",
+    "@expo/cli": "^57.0.6",
     "@expo/ngrok": "^4.1.3",
     "@expo/ui": "~0.2.0-beta.9",
     "@react-native-async-storage/async-storage": "2.2.0",
