@@ -37,8 +37,13 @@ async def listar_asociaciones_pendientes(authorization: str = Header(None)):
     _verificar_admin(authorization)
 
     resultado = supabase.table("asociaciones").select(
-        "id, nombre, nombre_responsable, contacto_telefono, contacto_email, created_at"
+        "id, nombre, nombre_responsable, contacto_telefono, contacto_email, logo_url,created_at, asociacion_fotos(id)"
     ).eq("verificado", False).is_("motivo_rechazo", "null").execute()
+
+    data = resultado.data
+
+    for item in data:
+        item["fotos_count"] = len(item.pop("asociacion_fotos", []))
 
     return resultado.data
 
@@ -170,3 +175,30 @@ async def resolver_apelacion(apelacion_id: str, body: RespuestaApelacionBody, au
         return {"mensaje": "Apelación rechazada."}
     
 ### FIN: admin rechaza o acepta apelacion 
+
+@router.get("/asociaciones/{asociacion_id}", status_code=200)
+async def obtener_detalle_asociacion(asociacion_id: str, authorization: str = Header(None)):
+    """Detalle completo de una asociación para que el admin pueda revisar
+    a fondo antes de aprobar/rechazar: datos de contacto, ubicación, logo,
+    fotos del refugio y tipos de animales que rescatan."""
+    _verificar_admin(authorization)
+
+    resultado = supabase.table("asociaciones").select(
+        "id, nombre, nombre_responsable, contacto_telefono, contacto_email, "
+        "acerca_de, logo_url, horario_atencion, radio_km, tipos_animales, "
+        "calle, colonia, municipio, referencia, latitud, longitud, "
+        "verificado, motivo_rechazo, created_at, "
+        "asociacion_fotos(id, foto_url, descripcion, orden)"
+    ).eq("id", asociacion_id).execute()
+
+    if not resultado.data:
+        raise HTTPException(status_code=404, detail="Asociación no encontrada")
+
+    asociacion = resultado.data[0]
+
+    # Ordenar las fotos por el campo `orden` que ya captura el formulario
+    fotos = sorted(asociacion.get("asociacion_fotos", []), key=lambda f: f.get("orden", 0))
+    asociacion["fotos"] = fotos
+    asociacion.pop("asociacion_fotos", None)
+
+    return asociacion
