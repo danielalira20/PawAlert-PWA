@@ -1,5 +1,5 @@
 import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
+import { useEffect } from 'react';
 import { MapContainer, Marker, TileLayer, useMapEvents } from 'react-leaflet';
 import { Reporte } from '../types/reporte';
 
@@ -36,6 +36,18 @@ interface LeafletMapProps {
 }
 
 export default function LeafletMap({ reportes, getMarkerColor, onSelectReport, onMapClick, width, height }: LeafletMapProps) {
+  useEffect(() => {
+    const linkId = 'leaflet-css';
+    if (!document.getElementById(linkId)) {
+      const link = document.createElement('link');
+      link.id = linkId;
+      link.rel = 'stylesheet';
+      link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+      link.crossOrigin = '';
+      document.head.appendChild(link);
+    }
+  }, []);
+
   return (
     <MapContainer center={INITIAL_CENTER} zoom={INITIAL_ZOOM} style={{ width, height }}>
       <TileLayer
