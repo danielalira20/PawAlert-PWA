@@ -118,7 +118,7 @@ function AnimalIcon({ tipoAnimal, condicion, size = 34 }: { tipoAnimal: string |
 }
 
 export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
-  const { token, user } = useAuth();
+  const { token, user, isLoggedIn } = useAuth();
   const [reportes, setReportes] = useState<ReporteItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [filtro, setFiltro] = useState<Filtro>('todos');
@@ -130,6 +130,15 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
 
   const isWeb = Platform.OS === 'web';
 
+  // Si la sesión termina mientras esta pantalla está abierta (ej. el refresh_token
+  // también expiró y el interceptor global hizo logout), nos cerramos solos en vez
+  // de quedarnos mostrando un spinner o una lista vacía sin contexto.
+  useEffect(() => {
+    if (!isLoggedIn) {
+      onClose?.();
+    }
+  }, [isLoggedIn]);
+
   const cargarReportes = async () => {
     setIsLoading(true);
     try {
@@ -138,7 +147,8 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
       });
       setReportes(res.data);
     } catch {
-      // Si falla, mostramos lista vacía
+      // Si falla, mostramos lista vacía (el efecto de arriba se encarga de
+      // cerrar la pantalla si la causa fue que la sesión terminó)
     } finally {
       setIsLoading(false);
     }

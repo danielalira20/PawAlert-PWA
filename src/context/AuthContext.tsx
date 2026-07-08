@@ -131,11 +131,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return Promise.reject(error);
         }
 
-        // Si no hay refresh_token guardado, no hay nada que hacer — dejamos pasar el error
-        if (!refreshTokenRef.current) {
-          return Promise.reject(error);
-        }
-
         originalRequest._retry = true;
 
         // Si ya hay un refresh en curso, esta petición espera a que termine
@@ -152,8 +147,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isRefreshingRef.current = true;
 
         try {
+          // Releemos el refresh_token directo de AsyncStorage (no solo la ref en memoria).
+          // Supabase rota el refresh_token cada vez que se usa: si otra pestaña/sesión
+          // ya lo refrescó mientras tanto, la ref en memoria de esta instancia quedaría
+          // desactualizada y el refresh fallaría con un token ya invalidado.
+          const freshRefreshToken = (await AsyncStorage.getItem(STORAGE_KEY_REFRESH)) ?? refreshTokenRef.current;
+
+          if (!freshRefreshToken) {
+            throw new Error('No hay refresh_token disponible');
+          }
+
           const refreshResponse = await axios.post(`${API_URL}/auth/refresh`, {
-            refresh_token: refreshTokenRef.current,
+            refresh_token: freshRefreshToken,
           });
 
           const newAccessToken = refreshResponse.data.access_token;
