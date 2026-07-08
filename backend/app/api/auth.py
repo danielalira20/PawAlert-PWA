@@ -20,6 +20,10 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
 @router.post("/register", status_code=201)
 async def register(body: RegisterRequest):
     telefono_limpio = body.telefono.replace(" ", "").replace("-", "")
@@ -121,6 +125,7 @@ async def register(body: RegisterRequest):
 
     return {
         "access_token": login_response.session.access_token,
+        "refresh_token": login_response.session.refresh_token,
         "token_type": "bearer",
         "usuario": {
             "id": usuario.data[0]["id"],
@@ -158,6 +163,30 @@ async def login(body: LoginRequest):
 
     return {
         "access_token": response.session.access_token,
+        "refresh_token": response.session.refresh_token,
         "token_type": "bearer",
         "usuario": usuario_data
+    }
+
+
+@router.post("/refresh", status_code=200)
+async def refresh_token(body: RefreshRequest):
+    """
+    Renueva el access_token usando el refresh_token guardado en el dispositivo.
+    Se llama automáticamente desde el frontend cuando una petición falla con 401
+    (el JWT de Supabase dura solo 1 hora).
+    """
+    try:
+        response = get_fresh_client().auth.refresh_session(body.refresh_token)
+    except Exception:
+        # El refresh_token también expiró o es inválido — el usuario debe volver a loguearse
+        raise HTTPException(status_code=401, detail="Sesión expirada. Vuelve a iniciar sesión.")
+
+    if not response.session:
+        raise HTTPException(status_code=401, detail="Sesión expirada. Vuelve a iniciar sesión.")
+
+    return {
+        "access_token": response.session.access_token,
+        "refresh_token": response.session.refresh_token,
+        "token_type": "bearer",
     }

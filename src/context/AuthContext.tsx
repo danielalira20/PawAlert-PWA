@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
-import { createContext, ReactNode, useContext, useEffect, useState } from 'react';
+import { createContext, ReactNode, useContext, useEffect, useRef, useState } from 'react';
 import { API_URL } from '../constants/api';
 
 interface Usuario {
@@ -31,67 +31,167 @@ interface AuthContextType {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<Usuario>;
   register: (data: RegisterData) => Promise<Usuario>;
-  setSession: (usuario: Usuario, accessToken: string) => Promise<void>;
+  setSession: (usuario: Usuario, accessToken: string, refreshToken?: string) => Promise<void>;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
 const STORAGE_KEY_TOKEN = '@pawalert_token';
+const STORAGE_KEY_REFRESH = '@pawalert_refresh_token';
 const STORAGE_KEY_USER = '@pawalert_user';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<Usuario | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Refs para que el interceptor de axios (que vive fuera del ciclo de render)
+  // siempre lea el valor más reciente sin tener que re-registrarse en cada cambio.
+  const tokenRef = useRef<string | null>(null);
+  const refreshTokenRef = useRef<string | null>(null);
+  const isRefreshingRef = useRef(false);
+  const refreshSubscribersRef = useRef<Array<(newToken: string) => void>>([]);
+
   useEffect(() => {
     (async () => {
       try {
-        const [storedToken, storedUser] = await Promise.all([
+        const [storedToken, storedRefresh, storedUser] = await Promise.all([
           AsyncStorage.getItem(STORAGE_KEY_TOKEN),
+          AsyncStorage.getItem(STORAGE_KEY_REFRESH),
           AsyncStorage.getItem(STORAGE_KEY_USER),
         ]);
         if (storedToken && storedUser) {
           setToken(storedToken);
           setUser(JSON.parse(storedUser));
+          tokenRef.current = storedToken;
+        }
+        if (storedRefresh) {
+          refreshTokenRef.current = storedRefresh;
         }
       } catch {
         // Si falla la lectura, simplemente no se restaura sesión automática.
       } finally {
-        setIsLoading(false); // ← siempre se ejecuta al terminar
+        setIsLoading(false);
       }
     })();
   }, []);
 
-  const setSession = async (usuario: Usuario, accessToken: string) => {
-  setUser(usuario);
-  setToken(accessToken);
-  try {
-    await AsyncStorage.setItem(STORAGE_KEY_TOKEN, accessToken);
-    await AsyncStorage.setItem(STORAGE_KEY_USER, JSON.stringify(usuario));
-  } catch {
-    // Si falla el storage local, la sesión sigue activa en memoria
-  }
-};
+  const setSession = async (usuario: Usuario, accessToken: string, refreshTokenValue?: string) => {
+    setUser(usuario);
+    setToken(accessToken);
+    tokenRef.current = accessToken;
+    if (refreshTokenValue) {
+      refreshTokenRef.current = refreshTokenValue;
+    }
+    try {
+      await AsyncStorage.setItem(STORAGE_KEY_TOKEN, accessToken);
+      await AsyncStorage.setItem(STORAGE_KEY_USER, JSON.stringify(usuario));
+      if (refreshTokenValue) {
+        await AsyncStorage.setItem(STORAGE_KEY_REFRESH, refreshTokenValue);
+      }
+    } catch {
+      // Si falla el storage local, la sesión sigue activa en memoria
+    }
+  };
 
   const login = async (email: string, password: string) => {
     const res = await axios.post(`${API_URL}/auth/login`, { email, password });
-    await setSession(res.data.usuario, res.data.access_token);
+    await setSession(res.data.usuario, res.data.access_token, res.data.refresh_token);
     return res.data.usuario as Usuario;
   };
 
   const register = async (data: RegisterData) => {
     const res = await axios.post(`${API_URL}/auth/register`, data);
-    await setSession(res.data.usuario, res.data.access_token);
+    await setSession(res.data.usuario, res.data.access_token, res.data.refresh_token);
     return res.data.usuario as Usuario;
   };
 
   const logout = () => {
     setUser(null);
     setToken(null);
+    tokenRef.current = null;
+    refreshTokenRef.current = null;
     AsyncStorage.removeItem(STORAGE_KEY_TOKEN).catch(() => {});
+    AsyncStorage.removeItem(STORAGE_KEY_REFRESH).catch(() => {});
     AsyncStorage.removeItem(STORAGE_KEY_USER).catch(() => {});
   };
+
+  // ─── Interceptor global de axios: refresh automático en 401 ─────────────────
+  // Se registra UNA sola vez. Usa refs para siempre ver el token más actual
+  // sin necesidad de re-suscribirse cada vez que cambia el estado.
+  useEffect(() => {
+    const interceptorId = axios.interceptors.response.use(
+      (response) => response,
+      async (error) => {
+        const originalRequest = error.config;
+
+        // Solo actuamos sobre 401, y solo una vez por request (evita loop infinito)
+        if (error.response?.status !== 401 || originalRequest._retry) {
+          return Promise.reject(error);
+        }
+
+        // Si no hay refresh_token guardado, no hay nada que hacer — dejamos pasar el error
+        if (!refreshTokenRef.current) {
+          return Promise.reject(error);
+        }
+
+        originalRequest._retry = true;
+
+        // Si ya hay un refresh en curso, esta petición espera a que termine
+        // en lugar de disparar otro refresh en paralelo.
+        if (isRefreshingRef.current) {
+          return new Promise((resolve, reject) => {
+            refreshSubscribersRef.current.push((newToken: string) => {
+              originalRequest.headers.Authorization = `Bearer ${newToken}`;
+              resolve(axios(originalRequest));
+            });
+          });
+        }
+
+        isRefreshingRef.current = true;
+
+        try {
+          const refreshResponse = await axios.post(`${API_URL}/auth/refresh`, {
+            refresh_token: refreshTokenRef.current,
+          });
+
+          const newAccessToken = refreshResponse.data.access_token;
+          const newRefreshToken = refreshResponse.data.refresh_token;
+
+          tokenRef.current = newAccessToken;
+          refreshTokenRef.current = newRefreshToken;
+          setToken(newAccessToken);
+
+          await AsyncStorage.setItem(STORAGE_KEY_TOKEN, newAccessToken);
+          if (newRefreshToken) {
+            await AsyncStorage.setItem(STORAGE_KEY_REFRESH, newRefreshToken);
+          }
+
+          // Avisamos a todas las peticiones que esperaban este refresh
+          refreshSubscribersRef.current.forEach((cb) => cb(newAccessToken));
+          refreshSubscribersRef.current = [];
+
+          // Reintentamos la petición original con el token nuevo
+          originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
+          return axios(originalRequest);
+        } catch (refreshError) {
+          // El refresh_token también expiró — la sesión realmente terminó.
+          // Limpiamos todo y dejamos que la app redirija a login de forma natural
+          // (isLoggedIn pasará a false).
+          refreshSubscribersRef.current = [];
+          logout();
+          return Promise.reject(refreshError);
+        } finally {
+          isRefreshingRef.current = false;
+        }
+      }
+    );
+
+    return () => {
+      axios.interceptors.response.eject(interceptorId);
+    };
+  }, []);
 
   return (
     <AuthContext.Provider value={{ user, token, isLoggedIn: !!user, isLoading, login, register, setSession, logout }}>
