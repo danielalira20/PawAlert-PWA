@@ -34,7 +34,6 @@ def verificar_duplicados(municipio: str | None, colonia: str | None, tipo_animal
 
     hace_dos_horas = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
 
-    # Resolver el ID del tipo de animal para filtrar
     tipo_animal_id = None
     if tipo_animal:
         tipo_animal_id = obtener_id_catalogo("tipo_animal_catalogo", tipo_animal)
@@ -50,14 +49,12 @@ def verificar_duplicados(municipio: str | None, colonia: str | None, tipo_animal
     resultado = query.execute()
     duplicados = resultado.data if resultado.data else []
 
-    # Filtrar por tipo de animal en Python ya que el join anidado no permite WHERE en subrelación
     if tipo_animal_id:
         duplicados = [
             d for d in duplicados
             if d.get("animal", {}).get("tipo_animal_id") == tipo_animal_id
         ]
 
-    # Query separada para la foto
     for duplicado in duplicados:
         animal = duplicado.get("animal")
         if animal and animal.get("id"):
@@ -102,17 +99,16 @@ async def crear_reporte(
     es_duplicado_confirmado: bool | None = None,
     reporte_original_id: str | None = None,
 ) -> dict:
-    
+
     print("=== DEBUG DUPLICADOS ===")
     print("municipio:", municipio)
     print("colonia:", colonia)
     print("tipo_animal:", tipo_animal)
     print("========================")
 
-    # 0 — Verificar duplicados (solo si no viene confirmación del usuario)
     if es_duplicado_confirmado is None:
         posibles_duplicados = verificar_duplicados(municipio, colonia, tipo_animal)
-        
+
         if posibles_duplicados:
             duplicado = posibles_duplicados[0]
 
@@ -125,14 +121,11 @@ async def crear_reporte(
                     "created_at": str(duplicado["created_at"]),
                     "tipo_animal": duplicado.get("animal", {}).get("tipo_animal_catalogo", {}).get("clave"),
                     "condicion": duplicado.get("animal", {}).get("condicion_catalogo", {}).get("clave"),
-                    "foto_url": duplicado.get("foto_url"),  # ← viene de verificar_duplicados
+                    "foto_url": duplicado.get("foto_url"),
                 },
                 "total_duplicados": len(posibles_duplicados)
             }
-    # 1 — Resolver usuario: con sesión usa usuario_id directo, invitado queda None
-    # (los datos del invitado se guardan en el reporte)
 
-    # 2 — Resolver IDs de catálogos
     tipo_animal_id = obtener_id_catalogo("tipo_animal_catalogo", tipo_animal)
     condicion_id = obtener_id_catalogo("condicion_catalogo", condicion)
     tamanio_id = obtener_id_catalogo("tamanio_catalogo", tamanio)
@@ -141,7 +134,6 @@ async def crear_reporte(
     if not tipo_animal_id or not condicion_id or not tamanio_id or not estado_id:
         raise HTTPException(status_code=500, detail="Error al resolver catálogos de la BD")
 
-    # 3 — Asignar asociación por radio
     asociacion = None
     asociacion_id = None
     if latitud and longitud:
@@ -149,7 +141,6 @@ async def crear_reporte(
         if asociacion:
             asociacion_id = asociacion["id"]
 
-    # 4 — Crear reporte
     estado_asignado_id = obtener_id_catalogo("reporte_estados", "asignado") if asociacion_id else None
 
     reporte_data = {
@@ -169,14 +160,13 @@ async def crear_reporte(
         "municipio": municipio,
         "estado_ubicacion": estado_ubicacion,
         "referencia": referencia,
-        "reporte_original_id": reporte_original_id, 
+        "reporte_original_id": reporte_original_id,
     }
 
     reporte = supabase.table("reportes").insert(reporte_data).execute()
     reporte_id = reporte.data[0]["id"]
     created_at = reporte.data[0]["created_at"]
 
-    # 5 — Crear registro en ANIMAL
     raza_id = None
     if raza_clave:
         raza_id = obtener_id_catalogo("raza_catalogo", raza_clave)
@@ -205,7 +195,6 @@ async def crear_reporte(
     animal_result = supabase.table("animal").insert(animal_data).execute()
     animal_id = animal_result.data[0]["id"]
 
-    # 6 — Subir fotos del animal
     if fotos:
         ordenes = json.loads(fotos_ordenes) if fotos_ordenes and fotos_ordenes.strip() else []
         for i, foto in enumerate(fotos):
@@ -217,7 +206,6 @@ async def crear_reporte(
                     "orden": ordenes[i] if i < len(ordenes) else i + 1,
                 }).execute()
 
-    # 7 — Registrar asignación y notificación si hay asociación
     if asociacion_id:
         estado_asignacion_id = obtener_id_catalogo("asignacion_estados", "notificada")
         supabase.table("reporte_asignaciones").insert({
@@ -235,7 +223,6 @@ async def crear_reporte(
             "tipo": "nuevo_reporte",
         }).execute()
 
-        #Email si condicion es grave
         condicion_str = condicion.value if hasattr(condicion, 'value') else str(condicion)
         if condicion_str == "grave":
             try:
@@ -253,7 +240,6 @@ async def crear_reporte(
             except Exception as e:
                 print(f"[WARN] No se pudo enviar email de reporte grave: {e}")
 
-    # 8 — Registrar en historial
     registrar_historial(
         reporte_id=reporte_id,
         usuario_id=usuario_id,
@@ -271,7 +257,6 @@ async def crear_reporte(
             datos_extra={"asociacion_id": asociacion_id, "asociacion_nombre": asociacion["nombre"]}
         )
 
-    # 9 — Obtener contactos de emergencia si no hay asociación
     contactos = []
     if not asociacion_id:
         contactos = obtener_contactos_emergencia(
@@ -291,7 +276,7 @@ async def crear_reporte(
 ESTADOS_VALIDOS = ["pendiente", "asignado", "en_camino", "en_atencion", "rescatado", "cerrado", "sin_cobertura", "duplicado", "muerto"]
 
 TRANSICIONES_PERMITIDAS = {
-    "rescatado": "cerrado",  # representante cierra el caso
+    "rescatado": "cerrado",
 }
 
 async def obtener_reportes() -> list:
@@ -351,7 +336,6 @@ async def cambiar_estado_reporte(reporte_id: str, nuevo_estado: str) -> dict:
     if nuevo_estado not in ESTADOS_VALIDOS:
         raise HTTPException(status_code=400, detail="Estado no válido")
 
-    # Validar que la transición está permitida
     transicion_permitida = TRANSICIONES_PERMITIDAS.get(estado_actual)
     if transicion_permitida != nuevo_estado:
         raise HTTPException(
@@ -395,6 +379,7 @@ async def obtener_reportes_usuario(usuario_id: str) -> list:
         animal = r.get("animal")
         animal_data = None
         foto_url = None
+        fotos_urls = []
 
         if animal:
             animal_data = {
@@ -407,8 +392,12 @@ async def obtener_reportes_usuario(usuario_id: str) -> list:
             }
             fotos = animal.get("animal_fotos") or []
             if fotos:
+                # NOTA: antes solo se regresaba la primera foto (foto_url).
+                # Ahora también regresamos el arreglo completo ordenado (fotos)
+                # para que el frontend pueda mostrar un carrusel cuando hay varias.
                 fotos_ordenadas = sorted(fotos, key=lambda f: f.get("orden", 0))
-                foto_url = fotos_ordenadas[0]["foto_url"]
+                fotos_urls = [f["foto_url"] for f in fotos_ordenadas]
+                foto_url = fotos_urls[0]
 
         asociacion = r.get("asociaciones")
         asociacion_nombre = asociacion.get("nombre") if asociacion else None
@@ -423,6 +412,7 @@ async def obtener_reportes_usuario(usuario_id: str) -> list:
             "calle": r.get("calle"),
             "created_at": str(r["created_at"]),
             "foto_url": foto_url,
+            "fotos": fotos_urls,
             "animal": animal_data,
             "asociacion_nombre": asociacion_nombre,
         })

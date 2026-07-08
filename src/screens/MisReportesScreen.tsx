@@ -19,6 +19,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Dimensions,
   Image,
   Platform,
   ScrollView,
@@ -39,6 +40,7 @@ interface ReporteItem {
   calle: string | null;
   created_at: string;
   foto_url: string | null;
+  fotos?: string[]; // si el backend manda varias fotos (animal_fotos), se usan aquí
   asociacion_nombre: string | null;
   animal: {
     tipo_animal: string | null;
@@ -117,6 +119,74 @@ function AnimalIcon({ tipoAnimal, condicion, size = 34 }: { tipoAnimal: string |
   );
 }
 
+// ─── Carrusel de fotos (para la sección expandida) ──────────────────────────
+function PhotoCarousel({ fotos, width, height }: { fotos: string[]; width: number | string; height: number }) {
+  const [index, setIndex] = useState(0);
+  if (fotos.length === 0) return null;
+
+  const goPrev = () => setIndex((i) => (i === 0 ? fotos.length - 1 : i - 1));
+  const goNext = () => setIndex((i) => (i === fotos.length - 1 ? 0 : i + 1));
+
+  return (
+    <View style={{ width, borderRadius: 12, overflow: 'hidden', flexShrink: 0 }}>
+      <View style={{ width, height }}>
+        <Image source={{ uri: fotos[index] }} style={{ width, height }} resizeMode="cover" />
+
+        {fotos.length > 1 && (
+          <>
+            {/* Flechas de navegación */}
+            <TouchableOpacity
+              onPress={goPrev}
+              style={{
+                position: 'absolute', left: 4, top: '50%', marginTop: -13,
+                width: 26, height: 26, borderRadius: 13,
+                backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <Feather name="chevron-left" size={15} color="#FFFFFF" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={goNext}
+              style={{
+                position: 'absolute', right: 4, top: '50%', marginTop: -13,
+                width: 26, height: 26, borderRadius: 13,
+                backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <Feather name="chevron-right" size={15} color="#FFFFFF" />
+            </TouchableOpacity>
+
+            {/* Puntos indicadores */}
+            <View style={{
+              position: 'absolute', bottom: 8, left: 0, right: 0,
+              flexDirection: 'row', justifyContent: 'center', gap: 5,
+            }}>
+              {fotos.map((_, i) => (
+                <View
+                  key={i}
+                  style={{
+                    width: i === index ? 14 : 6, height: 6, borderRadius: 3,
+                    backgroundColor: i === index ? '#FFFFFF' : 'rgba(255,255,255,0.55)',
+                  }}
+                />
+              ))}
+            </View>
+
+            {/* Contador */}
+            <View style={{
+              position: 'absolute', top: 6, right: 6,
+              backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 100,
+              paddingHorizontal: 7, paddingVertical: 2,
+            }}>
+              <Text style={{ fontSize: 9, color: '#FFFFFF', fontWeight: '700' }}>{index + 1}/{fotos.length}</Text>
+            </View>
+          </>
+        )}
+      </View>
+    </View>
+  );
+}
+
 export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
   const { token, user, isLoggedIn } = useAuth();
   const [reportes, setReportes] = useState<ReporteItem[]>([]);
@@ -129,6 +199,16 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const isWeb = Platform.OS === 'web';
+
+  // El modal centrado solo tiene sentido en web CON pantalla ancha (desktop).
+  // En web con viewport angosto (navegador de celular) o en app nativa,
+  // usamos pantalla completa — igual que hicimos en MapScreen.web.tsx.
+  const [windowWidth, setWindowWidth] = useState(Dimensions.get('window').width);
+  useEffect(() => {
+    const sub = Dimensions.addEventListener('change', ({ window }) => setWindowWidth(window.width));
+    return () => sub.remove();
+  }, []);
+  const showAsCenteredModal = isWeb && windowWidth >= 640;
 
   // Si la sesión termina mientras esta pantalla está abierta (ej. el refresh_token
   // también expiró y el interceptor global hizo logout), nos cerramos solos en vez
@@ -251,9 +331,15 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
     const isExpanded = expandedId === reporte.id;
     const estadoColor = getEstadoColor(reporte.estado_reporte);
     const condCfg = getCondicion(reporte.animal?.condicion ?? null);
+    const condicionLabel = reporte.animal?.condicion
+      ? reporte.animal.condicion[0].toUpperCase() + reporte.animal.condicion.slice(1)
+      : null;
     const tipoLabel = reporte.animal?.tipo_animal
       ? reporte.animal.tipo_animal[0].toUpperCase() + reporte.animal.tipo_animal.slice(1)
       : 'Animal';
+    const fotos = reporte.fotos && reporte.fotos.length > 0
+      ? reporte.fotos
+      : reporte.foto_url ? [reporte.foto_url] : [];
 
     return (
       <View key={reporte.id} style={{ flexDirection: 'row' }}>
@@ -281,51 +367,77 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
           <TouchableOpacity onPress={() => toggleExpand(reporte.id)} activeOpacity={0.85}>
             <View style={{
               backgroundColor: petzen.colors.white,
-              borderWidth: 1,
-              borderColor: isExpanded ? condCfg.color + '55' : '#EFEAE2',
+              borderWidth: isExpanded ? 2 : 1.5,
+              borderColor: isExpanded ? condCfg.color : condCfg.color + '80',
               borderRadius: 16,
               overflow: 'hidden',
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 1 },
-              shadowOpacity: isExpanded ? 0.08 : 0.04,
-              shadowRadius: isExpanded ? 10 : 5,
-              elevation: isExpanded ? 3 : 1,
+              shadowColor: condCfg.color,
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: isExpanded ? 0.3 : 0.16,
+              shadowRadius: isExpanded ? 12 : 6,
+              elevation: isExpanded ? 4 : 2,
             }}>
-              <View style={{ flexDirection: 'row', padding: 12, gap: 11, alignItems: 'center' }}>
+              {/* Franja superior de color — refuerza el estado de salud de un vistazo */}
+              <View style={{ height: 4, backgroundColor: condCfg.color }} />
+
+              <View style={{ flexDirection: 'row', padding: 13, gap: 12, alignItems: 'center' }}>
                 {/* Foto o ícono */}
-                <View style={{ width: 68, height: 68, borderRadius: 14, overflow: 'hidden', flexShrink: 0 }}>
-                  {reporte.foto_url ? (
-                    <Image source={{ uri: reporte.foto_url }} style={{ width: 68, height: 68 }} resizeMode="cover" />
+                <View style={{ width: 72, height: 72, borderRadius: 14, overflow: 'hidden', flexShrink: 0, borderWidth: 1, borderColor: condCfg.color + '30' }}>
+                  {fotos.length > 0 ? (
+                    <Image source={{ uri: fotos[0] }} style={{ width: 72, height: 72 }} resizeMode="cover" />
                   ) : (
-                    <View style={{ width: 68, height: 68, backgroundColor: condCfg.bg, alignItems: 'center', justifyContent: 'center' }}>
-                      <AnimalIcon tipoAnimal={reporte.animal?.tipo_animal ?? null} condicion={reporte.animal?.condicion ?? null} size={54} />
+                    <View style={{ width: 72, height: 72, backgroundColor: condCfg.bg, alignItems: 'center', justifyContent: 'center' }}>
+                      <AnimalIcon tipoAnimal={reporte.animal?.tipo_animal ?? null} condicion={reporte.animal?.condicion ?? null} size={56} />
                     </View>
                   )}
                 </View>
 
                 {/* Info */}
                 <View style={{ flex: 1 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 3 }}>
-                    <AnimalIcon tipoAnimal={reporte.animal?.tipo_animal ?? null} condicion={reporte.animal?.condicion ?? null} size={30} />
-                    <Text style={{ fontSize: 14, fontFamily: petzen.fonts.bold, color: petzen.colors.textDark }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 5 }}>
+                    <AnimalIcon tipoAnimal={reporte.animal?.tipo_animal ?? null} condicion={reporte.animal?.condicion ?? null} size={28} />
+                    <Text style={{ fontSize: 15, fontFamily: petzen.fonts.bold, color: petzen.colors.textDark }}>
                       {tipoLabel}
                     </Text>
+                    {reporte.animal?.tamanio && (
+                      <Text style={{ fontSize: 12, color: petzen.colors.textSecondary }}>
+                        · {reporte.animal.tamanio[0].toUpperCase() + reporte.animal.tamanio.slice(1)}
+                      </Text>
+                    )}
                   </View>
-                  <Text style={{ fontSize: 11, color: petzen.colors.textSecondary, marginBottom: 7 }}>
-                    {reporte.colonia || reporte.municipio || 'Sin ubicación'}
-                  </Text>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 8 }}>
+                    <Ionicons name="location-outline" size={11} color={petzen.colors.textSecondary} />
+                    <Text style={{ fontSize: 11, color: petzen.colors.textSecondary, flexShrink: 1 }} numberOfLines={1}>
+                      {reporte.colonia || reporte.municipio || 'Sin ubicación'}
+                    </Text>
+                  </View>
+                  {/* Badges: estado de salud + estado del reporte */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    {condicionLabel && (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: condCfg.bg, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 100, borderWidth: 1, borderColor: condCfg.color + '40' }}>
+                        <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: condCfg.color }} />
+                        <Text style={{ fontSize: 9, fontFamily: petzen.fonts.bold, color: condCfg.color, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                          {condicionLabel}
+                        </Text>
+                      </View>
+                    )}
                     <View style={{ backgroundColor: estadoColor + '18', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 100 }}>
                       <Text style={{ fontSize: 9, fontFamily: petzen.fonts.bold, color: estadoColor, textTransform: 'uppercase', letterSpacing: 0.4 }}>
                         {FILTRO_LABELS[reporte.estado_reporte as Filtro] || reporte.estado_reporte}
                       </Text>
                     </View>
+                    {fotos.length > 1 && (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                        <Ionicons name="images-outline" size={11} color={petzen.colors.textSecondary} />
+                        <Text style={{ fontSize: 9, color: petzen.colors.textSecondary, fontWeight: '600' }}>{fotos.length}</Text>
+                      </View>
+                    )}
                   </View>
                 </View>
 
                 <Feather
                   name={isExpanded ? 'chevron-up' : 'chevron-down'}
-                  size={16}
+                  size={18}
                   color={petzen.colors.textSecondary}
                 />
               </View>
@@ -334,48 +446,52 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
               {isExpanded && (
                 <View style={{ borderTopWidth: 1, borderTopColor: '#F0EBE3', padding: 13 }}>
                   <View style={{ flexDirection: 'row', gap: 12 }}>
-                    {/* Foto lateral (en vez de banner ancho — evita distorsión en fotos verticales) */}
-                    {reporte.foto_url && (
-                      <View style={{ width: 128, borderRadius: 12, overflow: 'hidden', flexShrink: 0 }}>
-                        <Image source={{ uri: reporte.foto_url }} style={{ width: 128, height: 158 }} resizeMode="cover" />
-                      </View>
+                    {/* Foto lateral (regresó al layout original que sí gustó) */}
+                    {fotos.length > 0 && (
+                      <PhotoCarousel fotos={fotos} width={128} height={158} />
                     )}
 
-                    {/* Detalles */}
-                    <View style={{ flex: 1, gap: 9 }}>
+                    {/* Detalles — texto más grande para que no se sienta vacío */}
+                    <View style={{ flex: 1, gap: 11 }}>
                       {reporte.asociacion_nombre && (
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                          <View style={{ width: 26, height: 26, borderRadius: 8, backgroundColor: petzen.colors.teal + '20', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                            <Ionicons name="business-outline" size={13} color={petzen.colors.tealDark} />
+                          <View style={{ width: 28, height: 28, borderRadius: 9, backgroundColor: petzen.colors.teal + '20', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <Ionicons name="business-outline" size={14} color={petzen.colors.tealDark} />
                           </View>
-                          <View style={{ flex: 1 }}>
-                            <Text style={{ fontSize: 9, color: petzen.colors.textSecondary, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.4 }}>Asociación</Text>
-                            <Text style={{ fontSize: 12, color: petzen.colors.textDark, fontWeight: '600' }}>{reporte.asociacion_nombre}</Text>
+                          <View style={{ flex: 1, flexShrink: 1 }}>
+                            <Text style={{ fontSize: 10, color: petzen.colors.textSecondary, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.4 }}>Asociación</Text>
+                            <Text style={{ fontSize: 14, color: petzen.colors.textDark, fontWeight: '700', flexShrink: 1 }} numberOfLines={2}>{reporte.asociacion_nombre}</Text>
                           </View>
                         </View>
                       )}
 
                       {(reporte.calle || reporte.colonia || reporte.municipio) && (
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                          <View style={{ width: 26, height: 26, borderRadius: 8, backgroundColor: '#F39C1220', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                            <Ionicons name="location-outline" size={13} color="#D68910" />
+                          <View style={{ width: 28, height: 28, borderRadius: 9, backgroundColor: '#F39C1220', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <Ionicons name="location-outline" size={14} color="#D68910" />
                           </View>
-                          <View style={{ flex: 1 }}>
-                            <Text style={{ fontSize: 9, color: petzen.colors.textSecondary, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.4 }}>Ubicación</Text>
-                            <Text style={{ fontSize: 12, color: petzen.colors.textDark }}>
+                          <View style={{ flex: 1, flexShrink: 1 }}>
+                            <Text style={{ fontSize: 10, color: petzen.colors.textSecondary, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.4 }}>Ubicación</Text>
+                            <Text style={{ fontSize: 13, color: petzen.colors.textDark, flexShrink: 1 }} numberOfLines={2}>
                               {[reporte.calle, reporte.colonia, reporte.municipio].filter(Boolean).join(', ')}
                             </Text>
                           </View>
                         </View>
                       )}
 
+                      {/* Datos del animal — siempre los 3, aunque digan "desconocido" */}
                       {reporte.animal && (
-                        <View style={{ flexDirection: 'row', gap: 5, flexWrap: 'wrap' }}>
-                          {[reporte.animal.sexo, reporte.animal.edad_aproximada, reporte.animal.tamanio]
-                            .filter(Boolean)
-                            .map((dato, i) => (
-                              <View key={i} style={{ backgroundColor: petzen.colors.peach + '40', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 100 }}>
-                                <Text style={{ fontSize: 9, color: petzen.colors.textDark, textTransform: 'capitalize' }}>{dato}</Text>
+                        <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
+                          {[
+                            { icon: 'male-female-outline', label: reporte.animal.sexo },
+                            { icon: 'time-outline', label: reporte.animal.edad_aproximada },
+                            { icon: 'resize-outline', label: reporte.animal.tamanio },
+                          ]
+                            .filter((d) => !!d.label)
+                            .map((d, i) => (
+                              <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: petzen.colors.peach + '40', paddingHorizontal: 9, paddingVertical: 4, borderRadius: 100 }}>
+                                <Ionicons name={d.icon as any} size={11} color={petzen.colors.orangeDark} />
+                                <Text style={{ fontSize: 11, color: petzen.colors.textDark, textTransform: 'capitalize', fontWeight: '600' }}>{d.label}</Text>
                               </View>
                             ))}
                         </View>
@@ -385,13 +501,13 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
 
                   {/* Descripción a todo el ancho, debajo de la fila foto+detalles */}
                   {reporte.animal?.descripcion && (
-                    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#F5F0E8' }}>
-                      <View style={{ width: 26, height: 26, borderRadius: 8, backgroundColor: '#9B59B620', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        <Ionicons name="document-text-outline" size={13} color="#9B59B6" />
+                    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F5F0E8' }}>
+                      <View style={{ width: 28, height: 28, borderRadius: 9, backgroundColor: '#9B59B620', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <Ionicons name="document-text-outline" size={14} color="#9B59B6" />
                       </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 9, color: petzen.colors.textSecondary, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.4 }}>Descripción</Text>
-                        <Text style={{ fontSize: 12, color: petzen.colors.textSecondary, lineHeight: 17 }}>{reporte.animal.descripcion}</Text>
+                      <View style={{ flex: 1, flexShrink: 1 }}>
+                        <Text style={{ fontSize: 10, color: petzen.colors.textSecondary, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.4 }}>Descripción</Text>
+                        <Text style={{ fontSize: 13, color: petzen.colors.textSecondary, lineHeight: 19, flexShrink: 1 }}>{reporte.animal.descripcion}</Text>
                       </View>
                     </View>
                   )}
@@ -406,14 +522,14 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
 
   // ─── Contenido interno (header + filtros + timeline) ─────────────────────
   const content = (
-    <View style={{ flex: 1, backgroundColor: petzen.colors.background, borderRadius: isWeb ? 20 : 0, overflow: 'hidden' }}>
+    <View style={{ flex: 1, backgroundColor: petzen.colors.background, borderRadius: showAsCenteredModal ? 20 : 0, overflow: 'hidden' }}>
       {/* Header */}
       <LinearGradient
         colors={[petzen.colors.teal, petzen.colors.tealDark]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={{
-          paddingTop: isWeb ? 20 : 28,
+          paddingTop: showAsCenteredModal ? 20 : 28,
           paddingHorizontal: 22,
           paddingBottom: 22,
         }}
@@ -453,7 +569,7 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
       ) : (
         <>
           {/* Filtros pinneados (no scrollean con el timeline) */}
-          <View style={{ marginBottom: 10, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, gap: 8 }}>
+          <View style={{ marginTop: 16, marginBottom: 10, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, gap: 8 }}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 7 }} style={{ flex: 1 }}>
               {RANGOS.map((r) => {
                 const isActive = !selectedDay && rango === r;
@@ -479,13 +595,13 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
             <TouchableOpacity
               onPress={() => setCalendarOpen((v) => !v)}
               style={{
-                width: 32, height: 32, borderRadius: 100,
+                width: 42, height: 42, borderRadius: 100,
                 alignItems: 'center', justifyContent: 'center',
                 backgroundColor: selectedDay ? petzen.colors.tealDark : petzen.colors.white,
                 borderWidth: 1, borderColor: selectedDay ? petzen.colors.tealDark : '#EFEAE2',
               }}
             >
-              <Ionicons name="calendar-outline" size={16} color={selectedDay ? '#FFFFFF' : petzen.colors.textSecondary} />
+              <Ionicons name="calendar-outline" size={22} color={selectedDay ? '#FFFFFF' : petzen.colors.textSecondary} />
             </TouchableOpacity>
           </View>
 
@@ -666,7 +782,7 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
   );
 
   // ─── Web: modal centrado con overlay ──────────────────────────────────────
-  if (isWeb) {
+  if (showAsCenteredModal) {
     return (
       <View
         style={{
@@ -688,6 +804,7 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
           style={{
             width: '100%',
             maxWidth: 640,
+            minHeight: 520,
             maxHeight: '85vh' as any,
             borderRadius: 20,
             overflow: 'hidden',
@@ -703,6 +820,28 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
     );
   }
 
-  // ─── Mobile: pantalla completa (se presenta como Modal desde el padre) ────
+  // ─── Web + navegador angosto (celular): pantalla completa REAL ────────────
+  // Un simple `return content` aquí se renderiza inline en el flujo normal de
+  // la página (por eso se veía "flotando" encima de Mi Perfil y chocando con
+  // el navbar). Necesita su propio overlay `fixed` para cubrir todo el
+  // viewport de verdad, igual que hace el modal centrado pero sin fondo
+  // oscuro ni tarjeta — a pantalla completa.
+  if (isWeb) {
+    return (
+      <View
+        style={{
+          position: 'fixed' as any,
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: petzen.colors.background,
+          zIndex: 2000,
+        }}
+      >
+        {content}
+      </View>
+    );
+  }
+
+  // ─── Nativo (iOS/Android): pantalla completa (ya viene envuelto en un
+  // Modal nativo desde el componente padre) ──────────────────────────────
   return content;
 }

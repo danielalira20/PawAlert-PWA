@@ -56,15 +56,25 @@ export default function ProfileScreen() {
         onLogout={logout}
       />
       {/* Modal: Mis Reportes */}
-      <Modal visible={isMisReportesVisible} animationType="slide" transparent onRequestClose={() => setIsMisReportesVisible(false)}>
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 16, paddingTop: 60, paddingBottom:40 }}>
-          <View style={{ flex: 1, borderRadius: 20, overflow: 'hidden' }}>
-            {isMisReportesVisible && (
-              <MisReportesScreen onClose={() => setIsMisReportesVisible(false)} />
-            )}
-          </View>
-        </View>
-      </Modal>
+      {/* Mis Reportes: en web se renderiza directo (el propio componente maneja
+          su overlay fijo centrado); en mobile usa Modal nativo a pantalla completa
+          sin padding, sin esquinas redondeadas y sin fondo oscuro — ya no es un
+          modal "flotante", ocupa toda la pantalla. */}
+      {Platform.OS === 'web' ? (
+        isMisReportesVisible && (
+          <MisReportesScreen onClose={() => setIsMisReportesVisible(false)} />
+        )
+      ) : (
+        <Modal
+          visible={isMisReportesVisible}
+          animationType="slide"
+          onRequestClose={() => setIsMisReportesVisible(false)}
+        >
+          {isMisReportesVisible && (
+            <MisReportesScreen onClose={() => setIsMisReportesVisible(false)} />
+          )}
+        </Modal>
+      )}
       {/* Modal: Panel de Administrador */}
       <AppModal visible={isAdminVisible} onClose={() => setIsAdminVisible(false)} maxWidth={1100}>
         {isAdminVisible && <AdminDashboardScreen onClose={() => setIsAdminVisible(false)} />}
