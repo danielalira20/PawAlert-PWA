@@ -56,7 +56,24 @@ async def create_report(
     especie_descripcion: Optional[str] = Form(None),
     es_duplicado_confirmado: Optional[bool] = Form(None),
     reporte_original_id: Optional[str] = Form(None),
+    authorization: Optional[str] = Header(None),
 ):
+    # Si el usuario está logueado (viene token), resolvemos su usuario_id
+    # automáticamente desde el token — sin depender de que el frontend lo mande.
+    # Esto evita reportes "huérfanos" con usuario_id=null cuando sí hay sesión activa.
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.replace("Bearer ", "")
+        try:
+            auth_response = supabase.auth.get_user(token)
+            resultado = supabase.table("usuarios").select("id").eq(
+                "auth_user_id", auth_response.user.id
+            ).execute()
+            if resultado.data:
+                usuario_id = resultado.data[0]["id"]
+        except Exception:
+            # Token inválido/expirado: seguimos como invitado, no bloqueamos el reporte
+            pass
+
     if not usuario_id and not nombre:
         raise HTTPException(status_code=422, detail="Se requiere nombre o usuario_id")
 
