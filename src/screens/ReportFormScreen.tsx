@@ -1,4 +1,4 @@
-import { Feather } from '@expo/vector-icons';
+import { Feather, Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { router } from 'expo-router';
@@ -7,10 +7,10 @@ import * as Location from 'expo-location';
 import { useEffect, useState } from 'react';
 import { Image, Modal, Platform, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { Toast, useToast } from '../components/Toast';
-import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
 import { API_URL } from '../constants/api';
+import { petzen } from '../constants/petzenTheme';
 import { useAuth } from '../context/AuthContext';
 import LocationPickerMap from './LocationPickerMap';
 
@@ -526,7 +526,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
       <Text style={{ fontSize: 14, fontWeight: '600', color: '#2C3E50', marginBottom: 8 }}>{label} <Text style={{ color: '#E74C3C' }}>*</Text></Text>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
         {options.map((opt) => (
-          <TouchableOpacity key={opt} onPress={() => setState(opt)} style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, borderWidth: 1, backgroundColor: stateValue === opt ? '#3498DB' : '#FFFFFF', borderColor: error ? '#E74C3C' : (stateValue === opt ? '#3498DB' : '#BDC3C7'), alignItems: 'center' }}>
+          <TouchableOpacity key={opt} onPress={() => setState(opt)} style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, borderWidth: 1, backgroundColor: stateValue === opt ? petzen.colors.teal : '#FFFFFF', borderColor: error ? '#E74C3C' : (stateValue === opt ? petzen.colors.teal : '#BDC3C7'), alignItems: 'center' }}>
             <Text style={{ textAlign: 'center', fontWeight: '500', fontSize: 14, color: stateValue === opt ? '#FFFFFF' : '#7F8C8D' }}>{opt}</Text>
           </TouchableOpacity>
         ))}
@@ -539,10 +539,10 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
     <View style={{ marginBottom: 20 }}>
       <Text style={{ fontSize: 14, fontWeight: '600', color: '#2C3E50', marginBottom: 8 }}>{label} <Text style={{ color: '#E74C3C' }}>*</Text></Text>
       <View style={{ flexDirection: 'row', gap: 8 }}>
-        <TouchableOpacity onPress={() => setValue(true)} style={{ flex: 1, paddingVertical: 8, borderRadius: 8, borderWidth: 1, backgroundColor: value === true ? '#3498DB' : '#FFFFFF', borderColor: error ? '#E74C3C' : (value === true ? '#3498DB' : '#BDC3C7'), alignItems: 'center' }}>
+        <TouchableOpacity onPress={() => setValue(true)} style={{ flex: 1, paddingVertical: 8, borderRadius: 8, borderWidth: 1, backgroundColor: value === true ? petzen.colors.teal : '#FFFFFF', borderColor: error ? '#E74C3C' : (value === true ? petzen.colors.teal : '#BDC3C7'), alignItems: 'center' }}>
           <Text style={{ color: value === true ? '#FFFFFF' : '#7F8C8D', fontWeight: '500' }}>Sí</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => setValue(false)} style={{ flex: 1, paddingVertical: 8, borderRadius: 8, borderWidth: 1, backgroundColor: value === false ? '#3498DB' : '#FFFFFF', borderColor: error ? '#E74C3C' : (value === false ? '#3498DB' : '#BDC3C7'), alignItems: 'center' }}>
+        <TouchableOpacity onPress={() => setValue(false)} style={{ flex: 1, paddingVertical: 8, borderRadius: 8, borderWidth: 1, backgroundColor: value === false ? petzen.colors.teal : '#FFFFFF', borderColor: error ? '#E74C3C' : (value === false ? petzen.colors.teal : '#BDC3C7'), alignItems: 'center' }}>
           <Text style={{ color: value === false ? '#FFFFFF' : '#7F8C8D', fontWeight: '500' }}>No</Text>
         </TouchableOpacity>
       </View>
@@ -553,7 +553,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
   // ─── Pantalla de confirmación ───
   if (resultadoEnvio !== null) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#F5F5F5', justifyContent: 'center', alignItems: 'center', padding: 32 }}>
+      <View style={{ flex: 1, backgroundColor: petzen.colors.background, justifyContent: 'center', alignItems: 'center', padding: 32 }}>
         <Toast toast={toast} translateY={translateY} />
 
         <Image
@@ -562,10 +562,10 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
           resizeMode="contain"
         />
 
-        <Text style={{ fontSize: 26, fontWeight: '800', color: '#2C3E50', textAlign: 'center', marginBottom: 12 }}>
+        <Text style={{ fontFamily: petzen.fonts.extraBold, fontSize: 26, color: petzen.colors.textDark, textAlign: 'center', marginBottom: 12 }}>
           ¡Gracias por reportar!
         </Text>
-        <Text style={{ fontSize: 15, color: '#566573', textAlign: 'center', lineHeight: 24, marginBottom: 36 }}>
+        <Text style={{ fontFamily: petzen.fonts.regular, fontSize: 15, color: petzen.colors.textSecondary, textAlign: 'center', lineHeight: 24, marginBottom: 36 }}>
           {resultadoEnvio}
         </Text>
         <TouchableOpacity
@@ -575,9 +575,9 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
               if (onClose) onClose();
             }, 300);
           }}
-          style={{ backgroundColor: '#3498DB', paddingVertical: 16, paddingHorizontal: 48, borderRadius: 30, alignItems: 'center' }}
+          style={{ backgroundColor: petzen.colors.orange, paddingVertical: 16, paddingHorizontal: 48, borderRadius: petzen.radii.pill, alignItems: 'center' }}
         >
-          <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 16 }}>Entendido</Text>
+          <Text style={{ fontFamily: petzen.fonts.bold, color: '#FFFFFF', fontSize: 16 }}>Entendido</Text>
         </TouchableOpacity>
       </View>
     );
@@ -585,26 +585,44 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
 
   // ─── Header con progreso ───
   const renderHeader = () => (
-    <View style={{ backgroundColor: '#FFFFFF', paddingTop: 16, paddingBottom: 12, paddingHorizontal: 24, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
-        <TouchableOpacity onPress={handleAnterior} style={{ marginRight: 12, padding: 4 }}>
-          <Feather name="chevron-left" size={24} color="#2C3E50" />
+    <View
+      style={{
+        backgroundColor: petzen.colors.teal,
+        paddingTop: 28,
+        paddingBottom: 40,
+        paddingHorizontal: 24,
+        borderBottomLeftRadius: petzen.radii.headerCurve,
+        borderBottomRightRadius: petzen.radii.headerCurve,
+      }}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <TouchableOpacity
+          onPress={handleAnterior}
+          style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}
+        >
+          <Feather name="chevron-left" size={20} color="#FFFFFF" />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 17, fontWeight: '700', color: '#2C3E50' }}>Nuevo Reporte</Text>
-          <Text style={{ fontSize: 12, color: '#7F8C8D', marginTop: 1 }}>
+          <Text style={{ fontFamily: petzen.fonts.bold, fontSize: 18, color: '#FFFFFF' }}>Nuevo Reporte</Text>
+          <Text style={{ fontFamily: petzen.fonts.medium, fontSize: 12, color: 'rgba(255,255,255,0.85)', marginTop: 2 }}>
             Paso {paso} de {TOTAL_PASOS}: {PASO_NOMBRES[paso - 1]}
           </Text>
         </View>
+        <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center', marginRight: onClose ? 8 : 0 }}>
+          <Ionicons name="paw" size={22} color="#FFFFFF" />
+        </View>
         {onClose && (
-          <TouchableOpacity onPress={handleCloseRequest} style={{ padding: 4 }}>
-            <Feather name="x" size={22} color="#95A5A6" />
+          <TouchableOpacity
+            onPress={handleCloseRequest}
+            style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center' }}
+          >
+            <Feather name="x" size={18} color="#FFFFFF" />
           </TouchableOpacity>
         )}
       </View>
       {/* Barra de progreso */}
-      <View style={{ height: 3, backgroundColor: '#E5E7EB', borderRadius: 2 }}>
-        <View style={{ height: 3, backgroundColor: '#3498DB', borderRadius: 2, width: `${(paso / TOTAL_PASOS) * 100}%` }} />
+      <View style={{ height: 4, backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: 2, marginTop: 18 }}>
+        <View style={{ height: 4, backgroundColor: petzen.colors.yellow, borderRadius: 2, width: `${(paso / TOTAL_PASOS) * 100}%` }} />
       </View>
     </View>
   );
@@ -618,7 +636,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
 
       {/* Fotos */}
       <Card>
-        <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#2C3E50', marginBottom: 4 }}>
+        <Text style={{ fontSize: 16, fontFamily: petzen.fonts.bold, color: '#2C3E50', marginBottom: 4 }}>
           Foto del animalito <Text style={{ color: '#E74C3C' }}>*</Text>
         </Text>
         <Text style={{ fontSize: 12, color: '#7F8C8D', marginBottom: 16 }}>
@@ -640,13 +658,29 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
           </View>
         ))}
 
-        <Button label="Agregar Foto del animalito" variant="secondary" onPress={handleAddFoto} />
+        <TouchableOpacity
+          onPress={handleAddFoto}
+          style={{
+            flexDirection: 'row',
+            justifyContent: 'center',
+            alignItems: 'center',
+            paddingVertical: 16,
+            borderRadius: 16,
+            borderWidth: 2,
+            borderStyle: 'dashed',
+            borderColor: petzen.colors.orange,
+            backgroundColor: petzen.colors.peach + '40',
+          }}
+        >
+          <Feather name="camera" size={18} color={petzen.colors.orange} style={{ marginRight: 8 }} />
+          <Text style={{ fontFamily: petzen.fonts.bold, fontSize: 14, color: petzen.colors.orange }}>Agregar Foto del animalito</Text>
+        </TouchableOpacity>
         {errors.foto && <Text style={{ color: '#E74C3C', fontSize: 12, marginTop: 8 }}>{errors.foto}</Text>}
       </Card>
 
       {/* Condición semáforo */}
       <Card>
-        <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#2C3E50', marginBottom: 4 }}>
+        <Text style={{ fontSize: 16, fontFamily: petzen.fonts.bold, color: '#2C3E50', marginBottom: 4 }}>
           Condición del animal <Text style={{ color: '#E74C3C' }}>*</Text>
         </Text>
         <Text style={{ fontSize: 12, color: '#7F8C8D', marginBottom: 16 }}>
@@ -702,7 +736,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
 
       {/* Ubicación */}
       <Card>
-        <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#2C3E50', marginBottom: 4 }}>
+        <Text style={{ fontSize: 16, fontFamily: petzen.fonts.bold, color: '#2C3E50', marginBottom: 4 }}>
           Ubicación del animal <Text style={{ color: '#E74C3C' }}>*</Text>
         </Text>
         <Text style={{ fontSize: 12, color: '#7F8C8D', marginBottom: 16 }}>
@@ -722,8 +756,8 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
         )}
 
         <TouchableOpacity onPress={handleGetLocation} style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, marginBottom: 12 }}>
-          <Feather name="map-pin" size={14} color="#3498DB" style={{ marginRight: 6 }} />
-          <Text style={{ fontSize: 13, color: '#3498DB', fontWeight: '600' }}>
+          <Feather name="map-pin" size={14} color={petzen.colors.teal} style={{ marginRight: 6 }} />
+          <Text style={{ fontSize: 13, color: petzen.colors.teal, fontWeight: '600' }}>
             {isLoadingGps ? 'Obteniendo tu ubicación...' : 'Usar mi ubicación actual'}
           </Text>
         </TouchableOpacity>
@@ -754,8 +788,8 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
           <Input label="Municipio" placeholder="Ej. Puebla" value={municipio} onChangeText={setMunicipio} maxLength={50} />
           <Input label="Estado" placeholder="Ej. Puebla" value={estadoUbicacion} onChangeText={setEstadoUbicacion} maxLength={50} />
           <TouchableOpacity onPress={handleGeocodeManualFields} style={{ flexDirection: 'row', alignItems: 'center', marginTop: -8, marginBottom: 8 }}>
-            <Feather name="refresh-cw" size={13} color="#3498DB" style={{ marginRight: 6 }} />
-            <Text style={{ fontSize: 12, color: '#3498DB', fontWeight: '600' }}>Mover el pin a esta dirección</Text>
+            <Feather name="refresh-cw" size={13} color={petzen.colors.teal} style={{ marginRight: 6 }} />
+            <Text style={{ fontSize: 12, color: petzen.colors.teal, fontWeight: '600' }}>Mover el pin a esta dirección</Text>
           </TouchableOpacity>
           <View>
             <Input label="Referencia (Opcional)" placeholder="Ej. Frente a la tienda de abarrotes..." value={referencia} onChangeText={setReferencia} maxLength={150} />
@@ -766,9 +800,9 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
 
       <TouchableOpacity
         onPress={handleSiguiente}
-        style={{ backgroundColor: '#3498DB', paddingVertical: 16, borderRadius: 30, alignItems: 'center', marginTop: 8 }}
+        style={{ backgroundColor: petzen.colors.orange, paddingVertical: 16, borderRadius: 30, alignItems: 'center', marginTop: 8 }}
       >
-        <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 16 }}>Siguiente →</Text>
+        <Text style={{ fontFamily: petzen.fonts.bold, color: '#FFFFFF', fontSize: 16 }}>Siguiente →</Text>
       </TouchableOpacity>
     </ScrollView>
   );
@@ -829,9 +863,9 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
 
       <TouchableOpacity
         onPress={handleSiguiente}
-        style={{ backgroundColor: '#3498DB', paddingVertical: 16, borderRadius: 30, alignItems: 'center', marginTop: 8 }}
+        style={{ backgroundColor: petzen.colors.orange, paddingVertical: 16, borderRadius: 30, alignItems: 'center', marginTop: 8 }}
       >
-        <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 16 }}>Siguiente →</Text>
+        <Text style={{ fontFamily: petzen.fonts.bold, color: '#FFFFFF', fontSize: 16 }}>Siguiente →</Text>
       </TouchableOpacity>
     </ScrollView>
   );
@@ -844,14 +878,14 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
       </Text>
 
       <Card>
-        <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#2C3E50', marginBottom: 12 }}>Información del Reportante</Text>
+        <Text style={{ fontSize: 16, fontFamily: petzen.fonts.bold, color: '#2C3E50', marginBottom: 12 }}>Información del Reportante</Text>
 
         {isLoggedIn && user ? (
           <View style={{ marginBottom: 16 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#EAF6FF', padding: 14, borderRadius: 10, marginBottom: 8 }}>
               <Text style={{ fontSize: 20, marginRight: 10 }}>👋</Text>
               <View>
-                <Text style={{ fontSize: 15, fontWeight: '700', color: '#2C3E50' }}>
+                <Text style={{ fontSize: 15, fontFamily: petzen.fonts.bold, color: '#2C3E50' }}>
                   Hola, {user.nombre} {user.apellido_paterno}
                 </Text>
                 <Text style={{ fontSize: 12, color: '#7F8C8D' }}>{user.telefono}</Text>
@@ -886,7 +920,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
               onPress={() => setShowLoginModal(true)}
               style={{ alignItems: 'center', paddingVertical: 8, marginBottom: 8 }}
             >
-              <Text style={{ color: '#3498DB', fontSize: 13, fontWeight: '600' }}>¿Tienes cuenta? Inicia sesión</Text>
+              <Text style={{ color: petzen.colors.teal, fontSize: 13, fontWeight: '600' }}>¿Tienes cuenta? Inicia sesión</Text>
             </TouchableOpacity>
           </>
         )}
@@ -895,9 +929,9 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
       <TouchableOpacity
         onPress={() => handleSubmit(false)}
         disabled={isSubmitting}
-        style={{ backgroundColor: isSubmitting ? '#95A5A6' : '#3498DB', paddingVertical: 16, borderRadius: 30, alignItems: 'center', marginTop: 8 }}
+        style={{ backgroundColor: isSubmitting ? '#95A5A6' : petzen.colors.orange, paddingVertical: 16, borderRadius: 30, alignItems: 'center', marginTop: 8 }}
       >
-        <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 16 }}>
+        <Text style={{ fontFamily: petzen.fonts.bold, color: '#FFFFFF', fontSize: 16 }}>
           {isSubmitting ? 'Enviando...' : 'Enviar Reporte 🐾'}
         </Text>
       </TouchableOpacity>
@@ -905,19 +939,21 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
   );
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#F5F5F5' }}>
+    <View style={{ flex: 1, backgroundColor: petzen.colors.teal }}>
       <Toast toast={toast} translateY={translateY} />
       {renderHeader()}
 
-      {paso === 1 && renderPaso1()}
-      {paso === 2 && renderPaso2()}
-      {paso === 3 && renderPaso3()}
+      <View style={{ flex: 1, backgroundColor: petzen.colors.background, marginTop: -28, borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden' }}>
+        {paso === 1 && renderPaso1()}
+        {paso === 2 && renderPaso2()}
+        {paso === 3 && renderPaso3()}
+      </View>
 
       {/* Modal: Duplicado */}
       <Modal visible={!!duplicadoInfo} transparent animationType="fade" onRequestClose={() => setDuplicadoInfo(null)}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
           <View style={{ backgroundColor: '#FFFFFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 28, paddingBottom: 44 }}>
-            <Text style={{ fontSize: 18, fontWeight: '700', color: '#2C3E50', textAlign: 'center', marginBottom: 12 }}>
+            <Text style={{ fontSize: 18, fontFamily: petzen.fonts.bold, color: '#2C3E50', textAlign: 'center', marginBottom: 12 }}>
               Posible reporte duplicado
             </Text>
             {duplicadoInfo?.existente?.foto_url && (
@@ -932,15 +968,15 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
             )}
             <TouchableOpacity
               onPress={() => { const info = duplicadoInfo; setDuplicadoInfo(null); if (info) handleSubmit(true, info.existente.id); }}
-              style={{ backgroundColor: '#3498DB', paddingVertical: 16, borderRadius: 12, alignItems: 'center', marginBottom: 12 }}
+              style={{ backgroundColor: petzen.colors.orange, paddingVertical: 16, borderRadius: 12, alignItems: 'center', marginBottom: 12 }}
             >
-              <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 15 }}>Vincular al caso existente</Text>
+              <Text style={{ color: '#FFFFFF', fontFamily: petzen.fonts.bold, fontSize: 15 }}>Vincular al caso existente</Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => { setDuplicadoInfo(null); handleSubmit(true); }}
               style={{ borderWidth: 1.5, borderColor: '#BDC3C7', paddingVertical: 16, borderRadius: 12, alignItems: 'center', marginBottom: 16 }}
             >
-              <Text style={{ color: '#2C3E50', fontWeight: '700', fontSize: 15 }}>Crear un reporte nuevo</Text>
+              <Text style={{ color: '#2C3E50', fontFamily: petzen.fonts.bold, fontSize: 15 }}>Crear un reporte nuevo</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setDuplicadoInfo(null)} style={{ alignItems: 'center' }}>
               <Text style={{ color: '#95A5A6', fontSize: 14 }}>Cancelar</Text>
@@ -954,7 +990,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
           <View style={{ backgroundColor: '#FFFFFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 28, paddingBottom: 44 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-              <Text style={{ fontSize: 18, fontWeight: '700', color: '#2C3E50' }}>Iniciar Sesión</Text>
+              <Text style={{ fontSize: 18, fontFamily: petzen.fonts.bold, color: '#2C3E50' }}>Iniciar Sesión</Text>
               <TouchableOpacity onPress={() => setShowLoginModal(false)}>
                 <Feather name="x" size={22} color="#95A5A6" />
               </TouchableOpacity>
@@ -980,9 +1016,9 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
             <TouchableOpacity
               onPress={handleLoginInline}
               disabled={isLoggingIn}
-              style={{ backgroundColor: isLoggingIn ? '#95A5A6' : '#3498DB', paddingVertical: 14, borderRadius: 30, alignItems: 'center', marginTop: 8 }}
+              style={{ backgroundColor: isLoggingIn ? '#95A5A6' : petzen.colors.orange, paddingVertical: 14, borderRadius: 30, alignItems: 'center', marginTop: 8 }}
             >
-              <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 15 }}>
+              <Text style={{ color: '#FFFFFF', fontFamily: petzen.fonts.bold, fontSize: 15 }}>
                 {isLoggingIn ? 'Iniciando sesión...' : 'Iniciar Sesión'}
               </Text>
             </TouchableOpacity>
@@ -994,7 +1030,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
       <Modal visible={showCloseConfirm} transparent animationType="fade" onRequestClose={() => setShowCloseConfirm(false)}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 24 }}>
           <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16, padding: 24 }}>
-            <Text style={{ fontSize: 18, fontWeight: '700', color: '#2C3E50', textAlign: 'center', marginBottom: 12 }}>
+            <Text style={{ fontSize: 18, fontFamily: petzen.fonts.bold, color: '#2C3E50', textAlign: 'center', marginBottom: 12 }}>
               ¿Estás seguro de cerrarlo?
             </Text>
             <Text style={{ fontSize: 14, color: '#566573', textAlign: 'center', marginBottom: 24 }}>

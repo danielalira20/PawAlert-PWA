@@ -6,3 +6,4 @@ pydantic==2.9.2
 pydantic-settings==2.6.1
 python-dotenv==1.0.1
 email-validator==2.3.0
+sib-api-v3-sdk>=7.6.0

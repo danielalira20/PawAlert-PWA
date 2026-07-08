@@ -1,5 +1,6 @@
 import { useRef } from 'react';
 import L from 'leaflet';
+import { useEffect } from 'react';
 import 'leaflet/dist/leaflet.css';
 import { MapContainer, Marker, Popup, TileLayer, useMapEvents } from 'react-leaflet';
 import { Reporte } from '../types/reporte';
@@ -131,14 +132,34 @@ function MapClickHandler({ onMapClick }: { onMapClick: () => void }) {
 interface LeafletMapProps {
   reportes: Reporte[];
   selectedReportId?: string | null;
+  getMarkerColor?: (reporte: Reporte) => string;
+  width?: string | number;
+  height?: string | number;
   onSelectReport: (reporte: Reporte) => void;
   onMapClick: () => void;
 }
 
 // ─── Componente ───────────────────────────────────────────────────────────────
-export default function LeafletMap({
-  reportes, selectedReportId, onSelectReport, onMapClick,
+export default function LeafletMap({ 
+  reportes, 
+  getMarkerColor, 
+  selectedReportId, 
+  onSelectReport, 
+  onMapClick, 
+  width, 
+  height 
 }: LeafletMapProps) {
+  useEffect(() => {
+    const linkId = 'leaflet-css';
+    if (!document.getElementById(linkId)) {
+      const link = document.createElement('link');
+      link.id = linkId;
+      link.rel = 'stylesheet';
+      link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+      link.crossOrigin = '';
+      document.head.appendChild(link);
+    }
+  }, []);
   return (
     <>
       <style>{`
