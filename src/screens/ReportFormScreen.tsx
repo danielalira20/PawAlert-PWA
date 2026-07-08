@@ -40,7 +40,7 @@ const PASO_NOMBRES = ['Situación del animal', 'Datos del animal', 'Tus datos'];
 const TOTAL_PASOS = 3;
 
 export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
-  const { user, isLoggedIn, logout, login } = useAuth();
+  const { user, isLoggedIn, logout, login, token } = useAuth();
   const { toast, translateY, showToast } = useToast();
 
   // ─── Navegación por pasos ───
@@ -467,7 +467,13 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
       if (esDuplicadoConfirmado) formData.append('es_duplicado_confirmado', 'true');
       if (reporteOriginalId) formData.append('reporte_original_id', reporteOriginalId);
 
-      const response = await axios.post(`${API_URL}/reports`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const response = await axios.post(`${API_URL}/reports`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+          ...(isLoggedIn && token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      
       const data = response.data;
 
       if (data.posible_duplicado) {
