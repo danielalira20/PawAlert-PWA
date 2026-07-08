@@ -1,9 +1,36 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, SafeAreaView, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, SafeAreaView, ScrollView, Text, TextInput, TouchableOpacity, View, Platform, KeyboardAvoidingView } from 'react-native';
 import { Toast, useToast } from '../components/Toast';
 import { useAuth } from '../context/AuthContext';
 import { validarPassword } from '../utils/validators';
+
+// ─── FONTS & TOKENS ───────────────────────────────────────────────────────────
+import { useFonts } from 'expo-font';
+import { Fraunces_800ExtraBold } from '@expo-google-fonts/fraunces';
+import { Poppins_400Regular, Poppins_500Medium, Poppins_600SemiBold } from '@expo-google-fonts/poppins';
+import { Ionicons } from '@expo/vector-icons';
+
+const C = {
+  primary:       '#F5842B',
+  primaryLight:  '#F1D5B6',
+  secondary:     '#66C5BD',
+  accent:        '#F6CE5B',
+  neutralLight:  '#E8CCAD',
+  text:          '#2E2A26',
+  bg:            '#FFFFFF',
+  bgSoft:        '#FDF8F4',
+  muted:         '#9E8C7E',
+};
+
+const F = {
+  displayBold: 'Fraunces_800ExtraBold',
+  displaySemi: 'Fraunces_800ExtraBold',
+  bodyRegular: 'Poppins_400Regular',
+  bodyMedium:  'Poppins_500Medium',
+  bodySemiBold: 'Poppins_600SemiBold',
+};
+// ──────────────────────────────────────────────────────────────────────────────
 
 type Tab = 'login' | 'register';
 
@@ -14,6 +41,13 @@ export default function LoginScreen() {
   const [tab, setTab] = useState<Tab>(params.tab === 'register' ? 'register' : 'login');
   const [isLoading, setIsLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  const [fontsLoaded] = useFonts({
+    Fraunces_800ExtraBold,
+    Poppins_400Regular,
+    Poppins_500Medium,
+    Poppins_600SemiBold,
+  });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -214,108 +248,138 @@ export default function LoginScreen() {
   };
 
   const inputStyle = {
-    borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8,
-    padding: 12, marginBottom: 12, color: '#2C3E50', fontSize: 14,
+    borderWidth: 1.5, borderColor: `${C.neutralLight}60`, borderRadius: 16,
+    padding: 16, marginBottom: 12, color: C.text, fontSize: 15, fontFamily: F.bodyMedium,
+    backgroundColor: C.bgSoft,
   };
-  const labelStyle = { fontSize: 12, color: '#7F8C8D', marginBottom: 4, fontWeight: '600' as const };
+  const labelStyle = { fontSize: 13, color: C.text, marginBottom: 6, fontFamily: F.bodySemiBold, letterSpacing: 0.3 };
+  const errorStyle = { color: '#E74C3C', fontSize: 12, fontFamily: F.bodyRegular, marginBottom: 16, marginTop: -8 };
+
+  if (!fontsLoaded) return <View style={{ flex: 1, backgroundColor: C.bgSoft, justifyContent: 'center' }}><ActivityIndicator color={C.primary} size="large" /></View>;
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#F5F5F5' }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: C.bgSoft }}>
       <Toast toast={toast} translateY={translateY} />
       {successMessage && (
         <View style={{
           position: 'absolute', top: 0, left: 0, right: 0, zIndex: 999,
-          backgroundColor: '#27AE60', paddingVertical: 14, paddingHorizontal: 20,
-          alignItems: 'center',
+          backgroundColor: C.secondary, paddingVertical: 14, paddingHorizontal: 20,
+          alignItems: 'center', ...(Platform.OS === 'web' ? { position: 'fixed' } : {})
         }}>
-          <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>
+          <Text style={{ color: C.bg, fontFamily: F.bodySemiBold, fontSize: 14 }}>
             ✓ {successMessage}
           </Text>
         </View>
       )}
 
-      <ScrollView contentContainerStyle={{ padding: 24, flexGrow: 1, justifyContent: 'center' }}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={{ padding: 24, flexGrow: 1, justifyContent: 'center' }} showsVerticalScrollIndicator={false}>
 
-        <View style={{ alignItems: 'center', marginBottom: 32 }}>
-          <Text style={{ color: '#3498DB', fontWeight: 'bold', fontSize: 36, marginBottom: 8 }}>PawAlert</Text>
-          <Text style={{ color: '#7F8C8D', fontSize: 14, textAlign: 'center' }}>
-            Inicia sesión para reportar más fácil
-          </Text>
-        </View>
+          <View style={{ alignItems: 'center', marginBottom: 40 }}>
+            <Ionicons name="paw" size={48} color={C.primary} style={{ marginBottom: 16, opacity: 0.9 }} />
+            <Text style={{ color: C.primary, fontFamily: F.displayBold, fontSize: 42, marginBottom: 8, letterSpacing: -1 }}>PawAlert</Text>
+            <Text style={{ color: C.muted, fontSize: 16, textAlign: 'center', fontFamily: F.bodyRegular }}>
+              {tab === 'login' ? 'Inicia sesión para reportar más rápido' : 'Únete a nuestra comunidad de rescate'}
+            </Text>
+          </View>
 
-        <View style={{ flexDirection: 'row', backgroundColor: '#FFFFFF', padding: 4, borderRadius: 12, marginBottom: 24 }}>
-          {(['login', 'register'] as Tab[]).map((t) => (
+          <View style={{ flexDirection: 'row', backgroundColor: '#F1E9E0', padding: 6, borderRadius: 30, marginBottom: 32 }}>
+            {(['login', 'register'] as Tab[]).map((t) => {
+              const isActive = tab === t;
+              return (
+                <TouchableOpacity
+                  key={t}
+                  onPress={() => setTab(t)}
+                  style={{ 
+                    flex: 1, paddingVertical: 14, borderRadius: 24, alignItems: 'center', 
+                    backgroundColor: isActive ? C.bg : 'transparent',
+                    ...(isActive ? (Platform.OS === 'web' ? { boxShadow: '0 4px 12px rgba(46,42,38,0.08)' } : { elevation: 2 }) : {})
+                  }}
+                >
+                  <Text style={{ fontFamily: isActive ? F.bodySemiBold : F.bodyMedium, color: isActive ? C.primary : C.muted, fontSize: 15 }}>
+                    {t === 'login' ? 'Iniciar Sesión' : 'Registrarse'}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <View style={{ 
+            backgroundColor: C.bg, padding: 24, borderRadius: 24, 
+            ...(Platform.OS === 'web' ? { boxShadow: '0 8px 30px rgba(46,42,38,0.06)' } : { elevation: 4 })
+          }}>
+            {tab === 'login' ? (
+              <View>
+                <Text style={labelStyle}>Correo electrónico *</Text>
+                <TextInput placeholder="correo@ejemplo.com" placeholderTextColor={C.muted} keyboardType="email-address" autoCapitalize="none"
+                  value={email} onChangeText={handleLoginEmailChange} style={errors.email ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC' } : inputStyle} />
+                {errors.email ? <Text style={errorStyle}>{errors.email}</Text> : null}
+
+                <Text style={labelStyle}>Contraseña *</Text>
+                <TextInput placeholder="••••••••" placeholderTextColor={C.muted} secureTextEntry value={password} onChangeText={handleLoginPasswordChange}
+                  style={errors.password ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC', marginBottom: 24 } : { ...inputStyle, marginBottom: 32 }} />
+                {errors.password ? <Text style={errorStyle}>{errors.password}</Text> : null}
+              </View>
+            ) : (
+              <View>
+                <Text style={labelStyle}>Nombre(s) *</Text>
+                <TextInput placeholder="Ej. Ana" placeholderTextColor={C.muted} value={nombre} onChangeText={handleNombreChange} style={errors.nombre ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC' } : inputStyle} />
+                {errors.nombre ? <Text style={errorStyle}>{errors.nombre}</Text> : null}
+
+                <Text style={labelStyle}>Apellido Paterno *</Text>
+                <TextInput placeholder="Ej. Pérez" placeholderTextColor={C.muted} value={apellidoPaterno} onChangeText={handleApellidoPaternoChange} style={errors.apellidoPaterno ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC' } : inputStyle} />
+                {errors.apellidoPaterno ? <Text style={errorStyle}>{errors.apellidoPaterno}</Text> : null}
+
+                <Text style={labelStyle}>Apellido Materno (Opcional)</Text>
+                <TextInput placeholder="Ej. López" placeholderTextColor={C.muted} value={apellidoMaterno} onChangeText={handleApellidoMaternoChange} style={errors.apellidoMaterno ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC' } : inputStyle} />
+                {errors.apellidoMaterno ? <Text style={errorStyle}>{errors.apellidoMaterno}</Text> : null}
+
+                <Text style={labelStyle}>Teléfono *</Text>
+                <TextInput placeholder="10 dígitos" placeholderTextColor={C.muted} keyboardType="phone-pad" value={telefono} onChangeText={handleTelefonoChange} style={errors.telefono ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC' } : inputStyle} />
+                {errors.telefono ? <Text style={errorStyle}>{errors.telefono}</Text> : null}
+
+                <Text style={labelStyle}>Correo electrónico *</Text>
+                <TextInput placeholder="correo@ejemplo.com" placeholderTextColor={C.muted} keyboardType="email-address" autoCapitalize="none"
+                  value={regEmail} onChangeText={handleRegEmailChange} style={errors.regEmail ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC' } : inputStyle} />
+                {errors.regEmail ? <Text style={errorStyle}>{errors.regEmail}</Text> : null}
+
+                <Text style={labelStyle}>Contraseña *</Text>
+                <TextInput placeholder="8+ caracteres, mayúscula, minúscula y número" placeholderTextColor={C.muted} secureTextEntry value={regPassword} onChangeText={handleRegPasswordChange} style={errors.regPassword ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC' } : inputStyle} />
+                {errors.regPassword ? <Text style={errorStyle}>{errors.regPassword}</Text> : null}
+
+                <Text style={labelStyle}>Confirmar Contraseña *</Text>
+                <TextInput placeholder="Repite tu contraseña" placeholderTextColor={C.muted} secureTextEntry value={regPassword2} onChangeText={handleRegPassword2Change}
+                  style={errors.regPassword2 ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC', marginBottom: 24 } : { ...inputStyle, marginBottom: 32 }} />
+                {errors.regPassword2 ? <Text style={errorStyle}>{errors.regPassword2}</Text> : null}
+              </View>
+            )}
+
             <TouchableOpacity
-              key={t}
-              onPress={() => setTab(t)}
-              style={{ flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center', backgroundColor: tab === t ? '#3498DB' : 'transparent' }}
+              onPress={tab === 'login' ? handleLogin : handleRegister}
+              disabled={isLoading}
+              style={{ 
+                backgroundColor: C.primary, paddingVertical: 18, borderRadius: 30, 
+                alignItems: 'center', opacity: isLoading ? 0.7 : 1,
+                ...(Platform.OS === 'web' ? { boxShadow: '0 4px 14px rgba(245,132,43,0.3)' } : { elevation: 3 })
+              }}
             >
-              <Text style={{ fontWeight: '600', color: tab === t ? '#FFFFFF' : '#7F8C8D' }}>
-                {t === 'login' ? 'Iniciar Sesión' : 'Registrarse'}
-              </Text>
+              {isLoading
+                ? <ActivityIndicator color={C.bg} />
+                : <Text style={{ color: C.bg, fontFamily: F.bodySemiBold, fontSize: 16 }}>
+                    {tab === 'login' ? 'Iniciar Sesión' : 'Crear Cuenta'}
+                  </Text>
+              }
             </TouchableOpacity>
-          ))}
-        </View>
+          </View>
 
-        <View style={{ backgroundColor: '#FFFFFF', padding: 20, borderRadius: 16 }}>
-          {tab === 'login' ? (
-            <View>
-              <Text style={labelStyle}>Correo electrónico *</Text>
-              <TextInput placeholder="correo@ejemplo.com" keyboardType="email-address" autoCapitalize="none"
-                value={email} onChangeText={handleLoginEmailChange} style={errors.email ? { ...inputStyle, borderColor: '#E74C3C', marginBottom: 4 } : inputStyle} />
-              {errors.email && <Text style={{ color: '#E74C3C', fontSize: 12, marginBottom: 12 }}>{errors.email}</Text>}
-              <Text style={labelStyle}>Contraseña *</Text>
-              <TextInput placeholder="••••••••" secureTextEntry value={password} onChangeText={handleLoginPasswordChange}
-                style={errors.password ? { ...inputStyle, borderColor: '#E74C3C', marginBottom: 4 } : { ...inputStyle, marginBottom: 24 }} />
-              {errors.password && <Text style={{ color: '#E74C3C', fontSize: 12, marginBottom: 24 }}>{errors.password}</Text>}
-            </View>
-          ) : (
-            <View>
-              <Text style={labelStyle}>Nombre(s) *</Text>
-              <TextInput placeholder="Ej. Ana" value={nombre} onChangeText={handleNombreChange} style={errors.nombre ? { ...inputStyle, borderColor: '#E74C3C', marginBottom: 4 } : inputStyle} />
-              {errors.nombre && <Text style={{ color: '#E74C3C', fontSize: 12, marginBottom: 12 }}>{errors.nombre}</Text>}
-              <Text style={labelStyle}>Apellido Paterno *</Text>
-              <TextInput placeholder="Ej. Pérez" value={apellidoPaterno} onChangeText={handleApellidoPaternoChange} style={errors.apellidoPaterno ? { ...inputStyle, borderColor: '#E74C3C', marginBottom: 4 } : inputStyle} />
-              {errors.apellidoPaterno && <Text style={{ color: '#E74C3C', fontSize: 12, marginBottom: 12 }}>{errors.apellidoPaterno}</Text>}
-              <Text style={labelStyle}>Apellido Materno (Opcional)</Text>
-              <TextInput placeholder="Ej. López" value={apellidoMaterno} onChangeText={handleApellidoMaternoChange} style={errors.apellidoMaterno ? { ...inputStyle, borderColor: '#E74C3C', marginBottom: 4 } : inputStyle} />
-              {errors.apellidoMaterno && <Text style={{ color: '#E74C3C', fontSize: 12, marginBottom: 12 }}>{errors.apellidoMaterno}</Text>}
-              <Text style={labelStyle}>Teléfono *</Text>
-              <TextInput placeholder="2221234567" keyboardType="phone-pad" value={telefono} onChangeText={handleTelefonoChange} style={errors.telefono ? { ...inputStyle, borderColor: '#E74C3C', marginBottom: 4 } : inputStyle} />
-              {errors.telefono && <Text style={{ color: '#E74C3C', fontSize: 12, marginBottom: 12 }}>{errors.telefono}</Text>}
-              <Text style={labelStyle}>Correo electrónico *</Text>
-              <TextInput placeholder="correo@ejemplo.com" keyboardType="email-address" autoCapitalize="none"
-                value={regEmail} onChangeText={handleRegEmailChange} style={errors.regEmail ? { ...inputStyle, borderColor: '#E74C3C', marginBottom: 4 } : inputStyle} />
-              {errors.regEmail && <Text style={{ color: '#E74C3C', fontSize: 12, marginBottom: 12 }}>{errors.regEmail}</Text>}
-              <Text style={labelStyle}>Contraseña *</Text>
-              <TextInput placeholder="8+ caracteres, mayúscula, minúscula y número" secureTextEntry value={regPassword} onChangeText={handleRegPasswordChange} style={errors.regPassword ? { ...inputStyle, borderColor: '#E74C3C', marginBottom: 4 } : inputStyle} />
-              {errors.regPassword && <Text style={{ color: '#E74C3C', fontSize: 12, marginBottom: 12 }}>{errors.regPassword}</Text>}
-              <Text style={labelStyle}>Confirmar Contraseña *</Text>
-              <TextInput placeholder="Repite tu contraseña" secureTextEntry value={regPassword2} onChangeText={handleRegPassword2Change}
-                style={errors.regPassword2 ? { ...inputStyle, borderColor: '#E74C3C', marginBottom: 4 } : { ...inputStyle, marginBottom: 24 }} />
-              {errors.regPassword2 && <Text style={{ color: '#E74C3C', fontSize: 12, marginBottom: 24 }}>{errors.regPassword2}</Text>}
-            </View>
-          )}
-
-          <TouchableOpacity
-            onPress={tab === 'login' ? handleLogin : handleRegister}
-            disabled={isLoading}
-            style={{ backgroundColor: '#3498DB', paddingVertical: 14, borderRadius: 8, alignItems: 'center', opacity: isLoading ? 0.6 : 1 }}
-          >
-            {isLoading
-              ? <ActivityIndicator color="#FFFFFF" />
-              : <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 16 }}>
-                  {tab === 'login' ? 'Iniciar Sesión' : 'Crear Cuenta'}
-                </Text>
-            }
+          <TouchableOpacity onPress={() => router.replace('/')} style={{ alignItems: 'center', marginTop: 32, padding: 12 }}>
+            <Text style={{ color: C.primary, fontFamily: F.bodySemiBold, fontSize: 15, textDecorationLine: 'underline' }}>
+              Continuar como invitado
+            </Text>
           </TouchableOpacity>
-        </View>
 
-        <TouchableOpacity onPress={() => router.replace('/')} style={{ alignItems: 'center', marginTop: 20 }}>
-          <Text style={{ color: '#7F8C8D', fontSize: 14 }}>Continuar como invitado</Text>
-        </TouchableOpacity>
-
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
