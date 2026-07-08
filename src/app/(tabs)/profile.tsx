@@ -55,25 +55,11 @@ export default function ProfileScreen() {
         onOpenStaffPanel={() => setIsStaffVisible(true)}
         onLogout={logout}
       />
-      {/* Modal: Mis Reportes */}
-      {/* Mis Reportes: en web se renderiza directo (el propio componente maneja
-          su overlay fijo centrado); en mobile usa Modal nativo a pantalla completa
-          sin padding, sin esquinas redondeadas y sin fondo oscuro — ya no es un
-          modal "flotante", ocupa toda la pantalla. */}
-      {Platform.OS === 'web' ? (
-        isMisReportesVisible && (
-          <MisReportesScreen onClose={() => setIsMisReportesVisible(false)} />
-        )
-      ) : (
-        <Modal
-          visible={isMisReportesVisible}
-          animationType="slide"
-          onRequestClose={() => setIsMisReportesVisible(false)}
-        >
-          {isMisReportesVisible && (
-            <MisReportesScreen onClose={() => setIsMisReportesVisible(false)} />
-          )}
-        </Modal>
+      {/* Mis Reportes: el propio componente maneja su presentación (Modal de RN)
+          para web y nativo, centrado/pantalla-completa según ancho de pantalla —
+          ya no hace falta envolverlo aquí ni distinguir por plataforma. */}
+      {isMisReportesVisible && (
+        <MisReportesScreen onClose={() => setIsMisReportesVisible(false)} />
       )}
       {/* Modal: Panel de Administrador */}
       <AppModal visible={isAdminVisible} onClose={() => setIsAdminVisible(false)} maxWidth={1100}>

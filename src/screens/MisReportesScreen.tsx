@@ -21,6 +21,7 @@ import {
   ActivityIndicator,
   Dimensions,
   Image,
+  Modal,
   Platform,
   ScrollView,
   Text,
@@ -443,76 +444,93 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
               </View>
 
               {/* Sección expandida */}
-              {isExpanded && (
-                <View style={{ borderTopWidth: 1, borderTopColor: '#F0EBE3', padding: 13 }}>
-                  <View style={{ flexDirection: 'row', gap: 12 }}>
-                    {/* Foto lateral (regresó al layout original que sí gustó) */}
-                    {fotos.length > 0 && (
-                      <PhotoCarousel fotos={fotos} width={128} height={158} />
+              {isExpanded && (() => {
+                // En pantallas angostas de verdad el layout foto+texto lado a lado
+                // no cabe (el texto se corta o se parte). Ahí apilamos: foto arriba
+                // a todo el ancho, detalles abajo también a todo el ancho.
+                const stacked = windowWidth < 420;
+
+                const detailRows = (
+                  <>
+                    {reporte.asociacion_nombre && (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <View style={{ width: 28, height: 28, borderRadius: 9, backgroundColor: petzen.colors.teal + '20', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <Ionicons name="business-outline" size={14} color={petzen.colors.tealDark} />
+                        </View>
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text style={{ fontSize: 10, color: petzen.colors.textSecondary, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.4 }}>Asociación</Text>
+                          <Text style={{ fontSize: 14, color: petzen.colors.textDark, fontWeight: '700' }}>{reporte.asociacion_nombre}</Text>
+                        </View>
+                      </View>
                     )}
 
-                    {/* Detalles — texto más grande para que no se sienta vacío */}
-                    <View style={{ flex: 1, gap: 11 }}>
-                      {reporte.asociacion_nombre && (
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                          <View style={{ width: 28, height: 28, borderRadius: 9, backgroundColor: petzen.colors.teal + '20', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                            <Ionicons name="business-outline" size={14} color={petzen.colors.tealDark} />
-                          </View>
-                          <View style={{ flex: 1, flexShrink: 1 }}>
-                            <Text style={{ fontSize: 10, color: petzen.colors.textSecondary, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.4 }}>Asociación</Text>
-                            <Text style={{ fontSize: 14, color: petzen.colors.textDark, fontWeight: '700', flexShrink: 1 }} numberOfLines={2}>{reporte.asociacion_nombre}</Text>
-                          </View>
+                    {(reporte.calle || reporte.colonia || reporte.municipio) && (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <View style={{ width: 28, height: 28, borderRadius: 9, backgroundColor: '#F39C1220', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <Ionicons name="location-outline" size={14} color="#D68910" />
                         </View>
-                      )}
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text style={{ fontSize: 10, color: petzen.colors.textSecondary, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.4 }}>Ubicación</Text>
+                          <Text style={{ fontSize: 13, color: petzen.colors.textDark }}>
+                            {[reporte.calle, reporte.colonia, reporte.municipio].filter(Boolean).join(', ')}
+                          </Text>
+                        </View>
+                      </View>
+                    )}
 
-                      {(reporte.calle || reporte.colonia || reporte.municipio) && (
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                          <View style={{ width: 28, height: 28, borderRadius: 9, backgroundColor: '#F39C1220', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                            <Ionicons name="location-outline" size={14} color="#D68910" />
-                          </View>
-                          <View style={{ flex: 1, flexShrink: 1 }}>
-                            <Text style={{ fontSize: 10, color: petzen.colors.textSecondary, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.4 }}>Ubicación</Text>
-                            <Text style={{ fontSize: 13, color: petzen.colors.textDark, flexShrink: 1 }} numberOfLines={2}>
-                              {[reporte.calle, reporte.colonia, reporte.municipio].filter(Boolean).join(', ')}
-                            </Text>
-                          </View>
-                        </View>
-                      )}
+                    {/* Datos del animal — siempre los 3, aunque digan "desconocido" */}
+                    {reporte.animal && (
+                      <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
+                        {[
+                          { icon: 'male-female-outline', label: reporte.animal.sexo },
+                          { icon: 'time-outline', label: reporte.animal.edad_aproximada },
+                          { icon: 'resize-outline', label: reporte.animal.tamanio },
+                        ]
+                          .filter((d) => !!d.label)
+                          .map((d, i) => (
+                            <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: petzen.colors.peach + '40', paddingHorizontal: 9, paddingVertical: 4, borderRadius: 100 }}>
+                              <Ionicons name={d.icon as any} size={11} color={petzen.colors.orangeDark} />
+                              <Text style={{ fontSize: 11, color: petzen.colors.textDark, textTransform: 'capitalize', fontWeight: '600' }}>{d.label}</Text>
+                            </View>
+                          ))}
+                      </View>
+                    )}
+                  </>
+                );
 
-                      {/* Datos del animal — siempre los 3, aunque digan "desconocido" */}
-                      {reporte.animal && (
-                        <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
-                          {[
-                            { icon: 'male-female-outline', label: reporte.animal.sexo },
-                            { icon: 'time-outline', label: reporte.animal.edad_aproximada },
-                            { icon: 'resize-outline', label: reporte.animal.tamanio },
-                          ]
-                            .filter((d) => !!d.label)
-                            .map((d, i) => (
-                              <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: petzen.colors.peach + '40', paddingHorizontal: 9, paddingVertical: 4, borderRadius: 100 }}>
-                                <Ionicons name={d.icon as any} size={11} color={petzen.colors.orangeDark} />
-                                <Text style={{ fontSize: 11, color: petzen.colors.textDark, textTransform: 'capitalize', fontWeight: '600' }}>{d.label}</Text>
-                              </View>
-                            ))}
+                return (
+                  <View style={{ borderTopWidth: 1, borderTopColor: '#F0EBE3', padding: 13 }}>
+                    {stacked ? (
+                      <View style={{ gap: 12 }}>
+                        {fotos.length > 0 && (
+                          <PhotoCarousel fotos={fotos} width={'100%' as any} height={170} />
+                        )}
+                        <View style={{ gap: 11 }}>{detailRows}</View>
+                      </View>
+                    ) : (
+                      <View style={{ flexDirection: 'row', gap: 12 }}>
+                        {fotos.length > 0 && (
+                          <PhotoCarousel fotos={fotos} width={128} height={158} />
+                        )}
+                        <View style={{ flex: 1, gap: 11, minWidth: 0 }}>{detailRows}</View>
+                      </View>
+                    )}
+
+                    {/* Descripción a todo el ancho */}
+                    {reporte.animal?.descripcion && (
+                      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F5F0E8' }}>
+                        <View style={{ width: 28, height: 28, borderRadius: 9, backgroundColor: '#9B59B620', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <Ionicons name="document-text-outline" size={14} color="#9B59B6" />
                         </View>
-                      )}
-                    </View>
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text style={{ fontSize: 10, color: petzen.colors.textSecondary, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.4 }}>Descripción</Text>
+                          <Text style={{ fontSize: 13, color: petzen.colors.textSecondary, lineHeight: 19 }}>{reporte.animal.descripcion}</Text>
+                        </View>
+                      </View>
+                    )}
                   </View>
-
-                  {/* Descripción a todo el ancho, debajo de la fila foto+detalles */}
-                  {reporte.animal?.descripcion && (
-                    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F5F0E8' }}>
-                      <View style={{ width: 28, height: 28, borderRadius: 9, backgroundColor: '#9B59B620', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        <Ionicons name="document-text-outline" size={14} color="#9B59B6" />
-                      </View>
-                      <View style={{ flex: 1, flexShrink: 1 }}>
-                        <Text style={{ fontSize: 10, color: petzen.colors.textSecondary, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.4 }}>Descripción</Text>
-                        <Text style={{ fontSize: 13, color: petzen.colors.textSecondary, lineHeight: 19, flexShrink: 1 }}>{reporte.animal.descripcion}</Text>
-                      </View>
-                    </View>
-                  )}
-                </View>
-              )}
+                );
+              })()}
             </View>
           </TouchableOpacity>
         </View>
@@ -781,67 +799,50 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
     </View>
   );
 
-  // ─── Web: modal centrado con overlay ──────────────────────────────────────
-  if (showAsCenteredModal) {
-    return (
-      <View
-        style={{
-          position: 'fixed' as any,
-          top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: 'rgba(20,15,10,0.45)',
-          alignItems: 'center', justifyContent: 'center',
-          zIndex: 2000,
-          padding: 20,
-        }}
-      >
-        {/* Click fuera del modal cierra */}
-        <TouchableOpacity
-          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
-          activeOpacity={1}
-          onPress={onClose}
-        />
-        <View
-          style={{
-            width: '100%',
-            maxWidth: 640,
-            minHeight: 520,
-            maxHeight: '85vh' as any,
-            borderRadius: 20,
-            overflow: 'hidden',
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 20 },
-            shadowOpacity: 0.25,
-            shadowRadius: 40,
-          }}
-        >
+  // ─── Modal de React Native para TODO caso ──────────────────────────────────
+  // Antes usábamos `position:'fixed'` a mano en web. El problema: si algún
+  // ancestro (el wrapper de React Navigation/Expo Router, animaciones de
+  // transición entre tabs, etc.) tiene un `transform` aplicado, ese ancestro
+  // se vuelve el "contenedor" real de cualquier hijo `fixed` — y entonces
+  // ningún z-index, por alto que sea, logra que quede por encima del navbar.
+  //
+  // <Modal> de React Native se renderiza vía portal directo al <body> (en
+  // web) o a la capa nativa de modales (en iOS/Android), completamente FUERA
+  // del árbol de la app — así se escapa de raíz cualquier stacking context
+  // problemático, sin depender de números de z-index.
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      {showAsCenteredModal ? (
+        // Desktop / web ancho: tarjeta centrada con fondo oscuro
+        <View style={{ flex: 1, backgroundColor: 'rgba(20,15,10,0.45)', alignItems: 'center', justifyContent: 'center', padding: 20, paddingBottom: 90 }}>
+          <TouchableOpacity
+            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+            activeOpacity={1}
+            onPress={onClose}
+          />
+          <View
+            style={{
+              width: '100%',
+              maxWidth: 640,
+              minHeight: 520,
+              maxHeight: '75vh' as any,
+              borderRadius: 20,
+              overflow: 'hidden',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 20 },
+              shadowOpacity: 0.25,
+              shadowRadius: 40,
+            }}
+          >
+            {content}
+          </View>
+        </View>
+      ) : (
+        // Móvil (nativo o navegador angosto): pantalla completa sin fondo oscuro
+        <View style={{ flex: 1, backgroundColor: petzen.colors.background }}>
           {content}
         </View>
-      </View>
-    );
-  }
-
-  // ─── Web + navegador angosto (celular): pantalla completa REAL ────────────
-  // Un simple `return content` aquí se renderiza inline en el flujo normal de
-  // la página (por eso se veía "flotando" encima de Mi Perfil y chocando con
-  // el navbar). Necesita su propio overlay `fixed` para cubrir todo el
-  // viewport de verdad, igual que hace el modal centrado pero sin fondo
-  // oscuro ni tarjeta — a pantalla completa.
-  if (isWeb) {
-    return (
-      <View
-        style={{
-          position: 'fixed' as any,
-          top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: petzen.colors.background,
-          zIndex: 2000,
-        }}
-      >
-        {content}
-      </View>
-    );
-  }
-
-  // ─── Nativo (iOS/Android): pantalla completa (ya viene envuelto en un
-  // Modal nativo desde el componente padre) ──────────────────────────────
-  return content;
+      )}
+    </Modal>
+  );
 }
