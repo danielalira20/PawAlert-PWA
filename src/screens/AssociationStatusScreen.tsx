@@ -435,7 +435,7 @@ export default function AssociationStatusScreen({ onClose }: Props) {
       <View style={{ flex: 1, width: '100%', maxWidth: 1000, alignSelf: 'center' }}>
         
         {/* HEADER PETZEN */}
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 24, paddingTop: Platform.OS === 'web' ? 24 : 60 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 24, paddingTop: 24,}}>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center', marginRight: 16 }}>
               <Text style={{ color: COLORS.white, fontWeight: 'bold', fontSize: 20 }}>
@@ -447,11 +447,6 @@ export default function AssociationStatusScreen({ onClose }: Props) {
               <Text style={{ color: COLORS.textDark, fontSize: 22, fontWeight: 'bold' }}>{info?.nombre}</Text>
             </View>
           </View>
-          {onClose && (
-            <TouchableOpacity onPress={onClose} style={{ backgroundColor: 'rgba(74, 55, 40, 0.1)', padding: 10, borderRadius: 20 }}>
-              <Ionicons name="close" size={24} color={COLORS.textDark} />
-            </TouchableOpacity>
-          )}
         </View>
 
         <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 100 }} showsVerticalScrollIndicator={false}>

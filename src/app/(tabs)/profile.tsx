@@ -67,15 +67,11 @@ export default function ProfileScreen() {
       </AppModal>
 
       {/* Modal: Panel de Asociación */}
-      <Modal visible={isAssociationVisible} animationType="slide" transparent onRequestClose={() => setIsAssociationVisible(false)}>
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 16, paddingTop: 60, paddingBottom: 40 }}>
-          <View style={{ flex: 1, backgroundColor: '#F5F5F5', borderRadius: 20, overflow: 'hidden' }}>
-            {isAssociationVisible && (
-              <AssociationStatusScreen onClose={() => setIsAssociationVisible(false)} />
-            )}
-          </View>
-        </View>
-      </Modal>
+      <AppModal visible={isAssociationVisible} onClose={() => setIsAssociationVisible(false)}>
+        {isAssociationVisible && (
+          <AssociationStatusScreen onClose={() => setIsAssociationVisible(false)} />
+        )}
+      </AppModal>
 
       {/* Modal: Panel de Staff */}
       <AppModal visible={isStaffVisible} onClose={() => setIsStaffVisible(false)}>
