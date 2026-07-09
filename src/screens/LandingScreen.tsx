@@ -1047,24 +1047,20 @@ export default function LandingScreen() {
       {/* ── MODAL REGISTRO ASOCIACIÓN ────────────────────────────────────── */}
       <Modal
         visible={isAssociationFormVisible}
-        animationType="slide"
+        animationType="fade" /* 'fade' se ve mucho mejor con efectos blur que 'slide' */
         transparent={true}
         onRequestClose={() => setIsAssociationFormVisible(false)}
       >
-        <View style={{ flex: 1, backgroundColor: 'rgba(46,42,38,0.55)', justifyContent: 'center', padding: 16, paddingTop: 60, paddingBottom: 40 }}>
-          <View style={{ flex: 1, backgroundColor: '#F5F5F5', borderRadius: 24, overflow: 'hidden' }}>
-            {isAssociationFormVisible && (
-              <Suspense fallback={
-                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-                  <ActivityIndicator size="large" color={C.primary} />
-                  <Text style={{ marginTop: 12, color: C.muted, fontFamily: F.bodyMedium }}>Cargando formulario...</Text>
-                </View>
-              }>
-                <AssociationFormScreen onClose={() => setIsAssociationFormVisible(false)} />
-              </Suspense>
-            )}
-          </View>
-        </View>
+        {isAssociationFormVisible && (
+          <Suspense fallback={
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.4)' }}>
+              <ActivityIndicator size="large" color={C.primary} />
+              <Text style={{ marginTop: 12, color: '#FFF', fontFamily: F.bodyMedium }}>Cargando formulario...</Text>
+            </View>
+          }>
+            <AssociationFormScreen onClose={() => setIsAssociationFormVisible(false)} />
+          </Suspense>
+        )}
       </Modal>
       {/* ── MODAL GUÍA DE REPORTE ────────────────────────────────────────── */}
       <Modal
