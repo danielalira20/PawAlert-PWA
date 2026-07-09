@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, Image, TouchableOpacity, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../../context/AuthContext';
@@ -9,10 +9,10 @@ import { RoleBadge } from './RoleBadge';
 import { AccountDataCard } from './AccountDataCard';
 import { AccessRow } from './AccessRow';
 import { PawPatternBackground } from './PawPatternBackground';
-import { DecoPaw } from './DecoPaw';
+import { RecentReportsCard } from './RecentReportsCard';
+import { useRecentReports } from '../../hooks/useRecentReports';
 
 const DESKTOP_BREAKPOINT = 900;
-const PETS_ILLUSTRATION = require('../../../assets/images/profile-hero.jpg');
 
 interface Props {
   onOpenMisReportes: () => void;
@@ -32,84 +32,113 @@ export function LoggedInProfile({
   const { user } = useAuth();
   const { width } = useWindowDimensions();
   const isDesktop = width >= DESKTOP_BREAKPOINT;
+  const { reportes, totalReportes, isLoading: isLoadingReportes } = useRecentReports();
 
   if (!user) return null;
 
   const esAdmin = !!user.es_admin;
   const esAsociacion = !!user.asociacion_id && user.rol === 'asociacion';
   const esStaff = !!user.asociacion_id && user.rol === 'staff';
-  const esReportante = !esAdmin && !esAsociacion && !esStaff;
 
   const nombreCompleto = `${user.nombre ?? ''} ${user.apellido_paterno ?? ''}`.trim();
 
-  const accountAndAccess = (
+  const rolBadgeElement = esAdmin ? (
+    <RoleBadge rol="admin" variant="onWhite" />
+  ) : esAsociacion ? (
+    <RoleBadge rol="asociacion" variant="onWhite" />
+  ) : esStaff ? (
+    <RoleBadge rol="staff" variant="onWhite" />
+  ) : null;
+
+  // Accesos: "Mis Reportes" ahora es para todos los roles, no solo
+  // reportante. El panel de rol (si aplica) se agrega después.
+  const accesos = (
     <>
-      <View style={styles.section}>
-        <AccountDataCard telefono={user.telefono} email={user.email} />
-      </View>
-
-      <View style={styles.section}>
-        <View style={styles.accessCard}>
-          <Text style={styles.accessTitle}>Accesos</Text>
-
-          {esReportante && (
-            <AccessRow icon="clipboard-outline" label="Mis Reportes" onPress={onOpenMisReportes} isLast />
-          )}
-          {esAdmin && (
-            <AccessRow
-              icon="shield-checkmark-outline"
-              label="Panel de administrador"
-              onPress={onOpenAdminPanel}
-              isLast
-            />
-          )}
-          {esAsociacion && (
-            <AccessRow
-              icon="business-outline"
-              label="Panel de asociación"
-              onPress={onOpenAssociationPanel}
-              isLast
-            />
-          )}
-          {esStaff && (
-            <AccessRow icon="briefcase-outline" label="Panel de staff" onPress={onOpenStaffPanel} isLast />
-          )}
-        </View>
-      </View>
-
-      <TouchableOpacity onPress={onLogout} activeOpacity={0.8} style={styles.logoutButton}>
-        <Ionicons name="log-out-outline" size={18} color={Brand.danger} />
-        <Text style={styles.logoutText}>Cerrar sesión</Text>
-      </TouchableOpacity>
+      <AccessRow icon="clipboard-outline" label="Mis Reportes" onPress={onOpenMisReportes} isLast={!esAdmin && !esAsociacion && !esStaff} />
+      {esAdmin && (
+        <AccessRow icon="shield-checkmark-outline" label="Panel de administrador" onPress={onOpenAdminPanel} isLast />
+      )}
+      {esAsociacion && (
+        <AccessRow icon="business-outline" label="Panel de asociación" onPress={onOpenAssociationPanel} isLast />
+      )}
+      {esStaff && <AccessRow icon="briefcase-outline" label="Panel de staff" onPress={onOpenStaffPanel} isLast />}
     </>
   );
 
-  // ── DESKTOP: card blanca de siempre, badge de color sólido ────────────
+  // ── DESKTOP: sidebar unificado + card de reportes recientes ───────────
   if (isDesktop) {
     return (
       <View style={styles.screen}>
         <PawPatternBackground />
-        <DecoPaw top={90} left={40} size={130} rotate={-20} opacity={0.22} />
-        <DecoPaw top={160} right={70} size={90} rotate={16} color="#E0B98C" opacity={0.26} />
-        <DecoPaw bottom={80} left={90} size={150} rotate={10} color="#D4A97A" opacity={0.18} />
-        <DecoPaw bottom={120} right={50} size={110} rotate={-12} opacity={0.24} />
 
         <ScrollView contentContainerStyle={styles.desktopScrollContent}>
           <View style={styles.desktopInner}>
-            <Text style={styles.pageTitle}>Mi Perfil</Text>
+            {/* Encabezado de página */}
+            <View style={styles.pageHeader}>
+              <LinearGradient
+                colors={[Brand.primary, Brand.primaryDark]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.pageHeaderIcon}
+              >
+                <Ionicons name="paw" size={20} color="#fff" />
+              </LinearGradient>
+              <View>
+                <Text style={styles.pageTitle}>Mi Perfil</Text>
+                <Text style={styles.pageSubtitle}>PawAlert · Gestión de cuenta</Text>
+              </View>
+            </View>
+
             <View style={styles.desktopRow}>
+              {/* Columna izquierda: card unificada */}
               <View style={styles.desktopLeft}>
-                <View style={styles.whiteCard}>
-                  <AssocAvatar nombre={nombreCompleto || 'Usuario'} logoUrl={null} size="lg" />
-                  <Text style={styles.nombreOnWhite}>{nombreCompleto || 'Usuario'}</Text>
-                  <Text style={styles.emailOnWhite}>{user.email}</Text>
-                  {esAdmin && <RoleBadge rol="admin" variant="onWhite" />}
-                  {esAsociacion && <RoleBadge rol="asociacion" variant="onWhite" />}
-                  {esStaff && <RoleBadge rol="staff" variant="onWhite" />}
+                <View style={styles.unifiedCard}>
+                  {/* Sección 1: avatar + nombre + badge */}
+                  <View style={styles.avatarSection}>
+                    <View style={styles.avatarWrap}>
+                      <AssocAvatar nombre={nombreCompleto || 'Usuario'} logoUrl={null} size="lg" />
+                      {rolBadgeElement && (
+                        <View style={styles.badgeFloating}>
+                          {React.cloneElement(rolBadgeElement, { style: styles.badgeFloatingInner })}
+                        </View>
+                      )}
+                    </View>
+                    <Text style={styles.nombreOnWhite}>{nombreCompleto || 'Usuario'}</Text>
+                    <Text style={styles.emailOnWhite}>{user.email}</Text>
+                  </View>
+
+                  <View style={styles.divider} />
+
+                  {/* Sección 2: datos de cuenta (bare, sin su propia card) */}
+                  <View style={styles.sectionPadding}>
+                    <AccountDataCard telefono={user.telefono} email={user.email} bare />
+                  </View>
+
+                  <View style={styles.divider} />
+
+                  {/* Sección 3: accesos */}
+                  <View style={styles.sectionPadding}>
+                    <Text style={styles.accessTitle}>Accesos</Text>
+                    {accesos}
+                  </View>
                 </View>
 
+                {/* Cerrar sesión — separado, fuera de la card unificada */}
+                <TouchableOpacity onPress={onLogout} activeOpacity={0.8} style={styles.logoutButton}>
+                  <Ionicons name="log-out-outline" size={18} color={Brand.danger} />
+                  <Text style={styles.logoutText}>Cerrar sesión</Text>
+                </TouchableOpacity>
               </View>
-              <View style={styles.desktopRight}>{accountAndAccess}</View>
+
+              {/* Columna derecha: reportes recientes */}
+              <View style={styles.desktopRight}>
+                <RecentReportsCard
+                  reportes={reportes}
+                  totalReportes={totalReportes}
+                  isLoading={isLoadingReportes}
+                  onOpenMisReportes={onOpenMisReportes}
+                />
+              </View>
             </View>
           </View>
         </ScrollView>
@@ -117,7 +146,7 @@ export function LoggedInProfile({
     );
   }
 
-  // ── MÓVIL: banner con degradado, full-bleed ───────────────────────────
+  // ── MÓVIL: sin cambios — banner degradado + cards separadas ───────────
   return (
     <ScrollView style={styles.screen} contentContainerStyle={{ paddingBottom: 40 }}>
       <LinearGradient
@@ -136,7 +165,23 @@ export function LoggedInProfile({
         {esStaff && <RoleBadge rol="staff" variant="onColor" />}
       </LinearGradient>
 
-      <View style={styles.mobileCentered}>{accountAndAccess}</View>
+      <View style={styles.mobileCentered}>
+        <View style={styles.section}>
+          <AccountDataCard telefono={user.telefono} email={user.email} />
+        </View>
+
+        <View style={styles.section}>
+          <View style={styles.accessCard}>
+            <Text style={styles.accessTitle}>Accesos</Text>
+            {accesos}
+          </View>
+        </View>
+
+        <TouchableOpacity onPress={onLogout} activeOpacity={0.8} style={styles.logoutButton}>
+          <Ionicons name="log-out-outline" size={18} color={Brand.danger} />
+          <Text style={styles.logoutText}>Cerrar sesión</Text>
+        </TouchableOpacity>
+      </View>
     </ScrollView>
   );
 }
@@ -144,31 +189,8 @@ export function LoggedInProfile({
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Brand.backgroundWarm, position: 'relative' },
 
+  // Móvil
   mobileCentered: { width: '100%', maxWidth: 480, alignSelf: 'center', paddingHorizontal: 20, paddingTop: 16 },
-
-  desktopScrollContent: { paddingHorizontal: 40, paddingTop: 32, paddingBottom: 40 },
-  desktopInner: { width: '100%', maxWidth: 1000, alignSelf: 'center' },
-  pageTitle: { fontSize: 30, fontWeight: '900', color: Brand.textDark, marginBottom: 24 },
-  desktopRow: { flexDirection: 'row', gap: 28, alignItems: 'flex-start' },
-  desktopLeft: { width: 320 },
-  desktopRight: { flex: 1 },
-
-  // Card blanca de escritorio (sin degradado)
-  whiteCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 24,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-    elevation: 2,
-  },
-  nombreOnWhite: { fontSize: 19, fontWeight: '800', color: Brand.textDark, marginTop: 14, textAlign: 'center' },
-  emailOnWhite: { fontSize: 13, color: Brand.textMuted, marginTop: 2, textAlign: 'center' },
-
-  // Banner degradado de móvil
   mobileBanner: {
     alignItems: 'center',
     paddingTop: 56,
@@ -185,9 +207,7 @@ const styles = StyleSheet.create({
   avatarRing: { padding: 4, borderRadius: 46, backgroundColor: 'rgba(255,255,255,0.9)' },
   nombreOnColor: { fontSize: 19, fontWeight: '800', color: '#fff', marginTop: 14, textAlign: 'center' },
   emailOnColor: { fontSize: 13, color: 'rgba(255,255,255,0.85)', marginTop: 2, textAlign: 'center' },
-
   section: { marginBottom: 16, marginTop: 16 },
-
   accessCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
@@ -198,6 +218,57 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 2,
   },
+
+  // Desktop
+  desktopScrollContent: { paddingHorizontal: 40, paddingTop: 32, paddingBottom: 40 },
+  desktopInner: { width: '100%', maxWidth: 1100, alignSelf: 'center' },
+  pageHeader: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 28 },
+  pageHeaderIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: Brand.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  pageTitle: { fontSize: 26, fontWeight: '900', color: Brand.textDark, lineHeight: 30 },
+  pageSubtitle: { fontSize: 12, fontWeight: '700', color: '#B0966E', marginTop: 2 },
+
+  desktopRow: { flexDirection: 'row', gap: 24, alignItems: 'flex-start' },
+  desktopLeft: { width: 320, gap: 12 },
+  desktopRight: { flex: 1, minWidth: 0 },
+
+  unifiedCard: {
+    backgroundColor: Brand.cardWarm,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(46,42,38,0.1)',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 14,
+    elevation: 4,
+  },
+  avatarSection: { alignItems: 'center', paddingHorizontal: 24, paddingTop: 28, paddingBottom: 24 },
+  avatarWrap: { position: 'relative', marginBottom: 20 },
+  badgeFloating: {
+    position: 'absolute',
+    bottom: -10,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  badgeFloatingInner: { marginTop: 0, borderWidth: 2, borderColor: '#fff' },
+  nombreOnWhite: { fontSize: 15, fontWeight: '800', color: Brand.textDark, textAlign: 'center' },
+  emailOnWhite: { fontSize: 13, color: Brand.textFaint, marginTop: 4, textAlign: 'center' },
+  divider: { height: 1, backgroundColor: 'rgba(46,42,38,0.08)', marginHorizontal: 20 },
+  sectionPadding: { paddingHorizontal: 20, paddingVertical: 20 },
+
   accessTitle: {
     fontSize: 11,
     fontWeight: '800',
@@ -217,18 +288,4 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
   },
   logoutText: { color: Brand.danger, fontWeight: '800', fontSize: 14 },
-
-  petsSticker: {
-    width: '100%',
-    height: 130,
-    borderRadius: 24,
-    overflow: 'hidden',
-    marginTop: 14,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 3,
-  },
-  petsStickerImage: { width: '100%', height: '100%' },
 });

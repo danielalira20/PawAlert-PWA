@@ -1,16 +1,15 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, StyleProp, ViewStyle } from 'react-native';
 import { Brand } from '../../constants/theme';
 
 type Rol = 'admin' | 'staff' | 'asociacion';
 
 interface Props {
   rol: Rol;
-  // "onColor" = pastilla blanca con texto de color (para fondos de color,
-  // como el banner degradado de móvil).
-  // "onWhite" = pastilla de color sólido con texto blanco (para fondos
-  // blancos/claros, como la card de escritorio).
   variant?: 'onColor' | 'onWhite';
+  // Permite reposicionar/ajustar el badge desde donde se usa (ej. flotando
+  // encima del avatar en vez de su posición por defecto debajo del nombre).
+  style?: StyleProp<ViewStyle>;
 }
 
 const CONFIG: Record<Rol, { label: string; solid: string; textOnColor: string }> = {
@@ -19,19 +18,19 @@ const CONFIG: Record<Rol, { label: string; solid: string; textOnColor: string }>
   asociacion: { label: 'Asociación', solid: Brand.secondary, textOnColor: '#1F7A70' },
 };
 
-export function RoleBadge({ rol, variant = 'onColor' }: Props) {
+export function RoleBadge({ rol, variant = 'onColor', style }: Props) {
   const cfg = CONFIG[rol];
 
   if (variant === 'onWhite') {
     return (
-      <View style={[styles.badge, { backgroundColor: cfg.solid, shadowColor: cfg.solid }]}>
+      <View style={[styles.badge, { backgroundColor: cfg.solid, shadowColor: cfg.solid }, style]}>
         <Text style={[styles.text, { color: '#fff' }]}>{cfg.label.toUpperCase()}</Text>
       </View>
     );
   }
 
   return (
-    <View style={[styles.badge, styles.badgeOnColor]}>
+    <View style={[styles.badge, styles.badgeOnColor, style]}>
       <Text style={[styles.text, { color: cfg.textOnColor }]}>{cfg.label.toUpperCase()}</Text>
     </View>
   );

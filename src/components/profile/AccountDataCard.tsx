@@ -14,9 +14,12 @@ interface Row {
 interface Props {
   telefono?: string | null;
   email?: string | null;
+  // "bare" = sin su propia card blanca (para cuando ya vive dentro de una
+  // card unificada más grande, como en el layout de escritorio nuevo).
+  bare?: boolean;
 }
 
-export function AccountDataCard({ telefono, email }: Props) {
+export function AccountDataCard({ telefono, email, bare }: Props) {
   const rows: Row[] = [
     {
       icon: 'call-outline',
@@ -34,8 +37,8 @@ export function AccountDataCard({ telefono, email }: Props) {
     },
   ];
 
-  return (
-    <View style={styles.card}>
+  const content = (
+    <>
       <Text style={styles.title}>Datos de cuenta</Text>
       {rows.map((row, i) => (
         <View key={row.label} style={[styles.row, i > 0 && styles.rowDivider]}>
@@ -48,8 +51,12 @@ export function AccountDataCard({ telefono, email }: Props) {
           </View>
         </View>
       ))}
-    </View>
+    </>
   );
+
+  if (bare) return <View style={{ width: '100%' }}>{content}</View>;
+
+  return <View style={styles.card}>{content}</View>;
 }
 
 const styles = StyleSheet.create({
