@@ -4,6 +4,8 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
+import { formatDistanceToNow } from 'date-fns';
+import { es } from 'date-fns/locale';
 import { ActivityIndicator, Dimensions, Image, Linking, Modal, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Toast, useToast } from '../components/Toast';
@@ -12,18 +14,34 @@ import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
 import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
+import { useWindowDimensions } from 'react-native';
 
 // ─── PALETA DE COLORES PETZEN ───
 const COLORS = {
-  bg: '#E8CCAD',        // Light Brown (Fondo principal)
-  primary: '#EC802B',   // Orange (Botones principales, Casos activos)
-  secondary: '#EDC55B', // Yellow (Herido, estados intermedios)
-  accent: '#66BCB4',    // Teal (Estable, Ver detalles, acciones secundarias)
-  textDark: '#4A3728',  // Texto oscuro para contraste
-  textLight: '#8C7A6B', // Texto secundario
+  bg: '#E8CCAD',
+  primary: '#EC802B',
+  secondary: '#EDC55B',
+  accent: '#66BCB4',
+  textDark: '#4A3728',
+  textLight: '#8C7A6B',
   white: '#FFFFFF',
-  danger: '#E74C3C',    // Rojo para Grave o Rechazar
-  cardBg: '#FAF3EA'     // Un tono ligeramente más claro para las tarjetas
+  danger: '#E74C3C',
+  cardBg: '#FAF3EA'
+};
+
+const SHADOW_SM = {
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 3 },
+  shadowOpacity: 0.08,
+  shadowRadius: 8,
+  elevation: 2,
+};
+const SHADOW_MD = {
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 6 },
+  shadowOpacity: 0.12,
+  shadowRadius: 12,
+  elevation: 4,
 };
 
 interface AsociacionInfo {
@@ -63,7 +81,6 @@ interface Props {
 }
 
 export default function AssociationStatusScreen({ onClose }: Props) {
-  // ─── TODA LA LÓGICA DE ESTADO SE MANTIENE INTACTA ───
   const { token, logout, isLoading } = useAuth();
   const { toast, translateY, showToast } = useToast();
   const [info, setInfo] = useState<AsociacionInfo | null>(null);
@@ -108,7 +125,7 @@ export default function AssociationStatusScreen({ onClose }: Props) {
   const [isApelando, setIsApelando] = useState(false);
   const [apelacionEnviada, setApelacionEnviada] = useState(false);
 
-  const screenWidth = Dimensions.get('window').width;
+  const { width: screenWidth } = useWindowDimensions();
 
   const MOTIVOS_RECHAZO = [
     'No tenemos capacidad disponible ahora mismo',
@@ -132,7 +149,6 @@ export default function AssociationStatusScreen({ onClose }: Props) {
     'No se pudo rescatar'
   ];
 
-  // ─── FUNCIONES API INTACTAS ───
   const cargarEstado = async () => {
     setIsLoadingInfo(true);
     try {
@@ -195,6 +211,20 @@ export default function AssociationStatusScreen({ onClose }: Props) {
       verificarApelacion();
     }
   }, [info]);
+
+  // Refresco automático cada minuto — así "Cerrar caso" aparece solo en
+  // cuanto el staff manda su hito final, sin que el representante tenga
+  // que cerrar y volver a abrir el panel para verlo. Se detiene solo si
+  // el panel se cierra (se desmonta) o la asociación deja de estar
+  // aprobada. Depende también de `token` para no quedarse con una
+  // versión vieja del token si se refresca mientras el panel sigue abierto.
+  useEffect(() => {
+    if (info?.estado !== 'aprobada') return;
+    const interval = setInterval(() => {
+      cargarReportes();
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [info?.estado, token]);
 
   const handlePickDocument = async () => {
     if (apelacionDocs.length >= 3) {
@@ -393,7 +423,6 @@ export default function AssociationStatusScreen({ onClose }: Props) {
     }
   };
 
-  // ─── FUNCIONES DE APOYO VISUAL PETZEN ───
   const getBadgeColor = (condicion: string | null) => {
     switch(condicion?.toLowerCase()) {
       case 'grave': return COLORS.danger;
@@ -431,10 +460,8 @@ export default function AssociationStatusScreen({ onClose }: Props) {
     <View style={{ flex: 1, backgroundColor: COLORS.bg }}>
       <Toast toast={toast} translateY={translateY} />
 
-      {/* CONTENEDOR RESPONSIVO (Centro flotante en Web, pantalla completa en móvil) */}
-      <View style={{ flex: 1, width: '100%', maxWidth: 1000, alignSelf: 'center' }}>
+      <View style={{ flex: 1, width: '100%', maxWidth: 900, alignSelf: 'center' }}>
         
-        {/* HEADER PETZEN */}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 24, paddingTop: 24,}}>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center', marginRight: 16 }}>
@@ -451,9 +478,8 @@ export default function AssociationStatusScreen({ onClose }: Props) {
 
         <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
 
-          {/* ─── ESTADOS PENDIENTE Y RECHAZADA ─── */}
           {info.estado === 'pendiente' && (
-            <View style={{ backgroundColor: COLORS.cardBg, padding: 24, borderRadius: 24, elevation: 2 }}>
+            <View style={{ backgroundColor: COLORS.cardBg, padding: 24, borderRadius: 24, ...SHADOW_SM }}>
               <Text style={{ fontSize: 18, fontWeight: 'bold', color: COLORS.secondary, marginBottom: 8 }}>En revisión</Text>
               <Text style={{ fontSize: 14, color: COLORS.textLight, lineHeight: 22 }}>Tu asociación está siendo revisada por nuestro equipo. Te avisaremos en cuanto sea aprobada.</Text>
             </View>
@@ -461,7 +487,7 @@ export default function AssociationStatusScreen({ onClose }: Props) {
 
           {info.estado === 'rechazada' && (
             <>
-              <View style={{ backgroundColor: COLORS.cardBg, padding: 24, borderRadius: 24, elevation: 2, marginBottom: 24, borderLeftWidth: 6, borderLeftColor: COLORS.danger }}>
+              <View style={{ backgroundColor: COLORS.cardBg, padding: 24, borderRadius: 24, ...SHADOW_SM, marginBottom: 24, borderLeftWidth: 6, borderLeftColor: COLORS.danger }}>
                 <Text style={{ fontSize: 18, fontWeight: 'bold', color: COLORS.danger, marginBottom: 8 }}>Solicitud rechazada</Text>
                 <Text style={{ fontSize: 14, color: COLORS.textDark, lineHeight: 22 }}>Motivo: {info.motivo_rechazo || 'No se especificó motivo.'}</Text>
               </View>
@@ -476,7 +502,7 @@ export default function AssociationStatusScreen({ onClose }: Props) {
                     <Text style={{ color: COLORS.textLight }}>• RFC o registro ante autoridad</Text>
                   </View>
 
-                  <View style={{ backgroundColor: COLORS.cardBg, padding: 24, borderRadius: 24, elevation: 2 }}>
+                  <View style={{ backgroundColor: COLORS.cardBg, padding: 24, borderRadius: 24, ...SHADOW_SM }}>
                     <Text style={{ fontSize: 18, fontWeight: 'bold', color: COLORS.textDark, marginBottom: 12 }}>Enviar Apelación</Text>
                     <TextInput
                       style={{ backgroundColor: COLORS.white, borderRadius: 16, padding: 16, fontSize: 14, color: COLORS.textDark, minHeight: 120, textAlignVertical: 'top', borderWidth: 1, borderColor: '#F0E6D2' }}
@@ -513,22 +539,20 @@ export default function AssociationStatusScreen({ onClose }: Props) {
             </>
           )}
 
-          {/* ─── ASOCIACIÓN APROBADA ─── */}
           {info.estado === 'aprobada' && (
             <>
-              {/* Tarjetas de Estadísticas tipo María López */}
               <View style={{ flexDirection: 'row', gap: 12, marginBottom: 32 }}>
-                <View style={{ flex: 1, backgroundColor: COLORS.primary, borderRadius: 24, padding: 20, alignItems: 'center', elevation: 4 }}>
+                <View style={{ flex: 1, backgroundColor: COLORS.primary, borderRadius: 24, padding: 20, alignItems: 'center', ...SHADOW_MD }}>
                   <Ionicons name="pulse" size={24} color={COLORS.white} style={{ marginBottom: 8 }} />
                   <Text style={{ fontSize: 32, fontWeight: '900', color: COLORS.white }}>{reportes.length}</Text>
                   <Text style={{ fontSize: 12, color: COLORS.white, fontWeight: '500' }}>Casos activos</Text>
                 </View>
-                <View style={{ flex: 1, backgroundColor: COLORS.cardBg, borderRadius: 24, padding: 20, alignItems: 'center', elevation: 2 }}>
+                <View style={{ flex: 1, backgroundColor: COLORS.cardBg, borderRadius: 24, padding: 20, alignItems: 'center', ...SHADOW_SM }}>
                   <Ionicons name="navigate" size={24} color={COLORS.accent} style={{ marginBottom: 8 }} />
                   <Text style={{ fontSize: 24, fontWeight: '800', color: COLORS.textDark }}>{reportes.filter(r => r.estado_reporte === 'en_camino').length}</Text>
                   <Text style={{ fontSize: 12, color: COLORS.textLight, fontWeight: '500' }}>En camino</Text>
                 </View>
-                <View style={{ flex: 1, backgroundColor: COLORS.cardBg, borderRadius: 24, padding: 20, alignItems: 'center', elevation: 2 }}>
+                <View style={{ flex: 1, backgroundColor: COLORS.cardBg, borderRadius: 24, padding: 20, alignItems: 'center', ...SHADOW_SM }}>
                   <Ionicons name="checkmark-circle" size={24} color={COLORS.secondary} style={{ marginBottom: 8 }} />
                   <Text style={{ fontSize: 24, fontWeight: '800', color: COLORS.textDark }}>{reportes.filter(r => r.estado_reporte === 'cerrado').length}</Text>
                   <Text style={{ fontSize: 12, color: COLORS.textLight, fontWeight: '500' }}>Cerrados</Text>
@@ -544,7 +568,6 @@ export default function AssociationStatusScreen({ onClose }: Props) {
                 )}
               </View>
 
-              {/* Filtros estilo Pills */}
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 24 }}>
                 <View style={{ flexDirection: 'row', gap: 10 }}>
                   {(['pendientes', 'aceptadas', 'rechazadas', 'todas'] as FiltroAsignacion[]).map((f) => (
@@ -562,22 +585,27 @@ export default function AssociationStatusScreen({ onClose }: Props) {
                 </View>
               </ScrollView>
 
-              {/* Grid de Reportes */}
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 16, justifyContent: 'space-between' }}>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 16, justifyContent: 'center' }}>
                 {reportesFiltrados.map((reporte) => {
                   const enProceso = ['en_camino', 'en_atencion'].includes(reporte.estado_reporte);
+                  const yaRescatado = reporte.estado_reporte === 'rescatado';
                   return (
                     <View key={reporte.asignacion_id} style={{ 
-                      width: screenWidth > 768 ? '48%' : '100%', 
-                      backgroundColor: COLORS.cardBg, borderRadius: 24, overflow: 'hidden', elevation: 3, marginBottom: 8
+                      flexGrow: 1,
+                      flexBasis: 260,
+                      maxWidth: 300,
+                      backgroundColor: COLORS.cardBg, borderRadius: 20, overflow: 'hidden', marginBottom: 8,
+                      shadowColor: '#000',
+                      shadowOffset: { width: 0, height: 4 },
+                      shadowOpacity: 0.1,
+                      shadowRadius: 10,
+                      elevation: 3,
                     }}>
                       <View style={{ position: 'relative' }}>
-                        <Image source={{ uri: reporte.foto_url || 'https://via.placeholder.com/400' }} style={{ width: '100%', height: 160 }} resizeMode="cover" />
-                        {/* Badge de Condición estilo María López */}
+                        <Image source={{ uri: reporte.foto_url || 'https://via.placeholder.com/400' }} style={{ width: '100%', height: 130 }} resizeMode="cover" />
                         <View style={{ position: 'absolute', top: 12, right: 12, backgroundColor: getBadgeColor(reporte.animal?.condicion || ''), paddingHorizontal: 16, paddingVertical: 6, borderRadius: 16 }}>
                           <Text style={{ color: COLORS.white, fontWeight: '800', fontSize: 12, textTransform: 'capitalize' }}>{reporte.animal?.condicion || 'Desconocido'}</Text>
                         </View>
-                        {/* Cinta de estado si está en proceso */}
                         {enProceso && (
                           <View style={{ position: 'absolute', bottom: 0, width: '100%', backgroundColor: 'rgba(102, 188, 180, 0.9)', paddingVertical: 8, paddingHorizontal: 16 }}>
                             <Text style={{ color: COLORS.white, fontSize: 12, fontWeight: '600' }}><Ionicons name="car" size={12}/> Rescatista en camino</Text>
@@ -585,18 +613,35 @@ export default function AssociationStatusScreen({ onClose }: Props) {
                         )}
                       </View>
 
-                      <View style={{ padding: 20 }}>
-                        <Text style={{ fontSize: 20, fontWeight: '800', color: COLORS.textDark, textTransform: 'capitalize' }}>{reporte.animal?.tipo_animal || 'Animal'}</Text>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
-                          <Ionicons name="location-outline" size={16} color={COLORS.primary} />
-                          <Text style={{ color: COLORS.textLight, fontSize: 13, marginLeft: 4 }} numberOfLines={1}>
+                      <View style={{ padding: 15 }}>
+                        <Text style={{ fontSize: 16, fontWeight: '800', color: COLORS.textDark, textTransform: 'capitalize' }}>{reporte.animal?.tipo_animal || 'Animal'}</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
+                          <Ionicons name="location-outline" size={13} color={COLORS.primary} />
+                          <Text style={{ color: COLORS.textLight, fontSize: 12, marginLeft: 4 }} numberOfLines={1}>
                             {[reporte.colonia, reporte.municipio].filter(Boolean).join(', ')}
                           </Text>
                         </View>
-                        <Text style={{ color: COLORS.textLight, fontSize: 12, marginTop: 4, marginLeft: 2 }}>hace 1 h</Text>
+                        <Text style={{ color: COLORS.textLight, fontSize: 11, marginTop: 3, marginLeft: 2 }}>
+                          hace {formatDistanceToNow(new Date(reporte.created_at), { locale: es })}
+                        </Text>
 
-                        {/* Botones estilo PetZen */}
-                        <View style={{ marginTop: 20 }}>
+                        {/* Datos rápidos del animal — para decidir si aceptar sin
+                            tener que adivinar */}
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                          {[reporte.animal?.tamanio, reporte.animal?.sexo, reporte.animal?.edad_aproximada]
+                            .filter(Boolean)
+                            .map((dato, i) => (
+                              <View key={i} style={{ backgroundColor: 'rgba(74,55,40,0.06)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 100 }}>
+                                <Text style={{ fontSize: 10, color: COLORS.textDark, textTransform: 'capitalize', fontWeight: '600' }}>{dato}</Text>
+                              </View>
+                            ))}
+                        </View>
+
+                        <TouchableOpacity onPress={() => setReporteSeleccionado(reporte)} style={{ marginTop: 8 }}>
+                          <Text style={{ fontSize: 12, color: COLORS.accent, fontWeight: '700' }}>Ver detalle completo →</Text>
+                        </TouchableOpacity>
+
+                        <View style={{ marginTop: 14 }}>
                           {reporte.estado_reporte === 'asignado' || reporte.estado_asignacion_clave === 'notificada' ? (
                             <View style={{ flexDirection: 'row', gap: 12 }}>
                               <TouchableOpacity onPress={() => { setReporteAccionId(reporte.reporte_id); setShowAcceptModal(true); }} style={{ flex: 1, backgroundColor: COLORS.primary, paddingVertical: 14, borderRadius: 16, alignItems: 'center' }}>
@@ -606,21 +651,27 @@ export default function AssociationStatusScreen({ onClose }: Props) {
                                 <Text style={{ color: COLORS.danger, fontWeight: 'bold' }}>Rechazar</Text>
                               </TouchableOpacity>
                             </View>
-                          ) : enProceso ? (
+                          ) : yaRescatado ? (
+                            // El staff ya mandó su hito final ("llegué al refugio") — ya
+                            // se puede cerrar el caso formalmente.
                             <View style={{ gap: 10 }}>
                               <TouchableOpacity onPress={() => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=$${reporte.latitud},${reporte.longitud}`)} style={{ backgroundColor: COLORS.primary, paddingVertical: 14, borderRadius: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}>
                                 <Ionicons name="map" size={16} color={COLORS.white} style={{ marginRight: 6 }}/>
                                 <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Cómo llegar</Text>
                               </TouchableOpacity>
-                              <View style={{ flexDirection: 'row', gap: 10 }}>
-                                <TouchableOpacity onPress={() => { setReporteAccionId(reporte.reporte_id); resetModales(); setShowEncontreModal(true); }} style={{ flex: 1, backgroundColor: COLORS.secondary, paddingVertical: 12, borderRadius: 14, alignItems: 'center' }}>
-                                  <Text style={{ color: COLORS.textDark, fontWeight: 'bold' }}>Hito rescate</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity onPress={() => { setReporteAccionId(reporte.reporte_id); resetModales(); setShowCerrarModal(true); }} style={{ flex: 1, backgroundColor: COLORS.accent, paddingVertical: 12, borderRadius: 14, alignItems: 'center' }}>
-                                  <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Cerrar caso</Text>
-                                </TouchableOpacity>
-                              </View>
+                              <TouchableOpacity onPress={() => { setReporteAccionId(reporte.reporte_id); resetModales(); setShowCerrarModal(true); }} style={{ backgroundColor: COLORS.accent, paddingVertical: 14, borderRadius: 16, alignItems: 'center' }}>
+                                <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Cerrar caso</Text>
+                              </TouchableOpacity>
                             </View>
+                          ) : enProceso ? (
+                            // en_camino / en_atencion: el staff sigue trabajando el caso.
+                            // "Hito rescate" NO va aquí — le pertenece al dashboard del
+                            // staff (el backend lo rechaza con 403 si alguien más lo llama).
+                            // La asociación solo monitorea mientras tanto.
+                            <TouchableOpacity onPress={() => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=$${reporte.latitud},${reporte.longitud}`)} style={{ backgroundColor: COLORS.primary, paddingVertical: 14, borderRadius: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}>
+                              <Ionicons name="map" size={16} color={COLORS.white} style={{ marginRight: 6 }}/>
+                              <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Cómo llegar</Text>
+                            </TouchableOpacity>
                           ) : (
                             <TouchableOpacity onPress={() => setReporteSeleccionado(reporte)} style={{ backgroundColor: COLORS.accent, paddingVertical: 14, borderRadius: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}>
                               <Ionicons name="eye" size={16} color={COLORS.white} style={{ marginRight: 6 }}/>
@@ -634,8 +685,7 @@ export default function AssociationStatusScreen({ onClose }: Props) {
                 })}
               </View>
 
-              {/* FORMULARIO DE REPRESENTANTES RESTAURADO A SU LÓGICA ORIGINAL + ESTILO PETZEN */}
-              <View style={{ backgroundColor: COLORS.cardBg, padding: 28, borderRadius: 32, marginTop: 32, elevation: 4 }}>
+              <View style={{ backgroundColor: COLORS.cardBg, padding: 28, borderRadius: 32, marginTop: 32, ...SHADOW_MD }}>
                 <Text style={{ fontSize: 22, fontWeight: '800', color: COLORS.textDark, marginBottom: 6 }}>Agregar miembro</Text>
                 <Text style={{ fontSize: 13, color: COLORS.textLight, marginBottom: 20 }}>Esta persona podrá iniciar sesión con el mismo teléfono que registres.</Text>
                 
@@ -649,11 +699,20 @@ export default function AssociationStatusScreen({ onClose }: Props) {
                   </TouchableOpacity>
                 </View>
 
-                {/* LOS 4 INPUTS ORIGINALES EXACTOS */}
-                <Input label="Nombre(s)" placeholder="Ej. Ana" value={nombreRep} onChangeText={setNombreRep} />
-                <Input label="Apellido" placeholder="Ej. Pérez" value={apellidoRep} onChangeText={setApellidoRep} />
-                <Input label="Teléfono" placeholder="Ej. 2221234567" value={telefonoRep} onChangeText={setTelefonoRep} keyboardType="numeric" maxLength={10} />
-                <Input label="Correo (Opcional)" placeholder="Ej. correo@ejemplo.com" value={emailRep} onChangeText={setEmailRep} keyboardType="email-address" autoCapitalize="none" />
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+                  <View style={{ flexGrow: 1, flexBasis: 200, minWidth: 180 }}>
+                    <Input label="Nombre(s)" placeholder="Ej. Ana" value={nombreRep} onChangeText={setNombreRep} />
+                  </View>
+                  <View style={{ flexGrow: 1, flexBasis: 200, minWidth: 180 }}>
+                    <Input label="Apellido" placeholder="Ej. Pérez" value={apellidoRep} onChangeText={setApellidoRep} />
+                  </View>
+                  <View style={{ flexGrow: 1, flexBasis: 200, minWidth: 180 }}>
+                    <Input label="Teléfono" placeholder="Ej. 2221234567" value={telefonoRep} onChangeText={setTelefonoRep} keyboardType="numeric" maxLength={10} />
+                  </View>
+                  <View style={{ flexGrow: 1, flexBasis: 200, minWidth: 180 }}>
+                    <Input label="Correo (Opcional)" placeholder="Ej. correo@ejemplo.com" value={emailRep} onChangeText={setEmailRep} keyboardType="email-address" autoCapitalize="none" />
+                  </View>
+                </View>
                 
                 <View style={{ marginTop: 10 }}>
                    <Button label={esStaff ? "Agregar staff" : "Agregar representante"} onPress={handleAgregarRepresentante} isLoading={isAdding} />
@@ -664,16 +723,29 @@ export default function AssociationStatusScreen({ onClose }: Props) {
         </ScrollView>
       </View>
 
-      {/* ─── MODALES DE INTERACCIÓN ESTILO PETZEN ─── */}
-      {/* Modal Detalles */}
       {reporteSeleccionado && (
         <Modal visible={true} transparent animationType="slide">
           <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
             <View style={{ backgroundColor: COLORS.cardBg, borderRadius: 32, padding: 32, width: '100%', maxWidth: 500, maxHeight: '90%' }}>
               <ScrollView showsVerticalScrollIndicator={false}>
                 <Text style={{ fontSize: 28, fontWeight: '900', color: COLORS.textDark, textTransform: 'capitalize', marginBottom: 4 }}>{reporteSeleccionado.animal?.tipo_animal}</Text>
-                <Text style={{ fontSize: 16, color: getBadgeColor(reporteSeleccionado.animal?.condicion || ''), fontWeight: '800', textTransform: 'uppercase', marginBottom: 24 }}>{reporteSeleccionado.animal?.condicion}</Text>
-                
+                <Text style={{ fontSize: 16, color: getBadgeColor(reporteSeleccionado.animal?.condicion || ''), fontWeight: '800', textTransform: 'uppercase', marginBottom: 16 }}>{reporteSeleccionado.animal?.condicion}</Text>
+
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 24 }}>
+                  {[
+                    { label: 'Tamaño', value: reporteSeleccionado.animal?.tamanio },
+                    { label: 'Sexo', value: reporteSeleccionado.animal?.sexo },
+                    { label: 'Edad', value: reporteSeleccionado.animal?.edad_aproximada },
+                  ]
+                    .filter((d) => !!d.value)
+                    .map((d, i) => (
+                      <View key={i} style={{ backgroundColor: COLORS.white, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12 }}>
+                        <Text style={{ fontSize: 10, color: COLORS.textLight, fontWeight: '700', textTransform: 'uppercase' }}>{d.label}</Text>
+                        <Text style={{ fontSize: 14, color: COLORS.textDark, fontWeight: '700', textTransform: 'capitalize' }}>{d.value}</Text>
+                      </View>
+                    ))}
+                </View>
+
                 <Text style={{ fontSize: 18, fontWeight: '800', color: COLORS.textDark, marginBottom: 8 }}>Descripción</Text>
                 <Text style={{ fontSize: 15, color: COLORS.textLight, marginBottom: 24, lineHeight: 22 }}>{reporteSeleccionado.animal?.descripcion || 'Sin descripción detallada.'}</Text>
                 
@@ -688,7 +760,6 @@ export default function AssociationStatusScreen({ onClose }: Props) {
         </Modal>
       )}
 
-      {/* Modal Aceptar */}
       <Modal visible={showAcceptModal} transparent animationType="fade">
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
           <View style={{ backgroundColor: COLORS.cardBg, borderRadius: 32, padding: 32, width: '100%', maxWidth: 400 }}>
@@ -711,7 +782,6 @@ export default function AssociationStatusScreen({ onClose }: Props) {
         </View>
       </Modal>
 
-      {/* Modal Rechazar */}
       <Modal visible={showRejectModal} transparent animationType="fade">
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
           <View style={{ backgroundColor: COLORS.cardBg, borderRadius: 32, padding: 32, width: '100%', maxWidth: 450 }}>
@@ -734,7 +804,6 @@ export default function AssociationStatusScreen({ onClose }: Props) {
         </View>
       </Modal>
 
-      {/* Modal Encontré al Animal / Cerrar Caso */}
       <Modal visible={showEncontreModal || showCerrarModal} transparent animationType="fade">
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
           <View style={{ backgroundColor: COLORS.cardBg, borderRadius: 32, padding: 32, width: '100%', maxWidth: 450 }}>
@@ -765,7 +834,6 @@ export default function AssociationStatusScreen({ onClose }: Props) {
         </View>
       </Modal>
 
-      {/* Modal Staff */}
       <Modal visible={showStaffModal} transparent animationType="fade">
           <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
             <View style={{ backgroundColor: COLORS.cardBg, borderRadius: 32, padding: 32, width: '100%', maxWidth: 450 }}>
