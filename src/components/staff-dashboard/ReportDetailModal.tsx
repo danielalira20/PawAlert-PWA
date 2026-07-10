@@ -133,8 +133,8 @@ const styles = StyleSheet.create({
   sheetDesktop: {
     borderRadius: 26,
     width: '100%',
-    maxWidth: 640,
-    maxHeight: '85%',
+    maxWidth: 460,
+    maxHeight: '80%',
   },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
   title: { fontSize: 18, fontWeight: '800', color: Brand.textDark },
