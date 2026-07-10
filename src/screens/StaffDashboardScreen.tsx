@@ -203,7 +203,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
                   layout="grid"
                 />
                 <ReportesGroup
-                  titulo="En acción"
+                  titulo="En antención"
                   color={Brand.secondary}
                   reportes={reportesEnAccion}
                   onOpenDetail={abrirDetalle}

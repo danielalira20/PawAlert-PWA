@@ -37,7 +37,15 @@ def _obtener_staff_autenticado(authorization: str | None) -> dict:
 
 @router.get("/me/reportes", status_code=200)
 async def get_reportes_staff(authorization: str = Header(None)):
-    """Devuelve los reportes asignados al staff logueado divididos por estado."""
+    """Devuelve los reportes asignados al staff logueado.
+
+    IMPORTANTE: antes este endpoint excluía 'cerrado' y 'sin_cobertura' (solo
+    servía para el dashboard de casos activos). Ahora trae TODOS los reportes
+    del staff para poder calcular estadísticas de impacto histórico en Mi
+    Perfil — pero los buckets que ya consume el dashboard (pendientes/
+    en_accion/completados) se comportan exactamente igual que antes, no se
+    les quitó ni agregó nada. Solo se sumó el bucket nuevo `historial`.
+    """
     usuario = _obtener_staff_autenticado(authorization)
 
     resultado = supabase.table("reportes").select(
@@ -47,13 +55,12 @@ async def get_reportes_staff(authorization: str = Header(None)):
         "animal(id, sexo, edad_aproximada, descripcion, "
         "tipo_animal_catalogo(clave), condicion_catalogo(clave), tamanio_catalogo(clave), "
         "animal_fotos(foto_url, orden))"
-    ).eq("staff_asignado_id", usuario["id"]).not_.in_(
-        "estado_reporte", ["cerrado", "sin_cobertura"]
-    ).order("created_at", desc=True).execute()
+    ).eq("staff_asignado_id", usuario["id"]).order("created_at", desc=True).execute()
 
     pendientes = []
     en_accion = []
     completados = []
+    historial = [] 
 
     for r in resultado.data or []:
         animal = r.get("animal") or {}
@@ -88,15 +95,19 @@ async def get_reportes_staff(authorization: str = Header(None)):
             }
         }
 
-        if r.get("estado_reporte") == "en_camino":
+        estado = r.get("estado_reporte")
+        if estado == "en_camino":
             pendientes.append(reporte)
-        elif r.get("estado_reporte") == "en_atencion":
+        elif estado == "en_atencion":
             en_accion.append(reporte)
-        elif r.get("estado_reporte") == "rescatado":
+        elif estado == "rescatado":
             completados.append(reporte)
+        elif estado in ("cerrado", "sin_cobertura"):
+            historial.append(reporte)
 
     return {
         "pendientes": pendientes,
         "en_accion": en_accion,
-        "completados": completados
+        "completados": completados,
+        "historial": historial,
     }
