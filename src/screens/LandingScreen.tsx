@@ -120,7 +120,89 @@ function SectionLabel({ text, color = C.primary }: { text: string; color?: strin
   );
 }
 
+// ─── ROLES ──────────────────────────────────────────────────────────────────
+const ROLES = [
+  {
+    id: 'reportante',
+    title: 'Reportante',
+    icon: 'camera-outline',
+    does: 'Reporta animales en situación de calle desde la app, con foto y ubicación.',
+    requirements: 'Solo necesita crear una cuenta básica y tener acceso a la cámara/ubicación.',
+    ctaLabel: 'Reportar',
+    ctaRoute: '/map',
+  },
+  {
+    id: 'voluntario-asociacion',
+    title: 'Voluntario de asociación',
+    icon: 'people-outline',
+    does: 'Se une a una asociación de rescate existente para atender los reportes recibidos.',
+    requirements: 'Debe pertenecer o ser aceptado por una asociación registrada en la plataforma.',
+    ctaLabel: 'Únete a una asociación',
+    ctaRoute: '/join-association',
+  },
+  {
+    id: 'voluntario-externo',
+    title: 'Voluntario externo – Casa hogar',
+    icon: 'home-outline',
+    does: 'Ofrece su hogar de forma temporal para el resguardo de animales rescatados.',
+    requirements: 'Completar un formulario de postulación y validación básica del espacio disponible.',
+    ctaLabel: 'Postúlate como casa hogar',
+    ctaRoute: '/foster-application',
+  },
+  {
+    id: 'asociacion',
+    title: 'Asociación',
+    icon: 'business-outline',
+    does: 'Recibe alertas de reportes cercanos, coordina rescates y gestiona su equipo de voluntarios.',
+    requirements: 'Registrar la organización y pasar por un proceso de validación.',
+    ctaLabel: 'Registra tu asociación',
+    ctaRoute: '/association-register',
+  },
+  {
+    id: 'patrocinador',
+    title: 'Patrocinador',
+    icon: 'star-outline',
+    does: 'Apoya económicamente el sostenimiento de rescates y campañas (función futura).',
+    requirements: 'Próximamente disponible.',
+    ctaLabel: 'Próximamente',
+    ctaRoute: null,
+  },
+];
 
+// ─── PAW PATTERN BACKGROUND ─────────────────────────────────────────────────
+function PawPatternBackground() {
+  const { width, height } = useWindowDimensions();
+  const columns = Math.ceil(width / 80) + 1;
+  const rows = Math.ceil((height || 1000) / 80) + 1;
+  const paws = [];
+  for (let i = 0; i < rows; i++) {
+    for (let j = 0; j < columns; j++) {
+      const isOffset = i % 2 !== 0;
+      const offsetX = (i * 7 + j * 13) % 20 - 10;
+      const offsetY = (i * 11 + j * 5) % 20 - 10;
+      const rotation = (i * 3 + j * 7) % 30 - 15;
+      paws.push(
+        <View
+          key={`${i}-${j}`}
+          style={{
+            position: 'absolute',
+            top: i * 80 + offsetY,
+            left: j * 80 + (isOffset ? 40 : 0) + offsetX,
+            opacity: 0.04,
+            transform: [{ rotate: `${rotation}deg` }],
+          }}
+        >
+          <Ionicons name="paw" size={24} color={C.muted} />
+        </View>
+      );
+    }
+  }
+  return (
+    <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, overflow: 'hidden', zIndex: 0 }} pointerEvents="none">
+      {paws}
+    </View>
+  );
+}
 
 // ─── MAIN SCREEN ────────────────────────────────────────────────────────────
 export default function LandingScreen() {
@@ -131,6 +213,41 @@ export default function LandingScreen() {
   const [isAssociationFormVisible, setIsAssociationFormVisible] = useState(false);
   const [isReportGuideVisible, setIsReportGuideVisible] = useState(false);
   const [recentPhotos, setRecentPhotos] = useState<string[]>([]);
+
+  const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
+  const expandOpacity = useRef(new Animated.Value(0)).current;
+  const expandTranslateY = useRef(new Animated.Value(20)).current;
+
+  const handleRolePress = (id: string) => {
+    if (selectedRoleId === id) {
+      Animated.parallel([
+        Animated.timing(expandOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
+        Animated.timing(expandTranslateY, { toValue: -10, duration: 200, useNativeDriver: true })
+      ]).start(() => setSelectedRoleId(null));
+    } else {
+      if (selectedRoleId) {
+        Animated.parallel([
+          Animated.timing(expandOpacity, { toValue: 0, duration: 150, useNativeDriver: true }),
+          Animated.timing(expandTranslateY, { toValue: -10, duration: 150, useNativeDriver: true })
+        ]).start(() => {
+          setSelectedRoleId(id);
+          expandTranslateY.setValue(20);
+          Animated.parallel([
+            Animated.timing(expandOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
+            Animated.timing(expandTranslateY, { toValue: 0, duration: 300, useNativeDriver: true })
+          ]).start();
+        });
+      } else {
+        setSelectedRoleId(id);
+        expandOpacity.setValue(0);
+        expandTranslateY.setValue(20);
+        Animated.parallel([
+          Animated.timing(expandOpacity, { toValue: 1, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+          Animated.timing(expandTranslateY, { toValue: 0, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true })
+        ]).start();
+      }
+    }
+  };
 
   // ── Font loading ──
   const [fontsLoaded] = useFonts({
@@ -207,7 +324,8 @@ export default function LandingScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bgSoft }}>
-      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+      <PawPatternBackground />
+      <ScrollView style={{ flex: 1, zIndex: 1 }} showsVerticalScrollIndicator={false}>
 
         {/* ══════════════════════════════════════════════════════════════════
             SECCIÓN 1 — NAVBAR  (sticky-like header)
@@ -251,214 +369,330 @@ export default function LandingScreen() {
         </View>
 
         {/* ══════════════════════════════════════════════════════════════════
-            SECCIÓN 2 — HERO (con collage de fotos)
+            SECCIÓN 2 — HERO (Rediseñado)
         ══════════════════════════════════════════════════════════════════ */}
         <View style={{
-          backgroundColor: C.primaryLight,
+          backgroundColor: 'transparent',
           paddingTop: 56,
-          paddingBottom: 80,
+          paddingBottom: 40,
           paddingHorizontal: 28,
           alignItems: 'center',
-          overflow: 'hidden',
           position: 'relative',
-          borderBottomLeftRadius: 48,
-          borderBottomRightRadius: 48,
         }}>
-          {/* Blob decorativo fondo */}
-          <View style={{
-            position: 'absolute', top: -80, right: -60,
-            width: 320, height: 320, borderRadius: 160,
-            backgroundColor: C.accent,
-            opacity: 0.22,
-            ...(isWeb ? { filter: 'blur(70px)' } : {}),
-          } as any} />
-          <View style={{
-            position: 'absolute', bottom: -40, left: -40,
-            width: 260, height: 260, borderRadius: 130,
-            backgroundColor: C.secondary,
-            opacity: 0.2,
-            ...(isWeb ? { filter: 'blur(60px)' } : {}),
-          } as any} />
-
-          {/* Huellas decorativas */}
-          <PawDecor top={20} left={30} size={40} opacity={0.09} color={C.primary} />
-          <PawDecor top={60} right={20} size={28} opacity={0.07} color={C.secondary} />
-          <PawDecor bottom={30} left={60} size={24} opacity={0.07} color={C.accent} />
-          <PawDecor bottom={50} right={40} size={36} opacity={0.08} color={C.primary} />
-
           {/* Hero content: 2 columnas en desktop */}
           <View style={{
             flexDirection: isDesktop ? 'row' : 'column',
             alignItems: 'center',
-            maxWidth: 960,
+            maxWidth: 1024,
             width: '100%',
-            gap: isDesktop ? 40 : 0,
+            gap: isDesktop ? 60 : 40,
           }}>
-
-            {/* Columna izquierda: Logo + texto */}
-            <View style={{ flex: 1, alignItems: isDesktop ? 'flex-start' : 'center' }}>
-              {/* Logo animado */}
-              <Animated.View style={{ transform: [{ scale: logoScale }], marginBottom: 24 }}>
-                <View style={{
-                  backgroundColor: C.bg,
-                  padding: 18, borderRadius: 32,
-                  ...(isWeb ? { boxShadow: `0 12px 40px ${C.primary}25` } : { elevation: 6 }),
-                } as any}>
-                  <Image
-                    source={require('../../assets/images/logo-glow.png')}
-                    style={{ width: 72, height: 72, resizeMode: 'contain' }}
-                  />
-                </View>
-              </Animated.View>
-
-              {/* Texto Hero */}
+            {/* Columna izquierda */}
+            <View style={{ flex: 1, alignItems: isDesktop ? 'flex-start' : 'center', zIndex: 1 }}>
               <Animated.View style={{
                 alignItems: isDesktop ? 'flex-start' : 'center',
                 width: '100%',
                 opacity: heroFade, transform: [{ translateY: heroSlide }],
               }}>
-                {/* Badge */}
-                <View style={{
-                  backgroundColor: C.primary,
-                  paddingHorizontal: 16, paddingVertical: 5,
-                  borderRadius: 100, marginBottom: 18,
-                  flexDirection: 'row', gap: 6, alignItems: 'center',
-                }}>
-                  <Ionicons name="paw" size={11} color="#FFF" />
-                  <Text style={{ color: '#FFF', fontSize: 11, fontFamily: F.bodySemiBold, letterSpacing: 1.8, textTransform: 'uppercase' }}>
-                    Reportando para cambiar vidas
-                  </Text>
-                </View>
-
                 <Text style={{
                   color: C.text,
-                  fontSize: isDesktop ? 54 : 40,
+                  fontSize: isDesktop ? 72 : 52,
                   fontFamily: F.displayBold,
                   textAlign: isDesktop ? 'left' : 'center',
-                  letterSpacing: -1.5,
-                  marginBottom: 4,
-                  lineHeight: isDesktop ? 62 : 48,
+                  letterSpacing: -2,
+                  marginBottom: 8,
+                  lineHeight: isDesktop ? 80 : 60,
                 }}>
-                  Encuentra a un animal{'\n'}
-                  <Text style={{ color: C.primary }}>que necesita ayuda</Text>
+                  Paw<Text style={{ color: C.primary }}>Alert</Text>
                 </Text>
 
                 <Text style={{
                   color: C.muted,
-                  fontSize: isDesktop ? 17 : 14,
+                  fontSize: isDesktop ? 22 : 18,
                   fontFamily: F.bodyMedium,
                   textAlign: isDesktop ? 'left' : 'center',
-                  maxWidth: 480,
-                  lineHeight: isDesktop ? 28 : 22,
-                  marginBottom: 36,
-                  marginTop: 12,
+                  marginBottom: 40,
                 }}>
-                  Conectamos a ciudadanos con asociaciones de rescate para salvar animales en situación de calle.
+                  Reportando para cambiar vidas
                 </Text>
 
                 {/* CTAs */}
-                <View style={{ flexDirection: isDesktop ? 'row' : 'column', gap: 12, width: '100%', maxWidth: 440 }}>
+                <View style={{ flexDirection: isDesktop ? 'row' : 'column', gap: 16, width: '100%', maxWidth: 480 }}>
                   <AnimatedButton onPress={() => router.push('/map')} style={{ flex: 1 }}>
                     <View style={{
                       backgroundColor: C.primary,
-                      paddingVertical: 15, paddingHorizontal: 24,
+                      paddingVertical: 16, paddingHorizontal: 28,
                       borderRadius: 100,
                       alignItems: 'center', flexDirection: 'row',
-                      justifyContent: 'center', gap: 8,
+                      justifyContent: 'center', gap: 10,
                       ...(isWeb ? { boxShadow: `0 8px 28px ${C.primary}50` } : { elevation: 6 }),
                     } as any}>
-                      <Ionicons name="map" size={18} color="#FFF" />
-                      <Text style={{ color: '#FFF', fontSize: 15, fontFamily: F.bodySemiBold }}>Ver Reportes en Vivo</Text>
+                      <Ionicons name="map" size={20} color="#FFF" />
+                      <Text style={{ color: '#FFF', fontSize: 16, fontFamily: F.bodySemiBold }}>Ver Reportes en Vivo</Text>
                     </View>
                   </AnimatedButton>
 
                   <AnimatedButton onPress={() => setIsAssociationFormVisible(true)} style={{ flex: 1 }}>
                     <View style={{
                       backgroundColor: C.bg,
-                      paddingVertical: 15, paddingHorizontal: 24,
+                      paddingVertical: 16, paddingHorizontal: 28,
                       borderRadius: 100,
                       alignItems: 'center', flexDirection: 'row',
-                      justifyContent: 'center', gap: 8,
+                      justifyContent: 'center', gap: 10,
                       borderWidth: 2, borderColor: C.primary,
                     }}>
-                      <Ionicons name="business-outline" size={18} color={C.primary} />
-                      <Text style={{ color: C.primary, fontSize: 15, fontFamily: F.bodySemiBold }}>Registrar Asociación</Text>
+                      <Ionicons name="business-outline" size={20} color={C.primary} />
+                      <Text style={{ color: C.primary, fontSize: 16, fontFamily: F.bodySemiBold }}>Registrar Asociación</Text>
                     </View>
                   </AnimatedButton>
                 </View>
               </Animated.View>
             </View>
 
-            {/* Columna derecha: Collage de fotos de mascotas */}
+            {/* Columna derecha: Blob con foto */}
             <Animated.View style={{
-              flex: isDesktop ? 0.7 : undefined,
+              flex: isDesktop ? 1 : undefined,
               width: isDesktop ? undefined : '100%',
-              height: isDesktop ? 340 : 200,
-              marginTop: isDesktop ? 0 : 36,
-              position: 'relative',
               alignItems: 'center',
               justifyContent: 'center',
-              opacity: heroFade,
-              transform: [{ translateY: heroSlide }],
+              position: 'relative',
+              opacity: heroFade, transform: [{ translateY: heroSlide }],
             }}>
-              {/* Foto 1 — círculo grande primaryLight */}
+              {/* Blob contenedor */}
               <View style={{
-                position: 'absolute',
-                top: isDesktop ? 0 : 0,
-                left: isDesktop ? 20 : '5%' as any,
-                width: isDesktop ? 160 : 100,
-                height: isDesktop ? 160 : 100,
-                borderRadius: isDesktop ? 80 : 50,
-                backgroundColor: C.primaryLight,
-                borderWidth: 4, borderColor: C.bg,
+                width: isDesktop ? 440 : 300,
+                height: isDesktop ? 440 : 300,
+                backgroundColor: `${C.secondary}40`,
+                borderRadius: isDesktop ? 220 : 150,
+                borderTopRightRadius: isDesktop ? 160 : 100,
+                borderBottomLeftRadius: isDesktop ? 180 : 120,
+                alignItems: 'center',
+                justifyContent: 'center',
+                position: 'relative',
                 overflow: 'hidden',
-                alignItems: 'center', justifyContent: 'center',
-                ...(isWeb ? { boxShadow: `0 8px 24px ${C.primary}30` } : { elevation: 5 }),
-              } as any}>
-                {/* TODO: reemplazar por foto real de mascota */}
-                <Ionicons name="paw" size={isDesktop ? 50 : 32} color={C.primary} />
+              }}>
+                <View style={{
+                  width: '90%', height: '90%',
+                  backgroundColor: C.neutralLight,
+                  borderRadius: isDesktop ? 200 : 140,
+                  borderTopRightRadius: isDesktop ? 140 : 90,
+                  borderBottomLeftRadius: isDesktop ? 160 : 110,
+                  alignItems: 'center', justifyContent: 'center',
+                  overflow: 'hidden',
+                }}>
+                  {/* TODO: reemplazar por foto real del perro */}
+                  <Ionicons name="image-outline" size={60} color={C.muted} />
+                </View>
               </View>
 
-              {/* Foto 2 — círculo mediano secondary */}
-              <View style={{
-                position: 'absolute',
-                top: isDesktop ? 40 : 20,
-                right: isDesktop ? 10 : '5%' as any,
-                width: isDesktop ? 130 : 80,
-                height: isDesktop ? 130 : 80,
-                borderRadius: isDesktop ? 65 : 40,
-                backgroundColor: C.secondary,
-                borderWidth: 4, borderColor: C.bg,
-                overflow: 'hidden',
-                alignItems: 'center', justifyContent: 'center',
-                ...(isWeb ? { boxShadow: `0 8px 24px ${C.secondary}30` } : { elevation: 5 }),
-              } as any}>
-                {/* TODO: reemplazar por foto real de mascota */}
-                <Ionicons name="paw" size={isDesktop ? 40 : 24} color={C.bg} />
-              </View>
-
-              {/* Foto 3 — círculo accent */}
-              <View style={{
-                position: 'absolute',
-                bottom: isDesktop ? 10 : 0,
-                left: isDesktop ? 80 : '35%' as any,
-                width: isDesktop ? 120 : 70,
-                height: isDesktop ? 120 : 70,
-                borderRadius: isDesktop ? 60 : 35,
-                backgroundColor: C.accent,
-                borderWidth: 4, borderColor: C.bg,
-                overflow: 'hidden',
-                alignItems: 'center', justifyContent: 'center',
-                ...(isWeb ? { boxShadow: `0 8px 24px ${C.accent}30` } : { elevation: 5 }),
-              } as any}>
-                {/* TODO: reemplazar por foto real de mascota */}
-                <Ionicons name="heart" size={isDesktop ? 36 : 22} color={C.text} />
-              </View>
-
-              {/* Paw decorativa flotante entre los círculos */}
-              <PawDecor top={isDesktop ? 110 : 60} left={isDesktop ? 150 : '45%'} size={16} opacity={0.2} color={C.primary} rotate={-25} />
+              {/* PawDecor decorativos */}
+              <PawDecor top={-10} right={isDesktop ? 20 : 0} size={48} opacity={0.15} color={C.primary} rotate={20} />
+              <PawDecor bottom={20} left={isDesktop ? -20 : -10} size={36} opacity={0.12} color={C.accent} rotate={-15} />
             </Animated.View>
           </View>
+        </View>
+
+        {/* ══════════════════════════════════════════════════════════════════
+            NUEVA SECCIÓN: TIMELINE (3 pasos de un reporte)
+        ══════════════════════════════════════════════════════════════════ */}
+        <View style={{
+          paddingHorizontal: 24, paddingTop: 40, paddingBottom: 60,
+          maxWidth: 960, alignSelf: 'center', width: '100%',
+        }}>
+          <SectionLabel text="Proceso" color={C.secondary} />
+          <Text style={{
+            fontSize: isDesktop ? 36 : 28, fontFamily: F.displayBold, color: C.text,
+            textAlign: 'center', letterSpacing: -0.8, marginBottom: 48,
+          }}>
+            Así funciona un reporte
+          </Text>
+
+          <View style={{ flexDirection: isDesktop ? 'row' : 'column', position: 'relative', alignItems: isDesktop ? 'flex-start' : 'center', justifyContent: 'space-between' }}>
+            {/* Línea conectora */}
+            {isDesktop ? (
+              <View style={{
+                position: 'absolute', top: 12, left: '16%', right: '16%',
+                height: 2, borderBottomWidth: 2, borderColor: C.neutralLight, borderStyle: 'dashed',
+                zIndex: 0
+              }} />
+            ) : (
+              <View style={{
+                position: 'absolute', top: 20, bottom: 20, left: 40,
+                width: 2, borderLeftWidth: 2, borderColor: C.neutralLight, borderStyle: 'dashed',
+                zIndex: 0
+              }} />
+            )}
+
+            {[
+              { num: '01', title: 'Paso 1', desc: 'Descripción del paso 1.' },
+              { num: '02', title: 'Paso 2', desc: 'Descripción del paso 2.' },
+              { num: '03', title: 'Paso 3', desc: 'Descripción del paso 3.' },
+            ].map((step, i) => (
+              <View key={i} style={{
+                flex: isDesktop ? 1 : undefined,
+                width: isDesktop ? undefined : '100%',
+                alignItems: isDesktop ? 'center' : 'flex-start',
+                flexDirection: isDesktop ? 'column' : 'row',
+                gap: isDesktop ? 16 : 24,
+                marginBottom: isDesktop ? 0 : 32,
+                zIndex: 1,
+                paddingHorizontal: isDesktop ? 16 : 0,
+              }}>
+                <View style={{
+                  width: 24, height: 24, borderRadius: 12, backgroundColor: C.secondary,
+                  borderWidth: 4, borderColor: C.bgSoft,
+                  marginTop: isDesktop ? 0 : 16,
+                  marginLeft: isDesktop ? 0 : 29,
+                }} />
+                <View style={{ flex: isDesktop ? undefined : 1, alignItems: isDesktop ? 'center' : 'flex-start' }}>
+                  <View style={{ position: 'relative', alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{
+                      fontSize: 48, fontFamily: F.displayBold, color: C.neutralLight, opacity: 0.3,
+                      position: isDesktop ? 'absolute' : 'relative',
+                      top: isDesktop ? -30 : 0, left: isDesktop ? 0 : 0,
+                    }}>
+                      {step.num}
+                    </Text>
+                    <Text style={{ fontSize: 20, fontFamily: F.displayBold, color: C.text, zIndex: 1, marginTop: isDesktop ? 0 : -20 }}>
+                      {step.title}
+                    </Text>
+                  </View>
+                  <Text style={{
+                    fontSize: 14, color: C.muted, fontFamily: F.bodyMedium,
+                    textAlign: isDesktop ? 'center' : 'left', marginTop: 8,
+                  }}>
+                    {step.desc}
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        {/* ══════════════════════════════════════════════════════════════════
+            NUEVA SECCIÓN: ROLES (Cómo participar)
+        ══════════════════════════════════════════════════════════════════ */}
+        <View style={{
+          paddingHorizontal: 24, paddingTop: 40, paddingBottom: 60,
+          maxWidth: 960, alignSelf: 'center', width: '100%',
+        }}>
+          <SectionLabel text="Cómo participar" color={C.primary} />
+          <Text style={{
+            fontSize: isDesktop ? 36 : 28, fontFamily: F.displayBold, color: C.text,
+            textAlign: 'center', letterSpacing: -0.8, marginBottom: 48,
+          }}>
+            Elige tu rol
+          </Text>
+
+          {/* Círculos de roles */}
+          <ScrollView
+            horizontal={!isDesktop}
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{
+              flexDirection: isDesktop ? 'row' : 'row',
+              flexWrap: isDesktop ? 'wrap' : 'nowrap',
+              justifyContent: 'center', gap: 24, paddingBottom: 16,
+              minWidth: '100%',
+            }}
+          >
+            {ROLES.map((role, i) => {
+              const colors = [C.primary, C.secondary, C.accent, C.text, C.danger];
+              const roleColor = colors[i % colors.length];
+              const isActive = selectedRoleId === role.id;
+
+              return (
+                <View key={role.id} style={{ alignItems: 'center', width: isDesktop ? 140 : 120 }}>
+                  <AnimatedButton onPress={() => handleRolePress(role.id)}>
+                    <View style={{
+                      width: 90, height: 90, borderRadius: 45,
+                      backgroundColor: `${roleColor}15`,
+                      alignItems: 'center', justifyContent: 'center',
+                      borderWidth: isActive ? 3 : 0,
+                      borderColor: roleColor,
+                      position: 'relative',
+                      ...(isWeb && isActive ? { boxShadow: `0 0 15px ${roleColor}40` } : {}),
+                    }}>
+                      <Ionicons name={role.icon as any} size={36} color={roleColor} />
+                      {isActive && (
+                        <View style={{
+                          position: 'absolute', bottom: -5, right: -5,
+                          backgroundColor: C.bg, borderRadius: 12, padding: 2,
+                        }}>
+                          <Ionicons name="checkmark-circle" size={20} color={roleColor} />
+                        </View>
+                      )}
+                    </View>
+                  </AnimatedButton>
+                  <Text style={{
+                    fontSize: 14, fontFamily: F.bodySemiBold, color: C.text,
+                    textAlign: 'center', marginTop: 12,
+                  }}>
+                    {role.title}
+                  </Text>
+                </View>
+              );
+            })}
+          </ScrollView>
+
+          {/* Tarjeta expandida */}
+          {selectedRoleId && (
+            <Animated.View style={{
+              opacity: expandOpacity,
+              transform: [{ translateY: expandTranslateY }],
+              marginTop: 24,
+            }}>
+              {(() => {
+                const activeRole = ROLES.find(r => r.id === selectedRoleId);
+                if (!activeRole) return null;
+                const activeIndex = ROLES.findIndex(r => r.id === selectedRoleId);
+                const colors = [C.primary, C.secondary, C.accent, C.text, C.danger];
+                const activeColor = colors[activeIndex % colors.length];
+
+                return (
+                  <View style={{
+                    backgroundColor: C.bg,
+                    borderRadius: 24, padding: 32,
+                    borderWidth: 1, borderColor: `${activeColor}30`,
+                    ...(isWeb ? { boxShadow: `0 8px 30px ${activeColor}15` } : { elevation: 4 }),
+                  }}>
+                    <Text style={{ fontSize: 24, fontFamily: F.displayBold, color: C.text, marginBottom: 12 }}>
+                      {activeRole.title}
+                    </Text>
+                    <Text style={{ fontSize: 15, fontFamily: F.bodyMedium, color: C.text, marginBottom: 12, lineHeight: 24 }}>
+                      {activeRole.does}
+                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 24 }}>
+                      <Ionicons name="information-circle-outline" size={20} color={C.muted} style={{ marginTop: 2 }} />
+                      <Text style={{ fontSize: 14, fontFamily: F.bodyRegular, color: C.muted, flex: 1, lineHeight: 20 }}>
+                        {activeRole.requirements}
+                      </Text>
+                    </View>
+
+                    <AnimatedButton onPress={() => {
+                      if (activeRole.ctaRoute === '/association-register') {
+                        setIsAssociationFormVisible(true);
+                      } else if (activeRole.ctaRoute) {
+                        router.push(activeRole.ctaRoute);
+                      }
+                    }}>
+                      <View style={{
+                        backgroundColor: activeRole.ctaRoute ? activeColor : C.neutralLight,
+                        paddingVertical: 14, paddingHorizontal: 24,
+                        borderRadius: 100, alignSelf: 'flex-start',
+                      }}>
+                        <Text style={{
+                          color: activeRole.ctaRoute ? (activeColor === C.accent ? C.text : '#FFF') : C.muted,
+                          fontSize: 15, fontFamily: F.bodySemiBold
+                        }}>
+                          {activeRole.ctaLabel}
+                        </Text>
+                      </View>
+                    </AnimatedButton>
+                  </View>
+                );
+              })()}
+            </Animated.View>
+          )}
         </View>
 
         {/* ══════════════════════════════════════════════════════════════════
