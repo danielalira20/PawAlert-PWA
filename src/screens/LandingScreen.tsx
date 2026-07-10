@@ -23,6 +23,7 @@ import { useFonts } from 'expo-font';
 import {
   Fraunces_800ExtraBold,
 } from '@expo-google-fonts/fraunces';
+import heroImage from '../assets/images/imagen_hero.png';
 import {
   Poppins_400Regular,
   Poppins_500Medium,
@@ -213,6 +214,7 @@ export default function LandingScreen() {
   const [isAssociationFormVisible, setIsAssociationFormVisible] = useState(false);
   const [isReportGuideVisible, setIsReportGuideVisible] = useState(false);
   const [recentPhotos, setRecentPhotos] = useState<string[]>([]);
+  const [showFullMissionVision, setShowFullMissionVision] = useState(false);
 
   const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
   const expandOpacity = useRef(new Animated.Value(0)).current;
@@ -462,7 +464,7 @@ export default function LandingScreen() {
               <View style={{
                 width: isDesktop ? 440 : 300,
                 height: isDesktop ? 440 : 300,
-                backgroundColor: `${C.secondary}40`,
+                backgroundColor: 'transparent',
                 borderRadius: isDesktop ? 220 : 150,
                 borderTopRightRadius: isDesktop ? 160 : 100,
                 borderBottomLeftRadius: isDesktop ? 180 : 120,
@@ -480,8 +482,7 @@ export default function LandingScreen() {
                   alignItems: 'center', justifyContent: 'center',
                   overflow: 'hidden',
                 }}>
-                  {/* TODO: reemplazar por foto real del perro */}
-                  <Ionicons name="image-outline" size={60} color={C.muted} />
+                  <Image source={heroImage} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
                 </View>
               </View>
 
@@ -524,9 +525,9 @@ export default function LandingScreen() {
             )}
 
             {[
-              { num: '01', title: 'Paso 1', desc: 'Descripción del paso 1.' },
-              { num: '02', title: 'Paso 2', desc: 'Descripción del paso 2.' },
-              { num: '03', title: 'Paso 3', desc: 'Descripción del paso 3.' },
+              { num: '01', title: 'Reporta', desc: 'Toma una foto del animal y marca la ubicación exacta en segundos desde tu celular.' },
+              { num: '02', title: 'Conectamos', desc: 'Notificamos al instante a la asociación de rescate más cercana a la ubicación del reporte.' },
+              { num: '03', title: 'Rescatamos', desc: 'La asociación se moviliza y actualizá el estado del animal en vivo para que puedas seguir su rescate.' },
             ].map((step, i) => (
               <View key={i} style={{
                 flex: isDesktop ? 1 : undefined,
@@ -666,11 +667,16 @@ export default function LandingScreen() {
 
                             return (
                               <View style={{
-                                backgroundColor: C.bg,
+                                backgroundColor: `${activeColor}12`,
                                 borderRadius: 24, padding: 32,
-                                borderWidth: 1, borderColor: `${activeColor}30`,
-                                ...(isWeb ? { boxShadow: `0 8px 30px ${activeColor}15` } : { elevation: 4 }),
-                              }}>
+                                borderWidth: 1.5, borderColor: `${activeColor}35`,
+                                ...(isWeb ? {
+                                  backdropFilter: 'blur(20px)',
+                                  WebkitBackdropFilter: 'blur(20px)',
+                                  background: `linear-gradient(135deg, ${activeColor}10 0%, rgba(255,255,255,0.6) 100%)`,
+                                  boxShadow: `0 8px 32px ${activeColor}18, inset 0 1px 0 rgba(255,255,255,0.8)`,
+                                } : { elevation: 2 }),
+                              } as any}>
                                 <Text style={{ fontSize: 24, fontFamily: F.displayBold, color: C.text, marginBottom: 12 }}>
                                   {activeRole.title}
                                 </Text>
@@ -720,79 +726,140 @@ export default function LandingScreen() {
 
 
         {/* ══════════════════════════════════════════════════════════════════
-            SECCIÓN 4 — ¿POR QUÉ ELEGIRNOS?
+            SECCIÓN 4 — ¿POR QUÉ ELEGIRNOS? (Fusionada con Misión/Visión)
         ══════════════════════════════════════════════════════════════════ */}
         <Animated.View style={{
-          paddingHorizontal: 24, paddingTop: 72, paddingBottom: 16,
+          paddingHorizontal: 24, paddingTop: 72, paddingBottom: 72,
           maxWidth: 960, alignSelf: 'center', width: '100%',
           opacity: howOpacity, transform: [{ translateY: howSlide }],
           position: 'relative', overflow: 'hidden',
         }}>
-          {/* Huellas decorativas extra */}
-          <PawDecor top={10} right={20} size={36} opacity={0.06} color={C.secondary} rotate={15} />
-          <PawDecor bottom={30} left={10} size={28} opacity={0.06} color={C.accent} rotate={-20} />
-          <PawDecor top={50} left={40} size={20} opacity={0.05} color={C.primary} rotate={30} />
-
-          <SectionLabel text="Por qué elegirnos" color={C.secondary} />
-          <Text style={{
-            fontSize: isDesktop ? 36 : 28, fontFamily: F.displayBold, color: C.text,
-            textAlign: 'center', letterSpacing: -0.8, marginBottom: 36,
-          }}>
-            Rescate que funciona de verdad
-          </Text>
-
-          <View style={{ flexDirection: isDesktop ? 'row' : 'column', gap: 16 }}>
-            {[
-              {
-                icon: 'shield-checkmark-outline' as const,
-                accent: C.secondary,
-                bg: `${C.secondary}18`,
-                title: 'Proceso responsable',
-                desc: 'Cada reporte es validado y atendido por asociaciones verificadas en tu zona.',
-              },
-              {
-                icon: 'flash-outline' as const,
-                accent: C.primary,
-                bg: `${C.primary}18`,
-                title: 'Respuesta inmediata',
-                desc: 'Notificamos a la asociación más cercana al instante. Sin demoras, sin burocracia.',
-              },
-              {
-                icon: 'heart-outline' as const,
-                accent: C.accent,
-                bg: `${C.accent}25`,
-                title: 'Seguimiento real',
-                desc: 'Seguí el estado del animal rescatado en vivo desde la app.',
-              },
-            ].map((item, i) => (
-              <View key={i} style={{
-                flex: 1,
-                backgroundColor: C.bg,
-                borderRadius: 24,
-                padding: 26,
-                borderWidth: 1,
-                borderColor: `${C.neutralLight}60`,
-                alignItems: 'flex-start',
-                position: 'relative', overflow: 'hidden',
-                ...(isWeb ? { boxShadow: '0 4px 20px rgba(46,42,38,0.05)' } : { elevation: 2 }),
-              } as any}>
-                {/* Top accent line */}
-                <View style={{
-                  position: 'absolute', top: 0, left: 0, right: 0, height: 4,
-                  backgroundColor: item.accent, borderBottomLeftRadius: 0, borderBottomRightRadius: 0,
-                }} />
-                <View style={{
-                  width: 48, height: 48, borderRadius: 16,
-                  backgroundColor: item.bg,
-                  alignItems: 'center', justifyContent: 'center', marginBottom: 14,
-                }}>
-                  <Ionicons name={item.icon} size={24} color={item.accent} />
-                </View>
-                <Text style={{ fontSize: 18, fontFamily: F.displayBold, color: C.text, marginBottom: 6 }}>{item.title}</Text>
-                <Text style={{ fontSize: 13, color: C.muted, lineHeight: 20, fontFamily: F.bodyMedium }}>{item.desc}</Text>
-              </View>
-            ))}
+          <View style={{ alignItems: 'center', marginBottom: 60 }}>
+            <SectionLabel text="Por qué elegirnos" color={C.secondary} />
+            <Text style={{
+              fontSize: isDesktop ? 36 : 28, fontFamily: F.displayBold, color: C.text,
+              textAlign: 'center', letterSpacing: -0.8, marginBottom: 12,
+            }}>
+              Rescate que funciona de verdad
+            </Text>
+            <Text style={{
+              fontSize: 14, fontFamily: F.bodyMedium, color: C.muted, textAlign: 'center', maxWidth: 600
+            }}>
+              Esto es lo que nos mueve y nos hace diferentes.
+            </Text>
           </View>
+
+          {isDesktop ? (
+            // Desktop Layout: Imagen central con burbujas satélite
+            <View style={{ height: 500, position: 'relative', alignItems: 'center', justifyContent: 'center', marginBottom: 40 }}>
+              {/* Círculo central (Imagen) */}
+              <View style={{
+                width: 320, height: 320,
+                borderRadius: 160,
+                borderWidth: 2, borderStyle: 'dashed', borderColor: C.secondary,
+                alignItems: 'center', justifyContent: 'center',
+                position: 'absolute',
+              }}>
+                <View style={{
+                  width: 280, height: 280,
+                  borderRadius: 140,
+                  backgroundColor: C.neutralLight,
+                  alignItems: 'center', justifyContent: 'center',
+                  overflow: 'hidden',
+                }}>
+                  {/* TODO: reemplazar por foto real de una mascota rescatada */}
+                  <Ionicons name="image-outline" size={48} color={C.muted} />
+                </View>
+              </View>
+
+              {/* Burbujas satélite */}
+              {[
+                { top: 40, left: 20, align: 'left', icon: 'shield-checkmark-outline' as const, color: C.secondary, title: 'Proceso responsable', desc: 'Cada reporte es validado y atendido por asociaciones verificadas en tu zona.' },
+                { top: 220, left: -20, align: 'left', icon: 'flash-outline' as const, color: C.primary, title: 'Respuesta inmediata', desc: 'Notificamos a la asociación más cercana al instante. Sin demoras, sin burocracia.' },
+                { bottom: 40, left: 40, align: 'left', icon: 'heart-outline' as const, color: C.accent, title: 'Seguimiento real', desc: 'Seguí el estado del animal rescatado en vivo desde la app.' },
+                { top: 80, right: 0, align: 'right', isEmoji: true, icon: '🎯', color: C.primary, title: 'Nuestra Misión', desc: 'Brindar ayuda rápida y efectiva a los animales en situación de calle.' },
+                { bottom: 80, right: 20, align: 'right', isEmoji: true, icon: '🌍', color: C.secondary, title: 'Nuestra Visión', desc: 'Ser la plataforma líder en rescate animal, erradicando el sufrimiento.' },
+              ].map((item, i) => (
+                <View key={i} style={{
+                  position: 'absolute',
+                  top: item.top, bottom: item.bottom, left: item.left, right: item.right,
+                  flexDirection: item.align === 'left' ? 'row' : 'row-reverse',
+                  alignItems: 'center', gap: 12,
+                  width: 280,
+                }}>
+                  <View style={{
+                    width: 60, height: 60, borderRadius: 30, backgroundColor: C.bg,
+                    alignItems: 'center', justifyContent: 'center',
+                    borderWidth: 1, borderColor: `${item.color}30`,
+                    ...(isWeb ? { boxShadow: `0 4px 15px ${item.color}15` } : { elevation: 3 }),
+                  }}>
+                    {item.isEmoji ? (
+                      <Text style={{ fontSize: 28 }}>{item.icon}</Text>
+                    ) : (
+                      <Ionicons name={item.icon as any} size={28} color={item.color} />
+                    )}
+                  </View>
+                  <View style={{ flex: 1, alignItems: item.align === 'left' ? 'flex-start' : 'flex-end' }}>
+                    <Text style={{ fontSize: 15, fontFamily: F.displayBold, color: C.text, textAlign: item.align === 'left' ? 'left' : 'right' }}>{item.title}</Text>
+                    <Text style={{ fontSize: 12, fontFamily: F.bodyMedium, color: C.muted, lineHeight: 16, textAlign: item.align === 'left' ? 'left' : 'right' }} numberOfLines={3}>
+                      {item.desc}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          ) : (
+            // Mobile Layout: Imagen central arriba y lista apilada
+            <View style={{ marginBottom: 40, alignItems: 'center' }}>
+              <View style={{
+                width: 240, height: 240, borderRadius: 120,
+                borderWidth: 2, borderStyle: 'dashed', borderColor: C.secondary,
+                alignItems: 'center', justifyContent: 'center', marginBottom: 40,
+              }}>
+                <View style={{
+                  width: 210, height: 210, borderRadius: 105,
+                  backgroundColor: C.neutralLight,
+                  alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+                }}>
+                  {/* TODO: reemplazar por foto real de una mascota rescatada */}
+                  <Ionicons name="image-outline" size={40} color={C.muted} />
+                </View>
+              </View>
+
+              <View style={{ width: '100%', gap: 16 }}>
+                {[
+                  { icon: 'shield-checkmark-outline' as const, color: C.secondary, title: 'Proceso responsable', desc: 'Cada reporte es validado y atendido por asociaciones verificadas en tu zona.' },
+                  { icon: 'flash-outline' as const, color: C.primary, title: 'Respuesta inmediata', desc: 'Notificamos a la asociación más cercana al instante. Sin demoras, sin burocracia.' },
+                  { icon: 'heart-outline' as const, color: C.accent, title: 'Seguimiento real', desc: 'Seguí el estado del animal rescatado en vivo desde la app.' },
+                  { isEmoji: true, icon: '🎯', color: C.primary, title: 'Nuestra Misión', desc: 'Brindar ayuda rápida y efectiva a los animales en situación de calle.' },
+                  { isEmoji: true, icon: '🌍', color: C.secondary, title: 'Nuestra Visión', desc: 'Ser la plataforma líder en rescate animal, erradicando el sufrimiento.' },
+                ].map((item, i) => (
+                  <View key={i} style={{
+                    flexDirection: 'row', alignItems: 'center', gap: 16,
+                    backgroundColor: C.bg, padding: 16, borderRadius: 20,
+                    borderWidth: 1, borderColor: `${C.neutralLight}60`,
+                    ...(isWeb ? { boxShadow: `0 4px 15px rgba(0,0,0,0.03)` } : { elevation: 1 }),
+                  }}>
+                    <View style={{
+                      width: 50, height: 50, borderRadius: 25, backgroundColor: `${item.color}15`,
+                      alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      {item.isEmoji ? (
+                        <Text style={{ fontSize: 24 }}>{item.icon}</Text>
+                      ) : (
+                        <Ionicons name={item.icon as any} size={24} color={item.color} />
+                      )}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 16, fontFamily: F.displayBold, color: C.text, marginBottom: 4 }}>{item.title}</Text>
+                      <Text style={{ fontSize: 13, fontFamily: F.bodyMedium, color: C.muted, lineHeight: 18 }}>{item.desc}</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+
         </Animated.View>
 
 
@@ -824,7 +891,7 @@ export default function LandingScreen() {
             gap: isDesktop ? 60 : 40,
             marginBottom: 48,
           }}>
-            
+
             {/* Columna Izquierda: Imagen Blob */}
             <View style={{
               flex: 1,
@@ -873,11 +940,13 @@ export default function LandingScreen() {
                 { num: '01', text: 'Mantén la calma y asegura la zona sin ponerte en riesgo.' },
                 { num: '02', text: 'Toma 2 o 3 fotos claras del animal mostrando su estado.' },
                 { num: '03', text: 'Sube el reporte y espera instrucciones de una asociación.' },
+                { num: '04', text: 'Permanece en el lugar si es seguro, o monitorea a distancia.' },
+                { num: '05', text: 'Sigue las indicaciones de los voluntarios al llegar.' },
               ].map((step, i) => (
                 <View key={i} style={{
                   flexDirection: 'row',
                   alignItems: 'center',
-                  marginBottom: i === 2 ? 0 : 20,
+                  marginBottom: i === 4 ? 0 : 20,
                   gap: 16,
                 }}>
                   {/* Círculo número */}
@@ -892,7 +961,7 @@ export default function LandingScreen() {
                       {step.num}
                     </Text>
                   </View>
-                  
+
                   {/* Texto */}
                   <Text style={{
                     flex: 1,
@@ -924,90 +993,21 @@ export default function LandingScreen() {
           </View>
         </View>
 
-        {/* ══════════════════════════════════════════════════════════════════
-            SECCIÓN 6 — MISIÓN / VISIÓN
-        ══════════════════════════════════════════════════════════════════ */}
-        <Animated.View style={{
-          paddingHorizontal: 24, paddingTop: 72, paddingBottom: 72,
-          maxWidth: 960, alignSelf: 'center', width: '100%',
-          opacity: missionOpacity, transform: [{ translateY: missionSlide }],
-        }}>
-          <SectionLabel text="Nuestro propósito" color={C.secondary} />
-          <Text style={{
-            fontSize: isDesktop ? 36 : 28, fontFamily: F.displayBold, color: C.text,
-            textAlign: 'center', letterSpacing: -0.8, marginBottom: 36,
-          }}>
-            Lo que nos mueve cada día
-          </Text>
 
-          <View style={{ flexDirection: isDesktop ? 'row' : 'column', gap: 20 }}>
-            {[
-              {
-                icon: '🎯',
-                accent: C.primary,
-                bg: `${C.primary}10`,
-                blobColor: `${C.primary}12`,
-                title: 'Nuestra Misión',
-                text: 'Brindar ayuda rápida y efectiva a los animales en situación de calle, creando una red de apoyo que salva vidas a través de tecnología accesible para todos.',
-              },
-              {
-                icon: '🌍',
-                accent: C.secondary,
-                bg: `${C.secondary}12`,
-                blobColor: `${C.secondary}15`,
-                title: 'Nuestra Visión',
-                text: 'Ser la plataforma líder en rescate animal, erradicando el sufrimiento en las calles y fomentando una cultura de adopción, respeto y empatía hacia toda forma de vida.',
-              },
-            ].map((card, i) => (
-              <View key={i} style={{
-                flex: 1, borderRadius: 28, padding: 32,
-                overflow: 'hidden', position: 'relative',
-                borderWidth: 1, borderColor: `${C.neutralLight}60`,
-                backgroundColor: C.bg,
-                ...(isWeb ? { boxShadow: '0 4px 20px rgba(46,42,38,0.05)' } : { elevation: 2 }),
-              } as any}>
-                {/* Blob decorativo esquina */}
-                <View style={{
-                  position: 'absolute', top: -30, right: -30,
-                  width: 130, height: 130, borderRadius: 65,
-                  backgroundColor: card.blobColor,
-                }} />
-                <View style={{
-                  width: 52, height: 52, backgroundColor: card.bg,
-                  borderRadius: 18, alignItems: 'center', justifyContent: 'center', marginBottom: 16,
-                }}>
-                  <Text style={{ fontSize: 26 }}>{card.icon}</Text>
-                </View>
-                <View style={{
-                  alignSelf: 'flex-start',
-                  backgroundColor: card.accent + '18',
-                  paddingHorizontal: 10, paddingVertical: 3,
-                  borderRadius: 100, marginBottom: 10,
-                }}>
-                  <Text style={{ fontSize: 10, fontFamily: F.bodySemiBold, color: card.accent, textTransform: 'uppercase', letterSpacing: 1.5 }}>
-                    {card.title}
-                  </Text>
-                </View>
-                <Text style={{ fontSize: 22, fontFamily: F.displayBold, color: C.text, marginBottom: 10, letterSpacing: -0.3 }}>{card.title}</Text>
-                <Text style={{ fontSize: 13, color: C.muted, lineHeight: 22, fontFamily: F.bodyMedium }}>{card.text}</Text>
-              </View>
-            ))}
-          </View>
-        </Animated.View>
 
         {/* ══════════════════════════════════════════════════════════════════
             SECCIÓN 7 — RED DE ASOCIACIONES
         ══════════════════════════════════════════════════════════════════ */}
         <View style={{
-          backgroundColor: C.neutralLight + '55',
           paddingTop: 64, paddingBottom: 72,
+          position: 'relative',
+          backgroundColor: C.neutralLight + '55',
           borderTopLeftRadius: 40,
           borderTopRightRadius: 40,
-          overflow: 'hidden',
-          position: 'relative',
         }}>
-          <PawDecor top={16} right={24} size={44} opacity={0.08} color={C.primary} />
-          <PawDecor bottom={24} left={20} size={32} opacity={0.07} color={C.secondary} />
+          <PawDecor top={16} right={24} size={44} opacity={0.10} color={C.primary} />
+          <PawDecor bottom={24} left={20} size={32} opacity={0.09} color={C.secondary} />
+          <PawDecor top={80} left={'45%' as any} size={24} opacity={0.07} color={C.accent} rotate={20} />
 
           <View style={{ paddingHorizontal: 24, maxWidth: 960, alignSelf: 'center', width: '100%', marginBottom: 32 }}>
             <SectionLabel text="Aliados" color={C.primary} />
@@ -1024,7 +1024,7 @@ export default function LandingScreen() {
               { name: 'Huellitas de Amor', color: C.primary, image: null },
               { name: 'Patitas Felices', color: C.secondary, image: null },
               { name: 'Refugio Esperanza', color: C.accent, image: null },
-              { name: 'Amigos Peludos', color: C.danger, image: null },
+              { name: 'Amigos Peludos', color: '#E74C3C', image: null },
               { name: 'SOS Animal', color: '#9B59B6', image: null },
               { name: 'Vida Animal', color: '#27AE60', image: null },
             ].map((item, i) => (
@@ -1040,7 +1040,6 @@ export default function LandingScreen() {
                 borderColor: `${item.color}25`,
                 ...(isWeb ? { boxShadow: `0 4px 20px ${item.color}15` } : {}),
               } as any}>
-                {/* Avatar: imagen del logo si existe, sino ícono de pata */}
                 <View style={{
                   width: 68, height: 68, borderRadius: 34,
                   backgroundColor: item.color + '15',
@@ -1050,10 +1049,7 @@ export default function LandingScreen() {
                   overflow: 'hidden',
                 }}>
                   {item.image ? (
-                    <Image
-                      source={{ uri: item.image }}
-                      style={{ width: 68, height: 68, borderRadius: 34 }}
-                    />
+                    <Image source={{ uri: item.image }} style={{ width: 68, height: 68, borderRadius: 34 }} />
                   ) : (
                     <Ionicons name="paw" size={30} color={item.color} />
                   )}
