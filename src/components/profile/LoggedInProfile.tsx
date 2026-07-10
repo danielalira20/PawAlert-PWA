@@ -9,8 +9,15 @@ import { RoleBadge } from './RoleBadge';
 import { AccountDataCard } from './AccountDataCard';
 import { AccessRow } from './AccessRow';
 import { PawPatternBackground } from './PawPatternBackground';
-import { RecentReportsCard } from './RecentReportsCard';
 import { useRecentReports } from '../../hooks/useRecentReports';
+import { useAssociationImpact } from '../../hooks/useAssociationImpact';
+import { useAdminSupervision } from '../../hooks/useAdminSupervision';
+import { useStaffImpact } from '../../hooks/useStaffImpact';
+import { GeneralStatsStrip } from './GeneralStatsStrip';
+import { ReporterImpactStats } from './ReporterImpactStats';
+import { AssociationImpactStats } from './AssociationImpactStats';
+import { AdminSupervisionCard } from './AdminSupervisionCard';
+import { StaffImpactStats } from './StaffImpactStats';
 
 const DESKTOP_BREAKPOINT = 900;
 
@@ -32,15 +39,34 @@ export function LoggedInProfile({
   const { user } = useAuth();
   const { width } = useWindowDimensions();
   const isDesktop = width >= DESKTOP_BREAKPOINT;
-  const { reportes, totalReportes, isLoading: isLoadingReportes } = useRecentReports();
+  const esAdmin = !!user?.es_admin;
+  const esAsociacion = !!user?.asociacion_id && user?.rol === 'asociacion';
+  const esStaff = !!user?.asociacion_id && user?.rol === 'staff';
+
+  const { impacto, isLoading: isLoadingReportes } = useRecentReports();
+  const { impacto: impactoAsociacion, isLoading: isLoadingAsociacion } = useAssociationImpact(esAsociacion);
+  const { pendientes, totalPendientes, isLoading: isLoadingAdmin } = useAdminSupervision(esAdmin);
+  const { impacto: impactoStaff, isLoading: isLoadingStaff } = useStaffImpact(esStaff);
 
   if (!user) return null;
 
-  const esAdmin = !!user.es_admin;
-  const esAsociacion = !!user.asociacion_id && user.rol === 'asociacion';
-  const esStaff = !!user.asociacion_id && user.rol === 'staff';
-
   const nombreCompleto = `${user.nombre ?? ''} ${user.apellido_paterno ?? ''}`.trim();
+
+  // Los 4 roles ya tienen su propia versión.
+  const impactStatsElement = esAsociacion ? (
+    <AssociationImpactStats impacto={impactoAsociacion} isLoading={isLoadingAsociacion} />
+  ) : esAdmin ? (
+    <AdminSupervisionCard
+      pendientes={pendientes}
+      totalPendientes={totalPendientes}
+      isLoading={isLoadingAdmin}
+      onOpenAdminPanel={onOpenAdminPanel}
+    />
+  ) : esStaff ? (
+    <StaffImpactStats impacto={impactoStaff} isLoading={isLoadingStaff} />
+  ) : (
+    <ReporterImpactStats impacto={impacto} isLoading={isLoadingReportes} />
+  );
 
   const rolBadgeElement = esAdmin ? (
     <RoleBadge rol="admin" variant="onWhite" />
@@ -50,8 +76,6 @@ export function LoggedInProfile({
     <RoleBadge rol="staff" variant="onWhite" />
   ) : null;
 
-  // Accesos: "Mis Reportes" ahora es para todos los roles, no solo
-  // reportante. El panel de rol (si aplica) se agrega después.
   const accesos = (
     <>
       <AccessRow icon="clipboard-outline" label="Mis Reportes" onPress={onOpenMisReportes} isLast={!esAdmin && !esAsociacion && !esStaff} />
@@ -65,7 +89,8 @@ export function LoggedInProfile({
     </>
   );
 
-  // ── DESKTOP: sidebar unificado + card de reportes recientes ───────────
+  // ── DESKTOP: sidebar + impacto (en fila), estadísticas generales debajo
+  //    de TODO, a lo ancho completo de la página ─────────────────────────
   if (isDesktop) {
     return (
       <View style={styles.screen}>
@@ -73,6 +98,7 @@ export function LoggedInProfile({
 
         <ScrollView contentContainerStyle={styles.desktopScrollContent}>
           <View style={styles.desktopInner}>
+
             {/* Encabezado de página */}
             <View style={styles.pageHeader}>
               <LinearGradient
@@ -89,11 +115,10 @@ export function LoggedInProfile({
               </View>
             </View>
 
+            {/* Fila de 2 columnas: sidebar + tu impacto */}
             <View style={styles.desktopRow}>
-              {/* Columna izquierda: card unificada */}
               <View style={styles.desktopLeft}>
                 <View style={styles.unifiedCard}>
-                  {/* Sección 1: avatar + nombre + badge */}
                   <View style={styles.avatarSection}>
                     <View style={styles.avatarWrap}>
                       <AssocAvatar nombre={nombreCompleto || 'Usuario'} logoUrl={null} size="lg" />
@@ -109,44 +134,40 @@ export function LoggedInProfile({
 
                   <View style={styles.divider} />
 
-                  {/* Sección 2: datos de cuenta (bare, sin su propia card) */}
                   <View style={styles.sectionPadding}>
                     <AccountDataCard telefono={user.telefono} email={user.email} bare />
                   </View>
 
                   <View style={styles.divider} />
 
-                  {/* Sección 3: accesos */}
                   <View style={styles.sectionPadding}>
                     <Text style={styles.accessTitle}>Accesos</Text>
                     {accesos}
                   </View>
                 </View>
 
-                {/* Cerrar sesión — separado, fuera de la card unificada */}
                 <TouchableOpacity onPress={onLogout} activeOpacity={0.8} style={styles.logoutButton}>
                   <Ionicons name="log-out-outline" size={18} color={Brand.danger} />
                   <Text style={styles.logoutText}>Cerrar sesión</Text>
                 </TouchableOpacity>
               </View>
 
-              {/* Columna derecha: reportes recientes */}
               <View style={styles.desktopRight}>
-                <RecentReportsCard
-                  reportes={reportes}
-                  totalReportes={totalReportes}
-                  isLoading={isLoadingReportes}
-                  onOpenMisReportes={onOpenMisReportes}
-                />
+                {impactStatsElement}
               </View>
             </View>
+
+            {/* Estadísticas generales — FUERA de desktopRow a propósito, para
+                que su contenedor padre sea desktopInner (ancho completo de
+                1100px) y no desktopRight (más angosto por el sidebar). */}
+            <GeneralStatsStrip />
           </View>
         </ScrollView>
       </View>
     );
   }
 
-  // ── MÓVIL: sin cambios — banner degradado + cards separadas ───────────
+  // ── MÓVIL: sin cambios estructurales ────────────────────────────────
   return (
     <ScrollView style={styles.screen} contentContainerStyle={{ paddingBottom: 40 }}>
       <LinearGradient
@@ -181,6 +202,13 @@ export function LoggedInProfile({
           <Ionicons name="log-out-outline" size={18} color={Brand.danger} />
           <Text style={styles.logoutText}>Cerrar sesión</Text>
         </TouchableOpacity>
+
+        {/* Estadísticas — a propósito AL FINAL, debajo de Cerrar sesión, para
+            no desplazar la estructura móvil que ya funcionaba bien */}
+        <View style={{ marginTop: 24 }}>
+          {impactStatsElement}
+        </View>
+        <GeneralStatsStrip />
       </View>
     </ScrollView>
   );
@@ -189,7 +217,6 @@ export function LoggedInProfile({
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Brand.backgroundWarm, position: 'relative' },
 
-  // Móvil
   mobileCentered: { width: '100%', maxWidth: 480, alignSelf: 'center', paddingHorizontal: 20, paddingTop: 16 },
   mobileBanner: {
     alignItems: 'center',
@@ -219,7 +246,6 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
 
-  // Desktop
   desktopScrollContent: { paddingHorizontal: 40, paddingTop: 32, paddingBottom: 40 },
   desktopInner: { width: '100%', maxWidth: 1100, alignSelf: 'center' },
   pageHeader: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 28 },
@@ -238,7 +264,7 @@ const styles = StyleSheet.create({
   pageTitle: { fontSize: 26, fontWeight: '900', color: Brand.textDark, lineHeight: 30 },
   pageSubtitle: { fontSize: 12, fontWeight: '700', color: '#B0966E', marginTop: 2 },
 
-  desktopRow: { flexDirection: 'row', gap: 24, alignItems: 'flex-start' },
+  desktopRow: { flexDirection: 'row', gap: 24, alignItems: 'flex-start', marginBottom: 20 },
   desktopLeft: { width: 320, gap: 12 },
   desktopRight: { flex: 1, minWidth: 0 },
 
