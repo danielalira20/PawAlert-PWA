@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Text, View } from 'react-native';
 import MapView, { Marker, Region } from 'react-native-maps';
+import { TrackedMarker } from './TrackedMarker';
 
 interface Props {
   onLocationSelect: (lat: number, lng: number) => void;
@@ -94,14 +95,13 @@ export default function LocationPickerMap({ onLocationSelect, selectedPosition }
           showsUserLocation
           showsMyLocationButton={false}
         >
-          <Marker
+          <TrackedMarker
             draggable
             coordinate={markerCoord}
             onDragEnd={handlePress}
-            tracksViewChanges={false}
           >
             <LocationPin />
-          </Marker>
+          </TrackedMarker>
         </MapView>
       </View>
 

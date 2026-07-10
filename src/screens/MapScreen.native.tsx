@@ -4,9 +4,10 @@ import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Dimensions, Image, Modal, Text, TouchableOpacity, View } from 'react-native';
-import MapView, { Callout, Marker, Region } from 'react-native-maps';
+import MapView, { Callout, Region } from 'react-native-maps';
+import { TrackedMarker } from './TrackedMarker';
 import AuthGateModal from '../components/AuthGateModal';
-import { ICON_CAT, ICON_DOG, ICON_PAW } from '../constants/mapIcons';
+import { ICON_CAT, ICON_CLOCK, ICON_CALENDAR, ICON_DOG, ICON_PAW, ICON_WARNING } from '../constants/mapIcons';
 import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
 import { Reporte } from '../types/reporte';
@@ -45,6 +46,8 @@ const ESTADO_CONFIG: Record<string, { color: string; label: string; bg: string }
 
 const getCfg = (map: Record<string, any>, key: string) =>
   map[key?.toLowerCase()] ?? { color: '#95A5A6', label: key ?? '', bg: '#F2F3F4' };
+
+const URGENCIA: Record<string, number> = { grave: 0, herido: 1, estable: 2 };
 
 // ─── Colores oscurecidos para borde del pin ───────────────────────────────────
 const DARK: Record<string, string> = {
@@ -121,6 +124,11 @@ export default function MapScreen() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [, setTick] = useState(0);
 
+  // ── Filtros — portados de MapScreen.web.tsx ──────────────────────────────
+  const [filtro, setFiltro] = useState('todos');
+  const [filtroEspecie, setFiltroEspecie] = useState('todos');
+  const [ordenar, setOrdenar] = useState('reciente');
+
   const sheetY = useRef(new Animated.Value(300)).current;
 
   const showSheet = () =>
@@ -150,7 +158,24 @@ export default function MapScreen() {
     showSheet();
   };
 
-  const reportesActivos = reportes.filter(r => r.estado_reporte !== 'cerrado');
+  // ── Mismo filtrado + orden que la versión web ────────────────────────────
+  const reportesFiltrados = reportes
+    .filter(r => {
+      if (r.estado_reporte === 'cerrado') return false;
+      if (filtro !== 'todos' && r.animal?.condicion?.toLowerCase() !== filtro) return false;
+      if (filtroEspecie !== 'todos' && r.animal?.tipo_animal?.toLowerCase() !== filtroEspecie) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      if (ordenar === 'reciente') return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      if (ordenar === 'antiguo')  return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      if (ordenar === 'urgente') {
+        const ua = URGENCIA[a.animal?.condicion?.toLowerCase() ?? ''] ?? 3;
+        const ub = URGENCIA[b.animal?.condicion?.toLowerCase() ?? ''] ?? 3;
+        return ua - ub;
+      }
+      return 0;
+    });
 
   return (
     <View style={{ flex: 1 }}>
@@ -161,7 +186,7 @@ export default function MapScreen() {
         showsUserLocation
         showsMyLocationButton={false}
       >
-        {reportesActivos.map(reporte => {
+        {reportesFiltrados.map(reporte => {
           const tipo = reporte.animal?.tipo_animal ?? '';
           const tipoLabel = tipo ? tipo[0].toUpperCase() + tipo.slice(1) : 'Animal';
           const tamanio = reporte.animal?.tamanio ?? '';
@@ -171,10 +196,9 @@ export default function MapScreen() {
           const loc = reporte.colonia ?? reporte.municipio ?? '';
 
           return (
-            <Marker
+            <TrackedMarker
               key={reporte.id}
               coordinate={{ latitude: reporte.latitud as number, longitude: reporte.longitud as number }}
-              tracksViewChanges={false}
             >
               <AnimalMarker
                 condicion={reporte.animal?.condicion ?? ''}
@@ -210,28 +234,90 @@ export default function MapScreen() {
                   </View>
                 </View>
               </Callout>
-            </Marker>
+            </TrackedMarker>
           );
         })}
       </MapView>
 
-      {/* Chip de reportes activos — top left */}
+      {/* Barra de filtros interactivos — portada de MapScreen.web.tsx.
+          Reemplaza al chip simple de "X reportes activos" que había antes
+          (ese conteo ya lo muestra el pill "Todos" de aquí abajo). */}
       <View style={{
-        position: 'absolute', top: 50, left: 16,
-        backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: 20,
-        paddingVertical: 6, paddingHorizontal: 12,
-        flexDirection: 'row', alignItems: 'center', gap: 6,
-        shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 6,
+        position: 'absolute', top: 50, left: 12, right: 12,
+        backgroundColor: 'rgba(255,255,255,0.97)',
+        borderRadius: 16,
+        shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.08, shadowRadius: 8,
+        overflow: 'hidden',
+        zIndex: 1200,
+        elevation: 12,
       }}>
-        <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.orange }} />
-        <Text style={{ fontSize: 11, fontWeight: '700', color: COLORS.textDark }}>
-          {reportesActivos.length} {reportesActivos.length === 1 ? 'reporte activo' : 'reportes activos'}
-        </Text>
+        {/* Fila 1: condición, con conteo por categoría */}
+        <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#F0E8DC' }}>
+          {[
+            { key: 'todos',   label: 'Todos',   color: COLORS.orange },
+            { key: 'estable', label: 'Estable', color: '#27AE60' },
+            { key: 'herido',  label: 'Herido',  color: '#F39C12' },
+            { key: 'grave',   label: 'Grave',   color: '#E74C3C' },
+          ].map(({ key, label, color }, idx, arr) => {
+            const isActive = filtro === key;
+            // Cuenta desde el total (respetando especie) sin aplicar el
+            // filtro de condición activo — así el número no "desaparece"
+            // al elegir esa misma pestaña.
+            const base = reportes.filter(r => {
+              if (r.estado_reporte === 'cerrado') return false;
+              if (filtroEspecie !== 'todos' && r.animal?.tipo_animal?.toLowerCase() !== filtroEspecie) return false;
+              return true;
+            });
+            const count = key === 'todos'
+              ? base.length
+              : base.filter(r => r.animal?.condicion?.toLowerCase() === key).length;
+            return (
+              <TouchableOpacity key={key} onPress={() => setFiltro(key)}
+                style={{ flex: 1, paddingVertical: 8, alignItems: 'center',
+                  backgroundColor: isActive ? color : 'transparent',
+                  borderRightWidth: idx < arr.length - 1 ? 1 : 0, borderRightColor: '#F0E8DC' }}>
+                <Text style={{ fontSize: 9, fontWeight: '800', color: isActive ? '#FFF' : color, lineHeight: 12 }}>{label}</Text>
+                <Text style={{ fontSize: 11, fontWeight: '900', color: isActive ? 'rgba(255,255,255,0.9)' : COLORS.textDark, marginTop: 1 }}>{count}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+        {/* Fila 2: especie + orden */}
+        <View style={{ flexDirection: 'row', paddingHorizontal: 8, paddingVertical: 7, gap: 6 }}>
+          {[
+            { key: 'todos', icon: ICON_PAW, label: 'Todos'  },
+            { key: 'perro', icon: ICON_DOG, label: 'Perros' },
+            { key: 'gato',  icon: ICON_CAT, label: 'Gatos'  },
+          ].map(({ key, icon, label }) => (
+            <TouchableOpacity key={key} onPress={() => setFiltroEspecie(key)}
+              style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12, borderWidth: 1.5,
+                borderColor: COLORS.teal, backgroundColor: filtroEspecie === key ? COLORS.teal : 'transparent',
+                flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Image source={{ uri: icon }} style={{ width: 14, height: 14, tintColor: filtroEspecie === key ? '#FFF' : COLORS.teal }} />
+              <Text style={{ fontSize: 10, fontWeight: '700', color: filtroEspecie === key ? '#FFF' : COLORS.teal }}>{label}</Text>
+            </TouchableOpacity>
+          ))}
+          <View style={{ flex: 1 }} />
+          {[
+            { key: 'reciente', icon: ICON_CLOCK    },
+            { key: 'urgente',  icon: ICON_WARNING  },
+            { key: 'antiguo',  icon: ICON_CALENDAR },
+          ].map(({ key, icon }) => (
+            <TouchableOpacity key={key} onPress={() => setOrdenar(key)}
+              style={{ width: 28, height: 28, borderRadius: 14, borderWidth: 1.5,
+                borderColor: '#B0A090', alignItems: 'center', justifyContent: 'center',
+                backgroundColor: ordenar === key ? '#B0A090' : 'transparent' }}>
+              <Image source={{ uri: icon }} style={{ width: 16, height: 16, tintColor: ordenar === key ? '#FFF' : '#B0A090' }} />
+            </TouchableOpacity>
+          ))}
+        </View>
       </View>
 
-      {/* Leyenda — top right */}
+      {/* Leyenda — bajada de top:50 a top:145 para no chocar con la nueva
+          barra de filtros (que ahora ocupa esa esquina superior) */}
       <View style={{
-        position: 'absolute', top: 50, right: 16,
+        position: 'absolute', top: 145, right: 16,
         backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: 12, padding: 10,
         shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 6,
       }}>
