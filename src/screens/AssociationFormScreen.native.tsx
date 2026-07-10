@@ -4,9 +4,9 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { Alert, Dimensions, Image, Modal, ScrollView, Text, TextInput, TouchableOpacity, View, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useEffect, useState, useRef } from 'react'; // <-- Agregamos useRef
+import { Alert, Dimensions, Image, Modal, ScrollView, Text, TextInput, TouchableOpacity, View, ActivityIndicator, Animated } from 'react-native'; // <-- Agregamos Animated
 import { Toast, useToast } from '../components/Toast';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
@@ -34,6 +34,31 @@ interface Props { onClose?: () => void; }
 export default function AssociationFormScreen({ onClose }: Props) {
   const { setSession } = useAuth();
   const { toast, translateY, showToast } = useToast();
+
+  // ─── ANIMACIÓN DEL BOTTOM SHEET ──────────────────────────────
+  const screenHeight = Dimensions.get('window').height;
+  const slideAnim = useRef(new Animated.Value(screenHeight)).current; // Inicia totalmente abajo
+
+  useEffect(() => {
+    // Animación de entrada: Sube con un efecto resorte (spring) muy natural
+    Animated.spring(slideAnim, {
+      toValue: 0,
+      tension: 50,
+      friction: 10,
+      useNativeDriver: true,
+    }).start();
+  }, []);
+
+  const iniciarSalida = () => {
+    // Animación de salida: Se desliza hacia abajo antes de desmontar el modal
+    Animated.timing(slideAnim, {
+      toValue: screenHeight,
+      duration: 250,
+      useNativeDriver: true,
+    }).start(() => {
+      if (onClose) onClose(); // Cierra el modal padre una vez que terminó de bajar
+    });
+  };
 
   const [nombre, setNombre] = useState('');
   const [nombreResponsable, setNombreResponsable] = useState('');
@@ -88,7 +113,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
     if (hasUnsavedChanges()) {
       setShowCloseConfirm(true);
     } else {
-      if (onClose) onClose();
+      iniciarSalida();
     }
   };
 
@@ -435,13 +460,27 @@ export default function AssociationFormScreen({ onClose }: Props) {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: COLORS.bgTeal, justifyContent: 'center', alignItems: 'center' }}>
+    <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
       <Toast toast={toast} translateY={translateY} />
 
-      <View style={{ width: '100%', flex: 1, backgroundColor: COLORS.bgTeal, overflow: 'hidden' }}>
+      {/* Cambiamos a Animated.View y aplicamos el translateY */}
+      <Animated.View style={{ 
+        width: '100%', 
+        height: '92%', 
+        backgroundColor: COLORS.bgTeal, 
+        borderTopLeftRadius: 32, 
+        borderTopRightRadius: 32, 
+        overflow: 'hidden',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 10,
+        elevation: 10,
+        transform: [{ translateY: slideAnim }] // <-- AQUÍ SE OBRA LA MAGIA
+      }}>
         
         {/* CORRECCIÓN: Ajustamos los zIndex y aplicamos pointerEvents="none" a la imagen */}
-        <View style={{ paddingHorizontal: 24, paddingTop: 60, paddingBottom: 50, position: 'relative', zIndex: 1 }}>
+        <View style={{ paddingHorizontal: 24, paddingTop: 32, paddingBottom: 40, position: 'relative', zIndex: 1 }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', zIndex: 10 }}>
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 36, fontWeight: '900', color: COLORS.bgWhite, textShadowColor: 'rgba(0,0,0,0.1)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 4 }}>¡Hola!</Text>
@@ -455,9 +494,8 @@ export default function AssociationFormScreen({ onClose }: Props) {
               )}
             </View>
           </View>
-          <Image 
-            pointerEvents="none"
-            source={{ uri: 'https://cdn-icons-png.flaticon.com/512/3047/3047928.png' }} 
+          <Image
+            source={{ uri: 'https://cdn-icons-png.flaticon.com/512/3047/3047928.png' }}
             style={{ width: 120, height: 120, position: 'absolute', bottom: -10, right: 30, zIndex: -1 }}
             resizeMode="contain"
           />
@@ -641,7 +679,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
             </TouchableOpacity>
           </ScrollView>
         </View>
-      </View>
+      </Animated.View>
 
       <Modal visible={campoHorarioActivo !== null} transparent animationType="fade" onRequestClose={() => setCampoHorarioActivo(null)}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end', alignItems: 'center' }}>
@@ -672,7 +710,10 @@ export default function AssociationFormScreen({ onClose }: Props) {
               <TouchableOpacity onPress={() => setShowCloseConfirm(false)} style={{ flex: 1, paddingVertical: 16, borderRadius: 20, backgroundColor: COLORS.grayLight, alignItems: 'center' }}>
                 <Text style={{ color: COLORS.textDark, fontWeight: '700' }}>Me quedo</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => { setShowCloseConfirm(false); if (onClose) onClose(); }} style={{ flex: 1, paddingVertical: 16, borderRadius: 20, backgroundColor: COLORS.danger, alignItems: 'center' }}>
+              <TouchableOpacity 
+                onPress={() => { setShowCloseConfirm(false); iniciarSalida(); }} // Impecable cierre animado
+                style={{ flex: 1, paddingVertical: 16, borderRadius: 20, backgroundColor: COLORS.danger, alignItems: 'center' }}
+              >
                 <Text style={{ color: COLORS.bgWhite, fontWeight: '700' }}>Sí, salir</Text>
               </TouchableOpacity>
             </View>
