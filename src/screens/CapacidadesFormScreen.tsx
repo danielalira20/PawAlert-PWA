@@ -103,8 +103,8 @@ export default function CapacidadesFormScreen({ onClose, fromProfile = false }: 
 
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
 
-  const ESPECIES = ['perro', 'gato', 'ave', 'otro'];
-  const TAMANOS = ['pequeño', 'mediano', 'grande'];
+  const ESPECIES = ['perro', 'gato', 'otro'];
+  const TAMANOS = ['pequeno', 'mediano', 'grande'];
 
   useEffect(() => {
     const cargarCapacidades = async () => {
@@ -125,13 +125,13 @@ export default function CapacidadesFormScreen({ onClose, fromProfile = false }: 
         setOfreceCasaHogar(cap?.ofrece_casa_hogar ?? false);
         setCapacidadAnimales(cap?.capacidad_animales ?? 1);
         setEspeciesSeleccionadas(cap?.especies ?? []);
-        setTamanosSeleccionados(cap?.tamanios ?? cap?.tamanos ?? []);
+        setTamanosSeleccionados(cap?.tamanios ?? []);
         setOtrosAnimales(cap?.otros_animales_en_casa ?? false);
         setNinos(cap?.ninos_en_casa ?? false);
         setTieneVehiculo(cap?.tiene_vehiculo ?? false);
         
-        const lat = cap?.latitud ?? cap?.latitude;
-        const lng = cap?.longitud ?? cap?.longitude;
+        const lat = cap?.latitud;
+        const lng = cap?.longitud;
         if (lat && lng) {
           setUbicacion({ latitud: lat, longitud: lng });
           setUbicacionConfirmada(true);

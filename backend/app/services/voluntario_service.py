@@ -111,6 +111,7 @@ async def obtener_mi_voluntario(usuario_id: str) -> dict:
     ).limit(1).execute()
 
     postulacion_data = None
+    intentos_previos = []
     if ultima_postulacion.data:
         p = ultima_postulacion.data[0]
         postulacion_data = {
@@ -120,7 +121,29 @@ async def obtener_mi_voluntario(usuario_id: str) -> dict:
             "motivo_rechazo": p.get("motivo_rechazo"),
             "numero_intento": p["numero_intento"],
             "asociacion_nombre": p.get("asociaciones", {}).get("nombre") if p.get("asociaciones") else None,
+            "resuelta_at": str(p["resuelta_at"]) if p.get("resuelta_at") else None,
         }
+
+        if p["numero_intento"] > 1:
+            previos = supabase.table("postulaciones").select(
+                "id, numero_intento, estado, motivo_rechazo, created_at, resuelta_at, "
+                "asociaciones(nombre)"
+            ).eq("voluntario_id", voluntario["id"]).lt(
+                "numero_intento", p["numero_intento"]
+            ).order("numero_intento").execute()
+
+            intentos_previos = [
+                {
+                    "id": prev["id"],
+                    "numero_intento": prev["numero_intento"],
+                    "estado": prev["estado"],
+                    "motivo_rechazo": prev.get("motivo_rechazo"),
+                    "created_at": str(prev["created_at"]),
+                    "resuelta_at": str(prev["resuelta_at"]) if prev.get("resuelta_at") else None,
+                    "asociacion_nombre": prev.get("asociaciones", {}).get("nombre") if prev.get("asociaciones") else None,
+                }
+                for prev in (previos.data or [])
+            ]
 
     return {
         "tiene_perfil_voluntario": True,
@@ -128,6 +151,7 @@ async def obtener_mi_voluntario(usuario_id: str) -> dict:
         "estado": voluntario["estado"],
         "asociacion_id": voluntario.get("asociacion_id"),
         "ultima_postulacion": postulacion_data,
+        "intentos_previos": intentos_previos,
     }
 
 
@@ -271,10 +295,11 @@ async def dar_de_baja_voluntario(voluntario_id: str, asociacion_id: str) -> dict
         "estado": "dado_de_baja",
     }).eq("id", voluntario_id).execute()
 
+    # Limpiar también la referencia en usuarios (deja de pertenecer a esta asociación)
     supabase.table("usuarios").update({
         "asociacion_id": None,
     }).eq("id", voluntario["usuario_id"]).execute()
-    
+
     # Si tenía un caso activo asignado, se libera y se registra en el historial
     reportes_activos = supabase.table("reportes").select(
         "id"

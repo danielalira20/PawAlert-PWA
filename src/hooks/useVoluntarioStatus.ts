@@ -1,67 +1,134 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import axios from 'axios';
+import { API_URL } from '../constants/api';
+import { useAuth } from '../context/AuthContext';
 
-// Ajusta esta interfaz según los datos reales que te devuelva tu backend
+// ─── Formas que expone GET /voluntarios/me (voluntario_service.py) ─────────
+interface UltimaPostulacionRaw {
+  id: string;
+  tipo: string;
+  estado: 'pendiente' | 'aceptada' | 'rechazada';
+  motivo_rechazo?: string;
+  numero_intento: number;
+  asociacion_nombre?: string;
+  resuelta_at?: string;
+}
+
+interface IntentoPrevioRaw {
+  id: string;
+  numero_intento: number;
+  estado: string;
+  motivo_rechazo?: string;
+  created_at: string;
+  resuelta_at?: string;
+  asociacion_nombre?: string;
+}
+
+interface VoluntarioMeResponse {
+  tiene_perfil_voluntario: boolean;
+  voluntario_id?: string;
+  estado?: string;
+  asociacion_id?: string;
+  ultima_postulacion?: UltimaPostulacionRaw | null;
+  intentos_previos?: IntentoPrevioRaw[];
+}
+
+// ─── Forma que ya consume MiPostulacionScreen.tsx ──────────────────────────
 export interface VoluntarioStatusResponse {
-  estado: 'pendiente' | 'aprobado' | 'rechazado' | 'revision';
-  fechaPostulacion?: string;
-  comentarios?: string;
+  voluntario: {
+    id: string;
+    tipo?: string;
+    estado: string;
+    asociacion_id?: string;
+  } | null;
+  postulacion_actual?: {
+    estado: string;
+    motivo_rechazo?: string;
+    numero_intento: number;
+    asociacion_nombre?: string;
+    resuelta_at?: string;
+  };
+  intentos_previos?: Array<{
+    id: string;
+    numero_intento: number;
+    estado: string;
+    motivo_rechazo?: string;
+    created_at: string;
+  }>;
 }
 
 export function useVoluntarioStatus() {
+  const { token } = useAuth();
   const [data, setData] = useState<VoluntarioStatusResponse | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let isMounted = true;
+  const fetchStatus = useCallback(async () => {
+    if (!token) {
+      setData(null);
+      setIsLoading(false);
+      return;
+    }
 
-    const fetchStatus = async () => {
-      try {
-        setIsLoading(true);
-        setError(null);
+    try {
+      setIsLoading(true);
+      setError(null);
 
-        // TODO: Reemplaza este bloque con tu llamada real a la API
-        // const response = await api.get('/voluntarios/mi-estatus');
-        // if (isMounted) setData(response.data);
+      const response = await axios.get<VoluntarioMeResponse>(
+        `${API_URL}/voluntarios/me`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
 
-        // --- Mock temporal para evitar que la app crashee ---
-        setTimeout(() => {
-          if (isMounted) {
-            setData({
-              estado: 'pendiente',
-              fechaPostulacion: new Date().toISOString(),
-              comentarios: 'Tu solicitud está siendo revisada por el equipo.',
-            });
-            setIsLoading(false);
-          }
-        }, 1500);
-        // ----------------------------------------------------
+      const raw = response.data;
 
-      } catch (err: any) {
-        if (isMounted) {
-          setError(err.message || 'Error al obtener el estado de postulación');
-          setIsLoading(false);
-        }
+      if (!raw.tiene_perfil_voluntario) {
+        setData({ voluntario: null });
+        return;
       }
-    };
 
+      setData({
+        voluntario: {
+          id: raw.voluntario_id!,
+          tipo: raw.ultima_postulacion?.tipo,
+          estado: raw.estado!,
+          asociacion_id: raw.asociacion_id,
+        },
+        postulacion_actual: raw.ultima_postulacion
+          ? {
+              estado: raw.ultima_postulacion.estado,
+              motivo_rechazo: raw.ultima_postulacion.motivo_rechazo,
+              numero_intento: raw.ultima_postulacion.numero_intento,
+              asociacion_nombre: raw.ultima_postulacion.asociacion_nombre,
+              resuelta_at: raw.ultima_postulacion.resuelta_at,
+            }
+          : undefined,
+        intentos_previos: (raw.intentos_previos || []).map((intento) => ({
+          id: intento.id,
+          numero_intento: intento.numero_intento,
+          estado: intento.estado,
+          motivo_rechazo: intento.motivo_rechazo,
+          created_at: intento.created_at,
+        })),
+      });
+    } catch (err: any) {
+      setError(
+        err?.response?.data?.detail ||
+          err.message ||
+          'Error al obtener el estado de postulación'
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
     fetchStatus();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  // Función para recargar los datos manualmente si tu pantalla lo necesita
-  const refetch = () => {
-    setIsLoading(true);
-    // Vuelve a ejecutar la lógica de fetchStatus aquí
-  };
+  }, [fetchStatus]);
 
   return {
     data,
     isLoading,
     error,
-    refetch
+    refetch: fetchStatus,
   };
 }

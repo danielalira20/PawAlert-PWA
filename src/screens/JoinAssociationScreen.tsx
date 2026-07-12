@@ -39,9 +39,9 @@ const FORM_MAX_WIDTH = 750;
 
 // ─── INTERFACES ─────────────────────────────────────────────────────────────
 interface VoluntarioStatus {
-  id: string;
-  tipo: string;
-  estado:
+  tiene_perfil_voluntario: boolean;
+  voluntario_id?: string;
+  estado?:
     | 'postulacion_pendiente'
     | 'activo_nivel_1'
     | 'activo_nivel_2'
@@ -49,13 +49,26 @@ interface VoluntarioStatus {
     | 'dado_de_baja'
     | 'baja_definitiva';
   asociacion_id?: string;
-  postulacion_actual?: {
+  ultima_postulacion?: {
+    id: string;
+    tipo: string;
+    estado: 'pendiente' | 'aceptada' | 'rechazada';
     motivo_rechazo?: string;
-    numero_intento?: number;
+    numero_intento: number;
     asociacion_nombre?: string;
-  };
+    resuelta_at?: string;
+  } | null;
+  intentos_previos?: Array<{
+    id: string;
+    numero_intento: number;
+    estado: string;
+    motivo_rechazo?: string;
+    created_at: string;
+    resuelta_at?: string;
+    asociacion_nombre?: string;
+  }>;
 }
-
+ 
 interface Asociacion {
   id: string;
   nombre: string;
@@ -133,18 +146,19 @@ export default function JoinAssociationScreen() {
   }, [isAuthLoading, isLoggedIn]);
 
   // 2. Cargar Estado del Voluntario y Perfil del Usuario
-  const fetchStatus = async () => {
+const fetchStatus = async () => {
     try {
       const res = await axios.get(`${API_URL}/voluntarios/me`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      setStatus(res.data);
-    } catch (error: any) {
-      if (error.response?.status === 404) {
-        setStatus(null);
+      if (res.data?.tiene_perfil_voluntario) {
+        setStatus(res.data);
       } else {
-        console.error('Error fetching voluntario status:', error);
+        setStatus(null);
       }
+    } catch (error: any) {
+      console.error('Error fetching voluntario status:', error);
+      setStatus(null);
     }
   };
 
@@ -751,7 +765,7 @@ export default function JoinAssociationScreen() {
                   >
                     Tu solicitud fue enviada a{' '}
                     <Text style={{ fontWeight: 'bold' }}>
-                      {status.postulacion_actual?.asociacion_nombre ||
+                      {status.ultima_postulacion?.asociacion_nombre ||
                         'la asociación seleccionada'}
                     </Text>
                     . Te notificaremos en cuanto haya una respuesta.
@@ -810,7 +824,7 @@ export default function JoinAssociationScreen() {
                       Motivo de la asociación:
                     </Text>
                     <Text style={{ fontSize: 14, color: COLORS.textLight }}>
-                      {status.postulacion_actual?.motivo_rechazo ||
+                      {status.ultima_postulacion?.motivo_rechazo ||
                         'No se especificó un motivo particular.'}
                     </Text>
                   </View>
