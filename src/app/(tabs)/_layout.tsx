@@ -9,12 +9,6 @@ const INACTIVE_COLOR = '#5C4B3A';
 const isWeb = Platform.OS === 'web';
 
 export default function TabsLayout() {
-  // Espacio real que reserva ESTE dispositivo específico para sus propios
-  // botones/gestos del sistema — varía entre celulares y tablets, y entre
-  // marcas/modelos. Antes usábamos un número fijo (8px Android / 20px iOS)
-  // que solo funcionaba en los celulares donde lo probamos; en una tablet
-  // con su propia barra de navegación en pantalla, ese número fijo se
-  // quedaba corto y la barra del sistema tapaba nuestros tabs.
   const insets = useSafeAreaInsets();
 
   return (
@@ -37,8 +31,6 @@ export default function TabsLayout() {
           : {
               backgroundColor: '#FFFFFF',
               borderTopWidth: 1, borderTopColor: '#F0E6D6',
-              // 54 = alto base del contenido (íconos + etiqueta) + el
-              // espacio real que pida el dispositivo abajo (insets.bottom).
               height: 54 + insets.bottom,
               paddingBottom: Math.max(8, insets.bottom),
               paddingTop: 8,
@@ -81,6 +73,13 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'person' : 'person-outline'} size={22} color={color} />
           ),
+        }}
+      />
+      <Tabs.Screen
+        name="join-association"
+        options={{
+          href: null,
+          tabBarStyle: { display: 'none' },
         }}
       />
     </Tabs>
