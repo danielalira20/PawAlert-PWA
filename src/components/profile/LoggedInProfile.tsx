@@ -26,6 +26,8 @@ interface Props {
   onOpenAdminPanel: () => void;
   onOpenAssociationPanel: () => void;
   onOpenStaffPanel: () => void;
+  onOpenPostulacion: () => void; // <-- NUEVA PROP
+  onOpenCapacidades: () => void; // <-- NUEVA PROP
   onLogout: () => void;
 }
 
@@ -34,14 +36,19 @@ export function LoggedInProfile({
   onOpenAdminPanel,
   onOpenAssociationPanel,
   onOpenStaffPanel,
+  onOpenPostulacion, // <-- NUEVA PROP
+  onOpenCapacidades, // <-- NUEVA PROP
   onLogout,
 }: Props) {
   const { user } = useAuth();
   const { width } = useWindowDimensions();
   const isDesktop = width >= DESKTOP_BREAKPOINT;
+  
   const esAdmin = !!user?.es_admin;
   const esAsociacion = !!user?.asociacion_id && user?.rol === 'asociacion';
   const esStaff = !!user?.asociacion_id && user?.rol === 'staff';
+  // Validamos si es voluntario interno
+  const esVoluntarioInterno = user?.rol === 'voluntario_interno';
 
   const { impacto, isLoading: isLoadingReportes } = useRecentReports();
   const { impacto: impactoAsociacion, isLoading: isLoadingAsociacion } = useAssociationImpact(esAsociacion);
@@ -76,16 +83,30 @@ export function LoggedInProfile({
     <RoleBadge rol="staff" variant="onWhite" />
   ) : null;
 
+  // Actualizamos los accesos agregando los de voluntario
   const accesos = (
     <>
-      <AccessRow icon="clipboard-outline" label="Mis Reportes" onPress={onOpenMisReportes} isLast={!esAdmin && !esAsociacion && !esStaff} />
+      <AccessRow 
+        icon="clipboard-outline" 
+        label="Mis Reportes" 
+        onPress={onOpenMisReportes} 
+        isLast={!esAdmin && !esAsociacion && !esStaff && !esVoluntarioInterno} 
+      />
       {esAdmin && (
         <AccessRow icon="shield-checkmark-outline" label="Panel de administrador" onPress={onOpenAdminPanel} isLast />
       )}
       {esAsociacion && (
         <AccessRow icon="business-outline" label="Panel de asociación" onPress={onOpenAssociationPanel} isLast />
       )}
-      {esStaff && <AccessRow icon="briefcase-outline" label="Panel de staff" onPress={onOpenStaffPanel} isLast />}
+      {esStaff && (
+        <AccessRow icon="briefcase-outline" label="Panel de staff" onPress={onOpenStaffPanel} isLast />
+      )}
+      {esVoluntarioInterno && (
+        <>
+          <AccessRow icon="document-text-outline" label="Mi postulación" onPress={onOpenPostulacion} />
+          <AccessRow icon="construct-outline" label="Termina de completar tu perfil" onPress={onOpenCapacidades} isLast />
+        </>
+      )}
     </>
   );
 
