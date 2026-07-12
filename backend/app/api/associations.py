@@ -6,6 +6,12 @@ from app.db.supabase import supabase, supabase_admin, get_fresh_client
 from app.services.storage_service import subir_foto
 from app.services.report_service import obtener_id_catalogo
 from app.utils.validators import validar_telefono, validar_email
+from app.models.voluntario import ResolverPostulacionRequest
+from app.services.voluntario_service import (
+    obtener_postulaciones_asociacion,
+    resolver_postulacion,
+    dar_de_baja_voluntario,
+)
 import json
 
 router = APIRouter()
@@ -32,6 +38,13 @@ def _obtener_usuario_autenticado(authorization: str | None) -> dict:
 
     return resultado.data[0]
 
+def _verificar_asociacion_aprobada(asociacion_id: str) -> None:
+    asociacion = supabase.table("asociaciones").select("verificado").eq(
+        "id", asociacion_id
+    ).execute()
+ 
+    if not asociacion.data or not asociacion.data[0]["verificado"]:
+        raise HTTPException(status_code=403, detail="Tu asociación todavía no ha sido aprobada")
 
 @router.post("", status_code=201)
 async def create_association(
@@ -479,12 +492,6 @@ async def apelar_rechazo(
     documentos: Optional[List[UploadFile]] = File(None),
     authorization: str = Header(None)
 ):
-    print("=== DEBUG APELAR ===")
-    print("mensaje:", mensaje)
-    print("documentos recibidos:", len(documentos) if documentos else 0)
-    for i, doc in enumerate(documentos or []):
-        print(f"doc {i}: {doc.filename}, {doc.content_type}, size: {doc.size}")
-    print("====================")
 
     """Permite a una asociación rechazada enviar una apelación con mensaje y documentos."""
     usuario = _obtener_usuario_autenticado(authorization)
@@ -578,4 +585,60 @@ async def get_apelacion(authorization: str = Header(None)):
 
 ### Fin: endpoint para status apleacion 
 
+ 
+### Endpoints: gestión de postulaciones y voluntarios de la asociación (Sprint Voluntarios)
+ 
+@router.get("/me/postulaciones", status_code=200)
+async def get_postulaciones_asociacion(estado: str | None = None, authorization: str = Header(None)):
+    """Lista las postulaciones recibidas por la asociación del usuario logueado.
+    Filtro opcional por estado: pendiente | aceptada | rechazada."""
+    usuario = _obtener_usuario_autenticado(authorization)
+ 
+    if not usuario.get("asociacion_id"):
+        raise HTTPException(status_code=404, detail="Este usuario no está vinculado a ninguna asociación")
+ 
+    _verificar_asociacion_aprobada(usuario["asociacion_id"])
+ 
+    return await obtener_postulaciones_asociacion(usuario["asociacion_id"], estado)
+ 
+ 
+@router.patch("/me/postulaciones/{postulacion_id}", status_code=200)
+async def patch_resolver_postulacion(
+    postulacion_id: str,
+    body: ResolverPostulacionRequest,
+    authorization: str = Header(None),
+):
+    """El staff de la asociación acepta o rechaza una postulación de voluntario."""
+    usuario = _obtener_usuario_autenticado(authorization)
+ 
+    if not usuario.get("asociacion_id"):
+        raise HTTPException(status_code=404, detail="Este usuario no está vinculado a ninguna asociación")
+ 
+    _verificar_asociacion_aprobada(usuario["asociacion_id"])
+ 
+    return await resolver_postulacion(
+        postulacion_id=postulacion_id,
+        usuario_staff_id=usuario["id"],
+        asociacion_id=usuario["asociacion_id"],
+        accion=body.accion.value,
+        motivo=body.motivo,
+    )
+ 
+ 
+@router.patch("/me/voluntarios/{voluntario_id}/baja", status_code=200)
+async def patch_dar_de_baja_voluntario(voluntario_id: str, authorization: str = Header(None)):
+    """El staff de la asociación da de baja a uno de sus voluntarios activos."""
+    usuario = _obtener_usuario_autenticado(authorization)
+ 
+    if not usuario.get("asociacion_id"):
+        raise HTTPException(status_code=404, detail="Este usuario no está vinculado a ninguna asociación")
+ 
+    _verificar_asociacion_aprobada(usuario["asociacion_id"])
+ 
+    return await dar_de_baja_voluntario(
+        voluntario_id=voluntario_id,
+        asociacion_id=usuario["asociacion_id"],
+    )
+ 
+### FIN: endpoints de postulaciones y voluntarios de la asociación
 
