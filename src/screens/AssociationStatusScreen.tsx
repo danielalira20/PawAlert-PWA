@@ -76,6 +76,27 @@ interface ReporteAsignado {
 
 type FiltroAsignacion = 'todas' | 'pendientes' | 'aceptadas' | 'rechazadas';
 
+type TabAsignacion = 'staff' | 'voluntarios';
+type EstadoVoluntarios = 'cargando' | 'candidatos' | 'esperando_confirmacion' | 'confirmado' | 'rechazado_mostrando_siguiente' | 'sin_candidatos';
+
+interface ScoreCandidato {
+  total: number;
+  proximidad: number;
+  compatibilidad: number;
+  disponibilidad: number;
+  carga: number;
+}
+
+interface Candidato {
+  voluntario_id: string;
+  nombre: string;
+  tipo: string;
+  etiqueta?: string;
+  distancia_km: number;
+  foto_url?: string | null;
+  score: ScoreCandidato;
+}
+
 interface Props {
   onClose?: () => void;
 }
@@ -112,6 +133,17 @@ export default function AssociationStatusScreen({ onClose }: Props) {
   const [staffList, setStaffList] = useState<any[]>([]);
   const [staffSeleccionado, setStaffSeleccionado] = useState<string | null>(null);
   const [esStaff, setEsStaff] = useState(false);
+
+  // ── Pestaña Voluntarios ──
+  const [tabAsignacion, setTabAsignacion] = useState<TabAsignacion>('staff');
+  const [candidatosList, setCandidatosList] = useState<Candidato[]>([]);
+  const [modoAsignacion, setModoAsignacion] = useState<string>('manual');
+  const [timeoutMin, setTimeoutMin] = useState<number>(10);
+  const [estadoVoluntarios, setEstadoVoluntarios] = useState<EstadoVoluntarios>('cargando');
+  const [voluntarioEsperando, setVoluntarioEsperando] = useState<{ id: string; nombre: string } | null>(null);
+  const [showConfirmVoluntarioModal, setShowConfirmVoluntarioModal] = useState(false);
+  const [candidatoAConfirmar, setCandidatoAConfirmar] = useState<Candidato | null>(null);
+  const [pollingRef, setPollingRef] = useState<ReturnType<typeof setInterval> | null>(null);
 
   const [motivoRechazo, setMotivoRechazo] = useState('');
   const [notasRechazo, setNotasRechazo] = useState('');
@@ -329,6 +361,13 @@ export default function AssociationStatusScreen({ onClose }: Props) {
   const resetModales = () => {
     setMotivoRechazo(''); setNotasRechazo(''); setEstadoEncontre(''); setEstadoCierre('');
     setNotasHito(''); setFotoHito(null); setReporteAccionId(null);
+    setTabAsignacion('staff');
+    setCandidatosList([]);
+    setEstadoVoluntarios('cargando');
+    setVoluntarioEsperando(null);
+    setCandidatoAConfirmar(null);
+    setShowConfirmVoluntarioModal(false);
+    if (pollingRef) { clearInterval(pollingRef); setPollingRef(null); }
   };
 
   const confirmarAceptacion = async () => {
@@ -363,6 +402,65 @@ export default function AssociationStatusScreen({ onClose }: Props) {
       resetModales();
       setStaffSeleccionado(null);
       setIsSubmittingAccion(false);
+    }
+  };
+
+  // ── Funciones de Voluntarios ──
+  const cargarCandidatos = async (reporteId: string) => {
+    setEstadoVoluntarios('cargando');
+    try {
+      const res = await axios.get(`${API_URL}/reportes/${reporteId}/candidatos`, { headers: { Authorization: `Bearer ${token}` } });
+      const data = res.data;
+      setCandidatosList(data.candidatos || []);
+      setModoAsignacion(data.modo_asignacion || 'manual');
+      setTimeoutMin(data.timeout_min || 10);
+      if ((data.candidatos || []).length === 0) {
+        setEstadoVoluntarios('sin_candidatos');
+      } else {
+        setEstadoVoluntarios('candidatos');
+      }
+    } catch (error: any) {
+      showToast({ type: 'error', title: 'Error', message: 'No pudimos cargar los candidatos.' });
+      setEstadoVoluntarios('sin_candidatos');
+    }
+  };
+
+  const confirmarAsignacionVoluntario = async () => {
+    if (!reporteAccionId || !candidatoAConfirmar) return;
+    setShowConfirmVoluntarioModal(false);
+    setVoluntarioEsperando({ id: candidatoAConfirmar.voluntario_id, nombre: candidatoAConfirmar.nombre });
+    setEstadoVoluntarios('esperando_confirmacion');
+    try {
+      await axios.post(
+        `${API_URL}/reportes/${reporteAccionId}/asignar`,
+        { voluntario_id: candidatoAConfirmar.voluntario_id },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      // Polling cada 5s para detectar confirmación o rechazo
+      const interval = setInterval(async () => {
+        try {
+          const res = await axios.get(`${API_URL}/reportes/${reporteAccionId}/candidatos`, { headers: { Authorization: `Bearer ${token}` } });
+          const estado = res.data?.estado_asignacion_voluntario;
+          if (estado === 'confirmado') {
+            clearInterval(interval);
+            setPollingRef(null);
+            setEstadoVoluntarios('confirmado');
+          } else if (estado === 'rechazado') {
+            clearInterval(interval);
+            setPollingRef(null);
+            setEstadoVoluntarios('rechazado_mostrando_siguiente');
+            setTimeout(() => {
+              if (reporteAccionId) cargarCandidatos(reporteAccionId);
+            }, 2500);
+          }
+        } catch { }
+      }, 5000);
+      setPollingRef(interval);
+    } catch (error: any) {
+      showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'No pudimos asignar el voluntario.' });
+      setEstadoVoluntarios('candidatos');
+    } finally {
+      setCandidatoAConfirmar(null);
     }
   };
 
@@ -834,39 +932,361 @@ export default function AssociationStatusScreen({ onClose }: Props) {
         </View>
       </Modal>
 
+      {/* ══════════════════════════════════════════════
+           MODAL AMPLIADO: STAFF | VOLUNTARIOS
+         ══════════════════════════════════════════════ */}
       <Modal visible={showStaffModal} transparent animationType="fade">
-          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
-            <View style={{ backgroundColor: COLORS.cardBg, borderRadius: 32, padding: 32, width: '100%', maxWidth: 450 }}>
-              <Text style={{ fontSize: 22, fontWeight: '800', color: COLORS.textDark, marginBottom: 20 }}>¿Quién atenderá este caso?</Text>
-              <ScrollView style={{ maxHeight: 350 }} showsVerticalScrollIndicator={false}>
-                {staffList.map((miembro) => (
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 16 }}>
+          <View style={{
+            backgroundColor: COLORS.cardBg, borderRadius: 32,
+            padding: 24, width: '100%', maxWidth: 480,
+            ...(Platform.OS === 'web'
+              ? { boxShadow: '0 20px 60px rgba(0,0,0,0.25)' } as any
+              : { elevation: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.25, shadowRadius: 20 })
+          }}>
+            {/* Header */}
+            <Text style={{ fontSize: 20, fontWeight: '800', color: COLORS.textDark, textAlign: 'center', marginBottom: 16 }}>
+              ¿Quién atenderá este caso?
+            </Text>
+
+            {/* Selector de pestañas pill */}
+            <View style={{
+              flexDirection: 'row', backgroundColor: COLORS.white,
+              borderRadius: 20, padding: 4, marginBottom: 20,
+              ...(Platform.OS === 'web'
+                ? { boxShadow: '0 2px 8px rgba(0,0,0,0.07)' } as any
+                : { elevation: 2 })
+            }}>
+              {(['staff', 'voluntarios'] as TabAsignacion[]).map((tab) => (
+                <TouchableOpacity
+                  key={tab}
+                  onPress={() => {
+                    setTabAsignacion(tab);
+                    if (tab === 'voluntarios' && reporteAccionId && estadoVoluntarios === 'cargando') {
+                      cargarCandidatos(reporteAccionId);
+                    }
+                  }}
+                  style={{
+                    flex: 1, paddingVertical: 10, borderRadius: 16, alignItems: 'center',
+                    backgroundColor: tabAsignacion === tab ? COLORS.primary : 'transparent',
+                  }}
+                >
+                  <Text style={{
+                    fontWeight: '700', fontSize: 14, textTransform: 'capitalize',
+                    color: tabAsignacion === tab ? COLORS.white : COLORS.textLight,
+                  }}>
+                    {tab === 'staff' ? '🧑‍💼 Staff' : '🤝 Voluntarios'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* ── PESTAÑA STAFF ── */}
+            {tabAsignacion === 'staff' && (
+              <>
+                <ScrollView style={{ maxHeight: 340 }} showsVerticalScrollIndicator={false}>
+                  {staffList.map((miembro) => (
+                    <TouchableOpacity
+                      key={miembro.id}
+                      onPress={() => miembro.disponible && setStaffSeleccionado(miembro.id)}
+                      style={{
+                        padding: 16, borderWidth: 2, borderRadius: 16, marginBottom: 12,
+                        borderColor: staffSeleccionado === miembro.id ? COLORS.primary : 'transparent',
+                        backgroundColor: !miembro.disponible ? '#F3F4F6' : staffSeleccionado === miembro.id ? 'rgba(236, 128, 43, 0.1)' : COLORS.white,
+                        opacity: miembro.disponible ? 1 : 0.6
+                      }}
+                    >
+                      <Text style={{ fontWeight: '700', fontSize: 15, color: COLORS.textDark }}>{miembro.nombre} {miembro.apellido_paterno}</Text>
+                      {!miembro.disponible && <Text style={{ fontSize: 13, color: COLORS.danger, marginTop: 4 }}>{miembro.motivo_no_disponible}</Text>}
+                      {miembro.disponible && <Text style={{ fontSize: 13, color: COLORS.accent, marginTop: 4 }}>Disponible — {miembro.casos_activos} casos activos</Text>}
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+                <View style={{ flexDirection: 'row', gap: 12, marginTop: 20 }}>
                   <TouchableOpacity
-                    key={miembro.id}
-                    onPress={() => miembro.disponible && setStaffSeleccionado(miembro.id)}
-                    style={{
-                      padding: 16, borderWidth: 2, borderRadius: 16, marginBottom: 12,
-                      borderColor: staffSeleccionado === miembro.id ? COLORS.primary : 'transparent',
-                      backgroundColor: !miembro.disponible ? '#F3F4F6' : staffSeleccionado === miembro.id ? 'rgba(236, 128, 43, 0.1)' : COLORS.white,
-                      opacity: miembro.disponible ? 1 : 0.6
-                    }}
+                    style={{ flex: 1, paddingVertical: 15, alignItems: 'center', borderRadius: 20, backgroundColor: '#E5E7EB' }}
+                    onPress={() => { setShowStaffModal(false); resetModales(); }}
                   >
-                    <Text style={{ fontWeight: '700', fontSize: 16, color: COLORS.textDark }}>{miembro.nombre} {miembro.apellido_paterno}</Text>
-                    {!miembro.disponible && <Text style={{ fontSize: 13, color: COLORS.danger, marginTop: 4 }}>{miembro.motivo_no_disponible}</Text>}
-                    {miembro.disponible && <Text style={{ fontSize: 13, color: COLORS.accent, marginTop: 4 }}>Disponible — {miembro.casos_activos} casos activos</Text>}
+                    <Text style={{ color: COLORS.textLight, fontWeight: 'bold' }}>Cancelar</Text>
                   </TouchableOpacity>
-                ))}
-              </ScrollView>
-              <View style={{ flexDirection: 'row', gap: 12, marginTop: 24 }}>
-                <TouchableOpacity style={{ flex: 1, paddingVertical: 16, alignItems: 'center', borderRadius: 20, backgroundColor: '#E5E7EB' }} onPress={() => { setShowStaffModal(false); resetModales(); }}>
-                  <Text style={{ color: COLORS.textLight, fontWeight: 'bold' }}>Cancelar</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={{ flex: 1, paddingVertical: 16, alignItems: 'center', borderRadius: 20, backgroundColor: COLORS.primary }} onPress={confirmarAsignacionStaff} disabled={isSubmittingAccion}>
-                  {isSubmittingAccion ? <ActivityIndicator color={COLORS.white} /> : <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Asignar Staff</Text>}
-                </TouchableOpacity>
+                  <TouchableOpacity
+                    style={{ flex: 1, paddingVertical: 15, alignItems: 'center', borderRadius: 20, backgroundColor: COLORS.primary }}
+                    onPress={confirmarAsignacionStaff}
+                    disabled={isSubmittingAccion}
+                  >
+                    {isSubmittingAccion
+                      ? <ActivityIndicator color={COLORS.white} />
+                      : <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Asignar Staff</Text>}
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+
+            {/* ── PESTAÑA VOLUNTARIOS ── */}
+            {tabAsignacion === 'voluntarios' && (
+              <View style={{ minHeight: 200 }}>
+
+                {/* ESTADO: cargando */}
+                {estadoVoluntarios === 'cargando' && (
+                  <View style={{ alignItems: 'center', paddingVertical: 40 }}>
+                    <ActivityIndicator size="large" color={COLORS.primary} />
+                    <Text style={{ color: COLORS.textLight, marginTop: 12, fontSize: 14 }}>Buscando candidatos…</Text>
+                    {/* Skeletons */}
+                    {[0, 1, 2].map((i) => (
+                      <View key={i} style={{
+                        width: '100%', height: 90, borderRadius: 16,
+                        backgroundColor: 'rgba(0,0,0,0.06)', marginTop: 12,
+                        opacity: 1 - i * 0.2,
+                      }} />
+                    ))}
+                  </View>
+                )}
+
+                {/* ESTADO: sin_candidatos */}
+                {estadoVoluntarios === 'sin_candidatos' && (
+                  <View style={{ alignItems: 'center', paddingVertical: 32 }}>
+                    <Text style={{ fontSize: 40, marginBottom: 12 }}>🐾</Text>
+                    <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.textDark, textAlign: 'center', marginBottom: 8 }}>
+                      Sin voluntarios disponibles
+                    </Text>
+                    <Text style={{ fontSize: 13, color: COLORS.textLight, textAlign: 'center', lineHeight: 20, marginBottom: 20 }}>
+                      No hay voluntarios disponibles cerca de este reporte por ahora.
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() => reporteAccionId && cargarCandidatos(reporteAccionId)}
+                      style={{ backgroundColor: COLORS.primary, paddingHorizontal: 28, paddingVertical: 13, borderRadius: 20 }}
+                    >
+                      <Text style={{ color: COLORS.white, fontWeight: '700' }}>🔄 Reintentar</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => { setShowStaffModal(false); resetModales(); }}
+                      style={{ marginTop: 12 }}
+                    >
+                      <Text style={{ color: COLORS.textLight, fontSize: 13 }}>Cerrar</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {/* ESTADO: esperando_confirmacion */}
+                {estadoVoluntarios === 'esperando_confirmacion' && (
+                  <View style={{ alignItems: 'center', paddingVertical: 36 }}>
+                    <ActivityIndicator size="large" color={COLORS.accent} />
+                    <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.textDark, textAlign: 'center', marginTop: 16 }}>
+                      Esperando confirmación de
+                    </Text>
+                    <Text style={{ fontSize: 18, fontWeight: '800', color: COLORS.primary, marginTop: 4 }}>
+                      {voluntarioEsperando?.nombre}…
+                    </Text>
+                    <Text style={{ fontSize: 13, color: COLORS.textLight, marginTop: 10, textAlign: 'center' }}>
+                      Revisando respuesta cada 5 segundos.
+                    </Text>
+                  </View>
+                )}
+
+                {/* ESTADO: confirmado */}
+                {estadoVoluntarios === 'confirmado' && (
+                  <View style={{ alignItems: 'center', paddingVertical: 32 }}>
+                    <View style={{
+                      width: 72, height: 72, borderRadius: 36,
+                      backgroundColor: 'rgba(102,188,180,0.15)',
+                      justifyContent: 'center', alignItems: 'center', marginBottom: 16
+                    }}>
+                      <Ionicons name="checkmark-circle" size={48} color={COLORS.accent} />
+                    </View>
+                    <Text style={{ fontSize: 16, fontWeight: '800', color: COLORS.accent, textAlign: 'center' }}>
+                      {voluntarioEsperando?.nombre} confirmó y va en camino.
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() => { setShowStaffModal(false); resetModales(); cargarReportes(); }}
+                      style={{ backgroundColor: COLORS.accent, paddingHorizontal: 32, paddingVertical: 13, borderRadius: 20, marginTop: 24 }}
+                    >
+                      <Text style={{ color: COLORS.white, fontWeight: '700' }}>Cerrar</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {/* ESTADO: rechazado_mostrando_siguiente */}
+                {estadoVoluntarios === 'rechazado_mostrando_siguiente' && (
+                  <View style={{ alignItems: 'center', paddingVertical: 32 }}>
+                    <Ionicons name="close-circle" size={48} color={COLORS.danger} />
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: COLORS.danger, textAlign: 'center', marginTop: 12 }}>
+                      {voluntarioEsperando?.nombre} rechazó el caso.
+                    </Text>
+                    <Text style={{ fontSize: 13, color: COLORS.textLight, marginTop: 8 }}>Buscando siguiente candidato…</Text>
+                    <ActivityIndicator color={COLORS.primary} style={{ marginTop: 16 }} />
+                  </View>
+                )}
+
+                {/* ESTADO: candidatos */}
+                {estadoVoluntarios === 'candidatos' && (
+                  <>
+                    {/* Banner condicional */}
+                    {modoAsignacion !== 'manual' && (
+                      <View style={{
+                        backgroundColor: 'rgba(102,188,180,0.12)',
+                        borderRadius: 14, padding: 14, flexDirection: 'row',
+                        alignItems: 'flex-start', marginBottom: 14,
+                        borderLeftWidth: 4, borderLeftColor: COLORS.accent,
+                      }}>
+                        <Ionicons name="time-outline" size={20} color={COLORS.accent} style={{ marginRight: 10, marginTop: 1 }} />
+                        <Text style={{ flex: 1, fontSize: 13, color: COLORS.textDark, lineHeight: 19 }}>
+                          Si no asignas en <Text style={{ fontWeight: '700' }}>{timeoutMin} min</Text>, el sistema asignará automáticamente al mejor candidato.
+                        </Text>
+                      </View>
+                    )}
+
+                    <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
+                      {candidatosList.map((candidato) => {
+                        const maxScores = { proximidad: 40, compatibilidad: 25, disponibilidad: 20, carga: 15 };
+                        const barras = [
+                          { label: 'Proximidad', valor: candidato.score.proximidad, max: maxScores.proximidad },
+                          { label: 'Compatibilidad', valor: candidato.score.compatibilidad, max: maxScores.compatibilidad },
+                          { label: 'Disponibilidad', valor: candidato.score.disponibilidad, max: maxScores.disponibilidad },
+                          { label: 'Carga', valor: candidato.score.carga, max: maxScores.carga },
+                        ];
+                        const iniciales = candidato.nombre.split(' ').slice(0, 2).map((p: string) => p[0]).join('').toUpperCase();
+                        return (
+                          <View
+                            key={candidato.voluntario_id}
+                            style={{
+                              backgroundColor: COLORS.white, borderRadius: 20,
+                              padding: 16, marginBottom: 14,
+                              ...(Platform.OS === 'web'
+                                ? { boxShadow: '0 4px 16px rgba(0,0,0,0.08)' } as any
+                                : { elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8 })
+                            }}
+                          >
+                            {/* Fila superior: avatar + info + score total */}
+                            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+                              {/* Avatar */}
+                              <View style={{
+                                width: 48, height: 48, borderRadius: 24,
+                                backgroundColor: 'rgba(236,128,43,0.15)',
+                                justifyContent: 'center', alignItems: 'center', marginRight: 12
+                              }}>
+                                {candidato.foto_url
+                                  ? <Image source={{ uri: candidato.foto_url }} style={{ width: 48, height: 48, borderRadius: 24 }} />
+                                  : <Text style={{ fontSize: 16, fontWeight: '800', color: COLORS.primary }}>{iniciales}</Text>}
+                              </View>
+
+                              {/* Nombre + distancia + chip externo */}
+                              <View style={{ flex: 1 }}>
+                                <Text style={{ fontSize: 15, fontWeight: '700', color: COLORS.textDark }}>{candidato.nombre}</Text>
+                                <Text style={{ fontSize: 12, color: COLORS.textLight, marginTop: 2 }}>
+                                  📍 a {candidato.distancia_km} km
+                                </Text>
+                                {candidato.tipo === 'externo' && (
+                                  <View style={{
+                                    backgroundColor: '#E8CCAD', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3,
+                                    alignSelf: 'flex-start', marginTop: 5
+                                  }}>
+                                    <Text style={{ fontSize: 10, fontWeight: '700', color: COLORS.textDark }}>
+                                      {candidato.etiqueta || 'Voluntario externo verificado'}
+                                    </Text>
+                                  </View>
+                                )}
+                              </View>
+
+                              {/* Score total */}
+                              <View style={{ alignItems: 'center', marginLeft: 8 }}>
+                                <Text style={{ fontSize: 28, fontWeight: '800', color: COLORS.primary, fontFamily: 'Fredoka' }}>
+                                  {candidato.score.total}
+                                </Text>
+                                <Text style={{ fontSize: 10, color: COLORS.textLight, fontWeight: '600' }}>SCORE</Text>
+                              </View>
+                            </View>
+
+                            {/* Mini-barras de score */}
+                            {barras.map((barra) => {
+                              const pct = Math.min(1, barra.valor / barra.max);
+                              return (
+                                <View key={barra.label} style={{ marginBottom: 6 }}>
+                                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
+                                    <Text style={{ fontSize: 11, color: COLORS.textLight, fontWeight: '600' }}>{barra.label}</Text>
+                                    <Text style={{ fontSize: 11, color: COLORS.textDark, fontWeight: '700' }}>{barra.valor}/{barra.max}</Text>
+                                  </View>
+                                  <View style={{ backgroundColor: '#F0E6D2', borderRadius: 6, height: 6, overflow: 'hidden' }}>
+                                    <View style={{
+                                      width: `${Math.round(pct * 100)}%`,
+                                      backgroundColor: COLORS.primary, height: 6, borderRadius: 6
+                                    }} />
+                                  </View>
+                                </View>
+                              );
+                            })}
+
+                            {/* Botón Asignar */}
+                            <TouchableOpacity
+                              onPress={() => { setCandidatoAConfirmar(candidato); setShowConfirmVoluntarioModal(true); }}
+                              style={{
+                                backgroundColor: COLORS.primary, borderRadius: 14,
+                                paddingVertical: 11, alignItems: 'center', marginTop: 12
+                              }}
+                            >
+                              <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 14 }}>Asignar</Text>
+                            </TouchableOpacity>
+                          </View>
+                        );
+                      })}
+                    </ScrollView>
+
+                    <TouchableOpacity
+                      onPress={() => { setShowStaffModal(false); resetModales(); }}
+                      style={{ paddingVertical: 12, alignItems: 'center', marginTop: 4 }}
+                    >
+                      <Text style={{ color: COLORS.textLight, fontWeight: '600' }}>Cancelar</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+
               </View>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Modal de confirmación de asignación a voluntario ── */}
+      <Modal visible={showConfirmVoluntarioModal} transparent animationType="fade">
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+          <View style={{
+            backgroundColor: COLORS.cardBg, borderRadius: 28,
+            padding: 28, width: '100%', maxWidth: 380,
+            ...(Platform.OS === 'web'
+              ? { boxShadow: '0 16px 48px rgba(0,0,0,0.2)' } as any
+              : { elevation: 16 })
+          }}>
+            <View style={{ alignItems: 'center', marginBottom: 16 }}>
+              <View style={{
+                width: 64, height: 64, borderRadius: 32,
+                backgroundColor: 'rgba(236,128,43,0.12)',
+                justifyContent: 'center', alignItems: 'center', marginBottom: 12
+              }}>
+                <Ionicons name="person-add" size={32} color={COLORS.primary} />
+              </View>
+              <Text style={{ fontSize: 18, fontWeight: '800', color: COLORS.textDark, textAlign: 'center' }}>
+                ¿Asignar este caso a {candidatoAConfirmar?.nombre}?
+              </Text>
+              <Text style={{ fontSize: 13, color: COLORS.textLight, textAlign: 'center', marginTop: 8, lineHeight: 19 }}>
+                El voluntario recibirá una notificación y deberá confirmar.
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 12, marginTop: 8 }}>
+              <TouchableOpacity
+                onPress={() => { setShowConfirmVoluntarioModal(false); setCandidatoAConfirmar(null); }}
+                style={{ flex: 1, paddingVertical: 14, alignItems: 'center', borderRadius: 18, backgroundColor: '#E5E7EB' }}
+              >
+                <Text style={{ color: COLORS.textLight, fontWeight: 'bold' }}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={confirmarAsignacionVoluntario}
+                style={{ flex: 1, paddingVertical: 14, alignItems: 'center', borderRadius: 18, backgroundColor: COLORS.primary }}
+              >
+                <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Confirmar</Text>
+              </TouchableOpacity>
             </View>
           </View>
-        </Modal>
+        </View>
+      </Modal>
 
     </View>
   );
