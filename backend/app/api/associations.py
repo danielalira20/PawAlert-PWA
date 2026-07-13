@@ -16,6 +16,8 @@ import json
 
 router = APIRouter()
 
+MODOS_ASIGNACION_VALIDOS = ("manual", "semi_automatico", "automatico")
+
 
 def _obtener_usuario_autenticado(authorization: str | None) -> dict:
     """Valida el JWT de Supabase mandado en el header Authorization y regresa
@@ -583,7 +585,70 @@ async def get_apelacion(authorization: str = Header(None)):
         "created_at": str(apelacion.data[0]["created_at"])
     }
 
-### Fin: endpoint para status apleacion 
+### Fin: endpoint para status apleacion
+
+
+class ConfigAsignacionUpdate(BaseModel):
+    modo_asignacion: str | None = None
+    timeout_grave: int | None = None
+    timeout_herido: int | None = None
+    timeout_estable: int | None = None
+
+
+@router.get("/me/config-asignacion", status_code=200)
+async def get_config_asignacion(authorization: str = Header(None)):
+    """Devuelve la configuración de asignación de voluntarios de la asociación
+    del usuario logueado (modo manual/semi_automatico/automatico + timeouts)."""
+    usuario = _obtener_usuario_autenticado(authorization)
+
+    if not usuario.get("asociacion_id"):
+        raise HTTPException(status_code=404, detail="Este usuario no está vinculado a ninguna asociación")
+
+    resultado = supabase.table("asociaciones").select(
+        "modo_asignacion, timeout_grave, timeout_herido, timeout_estable"
+    ).eq("id", usuario["asociacion_id"]).execute()
+
+    if not resultado.data:
+        raise HTTPException(status_code=404, detail="Asociación no encontrada")
+
+    return resultado.data[0]
+
+
+@router.patch("/me/config-asignacion", status_code=200)
+async def patch_config_asignacion(body: ConfigAsignacionUpdate, authorization: str = Header(None)):
+    """Actualiza el modo de asignación y/o los timeouts. Solo valida y guarda
+    los campos que vengan en el body (los demás quedan sin tocar)."""
+    usuario = _obtener_usuario_autenticado(authorization)
+
+    if not usuario.get("asociacion_id"):
+        raise HTTPException(status_code=404, detail="Este usuario no está vinculado a ninguna asociación")
+
+    if body.modo_asignacion is not None and body.modo_asignacion not in MODOS_ASIGNACION_VALIDOS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"modo_asignacion debe ser uno de: {', '.join(MODOS_ASIGNACION_VALIDOS)}",
+        )
+
+    for campo, valor in (
+        ("timeout_grave", body.timeout_grave),
+        ("timeout_herido", body.timeout_herido),
+        ("timeout_estable", body.timeout_estable),
+    ):
+        if valor is not None and not (1 <= valor <= 240):
+            raise HTTPException(status_code=422, detail=f"{campo} debe estar entre 1 y 240 minutos")
+
+    actualizacion = {k: v for k, v in body.model_dump().items() if v is not None}
+    if not actualizacion:
+        raise HTTPException(status_code=422, detail="No se enviaron campos para actualizar")
+
+    resultado = supabase.table("asociaciones").update(actualizacion).eq(
+        "id", usuario["asociacion_id"]
+    ).execute()
+
+    if not resultado.data:
+        raise HTTPException(status_code=404, detail="Asociación no encontrada")
+
+    return resultado.data[0]
 
  
 ### Endpoints: gestión de postulaciones y voluntarios de la asociación (Sprint Voluntarios)
