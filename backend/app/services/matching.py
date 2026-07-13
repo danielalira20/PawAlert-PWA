@@ -6,6 +6,11 @@ from datetime import datetime
 
 from app.db.supabase import supabase
 
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+TZ_MEXICO = ZoneInfo("America/Mexico_City")
+
 PESOS = {
     "proximidad": 0.40,
     "compatibilidad": 0.25,
@@ -23,8 +28,12 @@ def obtener_candidatos(reporte_id: str) -> dict:
         "candidatos_para_reporte", {"p_reporte_id": reporte_id}
     ).execute().data or []
 
+    rechazaron = _voluntarios_que_rechazaron(reporte_id)
+
     candidatos = []
     for c in crudos:
+        if c["usuario_id"] in rechazaron:
+            continue  # ya rechazo este caso; no volver a ofrecerselo
         if c["casos_activos"] >= MAX_CASOS_SIMULTANEOS:
             continue  # filtro de carga
 
@@ -73,7 +82,7 @@ def _score_disponibilidad(disponibilidad: dict) -> float:
     """100 si el dia y la hora actual caen dentro de lo declarado, 0 si no.
     Formato acordado: {"dias":["lun","mar"],"horarios":[{"de":"09:00","a":"18:00"}]}
     Sin datos declarados -> 0 (quien no declara disponibilidad no compite en este componente)."""
-    ahora = datetime.now()
+    ahora = datetime.now(TZ_MEXICO)
     dias = (disponibilidad or {}).get("dias") or []
     horarios = (disponibilidad or {}).get("horarios") or []
     if DIAS[ahora.weekday()] not in dias:
@@ -96,3 +105,15 @@ def _obtener_reporte(reporte_id: str) -> dict:
         "latitud, longitud, candidatos_presentados_at"
     ).eq("id", reporte_id).single().execute()
     return res.data
+
+def _voluntarios_que_rechazaron(reporte_id: str) -> set:
+    """Usuarios que ya rechazaron este caso (leido del historial).
+    Evita que el escalamiento o la asociacion les vuelvan a asignar el mismo caso."""
+    res = (
+        supabase.table("historial_reporte")
+        .select("usuario_id")
+        .eq("reporte_id", reporte_id)
+        .eq("tipo_evento", "voluntario_rechaza")
+        .execute()
+    )
+    return {r["usuario_id"] for r in (res.data or []) if r.get("usuario_id")}
