@@ -364,10 +364,10 @@ async def guardar_capacidades(voluntario_id: str, datos: dict) -> dict:
     if not validar_claves_catalogo("tamanio_catalogo", datos.get("tamanios", [])):
         raise HTTPException(status_code=422, detail="Uno o más tamaños no son válidos")
 
-    if datos.get("ofrece_casa_hogar") and (datos.get("latitud") is None or datos.get("longitud") is None):
+    if datos.get("latitud") is None or datos.get("longitud") is None:
         raise HTTPException(
             status_code=422,
-            detail="Debes indicar tu zona de cobertura si ofreces casa hogar"
+            detail="Debes indicar tu zona de cobertura (puede ser aproximada)"
         )
 
     if not datos.get("acepto_terminos"):

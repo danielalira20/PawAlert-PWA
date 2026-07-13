@@ -24,7 +24,7 @@ const COLORS = {
 
 const FORM_MAX_WIDTH = 700;
 const DIAS_SEMANA = ['lun', 'mar', 'mié', 'jue', 'vie', 'sab', 'dom'];
-const DIAS_VALORES = ['lun', 'mar', 'mié', 'jue', 'vie', 'sab', 'dom'];
+const DIAS_VALORES = ['lun', 'mar', 'mie', 'jue', 'vie', 'sab', 'dom'];
 
 // Opciones de horarios a mostrar en el selector
 const TIME_OPTIONS = [
@@ -541,7 +541,7 @@ export default function CapacidadesFormScreen({ onClose, fromProfile = false }: 
               <Divider />
 
               {/* ─── Zona de Cobertura ─── */}
-              <FormSection title="Zona de Cobertura" subtitle="Ajusta el pin en el mapa para indicar dónde puedes operar.">
+              <FormSection title="Zona de Cobertura" subtitle="¿Desde qué zona puedes ayudar? Puede ser aproximado (el centro de tu colonia está bien).">
                 <TouchableOpacity onPress={handleGetLocation} style={styles.locationButton} disabled={isLoadingGps}>
                   <Ionicons name="location" size={18} color={COLORS.bgTeal} />
                   <Text style={styles.locationButtonText}>
