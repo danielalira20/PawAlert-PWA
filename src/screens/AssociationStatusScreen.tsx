@@ -157,6 +157,14 @@ export default function AssociationStatusScreen({ onClose }: Props) {
   const [isApelando, setIsApelando] = useState(false);
   const [apelacionEnviada, setApelacionEnviada] = useState(false);
 
+  // ── Configuración de Asignación ──
+  const [modoAsignacionConfig, setModoAsignacionConfig] = useState<'manual' | 'semi_automatico' | 'automatico'>('manual');
+  const [timeoutGrave, setTimeoutGrave] = useState('10');
+  const [timeoutHerido, setTimeoutHerido] = useState('30');
+  const [timeoutEstable, setTimeoutEstable] = useState('60');
+  const [isSavingConfig, setIsSavingConfig] = useState(false);
+  const [isLoadingConfig, setIsLoadingConfig] = useState(true);
+
   const { width: screenWidth } = useWindowDimensions();
 
   const MOTIVOS_RECHAZO = [
@@ -232,6 +240,51 @@ export default function AssociationStatusScreen({ onClose }: Props) {
     } catch (error) {}
   };
 
+  const cargarConfiguracionAsignacion = async () => {
+    setIsLoadingConfig(true);
+    try {
+      const res = await axios.get(`${API_URL}/associations/me/config-asignacion`, { headers: { Authorization: `Bearer ${token}` } });
+      if (res.data) {
+        setModoAsignacionConfig(res.data.modo_asignacion || 'manual');
+        setTimeoutGrave(String(res.data.timeout_grave || 10));
+        setTimeoutHerido(String(res.data.timeout_herido || 30));
+        setTimeoutEstable(String(res.data.timeout_estable || 60));
+      }
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setIsLoadingConfig(false);
+    }
+  };
+
+  const guardarConfiguracionAsignacion = async () => {
+    const g = parseInt(timeoutGrave, 10);
+    const h = parseInt(timeoutHerido, 10);
+    const e = parseInt(timeoutEstable, 10);
+    
+    if (modoAsignacionConfig !== 'manual') {
+      if (isNaN(g) || g < 1 || g > 240 || isNaN(h) || h < 1 || h > 240 || isNaN(e) || e < 1 || e > 240) {
+         showToast({ type: 'warning', title: 'Valores inválidos', message: 'Los tiempos deben estar entre 1 y 240 minutos.' });
+         return;
+      }
+    }
+
+    setIsSavingConfig(true);
+    try {
+      await axios.patch(`${API_URL}/associations/me/config-asignacion`, {
+        modo_asignacion: modoAsignacionConfig,
+        timeout_grave: g,
+        timeout_herido: h,
+        timeout_estable: e
+      }, { headers: { Authorization: `Bearer ${token}` } });
+      showToast({ type: 'success', title: '¡Listo!', message: 'Configuración guardada.' });
+    } catch (error: any) {
+      showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'No pudimos guardar la configuración.' });
+    } finally {
+      setIsSavingConfig(false);
+    }
+  };
+
   useEffect(() => {
     if (!isLoading) cargarEstado();
   }, [isLoading]);
@@ -239,6 +292,7 @@ export default function AssociationStatusScreen({ onClose }: Props) {
   useEffect(() => {
     if (info?.estado === 'aprobada') {
       cargarReportes();
+      cargarConfiguracionAsignacion();
     } else if (info?.estado === 'rechazada') {
       verificarApelacion();
     }
@@ -781,6 +835,69 @@ export default function AssociationStatusScreen({ onClose }: Props) {
                     </View>
                   );
                 })}
+              </View>
+
+              <View style={{ backgroundColor: COLORS.cardBg, padding: 28, borderRadius: 32, marginTop: 32, ...SHADOW_MD }}>
+                <Text style={{ fontSize: 22, fontWeight: '800', color: COLORS.textDark, marginBottom: 6 }}>Modo de asignación de casos</Text>
+                <Text style={{ fontSize: 13, color: COLORS.textLight, marginBottom: 20 }}>Define cómo se le asigna un voluntario a cada reporte que reciben.</Text>
+
+                {isLoadingConfig ? (
+                  <ActivityIndicator color={COLORS.primary} />
+                ) : (
+                  <>
+                    <View style={{ gap: 12, marginBottom: 20 }}>
+                      {[
+                        { id: 'manual', titulo: 'Manual', desc: 'Siempre eliges tú.' },
+                        { id: 'semi_automatico', titulo: 'Semi-automático', desc: 'Eliges tú, pero si no respondes a tiempo el sistema asigna.' },
+                        { id: 'automatico', titulo: 'Automático', desc: 'El sistema asigna y tú supervisas.' }
+                      ].map(modo => (
+                        <TouchableOpacity 
+                          key={modo.id}
+                          onPress={() => setModoAsignacionConfig(modo.id as any)}
+                          style={{
+                            padding: 16, borderWidth: 2, borderRadius: 16,
+                            borderColor: modoAsignacionConfig === modo.id ? COLORS.primary : 'transparent',
+                            backgroundColor: modoAsignacionConfig === modo.id ? 'rgba(236, 128, 43, 0.1)' : COLORS.white,
+                            flexDirection: 'row', alignItems: 'center'
+                          }}
+                        >
+                          <View style={{ 
+                            width: 20, height: 20, borderRadius: 10, borderWidth: 2, 
+                            borderColor: modoAsignacionConfig === modo.id ? COLORS.primary : COLORS.textLight, 
+                            marginRight: 12, justifyContent: 'center', alignItems: 'center' 
+                          }}>
+                            {modoAsignacionConfig === modo.id && <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: COLORS.primary }} />}
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ fontWeight: '700', fontSize: 16, color: COLORS.textDark }}>{modo.titulo}</Text>
+                            <Text style={{ fontSize: 13, color: COLORS.textLight, marginTop: 2 }}>{modo.desc}</Text>
+                          </View>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+
+                    {modoAsignacionConfig !== 'manual' && (
+                      <View style={{ backgroundColor: COLORS.white, padding: 16, borderRadius: 16, marginBottom: 20 }}>
+                        <Text style={{ fontSize: 12, color: COLORS.textLight, marginBottom: 16, fontStyle: 'italic' }}>
+                          Si el staff no asigna a tiempo, el sistema tomará al mejor candidato disponible según estos tiempos.
+                        </Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+                          <View style={{ flexGrow: 1, flexBasis: 100 }}>
+                            <Input label="Caso grave (min)" placeholder="Ej. 10" value={timeoutGrave} onChangeText={setTimeoutGrave} keyboardType="numeric" />
+                          </View>
+                          <View style={{ flexGrow: 1, flexBasis: 100 }}>
+                            <Input label="Caso herido (min)" placeholder="Ej. 30" value={timeoutHerido} onChangeText={setTimeoutHerido} keyboardType="numeric" />
+                          </View>
+                          <View style={{ flexGrow: 1, flexBasis: 100 }}>
+                            <Input label="Caso estable (min)" placeholder="Ej. 60" value={timeoutEstable} onChangeText={setTimeoutEstable} keyboardType="numeric" />
+                          </View>
+                        </View>
+                      </View>
+                    )}
+
+                    <Button label="Guardar cambios" onPress={guardarConfiguracionAsignacion} isLoading={isSavingConfig} />
+                  </>
+                )}
               </View>
 
               <View style={{ backgroundColor: COLORS.cardBg, padding: 28, borderRadius: 32, marginTop: 32, ...SHADOW_MD }}>
