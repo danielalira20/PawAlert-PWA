@@ -109,7 +109,7 @@ function getDistanceFromLatLonInKm(
 }
 
 export default function JoinAssociationScreen() {
-  const { token, isLoggedIn, isLoading: isAuthLoading } = useAuth();
+  const { token, isLoggedIn, isLoading: isAuthLoading, refreshUser } = useAuth();
   const { toast, translateY, showToast } = useToast();
 
   const [isLoading, setIsLoading] = useState(true);
@@ -153,6 +153,12 @@ const fetchStatus = async () => {
       });
       if (res.data?.tiene_perfil_voluntario) {
         setStatus(res.data);
+      // Si ya fue aceptado, el rol del usuario cambió en el backend
+        // (reportante -> voluntario_interno/externo) pero AuthContext
+        // sigue con el objeto viejo hasta que lo refresquemos aquí.
+        if (res.data.estado === 'activo_nivel_1' || res.data.estado === 'activo_nivel_2') {
+          refreshUser();
+        }
       } else {
         setStatus(null);
       }

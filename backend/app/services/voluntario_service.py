@@ -102,6 +102,14 @@ async def obtener_mi_voluntario(usuario_id: str) -> dict:
 
     voluntario = resultado.data[0]
 
+    # Para decidir si mostrar "Termina de completar tu perfil" — si ya
+    # existe una fila en capacidades, ya no debería aparecer esa opción.
+    capacidades_existentes = supabase.table("capacidades").select(
+        "voluntario_id"
+    ).eq("voluntario_id", voluntario["id"]).execute()
+    tiene_capacidades = bool(capacidades_existentes.data)
+
+
     # Traer la postulación más reciente para saber tipo / motivo de rechazo
     ultima_postulacion = supabase.table("postulaciones").select(
         "id, tipo, estado, motivo_rechazo, numero_intento, asociacion_id, "
@@ -152,6 +160,7 @@ async def obtener_mi_voluntario(usuario_id: str) -> dict:
         "asociacion_id": voluntario.get("asociacion_id"),
         "ultima_postulacion": postulacion_data,
         "intentos_previos": intentos_previos,
+        "tiene_capacidades": tiene_capacidades,
     }
 
 
