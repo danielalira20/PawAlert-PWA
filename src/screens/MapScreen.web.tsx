@@ -35,6 +35,7 @@ const ESTADO: Record<string, { color: string; label: string; bg: string }> = {
   cerrado:       { color: '#7F8C8D', label: 'Cerrado',      bg: '#F2F3F4' },
   sin_cobertura: { color: '#E67E22', label: 'Sin cobertura',bg: '#FEF9E7' },
 };
+const TAB_BAR_CLEARANCE = 18 + 68 + 12;
 
 const getCfg = (map: Record<string, any>, key: string) =>
   map[key?.toLowerCase()] ?? { color: '#95A5A6', label: key ?? '', bg: '#F2F3F4' };
@@ -362,7 +363,7 @@ export default function MapScreen() {
 
       {/* Clock */}
       {lastUpdated && (
-        <View style={{ position: 'absolute', bottom: 20, left: 16, backgroundColor: 'rgba(30,20,10,0.6)', borderRadius: 20, paddingVertical: 6, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <View style={{ position: 'absolute', bottom: TAB_BAR_CLEARANCE, left: 16, backgroundColor: 'rgba(30,20,10,0.6)', borderRadius: 20, paddingVertical: 6, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <Ionicons name="time-outline" size={13} color="#FFF" />
           <Text style={{ color: '#FFF', fontSize: 10, fontWeight: '600' }}>
             {formatDistanceToNow(lastUpdated, { addSuffix: true, locale: es })}
@@ -373,7 +374,7 @@ export default function MapScreen() {
       {/* FAB */}
       <TouchableOpacity
         onPress={handleCrearReporte}
-        style={{ position: 'absolute', bottom: 20, right: 20, width: 52, height: 52, borderRadius: 26, backgroundColor: C.orange, alignItems: 'center', justifyContent: 'center', shadowColor: C.orange, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.45, shadowRadius: 12, zIndex: 1000, elevation: 10 }}
+        style={{ position: 'absolute', bottom: TAB_BAR_CLEARANCE, right: 20, width: 52, height: 52, borderRadius: 26, backgroundColor: C.orange, alignItems: 'center', justifyContent: 'center', shadowColor: C.orange, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.45, shadowRadius: 12, zIndex: 1000, elevation: 10 }}
       >
         <Ionicons name="add" size={26} color="#FFF" />
       </TouchableOpacity>
