@@ -285,358 +285,345 @@ export default function CapacidadesFormScreen({ onClose, fromProfile = false }: 
 
   if (isLoading) {
     return (
-      <View style={[styles.outerContainer, { backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' } as any]}>
-        <View style={styles.centeredContent}>
-          <View style={styles.cardContainer}>
-            <View style={[styles.headerSection, { backgroundColor: COLORS.bgTeal }]}>
-              <View style={styles.headerContent}>
-                <View style={styles.headerText}>
-                  <Text style={styles.headerTitle}>Cargando...</Text>
-                </View>
-              </View>
-            </View>
-            <View style={styles.bodySection}>
-              <ActivityIndicator size="large" color={COLORS.primary} />
+      <View style={styles.container}>
+        <View style={styles.headerSection}>
+          <View style={styles.headerContent}>
+            <View style={styles.headerText}>
+              <Text style={styles.headerTitle}>Cargando...</Text>
             </View>
           </View>
+        </View>
+        <View style={[styles.bodySection, { justifyContent: 'center', alignItems: 'center' }]}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
         </View>
       </View>
     );
   }
 
   return (
-    <View style={[styles.outerContainer, { backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' } as any]}>
+    <View style={styles.container}>
       <Toast toast={toast} translateY={translateY} />
 
-      <View style={[styles.centeredContent]}>
-        <View style={styles.cardContainer}>
-          <View style={styles.headerSection}>
-            <View style={styles.headerContent}>
-              <View style={styles.headerText}>
-                <Text style={styles.headerTitle}>Mis Capacidades</Text>
-                <Text style={styles.headerSubtitle}>Cuéntanos cómo puedes ayudar</Text>
+      <View style={styles.headerSection}>
+        <View style={styles.headerContent}>
+          <View style={styles.headerText}>
+            <Text style={styles.headerTitle}>Mis Capacidades</Text>
+            <Text style={styles.headerSubtitle}>Cuéntanos cómo puedes ayudar</Text>
+          </View>
+        </View>
+        <Image
+          pointerEvents="none"
+          source={{ uri: 'https://cdn-icons-png.flaticon.com/512/3047/3047928.png' }}
+          style={styles.decorationImage}
+          resizeMode="contain"
+        />
+      </View>
+
+      <View style={styles.bodySection}>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+          {/* ─── Disponibilidad ─── */}
+          <FormSection title="Disponibilidad" subtitle="¿Qué días y horas puedes atender?">
+            <Text style={styles.sectionLabel}>Días disponibles *</Text>
+            <View style={styles.daysContainer}>
+              {DIAS_SEMANA.map((dia, idx) => {
+                const valor = DIAS_VALORES[idx];
+                const isSelected = diasSeleccionados.includes(valor);
+                return (
+                  <TouchableOpacity
+                    key={valor}
+                    onPress={() => toggleDia(valor)}
+                    style={[styles.dayChip, { backgroundColor: isSelected ? COLORS.primary : COLORS.grayLight }]}
+                  >
+                    <Text style={[styles.dayChipText, { color: isSelected ? COLORS.bgWhite : COLORS.textLight }]}>
+                      {dia}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            {errors.dias && <Text style={styles.errorText}>{errors.dias}</Text>}
+
+            <View style={{ marginTop: 20 }}>
+              <Text style={styles.sectionLabel}>Rango horario *</Text>
+              <View style={styles.timeContainer}>
+                {/* Botones que abren el Modal de Horario */}
+                <View style={styles.timeField}>
+                  <Text style={styles.timeLabel}>Desde</Text>
+                  <TouchableOpacity onPress={() => openTimePicker('apertura')} style={styles.timeSelectorBtn}>
+                    <Text style={styles.timeSelectorBtnText}>{getDisplayTime(horaApertura)}</Text>
+                    <Ionicons name="chevron-down" size={16} color={COLORS.textLight} />
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.timeField}>
+                  <Text style={styles.timeLabel}>Hasta</Text>
+                  <TouchableOpacity onPress={() => openTimePicker('cierre')} style={styles.timeSelectorBtn}>
+                    <Text style={styles.timeSelectorBtnText}>{getDisplayTime(horaCierre)}</Text>
+                    <Ionicons name="chevron-down" size={16} color={COLORS.textLight} />
+                  </TouchableOpacity>
+                </View>
               </View>
-              {onClose && (
-                <TouchableOpacity onPress={handleCloseRequest} style={styles.closeButton}>
-                  <Ionicons name="close" size={24} color={COLORS.bgWhite} />
-                </TouchableOpacity>
+              {(errors.horaApertura || errors.horaCierre) && (
+                <Text style={styles.errorText}>{errors.horaApertura || errors.horaCierre}</Text>
               )}
             </View>
-            <Image
-              pointerEvents="none"
-              source={{ uri: 'https://cdn-icons-png.flaticon.com/512/3047/3047928.png' }}
-              style={styles.decorationImage}
-              resizeMode="contain"
-            />
-          </View>
+          </FormSection>
 
-          <View style={styles.bodySection}>
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-              {/* ─── Disponibilidad ─── */}
-              <FormSection title="Disponibilidad" subtitle="¿Qué días y horas puedes atender?">
-                <Text style={styles.sectionLabel}>Días disponibles *</Text>
-                <View style={styles.daysContainer}>
-                  {DIAS_SEMANA.map((dia, idx) => {
-                    const valor = DIAS_VALORES[idx];
-                    const isSelected = diasSeleccionados.includes(valor);
+          <Divider />
+
+          {/* ─── Casa Hogar ─── */}
+          <FormSection title="Casa Hogar" subtitle="¿Ofreces espacio en tu hogar para animales?">
+            <TouchableOpacity
+              onPress={() => setOfreceCasaHogar(!ofreceCasaHogar)}
+              style={[
+                styles.checkboxContainer,
+                { borderColor: ofreceCasaHogar ? COLORS.primary : COLORS.border }
+              ]}
+            >
+              <View
+                style={[
+                  styles.checkbox,
+                  { backgroundColor: ofreceCasaHogar ? COLORS.primary : 'transparent', borderColor: COLORS.primary }
+                ]}
+              >
+                {ofreceCasaHogar && <Ionicons name="checkmark" size={18} color={COLORS.bgWhite} />}
+              </View>
+              <Text style={styles.checkboxLabel}>Ofrezco espacio en mi casa hogar</Text>
+            </TouchableOpacity>
+
+            {ofreceCasaHogar && (
+              <View style={{ marginTop: 20 }}>
+                <Text style={styles.sectionLabel}>Capacidad de animales *</Text>
+                <View style={styles.capacityContainer}>
+                  {[1, 2].map(cap => (
+                    <TouchableOpacity
+                      key={cap}
+                      onPress={() => setCapacidadAnimales(cap)}
+                      style={[
+                        styles.capacityChip,
+                        { backgroundColor: capacidadAnimales === cap ? COLORS.secondary : COLORS.grayLight }
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.capacityChipText,
+                          { color: capacidadAnimales === cap ? COLORS.textDark : COLORS.textLight }
+                        ]}
+                      >
+                        {cap} animal{cap > 1 ? 'es' : ''}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Especies que puedes acoger *</Text>
+                <View style={styles.chipContainer}>
+                  {ESPECIES.map(especie => {
+                    const isSelected = especiesSeleccionadas.includes(especie);
                     return (
                       <TouchableOpacity
-                        key={valor}
-                        onPress={() => toggleDia(valor)}
-                        style={[styles.dayChip, { backgroundColor: isSelected ? COLORS.primary : COLORS.grayLight }]}
+                        key={especie}
+                        onPress={() => toggleEspecie(especie)}
+                        style={[
+                          styles.chip,
+                          { backgroundColor: isSelected ? COLORS.primary : COLORS.grayLight }
+                        ]}
                       >
-                        <Text style={[styles.dayChipText, { color: isSelected ? COLORS.bgWhite : COLORS.textLight }]}>
-                          {dia}
+                        <Text
+                          style={{
+                            fontWeight: '700',
+                            fontSize: 13,
+                            color: isSelected ? COLORS.bgWhite : COLORS.textLight,
+                            textTransform: 'capitalize'
+                          }}
+                        >
+                          {especie}
                         </Text>
                       </TouchableOpacity>
                     );
                   })}
                 </View>
-                {errors.dias && <Text style={styles.errorText}>{errors.dias}</Text>}
+                {errors.especies && <Text style={styles.errorText}>{errors.especies}</Text>}
 
-                <View style={{ marginTop: 20 }}>
-                  <Text style={styles.sectionLabel}>Rango horario *</Text>
-                  <View style={styles.timeContainer}>
-                    {/* Botones que abren el Modal de Horario */}
-                    <View style={styles.timeField}>
-                      <Text style={styles.timeLabel}>Desde</Text>
-                      <TouchableOpacity onPress={() => openTimePicker('apertura')} style={styles.timeSelectorBtn}>
-                        <Text style={styles.timeSelectorBtnText}>{getDisplayTime(horaApertura)}</Text>
-                        <Ionicons name="chevron-down" size={16} color={COLORS.textLight} />
-                      </TouchableOpacity>
-                    </View>
-                    <View style={styles.timeField}>
-                      <Text style={styles.timeLabel}>Hasta</Text>
-                      <TouchableOpacity onPress={() => openTimePicker('cierre')} style={styles.timeSelectorBtn}>
-                        <Text style={styles.timeSelectorBtnText}>{getDisplayTime(horaCierre)}</Text>
-                        <Ionicons name="chevron-down" size={16} color={COLORS.textLight} />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                  {(errors.horaApertura || errors.horaCierre) && (
-                    <Text style={styles.errorText}>{errors.horaApertura || errors.horaCierre}</Text>
-                  )}
-                </View>
-              </FormSection>
-
-              <Divider />
-
-              {/* ─── Casa Hogar ─── */}
-              <FormSection title="Casa Hogar" subtitle="¿Ofreces espacio en tu hogar para animales?">
-                <TouchableOpacity
-                  onPress={() => setOfreceCasaHogar(!ofreceCasaHogar)}
-                  style={[
-                    styles.checkboxContainer,
-                    { borderColor: ofreceCasaHogar ? COLORS.primary : COLORS.border }
-                  ]}
-                >
-                  <View
-                    style={[
-                      styles.checkbox,
-                      { backgroundColor: ofreceCasaHogar ? COLORS.primary : 'transparent', borderColor: COLORS.primary }
-                    ]}
-                  >
-                    {ofreceCasaHogar && <Ionicons name="checkmark" size={18} color={COLORS.bgWhite} />}
-                  </View>
-                  <Text style={styles.checkboxLabel}>Ofrezco espacio en mi casa hogar</Text>
-                </TouchableOpacity>
-
-                {ofreceCasaHogar && (
-                  <View style={{ marginTop: 20 }}>
-                    <Text style={styles.sectionLabel}>Capacidad de animales *</Text>
-                    <View style={styles.capacityContainer}>
-                      {[1, 2].map(cap => (
-                        <TouchableOpacity
-                          key={cap}
-                          onPress={() => setCapacidadAnimales(cap)}
-                          style={[
-                            styles.capacityChip,
-                            { backgroundColor: capacidadAnimales === cap ? COLORS.secondary : COLORS.grayLight }
-                          ]}
+                <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Tamaños de animales *</Text>
+                <View style={styles.chipContainer}>
+                  {TAMANOS.map(tamano => {
+                    const isSelected = tamanosSeleccionados.includes(tamano);
+                    return (
+                      <TouchableOpacity
+                        key={tamano}
+                        onPress={() => toggleTamano(tamano)}
+                        style={[
+                          styles.chip,
+                          { backgroundColor: isSelected ? COLORS.secondary : COLORS.grayLight }
+                        ]}
+                      >
+                        <Text
+                          style={{
+                            fontWeight: '700',
+                            fontSize: 13,
+                            color: isSelected ? COLORS.textDark : COLORS.textLight,
+                            textTransform: 'capitalize'
+                          }}
                         >
-                          <Text
-                            style={[
-                              styles.capacityChipText,
-                              { color: capacidadAnimales === cap ? COLORS.textDark : COLORS.textLight }
-                            ]}
-                          >
-                            {cap} animal{cap > 1 ? 'es' : ''}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
+                          {tamano}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                {errors.tamanos && <Text style={styles.errorText}>{errors.tamanos}</Text>}
 
-                    <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Especies que puedes acoger *</Text>
-                    <View style={styles.chipContainer}>
-                      {ESPECIES.map(especie => {
-                        const isSelected = especiesSeleccionadas.includes(especie);
-                        return (
-                          <TouchableOpacity
-                            key={especie}
-                            onPress={() => toggleEspecie(especie)}
-                            style={[
-                              styles.chip,
-                              { backgroundColor: isSelected ? COLORS.primary : COLORS.grayLight }
-                            ]}
-                          >
-                            <Text
-                              style={{
-                                fontWeight: '700',
-                                fontSize: 13,
-                                color: isSelected ? COLORS.bgWhite : COLORS.textLight,
-                                textTransform: 'capitalize'
-                              }}
-                            >
-                              {especie}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-                    {errors.especies && <Text style={styles.errorText}>{errors.especies}</Text>}
-
-                    <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Tamaños de animales *</Text>
-                    <View style={styles.chipContainer}>
-                      {TAMANOS.map(tamano => {
-                        const isSelected = tamanosSeleccionados.includes(tamano);
-                        return (
-                          <TouchableOpacity
-                            key={tamano}
-                            onPress={() => toggleTamano(tamano)}
-                            style={[
-                              styles.chip,
-                              { backgroundColor: isSelected ? COLORS.secondary : COLORS.grayLight }
-                            ]}
-                          >
-                            <Text
-                              style={{
-                                fontWeight: '700',
-                                fontSize: 13,
-                                color: isSelected ? COLORS.textDark : COLORS.textLight,
-                                textTransform: 'capitalize'
-                              }}
-                            >
-                              {tamano}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-                    {errors.tamanos && <Text style={styles.errorText}>{errors.tamanos}</Text>}
-
-                    <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Tu situación en casa</Text>
-                    <TouchableOpacity
-                      onPress={() => setOtrosAnimales(!otrosAnimales)}
-                      style={[styles.checkboxContainer, { borderColor: COLORS.border }]}
-                    >
-                      <View
-                        style={[
-                          styles.checkbox,
-                          { backgroundColor: otrosAnimales ? COLORS.primary : 'transparent', borderColor: COLORS.primary }
-                        ]}
-                      >
-                        {otrosAnimales && <Ionicons name="checkmark" size={16} color={COLORS.bgWhite} />}
-                      </View>
-                      <Text style={styles.checkboxLabel}>Tengo otros animales en casa</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      onPress={() => setNinos(!ninos)}
-                      style={[styles.checkboxContainer, { borderColor: COLORS.border, marginTop: 12 }]}
-                    >
-                      <View
-                        style={[
-                          styles.checkbox,
-                          { backgroundColor: ninos ? COLORS.primary : 'transparent', borderColor: COLORS.primary }
-                        ]}
-                      >
-                        {ninos && <Ionicons name="checkmark" size={16} color={COLORS.bgWhite} />}
-                      </View>
-                      <Text style={styles.checkboxLabel}>Tengo niños en casa</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </FormSection>
-
-              <Divider />
-
-              {/* ─── Transporte ─── */}
-              <FormSection title="Transporte" subtitle="¿Cuentas con vehículo?">
+                <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Tu situación en casa</Text>
                 <TouchableOpacity
-                  onPress={() => setTieneVehiculo(!tieneVehiculo)}
+                  onPress={() => setOtrosAnimales(!otrosAnimales)}
                   style={[styles.checkboxContainer, { borderColor: COLORS.border }]}
                 >
                   <View
                     style={[
                       styles.checkbox,
-                      { backgroundColor: tieneVehiculo ? COLORS.primary : 'transparent', borderColor: COLORS.primary }
+                      { backgroundColor: otrosAnimales ? COLORS.primary : 'transparent', borderColor: COLORS.primary }
                     ]}
                   >
-                    {tieneVehiculo && <Ionicons name="checkmark" size={18} color={COLORS.bgWhite} />}
+                    {otrosAnimales && <Ionicons name="checkmark" size={16} color={COLORS.bgWhite} />}
                   </View>
-                  <Text style={styles.checkboxLabel}>Tengo vehículo disponible</Text>
-                </TouchableOpacity>
-              </FormSection>
-
-              <Divider />
-
-              {/* ─── Zona de Cobertura ─── */}
-              <FormSection title="Zona de Cobertura" subtitle="¿Desde qué zona puedes ayudar? Puede ser aproximado (el centro de tu colonia está bien).">
-                <TouchableOpacity onPress={handleGetLocation} style={styles.locationButton} disabled={isLoadingGps}>
-                  <Ionicons name="location" size={18} color={COLORS.bgTeal} />
-                  <Text style={styles.locationButtonText}>
-                    {isLoadingGps ? 'Obteniendo tu ubicación...' : 'Usar mi ubicación actual'}
-                  </Text>
+                  <Text style={styles.checkboxLabel}>Tengo otros animales en casa</Text>
                 </TouchableOpacity>
 
-                <View
-                  style={[
-                    styles.mapContainer,
-                    { borderWidth: errors.ubicacion ? 2 : 0, borderColor: COLORS.danger }
-                  ]}
-                >
-                  <LocationPickerMap
-                    selectedPosition={ubicacion}
-                    onLocationSelect={(lat, lng) => {
-                      setUbicacion({ latitud: lat, longitud: lng });
-                      setUbicacionConfirmada(true);
-                      setErrors(prev => ({ ...prev, ubicacion: '' }));
-                    }}
-                  />
-                </View>
-                {errors.ubicacion && <Text style={styles.errorText}>{errors.ubicacion}</Text>}
-              </FormSection>
-
-              <Divider />
-
-              {/* ─── Experiencia ─── */}
-              <FormSection title="Experiencia" subtitle="Cuéntanos sobre tu experiencia con animales.">
-                {/* Se cambia a TextInput normal para evitar confusión de importar componentes sin usar */}
-                <View style={[styles.textArea, { backgroundColor: COLORS.grayLight, padding: 0 }]}>
-                  <Text style={{ display: 'none' }} /> {/* Fix temporal si requería import custom */}
-                  <textarea 
-                    value={experiencia}
-                    onChange={(e) => setExperiencia(e.target.value)}
-                    placeholder="Ej. He trabajado 2 años en un refugio, tengo experiencia con perros de gran tamaño..."
-                    maxLength={500}
-                    style={{
-                      width: '100%', height: 100, backgroundColor: 'transparent',
-                      border: 'none', padding: 12, outline: 'none',
-                      fontFamily: 'inherit', fontSize: 14, color: COLORS.textDark,
-                      resize: 'none'
-                    }}
-                  />
-                </View>
-                <Text style={styles.charCounter}>{experiencia.length}/500</Text>
-              </FormSection>
-
-              <Divider />
-
-              {/* ─── Términos y Condiciones ─── */}
-              <FormSection title="Términos y Privacidad">
                 <TouchableOpacity
-                  onPress={() => setAceptoTerminos(!aceptoTerminos)}
-                  style={[
-                    styles.checkboxContainer,
-                    { borderColor: aceptoTerminos ? COLORS.primary : COLORS.border }
-                  ]}
+                  onPress={() => setNinos(!ninos)}
+                  style={[styles.checkboxContainer, { borderColor: COLORS.border, marginTop: 12 }]}
                 >
                   <View
                     style={[
                       styles.checkbox,
-                      { backgroundColor: aceptoTerminos ? COLORS.primary : 'transparent', borderColor: COLORS.primary }
+                      { backgroundColor: ninos ? COLORS.primary : 'transparent', borderColor: COLORS.primary }
                     ]}
                   >
-                    {aceptoTerminos && <Ionicons name="checkmark" size={18} color={COLORS.bgWhite} />}
+                    {ninos && <Ionicons name="checkmark" size={16} color={COLORS.bgWhite} />}
                   </View>
-                  <Text style={styles.checkboxLabel}>
-                    Acepto los términos y condiciones, y el aviso de privacidad *
-                  </Text>
+                  <Text style={styles.checkboxLabel}>Tengo niños en casa</Text>
                 </TouchableOpacity>
-                {errors.aceptoTerminos && <Text style={styles.errorText}>{errors.aceptoTerminos}</Text>}
+              </View>
+            )}
+          </FormSection>
 
-                <View style={styles.termsBox}>
-                  <Text style={styles.termsText}>
-                    Al aceptar, reconozco que proporcionaré información veraz, que mantendré comunicación continua
-                    con la asociación, y que cumpliré con los protocolos de seguridad y bienestar animal.
-                  </Text>
-                </View>
-              </FormSection>
+          <Divider />
 
-              <TouchableOpacity
-                onPress={handleSubmit}
-                disabled={isSubmitting}
-                style={[styles.submitButton, { backgroundColor: COLORS.primary }]}
+          {/* ─── Transporte ─── */}
+          <FormSection title="Transporte" subtitle="¿Cuentas con vehículo?">
+            <TouchableOpacity
+              onPress={() => setTieneVehiculo(!tieneVehiculo)}
+              style={[styles.checkboxContainer, { borderColor: COLORS.border }]}
+            >
+              <View
+                style={[
+                  styles.checkbox,
+                  { backgroundColor: tieneVehiculo ? COLORS.primary : 'transparent', borderColor: COLORS.primary }
+                ]}
               >
-                {isSubmitting ? (
-                  <ActivityIndicator color={COLORS.bgWhite} />
-                ) : (
-                  <Text style={styles.submitButtonText}>Guardar Capacidades</Text>
-                )}
-              </TouchableOpacity>
-            </ScrollView>
-          </View>
-        </View>
+                {tieneVehiculo && <Ionicons name="checkmark" size={18} color={COLORS.bgWhite} />}
+              </View>
+              <Text style={styles.checkboxLabel}>Tengo vehículo disponible</Text>
+            </TouchableOpacity>
+          </FormSection>
+
+          <Divider />
+
+          {/* ─── Zona de Cobertura ─── */}
+          <FormSection title="Zona de Cobertura" subtitle="¿Desde qué zona puedes ayudar? Puede ser aproximado (el centro de tu colonia está bien).">
+            <TouchableOpacity onPress={handleGetLocation} style={styles.locationButton} disabled={isLoadingGps}>
+              <Ionicons name="location" size={18} color={COLORS.bgTeal} />
+              <Text style={styles.locationButtonText}>
+                {isLoadingGps ? 'Obteniendo tu ubicación...' : 'Usar mi ubicación actual'}
+              </Text>
+            </TouchableOpacity>
+
+            <View
+              style={[
+                styles.mapContainer,
+                { borderWidth: errors.ubicacion ? 2 : 0, borderColor: COLORS.danger }
+              ]}
+            >
+              <LocationPickerMap
+                selectedPosition={ubicacion}
+                onLocationSelect={(lat, lng) => {
+                  setUbicacion({ latitud: lat, longitud: lng });
+                  setUbicacionConfirmada(true);
+                  setErrors(prev => ({ ...prev, ubicacion: '' }));
+                }}
+              />
+            </View>
+            {errors.ubicacion && <Text style={styles.errorText}>{errors.ubicacion}</Text>}
+          </FormSection>
+
+          <Divider />
+
+          {/* ─── Experiencia ─── */}
+          <FormSection title="Experiencia" subtitle="Cuéntanos sobre tu experiencia con animales.">
+            {/* Se cambia a TextInput normal para evitar confusión de importar componentes sin usar */}
+            <View style={[styles.textArea, { backgroundColor: COLORS.grayLight, padding: 0 }]}>
+              <Text style={{ display: 'none' }} /> {/* Fix temporal si requería import custom */}
+              <textarea 
+                value={experiencia}
+                onChange={(e) => setExperiencia(e.target.value)}
+                placeholder="Ej. He trabajado 2 años en un refugio, tengo experiencia con perros de gran tamaño..."
+                maxLength={500}
+                style={{
+                  width: '100%', height: 100, backgroundColor: 'transparent',
+                  border: 'none', padding: 12, outline: 'none',
+                  fontFamily: 'inherit', fontSize: 14, color: COLORS.textDark,
+                  resize: 'none'
+                }}
+              />
+            </View>
+            <Text style={styles.charCounter}>{experiencia.length}/500</Text>
+          </FormSection>
+
+          <Divider />
+
+          {/* ─── Términos y Condiciones ─── */}
+          <FormSection title="Términos y Privacidad">
+            <TouchableOpacity
+              onPress={() => setAceptoTerminos(!aceptoTerminos)}
+              style={[
+                styles.checkboxContainer,
+                { borderColor: aceptoTerminos ? COLORS.primary : COLORS.border }
+              ]}
+            >
+              <View
+                style={[
+                  styles.checkbox,
+                  { backgroundColor: aceptoTerminos ? COLORS.primary : 'transparent', borderColor: COLORS.primary }
+                ]}
+              >
+                {aceptoTerminos && <Ionicons name="checkmark" size={18} color={COLORS.bgWhite} />}
+              </View>
+              <Text style={styles.checkboxLabel}>
+                Acepto los términos y condiciones, y el aviso de privacidad *
+              </Text>
+            </TouchableOpacity>
+            {errors.aceptoTerminos && <Text style={styles.errorText}>{errors.aceptoTerminos}</Text>}
+
+            <View style={styles.termsBox}>
+              <Text style={styles.termsText}>
+                Al aceptar, reconozco que proporcionaré información veraz, que mantendré comunicación continua
+                con la asociación, y que cumpliré con los protocolos de seguridad y bienestar animal.
+              </Text>
+            </View>
+          </FormSection>
+
+          <TouchableOpacity
+            onPress={handleSubmit}
+            disabled={isSubmitting}
+            style={[styles.submitButton, { backgroundColor: COLORS.primary }]}
+          >
+            {isSubmitting ? (
+              <ActivityIndicator color={COLORS.bgWhite} />
+            ) : (
+              <Text style={styles.submitButtonText}>Guardar Capacidades</Text>
+            )}
+          </TouchableOpacity>
+        </ScrollView>
       </View>
 
       {/* MODAL: Selector de Horario */}
@@ -719,37 +706,9 @@ function Divider() {
 }
 
 const styles = StyleSheet.create({
-  outerContainer: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 9999,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
-  } as any,
-
-  centeredContent: {
-    width: '100%',
-    maxWidth: FORM_MAX_WIDTH,
-    maxHeight: '90%',
-    alignSelf: 'center',
-  },
-
-  cardContainer: {
+  container: {
     flex: 1,
     backgroundColor: COLORS.bgWhite,
-    borderRadius: 32,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    elevation: 15,
-    flexDirection: 'column',
   },
 
   headerSection: {
@@ -758,7 +717,7 @@ const styles = StyleSheet.create({
     paddingBottom: 32,
     backgroundColor: COLORS.bgTeal,
     position: 'relative',
-    zIndex: 1,
+    overflow: 'hidden',
   },
 
   headerContent: {
@@ -786,12 +745,6 @@ const styles = StyleSheet.create({
     opacity: 0.9,
   },
 
-  closeButton: {
-    backgroundColor: 'rgba(255,255,255,0.3)',
-    padding: 8,
-    borderRadius: 20,
-  },
-
   decorationImage: {
     width: 120,
     height: 120,
@@ -804,12 +757,8 @@ const styles = StyleSheet.create({
   bodySection: {
     flex: 1,
     backgroundColor: COLORS.bgWhite,
-    borderTopLeftRadius: 40,
-    borderTopRightRadius: 40,
     paddingHorizontal: 32,
     paddingTop: 32,
-    paddingBottom: 20,
-    zIndex: 2,
   },
 
   scrollContent: {

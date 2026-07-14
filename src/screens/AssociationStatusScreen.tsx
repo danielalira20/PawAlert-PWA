@@ -15,6 +15,7 @@ import { Input } from '../components/ui/Input';
 import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
 import { useWindowDimensions } from 'react-native';
+import { PostulacionesPanel } from '../components/association-dashboard/PostulacionesPanel';
 
 // ─── PALETA DE COLORES PETZEN ───
 const COLORS = {
@@ -75,6 +76,7 @@ interface ReporteAsignado {
 }
 
 type FiltroAsignacion = 'todas' | 'pendientes' | 'aceptadas' | 'rechazadas';
+type ActiveTab = 'reportes' | 'postulaciones';
 
 type TabAsignacion = 'staff' | 'voluntarios';
 type EstadoVoluntarios = 'cargando' | 'candidatos' | 'esperando_confirmacion' | 'confirmado' | 'rechazado_mostrando_siguiente' | 'sin_candidatos';
@@ -156,6 +158,7 @@ export default function AssociationStatusScreen({ onClose }: Props) {
   const [apelacionDocs, setApelacionDocs] = useState<any[]>([]);
   const [isApelando, setIsApelando] = useState(false);
   const [apelacionEnviada, setApelacionEnviada] = useState(false);
+  const [activeTab, setActiveTab] = useState<ActiveTab>('reportes');
 
   // ── Configuración de Asignación ──
   const [modoAsignacionConfig, setModoAsignacionConfig] = useState<'manual' | 'semi_automatico' | 'automatico'>('manual');
@@ -711,18 +714,61 @@ export default function AssociationStatusScreen({ onClose }: Props) {
                 </View>
               </View>
 
+              {/* Tabs de navegación */}
+              <View style={{ flexDirection: 'row', marginBottom: 20, borderBottomWidth: 1, borderBottomColor: '#E5E7EB' }}>
+                <TouchableOpacity 
+                  onPress={() => setActiveTab('reportes')}
+                  style={{ 
+                    paddingBottom: 12, 
+                    marginRight: 24, 
+                    borderBottomWidth: activeTab === 'reportes' ? 3 : 0, 
+                    borderBottomColor: COLORS.primary 
+                  }}
+                >
+                  <Text style={{ 
+                    fontSize: 16, 
+                    fontWeight: activeTab === 'reportes' ? '800' : '600', 
+                    color: activeTab === 'reportes' ? COLORS.primary : COLORS.textLight 
+                  }}>
+                    Reportes
+                  </Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  onPress={() => setActiveTab('postulaciones')}
+                  style={{ 
+                    paddingBottom: 12, 
+                    borderBottomWidth: activeTab === 'postulaciones' ? 3 : 0, 
+                    borderBottomColor: COLORS.primary 
+                  }}
+                >
+                  <Text style={{ 
+                    fontSize: 16, 
+                    fontWeight: activeTab === 'postulaciones' ? '800' : '600', 
+                    color: activeTab === 'postulaciones' ? COLORS.primary : COLORS.textLight 
+                  }}>
+                    Postulaciones
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Título de sección */}
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                <Text style={{ fontSize: 22, fontWeight: 'bold', color: COLORS.textDark }}>Reportes asignados</Text>
-                {nuevosReportes > 0 && (
+                <Text style={{ fontSize: 22, fontWeight: 'bold', color: COLORS.textDark }}>
+                  {activeTab === 'reportes' ? 'Reportes asignados' : 'Postulaciones de voluntarios'}
+                </Text>
+                {activeTab === 'reportes' && nuevosReportes > 0 && (
                   <View style={{ backgroundColor: COLORS.danger, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
                     <Text style={{ color: COLORS.white, fontSize: 12, fontWeight: '800' }}>{nuevosReportes}</Text>
                   </View>
                 )}
               </View>
 
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 24 }}>
-                <View style={{ flexDirection: 'row', gap: 10 }}>
-                  {(['pendientes', 'aceptadas', 'rechazadas', 'todas'] as FiltroAsignacion[]).map((f) => (
+              {activeTab === 'reportes' ? (
+                <>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 24 }}>
+                    <View style={{ flexDirection: 'row', gap: 10 }}>
+                      {(['pendientes', 'aceptadas', 'rechazadas', 'todas'] as FiltroAsignacion[]).map((f) => (
                     <TouchableOpacity 
                       key={f} onPress={() => setFiltro(f)}
                       style={{ 
@@ -835,7 +881,11 @@ export default function AssociationStatusScreen({ onClose }: Props) {
                     </View>
                   );
                 })}
-              </View>
+                  </View>
+                </>
+              ) : (
+                <PostulacionesPanel visible={activeTab === 'postulaciones'} />
+              )}
 
               <View style={{ backgroundColor: COLORS.cardBg, padding: 28, borderRadius: 32, marginTop: 32, ...SHADOW_MD }}>
                 <Text style={{ fontSize: 22, fontWeight: '800', color: COLORS.textDark, marginBottom: 6 }}>Modo de asignación de casos</Text>
