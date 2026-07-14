@@ -147,8 +147,8 @@ const ROLES = [
     icon: 'home-outline',
     does: 'Ofrece su hogar de forma temporal para el resguardo de animales rescatados.',
     requirements: 'Completar un formulario de postulación y validación básica del espacio disponible.',
-    ctaLabel: 'Postúlate como casa hogar',
-    ctaRoute: '/foster-application',
+    ctaLabel: 'Próximamente',
+    ctaRoute: null,
   },
   {
     id: 'asociacion',
@@ -750,35 +750,27 @@ export default function LandingScreen() {
           </View>
 
           {isDesktop ? (
-            // Desktop Layout: Imagen central con burbujas satélite
-            <View style={{ height: 500, position: 'relative', alignItems: 'center', justifyContent: 'center', marginBottom: 40 }}>
-              {/* Círculo central (Imagen) */}
-              <View style={{
-                width: 320, height: 320,
-                borderRadius: 160,
-                borderWidth: 2, borderStyle: 'dashed', borderColor: C.secondary,
-                alignItems: 'center', justifyContent: 'center',
-                position: 'absolute',
-              }}>
-                <View style={{
-                  width: 280, height: 280,
-                  borderRadius: 140,
-                  backgroundColor: C.neutralLight,
-                  alignItems: 'center', justifyContent: 'center',
-                  overflow: 'hidden',
-                }}>
-                  {/* TODO: reemplazar por foto real de una mascota rescatada */}
-                  <Ionicons name="image-outline" size={48} color={C.muted} />
-                </View>
-              </View>
+            // Desktop Layout: Imagen centrada con burbujas satélite
+            <View style={{ height: 520, position: 'relative', alignItems: 'center', justifyContent: 'center', marginBottom: 40 }}>
+              {/* Imagen del animal centrada, sin decorados */}
+              <Image
+                source={require('../assets/images/gato_img.png')}
+                style={{
+                  position: 'absolute',
+                  width: 540,
+                  height: 540,
+                  zIndex: 10,
+                }}
+                resizeMode="contain"
+              />
 
               {/* Burbujas satélite */}
               {[
                 { top: 40, left: 20, align: 'left', icon: 'shield-checkmark-outline' as const, color: C.secondary, title: 'Proceso responsable', desc: 'Cada reporte es validado y atendido por asociaciones verificadas en tu zona.' },
-                { top: 220, left: -20, align: 'left', icon: 'flash-outline' as const, color: C.primary, title: 'Respuesta inmediata', desc: 'Notificamos a la asociación más cercana al instante. Sin demoras, sin burocracia.' },
+                { top: 220, left: -20, align: 'left', icon: 'flash-outline' as const, color: C.primary, title: 'Respuesta inmediata', desc: 'Notificamos a la asociación más cercana al instante. Sin demoras.' },
                 { bottom: 40, left: 40, align: 'left', icon: 'heart-outline' as const, color: C.accent, title: 'Seguimiento real', desc: 'Seguí el estado del animal rescatado en vivo desde la app.' },
-                { top: 80, right: 0, align: 'right', isEmoji: true, icon: '🎯', color: C.primary, title: 'Nuestra Misión', desc: 'Brindar ayuda rápida y efectiva a los animales en situación de calle.' },
-                { bottom: 80, right: 20, align: 'right', isEmoji: true, icon: '🌍', color: C.secondary, title: 'Nuestra Visión', desc: 'Ser la plataforma líder en rescate animal, erradicando el sufrimiento.' },
+                { top: 80, right: 0, align: 'right', icon: 'flag-outline', color: C.primary, title: 'Nuestra Misión', desc: 'Brindar ayuda rápida y efectiva a los animales en situación de calle.' },
+                { bottom: 80, right: 20, align: 'right', icon: 'planet-outline', color: C.secondary, title: 'Nuestra Visión', desc: 'Ser la plataforma líder en rescate animal, erradicando el sufrimiento.' },
               ].map((item, i) => (
                 <View key={i} style={{
                   position: 'absolute',
@@ -800,8 +792,8 @@ export default function LandingScreen() {
                     )}
                   </View>
                   <View style={{ flex: 1, alignItems: item.align === 'left' ? 'flex-start' : 'flex-end' }}>
-                    <Text style={{ fontSize: 15, fontFamily: F.displayBold, color: C.text, textAlign: item.align === 'left' ? 'left' : 'right' }}>{item.title}</Text>
-                    <Text style={{ fontSize: 12, fontFamily: F.bodyMedium, color: C.muted, lineHeight: 16, textAlign: item.align === 'left' ? 'left' : 'right' }} numberOfLines={3}>
+                    <Text style={{ fontSize: 18, fontFamily: F.displayBold, color: C.text, textAlign: item.align === 'left' ? 'left' : 'right' }}>{item.title}</Text>
+                    <Text style={{ fontSize: 15, fontFamily: F.bodyMedium, color: C.muted, lineHeight: 16, textAlign: item.align === 'left' ? 'left' : 'right' }} numberOfLines={3}>
                       {item.desc}
                     </Text>
                   </View>
@@ -809,30 +801,22 @@ export default function LandingScreen() {
               ))}
             </View>
           ) : (
-            // Mobile Layout: Imagen central arriba y lista apilada
+            // Mobile Layout: Imagen centrada arriba y lista apilada
             <View style={{ marginBottom: 40, alignItems: 'center' }}>
-              <View style={{
-                width: 240, height: 240, borderRadius: 120,
-                borderWidth: 2, borderStyle: 'dashed', borderColor: C.secondary,
-                alignItems: 'center', justifyContent: 'center', marginBottom: 40,
-              }}>
-                <View style={{
-                  width: 210, height: 210, borderRadius: 105,
-                  backgroundColor: C.neutralLight,
-                  alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
-                }}>
-                  {/* TODO: reemplazar por foto real de una mascota rescatada */}
-                  <Ionicons name="image-outline" size={40} color={C.muted} />
-                </View>
-              </View>
+              {/* Imagen sin decorados circulares */}
+              <Image
+                source={require('../assets/images/gato_img.png')}
+                style={{ width: 400, height: 400, marginBottom: 12 }}
+                resizeMode="contain"
+              />
 
               <View style={{ width: '100%', gap: 16 }}>
                 {[
                   { icon: 'shield-checkmark-outline' as const, color: C.secondary, title: 'Proceso responsable', desc: 'Cada reporte es validado y atendido por asociaciones verificadas en tu zona.' },
-                  { icon: 'flash-outline' as const, color: C.primary, title: 'Respuesta inmediata', desc: 'Notificamos a la asociación más cercana al instante. Sin demoras, sin burocracia.' },
+                  { icon: 'flash-outline' as const, color: C.primary, title: 'Respuesta inmediata', desc: 'Notificamos a la asociación más cercana al instante. Sin demoras.' },
                   { icon: 'heart-outline' as const, color: C.accent, title: 'Seguimiento real', desc: 'Seguí el estado del animal rescatado en vivo desde la app.' },
-                  { isEmoji: true, icon: '🎯', color: C.primary, title: 'Nuestra Misión', desc: 'Brindar ayuda rápida y efectiva a los animales en situación de calle.' },
-                  { isEmoji: true, icon: '🌍', color: C.secondary, title: 'Nuestra Visión', desc: 'Ser la plataforma líder en rescate animal, erradicando el sufrimiento.' },
+                  { icon: 'flag-outline', color: C.primary, title: 'Nuestra Misión', desc: 'Brindar ayuda rápida y efectiva a los animales en situación de calle.' },
+                  { icon: 'planet-outline', color: C.secondary, title: 'Nuestra Visión', desc: 'Ser la plataforma líder en rescate animal, erradicando el sufrimiento.' },
                 ].map((item, i) => (
                   <View key={i} style={{
                     flexDirection: 'row', alignItems: 'center', gap: 16,
@@ -892,50 +876,25 @@ export default function LandingScreen() {
             marginBottom: 48,
           }}>
 
-            {/* Columna Izquierda: Imagen Blob */}
+            {/* Columna Izquierda: Imagen */}
             <View style={{
               flex: 1,
               alignItems: 'center',
               justifyContent: 'center',
-              position: 'relative',
               width: isDesktop ? undefined : '100%',
             }}>
-              {/* Outer dashed border blob */}
-              <View style={{
-                width: isDesktop ? 360 : 280,
-                height: isDesktop ? 360 : 280,
-                borderRadius: isDesktop ? 180 : 140,
-                borderTopRightRadius: isDesktop ? 120 : 90,
-                borderBottomLeftRadius: isDesktop ? 130 : 100,
-                borderWidth: 2,
-                borderColor: C.secondary,
-                borderStyle: 'dashed',
-                alignItems: 'center',
-                justifyContent: 'center',
-                position: 'relative',
-              }}>
-                {/* Inner image blob */}
-                <View style={{
-                  width: '90%', height: '90%',
-                  backgroundColor: C.neutralLight,
-                  borderRadius: isDesktop ? 160 : 120,
-                  borderTopRightRadius: isDesktop ? 100 : 75,
-                  borderBottomLeftRadius: isDesktop ? 110 : 85,
-                  alignItems: 'center', justifyContent: 'center',
-                  overflow: 'hidden',
-                }}>
-                  {/* TODO: reemplazar por foto real de un perro o gato */}
-                  <Ionicons name="image-outline" size={48} color={C.muted} />
-                </View>
-              </View>
-
-              {/* PawDecor decorativos */}
-              <PawDecor top={20} left={isDesktop ? 10 : -10} size={40} opacity={0.15} color={C.primary} rotate={-15} />
-              <PawDecor bottom={10} right={isDesktop ? 0 : -20} size={30} opacity={0.12} color={C.accent} rotate={20} />
+              <Image
+                source={require('../assets/images/gato_guia.png')}
+                style={{
+                  width: isDesktop ? 580 : 280,
+                  height: isDesktop ? 580 : 280,
+                }}
+                resizeMode="contain"
+              />
             </View>
 
             {/* Columna Derecha: Lista de Pasos */}
-            <View style={{ flex: 1, width: isDesktop ? undefined : '100%', paddingHorizontal: isDesktop ? 0 : 16 }}>
+            <View style={{ flex: 1, width: isDesktop ? undefined : '100%', paddingHorizontal: isDesktop ? 0 : 0 }}>
               {[
                 { num: '01', text: 'Mantén la calma y asegura la zona sin ponerte en riesgo.' },
                 { num: '02', text: 'Toma 2 o 3 fotos claras del animal mostrando su estado.' },
