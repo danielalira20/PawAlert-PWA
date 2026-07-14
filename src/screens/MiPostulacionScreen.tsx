@@ -112,11 +112,6 @@ export default function MiPostulacionScreen({ onClose }: Props) {
         <View style={styles.headerSection}>
           <View style={styles.headerContent}>
             <Text style={styles.headerTitle}>Mi Postulación</Text>
-            {onClose && (
-              <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-                <Ionicons name="close" size={24} color={COLORS.bgWhite} />
-              </TouchableOpacity>
-            )}
           </View>
         </View>
         <View style={styles.centerLoader}>
@@ -133,11 +128,6 @@ export default function MiPostulacionScreen({ onClose }: Props) {
         <View style={styles.headerSection}>
           <View style={styles.headerContent}>
             <Text style={styles.headerTitle}>Mi Postulación</Text>
-            {onClose && (
-              <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-                <Ionicons name="close" size={24} color={COLORS.bgWhite} />
-              </TouchableOpacity>
-            )}
           </View>
         </View>
         <View style={styles.centerLoader}>
@@ -155,11 +145,6 @@ export default function MiPostulacionScreen({ onClose }: Props) {
         <View style={styles.headerSection}>
           <View style={styles.headerContent}>
             <Text style={styles.headerTitle}>Mi Postulación</Text>
-            {onClose && (
-              <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-                <Ionicons name="close" size={24} color={COLORS.bgWhite} />
-              </TouchableOpacity>
-            )}
           </View>
         </View>
         <View style={styles.centerLoader}>
@@ -347,11 +332,6 @@ export default function MiPostulacionScreen({ onClose }: Props) {
       <View style={styles.headerSection}>
         <View style={styles.headerContent}>
           <Text style={styles.headerTitle}>Mi Postulación</Text>
-          {onClose && (
-            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <Ionicons name="close" size={24} color={COLORS.bgWhite} />
-            </TouchableOpacity>
-          )}
         </View>
       </View>
 
@@ -398,12 +378,6 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: '900',
     color: COLORS.bgWhite,
-  },
-
-  closeButton: {
-    padding: 8,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.2)',
   },
 
   bodySection: {
