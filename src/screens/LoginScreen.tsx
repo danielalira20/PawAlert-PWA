@@ -273,15 +273,16 @@ export default function LoginScreen() {
       )}
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={{ padding: 24, flexGrow: 1, justifyContent: 'center' }} showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={{ padding: 24, flexGrow: 1, justifyContent: 'center', alignItems: 'center' }} showsVerticalScrollIndicator={false}>
 
-          <View style={{ alignItems: 'center', marginBottom: 40 }}>
-            <Ionicons name="paw" size={48} color={C.primary} style={{ marginBottom: 16, opacity: 0.9 }} />
-            <Text style={{ color: C.primary, fontFamily: F.displayBold, fontSize: 42, marginBottom: 8, letterSpacing: -1 }}>PawAlert</Text>
-            <Text style={{ color: C.muted, fontSize: 16, textAlign: 'center', fontFamily: F.bodyRegular }}>
-              {tab === 'login' ? 'Inicia sesión para reportar más rápido' : 'Únete a nuestra comunidad de rescate'}
-            </Text>
-          </View>
+          <View style={{ width: '100%', maxWidth: 440 }}>
+            <View style={{ alignItems: 'center', marginBottom: 40 }}>
+              <Ionicons name="paw" size={48} color={C.primary} style={{ marginBottom: 16, opacity: 0.9 }} />
+              <Text style={{ color: C.primary, fontFamily: F.displayBold, fontSize: 42, marginBottom: 8, letterSpacing: -1 }}>PawAlert</Text>
+              <Text style={{ color: C.muted, fontSize: 16, textAlign: 'center', fontFamily: F.bodyRegular }}>
+                {tab === 'login' ? 'Inicia sesión para reportar más rápido' : 'Únete a nuestra comunidad de rescate'}
+              </Text>
+            </View>
 
           <View style={{ flexDirection: 'row', backgroundColor: '#F1E9E0', padding: 6, borderRadius: 30, marginBottom: 32 }}>
             {(['login', 'register'] as Tab[]).map((t) => {
@@ -305,8 +306,9 @@ export default function LoginScreen() {
           </View>
 
           <View style={{ 
-            backgroundColor: C.bg, padding: 24, borderRadius: 24, 
-            ...(Platform.OS === 'web' ? { boxShadow: '0 8px 30px rgba(46,42,38,0.06)' } : { elevation: 4 })
+            backgroundColor: C.bg, padding: 32, borderRadius: 28, 
+            borderWidth: 1, borderColor: `${C.neutralLight}30`,
+            ...(Platform.OS === 'web' ? { boxShadow: '0 12px 40px rgba(46,42,38,0.08)' } : { elevation: 5 })
           }}>
             {tab === 'login' ? (
               <View>
@@ -378,6 +380,7 @@ export default function LoginScreen() {
             </Text>
           </TouchableOpacity>
 
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

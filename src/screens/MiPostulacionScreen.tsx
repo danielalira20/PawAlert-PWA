@@ -282,32 +282,32 @@ export default function MiPostulacionScreen({ onClose }: Props) {
       {/* Botones de acción */}
       {(voluntario.estado === 'activo_nivel_1' ||
         voluntario.estado === 'activo_nivel_2') && (
-        <View style={styles.actionsSection}>
-          <TouchableOpacity
-            style={[styles.actionButton, styles.completarButton]}
-            activeOpacity={0.8}
-            onPress={() => {
-              if (onClose) onClose();
-              router.push('/(tabs)/profile');
-            }}
-          >
-            <Ionicons name="pencil-outline" size={18} color={COLORS.bgWhite} />
-            <Text style={styles.actionButtonText}>Mis Capacidades</Text>
-          </TouchableOpacity>
+          <View style={styles.actionsSection}>
+            <TouchableOpacity
+              style={[styles.actionButton, styles.completarButton]}
+              activeOpacity={0.8}
+              onPress={() => {
+                if (onClose) onClose();
+                router.push('/(tabs)/profile');
+              }}
+            >
+              <Ionicons name="pencil-outline" size={18} color={COLORS.bgWhite} />
+              <Text style={styles.actionButtonText}>Mis Capacidades</Text>
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.actionButton, styles.misReportesButton]}
-            activeOpacity={0.8}
-            onPress={() => {
-              if (onClose) onClose();
-              router.push('/(tabs)');
-            }}
-          >
-            <Ionicons name="clipboard-outline" size={18} color={COLORS.bgWhite} />
-            <Text style={styles.actionButtonText}>Mis Casos</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+            <TouchableOpacity
+              style={[styles.actionButton, styles.misReportesButton]}
+              activeOpacity={0.8}
+              onPress={() => {
+                if (onClose) onClose();
+                router.push('/(tabs)');
+              }}
+            >
+              <Ionicons name="clipboard-outline" size={18} color={COLORS.bgWhite} />
+              <Text style={styles.actionButtonText}>Mis Casos</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
       {voluntario.estado === 'rechazado' && (
         <View style={styles.actionsSection}>
