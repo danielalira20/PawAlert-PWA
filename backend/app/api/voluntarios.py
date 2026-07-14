@@ -6,6 +6,7 @@ from app.services.voluntario_service import (
     obtener_mi_voluntario,
     obtener_capacidades,
     guardar_capacidades,
+    obtener_reportes_voluntario,
 )
 
 router = APIRouter()
@@ -78,3 +79,13 @@ async def put_mis_capacidades(body: CapacidadesRequest, authorization: str = Hea
     usuario = _obtener_usuario_autenticado(authorization)
     voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
     return await guardar_capacidades(voluntario_id, body.model_dump())
+
+
+@router.get("/me/reportes", status_code=200)
+async def get_mis_reportes_voluntario(authorization: str = Header(None)):
+    """Reemplaza GET /staff/me/reportes (migración staff -> voluntario_interno).
+    Mismos 4 buckets (pendientes/en_accion/completados/historial), pero ya no
+    exige rol 'staff' literal — cualquier voluntario activo (interno o
+    externo) puede ver sus casos asignados."""
+    usuario = _obtener_usuario_autenticado(authorization)
+    return await obtener_reportes_voluntario(usuario["id"])

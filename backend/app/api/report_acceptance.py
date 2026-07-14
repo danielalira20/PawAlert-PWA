@@ -51,16 +51,31 @@ def _obtener_usuario_autenticado(authorization: str | None) -> dict:
     except Exception:
         raise HTTPException(status_code=401, detail="Token inválido o expirado")
 
-    resultado = supabase.table("usuarios").select("id, asociacion_id").eq(
-        "auth_user_id", auth_response.user.id
-    ).execute()
+    resultado = supabase.table("usuarios").select(
+        "id, asociacion_id, roles(nombre)"
+    ).eq("auth_user_id", auth_response.user.id).execute()
 
     if not resultado.data:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
-    return resultado.data[0]
+    fila = resultado.data[0]
+    return {
+        "id": fila["id"],
+        "asociacion_id": fila.get("asociacion_id"),
+        "rol": (fila.get("roles") or {}).get("nombre"),
+    }
 
-
+def _verificar_rol(usuario: dict, roles_permitidos: tuple[str, ...]) -> None:
+    """Bloquea el acceso si el rol del usuario no está entre los permitidos.
+    Necesario desde que voluntario_interno/externo también reciben
+    asociacion_id al ser aceptados — sin este check, cualquier voluntario
+    pasaría la validación de 'está vinculado a una asociación'."""
+    if usuario.get("rol") not in roles_permitidos:
+        raise HTTPException(
+            status_code=403,
+            detail="No tienes permiso para realizar esta acción"
+        )
+    
 def _obtener_asignacion_para_staff(reporte_id: str, asociacion_id: str | None) -> str:
     """Confirma que el reporte está asignado a la asociación del usuario
     logueado, y regresa el id de la asignación."""
@@ -115,6 +130,7 @@ async def reject_report(reporte_id: str, body: AcceptanceRequest):
 @router.post("/{reporte_id}/accept-staff", status_code=200)
 async def accept_report_staff(reporte_id: str, body: AcceptanceRequestStaff, authorization: str = Header(None)):
     usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion", "staff"))
     asignacion_id = _obtener_asignacion_para_staff(reporte_id, usuario["asociacion_id"])
     _aceptar_asignacion(asignacion_id, reporte_id, body.notas)
     return {"mensaje": "Reporte aceptado exitosamente", "reporte_id": reporte_id}
@@ -123,6 +139,7 @@ async def accept_report_staff(reporte_id: str, body: AcceptanceRequestStaff, aut
 @router.post("/{reporte_id}/reject-staff", status_code=200)
 async def reject_report_staff(reporte_id: str, body: AcceptanceRequestStaff, authorization: str = Header(None)):
     usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion", "staff"))
     asignacion_id = _obtener_asignacion_para_staff(reporte_id, usuario["asociacion_id"])
     _rechazar_asignacion(asignacion_id, reporte_id, body.notas)
     return {"mensaje": "Reporte rechazado. Queda pendiente para reasignación.", "reporte_id": reporte_id}

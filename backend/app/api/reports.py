@@ -17,13 +17,30 @@ def _obtener_usuario_autenticado(authorization: str | None) -> dict:
         auth_response = supabase.auth.get_user(token)
     except Exception:
         raise HTTPException(status_code=401, detail="Token inválido o expirado")
-    resultado = supabase.table("usuarios").select("id, asociacion_id").eq(
-        "auth_user_id", auth_response.user.id
-    ).execute()
+    resultado = supabase.table("usuarios").select(
+        "id, asociacion_id, roles(nombre)"
+    ).eq("auth_user_id", auth_response.user.id).execute()
     if not resultado.data:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    return resultado.data[0]
+    fila = resultado.data[0]
+    return {
+        "id": fila["id"],
+        "asociacion_id": fila.get("asociacion_id"),
+        "rol": (fila.get("roles") or {}).get("nombre"),
+    }
 
+
+def _verificar_rol(usuario: dict, roles_permitidos: tuple[str, ...]) -> None:
+    """Bloquea el acceso si el rol del usuario no está entre los permitidos.
+    Necesario desde que voluntario_interno/externo también reciben
+    asociacion_id al ser aceptados — sin este check, cualquier voluntario
+    pasaría la validación de 'está vinculado a una asociación'."""
+    if usuario.get("rol") not in roles_permitidos:
+        raise HTTPException(
+            status_code=403,
+            detail="No tienes permiso para realizar esta acción"
+        )
+    
 @router.post("", status_code=201)
 async def create_report(
     nombre: Optional[str] = Form(None),
@@ -154,23 +171,9 @@ async def create_report(
 @router.post("/{reporte_id}/asignar-staff", status_code=200)
 async def asignar_staff(reporte_id: str, body: dict, authorization: str = Header(None)):
     """El representante acepta un reporte y asigna a un miembro del staff."""
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="No autenticado")
+    usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion", "staff"))
 
-    token = authorization.replace("Bearer ", "")
-    try:
-        auth_response = supabase.auth.get_user(token)
-    except Exception:
-        raise HTTPException(status_code=401, detail="Token inválido o expirado")
-
-    usuario = supabase.table("usuarios").select(
-        "id, asociacion_id"
-    ).eq("auth_user_id", auth_response.user.id).execute()
-
-    if not usuario.data:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
-
-    usuario = usuario.data[0]
     asociacion_id = usuario.get("asociacion_id")
 
     if not asociacion_id:
@@ -421,23 +424,9 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
 async def rechazar_reporte(reporte_id: str, body: RechazarReporteRequest, authorization: str = Header(None)):
     """El representante rechaza un reporte. El sistema busca automáticamente
     la siguiente asociación más cercana."""
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="No autenticado")
+    usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion", "staff"))
 
-    token = authorization.replace("Bearer ", "")
-    try:
-        auth_response = supabase.auth.get_user(token)
-    except Exception:
-        raise HTTPException(status_code=401, detail="Token inválido o expirado")
-
-    usuario = supabase.table("usuarios").select(
-        "id, asociacion_id"
-    ).eq("auth_user_id", auth_response.user.id).execute()
-
-    if not usuario.data:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
-
-    usuario = usuario.data[0]
     asociacion_id = usuario.get("asociacion_id")
 
     if not asociacion_id:
@@ -566,7 +555,6 @@ async def rechazar_reporte(reporte_id: str, body: RechazarReporteRequest, author
             "contactos_emergencia": contactos,
             "estado": "sin_cobertura"
         }
-
 ### FIN: postrechazo de reportes
 
 @router.get("", response_model=list[ReportListItem], status_code=200)

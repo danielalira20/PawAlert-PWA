@@ -21,7 +21,8 @@ MODOS_ASIGNACION_VALIDOS = ("manual", "semi_automatico", "automatico")
 
 def _obtener_usuario_autenticado(authorization: str | None) -> dict:
     """Valida el JWT de Supabase mandado en el header Authorization y regresa
-    el registro correspondiente en la tabla usuarios (incluye asociacion_id)."""
+    el registro correspondiente en la tabla usuarios (incluye asociacion_id
+    y el nombre del rol, vía join a roles — mismo patrón que asignaciones.py)."""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="No autenticado")
 
@@ -31,15 +32,31 @@ def _obtener_usuario_autenticado(authorization: str | None) -> dict:
     except Exception:
         raise HTTPException(status_code=401, detail="Token inválido o expirado")
 
-    resultado = supabase.table("usuarios").select("id, asociacion_id").eq(
-        "auth_user_id", auth_response.user.id
-    ).execute()
+    resultado = supabase.table("usuarios").select(
+        "id, asociacion_id, roles(nombre)"
+    ).eq("auth_user_id", auth_response.user.id).execute()
 
     if not resultado.data:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
-    return resultado.data[0]
+    fila = resultado.data[0]
+    return {
+        "id": fila["id"],
+        "asociacion_id": fila.get("asociacion_id"),
+        "rol": (fila.get("roles") or {}).get("nombre"),
+    }
 
+def _verificar_rol(usuario: dict, roles_permitidos: tuple[str, ...]) -> None:
+    """Bloquea el acceso si el rol del usuario no está entre los permitidos.
+    Necesario desde que voluntario_interno/externo también reciben
+    asociacion_id al ser aceptados — sin este check, cualquier voluntario
+    pasaría la validación de 'está vinculado a una asociación'."""
+    if usuario.get("rol") not in roles_permitidos:
+        raise HTTPException(
+            status_code=403,
+            detail="No tienes permiso para realizar esta acción"
+        )
+    
 def _verificar_asociacion_aprobada(asociacion_id: str) -> None:
     asociacion = supabase.table("asociaciones").select("verificado").eq(
         "id", asociacion_id
@@ -305,6 +322,7 @@ async def agregar_representante(asociacion_id: str, body: NuevoRepresentante, au
     con el mismo teléfono, momento en el que el flujo de reclamo de cuenta
     de invitado (ya existente) la vincula automáticamente."""
     usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion",))
 
     if usuario.get("asociacion_id") != asociacion_id:
         raise HTTPException(status_code=403, detail="No tienes permiso sobre esta asociación")
@@ -350,6 +368,7 @@ async def agregar_representante(asociacion_id: str, body: NuevoRepresentante, au
 @router.get("/me/reportes", status_code=200)
 async def get_reportes_asignados(authorization: str = Header(None)):
     usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion", "staff"))
 
     if not usuario.get("asociacion_id"):
         raise HTTPException(status_code=404, detail="Este usuario no está vinculado a ninguna asociación")
@@ -425,6 +444,7 @@ async def get_staff_asociacion(authorization: str = Header(None)):
     """Devuelve la lista de miembros del staff de la asociacion del usuario logueado,
     indicando si cada uno esta disponible para recibir nuevos casos."""
     usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion", "staff"))
 
     if not usuario.get("asociacion_id"):
         raise HTTPException(status_code=404, detail="Este usuario no está vinculado a ninguna asociación")
@@ -497,7 +517,8 @@ async def apelar_rechazo(
 
     """Permite a una asociación rechazada enviar una apelación con mensaje y documentos."""
     usuario = _obtener_usuario_autenticado(authorization)
-
+    _verificar_rol(usuario, ("asociacion",))
+    
     if not usuario.get("asociacion_id"):
         raise HTTPException(status_code=404, detail="Este usuario no está vinculado a ninguna asociación")
 
@@ -565,7 +586,8 @@ async def apelar_rechazo(
 async def get_apelacion(authorization: str = Header(None)):
     """Devuelve la apelación más reciente de la asociación si existe."""
     usuario = _obtener_usuario_autenticado(authorization)
-
+    _verificar_rol(usuario, ("asociacion",))
+    
     if not usuario.get("asociacion_id"):
         raise HTTPException(status_code=404, detail="Este usuario no está vinculado a ninguna asociación")
 
@@ -600,6 +622,7 @@ async def get_config_asignacion(authorization: str = Header(None)):
     """Devuelve la configuración de asignación de voluntarios de la asociación
     del usuario logueado (modo manual/semi_automatico/automatico + timeouts)."""
     usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion",))
 
     if not usuario.get("asociacion_id"):
         raise HTTPException(status_code=404, detail="Este usuario no está vinculado a ninguna asociación")
@@ -619,6 +642,7 @@ async def patch_config_asignacion(body: ConfigAsignacionUpdate, authorization: s
     """Actualiza el modo de asignación y/o los timeouts. Solo valida y guarda
     los campos que vengan en el body (los demás quedan sin tocar)."""
     usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion",))
 
     if not usuario.get("asociacion_id"):
         raise HTTPException(status_code=404, detail="Este usuario no está vinculado a ninguna asociación")
@@ -658,7 +682,8 @@ async def get_postulaciones_asociacion(estado: str | None = None, authorization:
     """Lista las postulaciones recibidas por la asociación del usuario logueado.
     Filtro opcional por estado: pendiente | aceptada | rechazada."""
     usuario = _obtener_usuario_autenticado(authorization)
- 
+    _verificar_rol(usuario, ("asociacion", "staff"))
+
     if not usuario.get("asociacion_id"):
         raise HTTPException(status_code=404, detail="Este usuario no está vinculado a ninguna asociación")
  
@@ -675,7 +700,8 @@ async def patch_resolver_postulacion(
 ):
     """El staff de la asociación acepta o rechaza una postulación de voluntario."""
     usuario = _obtener_usuario_autenticado(authorization)
- 
+    _verificar_rol(usuario, ("asociacion", "staff"))
+    
     if not usuario.get("asociacion_id"):
         raise HTTPException(status_code=404, detail="Este usuario no está vinculado a ninguna asociación")
  
@@ -694,7 +720,8 @@ async def patch_resolver_postulacion(
 async def patch_dar_de_baja_voluntario(voluntario_id: str, authorization: str = Header(None)):
     """El staff de la asociación da de baja a uno de sus voluntarios activos."""
     usuario = _obtener_usuario_autenticado(authorization)
- 
+    _verificar_rol(usuario, ("asociacion", "staff"))
+
     if not usuario.get("asociacion_id"):
         raise HTTPException(status_code=404, detail="Este usuario no está vinculado a ninguna asociación")
  

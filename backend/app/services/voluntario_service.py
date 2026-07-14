@@ -300,16 +300,15 @@ async def dar_de_baja_voluntario(voluntario_id: str, asociacion_id: str) -> dict
         "asociacion_id": None,
     }).eq("id", voluntario["usuario_id"]).execute()
 
-    # Si tenía un caso activo asignado, se libera y se registra en el historial
     reportes_activos = supabase.table("reportes").select(
         "id"
-    ).eq("voluntario_id", voluntario_id).in_(
+    ).eq("staff_asignado_id", voluntario["usuario_id"]).in_(
         "estado_reporte", ["asignado", "en_camino", "en_atencion"]
     ).execute()
 
     for reporte in (reportes_activos.data or []):
         supabase.table("reportes").update({
-            "voluntario_id": None,
+            "staff_asignado_id": None,
             "confirmacion_voluntario": None,
         }).eq("id", reporte["id"]).execute()
 
@@ -322,7 +321,6 @@ async def dar_de_baja_voluntario(voluntario_id: str, asociacion_id: str) -> dict
         )
 
     return {"mensaje": "Voluntario dado de baja", "estado": "dado_de_baja"}
-
 
 # ---------------------------------------------------------------------------
 # B2 — Formulario de capacidades
@@ -388,3 +386,89 @@ async def guardar_capacidades(voluntario_id: str, datos: dict) -> dict:
         supabase.table("capacidades").insert(payload).execute()
 
     return {"mensaje": "Capacidades guardadas correctamente"}
+
+ 
+# ---------------------------------------------------------------------------
+# Migración staff -> voluntario_interno: reemplaza GET /staff/me/reportes.
+# Misma lógica de 4 buckets que ya existía en staff.py, pero ya no exige
+# rol 'staff' literal — solo que el usuario tenga un perfil de voluntario
+# activo (interno o externo). Sigue leyendo reportes.staff_asignado_id,
+# que es la columna real que usa todo el sistema (matching, escalamiento).
+# ---------------------------------------------------------------------------
+ 
+async def obtener_reportes_voluntario(usuario_id: str) -> dict:
+    voluntario = supabase.table("voluntarios").select(
+        "id, estado"
+    ).eq("usuario_id", usuario_id).execute()
+ 
+    if not voluntario.data or voluntario.data[0]["estado"] not in (
+        "activo_nivel_1", "activo_nivel_2"
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Solo un voluntario activo puede ver sus casos asignados"
+        )
+ 
+    resultado = supabase.table("reportes").select(
+        "id, estado_reporte, municipio, colonia, calle, referencia, "
+        "latitud, longitud, created_at, "
+        "asociaciones(nombre, contacto_telefono), "
+        "animal(id, sexo, edad_aproximada, descripcion, "
+        "tipo_animal_catalogo(clave), condicion_catalogo(clave), tamanio_catalogo(clave), "
+        "animal_fotos(foto_url, orden))"
+    ).eq("staff_asignado_id", usuario_id).order("created_at", desc=True).execute()
+ 
+    pendientes = []
+    en_accion = []
+    completados = []
+    historial = []
+ 
+    for r in resultado.data or []:
+        animal = r.get("animal") or {}
+        fotos = animal.get("animal_fotos") or []
+        foto_url = None
+        if fotos:
+            fotos_ordenadas = sorted(fotos, key=lambda f: f.get("orden", 0))
+            foto_url = fotos_ordenadas[0]["foto_url"]
+ 
+        reporte = {
+            "id": r["id"],
+            "estado_reporte": r.get("estado_reporte"),
+            "municipio": r.get("municipio"),
+            "colonia": r.get("colonia"),
+            "calle": r.get("calle"),
+            "referencia": r.get("referencia"),
+            "latitud": r.get("latitud"),
+            "longitud": r.get("longitud"),
+            "created_at": str(r["created_at"]),
+            "foto_url": foto_url,
+            "asociacion": {
+                "nombre": r.get("asociaciones", {}).get("nombre"),
+                "telefono": r.get("asociaciones", {}).get("contacto_telefono"),
+            },
+            "animal": {
+                "tipo_animal": animal.get("tipo_animal_catalogo", {}).get("clave"),
+                "condicion": animal.get("condicion_catalogo", {}).get("clave"),
+                "tamanio": animal.get("tamanio_catalogo", {}).get("clave"),
+                "sexo": animal.get("sexo"),
+                "edad_aproximada": animal.get("edad_aproximada"),
+                "descripcion": animal.get("descripcion"),
+            }
+        }
+ 
+        estado = r.get("estado_reporte")
+        if estado == "en_camino":
+            pendientes.append(reporte)
+        elif estado == "en_atencion":
+            en_accion.append(reporte)
+        elif estado == "rescatado":
+            completados.append(reporte)
+        elif estado in ("cerrado", "sin_cobertura"):
+            historial.append(reporte)
+ 
+    return {
+        "pendientes": pendientes,
+        "en_accion": en_accion,
+        "completados": completados,
+        "historial": historial,
+    }
