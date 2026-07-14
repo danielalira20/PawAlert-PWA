@@ -23,9 +23,21 @@ interface Props {
   onClose: () => void;
   onEncontre: () => void;
   onRefugio: () => void;
+  // Mismo criterio que ReportCard: los hitos de campo (validan llegada
+  // contra el refugio de la asociación) solo aplican a voluntario_interno
+  // (y staff elevado) por ahora. Default true para no romper el
+  // comportamiento existente donde no se pase este prop explícitamente.
+  puedeRegistrarHitos?: boolean;
 }
 
-export function ReportDetailModal({ visible, reporte, onClose, onEncontre, onRefugio }: Props) {
+export function ReportDetailModal({
+  visible,
+  reporte,
+  onClose,
+  onEncontre,
+  onRefugio,
+  puedeRegistrarHitos = true,
+}: Props) {
   const condicion = reporte ? normalizeCondicion(reporte.animal?.condicion) : null;
   const { width } = useWindowDimensions();
   const isDesktop = width >= DESKTOP_BREAKPOINT;
@@ -89,14 +101,14 @@ export function ReportDetailModal({ visible, reporte, onClose, onEncontre, onRef
                 </TouchableOpacity>
               </View>
 
-              {reporte.estado_reporte === 'en_camino' && (
+              {puedeRegistrarHitos && reporte.estado_reporte === 'en_camino' && (
                 <TouchableOpacity style={[styles.actionButton, { backgroundColor: Brand.primary }]} onPress={onEncontre}>
                   <Ionicons name="checkmark-circle-outline" size={18} color="#fff" />
                   <Text style={styles.actionButtonText}>Encontré al animal</Text>
                 </TouchableOpacity>
               )}
 
-              {reporte.estado_reporte === 'en_atencion' && (
+              {puedeRegistrarHitos && reporte.estado_reporte === 'en_atencion' && (
                 <TouchableOpacity style={[styles.actionButton, { backgroundColor: '#8E44AD' }]} onPress={onRefugio}>
                   <Ionicons name="home-outline" size={18} color="#fff" />
                   <Text style={styles.actionButtonText}>Llegué al refugio</Text>

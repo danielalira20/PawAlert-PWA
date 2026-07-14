@@ -463,7 +463,7 @@ export default function AssociationStatusScreen({ onClose }: Props) {
   const cargarCandidatos = async (reporteId: string) => {
     setEstadoVoluntarios('cargando');
     try {
-      const res = await axios.get(`${API_URL}/reportes/${reporteId}/candidatos`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await axios.get(`${API_URL}/reports/${reporteId}/candidatos`, { headers: { Authorization: `Bearer ${token}` } });
       const data = res.data;
       setCandidatosList(data.candidatos || []);
       setModoAsignacion(data.modo_asignacion || 'manual');
@@ -486,14 +486,14 @@ export default function AssociationStatusScreen({ onClose }: Props) {
     setEstadoVoluntarios('esperando_confirmacion');
     try {
       await axios.post(
-        `${API_URL}/reportes/${reporteAccionId}/asignar`,
+        `${API_URL}/reports/${reporteAccionId}/asignar`,
         { voluntario_id: candidatoAConfirmar.voluntario_id },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       // Polling cada 5s para detectar confirmación o rechazo
       const interval = setInterval(async () => {
         try {
-          const res = await axios.get(`${API_URL}/reportes/${reporteAccionId}/candidatos`, { headers: { Authorization: `Bearer ${token}` } });
+          const res = await axios.get(`${API_URL}/reports/${reporteAccionId}/candidatos`, { headers: { Authorization: `Bearer ${token}` } });
           const estado = res.data?.estado_asignacion_voluntario;
           if (estado === 'confirmado') {
             clearInterval(interval);
@@ -1292,7 +1292,7 @@ export default function AssociationStatusScreen({ onClose }: Props) {
                                 <Text style={{ fontSize: 12, color: COLORS.textLight, marginTop: 2 }}>
                                   📍 a {candidato.distancia_km} km
                                 </Text>
-                                {candidato.tipo === 'externo' && (
+                                {candidato.tipo === 'voluntario_externo' && (
                                   <View style={{
                                     backgroundColor: '#E8CCAD', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3,
                                     alignSelf: 'flex-start', marginTop: 5

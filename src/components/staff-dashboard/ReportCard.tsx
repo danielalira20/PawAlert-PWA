@@ -59,6 +59,13 @@ interface Props {
   onOpenDetail: (reporte: ReporteStaff) => void;
   onQuickEncontre: (reporte: ReporteStaff) => void;
   onQuickRefugio: (reporte: ReporteStaff) => void;
+  // Los hitos ("encontré al animal" / "llegué al refugio") validan la
+  // llegada contra las coordenadas del refugio de la asociación — solo
+  // tiene sentido para voluntario_interno. Un voluntario_externo puede
+  // ver sus casos, pero no registrar estos hitos (aún no tiene un flujo
+  // equivalente para casa hogar). Default true para no romper el
+  // comportamiento existente donde no se pase este prop explícitamente.
+  puedeRegistrarHitos?: boolean;
 }
 
 export function ReportCard({
@@ -67,6 +74,7 @@ export function ReportCard({
   onOpenDetail,
   onQuickEncontre,
   onQuickRefugio,
+  puedeRegistrarHitos = true,
 }: Props) {
   const translateX = useSharedValue(0);
   const action = useMemo(() => getQuickAction(reporte.estado_reporte), [reporte.estado_reporte]);
@@ -85,9 +93,12 @@ export function ReportCard({
     else onOpenDetail(reporte);
   };
 
-  // No permitimos swipe en casos cerrados — no hay acción rápida que ofrecer.
+  // No permitimos swipe en casos cerrados, ni si el voluntario no puede
+  // registrar hitos (externo) — no hay acción rápida que ofrecerle todavía.
+  const swipeHabilitado = !esCerrado && puedeRegistrarHitos;
+
   const pan = Gesture.Pan()
-    .enabled(!esCerrado)
+    .enabled(swipeHabilitado)
     .activeOffsetX([-10, 10])
     .onUpdate((e) => {
       translateX.value = Math.max(-TRAY_WIDTH, Math.min(0, e.translationX));
@@ -113,7 +124,7 @@ export function ReportCard({
 
   return (
     <Animated.View entering={FadeInUp.delay(index * 70).duration(360)} style={styles.wrapper}>
-      {!esCerrado && (
+      {swipeHabilitado && (
         <Animated.View style={[styles.tray, { backgroundColor: action.color }, trayStyle]}>
           <Pressable onPress={handleQuickAction} style={styles.trayPressable} hitSlop={8}>
             <Ionicons name={action.icon} size={22} color="#fff" />
@@ -177,7 +188,7 @@ export function ReportCard({
                 <Text style={styles.metaTextFaint}>hace {tiempo}</Text>
               </View>
 
-              {!esCerrado && <Text style={styles.swipeHint}>← desliza para acción rápida</Text>}
+              {swipeHabilitado && <Text style={styles.swipeHint}>← desliza para acción rápida</Text>}
             </View>
           </Pressable>
         </Animated.View>

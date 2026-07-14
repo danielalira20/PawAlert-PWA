@@ -47,8 +47,14 @@ export function LoggedInProfile({
   const esAdmin = !!user?.es_admin;
   const esAsociacion = !!user?.asociacion_id && user?.rol === 'asociacion';
   const esStaff = !!user?.asociacion_id && user?.rol === 'staff';
-  // Validamos si es voluntario interno
+  // Validamos si es voluntario interno o externo. Ambos pueden ver sus
+  // casos asignados en el mismo dashboard (StaffDashboardScreen, migrado a
+  // GET /voluntarios/me/reportes) — la pantalla internamente restringe los
+  // hitos de campo solo a interno, pero la vista de "mis casos" aplica a
+  // los dos por igual.
   const esVoluntarioInterno = user?.rol === 'voluntario_interno';
+  const esVoluntarioExterno = user?.rol === 'voluntario_externo';
+  const esVoluntarioActivo = esVoluntarioInterno || esVoluntarioExterno;
 
   const { impacto, isLoading: isLoadingReportes } = useRecentReports();
   const { impacto: impactoAsociacion, isLoading: isLoadingAsociacion } = useAssociationImpact(esAsociacion);
@@ -60,6 +66,9 @@ export function LoggedInProfile({
   const nombreCompleto = `${user.nombre ?? ''} ${user.apellido_paterno ?? ''}`.trim();
 
   // Los 4 roles ya tienen su propia versión.
+  // NOTA: esVoluntarioActivo aún no tiene su propia tarjeta de impacto —
+  // por ahora cae al default (ReporterImpactStats). Pendiente crear una
+  // tarjeta específica de impacto de voluntario más adelante.
   const impactStatsElement = esAsociacion ? (
     <AssociationImpactStats impacto={impactoAsociacion} isLoading={isLoadingAsociacion} />
   ) : esAdmin ? (
@@ -81,6 +90,10 @@ export function LoggedInProfile({
     <RoleBadge rol="asociacion" variant="onWhite" />
   ) : esStaff ? (
     <RoleBadge rol="staff" variant="onWhite" />
+  ) : esVoluntarioInterno ? (
+    <RoleBadge rol="voluntario_interno" variant="onWhite" />
+  ) : esVoluntarioExterno ? (
+    <RoleBadge rol="voluntario_externo" variant="onWhite" />
   ) : null;
 
   // Actualizamos los accesos agregando los de voluntario
@@ -90,7 +103,7 @@ export function LoggedInProfile({
         icon="clipboard-outline" 
         label="Mis Reportes" 
         onPress={onOpenMisReportes} 
-        isLast={!esAdmin && !esAsociacion && !esStaff && !esVoluntarioInterno} 
+        isLast={!esAdmin && !esAsociacion && !esStaff && !esVoluntarioActivo} 
       />
       {esAdmin && (
         <AccessRow icon="shield-checkmark-outline" label="Panel de administrador" onPress={onOpenAdminPanel} isLast />
@@ -101,8 +114,9 @@ export function LoggedInProfile({
       {esStaff && (
         <AccessRow icon="briefcase-outline" label="Panel de staff" onPress={onOpenStaffPanel} isLast />
       )}
-      {esVoluntarioInterno && (
+      {esVoluntarioActivo && (
         <>
+          <AccessRow icon="briefcase-outline" label="Mis casos" onPress={onOpenStaffPanel} />
           <AccessRow icon="document-text-outline" label="Mi postulación" onPress={onOpenPostulacion} />
           <AccessRow icon="construct-outline" label="Termina de completar tu perfil" onPress={onOpenCapacidades} isLast />
         </>
@@ -205,6 +219,8 @@ export function LoggedInProfile({
         {esAdmin && <RoleBadge rol="admin" variant="onColor" />}
         {esAsociacion && <RoleBadge rol="asociacion" variant="onColor" />}
         {esStaff && <RoleBadge rol="staff" variant="onColor" />}
+        {esVoluntarioInterno && <RoleBadge rol="voluntario_interno" variant="onColor" />}
+        {esVoluntarioExterno && <RoleBadge rol="voluntario_externo" variant="onColor" />}
       </LinearGradient>
 
       <View style={styles.mobileCentered}>

@@ -30,6 +30,13 @@ export default function StaffDashboardScreen({ onClose }: Props) {
   const { width } = useWindowDimensions();
   const isDesktop = width >= DESKTOP_BREAKPOINT;
 
+  // Los hitos ("encontré al animal" / "llegué al refugio") validan la
+  // llegada contra las coordenadas del refugio de la asociación — por ahora
+  // solo tiene sentido para voluntario_interno (y el staff con permisos
+  // elevados, que también opera en campo). Un voluntario_externo puede
+  // ver esta misma pantalla con sus casos, pero sin esas acciones rápidas.
+  const puedeRegistrarHitos = user?.rol === 'voluntario_interno' || user?.rol === 'staff';
+
   const {
     reportesPendientes,
     reportesEnAccion,
@@ -201,6 +208,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
                   onQuickEncontre={abrirEncontre}
                   onQuickRefugio={abrirRefugio}
                   layout="grid"
+                  puedeRegistrarHitos={puedeRegistrarHitos}
                 />
                 <ReportesGroup
                   titulo="En antención"
@@ -210,6 +218,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
                   onQuickEncontre={abrirEncontre}
                   onQuickRefugio={abrirRefugio}
                   layout="grid"
+                  puedeRegistrarHitos={puedeRegistrarHitos}
                 />
                 <ReportesGroup
                   titulo="Completados"
@@ -220,6 +229,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
                   onQuickRefugio={abrirRefugio}
                   layout="grid"
                   esUltimo
+                  puedeRegistrarHitos={puedeRegistrarHitos}
                 />
               </View>
             </View>
@@ -242,6 +252,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
               onQuickEncontre={abrirEncontre}
               onQuickRefugio={abrirRefugio}
               layout="stack"
+              puedeRegistrarHitos={puedeRegistrarHitos}
             />
             <ReportesGroup
               titulo="En acción"
@@ -251,6 +262,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
               onQuickEncontre={abrirEncontre}
               onQuickRefugio={abrirRefugio}
               layout="stack"
+              puedeRegistrarHitos={puedeRegistrarHitos}
             />
             <ReportesGroup
               titulo="Completados"
@@ -261,6 +273,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
               onQuickRefugio={abrirRefugio}
               layout="stack"
               esUltimo
+              puedeRegistrarHitos={puedeRegistrarHitos}
             />
           </ScrollView>
         )}
@@ -272,6 +285,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
         onClose={() => setShowDetalles(false)}
         onEncontre={() => reporteSeleccionado && abrirEncontre(reporteSeleccionado)}
         onRefugio={() => reporteSeleccionado && abrirRefugio(reporteSeleccionado)}
+        puedeRegistrarHitos={puedeRegistrarHitos}
       />
 
       <EncontreModal
@@ -322,6 +336,7 @@ function ReportesGroup({
   onQuickRefugio,
   layout,
   esUltimo,
+  puedeRegistrarHitos,
 }: {
   titulo: string;
   color: string;
@@ -331,6 +346,7 @@ function ReportesGroup({
   onQuickRefugio: (r: ReporteStaff) => void;
   layout: 'stack' | 'grid';
   esUltimo?: boolean;
+  puedeRegistrarHitos: boolean;
 }) {
   if (reportes.length === 0) return null;
 
@@ -353,6 +369,7 @@ function ReportesGroup({
               onOpenDetail={onOpenDetail}
               onQuickEncontre={onQuickEncontre}
               onQuickRefugio={onQuickRefugio}
+              puedeRegistrarHitos={puedeRegistrarHitos}
             />
           </View>
         ))}

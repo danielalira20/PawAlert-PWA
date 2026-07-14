@@ -40,7 +40,10 @@ export function useStaffReports(showToast: ShowToastFn) {
   const cargarReportesAsignados = useCallback(async () => {
     setIsLoading(true);
     try {
-      const res = await axios.get<RespuestaStaffReportes>(`${API_URL}/staff/me/reportes`, {
+      // Migración staff -> voluntario_interno: antes /staff/me/reportes,
+      // ahora /voluntarios/me/reportes. Misma forma de respuesta exacta
+      // (pendientes/en_accion/completados/historial), solo cambia la URL.
+      const res = await axios.get<RespuestaStaffReportes>(`${API_URL}/voluntarios/me/reportes`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
@@ -52,7 +55,7 @@ export function useStaffReports(showToast: ShowToastFn) {
         throw new Error('Formato de respuesta no esperado');
       }
     } catch (error: any) {
-      console.error('Error al cargar reportes del staff:', error);
+      console.error('Error al cargar reportes del voluntario:', error);
       const mensajeError =
         error?.response?.data?.detail || error.message || 'No pudimos cargar tus casos asignados.';
       showToast({ type: 'error', title: 'Error', message: mensajeError });
