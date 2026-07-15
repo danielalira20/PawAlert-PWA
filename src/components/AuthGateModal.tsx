@@ -43,8 +43,8 @@ export default function AuthGateModal({ visible, onGuest, onClose }: Props) {
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={{ flex: 1, backgroundColor: 'rgba(46,42,38,0.6)', justifyContent: 'flex-end' }}>
-        <View style={{ backgroundColor: C.bg, borderTopLeftRadius: 36, borderTopRightRadius: 36, padding: 28, paddingBottom: 44 }}>
+      <View style={{ flex: 1, backgroundColor: 'rgba(46,42,38,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+        <View style={{ backgroundColor: C.bg, borderRadius: 36, padding: 28, paddingBottom: 36, width: '100%', maxWidth: 400 }}>
           
           <View style={{ alignItems: 'center', marginBottom: 20 }}>
             <View style={{ width: 48, height: 6, backgroundColor: C.neutralLight, borderRadius: 3, marginBottom: 24 }} />
