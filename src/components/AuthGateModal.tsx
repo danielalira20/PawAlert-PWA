@@ -59,7 +59,7 @@ export default function AuthGateModal({ visible, onGuest, onClose }: Props) {
 
           {/* Iniciar sesión */}
           <TouchableOpacity
-            onPress={() => { onClose(); router.push('/login'); }}
+            onPress={() => { onClose(); router.push('/profile?authView=login'); }}
             style={{ backgroundColor: C.primary, paddingVertical: 18, borderRadius: 30, alignItems: 'center', marginBottom: 12 }}
           >
             <Text style={{ color: C.bg, fontFamily: F.bodySemiBold, fontSize: 16 }}>Iniciar sesión</Text>
@@ -68,7 +68,7 @@ export default function AuthGateModal({ visible, onGuest, onClose }: Props) {
 
           {/* Crear cuenta */}
           <TouchableOpacity
-            onPress={() => { onClose(); router.push('/login?tab=register'); }}
+            onPress={() => { onClose(); router.push('/profile?authView=register'); }}
             style={{ backgroundColor: C.bg, borderWidth: 2, borderColor: C.primary, paddingVertical: 16, borderRadius: 30, alignItems: 'center', marginBottom: 16 }}
           >
             <Text style={{ color: C.primary, fontFamily: F.bodySemiBold, fontSize: 16 }}>Crear cuenta</Text>
