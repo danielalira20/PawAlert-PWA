@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet,
   useWindowDimensions, TextInput, ActivityIndicator, Platform,
@@ -17,21 +17,21 @@ import { consumeAuthIntent } from '../../utils/authIntent';
 
 // ─── Tokens visuales (idénticos a LoginScreen) ───────────────────────────────
 const C = {
-  primary:      '#F5842B',
+  primary: '#F5842B',
   primaryLight: '#F1D5B6',
-  secondary:    '#66C5BD',
-  accent:       '#F6CE5B',
+  secondary: '#66C5BD',
+  accent: '#F6CE5B',
   neutralLight: '#E8CCAD',
-  text:         '#2E2A26',
-  bg:           '#FFFFFF',
-  bgSoft:       '#FDF8F4',   // ← mismo fondo que LoginScreen
-  muted:        '#9E8C7E',
+  text: '#2E2A26',
+  bg: '#FFFFFF',
+  bgSoft: '#FDF8F4',   // ← mismo fondo que LoginScreen
+  muted: '#9E8C7E',
 };
 
 const F = {
-  displayBold:  'Fraunces_800ExtraBold',
-  bodyRegular:  'Poppins_400Regular',
-  bodyMedium:   'Poppins_500Medium',
+  displayBold: 'Fraunces_800ExtraBold',
+  bodyRegular: 'Poppins_400Regular',
+  bodyMedium: 'Poppins_500Medium',
   bodySemiBold: 'Poppins_600SemiBold',
 };
 // ─────────────────────────────────────────────────────────────────────────────
@@ -45,6 +45,22 @@ export function LoggedOutProfile() {
   const isDesktop = width >= DESKTOP_BREAKPOINT;
   const { login, register } = useAuth();
   const { toast, translateY, showToast } = useToast();
+
+  // Oculta el ojo nativo del browser en campos type="password" (Chrome/Edge)
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const styleId = 'hide-pw-reveal';
+    if (document.getElementById(styleId)) return;
+    const el = document.createElement('style');
+    el.id = styleId;
+    el.textContent = [
+      'input[type="password"]::-ms-reveal { display: none !important; }',
+      'input[type="password"]::-ms-clear { display: none !important; }',
+      'input[type="password"]::-webkit-contacts-auto-fill-button { display: none !important; }',
+      'input[type="password"]::-webkit-credentials-auto-fill-button { display: none !important; }',
+    ].join('\n');
+    document.head.appendChild(el);
+  }, []);
 
   const [fontsLoaded] = useFonts({
     Fraunces_800ExtraBold,
@@ -64,6 +80,11 @@ export function LoggedOutProfile() {
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // ─── Visibilidad contraseñas ────────────────────────────────────────────────
+  const [showPassword, setShowPassword] = useState(false);
+  const [showRegPassword, setShowRegPassword] = useState(false);
+  const [showRegPassword2, setShowRegPassword2] = useState(false);
 
   // ─── Campos login ──────────────────────────────────────────────────────────
   const [email, setEmail] = useState('');
@@ -281,8 +302,8 @@ export function LoggedOutProfile() {
                   backgroundColor: isActive ? C.bg : 'transparent',
                   ...(isActive
                     ? (Platform.OS === 'web'
-                        ? { boxShadow: '0 4px 12px rgba(46,42,38,0.08)' } as any
-                        : { elevation: 2 })
+                      ? { boxShadow: '0 4px 12px rgba(46,42,38,0.08)' } as any
+                      : { elevation: 2 })
                     : {}),
                 }}
               >
@@ -319,19 +340,29 @@ export function LoggedOutProfile() {
               {errors.email ? <Text style={errorStyle}>{errors.email}</Text> : null}
 
               <Text style={labelStyle}>Contraseña *</Text>
-              <TextInput
-                placeholder="••••••••"
-                placeholderTextColor={C.muted}
-                secureTextEntry
-                value={password}
-                onChangeText={handleLoginPasswordChange}
-                style={
-                  errors.password
-                    ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC', marginBottom: 24 }
-                    : { ...inputStyle, marginBottom: 28 }
-                }
-              />
-              {errors.password ? <Text style={errorStyle}>{errors.password}</Text> : null}
+              <View style={{ position: 'relative', marginBottom: errors.password ? 0 : 0 }}>
+                <TextInput
+                  placeholder="••••••••"
+                  placeholderTextColor={C.muted}
+                  secureTextEntry={!showPassword}
+                  value={password}
+                  onChangeText={handleLoginPasswordChange}
+                  style={[
+                    errors.password
+                      ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC', marginBottom: 0 }
+                      : { ...inputStyle, marginBottom: 0 },
+                    { paddingRight: 48 },
+                  ]}
+                />
+                <TouchableOpacity
+                  onPress={() => setShowPassword(v => !v)}
+                  style={{ position: 'absolute', right: 14, top: 0, bottom: 0, justifyContent: 'center' }}
+                  hitSlop={8}
+                >
+                  <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={C.muted} />
+                </TouchableOpacity>
+              </View>
+              {errors.password ? <Text style={{ ...errorStyle, marginTop: 4 }}>{errors.password}</Text> : <View style={{ marginBottom: 28 }} />}
             </View>
           )}
 
@@ -392,30 +423,52 @@ export function LoggedOutProfile() {
               {errors.regEmail ? <Text style={errorStyle}>{errors.regEmail}</Text> : null}
 
               <Text style={labelStyle}>Contraseña *</Text>
-              <TextInput
-                placeholder="8+ caracteres, mayúscula, minúscula y número"
-                placeholderTextColor={C.muted}
-                secureTextEntry
-                value={regPassword}
-                onChangeText={handleRegPasswordChange}
-                style={errors.regPassword ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC' } : inputStyle}
-              />
-              {errors.regPassword ? <Text style={errorStyle}>{errors.regPassword}</Text> : null}
+              <View style={{ position: 'relative' }}>
+                <TextInput
+                  placeholder="8+ caracteres, mayúscula, minúscula y número"
+                  placeholderTextColor={C.muted}
+                  secureTextEntry={!showRegPassword}
+                  value={regPassword}
+                  onChangeText={handleRegPasswordChange}
+                  style={[
+                    errors.regPassword ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC', marginBottom: 0 } : { ...inputStyle, marginBottom: 0 },
+                    { paddingRight: 48 },
+                  ]}
+                />
+                <TouchableOpacity
+                  onPress={() => setShowRegPassword(v => !v)}
+                  style={{ position: 'absolute', right: 14, top: 0, bottom: 0, justifyContent: 'center' }}
+                  hitSlop={8}
+                >
+                  <Ionicons name={showRegPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={C.muted} />
+                </TouchableOpacity>
+              </View>
+              {errors.regPassword ? <Text style={{ ...errorStyle, marginTop: 4 }}>{errors.regPassword}</Text> : <View style={{ marginBottom: 12 }} />}
 
               <Text style={labelStyle}>Confirmar Contraseña *</Text>
-              <TextInput
-                placeholder="Repite tu contraseña"
-                placeholderTextColor={C.muted}
-                secureTextEntry
-                value={regPassword2}
-                onChangeText={handleRegPassword2Change}
-                style={
-                  errors.regPassword2
-                    ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC', marginBottom: 24 }
-                    : { ...inputStyle, marginBottom: 28 }
-                }
-              />
-              {errors.regPassword2 ? <Text style={errorStyle}>{errors.regPassword2}</Text> : null}
+              <View style={{ position: 'relative' }}>
+                <TextInput
+                  placeholder="Repite tu contraseña"
+                  placeholderTextColor={C.muted}
+                  secureTextEntry={!showRegPassword2}
+                  value={regPassword2}
+                  onChangeText={handleRegPassword2Change}
+                  style={[
+                    errors.regPassword2
+                      ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC', marginBottom: 0 }
+                      : { ...inputStyle, marginBottom: 0 },
+                    { paddingRight: 48 },
+                  ]}
+                />
+                <TouchableOpacity
+                  onPress={() => setShowRegPassword2(v => !v)}
+                  style={{ position: 'absolute', right: 14, top: 0, bottom: 0, justifyContent: 'center' }}
+                  hitSlop={8}
+                >
+                  <Ionicons name={showRegPassword2 ? 'eye-off-outline' : 'eye-outline'} size={20} color={C.muted} />
+                </TouchableOpacity>
+              </View>
+              {errors.regPassword2 ? <Text style={{ ...errorStyle, marginTop: 4 }}>{errors.regPassword2}</Text> : <View style={{ marginBottom: 28 }} />}
             </View>
           )}
 
@@ -434,8 +487,8 @@ export function LoggedOutProfile() {
             {isLoading
               ? <ActivityIndicator color={C.bg} />
               : <Text style={{ color: C.bg, fontFamily: F.bodySemiBold, fontSize: 16 }}>
-                  {tab === 'login' ? 'Iniciar Sesión' : 'Crear Cuenta'}
-                </Text>
+                {tab === 'login' ? 'Iniciar Sesión' : 'Crear Cuenta'}
+              </Text>
             }
           </TouchableOpacity>
         </View>
