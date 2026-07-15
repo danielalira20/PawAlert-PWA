@@ -894,7 +894,7 @@ export default function LandingScreen() {
             </View>
 
             {/* Columna Derecha: Lista de Pasos */}
-            <View style={{ flex: 1, width: isDesktop ? undefined : '100%', paddingHorizontal: isDesktop ? 0 : 0 }}>
+            <View style={{ flex: 1, width: isDesktop ? undefined : '100%', paddingHorizontal: isDesktop ? 0 : 16 }}>
               {[
                 { num: '01', text: 'Mantén la calma y asegura la zona sin ponerte en riesgo.' },
                 { num: '02', text: 'Toma 2 o 3 fotos claras del animal mostrando su estado.' },
