@@ -7,6 +7,7 @@ import AdminDashboardScreen from '../../screens/AdminDashboardScreen';
 import AssociationStatusScreen from '../../screens/AssociationStatusScreen';
 import MisReportesScreen from '../../screens/MisReportesScreen';
 import StaffDashboardScreen from '../../screens/StaffDashboardScreen';
+import StaffAsignacionScreen from '../../screens/StaffAsignacionScreen';
 // Asegúrate de que las rutas a estas pantallas sean correctas según tu proyecto
 import MiPostulacionScreen from '../../screens/MiPostulacionScreen'; 
 import CapacidadesFormScreen from '../../screens/CapacidadesFormScreen';
@@ -24,6 +25,10 @@ export default function ProfileScreen() {
   const [isAssociationVisible, setIsAssociationVisible] = useState(false);
   const [isMisReportesVisible, setIsMisReportesVisible] = useState(false);
   const [isStaffVisible, setIsStaffVisible] = useState(false);
+  // Panel de asignación de staff (candidatos, modo de asignación,
+  // postulaciones, mis voluntarios) — distinto de isStaffVisible, que abre
+  // StaffDashboardScreen ("mis casos", compartido con voluntario_interno/externo).
+  const [isStaffAsignacionVisible, setIsStaffAsignacionVisible] = useState(false);
   
   // 1. Nuevos estados para los modales del voluntario
   const [isPostulacionVisible, setIsPostulacionVisible] = useState(false);
@@ -45,6 +50,7 @@ export default function ProfileScreen() {
       setIsAdminVisible(false);
       setIsAssociationVisible(false);
       setIsStaffVisible(false);
+      setIsStaffAsignacionVisible(false);
       // 2. Limpiar estados al cerrar sesión
       setIsPostulacionVisible(false);
       setIsCapacidadesVisible(false);
@@ -64,6 +70,7 @@ export default function ProfileScreen() {
         onOpenAdminPanel={() => setIsAdminVisible(true)}
         onOpenAssociationPanel={() => setIsAssociationVisible(true)}
         onOpenStaffPanel={() => setIsStaffVisible(true)}
+        onOpenStaffAsignacion={() => setIsStaffAsignacionVisible(true)}
         // 3. Pasar las funciones de apertura al componente
         onOpenPostulacion={() => setIsPostulacionVisible(true)}
         onOpenCapacidades={() => setIsCapacidadesVisible(true)}
@@ -86,6 +93,12 @@ export default function ProfileScreen() {
       
       <AppModal visible={isStaffVisible} onClose={() => setIsStaffVisible(false)}>
         {isStaffVisible && <StaffDashboardScreen onClose={() => setIsStaffVisible(false)} />}
+      </AppModal>
+
+      <AppModal visible={isStaffAsignacionVisible} onClose={() => setIsStaffAsignacionVisible(false)}>
+        {isStaffAsignacionVisible && (
+          <StaffAsignacionScreen onClose={() => setIsStaffAsignacionVisible(false)} />
+        )}
       </AppModal>
 
       {/* 4. Modales para las pantallas de Voluntario */}

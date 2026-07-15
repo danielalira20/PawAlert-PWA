@@ -299,9 +299,13 @@ async def dar_de_baja_voluntario(voluntario_id: str, asociacion_id: str) -> dict
     if voluntario.get("asociacion_id") != asociacion_id:
         raise HTTPException(status_code=403, detail="Este voluntario no pertenece a tu asociación")
 
-    # Dar de baja
+    if voluntario["estado"] not in ("activo_nivel_1", "activo_nivel_2"):
+        raise HTTPException(status_code=400, detail="Solo se puede dar de baja a un voluntario activo")
+
+    # Dar de baja, guardando el nivel que tenía para poder restaurarlo al reactivar
     supabase.table("voluntarios").update({
         "estado": "dado_de_baja",
+        "estado_previo": voluntario["estado"],
     }).eq("id", voluntario_id).execute()
 
     # Limpiar también la referencia en usuarios (deja de pertenecer a esta asociación)
@@ -330,6 +334,73 @@ async def dar_de_baja_voluntario(voluntario_id: str, asociacion_id: str) -> dict
         )
 
     return {"mensaje": "Voluntario dado de baja", "estado": "dado_de_baja"}
+
+
+async def reactivar_voluntario(voluntario_id: str, asociacion_id: str) -> dict:
+    """Reactiva a un voluntario previamente dado de baja, restaurando el nivel
+    que tenía antes (activo_nivel_1 / activo_nivel_2) desde estado_previo.
+    Nota: al dar de baja se limpió usuarios.asociacion_id, así que aquí hay
+    que restaurarlo también, o el voluntario reactivado quedaría "flotando"
+    sin asociación aunque voluntarios.asociacion_id sí la tenga."""
+    voluntario = supabase.table("voluntarios").select(
+        "id, usuario_id, asociacion_id, estado, estado_previo"
+    ).eq("id", voluntario_id).execute()
+
+    if not voluntario.data:
+        raise HTTPException(status_code=404, detail="Voluntario no encontrado")
+
+    voluntario = voluntario.data[0]
+
+    if voluntario.get("asociacion_id") != asociacion_id:
+        raise HTTPException(status_code=403, detail="Este voluntario no pertenece a tu asociación")
+
+    if voluntario["estado"] != "dado_de_baja":
+        raise HTTPException(status_code=400, detail="Solo se puede reactivar a alguien dado de baja")
+
+    nuevo_estado = voluntario.get("estado_previo") or "activo_nivel_1"
+
+    supabase.table("voluntarios").update({
+        "estado": nuevo_estado,
+        "estado_previo": None,
+    }).eq("id", voluntario_id).execute()
+
+    supabase.table("usuarios").update({
+        "asociacion_id": asociacion_id,
+    }).eq("id", voluntario["usuario_id"]).execute()
+
+    return {"mensaje": "Voluntario reactivado", "estado": nuevo_estado}
+
+
+async def listar_voluntarios_asociacion(asociacion_id: str) -> list:
+    """Lista los voluntarios vinculados a la asociación, para la vista de
+    'Mis voluntarios' donde se puede dar de baja o reactivar. Incluye tanto
+    activos como dados de baja (el frontend filtra con tabs); no incluye
+    rechazados ni postulacion_pendiente — esos viven en /me/postulaciones."""
+    resultado = supabase.table("voluntarios").select(
+        "id, estado, created_at, "
+        "usuarios(nombre, apellido_paterno, telefono, email), "
+        "capacidades(especies, tamanios, ofrece_casa_hogar)"
+    ).eq("asociacion_id", asociacion_id).in_(
+        "estado", ["activo_nivel_1", "activo_nivel_2", "dado_de_baja"]
+    ).order("created_at", desc=True).execute()
+
+    voluntarios = []
+    for v in resultado.data or []:
+        usuario = v.get("usuarios") or {}
+        capacidades = v.get("capacidades") or {}
+        voluntarios.append({
+            "voluntario_id": v["id"],
+            "estado": v["estado"],
+            "nombre": usuario.get("nombre"),
+            "apellido_paterno": usuario.get("apellido_paterno"),
+            "telefono": usuario.get("telefono"),
+            "email": usuario.get("email"),
+            "especies": capacidades.get("especies") or [],
+            "tamanios": capacidades.get("tamanios") or [],
+            "ofrece_casa_hogar": capacidades.get("ofrece_casa_hogar", False),
+        })
+
+    return voluntarios
 
 # ---------------------------------------------------------------------------
 # B2 — Formulario de capacidades

@@ -1,2 +1,2 @@
-import AssociationStatusScreen from '../screens/AssociationStatusScreen';
-export default AssociationStatusScreen;
+import StaffAsignacionScreen from '../screens/StaffAsignacionScreen';
+export default StaffAsignacionScreen;

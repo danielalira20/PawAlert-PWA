@@ -11,6 +11,8 @@ from app.services.voluntario_service import (
     obtener_postulaciones_asociacion,
     resolver_postulacion,
     dar_de_baja_voluntario,
+    reactivar_voluntario,
+    listar_voluntarios_asociacion,
 )
 import json
 
@@ -736,3 +738,33 @@ async def patch_dar_de_baja_voluntario(voluntario_id: str, authorization: str = 
  
 ### FIN: endpoints de postulaciones y voluntarios de la asociación
 
+@router.get("/me/voluntarios", status_code=200)
+async def get_voluntarios_asociacion(authorization: str = Header(None)):
+    """Lista los voluntarios de la asociación del usuario logueado, para la
+    vista de gestión donde se puede dar de baja o reactivar."""
+    usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion", "staff"))
+
+    if not usuario.get("asociacion_id"):
+        raise HTTPException(status_code=404, detail="Este usuario no está vinculado a ninguna asociación")
+
+    _verificar_asociacion_aprobada(usuario["asociacion_id"])
+
+    return await listar_voluntarios_asociacion(usuario["asociacion_id"])
+
+
+@router.patch("/me/voluntarios/{voluntario_id}/reactivar", status_code=200)
+async def patch_reactivar_voluntario(voluntario_id: str, authorization: str = Header(None)):
+    """El staff de la asociación reactiva a un voluntario previamente dado de baja."""
+    usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion", "staff"))
+
+    if not usuario.get("asociacion_id"):
+        raise HTTPException(status_code=404, detail="Este usuario no está vinculado a ninguna asociación")
+
+    _verificar_asociacion_aprobada(usuario["asociacion_id"])
+
+    return await reactivar_voluntario(
+        voluntario_id=voluntario_id,
+        asociacion_id=usuario["asociacion_id"],
+    )
