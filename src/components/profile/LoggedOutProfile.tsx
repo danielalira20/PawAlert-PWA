@@ -3,7 +3,7 @@ import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet,
   useWindowDimensions, TextInput, ActivityIndicator, Platform,
 } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useFonts } from 'expo-font';
 import { Fraunces_800ExtraBold } from '@expo-google-fonts/fraunces';
@@ -13,6 +13,7 @@ import { DesktopHeroPanel } from './DesktopHeroPanel';
 import { BenefitsRow } from './BenefitsRow';
 import { useAuth } from '../../context/AuthContext';
 import { Toast, useToast } from '../Toast';
+import { consumeAuthIntent } from '../../utils/authIntent';
 
 // ─── Tokens visuales (idénticos a LoginScreen) ───────────────────────────────
 const C = {
@@ -52,13 +53,13 @@ export function LoggedOutProfile() {
     Poppins_600SemiBold,
   });
 
-  const { authView } = useLocalSearchParams<{ authView?: string }>();
+  const intent = consumeAuthIntent();
 
   const [view, setView] = useState<AuthView>(
-    authView === 'login' || authView === 'register' ? 'auth' : 'landing'
+    intent === 'login' || intent === 'register' ? 'auth' : 'landing'
   );
   const [tab, setTab] = useState<Tab>(
-    authView === 'register' ? 'register' : 'login'
+    intent === 'register' ? 'register' : 'login'
   );
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
