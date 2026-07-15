@@ -59,6 +59,8 @@ export default function MapScreen() {
 
   // Bottom sheet para mobile web
   const sheetY = useRef(new Animated.Value(300)).current;
+  const [showClockLabel, setShowClockLabel] = useState(false);
+  const clockTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isMobile = windowWidth < 768;
 
@@ -70,6 +72,31 @@ export default function MapScreen() {
       setLastUpdated(new Date());
     } catch {}
   }, []);
+
+    const handleClockPress = () => {
+    if (!isMobile) return;
+    setShowClockLabel(true);
+
+    // Si ya había un timer corriendo (toques repetidos), lo cancelamos
+    // para que siempre sean 7 segundos completos desde el ÚLTIMO toque.
+    if (clockTimeoutRef.current) clearTimeout(clockTimeoutRef.current);
+    clockTimeoutRef.current = setTimeout(() => {
+      setShowClockLabel(false);
+    }, 7000);
+  };
+
+  useEffect(() => {
+  setIsClient(true);
+  fetchReportes();
+  const fetchInterval = setInterval(fetchReportes, 600000);
+  const tickInterval = setInterval(() => setTick(t => t + 1), 60000);
+  return () => {
+    clearInterval(fetchInterval);
+    clearInterval(tickInterval);
+    if (clockTimeoutRef.current) clearTimeout(clockTimeoutRef.current);
+  };
+}, [fetchReportes]);
+
 
   // Carga inicial e intervalos
   useEffect(() => {
@@ -351,7 +378,7 @@ export default function MapScreen() {
       )}
 
       {/* Leyenda */}
-      <View style={{ position: 'absolute', top: 16, right: 16, backgroundColor: '#FFF', borderRadius: 12, padding: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8 }}>
+      <View style={{ position: 'absolute', top: 16, right: 16, backgroundColor: '#FFF', borderRadius: 12, padding: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8, zIndex: 999, elevation: 9 }}>
         <Text style={{ fontSize: 9, fontWeight: '800', color: C.dark, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>Condición</Text>
         {Object.entries(CONDICION).map(([key, cfg]) => (
           <View key={key} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4 }}>
@@ -361,15 +388,29 @@ export default function MapScreen() {
         ))}
       </View>
 
-      {/* Clock */}
-      {lastUpdated && (
-        <View style={{ position: 'absolute', bottom: TAB_BAR_CLEARANCE, left: 16, backgroundColor: 'rgba(30,20,10,0.6)', borderRadius: 20, paddingVertical: 6, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <Ionicons name="time-outline" size={13} color="#FFF" />
+    {/* Clock */}
+    {lastUpdated && (
+      <TouchableOpacity
+        onPress={handleClockPress}
+        activeOpacity={isMobile ? 0.7 : 1}
+        style={{
+          position: 'absolute', bottom: TAB_BAR_CLEARANCE, left: 16,
+          backgroundColor: isMobile ? 'rgba(30,20,10,0.35)' : 'rgba(30,20,10,0.6)',
+          borderRadius: 20,
+          paddingVertical: 6,
+          paddingHorizontal: isMobile && !showClockLabel ? 8 : 12,
+          flexDirection: 'row', alignItems: 'center', gap: 6,
+          zIndex: 999, elevation: 9,
+        }}
+      >
+        <Ionicons name="time-outline" size={13} color="#FFF" />
+        {(!isMobile || showClockLabel) && (
           <Text style={{ color: '#FFF', fontSize: 10, fontWeight: '600' }}>
             {formatDistanceToNow(lastUpdated, { addSuffix: true, locale: es })}
           </Text>
-        </View>
-      )}
+        )}
+      </TouchableOpacity>
+    )}
 
       {/* FAB */}
       <TouchableOpacity
