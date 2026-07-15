@@ -1,6 +1,7 @@
 export interface Reporte {
   id: string;
   foto_url: string | null;
+  fotos?: string[];
   tipo_animal: string | null;
   condicion: string | null;
   estado: string;

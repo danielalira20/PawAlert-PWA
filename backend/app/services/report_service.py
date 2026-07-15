@@ -391,24 +391,22 @@ async def obtener_reportes_usuario(usuario_id: str) -> list:
 
         if animal:
             animal_data = {
-                "tipo_animal": animal.get("tipo_animal_catalogo", {}).get("clave") if animal.get("tipo_animal_catalogo") else None,
-                "condicion": animal.get("condicion_catalogo", {}).get("clave") if animal.get("condicion_catalogo") else None,
-                "tamanio": animal.get("tamanio_catalogo", {}).get("clave") if animal.get("tamanio_catalogo") else None,
+                "tipo_animal": animal.get("tipo_animal_catalogo", {}).get("clave"),
+                "condicion": animal.get("condicion_catalogo", {}).get("clave"),
+                "tamanio": animal.get("tamanio_catalogo", {}).get("clave"),
                 "sexo": animal.get("sexo"),
                 "edad_aproximada": animal.get("edad_aproximada"),
                 "descripcion": animal.get("descripcion"),
             }
+
             fotos = animal.get("animal_fotos") or []
             if fotos:
-                # NOTA: antes solo se regresaba la primera foto (foto_url).
-                # Ahora también regresamos el arreglo completo ordenado (fotos)
-                # para que el frontend pueda mostrar un carrusel cuando hay varias.
+                # Mismo patrón que obtener_reportes_usuario: devolvemos el
+                # arreglo completo ordenado, no solo la primera foto,
+                # para soportar carrusel en el detalle del mapa.
                 fotos_ordenadas = sorted(fotos, key=lambda f: f.get("orden", 0))
                 fotos_urls = [f["foto_url"] for f in fotos_ordenadas]
                 foto_url = fotos_urls[0]
-
-        asociacion = r.get("asociaciones")
-        asociacion_nombre = asociacion.get("nombre") if asociacion else None
 
         reportes.append({
             "id": r["id"],
@@ -417,12 +415,10 @@ async def obtener_reportes_usuario(usuario_id: str) -> list:
             "longitud": r.get("longitud"),
             "municipio": r.get("municipio"),
             "colonia": r.get("colonia"),
-            "calle": r.get("calle"),
             "created_at": str(r["created_at"]),
             "foto_url": foto_url,
             "fotos": fotos_urls,
             "animal": animal_data,
-            "asociacion_nombre": asociacion_nombre,
         })
 
     return reportes
