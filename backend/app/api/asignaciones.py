@@ -76,7 +76,7 @@ def obtener_candidatos(reporte_id: str, authorization: Optional[str] = Header(No
         .eq("id", reporte["asociacion_asignada_id"]).single().execute().data
     )
     resultado["modo_asignacion"] = aso["modo_asignacion"]
-    resultado["timeout_min"] = _timeout_por_condicion(aso, reporte.get("condicion"))
+    resultado["timeout_min"] = 0 if aso["modo_asignacion"] == "automatico" else _timeout_por_condicion(aso, reporte.get("condicion"))
 
     # Primera presentacion: sellar timestamp + evento (solo una vez)
     if reporte.get("candidatos_presentados_at") is None and resultado["candidatos"]:
@@ -165,13 +165,19 @@ def rechazar_asignacion(
 def _reporte_o_404(reporte_id: str) -> dict:
     res = (
         supabase.table("reportes")
-        .select("id, asociacion_asignada_id, staff_asignado_id, "
-                "confirmacion_voluntario, candidatos_presentados_at, condicion")
+        .select(
+            "id, asociacion_asignada_id, staff_asignado_id, "
+            "confirmacion_voluntario, candidatos_presentados_at, "
+            "animal(condicion_catalogo(clave))"
+        )
         .eq("id", reporte_id).single().execute()
     )
     if not res.data:
         raise HTTPException(status_code=404, detail="Reporte no encontrado")
-    return res.data
+    data = res.data
+    animal = data.get("animal") or {}
+    data["condicion"] = (animal.get("condicion_catalogo") or {}).get("clave")
+    return data
 
 
 def _validar_es_asociacion_duena(usuario: dict, reporte: dict):

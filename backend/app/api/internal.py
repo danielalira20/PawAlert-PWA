@@ -1,23 +1,22 @@
 """
 Endpoints internos (no consumidos por el frontend).
 Protegidos con el header X-Cron-Secret; el valor vive en la variable de
-entorno CRON_SECRET (local y Railway).
+entorno CRON_SECRET (local y Railway), leída vía app.config.settings —
+igual que el resto del proyecto (antes usaba os.getenv directo, que
+nunca veía el valor: pydantic-settings no exporta el .env a os.environ).
 """
-import os
 from typing import Optional
 
 from fastapi import APIRouter, Header, HTTPException
 
+from app.config import settings
 from app.services.escalamiento import evaluar_escalamientos
 
 router = APIRouter()
 
-CRON_SECRET = os.getenv("CRON_SECRET", "")
-
 
 @router.post("/escalamiento/run")
 def correr_escalamiento(x_cron_secret: Optional[str] = Header(None)):
-    if not CRON_SECRET or x_cron_secret != CRON_SECRET:
+    if not settings.cron_secret or x_cron_secret != settings.cron_secret:
         raise HTTPException(status_code=401, detail="No autorizado")
     return evaluar_escalamientos()
-
