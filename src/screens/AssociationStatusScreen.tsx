@@ -1116,7 +1116,7 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                       ))}
                     </View>
 
-                    {modoAsignacionConfig !== 'semi_automatico' && (
+                    {modoAsignacionConfig === 'semi_automatico' && (
                       <View style={{ backgroundColor: COLORS.white, padding: 16, borderRadius: 16, marginBottom: 20 }}>
                         <Text style={{ fontSize: 12, color: COLORS.textLight, marginBottom: 16, fontStyle: 'italic' }}>
                           {modoAsignacionConfig === 'semi_automatico'
