@@ -39,3 +39,4 @@ class CapacidadesRequest(BaseModel):
     longitud: Optional[float] = None
     experiencia_previa: Optional[str] = None
     acepto_terminos: bool = False
+
