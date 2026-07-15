@@ -101,10 +101,15 @@ def _score_carga(casos_activos: int) -> float:
 
 def _obtener_reporte(reporte_id: str) -> dict:
     res = supabase.table("reportes").select(
-        "id, tipo_animal, tamanio, condicion, asociacion_asignada_id, "
-        "latitud, longitud, candidatos_presentados_at"
+        "id, asociacion_asignada_id, latitud, longitud, candidatos_presentados_at, "
+        "animal(tipo_animal_catalogo(clave), tamanio_catalogo(clave), condicion_catalogo(clave))"
     ).eq("id", reporte_id).single().execute()
-    return res.data
+    data = res.data
+    animal = data.get("animal") or {}
+    data["tipo_animal"] = (animal.get("tipo_animal_catalogo") or {}).get("clave")
+    data["tamanio"] = (animal.get("tamanio_catalogo") or {}).get("clave")
+    data["condicion"] = (animal.get("condicion_catalogo") or {}).get("clave")
+    return data
 
 def _voluntarios_que_rechazaron(reporte_id: str) -> set:
     """Usuarios que ya rechazaron este caso (leido del historial).

@@ -4,6 +4,7 @@ from app.db.supabase import supabase
 from app.services.storage_service import subir_foto
 from app.services.assignment_service import asignar_asociacion, obtener_contactos_emergencia
 from datetime import datetime, timezone, timedelta
+from app.services import matching
 import json
 
 def obtener_id_catalogo(tabla: str, clave: str) -> str | None:
@@ -222,6 +223,33 @@ async def crear_reporte(
             "tipo_id": tipo_notif_id,
             "tipo": "nuevo_reporte",
         }).execute()
+
+        # Sellar candidatos_presentados_at desde la creación del reporte, no
+        # cuando alguien abra el modal de asignación — de lo contrario el
+        # modo "automático" nunca dispara (el timer nunca arranca sin que un
+        # humano mire candidatos primero, lo cual contradice "automático").
+        # Se hace para los 3 modos por igual: en manual/semi no cambia nada
+        # observable (el timeout de escalamiento solo lo usa el cron en
+        # semi_automatico/automatico); en automatico es lo que hace que el
+        # cron pueda escalar en su primera pasada sin intervención humana.
+        try:
+            candidatos_iniciales = matching.obtener_candidatos(reporte_id)
+            if candidatos_iniciales.get("candidatos"):
+                supabase.table("reportes").update({
+                    "candidatos_presentados_at": datetime.now(timezone.utc).isoformat()
+                }).eq("id", reporte_id).execute()
+                registrar_historial(
+                    reporte_id=reporte_id,
+                    usuario_id=None,
+                    tipo_evento="candidatos_presentados",
+                    descripcion=f"{len(candidatos_iniciales['candidatos'])} candidatos calculados al crear el reporte",
+                    datos_extra={"candidatos": [c["voluntario_id"] for c in candidatos_iniciales["candidatos"]]},
+                )
+        except Exception as e:
+            # No debe tronar la creación del reporte si el matching falla —
+            # el sellado de respaldo en GET /candidatos sigue como red de
+            # seguridad si esto no corrió por cualquier razón.
+            print(f"[WARN] No se pudo calcular candidatos iniciales al crear el reporte: {e}")
 
         condicion_str = condicion.value if hasattr(condicion, 'value') else str(condicion)
         if condicion_str == "grave":
