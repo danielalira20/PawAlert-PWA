@@ -16,6 +16,8 @@ import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
 import { useWindowDimensions } from 'react-native';
 import { PostulacionesPanel } from '../components/association-dashboard/PostulacionesPanel';
+import { Animated } from 'react-native';
+import { BlurView } from 'expo-blur';
 
 // ─── PALETA DE COLORES PETZEN ───
 const COLORS = {
@@ -101,9 +103,10 @@ interface Candidato {
 
 interface Props {
   onClose?: () => void;
+  standalone?: boolean;
 }
 
-export default function AssociationStatusScreen({ onClose }: Props) {
+export default function AssociationStatusScreen({ onClose, standalone = true }: Props) {
   const { token, logout, isLoading } = useAuth();
   const { toast, translateY, showToast } = useToast();
   const [info, setInfo] = useState<AsociacionInfo | null>(null);
@@ -202,6 +205,20 @@ export default function AssociationStatusScreen({ onClose }: Props) {
     } finally {
       setIsLoadingInfo(false);
     }
+  };
+
+
+  const [sobreAbierto, setSobreAbierto] = useState(false);
+  const notaAnim = useState(new Animated.Value(0))[0];
+
+  const abrirSobre = () => {
+    setSobreAbierto(true);
+    Animated.spring(notaAnim, {
+      toValue: 1,
+      friction: 7,
+      tension: 50,
+      useNativeDriver: Platform.OS !== 'web',
+    }).start();
   };
 
   const calcularNuevosReportes = async (data: ReporteAsignado[]) => {
@@ -611,6 +628,98 @@ export default function AssociationStatusScreen({ onClose }: Props) {
     return true;
   });
 
+  if (!standalone) {
+    // Modo embebido (justo tras registrar la asociación): solo el sobre/nota,
+    // sin header ni el resto del panel — el padre (AssociationFormScreen) ya
+    // pone el fondo con blur. Sin flex:1 para no estirarse a toda la pantalla.
+    return (
+      <View style={{ width: '100%', maxWidth: 400, alignSelf: 'center', position: 'relative' }}>
+        {onClose && (
+          <TouchableOpacity
+            onPress={onClose}
+            style={{ position: 'absolute', top: -14, right: -14, width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.18)', alignItems: 'center', justifyContent: 'center', zIndex: 10 }}
+          >
+            <Ionicons name="close" size={16} color="#FFF" />
+          </TouchableOpacity>
+        )}
+        {!sobreAbierto ? (
+          <TouchableOpacity activeOpacity={0.85} onPress={abrirSobre} style={{ alignItems: 'center' }}>
+            <View style={{
+              width: '100%', aspectRatio: 1.5,
+              backgroundColor: '#D9BB93',
+              borderRadius: 20,
+              justifyContent: 'center', alignItems: 'center',
+              ...(Platform.OS === 'web'
+                ? { boxShadow: '0 10px 28px rgba(74,55,40,0.2)' } as any
+                : { elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.2, shadowRadius: 16 }),
+            }}>
+              <View style={{
+                position: 'absolute', top: 0, left: 0, right: 0,
+                height: 0, width: 0,
+                borderLeftWidth: 190, borderRightWidth: 190,
+                borderTopWidth: 90,
+                borderLeftColor: 'transparent', borderRightColor: 'transparent',
+                borderTopColor: '#C7A87A',
+              }} />
+              <Ionicons name="mail-outline" size={40} color={COLORS.textDark} style={{ marginTop: 20 }} />
+              <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginTop: 8 }}>
+                Toca para abrir
+              </Text>
+            </View>
+          </TouchableOpacity>
+        ) : (
+          <Animated.View style={{
+            opacity: notaAnim,
+            transform: [
+              { translateY: notaAnim.interpolate({ inputRange: [0, 1], outputRange: [30, 0] }) },
+              { scale: notaAnim.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1] }) },
+              { rotate: '-1deg' },
+            ],
+          }}>
+            <View style={{
+              backgroundColor: COLORS.cardBg,
+              borderRadius: 28,
+              padding: 28,
+              paddingTop: 44,
+              borderWidth: 1, borderColor: 'rgba(0,0,0,0.05)',
+              ...(Platform.OS === 'web'
+                ? { boxShadow: '0 12px 32px rgba(74,55,40,0.18)' } as any
+                : { elevation: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.18, shadowRadius: 20 }),
+            }}>
+              <View style={{ position: 'absolute', top: -28, left: -14, transform: [{ rotate: '-6deg' }] }}>
+                <Image source={require('../../assets/images/sobre-perrito.png')} style={{ width: 90, height: 90 }} resizeMode="contain" />
+              </View>
+              <View style={{ position: 'absolute', top: -24, right: -12, transform: [{ rotate: '7deg' }] }}>
+                <Image source={require('../../assets/images/sobre-gatito.png')} style={{ width: 84, height: 84 }} resizeMode="contain" />
+              </View>
+              <View style={{ alignItems: 'center', marginBottom: 14, marginTop: 10 }}>
+                <Ionicons name="mail-open-outline" size={30} color={COLORS.primary} style={{ marginBottom: 8 }} />
+                <Text style={{ fontSize: 20, fontWeight: '900', color: COLORS.textDark, textAlign: 'center' }}>
+                  Tu solicitud está en revisión
+                </Text>
+              </View>
+              <Text style={{ fontSize: 14, color: COLORS.textLight, lineHeight: 22, textAlign: 'center', marginBottom: 20 }}>
+                Nuestro equipo está revisando los datos de{' '}
+                <Text style={{ fontWeight: '700', color: COLORS.textDark }}>{info?.nombre}</Text>.
+                Te avisaremos en cuanto sea aprobada.
+              </Text>
+              <View style={{ height: 1, backgroundColor: 'rgba(0,0,0,0.08)', marginBottom: 16 }} />
+              <View style={{
+                flexDirection: 'row', alignItems: 'flex-start',
+                backgroundColor: 'rgba(102,188,180,0.14)', borderRadius: 16, padding: 14,
+              }}>
+                <Ionicons name="key-outline" size={18} color={COLORS.accent} style={{ marginRight: 10, marginTop: 1 }} />
+                <Text style={{ flex: 1, fontSize: 13, color: COLORS.textDark, lineHeight: 19 }}>
+                  Ya puedes iniciar sesión con el correo y la contraseña que registraste. Ahí podrás ver el estado de tu solicitud en cualquier momento.
+                </Text>
+              </View>
+            </View>
+          </Animated.View>
+        )}
+      </View>
+    );
+  }
+
   return (
     <View style={{ flex: 1, backgroundColor: COLORS.bg }}>
       <Toast toast={toast} translateY={translateY} />
@@ -618,27 +727,118 @@ export default function AssociationStatusScreen({ onClose }: Props) {
       <View style={{ flex: 1, width: '100%', maxWidth: 900, alignSelf: 'center' }}>
         
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 24, paddingTop: 24,}}>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center', marginRight: 16 }}>
-              <Text style={{ color: COLORS.white, fontWeight: 'bold', fontSize: 20 }}>
-                {info?.nombre?.substring(0, 2).toUpperCase()}
-              </Text>
-            </View>
-            <View>
-              <Text style={{ color: COLORS.textLight, fontSize: 14, fontWeight: '500' }}>Hola de nuevo,</Text>
-              <Text style={{ color: COLORS.textDark, fontSize: 22, fontWeight: 'bold' }}>{info?.nombre}</Text>
-            </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center', marginRight: 16 }}>
+            <Text style={{ color: COLORS.white, fontWeight: 'bold', fontSize: 20 }}>
+              {info?.nombre?.substring(0, 2).toUpperCase()}
+            </Text>
+          </View>
+          <View>
+            <Text style={{ color: COLORS.textLight, fontSize: 14, fontWeight: '500' }}>Hola de nuevo,</Text>
+            <Text style={{ color: COLORS.textDark, fontSize: 22, fontWeight: 'bold' }}>{info?.nombre}</Text>
           </View>
         </View>
+        <TouchableOpacity
+          onPress={() => {
+            if (onClose) onClose();
+            else if (router.canGoBack()) router.back();
+            else router.replace('/');
+          }}
+          style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.06)', alignItems: 'center', justifyContent: 'center' }}
+        >
+          <Ionicons name="close" size={20} color={COLORS.textDark} />
+        </TouchableOpacity>
+      </View>
 
         <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
 
           {info.estado === 'pendiente' && (
-            <View style={{ backgroundColor: COLORS.cardBg, padding: 24, borderRadius: 24, ...SHADOW_SM }}>
-              <Text style={{ fontSize: 18, fontWeight: 'bold', color: COLORS.secondary, marginBottom: 8 }}>En revisión</Text>
-              <Text style={{ fontSize: 14, color: COLORS.textLight, lineHeight: 22 }}>Tu asociación está siendo revisada por nuestro equipo. Te avisaremos en cuanto sea aprobada.</Text>
+  <Modal visible transparent animationType="fade">
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+      <BlurView
+        intensity={30}
+        tint="dark"
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(20,15,10,0.55)' }}
+      />
+      <View style={{ width: '100%', maxWidth: 400 }}>
+        {!sobreAbierto ? (
+          <TouchableOpacity activeOpacity={0.85} onPress={abrirSobre} style={{ alignItems: 'center' }}>
+            <View style={{
+              width: '100%', aspectRatio: 1.5,
+              backgroundColor: '#D9BB93',
+              borderRadius: 20,
+              justifyContent: 'center', alignItems: 'center',
+              ...(Platform.OS === 'web'
+                ? { boxShadow: '0 10px 28px rgba(74,55,40,0.2)' } as any
+                : { elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.2, shadowRadius: 16 }),
+            }}>
+              <View style={{
+                position: 'absolute', top: 0, left: 0, right: 0,
+                height: 0, width: 0,
+                borderLeftWidth: 190, borderRightWidth: 190,
+                borderTopWidth: 90,
+                borderLeftColor: 'transparent', borderRightColor: 'transparent',
+                borderTopColor: '#C7A87A',
+              }} />
+              <Ionicons name="mail-outline" size={40} color={COLORS.textDark} style={{ marginTop: 20 }} />
+              <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginTop: 8 }}>
+                Toca para abrir
+              </Text>
             </View>
-          )}
+          </TouchableOpacity>
+        ) : (
+          <Animated.View style={{
+            opacity: notaAnim,
+            transform: [
+              { translateY: notaAnim.interpolate({ inputRange: [0, 1], outputRange: [30, 0] }) },
+              { scale: notaAnim.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1] }) },
+              { rotate: '-1deg' },
+            ],
+          }}>
+            <View style={{
+              backgroundColor: COLORS.cardBg,
+              borderRadius: 28,
+              padding: 28,
+              paddingTop: 44,
+              borderWidth: 1, borderColor: 'rgba(0,0,0,0.05)',
+              ...(Platform.OS === 'web'
+                ? { boxShadow: '0 12px 32px rgba(74,55,40,0.18)' } as any
+                : { elevation: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.18, shadowRadius: 20 }),
+            }}>
+              <View style={{ position: 'absolute', top: -28, left: -14, transform: [{ rotate: '-6deg' }] }}>
+                <Image source={require('../../assets/images/sobre-perrito.png')} style={{ width: 90, height: 90 }} resizeMode="contain" />
+              </View>
+              <View style={{ position: 'absolute', top: -24, right: -12, transform: [{ rotate: '7deg' }] }}>
+                <Image source={require('../../assets/images/sobre-gatito.png')} style={{ width: 84, height: 84 }} resizeMode="contain" />
+              </View>
+              <View style={{ alignItems: 'center', marginBottom: 14, marginTop: 10 }}>
+                <Ionicons name="mail-open-outline" size={30} color={COLORS.primary} style={{ marginBottom: 8 }} />
+                <Text style={{ fontSize: 20, fontWeight: '900', color: COLORS.textDark, textAlign: 'center' }}>
+                  Tu solicitud está en revisión
+                </Text>
+              </View>
+              <Text style={{ fontSize: 14, color: COLORS.textLight, lineHeight: 22, textAlign: 'center', marginBottom: 20 }}>
+                Nuestro equipo está revisando los datos de{' '}
+                <Text style={{ fontWeight: '700', color: COLORS.textDark }}>{info?.nombre}</Text>.
+                Te avisaremos en cuanto sea aprobada.
+              </Text>
+              <View style={{ height: 1, backgroundColor: 'rgba(0,0,0,0.08)', marginBottom: 16 }} />
+              <View style={{
+                flexDirection: 'row', alignItems: 'flex-start',
+                backgroundColor: 'rgba(102,188,180,0.14)', borderRadius: 16, padding: 14,
+              }}>
+                <Ionicons name="key-outline" size={18} color={COLORS.accent} style={{ marginRight: 10, marginTop: 1 }} />
+                <Text style={{ flex: 1, fontSize: 13, color: COLORS.textDark, lineHeight: 19 }}>
+                  Ya puedes iniciar sesión con el correo y la contraseña que registraste. Ahí podrás ver el estado de tu solicitud en cualquier momento.
+                </Text>
+              </View>
+            </View>
+          </Animated.View>
+        )}
+      </View>
+    </View>
+  </Modal>
+)}
 
           {info.estado === 'rechazada' && (
             <>
