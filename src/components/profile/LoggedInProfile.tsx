@@ -111,16 +111,18 @@ useFocusEffect(
   );
 
   const rolBadgeElement = esAdmin ? (
-    <RoleBadge rol="admin" variant="onWhite" />
-  ) : esAsociacion ? (
-    <RoleBadge rol="asociacion" variant="onWhite" />
-  ) : esStaff ? (
-    <RoleBadge rol="staff" variant="onWhite" />
-  ) : esVoluntarioInterno ? (
-    <RoleBadge rol="voluntario_interno" variant="onWhite" />
-  ) : esVoluntarioExterno ? (
-    <RoleBadge rol="voluntario_externo" variant="onWhite" />
-  ) : null;
+  <RoleBadge rol="admin" variant="onWhite" />
+) : esAsociacion ? (
+  <RoleBadge rol="asociacion" variant="onWhite" />
+) : esStaff ? (
+  <RoleBadge rol="staff" variant="onWhite" />
+) : esVoluntarioInterno ? (
+  <RoleBadge rol="voluntario_interno" variant="onWhite" />
+) : esVoluntarioExterno ? (
+  <RoleBadge rol="voluntario_externo" variant="onWhite" />
+) : (
+  <RoleBadge rol="reportante" variant="onWhite" />
+);
 
   // Actualizamos los accesos agregando los de voluntario
   const accesos = (
@@ -254,6 +256,9 @@ useFocusEffect(
         {esStaff && <RoleBadge rol="staff" variant="onColor" />}
         {esVoluntarioInterno && <RoleBadge rol="voluntario_interno" variant="onColor" />}
         {esVoluntarioExterno && <RoleBadge rol="voluntario_externo" variant="onColor" />}
+        {!esAdmin && !esAsociacion && !esStaff && !esVoluntarioInterno && !esVoluntarioExterno && (
+          <RoleBadge rol="reportante" variant="onColor" />
+        )} 
       </LinearGradient>
 
       <View style={styles.mobileCentered}>
