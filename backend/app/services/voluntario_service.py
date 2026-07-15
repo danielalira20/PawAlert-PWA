@@ -102,6 +102,14 @@ async def obtener_mi_voluntario(usuario_id: str) -> dict:
 
     voluntario = resultado.data[0]
 
+    # Para decidir si mostrar "Termina de completar tu perfil" — si ya
+    # existe una fila en capacidades, ya no debería aparecer esa opción.
+    capacidades_existentes = supabase.table("capacidades").select(
+        "voluntario_id"
+    ).eq("voluntario_id", voluntario["id"]).execute()
+    tiene_capacidades = bool(capacidades_existentes.data)
+
+
     # Traer la postulación más reciente para saber tipo / motivo de rechazo
     ultima_postulacion = supabase.table("postulaciones").select(
         "id, tipo, estado, motivo_rechazo, numero_intento, asociacion_id, "
@@ -152,6 +160,7 @@ async def obtener_mi_voluntario(usuario_id: str) -> dict:
         "asociacion_id": voluntario.get("asociacion_id"),
         "ultima_postulacion": postulacion_data,
         "intentos_previos": intentos_previos,
+        "tiene_capacidades": tiene_capacidades,
     }
 
 
@@ -457,13 +466,13 @@ async def obtener_reportes_voluntario(usuario_id: str) -> dict:
         }
  
         estado = r.get("estado_reporte")
-        if estado == "en_camino":
+        if estado in ("pendiente", "asignado"):
             pendientes.append(reporte)
-        elif estado == "en_atencion":
+        elif estado in ("en_camino", "en_atencion"):
             en_accion.append(reporte)
-        elif estado == "rescatado":
+        elif estado == "cerrado":
             completados.append(reporte)
-        elif estado in ("cerrado", "sin_cobertura"):
+        elif estado in ("sin_cobertura", "duplicado_vinculable", "duplicado_informativo", "cancelado_por_reportante"):
             historial.append(reporte)
  
     return {

@@ -35,6 +35,7 @@ const ESTADO: Record<string, { color: string; label: string; bg: string }> = {
   cerrado:       { color: '#7F8C8D', label: 'Cerrado',      bg: '#F2F3F4' },
   sin_cobertura: { color: '#E67E22', label: 'Sin cobertura',bg: '#FEF9E7' },
 };
+const TAB_BAR_CLEARANCE = 18 + 68 + 12;
 
 const getCfg = (map: Record<string, any>, key: string) =>
   map[key?.toLowerCase()] ?? { color: '#95A5A6', label: key ?? '', bg: '#F2F3F4' };
@@ -56,8 +57,13 @@ export default function MapScreen() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [, setTick] = useState(0);
 
+  // Imagen ampliada (modal con soporte de carrusel) — DEBE vivir dentro del componente
+  const [imagenAmpliada, setImagenAmpliada] = useState<{ fotos: string[]; index: number } | null>(null);
+
   // Bottom sheet para mobile web
   const sheetY = useRef(new Animated.Value(300)).current;
+  const [showClockLabel, setShowClockLabel] = useState(false);
+  const clockTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isMobile = windowWidth < 768;
 
@@ -70,13 +76,29 @@ export default function MapScreen() {
     } catch {}
   }, []);
 
+  const handleClockPress = () => {
+    if (!isMobile) return;
+    setShowClockLabel(true);
+
+    // Si ya había un timer corriendo (toques repetidos), lo cancelamos
+    // para que siempre sean 7 segundos completos desde el ÚLTIMO toque.
+    if (clockTimeoutRef.current) clearTimeout(clockTimeoutRef.current);
+    clockTimeoutRef.current = setTimeout(() => {
+      setShowClockLabel(false);
+    }, 7000);
+  };
+
   // Carga inicial e intervalos
   useEffect(() => {
     setIsClient(true);
     fetchReportes();
     const fetchInterval = setInterval(fetchReportes, 600000);
     const tickInterval = setInterval(() => setTick(t => t + 1), 60000);
-    return () => { clearInterval(fetchInterval); clearInterval(tickInterval); };
+    return () => {
+      clearInterval(fetchInterval);
+      clearInterval(tickInterval);
+      if (clockTimeoutRef.current) clearTimeout(clockTimeoutRef.current);
+    };
   }, [fetchReportes]);
 
   // Listener de dimensiones separado para evitar re-renders en cascada
@@ -101,6 +123,14 @@ export default function MapScreen() {
       setSidebarView('detail');
     }
   }, [isMobile]);
+
+  // Preparado para carrusel: si el backend manda el arreglo completo (reporte.fotos)
+  // se usa completo; si no, cae a la única foto_url que ya tenían.
+  const abrirImagenAmpliada = (reporte: Reporte) => {
+    const fotos = reporte.fotos?.length ? reporte.fotos : ([reporte.foto_url].filter(Boolean) as string[]);
+    if (fotos.length === 0) return;
+    setImagenAmpliada({ fotos, index: 0 });
+  };
 
   const handleMapClick = useCallback(() => {
     if (selectedReport) {
@@ -169,11 +199,15 @@ export default function MapScreen() {
           shadowRadius: isSelected ? 8 : 3,
         }}
       >
-        <View style={{ width: compact ? 44 : 52, height: compact ? 44 : 52, borderRadius: 10, backgroundColor: condCfg.bg, overflow: 'hidden', flexShrink: 0, alignItems: 'center', justifyContent: 'center' }}>
+        {/* Miniatura: tocable para ampliar, sin disparar la selección de la tarjeta completa */}
+        <TouchableOpacity
+          onPress={(e) => { e.stopPropagation(); abrirImagenAmpliada(reporte); }}
+          style={{ width: compact ? 44 : 52, height: compact ? 44 : 52, borderRadius: 10, backgroundColor: condCfg.bg, overflow: 'hidden', flexShrink: 0, alignItems: 'center', justifyContent: 'center' }}
+        >
           {reporte.foto_url
             ? <Image source={{ uri: reporte.foto_url }} style={{ width: compact ? 44 : 52, height: compact ? 44 : 52 }} resizeMode="cover" />
             : <Ionicons name="paw" size={compact ? 18 : 22} color={condCfg.color} />}
-        </View>
+        </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: compact ? 12 : 13, fontWeight: '800', color: C.dark, marginBottom: 2 }}>
             {tipoLabel}{tamanio ? ` · ${tamanio}` : ''}
@@ -210,14 +244,24 @@ export default function MapScreen() {
 
     return (
       <ScrollView contentContainerStyle={{ padding: 16 }}>
-        <View style={{ borderRadius: 14, overflow: 'hidden', height: 150, backgroundColor: condCfg.bg, marginBottom: 14 }}>
-          {r.foto_url
-            ? <Image source={{ uri: r.foto_url }} style={{ width: '100%', height: 150 }} resizeMode="cover" />
-            : <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><Ionicons name="paw" size={48} color={condCfg.color} /></View>}
-          <View style={{ position: 'absolute', top: 10, right: 10, backgroundColor: condCfg.color, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 }}>
-            <Text style={{ fontSize: 9, fontWeight: '800', color: '#FFF', textTransform: 'uppercase' }}>{condCfg.label}</Text>
+        <TouchableOpacity onPress={() => abrirImagenAmpliada(r)} activeOpacity={0.85}>
+          <View style={{ borderRadius: 14, overflow: 'hidden', height: 220, backgroundColor: condCfg.bg, marginBottom: 14 }}>
+            {r.foto_url
+              ? <Image source={{ uri: r.foto_url }} style={{ width: '100%', height: 220 }} resizeMode="cover" />
+              : <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><Ionicons name="paw" size={48} color={condCfg.color} /></View>}
+            <View style={{ position: 'absolute', top: 10, right: 10, backgroundColor: condCfg.color, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 }}>
+              <Text style={{ fontSize: 9, fontWeight: '800', color: '#FFF', textTransform: 'uppercase' }}>{condCfg.label}</Text>
+            </View>
+            {r.foto_url && (
+              <View style={{ position: 'absolute', bottom: 10, right: 10, backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 16, padding: 6, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Ionicons name="expand" size={14} color="#FFF" />
+                {r.fotos && r.fotos.length > 1 && (
+                  <Text style={{ color: '#FFF', fontSize: 10, fontWeight: '700' }}>{r.fotos.length}</Text>
+                )}
+              </View>
+            )}
           </View>
-        </View>
+        </TouchableOpacity>
 
         <Text style={{ fontSize: 20, fontWeight: '900', color: C.dark, marginBottom: 4 }}>
           {tipoLabel}{r.animal?.tamanio ? ` · ${r.animal.tamanio[0].toUpperCase() + r.animal.tamanio.slice(1)}` : ''}
@@ -350,7 +394,7 @@ export default function MapScreen() {
       )}
 
       {/* Leyenda */}
-      <View style={{ position: 'absolute', top: 16, right: 16, backgroundColor: '#FFF', borderRadius: 12, padding: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8 }}>
+      <View style={{ position: 'absolute', top: 16, right: 16, backgroundColor: '#FFF', borderRadius: 12, padding: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8, zIndex: 999, elevation: 9 }}>
         <Text style={{ fontSize: 9, fontWeight: '800', color: C.dark, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>Condición</Text>
         {Object.entries(CONDICION).map(([key, cfg]) => (
           <View key={key} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4 }}>
@@ -362,18 +406,32 @@ export default function MapScreen() {
 
       {/* Clock */}
       {lastUpdated && (
-        <View style={{ position: 'absolute', bottom: 20, left: 16, backgroundColor: 'rgba(30,20,10,0.6)', borderRadius: 20, paddingVertical: 6, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <TouchableOpacity
+          onPress={handleClockPress}
+          activeOpacity={isMobile ? 0.7 : 1}
+          style={{
+            position: 'absolute', bottom: TAB_BAR_CLEARANCE, left: 16,
+            backgroundColor: isMobile ? 'rgba(30,20,10,0.35)' : 'rgba(30,20,10,0.6)',
+            borderRadius: 20,
+            paddingVertical: 6,
+            paddingHorizontal: isMobile && !showClockLabel ? 8 : 12,
+            flexDirection: 'row', alignItems: 'center', gap: 6,
+            zIndex: 999, elevation: 9,
+          }}
+        >
           <Ionicons name="time-outline" size={13} color="#FFF" />
-          <Text style={{ color: '#FFF', fontSize: 10, fontWeight: '600' }}>
-            {formatDistanceToNow(lastUpdated, { addSuffix: true, locale: es })}
-          </Text>
-        </View>
+          {(!isMobile || showClockLabel) && (
+            <Text style={{ color: '#FFF', fontSize: 10, fontWeight: '600' }}>
+              {formatDistanceToNow(lastUpdated, { addSuffix: true, locale: es })}
+            </Text>
+          )}
+        </TouchableOpacity>
       )}
 
       {/* FAB */}
       <TouchableOpacity
         onPress={handleCrearReporte}
-        style={{ position: 'absolute', bottom: 20, right: 20, width: 52, height: 52, borderRadius: 26, backgroundColor: C.orange, alignItems: 'center', justifyContent: 'center', shadowColor: C.orange, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.45, shadowRadius: 12, zIndex: 1000, elevation: 10 }}
+        style={{ position: 'absolute', bottom: TAB_BAR_CLEARANCE, right: 20, width: 52, height: 52, borderRadius: 26, backgroundColor: C.orange, alignItems: 'center', justifyContent: 'center', shadowColor: C.orange, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.45, shadowRadius: 12, zIndex: 1000, elevation: 10 }}
       >
         <Ionicons name="add" size={26} color="#FFF" />
       </TouchableOpacity>
@@ -482,11 +540,13 @@ export default function MapScreen() {
         </TouchableOpacity>
         <View style={{ paddingHorizontal: 16, paddingTop: 4 }}>
           <View style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start' }}>
-            <View style={{ width: 72, height: 72, borderRadius: 12, overflow: 'hidden', backgroundColor: condCfg.bg, flexShrink: 0 }}>
-              {r.foto_url
-                ? <Image source={{ uri: r.foto_url }} style={{ width: 72, height: 72 }} resizeMode="cover" />
-                : <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><Ionicons name="paw" size={28} color={condCfg.color} /></View>}
-            </View>
+            <TouchableOpacity onPress={() => abrirImagenAmpliada(r)} activeOpacity={0.85}>
+              <View style={{ width: 72, height: 72, borderRadius: 12, overflow: 'hidden', backgroundColor: condCfg.bg, flexShrink: 0 }}>
+                {r.foto_url
+                  ? <Image source={{ uri: r.foto_url }} style={{ width: 72, height: 72 }} resizeMode="cover" />
+                  : <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><Ionicons name="paw" size={28} color={condCfg.color} /></View>}
+              </View>
+            </TouchableOpacity>
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 16, fontWeight: '900', color: C.dark, marginBottom: 4 }}>
                 {tipoLabel}{r.animal?.tamanio ? ` · ${r.animal.tamanio[0].toUpperCase() + r.animal.tamanio.slice(1)}` : ''}
@@ -555,6 +615,74 @@ export default function MapScreen() {
     ) : null
   );
 
+  // ─── Modal de imagen ampliada (con soporte de carrusel) ──────────────────────
+  const renderImagenAmpliada = () => {
+    if (!imagenAmpliada) return null;
+    const { fotos, index } = imagenAmpliada;
+    const hayVarias = fotos.length > 1;
+
+    return (
+      <View style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(10,8,6,0.92)', zIndex: 2000, alignItems: 'center', justifyContent: 'center' } as any}>
+        {/* Cerrar */}
+        <TouchableOpacity
+          onPress={() => setImagenAmpliada(null)}
+          style={{ position: 'absolute', top: 20, right: 20, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center', zIndex: 10 }}
+        >
+          <Feather name="x" size={22} color="#FFF" />
+        </TouchableOpacity>
+
+        {/* Contador (solo si hay varias) */}
+        {hayVarias && (
+          <View style={{ position: 'absolute', top: 24, alignSelf: 'center', backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20 }}>
+            <Text style={{ color: '#FFF', fontSize: 12, fontWeight: '700' }}>{index + 1} / {fotos.length}</Text>
+          </View>
+        )}
+
+        {/* Flecha izquierda */}
+        {hayVarias && index > 0 && (
+          <TouchableOpacity
+            onPress={() => setImagenAmpliada({ fotos, index: index - 1 })}
+            style={{ position: 'absolute', left: 12, width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' }}
+          >
+            <Feather name="chevron-left" size={24} color="#FFF" />
+          </TouchableOpacity>
+        )}
+
+        {/* Imagen */}
+        <Image
+          source={{ uri: fotos[index] }}
+          style={{ width: '90%', height: '75%', borderRadius: 12 }}
+          resizeMode="contain"
+        />
+
+        {/* Flecha derecha */}
+        {hayVarias && index < fotos.length - 1 && (
+          <TouchableOpacity
+            onPress={() => setImagenAmpliada({ fotos, index: index + 1 })}
+            style={{ position: 'absolute', right: 12, width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' }}
+          >
+            <Feather name="chevron-right" size={24} color="#FFF" />
+          </TouchableOpacity>
+        )}
+
+        {/* Miniaturas (solo si hay varias) */}
+        {hayVarias && (
+          <View style={{ position: 'absolute', bottom: 24, flexDirection: 'row', gap: 8 }}>
+            {fotos.map((f, i) => (
+              <TouchableOpacity key={i} onPress={() => setImagenAmpliada({ fotos, index: i })}>
+                <Image
+                  source={{ uri: f }}
+                  style={{ width: 44, height: 44, borderRadius: 8, borderWidth: i === index ? 2 : 0, borderColor: C.orange, opacity: i === index ? 1 : 0.5 }}
+                  resizeMode="cover"
+                />
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+      </View>
+    );
+  };
+
   // ─── LAYOUT MOBILE WEB ────────────────────────────────────────────────────────
   if (isMobile) {
     return (
@@ -562,6 +690,7 @@ export default function MapScreen() {
         {renderMap()}
         {renderMobileBottomSheet()}
         {renderFormModal()}
+        {renderImagenAmpliada()}
         <AuthGateModal visible={isAuthGateVisible} onClose={() => setIsAuthGateVisible(false)} onGuest={() => setSidebarView('form')} />
       </View>
     );
@@ -600,7 +729,9 @@ export default function MapScreen() {
       {/* Mapa */}
       {renderMap()}
 
+      {renderImagenAmpliada()}
       <AuthGateModal visible={isAuthGateVisible} onClose={() => setIsAuthGateVisible(false)} onGuest={() => setSidebarView('form')} />
+
     </View>
   );
 }

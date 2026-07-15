@@ -11,6 +11,7 @@ import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
 import LocationPickerMap from './LocationPickerMap';
 import { validarPassword } from '../utils/validators';
+import AssociationStatusScreen from './AssociationStatusScreen';
 
 const COLORS = {
   bgTeal: '#66BCB4',
@@ -56,6 +57,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
   const [isLoadingGps, setIsLoadingGps] = useState(false);
 
   const [calle, setCalle] = useState('');
+  const [numero, setNumero] = useState('');
   const [colonia, setColonia] = useState('');
   const [municipio, setMunicipio] = useState('');
   const [referencia, setReferencia] = useState('');
@@ -75,6 +77,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
 
   const [subcategoriaOtro, setSubcategoriaOtro] = useState<string | null>(null);
   const [especieDescripcionOtro, setEspecieDescripcionOtro] = useState('');
+  const [registroExitoso, setRegistroExitoso] = useState(false);
 
   useEffect(() => {
     const hasErrors = Object.values(errors).some(e => e !== '');
@@ -219,7 +222,8 @@ export default function AssociationFormScreen({ onClose }: Props) {
         params: { lat, lon, format: 'json', addressdetails: 1 },
       });
       const address = res.data.address || {};
-      setCalle([address.house_number, address.road].filter(Boolean).join(' '));
+      setCalle(address.road || '');
+      setNumero(address.house_number || '');
       setColonia(address.suburb || address.neighbourhood || address.colonia || '');
       setMunicipio(address.city || address.town || address.municipality || address.county || '');
       setDireccionConfirmada(res.data.display_name || '');
@@ -235,7 +239,8 @@ export default function AssociationFormScreen({ onClose }: Props) {
     
     setPinLocation({ latitud: lat, longitud: lon });
     setUbicacionConfirmada(true);
-    setCalle([address.house_number, address.road].filter(Boolean).join(' '));
+    setCalle(address.road || '');
+    setNumero(address.house_number || '');
     setColonia(address.suburb || address.neighbourhood || address.colonia || '');
     setMunicipio(address.city || address.town || address.municipality || address.county || '');
     setDireccionConfirmada(result.display_name);
@@ -310,7 +315,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
   const handleResetForm = () => {
     setNombre(''); setNombreResponsable(''); setApellidoResponsable(''); setAcercaDe(''); setLogoUrl('');
     setTelefono(''); setEmail(''); setPassword(''); setPassword2(''); setDiasSeleccionados([]); setHoraApertura(''); setHoraCierre(''); setTiposAnimales([]);
-    setCalle(''); setColonia(''); setMunicipio(''); setReferencia(''); setRadioKm('');
+    setCalle(''); setNumero(''); setColonia(''); setMunicipio(''); setReferencia(''); setRadioKm('');
     setPinLocation({ latitud: 19.0414, longitud: -98.2063 }); setUbicacionConfirmada(false);
     setSearchQuery(''); setDireccionConfirmada(''); setFotos([]); setErrors({});
   };
@@ -366,6 +371,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
       const horario = formatearHorario();
       if (horario) formData.append('horario_atencion', horario);
       if (calle.trim()) formData.append('calle', calle.trim());
+      if (numero.trim()) formData.append('numero', numero.trim());
       if (colonia.trim()) formData.append('colonia', colonia.trim());
       if (municipio.trim()) formData.append('municipio', municipio.trim());
       if (referencia.trim()) formData.append('referencia', referencia.trim());
@@ -389,10 +395,8 @@ export default function AssociationFormScreen({ onClose }: Props) {
       const response = await axios.post(`${API_URL}/associations`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
 
       await setSession(response.data.usuario, response.data.access_token);
-      showToast({ type: 'success', title: '¡Registro exitoso!', message: response.data.mensaje || 'Tu solicitud ha sido registrada.' });
       handleResetForm();
-      if (onClose) onClose();
-      router.replace('/association-status' as any);
+      setRegistroExitoso(true);
     } catch (error: any) {
       const mensaje = error?.response?.data?.detail || error?.message || 'Error desconocido';
       showToast({ type: 'error', title: 'Error', message: mensaje });
@@ -400,513 +404,530 @@ export default function AssociationFormScreen({ onClose }: Props) {
       setIsSubmitting(false);
     }
   };
-
-  return (
+return (
     <View style={[styles.outerContainer, { backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' } as any]}>
       <Toast toast={toast} translateY={translateY} />
-      
-      {/* Contenedor centrado con maxWidth (como en StaffDashboardScreen) */}
-      <View style={[styles.centeredContent]}>
-        {/* Card/Modal con header teal y body blanco */}
-        <View style={styles.cardContainer}>
-          
-          {/* Header teal */}
-          <View style={styles.headerSection}>
-            <View style={styles.headerContent}>
-              <View style={styles.headerText}>
-                <Text style={styles.headerTitle}>¡Hola!</Text>
-                <Text style={styles.headerSubtitle}>Qué gusto verte por aquí.</Text>
-              </View>
+
+      {registroExitoso ? (
+         <AssociationStatusScreen onClose={onClose} standalone={false} />
+      ) : (
+        <>
+          {/* Contenedor centrado con maxWidth (como en StaffDashboardScreen) */}
+          <View style={[styles.centeredContent]}>
+            {/* Card/Modal con header teal y body blanco */}
+            <View style={styles.cardContainer}>
               
-              {onClose && (
-                <TouchableOpacity 
-                  onPress={handleCloseRequest}
-                  style={styles.closeButton}
+              {/* Header teal */}
+              <View style={styles.headerSection}>
+                <View style={styles.headerContent}>
+                  <View style={styles.headerText}>
+                    <Text style={styles.headerTitle}>¡Hola!</Text>
+                    <Text style={styles.headerSubtitle}>Qué gusto verte por aquí.</Text>
+                  </View>
+                  
+                  {onClose && (
+                    <TouchableOpacity 
+                      onPress={handleCloseRequest}
+                      style={styles.closeButton}
+                    >
+                      <Ionicons name="close" size={24} color={COLORS.bgWhite} />
+                    </TouchableOpacity>
+                  )}
+                </View>
+                
+                <Image 
+                  pointerEvents="none"
+                  source={{ uri: 'https://cdn-icons-png.flaticon.com/512/3047/3047928.png' }} 
+                  style={styles.decorationImage}
+                  resizeMode="contain"
+                />
+              </View>
+
+              {/* Body blanco con scroll */}
+              <View style={styles.bodySection}>
+                <ScrollView 
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={styles.scrollContent}
                 >
-                  <Ionicons name="close" size={24} color={COLORS.bgWhite} />
-                </TouchableOpacity>
-              )}
-            </View>
-            
-            <Image 
-              pointerEvents="none"
-              source={{ uri: 'https://cdn-icons-png.flaticon.com/512/3047/3047928.png' }} 
-              style={styles.decorationImage}
-              resizeMode="contain"
-            />
-          </View>
-
-          {/* Body blanco con scroll */}
-          <View style={styles.bodySection}>
-            <ScrollView 
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.scrollContent}
-            >
-              {/* Datos de la Asociación */}
-              <FormSection title="Datos de la Asociación">
-                <Input 
-                  label="Nombre de la Asociación" 
-                  placeholder="Ej. Huellitas de Amor A.C." 
-                  value={nombre} 
-                  onChangeText={handleNombreChange} 
-                  error={errors.nombre} 
-                  required 
-                />
-                
-                <View style={styles.rowContainer}>
-                  <View style={styles.halfWidth}>
+                  {/* Datos de la Asociación */}
+                  <FormSection title="Datos de la Asociación">
                     <Input 
-                      label="Nombre(s) del Responsable" 
-                      placeholder="Ej. Juan" 
-                      value={nombreResponsable} 
-                      onChangeText={handleNombreResponsableChange} 
-                      error={errors.nombreResponsable} 
+                      label="Nombre de la Asociación" 
+                      placeholder="Ej. Huellitas de Amor A.C." 
+                      value={nombre} 
+                      onChangeText={handleNombreChange} 
+                      error={errors.nombre} 
                       required 
                     />
-                  </View>
-                  <View style={styles.halfWidth}>
+                    
+                    <View style={styles.rowContainer}>
+                      <View style={styles.halfWidth}>
+                        <Input 
+                          label="Nombre(s) del Responsable" 
+                          placeholder="Ej. Juan" 
+                          value={nombreResponsable} 
+                          onChangeText={handleNombreResponsableChange} 
+                          error={errors.nombreResponsable} 
+                          required 
+                        />
+                      </View>
+                      <View style={styles.halfWidth}>
+                        <Input 
+                          label="Apellido del Responsable" 
+                          placeholder="Ej. Pérez" 
+                          value={apellidoResponsable} 
+                          onChangeText={handleApellidoResponsableChange} 
+                          error={errors.apellidoResponsable} 
+                          required 
+                        />
+                      </View>
+                    </View>
+
                     <Input 
-                      label="Apellido del Responsable" 
-                      placeholder="Ej. Pérez" 
-                      value={apellidoResponsable} 
-                      onChangeText={handleApellidoResponsableChange} 
-                      error={errors.apellidoResponsable} 
-                      required 
+                      label="Acerca de la Asociación (Opcional)" 
+                      placeholder="Describe la misión o actividades..." 
+                      value={acercaDe} 
+                      onChangeText={setAcercaDe} 
+                      multiline 
+                      maxLength={300} 
+                      style={{ height: 80, textAlignVertical: 'top', outlineStyle: 'none' } as any} 
                     />
-                  </View>
-                </View>
+                    <Text style={styles.charCounter}>{acercaDe.length}/300</Text>
 
-                <Input 
-                  label="Acerca de la Asociación (Opcional)" 
-                  placeholder="Describe la misión o actividades..." 
-                  value={acercaDe} 
-                  onChangeText={setAcercaDe} 
-                  multiline 
-                  maxLength={300} 
-                  style={{ height: 80, textAlignVertical: 'top', outlineStyle: 'none' } as any} 
-                />
-                <Text style={styles.charCounter}>{acercaDe.length}/300</Text>
-
-                <Text style={styles.sectionLabel}>Logo de la Asociación (Opcional)</Text>
-                {logoUrl ? (
-                  <View style={styles.logoPreview}>
-                    <Image source={{ uri: logoUrl }} style={styles.logoImage} />
-                    <TouchableOpacity 
-                      onPress={() => setLogoUrl('')} 
-                      style={styles.logoDeleteButton}
-                    >
-                      <Ionicons name="trash" size={16} color={COLORS.danger} />
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  <TouchableOpacity 
-                    onPress={handlePickLogo} 
-                    style={styles.uploadButton}
-                  >
-                    <Ionicons name="cloud-upload" size={24} color={COLORS.textLight} />
-                    <Text style={styles.uploadText}>Subir logo</Text>
-                  </TouchableOpacity>
-                )}
-              </FormSection>
-
-              <Divider />
-
-              {/* Datos de Contacto */}
-              <FormSection title="Datos de Contacto" subtitle="Con este correo y contraseña iniciarás sesión.">
-                <Input 
-                  label="Teléfono" 
-                  placeholder="Ej. 2221234567" 
-                  value={telefono} 
-                  onChangeText={handleTelefonoChange} 
-                  error={errors.telefono} 
-                  keyboardType="numeric" 
-                  maxLength={10} 
-                  required 
-                />
-                <Input 
-                  label="Correo Electrónico" 
-                  placeholder="Ej. contacto@asociacion.org" 
-                  value={email} 
-                  onChangeText={handleEmailChange} 
-                  error={errors.email} 
-                  keyboardType="email-address" 
-                  autoCapitalize="none" 
-                  required 
-                />
-                
-                <View style={styles.rowContainer}>
-                  <View style={styles.halfWidth}>
-                    <Input 
-                      label="Contraseña" 
-                      placeholder="8+ caracteres" 
-                      value={password} 
-                      onChangeText={handlePasswordChange} 
-                      error={errors.password} 
-                      secureTextEntry 
-                      required 
-                    />
-                  </View>
-                  <View style={styles.halfWidth}>
-                    <Input 
-                      label="Confirmar Contraseña" 
-                      placeholder="Repite tu contraseña" 
-                      value={password2} 
-                      onChangeText={handlePassword2Change} 
-                      error={errors.password2} 
-                      secureTextEntry 
-                      required 
-                    />
-                  </View>
-                </View>
-              </FormSection>
-
-              <Divider />
-
-              {/* Operación y Animales */}
-              <FormSection title="Operación y Animales">
-                <Text style={styles.sectionLabel}>Horario de Atención (Opcional)</Text>
-                <View style={styles.daysContainer}>
-                  {DIAS_ORDEN.map((dia) => {
-                    const isSelected = diasSeleccionados.includes(dia);
-                    return (
+                    <Text style={styles.sectionLabel}>Logo de la Asociación (Opcional)</Text>
+                    {logoUrl ? (
+                      <View style={styles.logoPreview}>
+                        <Image source={{ uri: logoUrl }} style={styles.logoImage} />
+                        <TouchableOpacity 
+                          onPress={() => setLogoUrl('')} 
+                          style={styles.logoDeleteButton}
+                        >
+                          <Ionicons name="trash" size={16} color={COLORS.danger} />
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
                       <TouchableOpacity 
-                        key={dia} 
-                        onPress={() => toggleDia(dia)} 
-                        style={[styles.dayChip, { backgroundColor: isSelected ? COLORS.bgTeal : COLORS.grayLight }]}
+                        onPress={handlePickLogo} 
+                        style={styles.uploadButton}
                       >
-                        <Text style={[styles.dayChipText, { color: isSelected ? COLORS.bgWhite : COLORS.textLight }]}>
-                          {dia.slice(0, 3)}
-                        </Text>
+                        <Ionicons name="cloud-upload" size={24} color={COLORS.textLight} />
+                        <Text style={styles.uploadText}>Subir logo</Text>
                       </TouchableOpacity>
-                    );
-                  })}
-                </View>
+                    )}
+                  </FormSection>
 
-                <View style={styles.timeContainer}>
-                  <View style={styles.halfWidth}>
-                    <Text style={styles.timeLabel}>Apertura</Text>
-                    <TouchableOpacity 
-                      onPress={() => setCampoHorarioActivo('apertura')} 
-                      style={styles.timeButton}
-                    >
-                      <Text style={[styles.timeButtonText, { color: horaApertura ? COLORS.textDark : COLORS.textLight }]}>
-                        {horaApertura || '00:00 AM'}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                  <View style={styles.halfWidth}>
-                    <Text style={styles.timeLabel}>Cierre</Text>
-                    <TouchableOpacity 
-                      onPress={() => setCampoHorarioActivo('cierre')} 
-                      style={styles.timeButton}
-                    >
-                      <Text style={[styles.timeButtonText, { color: horaCierre ? COLORS.textDark : COLORS.textLight }]}>
-                        {horaCierre || '00:00 PM'}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
+                  <Divider />
 
-                <Text style={[styles.sectionLabel, styles.animalLabel]}>
-                  Tipos de animales que rescatan <Text style={styles.required}>*</Text>
-                </Text>
-                <View style={styles.animalChips}>
-                  {([{ id: 'perro', label: 'Perros' }, { id: 'gato', label: 'Gatos' }, { id: 'ave', label: 'Aves' }, { id: 'otro', label: 'Otros' }] as const).map((t) => {
-                    const isSelected = tiposAnimales.includes(t.id);
-                    return (
-                      <TouchableOpacity 
-                        key={t.id} 
-                        onPress={() => toggleTipoAnimal(t.id)} 
-                        style={[
-                          styles.animalChip,
-                          { 
-                            backgroundColor: isSelected ? COLORS.primary : COLORS.grayLight,
-                            borderWidth: errors.tiposAnimales ? 1 : 0,
-                            borderColor: COLORS.danger
-                          }
-                        ]}
-                      >
-                        <Text style={{ 
-                          textAlign: 'center', 
-                          fontWeight: '700', 
-                          fontSize: 14, 
-                          color: isSelected ? COLORS.bgWhite : COLORS.textLight 
-                        }}>
-                          {t.label}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-                {errors.tiposAnimales && <Text style={styles.errorText}>{errors.tiposAnimales}</Text>}
+                  {/* Datos de Contacto */}
+                  <FormSection title="Datos de Contacto" subtitle="Con este correo y contraseña iniciarás sesión.">
+                    <Input 
+                      label="Teléfono" 
+                      placeholder="Ej. 2221234567" 
+                      value={telefono} 
+                      onChangeText={handleTelefonoChange} 
+                      error={errors.telefono} 
+                      keyboardType="numeric" 
+                      maxLength={10} 
+                      required 
+                    />
+                    <Input 
+                      label="Correo Electrónico" 
+                      placeholder="Ej. contacto@asociacion.org" 
+                      value={email} 
+                      onChangeText={handleEmailChange} 
+                      error={errors.email} 
+                      keyboardType="email-address" 
+                      autoCapitalize="none" 
+                      required 
+                    />
+                    
+                    <View style={styles.rowContainer}>
+                      <View style={styles.halfWidth}>
+                        <Input 
+                          label="Contraseña" 
+                          placeholder="8+ caracteres" 
+                          value={password} 
+                          onChangeText={handlePasswordChange} 
+                          error={errors.password} 
+                          secureTextEntry 
+                          required 
+                        />
+                      </View>
+                      <View style={styles.halfWidth}>
+                        <Input 
+                          label="Confirmar Contraseña" 
+                          placeholder="Repite tu contraseña" 
+                          value={password2} 
+                          onChangeText={handlePassword2Change} 
+                          error={errors.password2} 
+                          secureTextEntry 
+                          required 
+                        />
+                      </View>
+                    </View>
+                  </FormSection>
 
-                {tiposAnimales.includes('otro') && (
-                  <View style={{ marginTop: 16 }}>
-                    <Text style={styles.sectionLabel}>Selecciona o describe el tipo de animal</Text>
-                    <View style={styles.animalChips}>
-                      {['Reptil', 'Equino', 'Exótico', 'Otro'].map((opcion) => {
-                        const isSelected = subcategoriaOtro === opcion;
+                  <Divider />
+
+                  {/* Operación y Animales */}
+                  <FormSection title="Operación y Animales">
+                    <Text style={styles.sectionLabel}>Horario de Atención (Opcional)</Text>
+                    <View style={styles.daysContainer}>
+                      {DIAS_ORDEN.map((dia) => {
+                        const isSelected = diasSeleccionados.includes(dia);
                         return (
                           <TouchableOpacity 
-                            key={opcion} 
-                            onPress={() => setSubcategoriaOtro(opcion)} 
+                            key={dia} 
+                            onPress={() => toggleDia(dia)} 
+                            style={[styles.dayChip, { backgroundColor: isSelected ? COLORS.bgTeal : COLORS.grayLight }]}
+                          >
+                            <Text style={[styles.dayChipText, { color: isSelected ? COLORS.bgWhite : COLORS.textLight }]}>
+                              {dia.slice(0, 3)}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+
+                    <View style={styles.timeContainer}>
+                      <View style={styles.halfWidth}>
+                        <Text style={styles.timeLabel}>Apertura</Text>
+                        <TouchableOpacity 
+                          onPress={() => setCampoHorarioActivo('apertura')} 
+                          style={styles.timeButton}
+                        >
+                          <Text style={[styles.timeButtonText, { color: horaApertura ? COLORS.textDark : COLORS.textLight }]}>
+                            {horaApertura || '00:00 AM'}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                      <View style={styles.halfWidth}>
+                        <Text style={styles.timeLabel}>Cierre</Text>
+                        <TouchableOpacity 
+                          onPress={() => setCampoHorarioActivo('cierre')} 
+                          style={styles.timeButton}
+                        >
+                          <Text style={[styles.timeButtonText, { color: horaCierre ? COLORS.textDark : COLORS.textLight }]}>
+                            {horaCierre || '00:00 PM'}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+
+                    <Text style={[styles.sectionLabel, styles.animalLabel]}>
+                      Tipos de animales que rescatan <Text style={styles.required}>*</Text>
+                    </Text>
+                    <View style={styles.animalChips}>
+                      {([{ id: 'perro', label: 'Perros' }, { id: 'gato', label: 'Gatos' }, { id: 'ave', label: 'Aves' }, { id: 'otro', label: 'Otros' }] as const).map((t) => {
+                        const isSelected = tiposAnimales.includes(t.id);
+                        return (
+                          <TouchableOpacity 
+                            key={t.id} 
+                            onPress={() => toggleTipoAnimal(t.id)} 
                             style={[
                               styles.animalChip,
-                              { backgroundColor: isSelected ? COLORS.secondary : COLORS.grayLight }
+                              { 
+                                backgroundColor: isSelected ? COLORS.primary : COLORS.grayLight,
+                                borderWidth: errors.tiposAnimales ? 1 : 0,
+                                borderColor: COLORS.danger
+                              }
                             ]}
                           >
                             <Text style={{ 
                               textAlign: 'center', 
                               fontWeight: '700', 
                               fontSize: 14, 
-                              color: isSelected ? COLORS.textDark : COLORS.textLight 
+                              color: isSelected ? COLORS.bgWhite : COLORS.textLight 
                             }}>
-                              {opcion}
+                              {t.label}
                             </Text>
                           </TouchableOpacity>
                         );
                       })}
                     </View>
-                    {errors.subcategoriaOtro && <Text style={styles.errorText}>{errors.subcategoriaOtro}</Text>}
+                    {errors.tiposAnimales && <Text style={styles.errorText}>{errors.tiposAnimales}</Text>}
 
-                    {subcategoriaOtro === 'Otro' && (
-                      <Input 
-                        label="Describe la especie *" 
-                        placeholder="Ej. Tlacuache, caballo..." 
-                        value={especieDescripcionOtro} 
-                        onChangeText={(val) => { 
-                          setEspecieDescripcionOtro(val); 
-                          if (val.trim()) setErrors(prev => ({ ...prev, especieDescripcionOtro: '' })); 
-                        }} 
-                        error={errors.especieDescripcionOtro} 
-                      />
+                    {tiposAnimales.includes('otro') && (
+                      <View style={{ marginTop: 16 }}>
+                        <Text style={styles.sectionLabel}>Selecciona o describe el tipo de animal</Text>
+                        <View style={styles.animalChips}>
+                          {['Reptil', 'Equino', 'Exótico', 'Otro'].map((opcion) => {
+                            const isSelected = subcategoriaOtro === opcion;
+                            return (
+                              <TouchableOpacity 
+                                key={opcion} 
+                                onPress={() => setSubcategoriaOtro(opcion)} 
+                                style={[
+                                  styles.animalChip,
+                                  { backgroundColor: isSelected ? COLORS.secondary : COLORS.grayLight }
+                                ]}
+                              >
+                                <Text style={{ 
+                                  textAlign: 'center', 
+                                  fontWeight: '700', 
+                                  fontSize: 14, 
+                                  color: isSelected ? COLORS.textDark : COLORS.textLight 
+                                }}>
+                                  {opcion}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                        {errors.subcategoriaOtro && <Text style={styles.errorText}>{errors.subcategoriaOtro}</Text>}
+
+                        {subcategoriaOtro === 'Otro' && (
+                          <Input 
+                            label="Describe la especie *" 
+                            placeholder="Ej. Tlacuache, caballo..." 
+                            value={especieDescripcionOtro} 
+                            onChangeText={(val) => { 
+                              setEspecieDescripcionOtro(val); 
+                              if (val.trim()) setErrors(prev => ({ ...prev, especieDescripcionOtro: '' })); 
+                            }} 
+                            error={errors.especieDescripcionOtro} 
+                          />
+                        )}
+                      </View>
                     )}
-                  </View>
-                )}
-              </FormSection>
+                  </FormSection>
 
-              <Divider />
+                  <Divider />
 
-              {/* Ubicación Física */}
-              <FormSection title="Ubicación Física" subtitle="Ajusta el pin en el mapa para mayor precisión.">
-                <Input 
-                  placeholder="Buscar dirección (Ej. Zócalo, Puebla)" 
-                  value={searchQuery} 
-                  onChangeText={setSearchQuery} 
-                />
-                {isSearching && <Text style={styles.searchingText}>Buscando...</Text>}
-                {searchResults.length > 0 && (
-                  <View style={styles.searchResults}>
-                    {searchResults.map((result, idx) => (
-                      <TouchableOpacity 
-                        key={idx} 
-                        onPress={() => handleSelectSearchResult(result)} 
-                        style={[
-                          styles.searchResult,
-                          { borderBottomWidth: idx === searchResults.length - 1 ? 0 : 1 }
-                        ]}
-                      >
-                        <Text style={styles.searchResultText}>{result.display_name}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
-
-                <TouchableOpacity 
-                  onPress={handleGetLocation} 
-                  style={styles.locationButton}
-                >
-                  <Ionicons name="location" size={18} color={COLORS.bgTeal} />
-                  <Text style={styles.locationButtonText}>
-                    {isLoadingGps ? 'Obteniendo tu ubicación...' : 'Usar mi ubicación actual'}
-                  </Text>
-                </TouchableOpacity>
-
-                <View style={[
-                  styles.mapContainer,
-                  { borderWidth: errors.ubicacion ? 2 : 0, borderColor: COLORS.danger }
-                ]}>
-                  <LocationPickerMap 
-                    selectedPosition={pinLocation} 
-                    onLocationSelect={handlePinLocationSelect} 
-                  />
-                </View>
-                {errors.ubicacion && <Text style={styles.errorText}>{errors.ubicacion}</Text>}
-
-                {direccionConfirmada !== '' && (
-                  <View style={styles.directionConfirm}>
-                    <Text style={styles.directionConfirmText}>
-                      Selección: <Text style={{ fontWeight: '700' }}>{direccionConfirmada}</Text>
-                    </Text>
-                  </View>
-                )}
-
-                <Input 
-                  label="Calle y número" 
-                  placeholder="Ej. Av. Reforma 123" 
-                  value={calle} 
-                  onChangeText={setCalle} 
-                />
-                
-                <View style={styles.rowContainer}>
-                  <View style={styles.halfWidth}>
+                  {/* Ubicación Física */}
+                  <FormSection title="Ubicación Física" subtitle="Ajusta el pin en el mapa para mayor precisión.">
                     <Input 
-                      label="Colonia" 
-                      placeholder="Ej. Centro Histórico" 
-                      value={colonia} 
-                      onChangeText={setColonia} 
+                      placeholder="Buscar dirección (Ej. Zócalo, Puebla)" 
+                      value={searchQuery} 
+                      onChangeText={setSearchQuery} 
                     />
-                  </View>
-                  <View style={styles.halfWidth}>
-                    <Input 
-                      label="Municipio / Ciudad" 
-                      placeholder="Ej. Puebla" 
-                      value={municipio} 
-                      onChangeText={setMunicipio} 
-                    />
-                  </View>
-                </View>
+                    {isSearching && <Text style={styles.searchingText}>Buscando...</Text>}
+                    {searchResults.length > 0 && (
+                      <View style={styles.searchResults}>
+                        {searchResults.map((result, idx) => (
+                          <TouchableOpacity 
+                            key={idx} 
+                            onPress={() => handleSelectSearchResult(result)} 
+                            style={[
+                              styles.searchResult,
+                              { borderBottomWidth: idx === searchResults.length - 1 ? 0 : 1 }
+                            ]}
+                          >
+                            <Text style={styles.searchResultText}>{result.display_name}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    )}
 
-                <Input 
-                  label="Referencia (Opcional)" 
-                  placeholder="Ej. Casa azul" 
-                  value={referencia} 
-                  onChangeText={setReferencia} 
-                />
-                <Input 
-                  label="Radio de Cobertura de Rescate (KM)" 
-                  placeholder="Ej. 15" 
-                  value={radioKm} 
-                  onChangeText={handleRadioKmChange} 
-                  error={errors.radioKm} 
-                  keyboardType="numeric" 
-                  required 
-                />
-              </FormSection>
+                    <TouchableOpacity 
+                      onPress={handleGetLocation} 
+                      style={styles.locationButton}
+                    >
+                      <Ionicons name="location" size={18} color={COLORS.bgTeal} />
+                      <Text style={styles.locationButtonText}>
+                        {isLoadingGps ? 'Obteniendo tu ubicación...' : 'Usar mi ubicación actual'}
+                      </Text>
+                    </TouchableOpacity>
 
-              <Divider />
-
-              {/* Fotos */}
-              <FormSection 
-                title="Fotos (Opcional)" 
-                subtitle="Sube hasta 3 fotos de tus instalaciones o rescates."
-              >
-                {fotos.map((f, index) => (
-                  <View key={f.id} style={styles.fotoItem}>
-                    <Image source={{ uri: f.foto_url }} style={styles.fotoImage} />
-                    <View style={styles.fotoContent}>
-                      <TextInput 
-                        placeholder="Añade una descripción..." 
-                        value={f.descripcion} 
-                        onChangeText={(text) => handleUpdateFotoDesc(f.id, text)} 
-                        style={[styles.fotoInput, { outlineStyle: 'none' }] as any} 
+                    <View style={[
+                      styles.mapContainer,
+                      { borderWidth: errors.ubicacion ? 2 : 0, borderColor: COLORS.danger }
+                    ]}>
+                      <LocationPickerMap 
+                        selectedPosition={pinLocation} 
+                        onLocationSelect={handlePinLocationSelect} 
                       />
-                      <TouchableOpacity onPress={() => handleDeleteFoto(f.id)}>
-                        <Text style={styles.fotoDelete}>Eliminar foto</Text>
-                      </TouchableOpacity>
                     </View>
-                  </View>
-                ))}
-                
-                <TouchableOpacity 
-                  onPress={captureFoto} 
-                  style={styles.addPhotoButton}
-                >
-                  <Text style={styles.addPhotoText}>
-                    <Ionicons name="images" size={16}/> Agregar foto
-                  </Text>
-                </TouchableOpacity>
-              </FormSection>
+                    {errors.ubicacion && <Text style={styles.errorText}>{errors.ubicacion}</Text>}
 
-              {showSubmitError && (
-                <Text style={styles.submitError}>
-                  Faltan campos por revisar arriba.
-                </Text>
-              )}
-              
-              <TouchableOpacity 
-                onPress={handleSubmit} 
-                disabled={isSubmitting} 
-                style={[
-                  styles.submitButton,
-                  { opacity: isSubmitting ? 0.7 : 1 }
-                ]}
-              >
-                {isSubmitting ? (
-                  <ActivityIndicator color={COLORS.bgWhite} />
-                ) : (
-                  <Text style={styles.submitButtonText}>Terminar Registro</Text>
-                )}
-              </TouchableOpacity>
+                    {direccionConfirmada !== '' && (
+                      <View style={styles.directionConfirm}>
+                        <Text style={styles.directionConfirmText}>
+                          Selección: <Text style={{ fontWeight: '700' }}>{direccionConfirmada}</Text>
+                        </Text>
+                      </View>
+                    )}
 
-            </ScrollView>
-          </View>
-        </View>
-      </View>
+                    <View style={styles.rowContainer}>
+                      <View style={styles.halfWidth}>
+                        <Input 
+                          label="Calle" 
+                          placeholder="Ej. Av. Reforma" 
+                          value={calle} 
+                          onChangeText={setCalle} 
+                        />
+                      </View>
+                      <View style={styles.halfWidth}>
+                        <Input 
+                          label="Número" 
+                          placeholder="Ej. 123" 
+                          value={numero} 
+                          onChangeText={setNumero} 
+                        />
+                      </View>
+                    </View>
+                    
+                    <View style={styles.rowContainer}>
+                      <View style={styles.halfWidth}>
+                        <Input 
+                          label="Colonia" 
+                          placeholder="Ej. Centro Histórico" 
+                          value={colonia} 
+                          onChangeText={setColonia} 
+                        />
+                      </View>
+                      <View style={styles.halfWidth}>
+                        <Input 
+                          label="Municipio / Ciudad" 
+                          placeholder="Ej. Puebla" 
+                          value={municipio} 
+                          onChangeText={setMunicipio} 
+                        />
+                      </View>
+                    </View>
 
-      {/* Modal de horarios */}
-      <Modal 
-        visible={campoHorarioActivo !== null} 
-        transparent 
-        animationType="fade" 
-        onRequestClose={() => setCampoHorarioActivo(null)}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>
-              {campoHorarioActivo === 'apertura' ? 'Hora de apertura' : 'Hora de cierre'}
-            </Text>
-            <ScrollView showsVerticalScrollIndicator={false} style={styles.modalScroll}>
-              {HORAS_DISPONIBLES.map((hora) => (
-                <TouchableOpacity 
-                  key={hora} 
-                  onPress={() => handleSeleccionarHora(hora)} 
-                  style={styles.horaOption}
-                >
-                  <Text style={styles.horaText}>{hora}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-            <TouchableOpacity 
-              onPress={() => setCampoHorarioActivo(null)} 
-              style={styles.modalCancel}
-            >
-              <Text style={styles.modalCancelText}>Cancelar</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+                    <Input 
+                      label="Referencia (Opcional)" 
+                      placeholder="Ej. Casa azul" 
+                      value={referencia} 
+                      onChangeText={setReferencia} 
+                    />
+                    <Input 
+                      label="Radio de Cobertura de Rescate (KM)" 
+                      placeholder="Ej. 15" 
+                      value={radioKm} 
+                      onChangeText={handleRadioKmChange} 
+                      error={errors.radioKm} 
+                      keyboardType="numeric" 
+                      required 
+                    />
+                  </FormSection>
 
-      {/* Modal de confirmación de salida */}
-      <Modal 
-        visible={showCloseConfirm} 
-        transparent 
-        animationType="fade" 
-        onRequestClose={() => setShowCloseConfirm(false)}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.confirmModal}>
-            <Text style={styles.confirmTitle}>¿Seguro que deseas salir?</Text>
-            <Text style={styles.confirmMessage}>
-              Los datos ingresados se perderán y tendrás que empezar tu registro de nuevo.
-            </Text>
-            <View style={styles.confirmButtons}>
-              <TouchableOpacity 
-                onPress={() => setShowCloseConfirm(false)} 
-                style={styles.confirmButtonCancel}
-              >
-                <Text style={styles.confirmButtonCancelText}>Me quedo</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                onPress={() => { setShowCloseConfirm(false); if (onClose) onClose(); }} 
-                style={styles.confirmButtonExit}
-              >
-                <Text style={styles.confirmButtonExitText}>Sí, salir</Text>
-              </TouchableOpacity>
+                  <Divider />
+
+                  {/* Fotos */}
+                  <FormSection 
+                    title="Fotos (Opcional)" 
+                    subtitle="Sube hasta 3 fotos de tus instalaciones o rescates."
+                  >
+                    {fotos.map((f, index) => (
+                      <View key={f.id} style={styles.fotoItem}>
+                        <Image source={{ uri: f.foto_url }} style={styles.fotoImage} />
+                        <View style={styles.fotoContent}>
+                          <TextInput 
+                            placeholder="Añade una descripción..." 
+                            value={f.descripcion} 
+                            onChangeText={(text) => handleUpdateFotoDesc(f.id, text)} 
+                            style={[styles.fotoInput, { outlineStyle: 'none' }] as any} 
+                          />
+                          <TouchableOpacity onPress={() => handleDeleteFoto(f.id)}>
+                            <Text style={styles.fotoDelete}>Eliminar foto</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ))}
+                    
+                    <TouchableOpacity 
+                      onPress={captureFoto} 
+                      style={styles.addPhotoButton}
+                    >
+                      <Text style={styles.addPhotoText}>
+                        <Ionicons name="images" size={16}/> Agregar foto
+                      </Text>
+                    </TouchableOpacity>
+                  </FormSection>
+
+                  {showSubmitError && (
+                    <Text style={styles.submitError}>
+                      Faltan campos por revisar arriba.
+                    </Text>
+                  )}
+                  
+                  <TouchableOpacity 
+                    onPress={handleSubmit} 
+                    disabled={isSubmitting} 
+                    style={[
+                      styles.submitButton,
+                      { opacity: isSubmitting ? 0.7 : 1 }
+                    ]}
+                  >
+                    {isSubmitting ? (
+                      <ActivityIndicator color={COLORS.bgWhite} />
+                    ) : (
+                      <Text style={styles.submitButtonText}>Terminar Registro</Text>
+                    )}
+                  </TouchableOpacity>
+
+                </ScrollView>
+              </View>
             </View>
           </View>
-        </View>
-      </Modal>
+
+          {/* Modal de horarios */}
+          <Modal 
+            visible={campoHorarioActivo !== null} 
+            transparent 
+            animationType="fade" 
+            onRequestClose={() => setCampoHorarioActivo(null)}
+          >
+            <View style={styles.modalBackdrop}>
+              <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>
+                  {campoHorarioActivo === 'apertura' ? 'Hora de apertura' : 'Hora de cierre'}
+                </Text>
+                <ScrollView showsVerticalScrollIndicator={false} style={styles.modalScroll}>
+                  {HORAS_DISPONIBLES.map((hora) => (
+                    <TouchableOpacity 
+                      key={hora} 
+                      onPress={() => handleSeleccionarHora(hora)} 
+                      style={styles.horaOption}
+                    >
+                      <Text style={styles.horaText}>{hora}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+                <TouchableOpacity 
+                  onPress={() => setCampoHorarioActivo(null)} 
+                  style={styles.modalCancel}
+                >
+                  <Text style={styles.modalCancelText}>Cancelar</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Modal>
+
+          {/* Modal de confirmación de salida */}
+          <Modal 
+            visible={showCloseConfirm} 
+            transparent 
+            animationType="fade" 
+            onRequestClose={() => setShowCloseConfirm(false)}
+          >
+            <View style={styles.modalBackdrop}>
+              <View style={styles.confirmModal}>
+                <Text style={styles.confirmTitle}>¿Seguro que deseas salir?</Text>
+                <Text style={styles.confirmMessage}>
+                  Los datos ingresados se perderán y tendrás que empezar tu registro de nuevo.
+                </Text>
+                <View style={styles.confirmButtons}>
+                  <TouchableOpacity 
+                    onPress={() => setShowCloseConfirm(false)} 
+                    style={styles.confirmButtonCancel}
+                  >
+                    <Text style={styles.confirmButtonCancelText}>Me quedo</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    onPress={() => { setShowCloseConfirm(false); if (onClose) onClose(); }} 
+                    style={styles.confirmButtonExit}
+                  >
+                    <Text style={styles.confirmButtonExitText}>Sí, salir</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </Modal>
+        </>
+      )}
     </View>
   );
 }

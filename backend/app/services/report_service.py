@@ -273,10 +273,18 @@ async def crear_reporte(
     }
 
 
-ESTADOS_VALIDOS = ["pendiente", "asignado", "en_camino", "en_atencion", "rescatado", "cerrado", "sin_cobertura", "duplicado", "muerto"]
+ESTADOS_VALIDOS = [
+    "pendiente", "asignado", "en_camino", "en_atencion", "cerrado",
+    "sin_cobertura", "duplicado_vinculable", "duplicado_informativo",
+    "cancelado_por_reportante",
+]
 
 TRANSICIONES_PERMITIDAS = {
-    "rescatado": "cerrado",
+    "asignado":   ["en_camino", "pendiente"],       # confirmación salida / rechazado / timeout
+    "en_camino":  ["en_atencion", "pendiente", "cerrado"],  # llegada / no_se_pudo_llegar / falsa_alarma
+    "en_atencion": ["cerrado"],                      # rescatado / muerto / no_localizado -> razones, no estados
+    "pendiente":  ["sin_cobertura"],
+    "sin_cobertura": ["pendiente"],
 }
 
 async def obtener_reportes() -> list:
@@ -322,7 +330,7 @@ async def obtener_reportes() -> list:
 
     return reportes
 
-async def cambiar_estado_reporte(reporte_id: str, nuevo_estado: str) -> dict:
+async def cambiar_estado_reporte(reporte_id: str, nuevo_estado: str, razon: str | None = None) -> dict:
     resultado = supabase.table("reportes").select(
         "id, estado_reporte, usuario_id"
     ).eq("id", reporte_id).execute()
@@ -331,13 +339,12 @@ async def cambiar_estado_reporte(reporte_id: str, nuevo_estado: str) -> dict:
         raise HTTPException(status_code=404, detail="Reporte no encontrado")
 
     estado_actual = resultado.data[0]["estado_reporte"]
-    usuario_id = resultado.data[0]["usuario_id"]
 
     if nuevo_estado not in ESTADOS_VALIDOS:
         raise HTTPException(status_code=400, detail="Estado no válido")
 
-    transicion_permitida = TRANSICIONES_PERMITIDAS.get(estado_actual)
-    if transicion_permitida != nuevo_estado:
+    destinos_permitidos = TRANSICIONES_PERMITIDAS.get(estado_actual, [])
+    if nuevo_estado not in destinos_permitidos:
         raise HTTPException(
             status_code=400,
             detail=f"No se puede cambiar de '{estado_actual}' a '{nuevo_estado}'"
@@ -354,8 +361,9 @@ async def cambiar_estado_reporte(reporte_id: str, nuevo_estado: str) -> dict:
         reporte_id=reporte_id,
         usuario_id=None,
         tipo_evento="estado_cambiado",
-        descripcion=f"Estado cambiado de {estado_actual} a {nuevo_estado}",
-        datos_extra={"estado_anterior": estado_actual, "estado_nuevo": nuevo_estado}
+        descripcion=f"Estado cambiado de {estado_actual} a {nuevo_estado}"
+                    + (f" (razón: {razon})" if razon else ""),
+        datos_extra={"estado_anterior": estado_actual, "estado_nuevo": nuevo_estado, "razon": razon}
     )
 
     return {
@@ -383,24 +391,22 @@ async def obtener_reportes_usuario(usuario_id: str) -> list:
 
         if animal:
             animal_data = {
-                "tipo_animal": animal.get("tipo_animal_catalogo", {}).get("clave") if animal.get("tipo_animal_catalogo") else None,
-                "condicion": animal.get("condicion_catalogo", {}).get("clave") if animal.get("condicion_catalogo") else None,
-                "tamanio": animal.get("tamanio_catalogo", {}).get("clave") if animal.get("tamanio_catalogo") else None,
+                "tipo_animal": animal.get("tipo_animal_catalogo", {}).get("clave"),
+                "condicion": animal.get("condicion_catalogo", {}).get("clave"),
+                "tamanio": animal.get("tamanio_catalogo", {}).get("clave"),
                 "sexo": animal.get("sexo"),
                 "edad_aproximada": animal.get("edad_aproximada"),
                 "descripcion": animal.get("descripcion"),
             }
+
             fotos = animal.get("animal_fotos") or []
             if fotos:
-                # NOTA: antes solo se regresaba la primera foto (foto_url).
-                # Ahora también regresamos el arreglo completo ordenado (fotos)
-                # para que el frontend pueda mostrar un carrusel cuando hay varias.
+                # Mismo patrón que obtener_reportes_usuario: devolvemos el
+                # arreglo completo ordenado, no solo la primera foto,
+                # para soportar carrusel en el detalle del mapa.
                 fotos_ordenadas = sorted(fotos, key=lambda f: f.get("orden", 0))
                 fotos_urls = [f["foto_url"] for f in fotos_ordenadas]
                 foto_url = fotos_urls[0]
-
-        asociacion = r.get("asociaciones")
-        asociacion_nombre = asociacion.get("nombre") if asociacion else None
 
         reportes.append({
             "id": r["id"],
@@ -409,12 +415,10 @@ async def obtener_reportes_usuario(usuario_id: str) -> list:
             "longitud": r.get("longitud"),
             "municipio": r.get("municipio"),
             "colonia": r.get("colonia"),
-            "calle": r.get("calle"),
             "created_at": str(r["created_at"]),
             "foto_url": foto_url,
             "fotos": fotos_urls,
             "animal": animal_data,
-            "asociacion_nombre": asociacion_nombre,
         })
 
     return reportes

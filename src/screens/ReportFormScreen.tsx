@@ -5,7 +5,7 @@ import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { useEffect, useState } from 'react';
-import { Image, Modal, Platform, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { Image, Modal, Platform, ScrollView, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { Toast, useToast } from '../components/Toast';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
@@ -13,6 +13,8 @@ import { API_URL } from '../constants/api';
 import { petzen } from '../constants/petzenTheme';
 import { useAuth } from '../context/AuthContext';
 import LocationPickerMap from './LocationPickerMap';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 
 type TipoAnimal = 'Perro' | 'Gato' | 'Otro' | null;
 type Condition = 'green' | 'yellow' | 'red' | null;
@@ -42,6 +44,8 @@ const TOTAL_PASOS = 3;
 export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
   const { user, isLoggedIn, logout, login, token } = useAuth();
   const { toast, translateY, showToast } = useToast();
+  const { width: winWidth } = useWindowDimensions();
+  const isDesktopModal = winWidth >= 768;
 
   // ─── Navegación por pasos ───
   const [paso, setPaso] = useState(1);
@@ -633,6 +637,12 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
     </View>
   );
 
+    const CONDICION_DUPLICADO: Record<string, { color: string; bg: string; label: string }> = {
+    estable: { color: '#27AE60', bg: '#EAFAF1', label: 'Estable' },
+    herido:  { color: '#F39C12', bg: '#FEF9E7', label: 'Herido' },
+    grave:   { color: '#E74C3C', bg: '#FDEDEC', label: 'Grave' },
+  };
+
   // ─── PASO 1: Situación del animal ───
   const renderPaso1 = () => (
     <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 40 }}>
@@ -956,40 +966,109 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
       </View>
 
       {/* Modal: Duplicado */}
+      {/* Modal: Duplicado */}
       <Modal visible={!!duplicadoInfo} transparent animationType="fade" onRequestClose={() => setDuplicadoInfo(null)}>
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
-          <View style={{ backgroundColor: '#FFFFFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 28, paddingBottom: 44 }}>
-            <Text style={{ fontSize: 18, fontFamily: petzen.fonts.bold, color: '#2C3E50', textAlign: 'center', marginBottom: 12 }}>
-              Posible reporte duplicado
-            </Text>
-            {duplicadoInfo?.existente?.foto_url && (
-              <View style={{ alignItems: 'center', marginBottom: 16 }}>
-                <Image source={{ uri: duplicadoInfo.existente.foto_url }} style={{ width: 140, height: 140, borderRadius: 12, backgroundColor: '#ECF0F1' }} resizeMode="cover" />
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: 'rgba(20,15,10,0.55)',
+            justifyContent: isDesktopModal ? 'center' : 'flex-end',
+            alignItems: isDesktopModal ? 'center' : undefined,
+            padding: isDesktopModal ? 24 : 0,
+          }}
+        >
+          <View
+            style={{
+              width: isDesktopModal ? '100%' : undefined,
+              maxWidth: isDesktopModal ? 400 : undefined,
+              borderRadius: isDesktopModal ? 24 : 24,
+              borderTopLeftRadius: 24,
+              borderTopRightRadius: 24,
+              borderBottomLeftRadius: isDesktopModal ? 24 : 0,
+              borderBottomRightRadius: isDesktopModal ? 24 : 0,
+              overflow: 'hidden',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 8 },
+              shadowOpacity: 0.25,
+              shadowRadius: 24,
+              elevation: 20,
+            }}
+          >
+            <BlurView intensity={60} tint="light" style={{ backgroundColor: 'rgba(255,250,246,0.85)' }}>
+              {/* Foto tipo "se busca" con degradado y datos encima */}
+              <View style={{ width: '100%', height: 190, backgroundColor: (duplicadoInfo && CONDICION_DUPLICADO[duplicadoInfo.existente?.condicion?.toLowerCase()]?.bg) || '#F2EEE8' }}>
+                {duplicadoInfo?.existente?.foto_url ? (
+                  <Image source={{ uri: duplicadoInfo.existente.foto_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                ) : (
+                  <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                    <Ionicons name="paw" size={48} color={petzen.colors.orange} />
+                  </View>
+                )}
+
+                {/* Degradado inferior para que el texto flote sobre la foto */}
+                <LinearGradient
+                  colors={['transparent', 'rgba(20,15,10,0.75)']}
+                  style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 90 }}
+                />
+
+                {/* Badge de condición, esquina superior */}
+                {duplicadoInfo && (
+                  <View
+                    style={{
+                      position: 'absolute', top: 12, right: 12,
+                      backgroundColor: CONDICION_DUPLICADO[duplicadoInfo.existente?.condicion?.toLowerCase()]?.color || petzen.colors.orange,
+                      paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20,
+                    }}
+                  >
+                    <Text style={{ fontSize: 10, fontWeight: '800', color: '#FFF', textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                      {CONDICION_DUPLICADO[duplicadoInfo.existente?.condicion?.toLowerCase()]?.label || duplicadoInfo.existente?.condicion}
+                    </Text>
+                  </View>
+                )}
+
+                {/* Hace X tiempo, flotando sobre el degradado */}
+                {duplicadoInfo && (
+                  <View style={{ position: 'absolute', left: 14, right: 14, bottom: 10 }}>
+                    <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.85)', fontWeight: '600' }}>
+                      Reportado hace {duplicadoInfo.tiempoTexto}
+                    </Text>
+                    <Text style={{ fontSize: 15, color: '#FFF', fontWeight: '800', marginTop: 1 }}>
+                      {duplicadoInfo.existente.tipo_animal || 'Animal'} en {duplicadoInfo.existente.colonia || duplicadoInfo.existente.municipio || 'esta zona'}
+                    </Text>
+                  </View>
+                )}
               </View>
-            )}
-            {duplicadoInfo && (
-              <Text style={{ fontSize: 14, color: '#566573', textAlign: 'center', marginBottom: 24, lineHeight: 20 }}>
-                {'Se reportó un '}{duplicadoInfo.existente.tipo_animal || 'animal'}{' en condición '}{duplicadoInfo.existente.condicion || 'desconocida'}{' en '}{duplicadoInfo.existente.colonia || duplicadoInfo.existente.municipio || 'esta zona'}{' hace '}{duplicadoInfo.tiempoTexto}{'.\n\n¿Es el mismo animal?'}
-              </Text>
-            )}
-            <TouchableOpacity
-              onPress={() => { const info = duplicadoInfo; setDuplicadoInfo(null); if (info) handleSubmit(true, info.existente.id); }}
-              style={{ backgroundColor: petzen.colors.orange, paddingVertical: 16, borderRadius: 12, alignItems: 'center', marginBottom: 12 }}
-            >
-              <Text style={{ color: '#FFFFFF', fontFamily: petzen.fonts.bold, fontSize: 15 }}>Vincular al caso existente</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => { setDuplicadoInfo(null); handleSubmit(true); }}
-              style={{ borderWidth: 1.5, borderColor: '#BDC3C7', paddingVertical: 16, borderRadius: 12, alignItems: 'center', marginBottom: 16 }}
-            >
-              <Text style={{ color: '#2C3E50', fontFamily: petzen.fonts.bold, fontSize: 15 }}>Crear un reporte nuevo</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => setDuplicadoInfo(null)} style={{ alignItems: 'center' }}>
-              <Text style={{ color: '#95A5A6', fontSize: 14 }}>Cancelar</Text>
-            </TouchableOpacity>
+
+              {/* Contenido de la tarjeta */}
+              <View style={{ padding: 24, paddingTop: 20 }}>
+                <Text style={{ fontSize: 19, fontFamily: petzen.fonts.extraBold, color: petzen.colors.textDark, textAlign: 'center', marginBottom: 6 }}>
+                  ¿Es el mismo animal?
+                </Text>
+                <Text style={{ fontSize: 13, color: petzen.colors.textSecondary, textAlign: 'center', marginBottom: 22, lineHeight: 19 }}>
+                  Ya existe un reporte activo que coincide con la ubicación y el tipo de animal.
+                </Text>
+
+                <TouchableOpacity
+                  onPress={() => { const info = duplicadoInfo; setDuplicadoInfo(null); if (info) handleSubmit(true, info.existente.id); }}
+                  style={{ backgroundColor: petzen.colors.orange, paddingVertical: 15, borderRadius: petzen.radii.pill, alignItems: 'center', marginBottom: 10 }}
+                >
+                  <Text style={{ color: '#FFFFFF', fontFamily: petzen.fonts.bold, fontSize: 15 }}>Vincular al caso existente</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => { setDuplicadoInfo(null); handleSubmit(true); }}
+                  style={{ borderWidth: 1.5, borderColor: 'rgba(0,0,0,0.15)', paddingVertical: 15, borderRadius: petzen.radii.pill, alignItems: 'center', marginBottom: 14, backgroundColor: 'rgba(255,255,255,0.4)' }}
+                >
+                  <Text style={{ color: petzen.colors.textDark, fontFamily: petzen.fonts.bold, fontSize: 15 }}>Crear un reporte nuevo</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setDuplicadoInfo(null)} style={{ alignItems: 'center' }}>
+                  <Text style={{ color: petzen.colors.textSecondary, fontSize: 13 }}>Cancelar</Text>
+                </TouchableOpacity>
+              </View>
+            </BlurView>
           </View>
         </View>
       </Modal>
+          
 
       {/* Modal: Login inline — sin cerrar el formulario */}
       <Modal visible={showLoginModal} transparent animationType="slide" onRequestClose={() => setShowLoginModal(false)}>

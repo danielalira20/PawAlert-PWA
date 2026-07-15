@@ -80,6 +80,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
   const [isLoadingGps, setIsLoadingGps] = useState(false);
 
   const [calle, setCalle] = useState('');
+  const [numero, setNumero] = useState('');
   const [colonia, setColonia] = useState('');
   const [municipio, setMunicipio] = useState('');
   const [referencia, setReferencia] = useState('');
@@ -312,7 +313,8 @@ export default function AssociationFormScreen({ onClose }: Props) {
         params: { lat, lon, format: 'json', addressdetails: 1 },
       });
       const address = res.data.address || {};
-      setCalle([address.house_number, address.road].filter(Boolean).join(' '));
+      setCalle(address.road || '');
+      setNumero(address.house_number || '');
       setColonia(address.suburb || address.neighbourhood || address.colonia || '');
       setMunicipio(address.city || address.town || address.municipality || address.county || '');
       setDireccionConfirmada(res.data.display_name || '');
@@ -332,7 +334,8 @@ export default function AssociationFormScreen({ onClose }: Props) {
     const address = result.address || {};
     setPinLocation({ latitud: lat, longitud: lon });
     setUbicacionConfirmada(true);
-    setCalle([address.house_number, address.road].filter(Boolean).join(' '));
+    setCalle(address.road || '');
+    setNumero(address.house_number || '');
     setColonia(address.suburb || address.neighbourhood || address.colonia || '');
     setMunicipio(address.city || address.town || address.municipality || address.county || '');
     setDireccionConfirmada(result.display_name);
@@ -376,7 +379,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
   const handleResetForm = () => {
     setNombre(''); setNombreResponsable(''); setApellidoResponsable(''); setAcercaDe(''); setLogoUrl('');
     setTelefono(''); setEmail(''); setPassword(''); setPassword2(''); setDiasSeleccionados([]); setHoraApertura(''); setHoraCierre(''); setTiposAnimales([]);
-    setCalle(''); setColonia(''); setMunicipio(''); setReferencia(''); setRadioKm('');
+    setCalle(''); setNumero(''); setColonia(''); setMunicipio(''); setReferencia(''); setRadioKm('');
     setPinLocation({ latitud: 19.0414, longitud: -98.2063 }); setUbicacionConfirmada(false);
     setSearchQuery(''); setDireccionConfirmada(''); setFotos([]); setErrors({});
   };
@@ -432,6 +435,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
       const horario = formatearHorario();
       if (horario) formData.append('horario_atencion', horario);
       if (calle.trim()) formData.append('calle', calle.trim());
+       if (numero.trim()) formData.append('numero', numero.trim());
       if (colonia.trim()) formData.append('colonia', colonia.trim());
       if (municipio.trim()) formData.append('municipio', municipio.trim());
       if (referencia.trim()) formData.append('referencia', referencia.trim());
@@ -641,7 +645,14 @@ export default function AssociationFormScreen({ onClose }: Props) {
                 </View>
               )}
 
-              <Input label="Calle y número" placeholder="Ej. Av. Reforma 123" value={calle} onChangeText={setCalle} />
+              <View style={styles.rowContainer}>
+                <View style={styles.halfWidth}>
+                  <Input label="Calle" placeholder="Ej. Av. Reforma" value={calle} onChangeText={setCalle} />
+                </View>
+                <View style={styles.halfWidth}>
+                  <Input label="Número" placeholder="Ej. 123" value={numero} onChangeText={setNumero} />
+                </View>
+              </View>
               <View style={{ flexDirection: 'column' }}>
                  <View style={{ flex: 1 }}><Input label="Colonia" placeholder="Ej. Centro Histórico" value={colonia} onChangeText={setColonia} /></View>
                  <View style={{ flex: 1 }}><Input label="Municipio / Ciudad" placeholder="Ej. Puebla" value={municipio} onChangeText={setMunicipio} /></View>

@@ -41,7 +41,7 @@ def get_html(nombre_asociacion: str, respuesta: str = "", nombre_representante: 
 
     {"<div style='background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;padding:16px 20px;margin-bottom:28px;'><div style='color:#94A3B8;font-size:11px;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:8px;'>Respuesta del revisor</div><p style='color:#2C3E50;font-size:14px;line-height:1.7;margin:0;'>" + respuesta + "</p></div>" if respuesta else ""}
 
-    <a href="https://pawalert.vercel.app" style="display:inline-block;background:#1F77B4;color:#ffffff;font-weight:700;font-size:14px;padding:12px 24px;border-radius:8px;text-decoration:none;">
+    <a href="https://paw-alert-pwa.vercel.app" style="display:inline-block;background:#1F77B4;color:#ffffff;font-weight:700;font-size:14px;padding:12px 24px;border-radius:8px;text-decoration:none;">
       Ir a mi panel →
     </a>
 

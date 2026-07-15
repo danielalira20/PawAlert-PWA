@@ -1,8 +1,11 @@
-import React from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
+import { useFocusEffect } from 'expo-router';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
+import { API_URL } from '../../constants/api';
 import { Brand } from '../../constants/theme';
 import { AssocAvatar } from '../admin-dashboard/AssocAvatar';
 import { RoleBadge } from './RoleBadge';
@@ -40,7 +43,7 @@ export function LoggedInProfile({
   onOpenCapacidades, // <-- NUEVA PROP
   onLogout,
 }: Props) {
-  const { user } = useAuth();
+  const { user , token } = useAuth();
   const { width } = useWindowDimensions();
   const isDesktop = width >= DESKTOP_BREAKPOINT;
   
@@ -55,6 +58,29 @@ export function LoggedInProfile({
   const esVoluntarioInterno = user?.rol === 'voluntario_interno';
   const esVoluntarioExterno = user?.rol === 'voluntario_externo';
   const esVoluntarioActivo = esVoluntarioInterno || esVoluntarioExterno;
+
+
+  const [tieneCapacidades, setTieneCapacidades] = useState<boolean | null>(null);
+ 
+useFocusEffect(
+  useCallback(() => {
+    if (!esVoluntarioActivo || !token) return;
+    let cancelado = false;
+    (async () => {
+      try {
+        const res = await axios.get(`${API_URL}/voluntarios/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!cancelado) setTieneCapacidades(!!res.data?.tiene_capacidades);
+      } catch {
+        if (!cancelado) setTieneCapacidades(null);
+      }
+    })();
+    return () => {
+      cancelado = true;
+    };
+  }, [esVoluntarioActivo, token])
+);
 
   const { impacto, isLoading: isLoadingReportes } = useRecentReports();
   const { impacto: impactoAsociacion, isLoading: isLoadingAsociacion } = useAssociationImpact(esAsociacion);
@@ -85,16 +111,18 @@ export function LoggedInProfile({
   );
 
   const rolBadgeElement = esAdmin ? (
-    <RoleBadge rol="admin" variant="onWhite" />
-  ) : esAsociacion ? (
-    <RoleBadge rol="asociacion" variant="onWhite" />
-  ) : esStaff ? (
-    <RoleBadge rol="staff" variant="onWhite" />
-  ) : esVoluntarioInterno ? (
-    <RoleBadge rol="voluntario_interno" variant="onWhite" />
-  ) : esVoluntarioExterno ? (
-    <RoleBadge rol="voluntario_externo" variant="onWhite" />
-  ) : null;
+  <RoleBadge rol="admin" variant="onWhite" />
+) : esAsociacion ? (
+  <RoleBadge rol="asociacion" variant="onWhite" />
+) : esStaff ? (
+  <RoleBadge rol="staff" variant="onWhite" />
+) : esVoluntarioInterno ? (
+  <RoleBadge rol="voluntario_interno" variant="onWhite" />
+) : esVoluntarioExterno ? (
+  <RoleBadge rol="voluntario_externo" variant="onWhite" />
+) : (
+  <RoleBadge rol="reportante" variant="onWhite" />
+);
 
   // Actualizamos los accesos agregando los de voluntario
   const accesos = (
@@ -117,8 +145,15 @@ export function LoggedInProfile({
       {esVoluntarioActivo && (
         <>
           <AccessRow icon="briefcase-outline" label="Mis casos" onPress={onOpenStaffPanel} />
-          <AccessRow icon="document-text-outline" label="Mi postulación" onPress={onOpenPostulacion} />
-          <AccessRow icon="construct-outline" label="Termina de completar tu perfil" onPress={onOpenCapacidades} isLast />
+          <AccessRow
+            icon="document-text-outline"
+            label="Mi postulación"
+            onPress={onOpenPostulacion}
+            isLast={tieneCapacidades !== false}
+          />
+          {tieneCapacidades === false && (
+            <AccessRow icon="construct-outline" label="Termina de completar tu perfil" onPress={onOpenCapacidades} isLast />
+          )}
         </>
       )}
     </>
@@ -221,6 +256,9 @@ export function LoggedInProfile({
         {esStaff && <RoleBadge rol="staff" variant="onColor" />}
         {esVoluntarioInterno && <RoleBadge rol="voluntario_interno" variant="onColor" />}
         {esVoluntarioExterno && <RoleBadge rol="voluntario_externo" variant="onColor" />}
+        {!esAdmin && !esAsociacion && !esStaff && !esVoluntarioInterno && !esVoluntarioExterno && (
+          <RoleBadge rol="reportante" variant="onColor" />
+        )} 
       </LinearGradient>
 
       <View style={styles.mobileCentered}>

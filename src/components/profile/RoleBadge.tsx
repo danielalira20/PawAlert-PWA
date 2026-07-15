@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, StyleProp, ViewStyle } from 'react-native';
 import { Brand } from '../../constants/theme';
 
-type Rol = 'admin' | 'staff' | 'asociacion' | 'voluntario_interno' | 'voluntario_externo';
+type Rol = 'admin' | 'staff' | 'asociacion' | 'voluntario_interno' | 'voluntario_externo' | 'reportante';
 
 interface Props {
   rol: Rol;
@@ -16,12 +16,11 @@ const CONFIG: Record<Rol, { label: string; solid: string; textOnColor: string }>
   admin: { label: 'Administrador', solid: Brand.primary, textOnColor: Brand.primary },
   staff: { label: 'Staff', solid: '#D9A62A', textOnColor: '#8A5F00' },
   asociacion: { label: 'Asociación', solid: Brand.secondary, textOnColor: '#1F7A70' },
-  // Mismo verde-azulado que asociación (ambos "operan en campo/con la
-  // asociación"), pero con label propio para distinguir el rol real.
   voluntario_interno: { label: 'Voluntario', solid: Brand.accent, textOnColor: '#1F7A70' },
-  // Tono cálido distinto (comparte paleta con "otro"/casa hogar) para
-  // diferenciarlo visualmente del interno sin inventar un color nuevo.
   voluntario_externo: { label: 'Voluntario externo', solid: '#B0966E', textOnColor: '#7A6449' },
+  // Tono neutro/discreto: es el rol base, no necesita destacar tanto como
+  // los demás — cualquiera puede reportar, no requiere aprobación.
+  reportante: { label: 'Reportante', solid: '#9B8B7A', textOnColor: '#6B5D4F' },
 };
 
 export function RoleBadge({ rol, variant = 'onColor', style }: Props) {

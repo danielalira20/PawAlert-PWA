@@ -68,7 +68,7 @@ def get_html(nombre_asociacion: str, municipio: str | None, tipo_animal: str | N
       </table>
     </div>
 
-    <a href="https://pawalert.vercel.app" style="display:inline-block;background:#1F77B4;color:#ffffff;font-weight:700;font-size:14px;padding:12px 24px;border-radius:8px;text-decoration:none;">
+    <a href="https://paw-alert-pwa.vercel.app" style="display:inline-block;background:#1F77B4;color:#ffffff;font-weight:700;font-size:14px;padding:12px 24px;border-radius:8px;text-decoration:none;">
       Ver caso completo →
     </a>
 

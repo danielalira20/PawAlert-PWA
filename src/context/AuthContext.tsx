@@ -32,6 +32,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<Usuario>;
   register: (data: RegisterData) => Promise<Usuario>;
   setSession: (usuario: Usuario, accessToken: string, refreshToken?: string) => Promise<void>;
+  refreshUser: () => Promise<Usuario | null>;
   logout: () => void;
 }
 
@@ -105,6 +106,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const res = await axios.post(`${API_URL}/auth/register`, data);
     await setSession(res.data.usuario, res.data.access_token, res.data.refresh_token);
     return res.data.usuario as Usuario;
+  };
+
+    // Vuelve a consultar GET /users/me y reemplaza el usuario en memoria +
+  // AsyncStorage. Necesario porque el rol (u otros datos) pueden cambiar
+  // DESPUÉS del login/registro — por ejemplo, cuando una asociación acepta
+  // la postulación de un voluntario, su rol pasa de 'reportante' a
+  // 'voluntario_interno'/'voluntario_externo' en la base de datos, pero
+  // el objeto `user` guardado localmente sigue siendo el viejo hasta que
+  // se llama a esta función explícitamente.
+  const refreshUser = async (): Promise<Usuario | null> => {
+    const currentToken = tokenRef.current;
+    if (!currentToken) return null;
+    try {
+      const res = await axios.get(`${API_URL}/users/me`, {
+        headers: { Authorization: `Bearer ${currentToken}` },
+      });
+      const usuarioActualizado = res.data as Usuario;
+      setUser(usuarioActualizado);
+      try {
+        await AsyncStorage.setItem(STORAGE_KEY_USER, JSON.stringify(usuarioActualizado));
+      } catch {
+        // Si falla el storage local, el usuario actualizado sigue en memoria
+      }
+      return usuarioActualizado;
+    } catch {
+      return null;
+    }
   };
 
   const logout = () => {
@@ -199,7 +227,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, token, isLoggedIn: !!user, isLoading, login, register, setSession, logout }}>
+    <AuthContext.Provider
+      value={{ user, token, isLoggedIn: !!user, isLoading, login, register, setSession, refreshUser, logout }}
+    >
       {children}
     </AuthContext.Provider>
   );
