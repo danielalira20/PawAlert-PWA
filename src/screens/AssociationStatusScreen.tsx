@@ -131,7 +131,7 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
   const [showEncontreModal, setShowEncontreModal] = useState(false);
   const [showCerrarModal, setShowCerrarModal] = useState(false);
   const [showStaffModal, setShowStaffModal] = useState(false);
-  
+
   const [reporteAccionId, setReporteAccionId] = useState<string | null>(null);
   const [isSubmittingAccion, setIsSubmittingAccion] = useState(false);
 
@@ -257,7 +257,7 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
       } else {
         setApelacionEnviada(false);
       }
-    } catch (error) {}
+    } catch (error) { }
   };
 
   const cargarConfiguracionAsignacion = async () => {
@@ -281,11 +281,11 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
     const g = parseInt(timeoutGrave, 10);
     const h = parseInt(timeoutHerido, 10);
     const e = parseInt(timeoutEstable, 10);
-    
+
     if (modoAsignacionConfig !== 'manual') {
       if (isNaN(g) || g < 1 || g > 240 || isNaN(h) || h < 1 || h > 240 || isNaN(e) || e < 1 || e > 240) {
-         showToast({ type: 'warning', title: 'Valores inválidos', message: 'Los tiempos deben estar entre 1 y 240 minutos.' });
-         return;
+        showToast({ type: 'warning', title: 'Valores inválidos', message: 'Los tiempos deben estar entre 1 y 240 minutos.' });
+        return;
       }
     }
 
@@ -371,22 +371,22 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
       formData.append('mensaje', apelacionTexto.trim());
 
       if (Platform.OS === 'web') {
-          for (const doc of apelacionDocs) {
-            if (doc.file) {
-              formData.append('documentos', doc.file, doc.name);
-            } else {
-              const res = await fetch(doc.uri);
-              const blob = await res.blob();
-              formData.append('documentos', blob, doc.name || 'documento');
-            }
+        for (const doc of apelacionDocs) {
+          if (doc.file) {
+            formData.append('documentos', doc.file, doc.name);
+          } else {
+            const res = await fetch(doc.uri);
+            const blob = await res.blob();
+            formData.append('documentos', blob, doc.name || 'documento');
           }
-        } else {
-          apelacionDocs.forEach((doc, index) => {
-            formData.append('documentos', {
-              uri: doc.uri, name: doc.name || `documento_${index}`, type: doc.mimeType || 'application/octet-stream'
-            } as any);
-          });
         }
+      } else {
+        apelacionDocs.forEach((doc, index) => {
+          formData.append('documentos', {
+            uri: doc.uri, name: doc.name || `documento_${index}`, type: doc.mimeType || 'application/octet-stream'
+          } as any);
+        });
+      }
 
       await axios.post(`${API_URL}/associations/me/apelar`, formData, {
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' }
@@ -394,7 +394,7 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
       setApelacionEnviada(true);
       showToast({ type: 'success', title: 'Apelación enviada', message: 'Tus documentos están en revisión.' });
     } catch (error: any) {
-       showToast({ type: 'error', title: 'Error', message: 'No pudimos enviar la apelación.' });
+      showToast({ type: 'error', title: 'Error', message: 'No pudimos enviar la apelación.' });
     } finally {
       setIsApelando(false);
     }
@@ -596,7 +596,7 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
   };
 
   const getBadgeColor = (condicion: string | null) => {
-    switch(condicion?.toLowerCase()) {
+    switch (condicion?.toLowerCase()) {
       case 'grave': return COLORS.danger;
       case 'herido': return COLORS.secondary;
       case 'estable': return COLORS.accent;
@@ -725,120 +725,110 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
       <Toast toast={toast} translateY={translateY} />
 
       <View style={{ flex: 1, width: '100%', maxWidth: 900, alignSelf: 'center' }}>
-        
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 24, paddingTop: 24,}}>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center', marginRight: 16 }}>
-            <Text style={{ color: COLORS.white, fontWeight: 'bold', fontSize: 20 }}>
-              {info?.nombre?.substring(0, 2).toUpperCase()}
-            </Text>
-          </View>
-          <View>
-            <Text style={{ color: COLORS.textLight, fontSize: 14, fontWeight: '500' }}>Hola de nuevo,</Text>
-            <Text style={{ color: COLORS.textDark, fontSize: 22, fontWeight: 'bold' }}>{info?.nombre}</Text>
+
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 24, paddingTop: 24, }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center', marginRight: 16 }}>
+              <Text style={{ color: COLORS.white, fontWeight: 'bold', fontSize: 20 }}>
+                {info?.nombre?.substring(0, 2).toUpperCase()}
+              </Text>
+            </View>
+            <View>
+              <Text style={{ color: COLORS.textLight, fontSize: 14, fontWeight: '500' }}>Hola de nuevo,</Text>
+              <Text style={{ color: COLORS.textDark, fontSize: 22, fontWeight: 'bold' }}>{info?.nombre}</Text>
+            </View>
           </View>
         </View>
-        <TouchableOpacity
-          onPress={() => {
-            if (onClose) onClose();
-            else if (router.canGoBack()) router.back();
-            else router.replace('/');
-          }}
-          style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.06)', alignItems: 'center', justifyContent: 'center' }}
-        >
-          <Ionicons name="close" size={20} color={COLORS.textDark} />
-        </TouchableOpacity>
-      </View>
 
         <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
 
           {info.estado === 'pendiente' && (
-  <Modal visible transparent animationType="fade">
-    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-      <BlurView
-        intensity={30}
-        tint="dark"
-        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(20,15,10,0.55)' }}
-      />
-      <View style={{ width: '100%', maxWidth: 400 }}>
-        {!sobreAbierto ? (
-          <TouchableOpacity activeOpacity={0.85} onPress={abrirSobre} style={{ alignItems: 'center' }}>
-            <View style={{
-              width: '100%', aspectRatio: 1.5,
-              backgroundColor: '#D9BB93',
-              borderRadius: 20,
-              justifyContent: 'center', alignItems: 'center',
-              ...(Platform.OS === 'web'
-                ? { boxShadow: '0 10px 28px rgba(74,55,40,0.2)' } as any
-                : { elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.2, shadowRadius: 16 }),
-            }}>
-              <View style={{
-                position: 'absolute', top: 0, left: 0, right: 0,
-                height: 0, width: 0,
-                borderLeftWidth: 190, borderRightWidth: 190,
-                borderTopWidth: 90,
-                borderLeftColor: 'transparent', borderRightColor: 'transparent',
-                borderTopColor: '#C7A87A',
-              }} />
-              <Ionicons name="mail-outline" size={40} color={COLORS.textDark} style={{ marginTop: 20 }} />
-              <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginTop: 8 }}>
-                Toca para abrir
-              </Text>
-            </View>
-          </TouchableOpacity>
-        ) : (
-          <Animated.View style={{
-            opacity: notaAnim,
-            transform: [
-              { translateY: notaAnim.interpolate({ inputRange: [0, 1], outputRange: [30, 0] }) },
-              { scale: notaAnim.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1] }) },
-              { rotate: '-1deg' },
-            ],
-          }}>
-            <View style={{
-              backgroundColor: COLORS.cardBg,
-              borderRadius: 28,
-              padding: 28,
-              paddingTop: 44,
-              borderWidth: 1, borderColor: 'rgba(0,0,0,0.05)',
-              ...(Platform.OS === 'web'
-                ? { boxShadow: '0 12px 32px rgba(74,55,40,0.18)' } as any
-                : { elevation: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.18, shadowRadius: 20 }),
-            }}>
-              <View style={{ position: 'absolute', top: -28, left: -14, transform: [{ rotate: '-6deg' }] }}>
-                <Image source={require('../../assets/images/sobre-perrito.png')} style={{ width: 90, height: 90 }} resizeMode="contain" />
+            <Modal visible transparent animationType="fade">
+              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+                <BlurView
+                  intensity={30}
+                  tint="dark"
+                  style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(20,15,10,0.55)' }}
+                />
+                <View style={{ width: '100%', maxWidth: 400 }}>
+                  {!sobreAbierto ? (
+                    <TouchableOpacity activeOpacity={0.85} onPress={abrirSobre} style={{ alignItems: 'center' }}>
+                      <View style={{
+                        width: '100%', aspectRatio: 1.5,
+                        backgroundColor: '#D9BB93',
+                        borderRadius: 20,
+                        justifyContent: 'center', alignItems: 'center',
+                        ...(Platform.OS === 'web'
+                          ? { boxShadow: '0 10px 28px rgba(74,55,40,0.2)' } as any
+                          : { elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.2, shadowRadius: 16 }),
+                      }}>
+                        <View style={{
+                          position: 'absolute', top: 0, left: 0, right: 0,
+                          height: 0, width: 0,
+                          borderLeftWidth: 190, borderRightWidth: 190,
+                          borderTopWidth: 90,
+                          borderLeftColor: 'transparent', borderRightColor: 'transparent',
+                          borderTopColor: '#C7A87A',
+                        }} />
+                        <Ionicons name="mail-outline" size={40} color={COLORS.textDark} style={{ marginTop: 20 }} />
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginTop: 8 }}>
+                          Toca para abrir
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  ) : (
+                    <Animated.View style={{
+                      opacity: notaAnim,
+                      transform: [
+                        { translateY: notaAnim.interpolate({ inputRange: [0, 1], outputRange: [30, 0] }) },
+                        { scale: notaAnim.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1] }) },
+                        { rotate: '-1deg' },
+                      ],
+                    }}>
+                      <View style={{
+                        backgroundColor: COLORS.cardBg,
+                        borderRadius: 28,
+                        padding: 28,
+                        paddingTop: 44,
+                        borderWidth: 1, borderColor: 'rgba(0,0,0,0.05)',
+                        ...(Platform.OS === 'web'
+                          ? { boxShadow: '0 12px 32px rgba(74,55,40,0.18)' } as any
+                          : { elevation: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.18, shadowRadius: 20 }),
+                      }}>
+                        <View style={{ position: 'absolute', top: -28, left: -14, transform: [{ rotate: '-6deg' }] }}>
+                          <Image source={require('../../assets/images/sobre-perrito.png')} style={{ width: 90, height: 90 }} resizeMode="contain" />
+                        </View>
+                        <View style={{ position: 'absolute', top: -24, right: -12, transform: [{ rotate: '7deg' }] }}>
+                          <Image source={require('../../assets/images/sobre-gatito.png')} style={{ width: 84, height: 84 }} resizeMode="contain" />
+                        </View>
+                        <View style={{ alignItems: 'center', marginBottom: 14, marginTop: 10 }}>
+                          <Ionicons name="mail-open-outline" size={30} color={COLORS.primary} style={{ marginBottom: 8 }} />
+                          <Text style={{ fontSize: 20, fontWeight: '900', color: COLORS.textDark, textAlign: 'center' }}>
+                            Tu solicitud está en revisión
+                          </Text>
+                        </View>
+                        <Text style={{ fontSize: 14, color: COLORS.textLight, lineHeight: 22, textAlign: 'center', marginBottom: 20 }}>
+                          Nuestro equipo está revisando los datos de{' '}
+                          <Text style={{ fontWeight: '700', color: COLORS.textDark }}>{info?.nombre}</Text>.
+                          Te avisaremos en cuanto sea aprobada.
+                        </Text>
+                        <View style={{ height: 1, backgroundColor: 'rgba(0,0,0,0.08)', marginBottom: 16 }} />
+                        <View style={{
+                          flexDirection: 'row', alignItems: 'flex-start',
+                          backgroundColor: 'rgba(102,188,180,0.14)', borderRadius: 16, padding: 14,
+                        }}>
+                          <Ionicons name="key-outline" size={18} color={COLORS.accent} style={{ marginRight: 10, marginTop: 1 }} />
+                          <Text style={{ flex: 1, fontSize: 13, color: COLORS.textDark, lineHeight: 19 }}>
+                            Ya puedes iniciar sesión con el correo y la contraseña que registraste. Ahí podrás ver el estado de tu solicitud en cualquier momento.
+                          </Text>
+                        </View>
+                      </View>
+                    </Animated.View>
+                  )}
+                </View>
               </View>
-              <View style={{ position: 'absolute', top: -24, right: -12, transform: [{ rotate: '7deg' }] }}>
-                <Image source={require('../../assets/images/sobre-gatito.png')} style={{ width: 84, height: 84 }} resizeMode="contain" />
-              </View>
-              <View style={{ alignItems: 'center', marginBottom: 14, marginTop: 10 }}>
-                <Ionicons name="mail-open-outline" size={30} color={COLORS.primary} style={{ marginBottom: 8 }} />
-                <Text style={{ fontSize: 20, fontWeight: '900', color: COLORS.textDark, textAlign: 'center' }}>
-                  Tu solicitud está en revisión
-                </Text>
-              </View>
-              <Text style={{ fontSize: 14, color: COLORS.textLight, lineHeight: 22, textAlign: 'center', marginBottom: 20 }}>
-                Nuestro equipo está revisando los datos de{' '}
-                <Text style={{ fontWeight: '700', color: COLORS.textDark }}>{info?.nombre}</Text>.
-                Te avisaremos en cuanto sea aprobada.
-              </Text>
-              <View style={{ height: 1, backgroundColor: 'rgba(0,0,0,0.08)', marginBottom: 16 }} />
-              <View style={{
-                flexDirection: 'row', alignItems: 'flex-start',
-                backgroundColor: 'rgba(102,188,180,0.14)', borderRadius: 16, padding: 14,
-              }}>
-                <Ionicons name="key-outline" size={18} color={COLORS.accent} style={{ marginRight: 10, marginTop: 1 }} />
-                <Text style={{ flex: 1, fontSize: 13, color: COLORS.textDark, lineHeight: 19 }}>
-                  Ya puedes iniciar sesión con el correo y la contraseña que registraste. Ahí podrás ver el estado de tu solicitud en cualquier momento.
-                </Text>
-              </View>
-            </View>
-          </Animated.View>
-        )}
-      </View>
-    </View>
-  </Modal>
-)}
+            </Modal>
+          )}
 
           {info.estado === 'rechazada' && (
             <>
@@ -916,36 +906,36 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
 
               {/* Tabs de navegación */}
               <View style={{ flexDirection: 'row', marginBottom: 20, borderBottomWidth: 1, borderBottomColor: '#E5E7EB' }}>
-                <TouchableOpacity 
+                <TouchableOpacity
                   onPress={() => setActiveTab('reportes')}
-                  style={{ 
-                    paddingBottom: 12, 
-                    marginRight: 24, 
-                    borderBottomWidth: activeTab === 'reportes' ? 3 : 0, 
-                    borderBottomColor: COLORS.primary 
+                  style={{
+                    paddingBottom: 12,
+                    marginRight: 24,
+                    borderBottomWidth: activeTab === 'reportes' ? 3 : 0,
+                    borderBottomColor: COLORS.primary
                   }}
                 >
-                  <Text style={{ 
-                    fontSize: 16, 
-                    fontWeight: activeTab === 'reportes' ? '800' : '600', 
-                    color: activeTab === 'reportes' ? COLORS.primary : COLORS.textLight 
+                  <Text style={{
+                    fontSize: 16,
+                    fontWeight: activeTab === 'reportes' ? '800' : '600',
+                    color: activeTab === 'reportes' ? COLORS.primary : COLORS.textLight
                   }}>
                     Reportes
                   </Text>
                 </TouchableOpacity>
-                
-                <TouchableOpacity 
+
+                <TouchableOpacity
                   onPress={() => setActiveTab('postulaciones')}
-                  style={{ 
-                    paddingBottom: 12, 
-                    borderBottomWidth: activeTab === 'postulaciones' ? 3 : 0, 
-                    borderBottomColor: COLORS.primary 
+                  style={{
+                    paddingBottom: 12,
+                    borderBottomWidth: activeTab === 'postulaciones' ? 3 : 0,
+                    borderBottomColor: COLORS.primary
                   }}
                 >
-                  <Text style={{ 
-                    fontSize: 16, 
-                    fontWeight: activeTab === 'postulaciones' ? '800' : '600', 
-                    color: activeTab === 'postulaciones' ? COLORS.primary : COLORS.textLight 
+                  <Text style={{
+                    fontSize: 16,
+                    fontWeight: activeTab === 'postulaciones' ? '800' : '600',
+                    color: activeTab === 'postulaciones' ? COLORS.primary : COLORS.textLight
                   }}>
                     Postulaciones
                   </Text>
@@ -969,118 +959,118 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 24 }}>
                     <View style={{ flexDirection: 'row', gap: 10 }}>
                       {(['pendientes', 'aceptadas', 'rechazadas', 'todas'] as FiltroAsignacion[]).map((f) => (
-                    <TouchableOpacity 
-                      key={f} onPress={() => setFiltro(f)}
-                      style={{ 
-                        paddingHorizontal: 20, paddingVertical: 10, borderRadius: 24, 
-                        backgroundColor: filtro === f ? COLORS.primary : COLORS.cardBg,
-                        borderWidth: filtro === f ? 0 : 1, borderColor: 'rgba(0,0,0,0.05)'
-                      }}
-                    >
-                      <Text style={{ color: filtro === f ? COLORS.white : COLORS.textDark, fontWeight: '700', textTransform: 'capitalize' }}>{f}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </ScrollView>
-
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 16, justifyContent: 'center' }}>
-                {reportesFiltrados.map((reporte) => {
-                  const enProceso = ['en_camino', 'en_atencion'].includes(reporte.estado_reporte);
-                  const yaRescatado = reporte.estado_reporte === 'rescatado';
-                  return (
-                    <View key={reporte.asignacion_id} style={{ 
-                      flexGrow: 1,
-                      flexBasis: 260,
-                      maxWidth: 300,
-                      backgroundColor: COLORS.cardBg, borderRadius: 20, overflow: 'hidden', marginBottom: 8,
-                      shadowColor: '#000',
-                      shadowOffset: { width: 0, height: 4 },
-                      shadowOpacity: 0.1,
-                      shadowRadius: 10,
-                      elevation: 3,
-                    }}>
-                      <View style={{ position: 'relative' }}>
-                        <Image source={{ uri: reporte.foto_url || 'https://via.placeholder.com/400' }} style={{ width: '100%', height: 130 }} resizeMode="cover" />
-                        <View style={{ position: 'absolute', top: 12, right: 12, backgroundColor: getBadgeColor(reporte.animal?.condicion || ''), paddingHorizontal: 16, paddingVertical: 6, borderRadius: 16 }}>
-                          <Text style={{ color: COLORS.white, fontWeight: '800', fontSize: 12, textTransform: 'capitalize' }}>{reporte.animal?.condicion || 'Desconocido'}</Text>
-                        </View>
-                        {enProceso && (
-                          <View style={{ position: 'absolute', bottom: 0, width: '100%', backgroundColor: 'rgba(102, 188, 180, 0.9)', paddingVertical: 8, paddingHorizontal: 16 }}>
-                            <Text style={{ color: COLORS.white, fontSize: 12, fontWeight: '600' }}><Ionicons name="car" size={12}/> Rescatista en camino</Text>
-                          </View>
-                        )}
-                      </View>
-
-                      <View style={{ padding: 15 }}>
-                        <Text style={{ fontSize: 16, fontWeight: '800', color: COLORS.textDark, textTransform: 'capitalize' }}>{reporte.animal?.tipo_animal || 'Animal'}</Text>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
-                          <Ionicons name="location-outline" size={13} color={COLORS.primary} />
-                          <Text style={{ color: COLORS.textLight, fontSize: 12, marginLeft: 4 }} numberOfLines={1}>
-                            {[reporte.colonia, reporte.municipio].filter(Boolean).join(', ')}
-                          </Text>
-                        </View>
-                        <Text style={{ color: COLORS.textLight, fontSize: 11, marginTop: 3, marginLeft: 2 }}>
-                          hace {formatDistanceToNow(new Date(reporte.created_at), { locale: es })}
-                        </Text>
-
-                        {/* Datos rápidos del animal — para decidir si aceptar sin
-                            tener que adivinar */}
-                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                          {[reporte.animal?.tamanio, reporte.animal?.sexo, reporte.animal?.edad_aproximada]
-                            .filter(Boolean)
-                            .map((dato, i) => (
-                              <View key={i} style={{ backgroundColor: 'rgba(74,55,40,0.06)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 100 }}>
-                                <Text style={{ fontSize: 10, color: COLORS.textDark, textTransform: 'capitalize', fontWeight: '600' }}>{dato}</Text>
-                              </View>
-                            ))}
-                        </View>
-
-                        <TouchableOpacity onPress={() => setReporteSeleccionado(reporte)} style={{ marginTop: 8 }}>
-                          <Text style={{ fontSize: 12, color: COLORS.accent, fontWeight: '700' }}>Ver detalle completo →</Text>
+                        <TouchableOpacity
+                          key={f} onPress={() => setFiltro(f)}
+                          style={{
+                            paddingHorizontal: 20, paddingVertical: 10, borderRadius: 24,
+                            backgroundColor: filtro === f ? COLORS.primary : COLORS.cardBg,
+                            borderWidth: filtro === f ? 0 : 1, borderColor: 'rgba(0,0,0,0.05)'
+                          }}
+                        >
+                          <Text style={{ color: filtro === f ? COLORS.white : COLORS.textDark, fontWeight: '700', textTransform: 'capitalize' }}>{f}</Text>
                         </TouchableOpacity>
-
-                        <View style={{ marginTop: 14 }}>
-                          {reporte.estado_reporte === 'asignado' || reporte.estado_asignacion_clave === 'notificada' ? (
-                            <View style={{ flexDirection: 'row', gap: 12 }}>
-                              <TouchableOpacity onPress={() => { setReporteAccionId(reporte.reporte_id); setShowAcceptModal(true); }} style={{ flex: 1, backgroundColor: COLORS.primary, paddingVertical: 14, borderRadius: 16, alignItems: 'center' }}>
-                                <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Aceptar</Text>
-                              </TouchableOpacity>
-                              <TouchableOpacity onPress={() => { setReporteAccionId(reporte.reporte_id); resetModales(); setShowRejectModal(true); }} style={{ flex: 1, backgroundColor: 'transparent', borderWidth: 1, borderColor: COLORS.danger, paddingVertical: 14, borderRadius: 16, alignItems: 'center' }}>
-                                <Text style={{ color: COLORS.danger, fontWeight: 'bold' }}>Rechazar</Text>
-                              </TouchableOpacity>
-                            </View>
-                          ) : yaRescatado ? (
-                            // El staff ya mandó su hito final ("llegué al refugio") — ya
-                            // se puede cerrar el caso formalmente.
-                            <View style={{ gap: 10 }}>
-                              <TouchableOpacity onPress={() => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=$${reporte.latitud},${reporte.longitud}`)} style={{ backgroundColor: COLORS.primary, paddingVertical: 14, borderRadius: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}>
-                                <Ionicons name="map" size={16} color={COLORS.white} style={{ marginRight: 6 }}/>
-                                <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Cómo llegar</Text>
-                              </TouchableOpacity>
-                              <TouchableOpacity onPress={() => { setReporteAccionId(reporte.reporte_id); resetModales(); setShowCerrarModal(true); }} style={{ backgroundColor: COLORS.accent, paddingVertical: 14, borderRadius: 16, alignItems: 'center' }}>
-                                <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Cerrar caso</Text>
-                              </TouchableOpacity>
-                            </View>
-                          ) : enProceso ? (
-                            // en_camino / en_atencion: el staff sigue trabajando el caso.
-                            // "Hito rescate" NO va aquí — le pertenece al dashboard del
-                            // staff (el backend lo rechaza con 403 si alguien más lo llama).
-                            // La asociación solo monitorea mientras tanto.
-                            <TouchableOpacity onPress={() => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=$${reporte.latitud},${reporte.longitud}`)} style={{ backgroundColor: COLORS.primary, paddingVertical: 14, borderRadius: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}>
-                              <Ionicons name="map" size={16} color={COLORS.white} style={{ marginRight: 6 }}/>
-                              <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Cómo llegar</Text>
-                            </TouchableOpacity>
-                          ) : (
-                            <TouchableOpacity onPress={() => setReporteSeleccionado(reporte)} style={{ backgroundColor: COLORS.accent, paddingVertical: 14, borderRadius: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}>
-                              <Ionicons name="eye" size={16} color={COLORS.white} style={{ marginRight: 6 }}/>
-                              <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Ver detalle</Text>
-                            </TouchableOpacity>
-                          )}
-                        </View>
-                      </View>
+                      ))}
                     </View>
-                  );
-                })}
+                  </ScrollView>
+
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 16, justifyContent: 'center' }}>
+                    {reportesFiltrados.map((reporte) => {
+                      const enProceso = ['en_camino', 'en_atencion'].includes(reporte.estado_reporte);
+                      const yaRescatado = reporte.estado_reporte === 'rescatado';
+                      return (
+                        <View key={reporte.asignacion_id} style={{
+                          flexGrow: 1,
+                          flexBasis: 260,
+                          maxWidth: 300,
+                          backgroundColor: COLORS.cardBg, borderRadius: 20, overflow: 'hidden', marginBottom: 8,
+                          shadowColor: '#000',
+                          shadowOffset: { width: 0, height: 4 },
+                          shadowOpacity: 0.1,
+                          shadowRadius: 10,
+                          elevation: 3,
+                        }}>
+                          <View style={{ position: 'relative' }}>
+                            <Image source={{ uri: reporte.foto_url || 'https://via.placeholder.com/400' }} style={{ width: '100%', height: 130 }} resizeMode="cover" />
+                            <View style={{ position: 'absolute', top: 12, right: 12, backgroundColor: getBadgeColor(reporte.animal?.condicion || ''), paddingHorizontal: 16, paddingVertical: 6, borderRadius: 16 }}>
+                              <Text style={{ color: COLORS.white, fontWeight: '800', fontSize: 12, textTransform: 'capitalize' }}>{reporte.animal?.condicion || 'Desconocido'}</Text>
+                            </View>
+                            {enProceso && (
+                              <View style={{ position: 'absolute', bottom: 0, width: '100%', backgroundColor: 'rgba(102, 188, 180, 0.9)', paddingVertical: 8, paddingHorizontal: 16 }}>
+                                <Text style={{ color: COLORS.white, fontSize: 12, fontWeight: '600' }}><Ionicons name="car" size={12} /> Rescatista en camino</Text>
+                              </View>
+                            )}
+                          </View>
+
+                          <View style={{ padding: 15 }}>
+                            <Text style={{ fontSize: 16, fontWeight: '800', color: COLORS.textDark, textTransform: 'capitalize' }}>{reporte.animal?.tipo_animal || 'Animal'}</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
+                              <Ionicons name="location-outline" size={13} color={COLORS.primary} />
+                              <Text style={{ color: COLORS.textLight, fontSize: 12, marginLeft: 4 }} numberOfLines={1}>
+                                {[reporte.colonia, reporte.municipio].filter(Boolean).join(', ')}
+                              </Text>
+                            </View>
+                            <Text style={{ color: COLORS.textLight, fontSize: 11, marginTop: 3, marginLeft: 2 }}>
+                              hace {formatDistanceToNow(new Date(reporte.created_at), { locale: es })}
+                            </Text>
+
+                            {/* Datos rápidos del animal — para decidir si aceptar sin
+                            tener que adivinar */}
+                            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                              {[reporte.animal?.tamanio, reporte.animal?.sexo, reporte.animal?.edad_aproximada]
+                                .filter(Boolean)
+                                .map((dato, i) => (
+                                  <View key={i} style={{ backgroundColor: 'rgba(74,55,40,0.06)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 100 }}>
+                                    <Text style={{ fontSize: 10, color: COLORS.textDark, textTransform: 'capitalize', fontWeight: '600' }}>{dato}</Text>
+                                  </View>
+                                ))}
+                            </View>
+
+                            <TouchableOpacity onPress={() => setReporteSeleccionado(reporte)} style={{ marginTop: 8 }}>
+                              <Text style={{ fontSize: 12, color: COLORS.accent, fontWeight: '700' }}>Ver detalle completo →</Text>
+                            </TouchableOpacity>
+
+                            <View style={{ marginTop: 14 }}>
+                              {reporte.estado_reporte === 'asignado' || reporte.estado_asignacion_clave === 'notificada' ? (
+                                <View style={{ flexDirection: 'row', gap: 12 }}>
+                                  <TouchableOpacity onPress={() => { setReporteAccionId(reporte.reporte_id); setShowAcceptModal(true); }} style={{ flex: 1, backgroundColor: COLORS.primary, paddingVertical: 14, borderRadius: 16, alignItems: 'center' }}>
+                                    <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Aceptar</Text>
+                                  </TouchableOpacity>
+                                  <TouchableOpacity onPress={() => { setReporteAccionId(reporte.reporte_id); resetModales(); setShowRejectModal(true); }} style={{ flex: 1, backgroundColor: 'transparent', borderWidth: 1, borderColor: COLORS.danger, paddingVertical: 14, borderRadius: 16, alignItems: 'center' }}>
+                                    <Text style={{ color: COLORS.danger, fontWeight: 'bold' }}>Rechazar</Text>
+                                  </TouchableOpacity>
+                                </View>
+                              ) : yaRescatado ? (
+                                // El staff ya mandó su hito final ("llegué al refugio") — ya
+                                // se puede cerrar el caso formalmente.
+                                <View style={{ gap: 10 }}>
+                                  <TouchableOpacity onPress={() => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=$${reporte.latitud},${reporte.longitud}`)} style={{ backgroundColor: COLORS.primary, paddingVertical: 14, borderRadius: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}>
+                                    <Ionicons name="map" size={16} color={COLORS.white} style={{ marginRight: 6 }} />
+                                    <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Cómo llegar</Text>
+                                  </TouchableOpacity>
+                                  <TouchableOpacity onPress={() => { setReporteAccionId(reporte.reporte_id); resetModales(); setShowCerrarModal(true); }} style={{ backgroundColor: COLORS.accent, paddingVertical: 14, borderRadius: 16, alignItems: 'center' }}>
+                                    <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Cerrar caso</Text>
+                                  </TouchableOpacity>
+                                </View>
+                              ) : enProceso ? (
+                                // en_camino / en_atencion: el staff sigue trabajando el caso.
+                                // "Hito rescate" NO va aquí — le pertenece al dashboard del
+                                // staff (el backend lo rechaza con 403 si alguien más lo llama).
+                                // La asociación solo monitorea mientras tanto.
+                                <TouchableOpacity onPress={() => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=$${reporte.latitud},${reporte.longitud}`)} style={{ backgroundColor: COLORS.primary, paddingVertical: 14, borderRadius: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}>
+                                  <Ionicons name="map" size={16} color={COLORS.white} style={{ marginRight: 6 }} />
+                                  <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Cómo llegar</Text>
+                                </TouchableOpacity>
+                              ) : (
+                                <TouchableOpacity onPress={() => setReporteSeleccionado(reporte)} style={{ backgroundColor: COLORS.accent, paddingVertical: 14, borderRadius: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}>
+                                  <Ionicons name="eye" size={16} color={COLORS.white} style={{ marginRight: 6 }} />
+                                  <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Ver detalle</Text>
+                                </TouchableOpacity>
+                              )}
+                            </View>
+                          </View>
+                        </View>
+                      );
+                    })}
                   </View>
                 </>
               ) : (
@@ -1097,11 +1087,11 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                   <>
                     <View style={{ gap: 12, marginBottom: 20 }}>
                       {[
-                        { id: 'manual', titulo: 'Manual', desc: 'Siempre eliges tú.' },
-                        { id: 'semi_automatico', titulo: 'Semi-automático', desc: 'Eliges tú, pero si no respondes a tiempo el sistema asigna.' },
-                        { id: 'automatico', titulo: 'Automático', desc: 'El sistema asigna y tú supervisas.' }
+                        { id: 'manual', titulo: 'Manual', desc: 'Siempre eliges tú a que voluntario asignar el caso.' },
+                        { id: 'semi_automatico', titulo: 'Semi-automático', desc: 'Tú eliges a que voluntario asignar el caso, pero si no respondes a tiempo el sistema asigna uno.' },
+                        { id: 'automatico', titulo: 'Automático', desc: 'El sistema asigna el caso a un voluntario y tú solo supervisas.' }
                       ].map(modo => (
-                        <TouchableOpacity 
+                        <TouchableOpacity
                           key={modo.id}
                           onPress={() => setModoAsignacionConfig(modo.id as any)}
                           style={{
@@ -1111,10 +1101,10 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                             flexDirection: 'row', alignItems: 'center'
                           }}
                         >
-                          <View style={{ 
-                            width: 20, height: 20, borderRadius: 10, borderWidth: 2, 
-                            borderColor: modoAsignacionConfig === modo.id ? COLORS.primary : COLORS.textLight, 
-                            marginRight: 12, justifyContent: 'center', alignItems: 'center' 
+                          <View style={{
+                            width: 20, height: 20, borderRadius: 10, borderWidth: 2,
+                            borderColor: modoAsignacionConfig === modo.id ? COLORS.primary : COLORS.textLight,
+                            marginRight: 12, justifyContent: 'center', alignItems: 'center'
                           }}>
                             {modoAsignacionConfig === modo.id && <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: COLORS.primary }} />}
                           </View>
@@ -1129,7 +1119,9 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                     {modoAsignacionConfig !== 'semi_automatico' && (
                       <View style={{ backgroundColor: COLORS.white, padding: 16, borderRadius: 16, marginBottom: 20 }}>
                         <Text style={{ fontSize: 12, color: COLORS.textLight, marginBottom: 16, fontStyle: 'italic' }}>
-                          Si el staff no asigna a tiempo, el sistema tomará al mejor candidato disponible según estos tiempos.
+                          {modoAsignacionConfig === 'semi_automatico'
+                            ? 'Tienes hasta el tiempo límite indicado para asignar un voluntario manualmente. Si no lo haces, el sistema elegirá al más apto de forma automática.'
+                            : 'El sistema asignará automáticamente al voluntario más apto si el caso no es atendido dentro del tiempo límite indicado.'}
                         </Text>
                         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
                           <View style={{ flexGrow: 1, flexBasis: 100 }}>
@@ -1153,7 +1145,7 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
               <View style={{ backgroundColor: COLORS.cardBg, padding: 28, borderRadius: 32, marginTop: 32, ...SHADOW_MD }}>
                 <Text style={{ fontSize: 22, fontWeight: '800', color: COLORS.textDark, marginBottom: 6 }}>Agregar miembro</Text>
                 <Text style={{ fontSize: 13, color: COLORS.textLight, marginBottom: 20 }}>Esta persona podrá iniciar sesión con el mismo teléfono que registres.</Text>
-                
+
                 <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.textDark, marginBottom: 10 }}>Tipo de miembro</Text>
                 <View style={{ flexDirection: 'row', gap: 12, marginBottom: 20 }}>
                   <TouchableOpacity onPress={() => setEsStaff(false)} style={{ flex: 1, paddingVertical: 12, borderRadius: 16, alignItems: 'center', backgroundColor: !esStaff ? COLORS.accent : 'transparent', borderWidth: !esStaff ? 0 : 1, borderColor: '#D1D5DB' }}>
@@ -1178,9 +1170,9 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                     <Input label="Correo (Opcional)" placeholder="Ej. correo@ejemplo.com" value={emailRep} onChangeText={setEmailRep} keyboardType="email-address" autoCapitalize="none" />
                   </View>
                 </View>
-                
+
                 <View style={{ marginTop: 10 }}>
-                   <Button label={esStaff ? "Agregar staff" : "Agregar representante"} onPress={handleAgregarRepresentante} isLoading={isAdding} />
+                  <Button label={esStaff ? "Agregar staff" : "Agregar representante"} onPress={handleAgregarRepresentante} isLoading={isAdding} />
                 </View>
               </View>
             </>
@@ -1213,7 +1205,7 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
 
                 <Text style={{ fontSize: 18, fontWeight: '800', color: COLORS.textDark, marginBottom: 8 }}>Descripción</Text>
                 <Text style={{ fontSize: 15, color: COLORS.textLight, marginBottom: 24, lineHeight: 22 }}>{reporteSeleccionado.animal?.descripcion || 'Sin descripción detallada.'}</Text>
-                
+
                 <Text style={{ fontSize: 18, fontWeight: '800', color: COLORS.textDark, marginBottom: 8 }}>Ubicación</Text>
                 <Text style={{ fontSize: 15, color: COLORS.textLight, lineHeight: 22 }}>{[reporteSeleccionado.calle, reporteSeleccionado.colonia, reporteSeleccionado.municipio].filter(Boolean).join(', ')}</Text>
               </ScrollView>
@@ -1252,9 +1244,9 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
           <View style={{ backgroundColor: COLORS.cardBg, borderRadius: 32, padding: 32, width: '100%', maxWidth: 450 }}>
             <Text style={{ fontSize: 22, fontWeight: '800', color: COLORS.textDark, marginBottom: 20 }}>¿Por qué rechazas este caso?</Text>
             {MOTIVOS_RECHAZO.map((motivo) => (
-               <TouchableOpacity key={motivo} onPress={() => setMotivoRechazo(motivo)} style={{ padding: 16, borderWidth: 2, borderColor: motivoRechazo === motivo ? COLORS.danger : 'transparent', borderRadius: 16, marginBottom: 10, backgroundColor: motivoRechazo === motivo ? 'rgba(231, 76, 60, 0.05)' : COLORS.white }}>
-                 <Text style={{ fontSize: 14, color: COLORS.textDark, fontWeight: motivoRechazo === motivo ? '700' : '500' }}>{motivo}</Text>
-               </TouchableOpacity>
+              <TouchableOpacity key={motivo} onPress={() => setMotivoRechazo(motivo)} style={{ padding: 16, borderWidth: 2, borderColor: motivoRechazo === motivo ? COLORS.danger : 'transparent', borderRadius: 16, marginBottom: 10, backgroundColor: motivoRechazo === motivo ? 'rgba(231, 76, 60, 0.05)' : COLORS.white }}>
+                <Text style={{ fontSize: 14, color: COLORS.textDark, fontWeight: motivoRechazo === motivo ? '700' : '500' }}>{motivo}</Text>
+              </TouchableOpacity>
             ))}
             <TextInput style={{ backgroundColor: COLORS.white, borderRadius: 16, padding: 16, fontSize: 14, marginTop: 12, marginBottom: 24, minHeight: 80, textAlignVertical: 'top' }} multiline placeholder="Comentarios adicionales (Opcional)" maxLength={150} value={notasRechazo} onChangeText={setNotasRechazo} />
             <View style={{ flexDirection: 'row', gap: 12 }}>
@@ -1278,14 +1270,14 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
             {(showEncontreModal ? OPCIONES_ENCONTRE : OPCIONES_CIERRE).map((opcion) => {
               const seleccionado = showEncontreModal ? estadoEncontre === opcion : estadoCierre === opcion;
               return (
-               <TouchableOpacity key={opcion} onPress={() => showEncontreModal ? setEstadoEncontre(opcion) : setEstadoCierre(opcion)} style={{ padding: 16, borderWidth: 2, borderColor: seleccionado ? COLORS.accent : 'transparent', borderRadius: 16, marginBottom: 10, backgroundColor: seleccionado ? 'rgba(102, 188, 180, 0.1)' : COLORS.white }}>
-                 <Text style={{ fontSize: 14, color: COLORS.textDark, fontWeight: seleccionado ? '700' : '500' }}>{opcion}</Text>
-               </TouchableOpacity>
+                <TouchableOpacity key={opcion} onPress={() => showEncontreModal ? setEstadoEncontre(opcion) : setEstadoCierre(opcion)} style={{ padding: 16, borderWidth: 2, borderColor: seleccionado ? COLORS.accent : 'transparent', borderRadius: 16, marginBottom: 10, backgroundColor: seleccionado ? 'rgba(102, 188, 180, 0.1)' : COLORS.white }}>
+                  <Text style={{ fontSize: 14, color: COLORS.textDark, fontWeight: seleccionado ? '700' : '500' }}>{opcion}</Text>
+                </TouchableOpacity>
               )
             })}
             <TextInput style={{ backgroundColor: COLORS.white, borderRadius: 16, padding: 16, fontSize: 14, marginTop: 12, minHeight: 80, textAlignVertical: 'top' }} multiline placeholder="Comentarios (Opcional)" value={notasHito} onChangeText={setNotasHito} />
             <TouchableOpacity onPress={handlePickFoto} style={{ padding: 16, backgroundColor: COLORS.white, borderRadius: 16, marginTop: 12, alignItems: 'center', borderWidth: 2, borderColor: '#E5E7EB', borderStyle: 'dashed' }}>
-              <Text style={{ color: COLORS.textLight, fontWeight: 'bold' }}><Ionicons name="camera" size={16}/> {fotoHito ? 'Foto adjuntada ✓' : 'Subir foto (Opcional)'}</Text>
+              <Text style={{ color: COLORS.textLight, fontWeight: 'bold' }}><Ionicons name="camera" size={16} /> {fotoHito ? 'Foto adjuntada ✓' : 'Subir foto (Opcional)'}</Text>
             </TouchableOpacity>
             <View style={{ flexDirection: 'row', gap: 12, marginTop: 24 }}>
               <TouchableOpacity onPress={() => showEncontreModal ? setShowEncontreModal(false) : setShowCerrarModal(false)} style={{ flex: 1, paddingVertical: 16, alignItems: 'center', borderRadius: 20, backgroundColor: '#E5E7EB' }}>

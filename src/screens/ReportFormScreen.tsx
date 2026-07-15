@@ -833,6 +833,19 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
       <Card>
         {renderSelector('Tipo de Animal', ['Perro', 'Gato', 'Otro'], tipoAnimal, handleTipoAnimalChange, errors.tipoAnimal)}
 
+        {/* Si es 'Otro': mostrar Categoría justo después del selector de Animal */}
+        {tipoAnimal === 'Otro' && (
+          <>
+            {renderSelector('Categoría', ['Ave', 'Reptil', 'Roedor', 'Fauna silvestre', 'Otro'], subcategoria, (val: any) => { setSubcategoria(val); setErrors(prev => ({ ...prev, subcategoria: '' })); }, errors.subcategoria)}
+            {subcategoria === 'Otro' && (
+              <View>
+                <Input label="Describe la especie *" placeholder="Ej. Tlacuache, caballo, etc." value={especieDescripcion} onChangeText={(val) => { setEspecieDescripcion(val); if (val.trim()) setErrors(prev => ({ ...prev, especieDescripcion: '' })); }} error={errors.especieDescripcion} maxLength={100} />
+                <Text style={{ textAlign: 'right', color: '#95A5A6', fontSize: 12, marginTop: -12, marginBottom: 8 }}>{especieDescripcion.length}/100</Text>
+              </View>
+            )}
+          </>
+        )}
+
         {tipoAnimal && (
           <>
             {renderSelector('Sexo', ['Macho', 'Hembra', 'Desconocido'], sexo, (val: any) => { setSexo(val); setErrors(prev => ({ ...prev, sexo: '' })); }, errors.sexo)}
@@ -856,20 +869,9 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
                 {sexo === 'Hembra' && renderBooleanSelector('¿Parece estar preñada?', estaPrenada, (val: any) => { setEstaPrenada(val); setErrors(prev => ({ ...prev, estaPrenada: '' })); }, errors.estaPrenada)}
               </>
             )}
-
-            {tipoAnimal === 'Otro' && (
-              <>
-                {renderSelector('Categoría', ['Ave', 'Reptil', 'Roedor', 'Fauna silvestre', 'Otro'], subcategoria, (val: any) => { setSubcategoria(val); setErrors(prev => ({ ...prev, subcategoria: '' })); }, errors.subcategoria)}
-                {subcategoria === 'Otro' && (
-                  <View>
-                    <Input label="Describe la especie *" placeholder="Ej. Tlacuache, caballo, etc." value={especieDescripcion} onChangeText={(val) => { setEspecieDescripcion(val); if (val.trim()) setErrors(prev => ({ ...prev, especieDescripcion: '' })); }} error={errors.especieDescripcion} maxLength={100} />
-                    <Text style={{ textAlign: 'right', color: '#95A5A6', fontSize: 12, marginTop: -12, marginBottom: 8 }}>{especieDescripcion.length}/100</Text>
-                  </View>
-                )}
-              </>
-            )}
           </>
         )}
+
 
         <View style={{ marginBottom: 8 }}>
           <Input label="Descripción adicional (Opcional)" placeholder="Detalles sobre el animal o la situación..." value={description} onChangeText={setDescription} multiline maxLength={300} numberOfLines={3} style={{ height: 80, textAlignVertical: 'top' }} />
