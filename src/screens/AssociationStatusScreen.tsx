@@ -1126,7 +1126,7 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                       ))}
                     </View>
 
-                    {modoAsignacionConfig !== 'manual' && (
+                    {modoAsignacionConfig !== 'semi_automatico' && (
                       <View style={{ backgroundColor: COLORS.white, padding: 16, borderRadius: 16, marginBottom: 20 }}>
                         <Text style={{ fontSize: 12, color: COLORS.textLight, marginBottom: 16, fontStyle: 'italic' }}>
                           Si el staff no asigna a tiempo, el sistema tomará al mejor candidato disponible según estos tiempos.
@@ -1489,18 +1489,20 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                   <>
                     {/* Banner condicional */}
                     {modoAsignacion !== 'manual' && (
-                      <View style={{
-                        backgroundColor: 'rgba(102,188,180,0.12)',
-                        borderRadius: 14, padding: 14, flexDirection: 'row',
-                        alignItems: 'flex-start', marginBottom: 14,
-                        borderLeftWidth: 4, borderLeftColor: COLORS.accent,
-                      }}>
-                        <Ionicons name="time-outline" size={20} color={COLORS.accent} style={{ marginRight: 10, marginTop: 1 }} />
-                        <Text style={{ flex: 1, fontSize: 13, color: COLORS.textDark, lineHeight: 19 }}>
-                          Si no asignas en <Text style={{ fontWeight: '700' }}>{timeoutMin} min</Text>, el sistema asignará automáticamente al mejor candidato.
-                        </Text>
-                      </View>
-                    )}
+                        <View style={{
+                          backgroundColor: 'rgba(102,188,180,0.12)',
+                          borderRadius: 14, padding: 14, flexDirection: 'row',
+                          alignItems: 'flex-start', marginBottom: 14,
+                          borderLeftWidth: 4, borderLeftColor: COLORS.accent,
+                        }}>
+                          <Ionicons name="time-outline" size={20} color={COLORS.accent} style={{ marginRight: 10, marginTop: 1 }} />
+                          <Text style={{ flex: 1, fontSize: 13, color: COLORS.textDark, lineHeight: 19 }}>
+                            {modoAsignacion === 'automatico'
+                              ? 'El sistema asignará al mejor candidato en breve, sin esperar a que elijas.'
+                              : <>Si no asignas en <Text style={{ fontWeight: '700' }}>{timeoutMin} min</Text>, el sistema asignará automáticamente al mejor candidato.</>}
+                          </Text>
+                        </View>
+                      )}
 
                     <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
                       {candidatosList.map((candidato) => {
