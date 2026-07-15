@@ -75,7 +75,8 @@ def _reportes_esperando_asignacion() -> list:
     res = (
         supabase.table("reportes")
         .select(
-            "id, condicion, candidatos_presentados_at, "
+            "id, candidatos_presentados_at, "
+            "animal(condicion_catalogo(clave)), "
             "asociaciones(modo_asignacion, timeout_grave, timeout_herido, timeout_estable)"
         )
         .eq("estado_reporte", "asignado")
@@ -83,8 +84,11 @@ def _reportes_esperando_asignacion() -> list:
         .not_.is_("candidatos_presentados_at", "null")
         .execute()
     )
-    return res.data or []
-
+    reportes = res.data or []
+    for r in reportes:
+        animal = r.get("animal") or {}
+        r["condicion"] = (animal.get("condicion_catalogo") or {}).get("clave")
+    return reportes
 
 def _minutos_desde(iso_timestamp: str) -> float:
     inicio = datetime.fromisoformat(iso_timestamp.replace("Z", "+00:00"))
