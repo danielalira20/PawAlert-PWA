@@ -356,6 +356,7 @@ export default function LoginScreen() {
               </View>
             )}
 
+
             <TouchableOpacity
               onPress={tab === 'login' ? handleLogin : handleRegister}
               disabled={isLoading}
@@ -372,6 +373,7 @@ export default function LoginScreen() {
                   </Text>
               }
             </TouchableOpacity>
+      
           </View>
 
           <TouchableOpacity onPress={() => router.replace('/')} style={{ alignItems: 'center', marginTop: 32, padding: 12 }}>

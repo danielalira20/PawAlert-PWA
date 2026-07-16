@@ -1,13 +1,18 @@
 from app.db.supabase import supabase
 
-def asignar_asociacion(latitud: float, longitud: float) -> dict | None:
+def asignar_asociacion(latitud: float, longitud: float, excluir_ids: list[str] | None = None) -> dict | None:
     resultado = supabase.rpc(
         "encontrar_asociacion_cercana",
         {
             "reporte_lat": latitud,
-            "reporte_lng": longitud
+            "reporte_lng": longitud,
+            "excluir_ids": excluir_ids or [],
         }
     ).execute()
+
+    if resultado.data and len(resultado.data) > 0:
+        return resultado.data[0]
+    return None
 
     if resultado.data and len(resultado.data) > 0:
         return resultado.data[0]

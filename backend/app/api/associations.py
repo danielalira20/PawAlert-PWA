@@ -240,6 +240,7 @@ async def create_association(
             "email": contacto_email,
             "telefono": telefono_limpio,
             "asociacion_id": asociacion_id,
+            "rol": "asociacion",
         },
     }
 
