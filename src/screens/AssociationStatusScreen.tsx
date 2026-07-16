@@ -796,91 +796,15 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
         <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
 
           {info.estado === 'pendiente' && (
-            <Modal visible transparent animationType="fade">
-              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-                <BlurView
-                  intensity={30}
-                  tint="dark"
-                  style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(20,15,10,0.55)' }}
-                />
-                <View style={{ width: '100%', maxWidth: 400 }}>
-                  {!sobreAbierto ? (
-                    <TouchableOpacity activeOpacity={0.85} onPress={abrirSobre} style={{ alignItems: 'center' }}>
-                      <View style={{
-                        width: '100%', aspectRatio: 1.5,
-                        backgroundColor: '#D9BB93',
-                        borderRadius: 20,
-                        justifyContent: 'center', alignItems: 'center',
-                        ...(Platform.OS === 'web'
-                          ? { boxShadow: '0 10px 28px rgba(74,55,40,0.2)' } as any
-                          : { elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.2, shadowRadius: 16 }),
-                      }}>
-                        <View style={{
-                          position: 'absolute', top: 0, left: 0, right: 0,
-                          height: 0, width: 0,
-                          borderLeftWidth: 190, borderRightWidth: 190,
-                          borderTopWidth: 90,
-                          borderLeftColor: 'transparent', borderRightColor: 'transparent',
-                          borderTopColor: '#C7A87A',
-                        }} />
-                        <Ionicons name="mail-outline" size={40} color={COLORS.textDark} style={{ marginTop: 20 }} />
-                        <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginTop: 8 }}>
-                          Toca para abrir
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
-                  ) : (
-                    <Animated.View style={{
-                      opacity: notaAnim,
-                      transform: [
-                        { translateY: notaAnim.interpolate({ inputRange: [0, 1], outputRange: [30, 0] }) },
-                        { scale: notaAnim.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1] }) },
-                        { rotate: '-1deg' },
-                      ],
-                    }}>
-                      <View style={{
-                        backgroundColor: COLORS.cardBg,
-                        borderRadius: 28,
-                        padding: 28,
-                        paddingTop: 44,
-                        borderWidth: 1, borderColor: 'rgba(0,0,0,0.05)',
-                        ...(Platform.OS === 'web'
-                          ? { boxShadow: '0 12px 32px rgba(74,55,40,0.18)' } as any
-                          : { elevation: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.18, shadowRadius: 20 }),
-                      }}>
-                        <View style={{ position: 'absolute', top: -28, left: -14, transform: [{ rotate: '-6deg' }] }}>
-                          <Image source={require('../../assets/images/sobre-perrito.png')} style={{ width: 90, height: 90 }} resizeMode="contain" />
-                        </View>
-                        <View style={{ position: 'absolute', top: -24, right: -12, transform: [{ rotate: '7deg' }] }}>
-                          <Image source={require('../../assets/images/sobre-gatito.png')} style={{ width: 84, height: 84 }} resizeMode="contain" />
-                        </View>
-                        <View style={{ alignItems: 'center', marginBottom: 14, marginTop: 10 }}>
-                          <Ionicons name="mail-open-outline" size={30} color={COLORS.primary} style={{ marginBottom: 8 }} />
-                          <Text style={{ fontSize: 20, fontWeight: '900', color: COLORS.textDark, textAlign: 'center' }}>
-                            Tu solicitud está en revisión
-                          </Text>
-                        </View>
-                        <Text style={{ fontSize: 14, color: COLORS.textLight, lineHeight: 22, textAlign: 'center', marginBottom: 20 }}>
-                          Nuestro equipo está revisando los datos de{' '}
-                          <Text style={{ fontWeight: '700', color: COLORS.textDark }}>{info?.nombre}</Text>.
-                          Te avisaremos en cuanto sea aprobada.
-                        </Text>
-                        <View style={{ height: 1, backgroundColor: 'rgba(0,0,0,0.08)', marginBottom: 16 }} />
-                        <View style={{
-                          flexDirection: 'row', alignItems: 'flex-start',
-                          backgroundColor: 'rgba(102,188,180,0.14)', borderRadius: 16, padding: 14,
-                        }}>
-                          <Ionicons name="key-outline" size={18} color={COLORS.accent} style={{ marginRight: 10, marginTop: 1 }} />
-                          <Text style={{ flex: 1, fontSize: 13, color: COLORS.textDark, lineHeight: 19 }}>
-                            Ya puedes iniciar sesión con el correo y la contraseña que registraste. Ahí podrás ver el estado de tu solicitud en cualquier momento.
-                          </Text>
-                        </View>
-                      </View>
-                    </Animated.View>
-                  )}
-                </View>
+            <View style={{ backgroundColor: COLORS.cardBg, padding: 24, borderRadius: 24, ...SHADOW_SM, marginBottom: 24, borderLeftWidth: 6, borderLeftColor: COLORS.secondary }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+                <Ionicons name="time" size={24} color={COLORS.secondary} style={{ marginRight: 8 }} />
+                <Text style={{ fontSize: 18, fontWeight: 'bold', color: COLORS.textDark }}>Tu solicitud está en revisión</Text>
               </View>
-            </Modal>
+              <Text style={{ fontSize: 14, color: COLORS.textDark, lineHeight: 22 }}>
+                Nuestro equipo está revisando los datos de <Text style={{ fontWeight: '700' }}>{info?.nombre}</Text>. Te avisaremos en cuanto sea aprobada para que puedas comenzar a recibir y gestionar reportes.
+              </Text>
+            </View>
           )}
 
           {info.estado === 'rechazada' && (
