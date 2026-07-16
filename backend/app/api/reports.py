@@ -481,8 +481,8 @@ async def rechazar_reporte(reporte_id: str, body: RechazarReporteRequest, author
     nueva_asociacion = None
 
     if reporte.get("latitud") and reporte.get("longitud"):
-        candidata = asignar_asociacion(reporte["latitud"], reporte["longitud"])
-        if candidata and candidata["id"] not in ids_rechazadas:
+        candidata = asignar_asociacion(reporte["latitud"], reporte["longitud"], excluir_ids=ids_rechazadas)
+        if candidata:
             nueva_asociacion = candidata
 
     if nueva_asociacion:
