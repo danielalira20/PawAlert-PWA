@@ -18,8 +18,10 @@ import * as Location from 'expo-location';
 
 import { useAuth } from '../context/AuthContext';
 import { Toast, useToast } from '../components/Toast';
+import { AppModal } from '../components/AppModal';
 import { API_URL } from '../constants/api';
 import LocationPickerMap from './LocationPickerMap';
+import CapacidadesFormScreen from './CapacidadesFormScreen';
 
 // ─── PALETA PETZEN ────────────────────────────────────────────────────────
 const COLORS = {
@@ -116,6 +118,7 @@ export default function JoinAssociationScreen() {
   const [status, setStatus] = useState<VoluntarioStatus | null>(null);
   const [isReapplying, setIsReapplying] = useState(false);
   const [usuarioPerfil, setUsuarioPerfil] = useState<UsuarioPerfil | null>(null);
+  const [showCapacidadesForm, setShowCapacidadesForm] = useState(false);
 
   const [asociaciones, setAsociaciones] = useState<Asociacion[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -906,9 +909,7 @@ const fetchStatus = async () => {
                   </Text>
 
                   <TouchableOpacity
-                    onPress={() =>
-                      router.push('/capacidades-form' as any)
-                    }
+                    onPress={() => setShowCapacidadesForm(true)}
                     style={{
                       backgroundColor: COLORS.primary,
                       paddingVertical: 18,
@@ -1049,6 +1050,21 @@ const fetchStatus = async () => {
           </View>
         </View>
       </Modal>
+
+      <AppModal
+        visible={showCapacidadesForm}
+        onClose={() => setShowCapacidadesForm(false)}
+      >
+        {showCapacidadesForm && (
+          <CapacidadesFormScreen
+            fromProfile={true}
+            onClose={() => {
+              setShowCapacidadesForm(false);
+              fetchStatus();
+            }}
+          />
+        )}
+      </AppModal>
     </View>
   );
 }

@@ -863,6 +863,9 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     paddingBottom: 30, // Safe area
     maxHeight: '60%',
+    alignSelf: 'center',
+    width: '100%',
+    maxWidth: 480,
   },
 
   pickerHeader: {
