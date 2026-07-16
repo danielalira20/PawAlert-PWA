@@ -182,7 +182,7 @@ export function LoggedOutProfile() {
       await login(email.trim(), password);
       setSuccessMessage('¡Bienvenida de vuelta!');
     } catch (error: any) {
-      showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'Error al iniciar sesión' });
+      showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'Correo o contraseña incorrectos' });
     } finally {
       setIsLoading(false);
     }
@@ -499,10 +499,6 @@ export function LoggedOutProfile() {
             }}
           >
 
-                        <ForgotPasswordFlowScreen
-  visible={showForgotPassword}
-  onClose={() => setShowForgotPassword(false)}
-/>
             {isLoading
               ? <ActivityIndicator color={C.bg} />
               : <Text style={{ color: C.bg, fontFamily: F.bodySemiBold, fontSize: 16 }}>
@@ -510,6 +506,11 @@ export function LoggedOutProfile() {
               </Text>
             }
           </TouchableOpacity>
+
+           <ForgotPasswordFlowScreen
+                visible={showForgotPassword}
+                onClose={() => setShowForgotPassword(false)}
+            />
         </View>
 
         {/* Volver a la vista inicial */}
