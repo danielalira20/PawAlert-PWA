@@ -1260,8 +1260,8 @@ export default function LandingScreen() {
         transparent={true}
         onRequestClose={() => setIsReportGuideVisible(false)}
       >
-        <View style={{ flex: 1, backgroundColor: 'rgba(46,42,38,0.55)', justifyContent: 'center', padding: 16, paddingTop: 60, paddingBottom: 40 }}>
-          <View style={{ flex: 1, backgroundColor: C.bgSoft, borderRadius: 24, overflow: 'hidden' }}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(46,42,38,0.55)', justifyContent: 'center', alignItems: 'center', padding: 16, paddingTop: 60, paddingBottom: 40 }}>
+          <View style={{ flex: 1, width: '100%', maxWidth: 900, backgroundColor: C.bgSoft, borderRadius: 24, overflow: 'hidden' }}>
             {isReportGuideVisible && (
               <Suspense fallback={
                 <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
