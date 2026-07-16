@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Image, Linking, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { Toast, useToast } from '../components/Toast';
 import { useStaffReports } from '../hooks/useStaffReports';
@@ -38,6 +39,10 @@ export default function StaffDashboardScreen({ onClose }: Props) {
   const puedeRegistrarHitos = user?.rol === 'voluntario_interno' || user?.rol === 'staff';
 
   const {
+    reportesEsperandoConfirmacion,
+    confirmarAsignacion,
+    rechazarAsignacionVoluntario,
+    isConfirmando,
     reportesPendientes,
     reportesEnAccion,
     reportesCompletados,
@@ -74,6 +79,11 @@ export default function StaffDashboardScreen({ onClose }: Props) {
   const [showDetalles, setShowDetalles] = useState(false);
   const [showEncontreModal, setShowEncontreModal] = useState(false);
   const [showRefugioModal, setShowRefugioModal] = useState(false);
+
+  // ── UI state: confirmar/rechazar una asignación nueva de voluntario ───
+  const [reporteAConfirmar, setReporteAConfirmar] = useState<ReporteStaff | null>(null);
+  const [showAceptarModal, setShowAceptarModal] = useState(false);
+  const [showRechazarModal, setShowRechazarModal] = useState(false);
 
   useEffect(() => {
     cargarReportesAsignados();
@@ -136,15 +146,53 @@ export default function StaffDashboardScreen({ onClose }: Props) {
     if (uri) setFotoRefugio(uri);
   };
 
+  // ── Confirmar/rechazar una asignación nueva ("¿Aceptas este caso?") ──
+  const abrirAceptar = (reporte: ReporteStaff) => {
+    setReporteAConfirmar(reporte);
+    setShowAceptarModal(true);
+  };
+
+  const abrirRechazar = (reporte: ReporteStaff) => {
+    setReporteAConfirmar(reporte);
+    setShowRechazarModal(true);
+  };
+
+  const confirmarAceptarAsignacion = async () => {
+    if (!reporteAConfirmar) return;
+    const ok = await confirmarAsignacion(reporteAConfirmar.id);
+    if (ok) {
+      setShowAceptarModal(false);
+      setReporteAConfirmar(null);
+    }
+  };
+
+  const confirmarRechazarAsignacion = async () => {
+    if (!reporteAConfirmar) return;
+    const ok = await rechazarAsignacionVoluntario(reporteAConfirmar.id);
+    if (ok) {
+      setShowRechazarModal(false);
+      setReporteAConfirmar(null);
+    }
+  };
+
+  const abrirMapaReporte = (reporte: ReporteStaff) => {
+    if (reporte.latitud && reporte.longitud) {
+      Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${reporte.latitud},${reporte.longitud}`);
+    }
+  };
+
   // ── Stats resumidos ─────────────────────────────────────────────────
   const totalReportes =
-    reportesPendientes.length + reportesEnAccion.length + reportesCompletados.length;
+    reportesEsperandoConfirmacion.length +
+    reportesPendientes.length +
+    reportesEnAccion.length +
+    reportesCompletados.length;
   const enCaminoCount = reportesEnAccion.filter((r) => r.estado_reporte === 'en_camino').length;
 
   const stats: StatItem[] = [
     {
       label: 'Casos activos',
-      value: reportesPendientes.length + reportesEnAccion.length,
+      value: reportesEsperandoConfirmacion.length + reportesPendientes.length + reportesEnAccion.length,
       icon: 'pulse',
       color: Brand.primary,
       primary: true,
@@ -156,6 +204,53 @@ export default function StaffDashboardScreen({ onClose }: Props) {
   // Reportes con coordenadas para el mapa y para el resumen de condiciones
   // (pendientes + en acción, no cerrados)
   const reportesActivos = [...reportesPendientes, ...reportesEnAccion];
+
+  // ── Sección "Esperando tu confirmación" — se repite en desktop y móvil ──
+  const seccionEsperandoConfirmacion = reportesEsperandoConfirmacion.length > 0 && (
+    <View style={[styles.section, styles.sectionSpacing]}>
+      <View style={styles.groupHeader}>
+        <View style={[styles.groupBar, { backgroundColor: Brand.primary }]} />
+        <Text style={styles.groupTitle}>Esperando tu confirmación</Text>
+        <View style={[styles.groupCount, { backgroundColor: Brand.primary }]}>
+          <Text style={styles.groupCountText}>{reportesEsperandoConfirmacion.length}</Text>
+        </View>
+      </View>
+
+      {reportesEsperandoConfirmacion.map((reporte) => (
+        <View key={reporte.id} style={confirmStyles.card}>
+          {reporte.foto_url && (
+            <Image source={{ uri: reporte.foto_url }} style={confirmStyles.photo} resizeMode="cover" />
+          )}
+          <View style={confirmStyles.body}>
+            <Text style={confirmStyles.title}>{reporte.animal?.tipo_animal || 'Animal'}</Text>
+            <View style={confirmStyles.metaRow}>
+              <Ionicons name="location-outline" size={13} color={Brand.primary} />
+              <Text style={confirmStyles.metaText} numberOfLines={1}>
+                {[reporte.calle, reporte.colonia, reporte.municipio].filter(Boolean).join(', ') ||
+                  'Ubicación no disponible'}
+              </Text>
+            </View>
+
+            {reporte.latitud && reporte.longitud && (
+              <TouchableOpacity onPress={() => abrirMapaReporte(reporte)} style={confirmStyles.mapaBtn}>
+                <Ionicons name="map-outline" size={14} color={Brand.accent} />
+                <Text style={confirmStyles.mapaBtnText}>Ver ubicación en el mapa</Text>
+              </TouchableOpacity>
+            )}
+
+            <View style={confirmStyles.actionsRow}>
+              <TouchableOpacity onPress={() => abrirRechazar(reporte)} style={confirmStyles.rechazarBtn}>
+                <Text style={confirmStyles.rechazarBtnText}>Rechazar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => abrirAceptar(reporte)} style={confirmStyles.aceptarBtn}>
+                <Text style={confirmStyles.aceptarBtnText}>Aceptar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      ))}
+    </View>
+  );
 
   return (
     <View style={styles.container}>
@@ -200,6 +295,8 @@ export default function StaffDashboardScreen({ onClose }: Props) {
                   </View>
                 </View>
 
+                {seccionEsperandoConfirmacion}
+
                 <ReportesGroup
                   titulo="Pendientes"
                   color={Brand.accent}
@@ -243,6 +340,8 @@ export default function StaffDashboardScreen({ onClose }: Props) {
               <Text style={styles.sectionTitle}>Mapa de casos</Text>
               <MapCard reportes={reportesActivos} onSelectReporte={abrirDetalle} />
             </View>
+
+            {seccionEsperandoConfirmacion}
 
             <ReportesGroup
               titulo="Pendientes"
@@ -318,6 +417,69 @@ export default function StaffDashboardScreen({ onClose }: Props) {
         onCancel={cancelarRefugio}
         onConfirm={confirmarRefugio}
       />
+
+      {/* ── Modal: aceptar asignación de voluntario (nuevo) ── */}
+      <Modal visible={showAceptarModal} transparent animationType="fade">
+        <View style={confirmStyles.modalOverlay}>
+          <View style={confirmStyles.modalCard}>
+            <Ionicons name="paw" size={36} color={Brand.primary} style={{ marginBottom: 12 }} />
+            <Text style={confirmStyles.modalTitle}>¿Aceptas este caso?</Text>
+            <Text style={confirmStyles.modalText}>
+              Al aceptar, se te marcará como en camino y deberás registrar los hitos de "encontré al
+              animal" y "llegué al refugio".
+            </Text>
+            <View style={confirmStyles.modalActions}>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowAceptarModal(false);
+                  setReporteAConfirmar(null);
+                }}
+                style={confirmStyles.modalCancelBtn}
+              >
+                <Text style={confirmStyles.modalCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={confirmarAceptarAsignacion} style={confirmStyles.modalConfirmBtn}>
+                {isConfirmando ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={confirmStyles.modalConfirmText}>Sí, acepto</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Modal: rechazar asignación de voluntario (nuevo) ── */}
+      <Modal visible={showRechazarModal} transparent animationType="fade">
+        <View style={confirmStyles.modalOverlay}>
+          <View style={confirmStyles.modalCard}>
+            <Ionicons name="close-circle-outline" size={36} color={Brand.danger} style={{ marginBottom: 12 }} />
+            <Text style={confirmStyles.modalTitle}>¿Rechazar este caso?</Text>
+            <Text style={confirmStyles.modalText}>
+              El caso regresará a la asociación para que se lo ofrezca a otro voluntario.
+            </Text>
+            <View style={confirmStyles.modalActions}>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowRechazarModal(false);
+                  setReporteAConfirmar(null);
+                }}
+                style={confirmStyles.modalCancelBtn}
+              >
+                <Text style={confirmStyles.modalCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={confirmarRechazarAsignacion} style={confirmStyles.modalRejectBtn}>
+                {isConfirmando ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={confirmStyles.modalConfirmText}>Sí, rechazar</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <Toast translateY={translateY} toast={toast} />
     </View>
@@ -416,4 +578,66 @@ const styles = StyleSheet.create({
   // Grid de 2 columnas para las cards en desktop
   gridWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },
   gridItem: { width: '48%' },
+});
+
+// ── Estilos de la sección/tarjeta nueva "Esperando tu confirmación" ──
+const confirmStyles = StyleSheet.create({
+  card: {
+    flexDirection: 'row',
+    backgroundColor: Brand.cardWarm,
+    borderRadius: 18,
+    overflow: 'hidden',
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: Brand.primary,
+  },
+  photo: { width: 90, height: '100%', minHeight: 100 },
+  body: { flex: 1, padding: 12, gap: 6 },
+  title: { fontSize: 15, fontWeight: '800', color: Brand.textDark },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  metaText: { fontSize: 12, color: Brand.textMuted, flexShrink: 1 },
+  mapaBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  mapaBtnText: { fontSize: 12, color: Brand.accent, fontWeight: '700' },
+  actionsRow: { flexDirection: 'row', gap: 8, marginTop: 8 },
+  rechazarBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#E74C3C',
+    borderRadius: 12,
+    paddingVertical: 9,
+    alignItems: 'center',
+  },
+  rechazarBtnText: { color: '#E74C3C', fontWeight: '700', fontSize: 13 },
+  aceptarBtn: { flex: 1, backgroundColor: Brand.primary, borderRadius: 12, paddingVertical: 9, alignItems: 'center' },
+  aceptarBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modalCard: {
+    backgroundColor: Brand.cardWarm,
+    borderRadius: 24,
+    padding: 28,
+    width: '100%',
+    maxWidth: 380,
+    alignItems: 'center',
+  },
+  modalTitle: { fontSize: 18, fontWeight: '800', color: Brand.textDark, textAlign: 'center' },
+  modalText: {
+    fontSize: 13,
+    color: Brand.textMuted,
+    textAlign: 'center',
+    marginTop: 8,
+    marginBottom: 20,
+    lineHeight: 19,
+  },
+  modalActions: { flexDirection: 'row', gap: 12, width: '100%' },
+  modalCancelBtn: { flex: 1, paddingVertical: 14, borderRadius: 18, backgroundColor: '#E5E7EB', alignItems: 'center' },
+  modalCancelText: { color: Brand.textMuted, fontWeight: 'bold' },
+  modalConfirmBtn: { flex: 1, paddingVertical: 14, borderRadius: 18, backgroundColor: Brand.primary, alignItems: 'center' },
+  modalRejectBtn: { flex: 1, paddingVertical: 14, borderRadius: 18, backgroundColor: '#E74C3C', alignItems: 'center' },
+  modalConfirmText: { color: '#fff', fontWeight: 'bold' },
 });

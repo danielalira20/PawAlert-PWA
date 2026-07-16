@@ -36,6 +36,8 @@ export function useStaffReports(showToast: ShowToastFn) {
   const [reportesEnAccion, setReportesEnAccion] = useState<ReporteStaff[]>([]);
   const [reportesCompletados, setReportesCompletados] = useState<ReporteStaff[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [reportesEsperandoConfirmacion, setReportesEsperandoConfirmacion] = useState<ReporteStaff[]>([]);
+  const [isConfirmando, setIsConfirmando] = useState(false);
 
   const cargarReportesAsignados = useCallback(async () => {
     setIsLoading(true);
@@ -48,6 +50,7 @@ export function useStaffReports(showToast: ShowToastFn) {
       });
 
       if (res.data) {
+        setReportesEsperandoConfirmacion(res.data.esperando_confirmacion || []);
         setReportesPendientes(res.data.pendientes || []);
         setReportesEnAccion(res.data.en_accion || []);
         setReportesCompletados(res.data.completados || []);
@@ -209,6 +212,58 @@ export function useStaffReports(showToast: ShowToastFn) {
     [estadoEncontre, notasEncontre, fotoEncontre, token, showToast, subirFotoHito, cargarReportesAsignados, resetEncontre],
   );
 
+  const confirmarAsignacion = useCallback(
+  async (reporteId: string): Promise<boolean> => {
+    setIsConfirmando(true);
+    try {
+      await axios.post(
+        `${API_URL}/reports/${reporteId}/confirmar-asignacion`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      showToast({ type: 'success', title: '¡Vas en camino!', message: 'El caso ha sido confirmado.' });
+      await cargarReportesAsignados();
+      return true;
+    } catch (error: any) {
+      showToast({
+        type: 'error',
+        title: 'Error',
+        message: error?.response?.data?.detail || 'No pudimos confirmar la asignación.',
+      });
+      return false;
+    } finally {
+      setIsConfirmando(false);
+    }
+  },
+  [token, showToast, cargarReportesAsignados],
+);
+
+const rechazarAsignacionVoluntario = useCallback(
+  async (reporteId: string, motivo?: string): Promise<boolean> => {
+    setIsConfirmando(true);
+    try {
+      await axios.post(
+        `${API_URL}/reports/${reporteId}/rechazar-asignacion`,
+        { motivo: motivo || null },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      showToast({ type: 'info', title: 'Caso rechazado', message: 'El caso regresó a la asociación.' });
+      await cargarReportesAsignados();
+      return true;
+    } catch (error: any) {
+      showToast({
+        type: 'error',
+        title: 'Error',
+        message: error?.response?.data?.detail || 'No pudimos rechazar la asignación.',
+      });
+      return false;
+    } finally {
+      setIsConfirmando(false);
+    }
+  },
+  [token, showToast, cargarReportesAsignados],
+);
+
   // ── Hito: "Llegué al refugio" (cierre de caso) ───────────────────────
   const [estadoRefugio, setEstadoRefugio] = useState('');
   const [notasRefugio, setNotasRefugio] = useState('');
@@ -302,6 +357,11 @@ export function useStaffReports(showToast: ShowToastFn) {
     reportesCompletados,
     isLoading,
     cargarReportesAsignados,
+
+    reportesEsperandoConfirmacion,
+    confirmarAsignacion,
+    rechazarAsignacionVoluntario,
+    isConfirmando,
 
     // GPS
     ubicacionActual,
