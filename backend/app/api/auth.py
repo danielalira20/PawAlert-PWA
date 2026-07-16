@@ -1,7 +1,8 @@
+import re
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, EmailStr
 from app.db.supabase import supabase, supabase_admin, get_fresh_client
-from app.utils.validators import validar_telefono, validar_password
+from app.utils.validators import validar_telefono, validar_password, validar_email
 
 router = APIRouter()
 
@@ -22,6 +23,20 @@ class LoginRequest(BaseModel):
 
 class RefreshRequest(BaseModel):
     refresh_token: str
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class VerifyResetCodeRequest(BaseModel):
+    email: str
+    codigo: str
+
+
+class ResetPasswordRequest(BaseModel):
+    access_token: str
+    refresh_token: str
+    nueva_password: str
 
 
 @router.post("/register", status_code=201)
@@ -190,3 +205,68 @@ async def refresh_token(body: RefreshRequest):
         "refresh_token": response.session.refresh_token,
         "token_type": "bearer",
     }
+
+@router.post("/forgot-password", status_code=200)
+async def forgot_password(body: ForgotPasswordRequest):
+    """Envía un código de 6 dígitos por correo (vía plantilla 'Reset Password'
+    de Supabase Auth, configurada para mostrar {{ .Token }} en vez de un link).
+    Nunca revela si el correo existe o no en la respuesta, para evitar
+    enumeración de cuentas."""
+    if not validar_email(body.email):
+        raise HTTPException(status_code=422, detail="Ingresa un correo electrónico válido.")
+
+    try:
+        supabase.auth.reset_password_email(body.email)
+    except Exception:
+        # No revelamos si el correo existe o no — siempre el mismo mensaje
+        pass
+
+    return {"mensaje": "Si el correo existe, te enviamos un código de verificación."}
+
+@router.post("/verify-reset-code", status_code=200)
+async def verify_reset_code(body: VerifyResetCodeRequest):
+    if not body.codigo or len(body.codigo.strip()) != 8:
+        raise HTTPException(status_code=422, detail="El código debe tener 8 dígitos.")
+
+    try:
+        auth_response = get_fresh_client().auth.verify_otp({
+            "email": body.email,
+            "token": body.codigo.strip(),
+            "type": "recovery",
+        })
+    except Exception:
+        raise HTTPException(status_code=400, detail="Código inválido o expirado.")
+
+    return {
+        "access_token": auth_response.session.access_token,
+        "refresh_token": auth_response.session.refresh_token,
+        "mensaje": "Código verificado correctamente.",
+    }
+
+
+@router.post("/reset-password", status_code=200)
+async def reset_password(body: ResetPasswordRequest):
+    """Ya NO vuelve a verificar el código — usa la sesión temporal que
+    devolvió verify-reset-code. Los códigos OTP de Supabase son de un solo
+    uso; verificarlo dos veces con el mismo valor lo invalida.
+
+    Validación de fortaleza: mínimo 6 caracteres, al menos una mayúscula
+    y al menos un número — espejo de lo que ya valida el frontend."""
+    if len(body.nueva_password) < 6:
+        raise HTTPException(status_code=422, detail="La contraseña debe tener al menos 6 caracteres.")
+    if not re.search(r"[A-Z]", body.nueva_password):
+        raise HTTPException(status_code=422, detail="La contraseña debe incluir al menos una letra mayúscula.")
+    if not re.search(r"[0-9]", body.nueva_password):
+        raise HTTPException(status_code=422, detail="La contraseña debe incluir al menos un número.")
+
+    try:
+        temp_client = get_fresh_client()
+        temp_client.auth.set_session(body.access_token, body.refresh_token)
+        temp_client.auth.update_user({"password": body.nueva_password})
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail="Tu sesión de verificación expiró. Solicita un nuevo código.",
+        )
+
+    return {"mensaje": "Contraseña actualizada correctamente."}

@@ -14,6 +14,7 @@ import { BenefitsRow } from './BenefitsRow';
 import { useAuth } from '../../context/AuthContext';
 import { Toast, useToast } from '../Toast';
 import { consumeAuthIntent } from '../../utils/authIntent';
+import ForgotPasswordFlowScreen from '../../screens/ForgotPasswordFlowScreen';
 
 // ─── Tokens visuales (idénticos a LoginScreen) ───────────────────────────────
 const C = {
@@ -45,6 +46,7 @@ export function LoggedOutProfile() {
   const isDesktop = width >= DESKTOP_BREAKPOINT;
   const { login, register } = useAuth();
   const { toast, translateY, showToast } = useToast();
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
 
   // Oculta el ojo nativo del browser en campos type="password" (Chrome/Edge)
   useEffect(() => {
@@ -361,9 +363,21 @@ export function LoggedOutProfile() {
                 >
                   <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={C.muted} />
                 </TouchableOpacity>
+
+                 <TouchableOpacity onPress={() => setShowForgotPassword(true)} style={{ alignSelf: 'flex-end', marginTop: 8 }}>
+                  <Text style={{ color: '#EC802B', fontSize: 13, fontWeight: '600' }}>
+                    ¿Olvidaste tu contraseña?
+                  </Text>
+                </TouchableOpacity>
+
               </View>
               {errors.password ? <Text style={{ ...errorStyle, marginTop: 4 }}>{errors.password}</Text> : <View style={{ marginBottom: 28 }} />}
+                  
             </View>
+
+            
+
+            
           )}
 
           {/* ── FORMULARIO REGISTRO ── */}
@@ -484,6 +498,11 @@ export function LoggedOutProfile() {
                 : { elevation: 3 }),
             }}
           >
+
+                        <ForgotPasswordFlowScreen
+  visible={showForgotPassword}
+  onClose={() => setShowForgotPassword(false)}
+/>
             {isLoading
               ? <ActivityIndicator color={C.bg} />
               : <Text style={{ color: C.bg, fontFamily: F.bodySemiBold, fontSize: 16 }}>
@@ -583,6 +602,8 @@ export function LoggedOutProfile() {
       {contenido}
     </ScrollView>
   );
+
+  
 }
 
 const styles = StyleSheet.create({
@@ -652,3 +673,5 @@ const styles = StyleSheet.create({
   newHereText: { fontSize: 13, color: Brand.textMuted },
   newHereLink: { color: Brand.primary, fontWeight: '700' },
 });
+
+
