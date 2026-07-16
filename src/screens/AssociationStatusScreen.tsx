@@ -142,6 +142,7 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
 
   const [reporteSeleccionado, setReporteSeleccionado] = useState<ReporteAsignado | null>(null);
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
+  const [showFullImage, setShowFullImage] = useState(false);
 
   const [showAcceptModal, setShowAcceptModal] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
@@ -1369,6 +1370,55 @@ const confirmarReactivar = async () => {
           <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
             <View style={{ backgroundColor: COLORS.cardBg, borderRadius: 32, padding: 32, width: '100%', maxWidth: 500, maxHeight: '90%' }}>
               <ScrollView showsVerticalScrollIndicator={false}>
+   
+                {/* ─── Foto(s) del reporte ─── */}
+              {(() => {
+                const fotos = reporteSeleccionado.fotos_urls?.length
+                  ? reporteSeleccionado.fotos_urls
+                  : reporteSeleccionado.foto_url
+                  ? [reporteSeleccionado.foto_url]
+                  : [];
+                if (fotos.length === 0) return null;
+
+                if (fotos.length === 1) {
+                  return (
+                    <TouchableOpacity
+                      onPress={() => { setCurrentPhotoIndex(0); setShowFullImage(true); }}
+                      activeOpacity={0.85}
+                      style={{ alignItems: 'center', marginBottom: 20 }}
+                    >
+                      <Image
+                        source={{ uri: fotos[0] }}
+                        style={{ width: '100%', maxWidth: 320, height: 200, borderRadius: 18 }}
+                        resizeMode="cover"
+                      />
+                    </TouchableOpacity>
+                  );
+                }
+
+                return (
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    style={{ marginBottom: 20 }}
+                    contentContainerStyle={{ gap: 10, justifyContent: 'center', flexGrow: 1 }}
+                  >
+                    {fotos.map((url, idx) => (
+                      <TouchableOpacity
+                        key={idx}
+                        onPress={() => { setCurrentPhotoIndex(idx); setShowFullImage(true); }}
+                        activeOpacity={0.85}
+                      >
+                        <Image
+                          source={{ uri: url }}
+                          style={{ width: 220, height: 160, borderRadius: 18 }}
+                          resizeMode="cover"
+                        />
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                );
+              })()}
                 <Text style={{ fontSize: 28, fontWeight: '900', color: COLORS.textDark, textTransform: 'capitalize', marginBottom: 4 }}>{reporteSeleccionado.animal?.tipo_animal}</Text>
                 <Text style={{ fontSize: 16, color: getBadgeColor(reporteSeleccionado.animal?.condicion || ''), fontWeight: '800', textTransform: 'uppercase', marginBottom: 16 }}>{reporteSeleccionado.animal?.condicion}</Text>
 
@@ -1400,6 +1450,52 @@ const confirmarReactivar = async () => {
           </View>
         </Modal>
       )}
+
+      {showFullImage && reporteSeleccionado && (() => {
+        const fotos = reporteSeleccionado.fotos_urls?.length
+          ? reporteSeleccionado.fotos_urls
+          : reporteSeleccionado.foto_url
+          ? [reporteSeleccionado.foto_url]
+          : [];
+        return (
+          <Modal visible={true} transparent animationType="fade">
+            <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', justifyContent: 'center', alignItems: 'center' }}>
+              <TouchableOpacity
+                onPress={() => setShowFullImage(false)}
+                style={{ position: 'absolute', top: 50, right: 24, zIndex: 10, backgroundColor: 'rgba(255,255,255,0.2)', padding: 10, borderRadius: 24 }}
+              >
+                <Ionicons name="close" size={26} color={COLORS.white} />
+              </TouchableOpacity>
+
+              <Image
+                source={{ uri: fotos[currentPhotoIndex] }}
+                style={{ width: '92%', height: '75%' }}
+                resizeMode="contain"
+              />
+
+              {fotos.length > 1 && (
+                <View style={{ flexDirection: 'row', gap: 16, marginTop: 20, alignItems: 'center' }}>
+                  <TouchableOpacity
+                    onPress={() => setCurrentPhotoIndex((i) => (i === 0 ? fotos.length - 1 : i - 1))}
+                    style={{ padding: 10 }}
+                  >
+                    <Ionicons name="chevron-back" size={28} color={COLORS.white} />
+                  </TouchableOpacity>
+                  <Text style={{ color: COLORS.white, fontWeight: '700' }}>
+                    {currentPhotoIndex + 1} / {fotos.length}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => setCurrentPhotoIndex((i) => (i === fotos.length - 1 ? 0 : i + 1))}
+                    style={{ padding: 10 }}
+                  >
+                    <Ionicons name="chevron-forward" size={28} color={COLORS.white} />
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          </Modal>
+        );
+      })()}
 
       <Modal visible={showAcceptModal} transparent animationType="fade">
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
