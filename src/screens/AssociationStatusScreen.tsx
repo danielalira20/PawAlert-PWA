@@ -221,6 +221,7 @@ const [isSubmittingVoluntario, setIsSubmittingVoluntario] = useState(false);
     'No se pudo rescatar'
   ];
 
+
   // 2. Funciones de validación en tiempo real para el formulario de miembro
   const handleNombreRepChange = (val: string) => {
     setNombreRep(val);
@@ -735,6 +736,7 @@ const confirmarReactivar = async () => {
       default: return COLORS.textLight;
     }
   };
+  
 
   if (isLoadingInfo) {
     return (
@@ -754,7 +756,7 @@ const confirmarReactivar = async () => {
 
   const reportesFiltrados = reportes.filter((r) => {
     if (filtro === 'todas') return true;
-    if (filtro === 'pendientes') return r.estado_reporte === 'asignado' || r.estado_asignacion_clave === 'notificada';
+    if (filtro === 'pendientes') { return !['rechazada', 'cancelada'].includes(r.estado_asignacion_clave)&& (r.estado_reporte === 'asignado' || r.estado_asignacion_clave === 'notificada');}
     if (filtro === 'aceptadas') return ['en_camino', 'en_atencion'].includes(r.estado_reporte) || ['aceptada', 'completada'].includes(r.estado_asignacion_clave);
     if (filtro === 'rechazadas') return ['rechazada', 'cancelada'].includes(r.estado_asignacion_clave);
     return true;
@@ -1048,12 +1050,14 @@ const confirmarReactivar = async () => {
                     {reportesFiltrados.map((reporte) => {
                       const enProceso = ['en_camino', 'en_atencion'].includes(reporte.estado_reporte);
                       const yaRescatado = reporte.estado_reporte === 'rescatado';
+                      const fueRechazada = reporte.estado_asignacion_clave === 'rechazada';
                       return (
                         <View key={reporte.asignacion_id} style={{
                           flexGrow: 1,
                           flexBasis: 260,
                           maxWidth: 300,
                           backgroundColor: COLORS.cardBg, borderRadius: 20, overflow: 'hidden', marginBottom: 8,
+                          opacity: fueRechazada ? 0.65 : 1,
                           shadowColor: '#000',
                           shadowOffset: { width: 0, height: 4 },
                           shadowOpacity: 0.1,
@@ -1065,6 +1069,22 @@ const confirmarReactivar = async () => {
                             <View style={{ position: 'absolute', top: 12, right: 12, backgroundColor: getBadgeColor(reporte.animal?.condicion || ''), paddingHorizontal: 16, paddingVertical: 6, borderRadius: 16 }}>
                               <Text style={{ color: COLORS.white, fontWeight: '800', fontSize: 12, textTransform: 'capitalize' }}>{reporte.animal?.condicion || 'Desconocido'}</Text>
                             </View>
+                            {fueRechazada && (
+                              <View style={{
+                                position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                                backgroundColor: 'rgba(46,42,38,0.45)',
+                                justifyContent: 'center', alignItems: 'center',
+                              }}>
+                                <View style={{
+                                  backgroundColor: COLORS.danger, paddingHorizontal: 18, paddingVertical: 6,
+                                  borderRadius: 8, transform: [{ rotate: '-8deg' }],
+                                }}>
+                                  <Text style={{ color: COLORS.white, fontWeight: '900', fontSize: 14, letterSpacing: 1 }}>
+                                    RECHAZADO
+                                  </Text>
+                                </View>
+                              </View>
+                            )}
                             {enProceso && (
                               <View style={{ position: 'absolute', bottom: 0, width: '100%', backgroundColor: 'rgba(102, 188, 180, 0.9)', paddingVertical: 8, paddingHorizontal: 16 }}>
                                 <Text style={{ color: COLORS.white, fontSize: 12, fontWeight: '600' }}><Ionicons name="car" size={12} /> Rescatista en camino</Text>
@@ -1101,7 +1121,7 @@ const confirmarReactivar = async () => {
                             </TouchableOpacity>
 
                             <View style={{ marginTop: 14 }}>
-                              {reporte.estado_reporte === 'asignado' || reporte.estado_asignacion_clave === 'notificada' ? (
+                              {!['rechazada', 'cancelada', 'aceptada', 'completada'].includes(reporte.estado_asignacion_clave)&& (reporte.estado_reporte === 'asignado' || reporte.estado_asignacion_clave === 'notificada') ? (
                                 <View style={{ flexDirection: 'row', gap: 12 }}>
                                   <TouchableOpacity onPress={() => { setReporteAccionId(reporte.reporte_id); setShowAcceptModal(true); }} style={{ flex: 1, backgroundColor: COLORS.primary, paddingVertical: 14, borderRadius: 16, alignItems: 'center' }}>
                                     <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Aceptar</Text>
