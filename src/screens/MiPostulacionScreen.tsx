@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useVoluntarioStatus, VoluntarioStatusResponse } from '../hooks/useVoluntarioStatus';
 import { Brand } from '../constants/theme';
+import CapacidadesFormScreen from '../screens/CapacidadesFormScreen';
 
 const COLORS = {
   bgTeal: '#66BCB4',
@@ -37,9 +38,22 @@ interface Props {
 }
 
 export default function MiPostulacionScreen({ onClose }: Props) {
-  const { data, isLoading, error } = useVoluntarioStatus();
+  const { data, isLoading, error, refetch  } = useVoluntarioStatus();
   const { width: screenWidth } = useWindowDimensions();
   const isDesktop = screenWidth >= DESKTOP_BREAKPOINT;
+  const [showCapacidadesForm, setShowCapacidadesForm] = useState(false);
+
+  if (showCapacidadesForm) {
+  return (
+    <CapacidadesFormScreen
+      onClose={() => {
+        setShowCapacidadesForm(false);
+        refetch();
+      }}
+      fromProfile={true}
+    />
+  );
+}
 
   const getEstadoColor = (estado: string) => {
     switch (estado) {
@@ -106,6 +120,7 @@ export default function MiPostulacionScreen({ onClose }: Props) {
     }
   };
 
+ 
   if (isLoading) {
     return (
       <View style={styles.container}>
@@ -286,26 +301,22 @@ export default function MiPostulacionScreen({ onClose }: Props) {
             <TouchableOpacity
               style={[styles.actionButton, styles.completarButton]}
               activeOpacity={0.8}
-              onPress={() => {
-                if (onClose) onClose();
-                router.push('/(tabs)/profile');
-              }}
+              onPress={() => setShowCapacidadesForm(true)}
             >
-              <Ionicons name="pencil-outline" size={18} color={COLORS.bgWhite} />
-              <Text style={styles.actionButtonText}>Mis Capacidades</Text>
+              <Ionicons
+                name={voluntario.tiene_capacidades ? 'pencil-outline' : 'clipboard-outline'}
+                size={18}
+                color={COLORS.bgWhite}
+              />
+              <Text style={styles.actionButtonText}>
+                {voluntario.tiene_capacidades ? 'Ver / Editar mis capacidades' : 'Completa tus capacidades'}
+              </Text>
             </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.actionButton, styles.misReportesButton]}
-              activeOpacity={0.8}
-              onPress={() => {
-                if (onClose) onClose();
-                router.push('/(tabs)');
-              }}
-            >
-              <Ionicons name="clipboard-outline" size={18} color={COLORS.bgWhite} />
-              <Text style={styles.actionButtonText}>Mis Casos</Text>
-            </TouchableOpacity>
+            <Text style={styles.capacidadesHint}>
+              {voluntario.tiene_capacidades
+                ? 'Consulta o actualiza tu disponibilidad, especies que puedes atender y zona de cobertura.'
+                : 'Termina de configurar tu perfil para poder empezar a recibir casos.'}
+            </Text>
           </View>
         )}
 
@@ -346,6 +357,13 @@ export default function MiPostulacionScreen({ onClose }: Props) {
           contenido
         )}
       </ScrollView>
+
+      {showCapacidadesForm && (
+        <CapacidadesFormScreen
+          onClose={() => setShowCapacidadesForm(false)}
+          fromProfile={true}
+        />
+      )}
     </View>
   );
 }
@@ -612,5 +630,14 @@ const styles = StyleSheet.create({
     color: COLORS.bgWhite,
     fontSize: 14,
     fontWeight: '700',
+  },
+
+    capacidadesHint: {
+    fontSize: 12,
+    color: COLORS.textLight,
+    textAlign: 'center',
+    marginTop: -4,
+    marginBottom: 8,
+    lineHeight: 16,
   },
 });

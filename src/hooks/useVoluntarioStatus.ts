@@ -31,6 +31,7 @@ interface VoluntarioMeResponse {
   asociacion_id?: string;
   ultima_postulacion?: UltimaPostulacionRaw | null;
   intentos_previos?: IntentoPrevioRaw[];
+  tiene_capacidades?: boolean;
 }
 
 // ─── Forma que ya consume MiPostulacionScreen.tsx ──────────────────────────
@@ -40,6 +41,7 @@ export interface VoluntarioStatusResponse {
     tipo?: string;
     estado: string;
     asociacion_id?: string;
+    tiene_capacidades?: boolean;
   } | null;
   postulacion_actual?: {
     estado: string;
@@ -92,6 +94,7 @@ export function useVoluntarioStatus() {
           tipo: raw.ultima_postulacion?.tipo,
           estado: raw.estado!,
           asociacion_id: raw.asociacion_id,
+          tiene_capacidades: raw.tiene_capacidades,
         },
         postulacion_actual: raw.ultima_postulacion
           ? {
