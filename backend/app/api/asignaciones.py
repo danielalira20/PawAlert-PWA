@@ -133,11 +133,20 @@ def confirmar_asignacion(reporte_id: str, authorization: Optional[str] = Header(
     reporte = _reporte_o_404(reporte_id)
     _validar_es_el_voluntario_asignado(usuario, reporte)
 
-    supabase.table("reportes").update(
-        {"confirmacion_voluntario": "confirmado"}
-    ).eq("id", reporte_id).execute()
+    supabase.table("reportes").update({
+        "confirmacion_voluntario": "confirmado",
+        "estado_reporte": "en_camino",
+    }).eq("id", reporte_id).execute()
+
+    estado_aceptada = supabase.table("asignacion_estados").select("id").eq("clave", "aceptada").execute()
+    if estado_aceptada.data:
+        supabase.table("reporte_asignaciones").update({
+            "estado_id": estado_aceptada.data[0]["id"],
+            "estado": "aceptada",
+        }).eq("reporte_id", reporte_id).execute()
+
     _evento(reporte_id, usuario["id"], "voluntario_confirma",
-            "El voluntario confirmó el caso", None)
+            "El voluntario confirmó el caso y va en camino", None)
     return {"ok": True}
 
 
@@ -149,6 +158,10 @@ def rechazar_asignacion(
     reporte = _reporte_o_404(reporte_id)
     _validar_es_el_voluntario_asignado(usuario, reporte)
 
+    # No se toca estado_reporte: ya estaba en "asignado" (asignar_voluntario
+    # nunca lo mueve), así que sigue viéndose disponible para que la
+    # asociación proponga otro candidato — coherente con la transición
+    # permitida asignado -> pendiente/en_camino del resto del sistema.
     supabase.table("reportes").update({
         "staff_asignado_id": None,
         "confirmacion_voluntario": None,
@@ -157,7 +170,6 @@ def rechazar_asignacion(
             "El voluntario rechazó — se presenta el siguiente candidato",
             {"motivo": body.motivo} if body.motivo else None)
     return {"ok": True}
-
 
 # ---------------------------------------------------------------------------
 # Helpers

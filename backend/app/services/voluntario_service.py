@@ -497,7 +497,8 @@ async def obtener_reportes_voluntario(usuario_id: str) -> dict:
         "tipo_animal_catalogo(clave), condicion_catalogo(clave), tamanio_catalogo(clave), "
         "animal_fotos(foto_url, orden))"
     ).eq("staff_asignado_id", usuario_id).order("created_at", desc=True).execute()
- 
+    
+    esperando_confirmacion = []
     pendientes = []
     en_accion = []
     completados = []
@@ -535,9 +536,16 @@ async def obtener_reportes_voluntario(usuario_id: str) -> dict:
                 "descripcion": animal.get("descripcion"),
             }
         }
- 
+
         estado = r.get("estado_reporte")
-        if estado in ("pendiente", "asignado"):
+        # Un caso "asignado" con confirmacion_voluntario='esperando' significa
+        # que a ESTE voluntario se le propuso el caso y todavía no ha
+        # respondido — necesita su propio grupo con acción Aceptar/Rechazar,
+        # no mezclarse con "pendientes" (que ahí no puede hacer nada más que
+        # esperar a que se le asigne alguien).
+        if estado == "asignado" and r.get("confirmacion_voluntario") == "esperando":
+            esperando_confirmacion.append(reporte)
+        elif estado in ("pendiente", "asignado"):
             pendientes.append(reporte)
         elif estado in ("en_camino", "en_atencion"):
             en_accion.append(reporte)
@@ -545,10 +553,13 @@ async def obtener_reportes_voluntario(usuario_id: str) -> dict:
             completados.append(reporte)
         elif estado in ("sin_cobertura", "duplicado_vinculable", "duplicado_informativo", "cancelado_por_reportante"):
             historial.append(reporte)
- 
+
     return {
+        "esperando_confirmacion": esperando_confirmacion,
         "pendientes": pendientes,
         "en_accion": en_accion,
         "completados": completados,
         "historial": historial,
     }
+ 
+        
