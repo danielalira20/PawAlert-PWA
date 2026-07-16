@@ -1012,7 +1012,7 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                                   <TouchableOpacity onPress={() => { setReporteAccionId(reporte.reporte_id); setShowAcceptModal(true); }} style={{ flex: 1, backgroundColor: COLORS.primary, paddingVertical: 14, borderRadius: 16, alignItems: 'center' }}>
                                     <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Aceptar</Text>
                                   </TouchableOpacity>
-                                  <TouchableOpacity onPress={() => { setReporteAccionId(reporte.reporte_id); resetModales(); setShowRejectModal(true); }} style={{ flex: 1, backgroundColor: 'transparent', borderWidth: 1, borderColor: COLORS.danger, paddingVertical: 14, borderRadius: 16, alignItems: 'center' }}>
+                                  <TouchableOpacity onPress={() => { resetModales(); setReporteAccionId(reporte.reporte_id); setShowRejectModal(true); }} style={{ flex: 1, backgroundColor: 'transparent', borderWidth: 1, borderColor: COLORS.danger, paddingVertical: 14, borderRadius: 16, alignItems: 'center' }}>
                                     <Text style={{ color: COLORS.danger, fontWeight: 'bold' }}>Rechazar</Text>
                                   </TouchableOpacity>
                                 </View>
