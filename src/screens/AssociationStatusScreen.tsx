@@ -117,6 +117,10 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
   const [telefonoRep, setTelefonoRep] = useState('');
   const [emailRep, setEmailRep] = useState('');
   const [isAdding, setIsAdding] = useState(false);
+  const [esStaff, setEsStaff] = useState(false);
+
+  // 1. Agregar estado para los errores del formulario
+  const [errorsRep, setErrorsRep] = useState<Record<string, string>>({});
 
   const [reportes, setReportes] = useState<ReporteAsignado[]>([]);
   const [isLoadingReportes, setIsLoadingReportes] = useState(false);
@@ -137,7 +141,6 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
 
   const [staffList, setStaffList] = useState<any[]>([]);
   const [staffSeleccionado, setStaffSeleccionado] = useState<string | null>(null);
-  const [esStaff, setEsStaff] = useState(false);
 
   // ── Pestaña Voluntarios ──
   const [tabAsignacion, setTabAsignacion] = useState<TabAsignacion>('staff');
@@ -195,6 +198,44 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
     'No se pudo rescatar'
   ];
 
+  // 2. Funciones de validación en tiempo real para el formulario de miembro
+  const handleNombreRepChange = (val: string) => {
+    setNombreRep(val);
+    if (!val.trim()) setErrorsRep(prev => ({ ...prev, nombreRep: 'El nombre es obligatorio.' }));
+    else if (/\d/.test(val)) setErrorsRep(prev => ({ ...prev, nombreRep: 'El nombre no debe contener números.' }));
+    else setErrorsRep(prev => ({ ...prev, nombreRep: '' }));
+  };
+
+  const handleApellidoRepChange = (val: string) => {
+    setApellidoRep(val);
+    if (!val.trim()) setErrorsRep(prev => ({ ...prev, apellidoRep: 'El apellido es obligatorio.' }));
+    else if (/\d/.test(val)) setErrorsRep(prev => ({ ...prev, apellidoRep: 'El apellido no debe contener números.' }));
+    else setErrorsRep(prev => ({ ...prev, apellidoRep: '' }));
+  };
+
+  const handleTelefonoRepChange = (val: string) => {
+    setTelefonoRep(val);
+    if (!val.trim()) {
+      setErrorsRep(prev => ({ ...prev, telefonoRep: 'El teléfono es obligatorio.' }));
+    } else if (/[a-zA-Z]/.test(val)) {
+      setErrorsRep(prev => ({ ...prev, telefonoRep: 'El teléfono no puede contener letras.' }));
+    } else if (!/^\d{10}$/.test(val.trim())) {
+      setErrorsRep(prev => ({ ...prev, telefonoRep: 'Debe tener 10 dígitos numéricos.' }));
+    } else {
+      setErrorsRep(prev => ({ ...prev, telefonoRep: '' }));
+    }
+  };
+
+  const handleEmailRepChange = (val: string) => {
+    setEmailRep(val);
+    if (val.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val.trim())) {
+      setErrorsRep(prev => ({ ...prev, emailRep: 'Ingresa un correo válido.' }));
+    } else {
+      setErrorsRep(prev => ({ ...prev, emailRep: '' }));
+    }
+  };
+
+
   const cargarEstado = async () => {
     setIsLoadingInfo(true);
     try {
@@ -206,7 +247,6 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
       setIsLoadingInfo(false);
     }
   };
-
 
   const [sobreAbierto, setSobreAbierto] = useState(false);
   const notaAnim = useState(new Animated.Value(0))[0];
@@ -318,12 +358,6 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
     }
   }, [info]);
 
-  // Refresco automático cada minuto — así "Cerrar caso" aparece solo en
-  // cuanto el staff manda su hito final, sin que el representante tenga
-  // que cerrar y volver a abrir el panel para verlo. Se detiene solo si
-  // el panel se cierra (se desmonta) o la asociación deja de estar
-  // aprobada. Depende también de `token` para no quedarse con una
-  // versión vieja del token si se refresca mientras el panel sigue abierto.
   useEffect(() => {
     if (info?.estado !== 'aprobada') return;
     const interval = setInterval(() => {
@@ -401,10 +435,31 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
   };
 
   const handleAgregarRepresentante = async () => {
-    if (!nombreRep.trim() || !apellidoRep.trim() || !telefonoRep.trim()) {
-      showToast({ type: 'warning', title: 'Datos incompletos', message: 'Nombre, apellido y teléfono son obligatorios.' });
+    // Validaciones finales antes del envío
+    let hasErrors = false;
+    const newErrors: Record<string, string> = {};
+
+    if (!nombreRep.trim()) { newErrors.nombreRep = 'El nombre es obligatorio.'; hasErrors = true; }
+    else if (/\d/.test(nombreRep)) { newErrors.nombreRep = 'El nombre no debe contener números.'; hasErrors = true; }
+
+    if (!apellidoRep.trim()) { newErrors.apellidoRep = 'El apellido es obligatorio.'; hasErrors = true; }
+    else if (/\d/.test(apellidoRep)) { newErrors.apellidoRep = 'El apellido no debe contener números.'; hasErrors = true; }
+
+    if (!telefonoRep.trim()) { newErrors.telefonoRep = 'El teléfono es obligatorio.'; hasErrors = true; }
+    else if (/[a-zA-Z]/.test(telefonoRep)) { newErrors.telefonoRep = 'El teléfono no puede contener letras.'; hasErrors = true; }
+    else if (!/^\d{10}$/.test(telefonoRep.trim())) { newErrors.telefonoRep = 'Debe tener 10 dígitos numéricos.'; hasErrors = true; }
+
+    if (emailRep.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailRep.trim())) {
+      newErrors.emailRep = 'Ingresa un correo válido.';
+      hasErrors = true;
+    }
+
+    if (hasErrors) {
+      setErrorsRep(prev => ({ ...prev, ...newErrors }));
+      showToast({ type: 'warning', title: 'Datos inválidos', message: 'Revisa los campos marcados en rojo.' });
       return;
     }
+
     if (!info) return;
     setIsAdding(true);
     try {
@@ -418,6 +473,7 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
       );
       showToast({ type: 'success', title: '¡Listo!', message: 'Persona agregada correctamente.' });
       setNombreRep(''); setApellidoRep(''); setTelefonoRep(''); setEmailRep(''); setEsStaff(false);
+      setErrorsRep({}); // Limpiamos los errores si todo fue un éxito
     } catch (error: any) {
       showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'No pudimos agregar al representante.' });
     } finally {
@@ -629,9 +685,6 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
   });
 
   if (!standalone) {
-    // Modo embebido (justo tras registrar la asociación): solo el sobre/nota,
-    // sin header ni el resto del panel — el padre (AssociationFormScreen) ya
-    // pone el fondo con blur. Sin flex:1 para no estirarse a toda la pantalla.
     return (
       <View style={{ width: '100%', maxWidth: 400, alignSelf: 'center', position: 'relative' }}>
         {onClose && (
@@ -743,91 +796,15 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
         <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
 
           {info.estado === 'pendiente' && (
-            <Modal visible transparent animationType="fade">
-              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-                <BlurView
-                  intensity={30}
-                  tint="dark"
-                  style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(20,15,10,0.55)' }}
-                />
-                <View style={{ width: '100%', maxWidth: 400 }}>
-                  {!sobreAbierto ? (
-                    <TouchableOpacity activeOpacity={0.85} onPress={abrirSobre} style={{ alignItems: 'center' }}>
-                      <View style={{
-                        width: '100%', aspectRatio: 1.5,
-                        backgroundColor: '#D9BB93',
-                        borderRadius: 20,
-                        justifyContent: 'center', alignItems: 'center',
-                        ...(Platform.OS === 'web'
-                          ? { boxShadow: '0 10px 28px rgba(74,55,40,0.2)' } as any
-                          : { elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.2, shadowRadius: 16 }),
-                      }}>
-                        <View style={{
-                          position: 'absolute', top: 0, left: 0, right: 0,
-                          height: 0, width: 0,
-                          borderLeftWidth: 190, borderRightWidth: 190,
-                          borderTopWidth: 90,
-                          borderLeftColor: 'transparent', borderRightColor: 'transparent',
-                          borderTopColor: '#C7A87A',
-                        }} />
-                        <Ionicons name="mail-outline" size={40} color={COLORS.textDark} style={{ marginTop: 20 }} />
-                        <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginTop: 8 }}>
-                          Toca para abrir
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
-                  ) : (
-                    <Animated.View style={{
-                      opacity: notaAnim,
-                      transform: [
-                        { translateY: notaAnim.interpolate({ inputRange: [0, 1], outputRange: [30, 0] }) },
-                        { scale: notaAnim.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1] }) },
-                        { rotate: '-1deg' },
-                      ],
-                    }}>
-                      <View style={{
-                        backgroundColor: COLORS.cardBg,
-                        borderRadius: 28,
-                        padding: 28,
-                        paddingTop: 44,
-                        borderWidth: 1, borderColor: 'rgba(0,0,0,0.05)',
-                        ...(Platform.OS === 'web'
-                          ? { boxShadow: '0 12px 32px rgba(74,55,40,0.18)' } as any
-                          : { elevation: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.18, shadowRadius: 20 }),
-                      }}>
-                        <View style={{ position: 'absolute', top: -28, left: -14, transform: [{ rotate: '-6deg' }] }}>
-                          <Image source={require('../../assets/images/sobre-perrito.png')} style={{ width: 90, height: 90 }} resizeMode="contain" />
-                        </View>
-                        <View style={{ position: 'absolute', top: -24, right: -12, transform: [{ rotate: '7deg' }] }}>
-                          <Image source={require('../../assets/images/sobre-gatito.png')} style={{ width: 84, height: 84 }} resizeMode="contain" />
-                        </View>
-                        <View style={{ alignItems: 'center', marginBottom: 14, marginTop: 10 }}>
-                          <Ionicons name="mail-open-outline" size={30} color={COLORS.primary} style={{ marginBottom: 8 }} />
-                          <Text style={{ fontSize: 20, fontWeight: '900', color: COLORS.textDark, textAlign: 'center' }}>
-                            Tu solicitud está en revisión
-                          </Text>
-                        </View>
-                        <Text style={{ fontSize: 14, color: COLORS.textLight, lineHeight: 22, textAlign: 'center', marginBottom: 20 }}>
-                          Nuestro equipo está revisando los datos de{' '}
-                          <Text style={{ fontWeight: '700', color: COLORS.textDark }}>{info?.nombre}</Text>.
-                          Te avisaremos en cuanto sea aprobada.
-                        </Text>
-                        <View style={{ height: 1, backgroundColor: 'rgba(0,0,0,0.08)', marginBottom: 16 }} />
-                        <View style={{
-                          flexDirection: 'row', alignItems: 'flex-start',
-                          backgroundColor: 'rgba(102,188,180,0.14)', borderRadius: 16, padding: 14,
-                        }}>
-                          <Ionicons name="key-outline" size={18} color={COLORS.accent} style={{ marginRight: 10, marginTop: 1 }} />
-                          <Text style={{ flex: 1, fontSize: 13, color: COLORS.textDark, lineHeight: 19 }}>
-                            Ya puedes iniciar sesión con el correo y la contraseña que registraste. Ahí podrás ver el estado de tu solicitud en cualquier momento.
-                          </Text>
-                        </View>
-                      </View>
-                    </Animated.View>
-                  )}
-                </View>
+            <View style={{ backgroundColor: COLORS.cardBg, padding: 24, borderRadius: 24, ...SHADOW_SM, marginBottom: 24, borderLeftWidth: 6, borderLeftColor: COLORS.secondary }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+                <Ionicons name="time" size={24} color={COLORS.secondary} style={{ marginRight: 8 }} />
+                <Text style={{ fontSize: 18, fontWeight: 'bold', color: COLORS.textDark }}>Tu solicitud está en revisión</Text>
               </View>
-            </Modal>
+              <Text style={{ fontSize: 14, color: COLORS.textDark, lineHeight: 22 }}>
+                Nuestro equipo está revisando los datos de <Text style={{ fontWeight: '700' }}>{info?.nombre}</Text>. Te avisaremos en cuanto sea aprobada para que puedas comenzar a recibir y gestionar reportes.
+              </Text>
+            </View>
           )}
 
           {info.estado === 'rechazada' && (
@@ -1148,26 +1125,26 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
 
                 <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.textDark, marginBottom: 10 }}>Tipo de miembro</Text>
                 <View style={{ flexDirection: 'row', gap: 12, marginBottom: 20 }}>
-                  <TouchableOpacity onPress={() => setEsStaff(false)} style={{ flex: 1, paddingVertical: 12, borderRadius: 16, alignItems: 'center', backgroundColor: !esStaff ? COLORS.accent : 'transparent', borderWidth: !esStaff ? 0 : 1, borderColor: '#D1D5DB' }}>
+                  <TouchableOpacity onPress={() => { setEsStaff(false); setErrorsRep({}); }} style={{ flex: 1, paddingVertical: 12, borderRadius: 16, alignItems: 'center', backgroundColor: !esStaff ? COLORS.accent : 'transparent', borderWidth: !esStaff ? 0 : 1, borderColor: '#D1D5DB' }}>
                     <Text style={{ color: !esStaff ? COLORS.white : COLORS.textLight, fontWeight: '700' }}>Representante</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={() => setEsStaff(true)} style={{ flex: 1, paddingVertical: 12, borderRadius: 16, alignItems: 'center', backgroundColor: esStaff ? COLORS.secondary : 'transparent', borderWidth: esStaff ? 0 : 1, borderColor: '#D1D5DB' }}>
+                  <TouchableOpacity onPress={() => { setEsStaff(true); setErrorsRep({}); }} style={{ flex: 1, paddingVertical: 12, borderRadius: 16, alignItems: 'center', backgroundColor: esStaff ? COLORS.secondary : 'transparent', borderWidth: esStaff ? 0 : 1, borderColor: '#D1D5DB' }}>
                     <Text style={{ color: esStaff ? COLORS.textDark : COLORS.textLight, fontWeight: '700' }}>Staff</Text>
                   </TouchableOpacity>
                 </View>
 
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
                   <View style={{ flexGrow: 1, flexBasis: 200, minWidth: 180 }}>
-                    <Input label="Nombre(s)" placeholder="Ej. Ana" value={nombreRep} onChangeText={setNombreRep} />
+                    <Input label="Nombre(s)" placeholder="Ej. Ana" value={nombreRep} onChangeText={handleNombreRepChange} error={errorsRep.nombreRep} />
                   </View>
                   <View style={{ flexGrow: 1, flexBasis: 200, minWidth: 180 }}>
-                    <Input label="Apellido" placeholder="Ej. Pérez" value={apellidoRep} onChangeText={setApellidoRep} />
+                    <Input label="Apellido" placeholder="Ej. Pérez" value={apellidoRep} onChangeText={handleApellidoRepChange} error={errorsRep.apellidoRep} />
                   </View>
                   <View style={{ flexGrow: 1, flexBasis: 200, minWidth: 180 }}>
-                    <Input label="Teléfono" placeholder="Ej. 2221234567" value={telefonoRep} onChangeText={setTelefonoRep} keyboardType="numeric" maxLength={10} />
+                    <Input label="Teléfono" placeholder="Ej. 2221234567" value={telefonoRep} onChangeText={handleTelefonoRepChange} keyboardType="numeric" maxLength={10} error={errorsRep.telefonoRep} />
                   </View>
                   <View style={{ flexGrow: 1, flexBasis: 200, minWidth: 180 }}>
-                    <Input label="Correo (Opcional)" placeholder="Ej. correo@ejemplo.com" value={emailRep} onChangeText={setEmailRep} keyboardType="email-address" autoCapitalize="none" />
+                    <Input label="Correo (Opcional)" placeholder="Ej. correo@ejemplo.com" value={emailRep} onChangeText={handleEmailRepChange} keyboardType="email-address" autoCapitalize="none" error={errorsRep.emailRep} />
                   </View>
                 </View>
 

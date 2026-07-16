@@ -1115,8 +1115,8 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
 
       {/* Modal: Confirmar cierre */}
       <Modal visible={showCloseConfirm} transparent animationType="fade" onRequestClose={() => setShowCloseConfirm(false)}>
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 24 }}>
-          <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16, padding: 24 }}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+          <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16, padding: 24, width: '100%', maxWidth: 400 }}>
             <Text style={{ fontSize: 18, fontFamily: petzen.fonts.bold, color: '#2C3E50', textAlign: 'center', marginBottom: 12 }}>
               ¿Estás seguro de cerrarlo?
             </Text>
