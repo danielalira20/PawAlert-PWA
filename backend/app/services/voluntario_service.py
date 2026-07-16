@@ -490,7 +490,7 @@ async def obtener_reportes_voluntario(usuario_id: str) -> dict:
         )
  
     resultado = supabase.table("reportes").select(
-        "id, estado_reporte, municipio, colonia, calle, referencia, "
+        "id, estado_reporte, confirmacion_voluntario, municipio, colonia, calle, referencia, "
         "latitud, longitud, created_at, "
         "asociaciones(nombre, contacto_telefono), "
         "animal(id, sexo, edad_aproximada, descripcion, "
