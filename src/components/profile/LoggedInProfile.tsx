@@ -36,6 +36,7 @@ interface Props {
   onOpenPostulacion: () => void; // <-- NUEVA PROP
   onOpenCapacidades: () => void; // <-- NUEVA PROP
   onLogout: () => void;
+  capacidadesRefreshKey?: number;
 }
 
 export function LoggedInProfile({
@@ -47,6 +48,7 @@ export function LoggedInProfile({
   onOpenPostulacion, // <-- NUEVA PROP
   onOpenCapacidades, // <-- NUEVA PROP
   onLogout,
+  capacidadesRefreshKey,
 }: Props) {
   const { user , token } = useAuth();
   const { width } = useWindowDimensions();
@@ -84,7 +86,7 @@ useFocusEffect(
     return () => {
       cancelado = true;
     };
-  }, [esVoluntarioActivo, token])
+  }, [esVoluntarioActivo, token, capacidadesRefreshKey])
 );
 
   const { impacto, isLoading: isLoadingReportes } = useRecentReports();

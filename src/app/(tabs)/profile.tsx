@@ -37,6 +37,10 @@ export default function ProfileScreen() {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(24)).current;
 
+  /// estado para refrescar pantallas 
+  const [capacidadesRefreshKey, setCapacidadesRefreshKey] = useState(0);
+
+  
   useEffect(() => {
     Animated.parallel([
       Animated.timing(fadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
@@ -63,6 +67,7 @@ export default function ProfileScreen() {
 
   const initials = `${user.nombre?.[0] ?? ''}${user.apellido_paterno?.[0] ?? ''}`.toUpperCase();
 
+  
   return (
      <>
       <LoggedInProfile
@@ -75,6 +80,7 @@ export default function ProfileScreen() {
         onOpenPostulacion={() => setIsPostulacionVisible(true)}
         onOpenCapacidades={() => setIsCapacidadesVisible(true)}
         onLogout={logout}
+        capacidadesRefreshKey={capacidadesRefreshKey}
       />
       
       {isMisReportesVisible && (
@@ -109,7 +115,10 @@ export default function ProfileScreen() {
       <AppModal visible={isCapacidadesVisible} onClose={() => setIsCapacidadesVisible(false)}>
         {isCapacidadesVisible && (
           <CapacidadesFormScreen 
-            onClose={() => setIsCapacidadesVisible(false)} 
+            onClose={() => {
+              setIsCapacidadesVisible(false)
+              setCapacidadesRefreshKey((k) => k + 1);
+            }}
             fromProfile={true} 
           />
         )}

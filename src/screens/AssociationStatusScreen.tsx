@@ -1955,6 +1955,38 @@ const confirmarReactivar = async () => {
           </View>
         </View>
       </Modal>
+
+      {/* ── Modal: dar de baja voluntario ── */}
+      <Modal visible={showBajaModal} transparent animationType="fade">
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+          <View style={{ backgroundColor: COLORS.cardBg, borderRadius: 32, padding: 32, width: '100%', maxWidth: 400 }}>
+            <Text style={{ fontSize: 20, fontWeight: '900', color: COLORS.textDark, marginBottom: 12, textAlign: 'center' }}>
+              ¿Dar de baja a {voluntarioAccion?.nombre}?
+            </Text>
+            <Text style={{ fontSize: 14, color: COLORS.textLight, textAlign: 'center', marginBottom: 24, lineHeight: 20 }}>
+              Si tiene un caso activo asignado, se liberará automáticamente para que otro voluntario pueda tomarlo.
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <TouchableOpacity
+                onPress={() => { setShowBajaModal(false); setVoluntarioAccion(null); }}
+                style={{ flex: 1, paddingVertical: 14, alignItems: 'center', borderRadius: 18, backgroundColor: '#E5E7EB' }}
+              >
+                <Text style={{ color: COLORS.textLight, fontWeight: 'bold' }}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={confirmarDarDeBaja}
+                style={{ flex: 1, paddingVertical: 14, alignItems: 'center', borderRadius: 18, backgroundColor: COLORS.danger }}
+              >
+                {isSubmittingVoluntario ? (
+                  <ActivityIndicator color={COLORS.white} />
+                ) : (
+                  <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Dar de baja</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
