@@ -78,7 +78,7 @@ interface ReporteAsignado {
 }
 
 type FiltroAsignacion = 'todas' | 'pendientes' | 'aceptadas' | 'rechazadas';
-type ActiveTab = 'reportes' | 'postulaciones';
+type ActiveTab = 'reportes' | 'postulaciones' | 'voluntarios';
 
 type TabAsignacion = 'staff' | 'voluntarios';
 type EstadoVoluntarios = 'cargando' | 'candidatos' | 'esperando_confirmacion' | 'confirmado' | 'rechazado_mostrando_siguiente' | 'sin_candidatos';
@@ -100,6 +100,19 @@ interface Candidato {
   foto_url?: string | null;
   score: ScoreCandidato;
 }
+
+interface VoluntarioAsociacion {
+  voluntario_id: string;
+  estado: 'activo_nivel_1' | 'activo_nivel_2' | 'dado_de_baja';
+  nombre: string | null;
+  apellido_paterno: string | null;
+  telefono: string | null;
+  email: string | null;
+  especies: string[];
+  tamanios: string[];
+  ofrece_casa_hogar: boolean;
+}
+type FiltroVoluntarios = 'activos' | 'dados_de_baja';
 
 interface Props {
   onClose?: () => void;
@@ -173,6 +186,16 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
   const [timeoutEstable, setTimeoutEstable] = useState('60');
   const [isSavingConfig, setIsSavingConfig] = useState(false);
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
+
+  // ── Pestaña "Mis voluntarios" ──
+const [voluntarios, setVoluntarios] = useState<VoluntarioAsociacion[]>([]);
+const [isLoadingVoluntarios, setIsLoadingVoluntarios] = useState(false);
+const [filtroVoluntarios, setFiltroVoluntarios] = useState<FiltroVoluntarios>('activos');
+const [voluntarioAccion, setVoluntarioAccion] = useState<VoluntarioAsociacion | null>(null);
+const [showBajaModal, setShowBajaModal] = useState(false);
+const [showReactivarModal, setShowReactivarModal] = useState(false);
+const [isSubmittingVoluntario, setIsSubmittingVoluntario] = useState(false);
+
 
   const { width: screenWidth } = useWindowDimensions();
 
@@ -345,6 +368,58 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
     }
   };
 
+  const cargarVoluntarios = async () => {
+  setIsLoadingVoluntarios(true);
+  try {
+    const res = await axios.get(`${API_URL}/associations/me/voluntarios`, { headers: { Authorization: `Bearer ${token}` } });
+    setVoluntarios(res.data || []);
+  } catch (error: any) {
+    showToast({ type: 'error', title: 'Error', message: 'No pudimos cargar tus voluntarios.' });
+  } finally {
+    setIsLoadingVoluntarios(false);
+  }
+};
+
+const confirmarDarDeBaja = async () => {
+  if (!voluntarioAccion) return;
+  setIsSubmittingVoluntario(true);
+  try {
+    await axios.patch(
+      `${API_URL}/associations/me/voluntarios/${voluntarioAccion.voluntario_id}/baja`,
+      {},
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    showToast({ type: 'success', title: 'Voluntario dado de baja', message: 'Sus casos activos volvieron al pool de asignación.' });
+    await cargarVoluntarios();
+  } catch (error: any) {
+    showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'No pudimos dar de baja al voluntario.' });
+  } finally {
+    setShowBajaModal(false);
+    setVoluntarioAccion(null);
+    setIsSubmittingVoluntario(false);
+  }
+};
+
+const confirmarReactivar = async () => {
+  if (!voluntarioAccion) return;
+  setIsSubmittingVoluntario(true);
+  try {
+    await axios.patch(
+      `${API_URL}/associations/me/voluntarios/${voluntarioAccion.voluntario_id}/reactivar`,
+      {},
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    showToast({ type: 'success', title: 'Voluntario reactivado', message: 'Ya vuelve a aparecer en el ranking de candidatos.' });
+    await cargarVoluntarios();
+  } catch (error: any) {
+    showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'No pudimos reactivar al voluntario.' });
+  } finally {
+    setShowReactivarModal(false);
+    setVoluntarioAccion(null);
+    setIsSubmittingVoluntario(false);
+  }
+};
+
   useEffect(() => {
     if (!isLoading) cargarEstado();
   }, [isLoading]);
@@ -353,6 +428,7 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
     if (info?.estado === 'aprobada') {
       cargarReportes();
       cargarConfiguracionAsignacion();
+      cargarVoluntarios();
     } else if (info?.estado === 'rechazada') {
       verificarApelacion();
     }
@@ -905,6 +981,7 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                   onPress={() => setActiveTab('postulaciones')}
                   style={{
                     paddingBottom: 12,
+                      marginRight: 24,  
                     borderBottomWidth: activeTab === 'postulaciones' ? 3 : 0,
                     borderBottomColor: COLORS.primary
                   }}
@@ -917,12 +994,29 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                     Postulaciones
                   </Text>
                 </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => setActiveTab('voluntarios')}
+                  style={{
+                    paddingBottom: 12,
+                    borderBottomWidth: activeTab === 'voluntarios' ? 3 : 0,
+                    borderBottomColor: COLORS.primary
+                  }}
+                >
+                  <Text style={{
+                    fontSize: 16,
+                    fontWeight: activeTab === 'voluntarios' ? '800' : '600',
+                    color: activeTab === 'voluntarios' ? COLORS.primary : COLORS.textLight
+                  }}>
+                    Mis voluntarios
+                  </Text>
+                </TouchableOpacity>
               </View>
 
               {/* Título de sección */}
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                 <Text style={{ fontSize: 22, fontWeight: 'bold', color: COLORS.textDark }}>
-                  {activeTab === 'reportes' ? 'Reportes asignados' : 'Postulaciones de voluntarios'}
+                  {activeTab === 'reportes' ? 'Reportes asignados' : activeTab === 'postulaciones' ? 'Postulaciones de voluntarios' : 'Mis voluntarios'}
                 </Text>
                 {activeTab === 'reportes' && nuevosReportes > 0 && (
                   <View style={{ backgroundColor: COLORS.danger, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
@@ -1050,9 +1144,102 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                     })}
                   </View>
                 </>
-              ) : (
-                <PostulacionesPanel visible={activeTab === 'postulaciones'} />
-              )}
+
+                ) : activeTab === 'postulaciones' ? (
+                  <PostulacionesPanel visible={activeTab === 'postulaciones'} />
+                ) : (
+                  <>
+                    <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
+                      {([
+                        { key: 'activos', label: 'Activos' },
+                        { key: 'dados_de_baja', label: 'Dados de baja' },
+                      ] as { key: FiltroVoluntarios; label: string }[]).map((f) => (
+                        <TouchableOpacity
+                          key={f.key} onPress={() => setFiltroVoluntarios(f.key)}
+                          style={{
+                            paddingHorizontal: 20, paddingVertical: 10, borderRadius: 24,
+                            backgroundColor: filtroVoluntarios === f.key ? COLORS.primary : COLORS.cardBg,
+                            borderWidth: filtroVoluntarios === f.key ? 0 : 1, borderColor: 'rgba(0,0,0,0.05)',
+                          }}
+                        >
+                          <Text style={{ color: filtroVoluntarios === f.key ? COLORS.white : COLORS.textDark, fontWeight: '700' }}>{f.label}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+
+                    {isLoadingVoluntarios ? (
+                      <ActivityIndicator color={COLORS.primary} style={{ marginTop: 40 }} />
+                    ) : voluntarios.filter((v) =>
+                        filtroVoluntarios === 'activos'
+                          ? ['activo_nivel_1', 'activo_nivel_2'].includes(v.estado)
+                          : v.estado === 'dado_de_baja'
+                      ).length === 0 ? (
+                      <View style={{ alignItems: 'center', paddingVertical: 40 }}>
+                        <Text style={{ fontSize: 40, marginBottom: 12 }}>🐾</Text>
+                        <Text style={{ fontSize: 15, color: COLORS.textLight, textAlign: 'center' }}>
+                          {filtroVoluntarios === 'activos' ? 'No tienes voluntarios activos todavía.' : 'No hay voluntarios dados de baja.'}
+                        </Text>
+                      </View>
+                    ) : (
+                      <View style={{ gap: 12 }}>
+                        {voluntarios.filter((v) =>
+                          filtroVoluntarios === 'activos'
+                            ? ['activo_nivel_1', 'activo_nivel_2'].includes(v.estado)
+                            : v.estado === 'dado_de_baja'
+                        ).map((v) => {
+                          const nivel = v.estado === 'activo_nivel_2' ? 'Nivel 2 — casa hogar' : v.estado === 'activo_nivel_1' ? 'Nivel 1 — campo' : null;
+                          return (
+                            <View key={v.voluntario_id} style={{ backgroundColor: COLORS.cardBg, borderRadius: 20, padding: 16, ...SHADOW_SM }}>
+                              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <View style={{ flex: 1 }}>
+                                  <Text style={{ fontSize: 16, fontWeight: '800', color: COLORS.textDark }}>
+                                    {v.nombre} {v.apellido_paterno}
+                                  </Text>
+                                  {v.telefono && (
+                                    <Text style={{ fontSize: 12, color: COLORS.textLight, marginTop: 2 }}>📞 {v.telefono}</Text>
+                                  )}
+                                  {nivel && (
+                                    <View style={{ backgroundColor: 'rgba(102,188,180,0.15)', alignSelf: 'flex-start', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, marginTop: 6 }}>
+                                      <Text style={{ fontSize: 10, fontWeight: '700', color: COLORS.accent }}>{nivel}</Text>
+                                    </View>
+                                  )}
+                                  {v.especies.length > 0 && (
+                                    <Text style={{ fontSize: 12, color: COLORS.textLight, marginTop: 6, textTransform: 'capitalize' }}>
+                                      Atiende: {v.especies.join(', ')}
+                                    </Text>
+                                  )}
+                                  {v.estado === 'dado_de_baja' && (
+                                    <View style={{ backgroundColor: 'rgba(231,76,60,0.12)', alignSelf: 'flex-start', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, marginTop: 6 }}>
+                                      <Text style={{ fontSize: 10, fontWeight: '700', color: COLORS.danger }}>Dado de baja</Text>
+                                    </View>
+                                  )}
+                                </View>
+
+                                {v.estado === 'dado_de_baja' ? (
+                                  <TouchableOpacity
+                                    onPress={() => { setVoluntarioAccion(v); setShowReactivarModal(true); }}
+                                    style={{ backgroundColor: COLORS.accent, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 14 }}
+                                  >
+                                    <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 13 }}>Reactivar</Text>
+                                  </TouchableOpacity>
+                                ) : (
+                                  <TouchableOpacity
+                                    onPress={() => { setVoluntarioAccion(v); setShowBajaModal(true); }}
+                                    style={{ backgroundColor: 'transparent', borderWidth: 1, borderColor: COLORS.danger, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 14 }}
+                                  >
+                                    <Text style={{ color: COLORS.danger, fontWeight: '700', fontSize: 13 }}>Dar de baja</Text>
+                                  </TouchableOpacity>
+                                )}
+                              </View>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    )}
+                  </>
+                )}
+
+              
 
               <View style={{ backgroundColor: COLORS.cardBg, padding: 28, borderRadius: 32, marginTop: 32, ...SHADOW_MD }}>
                 <Text style={{ fontSize: 22, fontWeight: '800', color: COLORS.textDark, marginBottom: 6 }}>Modo de asignación de casos</Text>
@@ -1626,6 +1813,32 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
         </View>
       </Modal>
 
+      {/* ── Modal: reactivar voluntario ── */}
+      <Modal visible={showReactivarModal} transparent animationType="fade">
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+          <View style={{ backgroundColor: COLORS.cardBg, borderRadius: 28, padding: 28, width: '100%', maxWidth: 400 }}>
+            <View style={{ alignItems: 'center', marginBottom: 16 }}>
+              <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(102,188,180,0.15)', justifyContent: 'center', alignItems: 'center', marginBottom: 12 }}>
+                <Ionicons name="person-add" size={32} color={COLORS.accent} />
+              </View>
+              <Text style={{ fontSize: 18, fontWeight: '800', color: COLORS.textDark, textAlign: 'center' }}>
+                ¿Reactivar a {voluntarioAccion?.nombre}?
+              </Text>
+              <Text style={{ fontSize: 13, color: COLORS.textLight, textAlign: 'center', marginTop: 8, lineHeight: 19 }}>
+                Volverá a aparecer en el ranking de candidatos con el nivel que tenía antes de la baja.
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 12, marginTop: 8 }}>
+              <TouchableOpacity onPress={() => { setShowReactivarModal(false); setVoluntarioAccion(null); }} style={{ flex: 1, paddingVertical: 14, alignItems: 'center', borderRadius: 18, backgroundColor: '#E5E7EB' }}>
+                <Text style={{ color: COLORS.textLight, fontWeight: 'bold' }}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={confirmarReactivar} style={{ flex: 1, paddingVertical: 14, alignItems: 'center', borderRadius: 18, backgroundColor: COLORS.accent }}>
+                {isSubmittingVoluntario ? <ActivityIndicator color={COLORS.white} /> : <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Reactivar</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
