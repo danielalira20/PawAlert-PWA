@@ -138,7 +138,7 @@ async def crear_reporte(
     asociacion = None
     asociacion_id = None
     if latitud and longitud:
-        asociacion = asignar_asociacion(latitud, longitud)
+        asociacion = asignar_asociacion(latitud, longitud, tipo_animal=tipo_animal) 
         if asociacion:
             asociacion_id = asociacion["id"]
 
