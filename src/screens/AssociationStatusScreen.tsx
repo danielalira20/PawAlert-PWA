@@ -191,13 +191,16 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
 
   // ── Pestaña "Mis voluntarios" ──
-const [voluntarios, setVoluntarios] = useState<VoluntarioAsociacion[]>([]);
-const [isLoadingVoluntarios, setIsLoadingVoluntarios] = useState(false);
-const [filtroVoluntarios, setFiltroVoluntarios] = useState<FiltroVoluntarios>('activos');
-const [voluntarioAccion, setVoluntarioAccion] = useState<VoluntarioAsociacion | null>(null);
-const [showBajaModal, setShowBajaModal] = useState(false);
-const [showReactivarModal, setShowReactivarModal] = useState(false);
-const [isSubmittingVoluntario, setIsSubmittingVoluntario] = useState(false);
+  const [voluntarios, setVoluntarios] = useState<VoluntarioAsociacion[]>([]);
+  const [isLoadingVoluntarios, setIsLoadingVoluntarios] = useState(false);
+  const [filtroVoluntarios, setFiltroVoluntarios] = useState<FiltroVoluntarios>('activos');
+  const [voluntarioAccion, setVoluntarioAccion] = useState<VoluntarioAsociacion | null>(null);
+  const [showBajaModal, setShowBajaModal] = useState(false);
+  const [showReactivarModal, setShowReactivarModal] = useState(false);
+  const [isSubmittingVoluntario, setIsSubmittingVoluntario] = useState(false);
+
+  ///subfiltros de aceptados
+  const [subFiltroAceptadas, setSubFiltroAceptadas] = useState<'todas' | 'en_proceso' | 'por_cerrar' | 'completados'>('todas');
 
 
   const { width: screenWidth } = useWindowDimensions();
@@ -586,6 +589,15 @@ const confirmarReactivar = async () => {
     try {
       const res = await axios.get(`${API_URL}/associations/me/staff`, { headers: { Authorization: `Bearer ${token}` } });
       setStaffList(res.data);
+
+      setTabAsignacion('staff');
+      setCandidatosList([]);
+      setEstadoVoluntarios('cargando');
+      setVoluntarioEsperando(null);
+      setCandidatoAConfirmar(null);
+      setShowConfirmVoluntarioModal(false);
+      if (pollingRef) { clearInterval(pollingRef); setPollingRef(null); }
+
       setShowAcceptModal(false);
       setShowStaffModal(true);
     } catch (error: any) {
@@ -759,8 +771,20 @@ const confirmarReactivar = async () => {
 
   const reportesFiltrados = reportes.filter((r) => {
     if (filtro === 'todas') return true;
-    if (filtro === 'pendientes') { return r.estado_reporte === 'asignado' && !r.confirmacion_voluntario; }
-    if (filtro === 'aceptadas') return ['en_camino', 'en_atencion'].includes(r.estado_reporte) || (r.estado_reporte === 'asignado' && r.confirmacion_voluntario === 'esperando') || r.estado_asignacion_clave === 'completada';
+    if (filtro === 'pendientes') {if (['rechazada', 'cancelada'].includes(r.estado_asignacion_clave)) return false; return r.estado_reporte === 'asignado' && !r.confirmacion_voluntario;}
+    if (filtro === 'aceptadas') {
+        const esAceptado = ['en_camino', 'en_atencion'].includes(r.estado_reporte)
+          || (r.estado_reporte === 'asignado' && r.confirmacion_voluntario === 'esperando')
+          || r.estado_asignacion_clave === 'completada';
+        if (!esAceptado) return false;
+
+        if (subFiltroAceptadas === 'todas') return true;
+        if (subFiltroAceptadas === 'en_proceso') {
+          return r.confirmacion_voluntario === 'esperando' || ['en_camino', 'en_atencion'].includes(r.estado_reporte);
+        }
+        if (subFiltroAceptadas === 'por_cerrar') return r.estado_reporte === 'rescatado';
+        if (subFiltroAceptadas === 'completados') return r.estado_asignacion_clave === 'completada';
+      }
     if (filtro === 'rechazadas') return ['rechazada', 'cancelada'].includes(r.estado_asignacion_clave);
     return true;
   });
@@ -1049,12 +1073,49 @@ const confirmarReactivar = async () => {
                     </View>
                   </ScrollView>
 
+                  {filtro === 'aceptadas' && (
+                      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+                        {([
+                          { key: 'todas', label: 'Todas' },
+                          { key: 'en_proceso', label: 'En proceso' },
+                          { key: 'por_cerrar', label: 'Por cerrar' },
+                          { key: 'completados', label: 'Completados' },
+                        ] as const).map((s) => (
+                          <TouchableOpacity
+                            key={s.key}
+                            onPress={() => setSubFiltroAceptadas(s.key)}
+                            style={{
+                              paddingHorizontal: 14, paddingVertical: 8, borderRadius: 16,
+                              backgroundColor: subFiltroAceptadas === s.key ? COLORS.secondary : COLORS.white,
+                              borderWidth: subFiltroAceptadas === s.key ? 0 : 1, borderColor: 'rgba(0,0,0,0.08)',
+                            }}
+                          >
+                            <Text style={{
+                              color: subFiltroAceptadas === s.key ? COLORS.white : COLORS.textDark,
+                              fontWeight: '700', fontSize: 12,
+                            }}>
+                              {s.label}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    )}
+
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 16, justifyContent: 'center' }}>
-                    {reportesFiltrados.map((reporte) => {
+                      {reportesFiltrados.length === 0 ? (
+                        <View style={{ width: '100%', alignItems: 'center', paddingVertical: 40 }}>
+                          <Ionicons name="file-tray-outline" size={40} color={COLORS.textLight} style={{ marginBottom: 12, opacity: 0.6 }} />
+                          <Text style={{ color: COLORS.textLight, fontSize: 14, fontWeight: '600', textAlign: 'center' }}>
+                            No hay casos en esta categoría por ahora.
+                          </Text>
+                        </View>
+                      ) : (
+                    reportesFiltrados.map((reporte) => {
                       const enProceso = ['en_camino', 'en_atencion'].includes(reporte.estado_reporte);
                       const esperandoConfirmacion = reporte.confirmacion_voluntario === 'esperando';
                       const yaRescatado = reporte.estado_reporte === 'rescatado';
                       const fueRechazada = reporte.estado_asignacion_clave === 'rechazada';
+                      const completado = reporte.estado_asignacion_clave === 'completada';
                       return (
                         <View key={reporte.asignacion_id} style={{
                           flexGrow: 1,
@@ -1093,11 +1154,19 @@ const confirmarReactivar = async () => {
                               <View style={{ position: 'absolute', bottom: 0, width: '100%', backgroundColor: 'rgba(230, 168, 20, 0.9)', paddingVertical: 8, paddingHorizontal: 16 }}>
                                 <Text style={{ color: COLORS.white, fontSize: 12, fontWeight: '600' }}><Ionicons name="time" size={12} /> Esperando confirmación del rescatista</Text>
                               </View>
-                            ) : enProceso && (
+                            ) : enProceso ? (
                               <View style={{ position: 'absolute', bottom: 0, width: '100%', backgroundColor: 'rgba(102, 188, 180, 0.9)', paddingVertical: 8, paddingHorizontal: 16 }}>
                                 <Text style={{ color: COLORS.white, fontSize: 12, fontWeight: '600' }}><Ionicons name="car" size={12} /> Rescatista en camino</Text>
                               </View>
-                            )}
+                            ) : yaRescatado ? (
+                              <View style={{ position: 'absolute', bottom: 0, width: '100%', backgroundColor: 'rgba(236, 128, 43, 0.92)', paddingVertical: 8, paddingHorizontal: 16 }}>
+                                <Text style={{ color: COLORS.white, fontSize: 12, fontWeight: '700' }}><Ionicons name="alert-circle" size={12} /> Llegó al refugio — cierra el caso</Text>
+                              </View>
+                            ) : completado ? (
+                              <View style={{ position: 'absolute', bottom: 0, width: '100%', backgroundColor: 'rgba(107, 114, 128, 0.9)', paddingVertical: 8, paddingHorizontal: 16 }}>
+                                <Text style={{ color: COLORS.white, fontSize: 12, fontWeight: '600' }}><Ionicons name="checkmark-done" size={12} /> Caso completado</Text>
+                              </View>
+                            ) : null}
                           </View>
 
                           <View style={{ padding: 15 }}>
@@ -1178,7 +1247,8 @@ const confirmarReactivar = async () => {
                           </View>
                         </View>
                       );
-                    })}
+                    })
+                  )}
                   </View>
                 </>
 
