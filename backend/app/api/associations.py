@@ -388,12 +388,34 @@ async def get_reportes_asignados(authorization: str = Header(None)):
     resultado = supabase.table("reporte_asignaciones").select(
     "id, assigned_at, accepted_at, closed_at, notas, "
     "asignacion_estados!reporte_asignaciones_estado_id_fkey(clave, descripcion), "
-    "reportes(id, estado_reporte, municipio, colonia, calle, latitud, longitud, created_at, "  # ← agregar latitud, longitud
+    "reportes(id, estado_reporte, confirmacion_voluntario, municipio, colonia, calle, latitud, longitud, created_at, "  # ← agregar latitud, longitud
     "animal(id, sexo, edad_aproximada, descripcion, "
     "tipo_animal_catalogo(clave), condicion_catalogo(clave), tamanio_catalogo(clave), "
     "animal_fotos(foto_url, orden)))"
     ).eq("asociacion_id", usuario["asociacion_id"]).order("assigned_at", desc=True).execute()
-    
+
+    reporte_ids_sin_asignar = [
+        r["reportes"]["id"] for r in resultado.data
+        if r.get("reportes")
+        and r["reportes"].get("estado_reporte") == "asignado"
+        and r["reportes"].get("confirmacion_voluntario") is None
+    ]
+    ultimos_rechazos = {}
+    if reporte_ids_sin_asignar:
+        eventos = supabase.table("historial_reporte").select(
+            "reporte_id, created_at, usuarios(nombre, apellido_paterno)"
+        ).in_("reporte_id", reporte_ids_sin_asignar).eq(
+            "tipo_evento", "voluntario_rechaza"
+        ).order("created_at", desc=True).execute()
+        for ev in eventos.data or []:
+            rid = ev["reporte_id"]
+            if rid not in ultimos_rechazos:
+                vol = ev.get("usuarios") or {}
+                ultimos_rechazos[rid] = {
+                    "nombre_voluntario": f"{vol.get('nombre', '')} {vol.get('apellido_paterno', '')}".strip(),
+                    "creado_at": str(ev["created_at"]),
+                }
+
     reportes = []
     for r in resultado.data:
         rep = r.get("reportes")
@@ -422,6 +444,8 @@ async def get_reportes_asignados(authorization: str = Header(None)):
             "reporte_id": rep["id"],
             "estado_asignacion_clave": estado_asignacion_clave,
             "estado_reporte": rep.get("estado_reporte"),
+            "confirmacion_voluntario": rep.get("confirmacion_voluntario"),
+            "ultimo_rechazo": ultimos_rechazos.get(rep["id"]),
             "municipio": rep.get("municipio"),
             "colonia": rep.get("colonia"),
             "calle": rep.get("calle"),

@@ -1,7 +1,19 @@
 from datetime import datetime, timezone
+from math import radians, sin, cos, asin, sqrt
 from fastapi import HTTPException
 from app.db.supabase import supabase
 from app.services.report_service import obtener_id_catalogo, registrar_historial
+
+
+def _distancia_km(lat1, lon1, lat2, lon2) -> float | None:
+    """Haversine simple, solo informativo (no participa en el ranking de matching)."""
+    if None in (lat1, lon1, lat2, lon2):
+        return None
+    lat1, lon1, lat2, lon2 = map(radians, (lat1, lon1, lat2, lon2))
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
+    return round(2 * 6371 * asin(sqrt(a)), 1)
 
 
 # ---------------------------------------------------------------------------
@@ -480,7 +492,7 @@ async def obtener_reportes_voluntario(usuario_id: str) -> dict:
     voluntario = supabase.table("voluntarios").select(
         "id, estado"
     ).eq("usuario_id", usuario_id).execute()
- 
+
     if not voluntario.data or voluntario.data[0]["estado"] not in (
         "activo_nivel_1", "activo_nivel_2"
     ):
@@ -488,7 +500,13 @@ async def obtener_reportes_voluntario(usuario_id: str) -> dict:
             status_code=403,
             detail="Solo un voluntario activo puede ver sus casos asignados"
         )
- 
+
+    capacidades = supabase.table("capacidades").select("latitud, longitud").eq(
+        "voluntario_id", voluntario.data[0]["id"]
+    ).execute()
+    lat_voluntario = capacidades.data[0]["latitud"] if capacidades.data else None
+    lon_voluntario = capacidades.data[0]["longitud"] if capacidades.data else None
+
     resultado = supabase.table("reportes").select(
         "id, estado_reporte, confirmacion_voluntario, municipio, colonia, calle, referencia, "
         "latitud, longitud, created_at, "
@@ -544,6 +562,9 @@ async def obtener_reportes_voluntario(usuario_id: str) -> dict:
         # no mezclarse con "pendientes" (que ahí no puede hacer nada más que
         # esperar a que se le asigne alguien).
         if estado == "asignado" and r.get("confirmacion_voluntario") == "esperando":
+            reporte["distancia_km"] = _distancia_km(
+                lat_voluntario, lon_voluntario, r.get("latitud"), r.get("longitud")
+            )
             esperando_confirmacion.append(reporte)
         elif estado in ("pendiente", "asignado"):
             pendientes.append(reporte)

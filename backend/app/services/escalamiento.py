@@ -49,6 +49,13 @@ def evaluar_escalamientos() -> dict:
             "confirmacion_voluntario": "esperando",
         }).eq("id", rep["id"]).execute()
 
+        estado_aceptada = supabase.table("asignacion_estados").select("id").eq("clave", "aceptada").execute()
+        if estado_aceptada.data:
+            supabase.table("reporte_asignaciones").update({
+                "estado_id": estado_aceptada.data[0]["id"],
+                "estado": "aceptada",
+            }).eq("reporte_id", rep["id"]).execute()
+
         _evento(
             rep["id"], top["usuario_id"], "asignado_automatico_timeout",
             f"Asignado automáticamente a {top['nombre']} por falta de respuesta "

@@ -116,6 +116,13 @@ def asignar_voluntario(
         "confirmacion_voluntario": "esperando",
     }).eq("id", reporte_id).execute()
 
+    estado_aceptada = supabase.table("asignacion_estados").select("id").eq("clave", "aceptada").execute()
+    if estado_aceptada.data:
+        supabase.table("reporte_asignaciones").update({
+            "estado_id": estado_aceptada.data[0]["id"],
+            "estado": "aceptada",
+        }).eq("reporte_id", reporte_id).execute()
+
     nombre = f"{vol['usuarios']['nombre']} {vol['usuarios']['apellido_paterno']}"
     tipo_evento = "reasignado" if habia_asignado else "asignado_manual"
     descripcion = (
@@ -166,6 +173,14 @@ def rechazar_asignacion(
         "staff_asignado_id": None,
         "confirmacion_voluntario": None,
     }).eq("id", reporte_id).execute()
+
+    estado_notificada = supabase.table("asignacion_estados").select("id").eq("clave", "notificada").execute()
+    if estado_notificada.data:
+        supabase.table("reporte_asignaciones").update({
+            "estado_id": estado_notificada.data[0]["id"],
+            "estado": "notificada",
+        }).eq("reporte_id", reporte_id).execute()
+
     _evento(reporte_id, usuario["id"], "voluntario_rechaza",
             "El voluntario rechazó — se presenta el siguiente candidato",
             {"motivo": body.motivo} if body.motivo else None)

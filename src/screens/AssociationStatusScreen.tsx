@@ -59,6 +59,8 @@ interface ReporteAsignado {
   reporte_id: string;
   estado_asignacion_clave: string;
   estado_reporte: string;
+  confirmacion_voluntario?: string | null;
+  ultimo_rechazo?: { nombre_voluntario: string; creado_at: string } | null;
   municipio: string | null;
   colonia: string | null;
   calle: string | null;
@@ -757,8 +759,8 @@ const confirmarReactivar = async () => {
 
   const reportesFiltrados = reportes.filter((r) => {
     if (filtro === 'todas') return true;
-    if (filtro === 'pendientes') { return !['rechazada', 'cancelada'].includes(r.estado_asignacion_clave)&& (r.estado_reporte === 'asignado' || r.estado_asignacion_clave === 'notificada');}
-    if (filtro === 'aceptadas') return ['en_camino', 'en_atencion'].includes(r.estado_reporte) || ['aceptada', 'completada'].includes(r.estado_asignacion_clave);
+    if (filtro === 'pendientes') { return r.estado_reporte === 'asignado' && !r.confirmacion_voluntario; }
+    if (filtro === 'aceptadas') return ['en_camino', 'en_atencion'].includes(r.estado_reporte) || (r.estado_reporte === 'asignado' && r.confirmacion_voluntario === 'esperando') || r.estado_asignacion_clave === 'completada';
     if (filtro === 'rechazadas') return ['rechazada', 'cancelada'].includes(r.estado_asignacion_clave);
     return true;
   });
@@ -1050,6 +1052,7 @@ const confirmarReactivar = async () => {
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 16, justifyContent: 'center' }}>
                     {reportesFiltrados.map((reporte) => {
                       const enProceso = ['en_camino', 'en_atencion'].includes(reporte.estado_reporte);
+                      const esperandoConfirmacion = reporte.confirmacion_voluntario === 'esperando';
                       const yaRescatado = reporte.estado_reporte === 'rescatado';
                       const fueRechazada = reporte.estado_asignacion_clave === 'rechazada';
                       return (
@@ -1086,7 +1089,11 @@ const confirmarReactivar = async () => {
                                 </View>
                               </View>
                             )}
-                            {enProceso && (
+                            {esperandoConfirmacion ? (
+                              <View style={{ position: 'absolute', bottom: 0, width: '100%', backgroundColor: 'rgba(230, 168, 20, 0.9)', paddingVertical: 8, paddingHorizontal: 16 }}>
+                                <Text style={{ color: COLORS.white, fontSize: 12, fontWeight: '600' }}><Ionicons name="time" size={12} /> Esperando confirmación del rescatista</Text>
+                              </View>
+                            ) : enProceso && (
                               <View style={{ position: 'absolute', bottom: 0, width: '100%', backgroundColor: 'rgba(102, 188, 180, 0.9)', paddingVertical: 8, paddingHorizontal: 16 }}>
                                 <Text style={{ color: COLORS.white, fontSize: 12, fontWeight: '600' }}><Ionicons name="car" size={12} /> Rescatista en camino</Text>
                               </View>
@@ -1104,6 +1111,15 @@ const confirmarReactivar = async () => {
                             <Text style={{ color: COLORS.textLight, fontSize: 11, marginTop: 3, marginLeft: 2 }}>
                               hace {formatDistanceToNow(new Date(reporte.created_at), { locale: es })}
                             </Text>
+
+                            {reporte.ultimo_rechazo && (
+                              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(230, 168, 20, 0.12)', borderRadius: 10, paddingVertical: 5, paddingHorizontal: 8, marginTop: 8 }}>
+                                <Ionicons name="alert-circle-outline" size={13} color="#B87F0A" />
+                                <Text style={{ color: '#B87F0A', fontSize: 11, fontWeight: '600', marginLeft: 5, flexShrink: 1 }} numberOfLines={2}>
+                                  {reporte.ultimo_rechazo.nombre_voluntario} rechazó — {modoAsignacionConfig !== 'manual' ? 'buscando siguiente candidato' : 'elige otro voluntario'}
+                                </Text>
+                              </View>
+                            )}
 
                             {/* Datos rápidos del animal — para decidir si aceptar sin
                             tener que adivinar */}
@@ -1719,6 +1735,12 @@ const confirmarReactivar = async () => {
                     <Text style={{ fontSize: 13, color: COLORS.textLight, marginTop: 10, textAlign: 'center' }}>
                       Revisando respuesta cada 5 segundos.
                     </Text>
+                    <TouchableOpacity
+                      onPress={() => setShowStaffModal(false)}
+                      style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.06)', alignItems: 'center', justifyContent: 'center', marginTop: 18 }}
+                    >
+                      <Ionicons name="close" size={20} color={COLORS.textDark} />
+                    </TouchableOpacity>
                   </View>
                 )}
 

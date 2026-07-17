@@ -23,9 +23,11 @@ export interface ReporteStaff {
     nombre: string | null;
     telefono: string | null;
   };
+  distancia_km?: number | null;
 }
 
 export interface RespuestaStaffReportes {
+  esperando_confirmacion: ReporteStaff[];
   pendientes: ReporteStaff[];
   en_accion: ReporteStaff[];
   completados: ReporteStaff[];

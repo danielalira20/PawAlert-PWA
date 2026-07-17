@@ -231,6 +231,23 @@ export default function StaffDashboardScreen({ onClose }: Props) {
               </Text>
             </View>
 
+            {typeof reporte.distancia_km === 'number' && (
+              <View style={confirmStyles.metaRow}>
+                <Ionicons name="navigate-outline" size={13} color={Brand.primary} />
+                <Text style={confirmStyles.metaText}>{reporte.distancia_km} km de tu ubicación</Text>
+              </View>
+            )}
+
+            <View style={confirmStyles.chipsRow}>
+              {[reporte.animal?.condicion, reporte.animal?.tamanio, reporte.animal?.sexo, reporte.animal?.edad_aproximada]
+                .filter(Boolean)
+                .map((dato, i) => (
+                  <View key={i} style={confirmStyles.chip}>
+                    <Text style={confirmStyles.chipText}>{dato}</Text>
+                  </View>
+                ))}
+            </View>
+
             {reporte.latitud && reporte.longitud && (
               <TouchableOpacity onPress={() => abrirMapaReporte(reporte)} style={confirmStyles.mapaBtn}>
                 <Ionicons name="map-outline" size={14} color={Brand.accent} />
@@ -598,6 +615,9 @@ const confirmStyles = StyleSheet.create({
   metaText: { fontSize: 12, color: Brand.textMuted, flexShrink: 1 },
   mapaBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
   mapaBtnText: { fontSize: 12, color: Brand.accent, fontWeight: '700' },
+  chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 2 },
+  chip: { backgroundColor: 'rgba(74,55,40,0.06)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 100 },
+  chipText: { fontSize: 10, color: Brand.textDark, textTransform: 'capitalize', fontWeight: '600' },
   actionsRow: { flexDirection: 'row', gap: 8, marginTop: 8 },
   rechazarBtn: {
     flex: 1,
