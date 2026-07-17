@@ -570,7 +570,7 @@ async def obtener_reportes_voluntario(usuario_id: str) -> dict:
             pendientes.append(reporte)
         elif estado in ("en_camino", "en_atencion"):
             en_accion.append(reporte)
-        elif estado == "cerrado":
+        elif estado in ("rescatado", "cerrado"):
             completados.append(reporte)
         elif estado in ("sin_cobertura", "duplicado_vinculable", "duplicado_informativo", "cancelado_por_reportante"):
             historial.append(reporte)

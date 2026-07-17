@@ -773,7 +773,7 @@ const confirmarReactivar = async () => {
     if (filtro === 'todas') return true;
     if (filtro === 'pendientes') {if (['rechazada', 'cancelada'].includes(r.estado_asignacion_clave)) return false; return r.estado_reporte === 'asignado' && !r.confirmacion_voluntario;}
     if (filtro === 'aceptadas') {
-        const esAceptado = ['en_camino', 'en_atencion'].includes(r.estado_reporte)
+        const esAceptado = ['en_camino', 'en_atencion', 'rescatado'].includes(r.estado_reporte)
           || (r.estado_reporte === 'asignado' && r.confirmacion_voluntario === 'esperando')
           || r.estado_asignacion_clave === 'completada';
         if (!esAceptado) return false;
@@ -1230,7 +1230,7 @@ const confirmarReactivar = async () => {
                                     <Ionicons name="map" size={16} color={COLORS.white} style={{ marginRight: 6 }} />
                                     <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Cómo llegar</Text>
                                   </TouchableOpacity>
-                                  <TouchableOpacity onPress={() => { setReporteAccionId(reporte.reporte_id); resetModales(); setShowCerrarModal(true); }} style={{ backgroundColor: COLORS.accent, paddingVertical: 14, borderRadius: 16, alignItems: 'center' }}>
+                                  <TouchableOpacity onPress={() => { resetModales(); setReporteAccionId(reporte.reporte_id); setShowCerrarModal(true); }} style={{ backgroundColor: COLORS.accent, paddingVertical: 14, borderRadius: 16, alignItems: 'center' }}>
                                     <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Cerrar caso</Text>
                                   </TouchableOpacity>
                                 </View>
