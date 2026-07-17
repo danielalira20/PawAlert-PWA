@@ -29,6 +29,7 @@ import { AssocLocationMap } from '../components/admin-dashboard/AssocLocationMap
 import { PhotoGallery } from '../components/admin-dashboard/PhotoGallery';
 import { ActionBar } from '../components/admin-dashboard/ActionBar';
 import { AdminActionButton } from '../components/admin-dashboard/AdminActionButton';
+import { StatsRow, type StatItem } from '../components/staff-dashboard/StatsRow';
 import { Brand } from '../constants/theme';
 import type { AsociacionDetalle } from '../types/asociacionAdmin';
 
@@ -528,10 +529,39 @@ function DetailShell({
 
 // ─── Cuerpo del detalle: header + secciones (móvil y desktop) ────────────
 
-function DetailHeader({ detalle }: { detalle: AsociacionDetalle }) {
+const AVATAR_COLORS_BRAND = [Brand.primary, Brand.secondary, Brand.accent, Brand.danger, Brand.primaryDark];
+
+function DetailHeader({ detalle, isDesktop }: { detalle: AsociacionDetalle; isDesktop: boolean }) {
+  const avatar = (
+    <AssocAvatar
+      nombre={detalle.nombre}
+      logoUrl={detalle.logo_url}
+      size="lg"
+      colors={AVATAR_COLORS_BRAND}
+      zoomable
+    />
+  );
+
+  if (isDesktop) {
+    return (
+      <View style={[styles.detailHeaderBlock, styles.detailHeaderBlockDesktop]}>
+        {avatar}
+        <View style={styles.detailHeaderTextCol}>
+          <Text style={[styles.detailNombre, styles.detailNombreDesktop]}>{detalle.nombre}</Text>
+          <Text style={styles.detailResponsable}>
+            {detalle.nombre_responsable?.trim() || 'Responsable no especificado'}
+          </Text>
+          <View style={{ marginTop: 8 }}>
+            <PendingBadge />
+          </View>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.detailHeaderBlock}>
-      <AssocAvatar nombre={detalle.nombre} logoUrl={detalle.logo_url} size="lg" />
+      {avatar}
       <Text style={styles.detailNombre}>{detalle.nombre}</Text>
       <Text style={styles.detailResponsable}>
         {detalle.nombre_responsable?.trim() || 'Responsable no especificado'}
@@ -541,6 +571,14 @@ function DetailHeader({ detalle }: { detalle: AsociacionDetalle }) {
       </View>
     </View>
   );
+}
+
+function buildAdminStats(detalle: AsociacionDetalle): StatItem[] {
+  return [
+    { label: 'Radio de cobertura', value: detalle.radio_km, icon: 'resize-outline', color: Brand.secondary },
+    { label: 'Tipos de animales', value: detalle.tipos_animales.length, icon: 'paw-outline', color: Brand.primary, primary: true },
+    { label: 'Fotos', value: detalle.fotos.length, icon: 'images-outline', color: Brand.accent },
+  ];
 }
 
 function UbicacionContent({ detalle }: { detalle: AsociacionDetalle }) {
@@ -575,19 +613,22 @@ function DetailMobileBody({
 }) {
   return (
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 20 }}>
-      <DetailHeader detalle={detalle} />
+      <DetailHeader detalle={detalle} isDesktop={false} />
+      <View style={[styles.detailBody, styles.statsRowWrap]}>
+        <StatsRow stats={buildAdminStats(detalle)} size="compact" />
+      </View>
       {extraTop && <View style={styles.detailBody}>{extraTop}</View>}
       <View style={styles.detailBody}>
-        <SectionBlock numero="01" titulo="Acerca de">
+        <SectionBlock icon="information-circle-outline" titulo="Acerca de">
           <AboutBlock acercaDe={detalle.acerca_de} />
         </SectionBlock>
-        <SectionBlock numero="02" titulo="Qué rescatan">
+        <SectionBlock icon="paw-outline" titulo="Qué rescatan">
           <AnimalChips tipos={detalle.tipos_animales} />
         </SectionBlock>
-        <SectionBlock numero="03" titulo="Ubicación">
+        <SectionBlock icon="location-outline" titulo="Ubicación">
           <UbicacionContent detalle={detalle} />
         </SectionBlock>
-        <SectionBlock numero="04" titulo="Horario de atención">
+        <SectionBlock icon="time-outline" titulo="Horario de atención">
           <View style={styles.horarioRow}>
             <Ionicons name="time-outline" size={16} color={Brand.primary} />
             <Text style={styles.horarioText}>
@@ -595,10 +636,10 @@ function DetailMobileBody({
             </Text>
           </View>
         </SectionBlock>
-        <SectionBlock numero="05" titulo="Contacto">
+        <SectionBlock icon="call-outline" titulo="Contacto">
           <ContactBlock telefono={detalle.contacto_telefono} email={detalle.contacto_email} />
         </SectionBlock>
-        <SectionBlock numero="06" titulo="Galería del refugio" sinBorde>
+        <SectionBlock icon="images-outline" titulo="Galería del refugio" sinBorde>
           <PhotoGallery fotos={detalle.fotos} columnas={2} />
         </SectionBlock>
       </View>
@@ -616,13 +657,16 @@ function DetailDesktopBody({
   return (
     <View style={styles.desktopDetailRow}>
       <ScrollView style={styles.desktopSidebar} contentContainerStyle={{ paddingBottom: 20 }}>
-        <DetailHeader detalle={detalle} />
+        <DetailHeader detalle={detalle} isDesktop />
+        <View style={[styles.detailBody, styles.statsRowWrap]}>
+          <StatsRow stats={buildAdminStats(detalle)} size="compact" />
+        </View>
         <View style={styles.detailBody}>
           {extraTop}
-          <SectionBlock numero="05" titulo="Contacto">
+          <SectionBlock icon="call-outline" titulo="Contacto">
             <ContactBlock telefono={detalle.contacto_telefono} email={detalle.contacto_email} />
           </SectionBlock>
-          <SectionBlock numero="04" titulo="Ubicación" sinBorde>
+          <SectionBlock icon="location-outline" titulo="Ubicación" sinBorde>
             <UbicacionContent detalle={detalle} />
           </SectionBlock>
         </View>
@@ -630,13 +674,13 @@ function DetailDesktopBody({
 
       <ScrollView style={styles.desktopMain} contentContainerStyle={{ paddingBottom: 20 }}>
         <View style={styles.desktopMainInner}>
-          <SectionBlock numero="01" titulo="Acerca de">
+          <SectionBlock icon="information-circle-outline" titulo="Acerca de">
             <AboutBlock acercaDe={detalle.acerca_de} />
           </SectionBlock>
-          <SectionBlock numero="02" titulo="Qué rescatan">
+          <SectionBlock icon="paw-outline" titulo="Qué rescatan">
             <AnimalChips tipos={detalle.tipos_animales} />
           </SectionBlock>
-          <SectionBlock numero="03" titulo="Horario de atención">
+          <SectionBlock icon="time-outline" titulo="Horario de atención">
             <View style={styles.horarioRow}>
               <Ionicons name="time-outline" size={16} color={Brand.primary} />
               <Text style={styles.horarioText}>
@@ -644,7 +688,7 @@ function DetailDesktopBody({
               </Text>
             </View>
           </SectionBlock>
-          <SectionBlock numero="06" titulo="Galería del refugio" sinBorde>
+          <SectionBlock icon="images-outline" titulo="Galería del refugio" sinBorde>
             <PhotoGallery fotos={detalle.fotos} columnas={3} />
           </SectionBlock>
         </View>
@@ -716,7 +760,21 @@ const styles = StyleSheet.create({
     paddingVertical: 22,
     paddingHorizontal: 20,
     backgroundColor: Brand.cardWarm,
+    borderRadius: 24,
+    marginHorizontal: 18,
+    marginTop: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 2,
   },
+  detailHeaderBlockDesktop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  detailHeaderTextCol: { flex: 1, alignItems: 'flex-start' },
   detailNombre: {
     fontSize: 17,
     fontWeight: '800',
@@ -724,8 +782,10 @@ const styles = StyleSheet.create({
     marginTop: 10,
     textAlign: 'center',
   },
+  detailNombreDesktop: { marginTop: 0, textAlign: 'left' },
   detailResponsable: { fontSize: 13, color: Brand.textMuted, marginTop: 2 },
   detailBody: { paddingHorizontal: 18 },
+  statsRowWrap: { marginTop: 16 },
 
   direccionText: { fontSize: 13, fontWeight: '800', color: Brand.textDark, lineHeight: 19 },
   direccionVacia: { fontSize: 13, color: Brand.textFaint },
@@ -735,8 +795,8 @@ const styles = StyleSheet.create({
   horarioText: { fontSize: 13, color: Brand.textDark, flex: 1, lineHeight: 19 },
 
   desktopDetailRow: { flex: 1, flexDirection: 'row' },
-  desktopSidebar: { width: 300, borderRightWidth: 1, borderRightColor: '#E4D3B8' },
-  desktopMain: { flex: 1 },
+  desktopSidebar: { width: 300, backgroundColor: Brand.cardWarm },
+  desktopMain: { flex: 1, backgroundColor: Brand.backgroundWarm },
   desktopMainInner: { paddingHorizontal: 28, maxWidth: 760 },
 
   // Card de la lista de apelaciones

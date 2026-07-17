@@ -13,6 +13,8 @@ export interface StatItem {
   primary?: boolean;
 }
 
+type Size = 'compact' | 'normal';
+
 // Cuenta de 0 al valor final con easing ease-out-cubic.
 // No usa Reanimated para el número en sí porque animar un <Text> numérico
 // con valores compartidos requiere createAnimatedComponent(TextInput);
@@ -43,14 +45,15 @@ function useCountUp(target: number, duration = 420, delay = 0) {
   return display;
 }
 
-function StatCard({ stat, index }: { stat: StatItem; index: number }) {
+function StatCard({ stat, index, size }: { stat: StatItem; index: number; size: Size }) {
   const displayed = useCountUp(stat.value, 420, 180 + index * 80);
+  const compact = size === 'compact';
 
   if (stat.primary) {
     return (
       <Animated.View
         entering={FadeInUp.delay(80).duration(400)}
-        style={[styles.card, styles.primaryCard]}
+        style={[styles.card, styles.primaryCard, compact && styles.primaryCardCompact]}
       >
         <LinearGradient
           colors={[Brand.primary, Brand.primaryDark]}
@@ -58,10 +61,10 @@ function StatCard({ stat, index }: { stat: StatItem; index: number }) {
           end={{ x: 1, y: 1 }}
           style={StyleSheet.absoluteFillObject}
         />
-        <View style={styles.iconCirclePrimary}>
-          <Ionicons name={stat.icon} size={18} color="#fff" />
+        <View style={[styles.iconCirclePrimary, compact && styles.iconCirclePrimaryCompact]}>
+          <Ionicons name={stat.icon} size={compact ? 14 : 18} color="#fff" />
         </View>
-        <Text style={styles.valuePrimary}>{displayed}</Text>
+        <Text style={[styles.valuePrimary, compact && styles.valuePrimaryCompact]}>{displayed}</Text>
         <Text style={styles.labelPrimary}>{stat.label}</Text>
       </Animated.View>
     );
@@ -70,22 +73,22 @@ function StatCard({ stat, index }: { stat: StatItem; index: number }) {
   return (
     <Animated.View
       entering={FadeInUp.delay(80 + index * 90).duration(400)}
-      style={[styles.card, styles.secondaryCard]}
+      style={[styles.card, styles.secondaryCard, compact && styles.secondaryCardCompact]}
     >
-      <View style={[styles.iconCircle, { backgroundColor: `${stat.color}26` }]}>
-        <Ionicons name={stat.icon} size={17} color={stat.color} />
+      <View style={[styles.iconCircle, compact && styles.iconCircleCompact, { backgroundColor: `${stat.color}26` }]}>
+        <Ionicons name={stat.icon} size={compact ? 13 : 17} color={stat.color} />
       </View>
-      <Text style={styles.value}>{displayed}</Text>
+      <Text style={[styles.value, compact && styles.valueCompact]}>{displayed}</Text>
       <Text style={styles.label}>{stat.label}</Text>
     </Animated.View>
   );
 }
 
-export function StatsRow({ stats }: { stats: StatItem[] }) {
+export function StatsRow({ stats, size = 'normal' }: { stats: StatItem[]; size?: Size }) {
   return (
     <View style={styles.row}>
       {stats.map((s, i) => (
-        <StatCard key={s.label} stat={s} index={i} />
+        <StatCard key={s.label} stat={s} index={i} size={size} />
       ))}
     </View>
   );
@@ -112,6 +115,7 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     elevation: 6,
   },
+  primaryCardCompact: { paddingVertical: 10 },
   secondaryCard: {
     backgroundColor: Brand.cardWarm,
     shadowColor: '#000',
@@ -120,6 +124,7 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 2,
   },
+  secondaryCardCompact: { paddingVertical: 10 },
   iconCircle: {
     width: 36,
     height: 36,
@@ -127,6 +132,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  iconCircleCompact: { width: 26, height: 26, borderRadius: 13 },
   iconCirclePrimary: {
     width: 38,
     height: 38,
@@ -135,8 +141,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  iconCirclePrimaryCompact: { width: 28, height: 28, borderRadius: 14 },
   value: { fontSize: 26, fontWeight: '900', color: Brand.textDark },
+  valueCompact: { fontSize: 18 },
   valuePrimary: { fontSize: 32, fontWeight: '900', color: '#fff' },
+  valuePrimaryCompact: { fontSize: 22 },
   label: { fontSize: 11, fontWeight: '600', color: Brand.textMuted, textAlign: 'center' },
   labelPrimary: {
     fontSize: 11,

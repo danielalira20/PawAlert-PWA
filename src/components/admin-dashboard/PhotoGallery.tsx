@@ -1,8 +1,9 @@
-import React from 'react';
-import { View, Text, Image, StyleSheet } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, Image, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Brand } from '../../constants/theme';
 import type { AsociacionFoto } from '../../types/asociacionAdmin';
+import { ImageLightbox } from '../common/ImageLightbox';
 
 interface Props {
   fotos: AsociacionFoto[];
@@ -10,6 +11,8 @@ interface Props {
 }
 
 export function PhotoGallery({ fotos, columnas = 2 }: Props) {
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+
   if (!fotos || fotos.length === 0) {
     return (
       <View style={styles.empty}>
@@ -21,20 +24,35 @@ export function PhotoGallery({ fotos, columnas = 2 }: Props) {
 
   const ordenadas = [...fotos].sort((a, b) => a.orden - b.orden);
   const anchoItem = `${100 / columnas - 3}%`;
+  const urls = ordenadas.map((f) => f.foto_url);
 
   return (
-    <View style={styles.grid}>
-      {ordenadas.map((foto) => (
-        <View key={foto.id} style={[styles.item, { width: anchoItem as any }]}>
-          <Image source={{ uri: foto.foto_url }} style={styles.image} resizeMode="cover" />
-          {!!foto.descripcion && (
-            <Text style={styles.caption} numberOfLines={2}>
-              {foto.descripcion}
-            </Text>
-          )}
-        </View>
-      ))}
-    </View>
+    <>
+      <View style={styles.grid}>
+        {ordenadas.map((foto, i) => (
+          <TouchableOpacity
+            key={foto.id}
+            style={[styles.item, { width: anchoItem as any }]}
+            onPress={() => setLightboxIndex(i)}
+            activeOpacity={0.85}
+          >
+            <Image source={{ uri: foto.foto_url }} style={styles.image} resizeMode="cover" />
+            {!!foto.descripcion && (
+              <Text style={styles.caption} numberOfLines={2}>
+                {foto.descripcion}
+              </Text>
+            )}
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      <ImageLightbox
+        visible={lightboxIndex !== null}
+        fotos={urls}
+        initialIndex={lightboxIndex ?? 0}
+        onClose={() => setLightboxIndex(null)}
+      />
+    </>
   );
 }
 
