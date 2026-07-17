@@ -500,7 +500,28 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
         const contactos = data.contactos_emergencia.map((c: any) => `${c.nombre}: ${c.telefono}`).join('\n');
         setResultadoEnvio(`No hay asociaciones disponibles en tu zona.\n\nContactos de emergencia:\n${contactos}`);
       } else {
-        setResultadoEnvio('Tu reporte fue publicado. No encontramos asociaciones ni contactos de emergencia en tu zona. Te recomendamos contactar a tu Ayuntamiento local o Protección Civil municipal.');
+        // Mensaje por defecto para perros, gatos o subcategoría "Otro"
+        let mensajeFinal = 'Tu reporte fue publicado. No encontramos asociaciones ni contactos de emergencia en tu zona. Te recomendamos contactar a tu Ayuntamiento local o Protección Civil municipal.';
+
+        // Mensajes personalizados para especies específicas
+        if (tipoAnimal === 'Otro') {
+          switch (subcategoria) {
+            case 'Ave':
+              mensajeFinal = 'Tu reporte fue publicado. Actualmente no contamos con asociaciones especializadas en aves en nuestra red. Te recomendamos contactar a Protección Civil o buscar un veterinario de especies exóticas.';
+              break;
+            case 'Reptil':
+              mensajeFinal = 'Tu reporte fue publicado. El manejo de reptiles requiere capacitación específica con la que nuestras asociaciones no cuentan actualmente. Por favor, contacta a Protección Civil de tu municipio.';
+              break;
+            case 'Roedor':
+              mensajeFinal = 'Tu reporte fue publicado. Por el momento no manejamos rescates de pequeños roedores. Te sugerimos acudir a clínicas veterinarias de fauna exótica cercanas.';
+              break;
+            case 'Fauna silvestre':
+              mensajeFinal = 'Tu reporte fue publicado. No manejamos el rescate de fauna silvestre ya que, por ley, requiere la intervención de autoridades federales. Por favor, reporta este caso a PROFEPA o Protección Civil.';
+              break;
+          }
+        }
+
+        setResultadoEnvio(mensajeFinal);
       }
     } catch (error: any) {
       const mensaje = error?.response?.data?.detail || error?.message || 'Error desconocido';
