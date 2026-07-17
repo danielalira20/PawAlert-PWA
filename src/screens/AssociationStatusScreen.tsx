@@ -1130,7 +1130,13 @@ const confirmarReactivar = async () => {
                           elevation: 3,
                         }}>
                           <View style={{ position: 'relative' }}>
-                            <Image source={{ uri: reporte.foto_url || 'https://via.placeholder.com/400' }} style={{ width: '100%', height: 130 }} resizeMode="cover" />
+                            <View style={{ width: '100%', height: 130, backgroundColor: '#2E2A26', justifyContent: 'center' }}>
+                              <Image
+                                source={{ uri: reporte.foto_url || 'https://via.placeholder.com/400' }}
+                                style={{ width: '100%', height: '100%' }}
+                                resizeMode="contain"
+                              />
+                            </View>
                             <View style={{ position: 'absolute', top: 12, right: 12, backgroundColor: getBadgeColor(reporte.animal?.condicion || ''), paddingHorizontal: 16, paddingVertical: 6, borderRadius: 16 }}>
                               <Text style={{ color: COLORS.white, fontWeight: '800', fontSize: 12, textTransform: 'capitalize' }}>{reporte.animal?.condicion || 'Desconocido'}</Text>
                             </View>
@@ -1475,8 +1481,8 @@ const confirmarReactivar = async () => {
                     >
                       <Image
                         source={{ uri: fotos[0] }}
-                        style={{ width: '100%', maxWidth: 320, height: 200, borderRadius: 18 }}
-                        resizeMode="cover"
+                        style={{ width: '100%', maxWidth: 320, height: 220, borderRadius: 18, backgroundColor: '#2E2A26'}}
+                        resizeMode="contain"
                       />
                     </TouchableOpacity>
                   );
@@ -1497,8 +1503,8 @@ const confirmarReactivar = async () => {
                       >
                         <Image
                           source={{ uri: url }}
-                          style={{ width: 220, height: 160, borderRadius: 18 }}
-                          resizeMode="cover"
+                          style={{ width: 220, height: 160, borderRadius: 18, backgroundColor: '#2E2A26'}}
+                          resizeMode="contain"
                         />
                       </TouchableOpacity>
                     ))}
