@@ -8,20 +8,32 @@ interface Props {
   onClose: () => void;
   children: React.ReactNode;
   maxWidth?: number;
+  // Cuando es false, no se puede cerrar tocando el fondo, con Esc/botón
+  // atrás, ni con la X — solo se cierra llamando a onClose desde dentro
+  // (ej. al terminar de guardar un formulario). Úsalo cuando cerrar a
+  // medias dejaría un cambio a medio aplicar (como una postulación que ya
+  // se mandó al backend pero cuyo formulario de seguimiento aún no se
+  // guardó).
+  dismissable?: boolean;
 }
 
 // Modal genérico con fondo difuminado (no solo oscurecido), que deja ver la
 // pantalla de atrás, con margen responsivo (más grande en web/desktop que en
 // móvil) y que se cierra al tocar fuera del contenido — sin cerrar por
 // accidente al tocar adentro, gracias al Pressable "absorbente" del contenido.
-export function AppModal({ visible, onClose, children, maxWidth = 900 }: Props) {
+export function AppModal({ visible, onClose, children, maxWidth = 900, dismissable = true }: Props) {
   const { width } = useWindowDimensions();
   const isDesktop = width >= 900;
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      {/* Fondo: toca aquí para cerrar */}
-      <Pressable style={StyleSheet.absoluteFill} onPress={onClose}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={dismissable ? onClose : () => {}}
+    >
+      {/* Fondo: toca aquí para cerrar (si es dismissable) */}
+      <Pressable style={StyleSheet.absoluteFill} onPress={dismissable ? onClose : undefined}>
         <BlurView intensity={45} tint="dark" style={StyleSheet.absoluteFill} />
       </Pressable>
 
@@ -42,9 +54,11 @@ export function AppModal({ visible, onClose, children, maxWidth = 900 }: Props) 
         <Pressable onPress={() => {}} style={[styles.contentBox, { maxWidth, width: '100%' }]}>
           {children}
 
-          <Pressable onPress={onClose} hitSlop={10} style={styles.closeButton}>
-            <Ionicons name="close" size={20} color="#fff" />
-          </Pressable>
+          {dismissable && (
+            <Pressable onPress={onClose} hitSlop={10} style={styles.closeButton}>
+              <Ionicons name="close" size={20} color="#fff" />
+            </Pressable>
+          )}
         </Pressable>
       </View>
     </Modal>

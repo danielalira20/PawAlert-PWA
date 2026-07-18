@@ -46,9 +46,11 @@ export default function MiPostulacionScreen({ onClose }: Props) {
   if (showCapacidadesForm) {
   return (
     <CapacidadesFormScreen
-      onClose={() => {
+      onClose={async () => {
+        // Refrescar antes de cerrar evita el parpadeo del estado viejo
+        // justo al cerrar el modal.
+        await refetch();
         setShowCapacidadesForm(false);
-        refetch();
       }}
       fromProfile={true}
     />

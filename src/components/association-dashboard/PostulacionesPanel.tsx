@@ -8,7 +8,6 @@ import {
   TextInput,
   ActivityIndicator,
   useWindowDimensions,
-  TouchableWithoutFeedback,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
@@ -16,6 +15,9 @@ import { usePostulacionesAsociacion, PostulacionItem, VoluntarioData } from '../
 import { API_URL } from '../../constants/api';
 import { useAuth } from '../../context/AuthContext';
 import { Toast, useToast } from '../Toast';
+import { AppModal } from '../AppModal';
+import { AssocAvatar } from '../admin-dashboard/AssocAvatar';
+import { AssocLocationMap } from '../admin-dashboard/AssocLocationMap';
 
 const COLORS = {
   bg: '#E8CCAD',
@@ -115,7 +117,7 @@ export function PostulacionesPanel({ visible }: Props) {
     try {
       await axios.patch(
         `${API_URL}/associations/me/postulaciones/${postulacionAccion.id}`,
-        { accion: 'rechazar', motivo_rechazo: motivoRechazo },
+        { accion: 'rechazar', motivo: motivoRechazo },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       showToast({ title: '¡Listo!', description: 'Postulación rechazada', type: 'success' });
@@ -223,9 +225,31 @@ export function PostulacionesPanel({ visible }: Props) {
                   <Text style={{ fontSize: 15, fontWeight: '700', color: COLORS.textDark, marginBottom: 4 }}>
                     {postulacion.voluntario?.nombre || 'Voluntario'} {postulacion.voluntario?.apellido_paterno || ''}
                   </Text>
-                  <Text style={{ fontSize: 12, color: COLORS.textLight, marginBottom: 8 }}>
+                  <Text style={{ fontSize: 12, color: COLORS.textLight, marginBottom: 2 }}>
                     {postulacion.voluntario?.email}
                   </Text>
+                  {!!postulacion.voluntario?.telefono && (
+                    <Text style={{ fontSize: 12, color: COLORS.textLight, marginBottom: 8 }}>
+                      {postulacion.voluntario.telefono}
+                    </Text>
+                  )}
+
+                  {postulacion.capacidades && (
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                      {postulacion.capacidades.ofrece_casa_hogar && (
+                        <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, backgroundColor: 'rgba(102, 188, 180, 0.15)' }}>
+                          <Text style={{ fontSize: 10, fontWeight: '700', color: COLORS.accent }}>Mi Casa Temporal</Text>
+                        </View>
+                      )}
+                      {!!postulacion.capacidades.especies?.length && (
+                        <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, backgroundColor: 'rgba(236, 128, 43, 0.1)' }}>
+                          <Text style={{ fontSize: 10, fontWeight: '700', color: COLORS.primary, textTransform: 'capitalize' }}>
+                            {postulacion.capacidades.especies.join(', ')}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  )}
 
                   <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 4 }}>
                     Intento: {postulacion.numero_intento}
@@ -418,165 +442,203 @@ export function PostulacionesPanel({ visible }: Props) {
         </View>
       </Modal>
 
-      {/* Modal de Detalle MEJORADO */}
-      <Modal 
-        visible={!!postulacionSeleccionada} 
-        transparent 
-        animationType="slide"
-        onRequestClose={cerrarDetalles}
-      >
-        <TouchableOpacity
-          style={{
-            flex: 1,
-            backgroundColor: 'rgba(0,0,0,0.5)',
-            justifyContent: 'flex-end',
-          }}
-          activeOpacity={1}
-          onPress={cerrarDetalles}
-        >
-          <TouchableWithoutFeedback>
-            <View
-              style={{
-                backgroundColor: COLORS.white,
-                borderTopLeftRadius: 24,
-                borderTopRightRadius: 24,
-                maxHeight: '90%',
-                paddingTop: 24,
-              }}
-            >
-              {/* Header del modal con nombre y botón X */}
-              {postulacionSeleccionada && voluntarioSeleccionado && (
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingHorizontal: 24, marginBottom: 20 }}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 20, fontWeight: '800', color: COLORS.textDark, marginBottom: 4 }}>
-                      {voluntarioSeleccionado.nombre} {voluntarioSeleccionado.apellido_paterno}
-                    </Text>
-                    <Text style={{ fontSize: 13, color: COLORS.textLight }}>
-                      Postulación #{postulacionSeleccionada.numero_intento}
-                    </Text>
+      {/* Modal de Detalle */}
+      <AppModal visible={!!postulacionSeleccionada} onClose={cerrarDetalles} maxWidth={900}>
+        {postulacionSeleccionada && voluntarioSeleccionado && (
+          <View style={{ flex: 1 }}>
+            {/* Header */}
+            <View style={{ padding: 24, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#F0E6D6' }}>
+              <Text style={{ fontSize: 20, fontWeight: '800', color: COLORS.textDark, marginBottom: 4 }}>
+                {voluntarioSeleccionado.nombre} {voluntarioSeleccionado.apellido_paterno}
+              </Text>
+              <Text style={{ fontSize: 13, color: COLORS.textLight }}>
+                Postulación #{postulacionSeleccionada.numero_intento}
+              </Text>
+            </View>
+
+            <ScrollView contentContainerStyle={{ padding: 24 }}>
+              <View style={{ flexDirection: isMobile ? 'column' : 'row', gap: 20 }}>
+                {/* Columna izquierda: avatar, contacto, mapa */}
+                <View style={{ width: isMobile ? '100%' : 260, gap: 16 }}>
+                  <View style={{ alignItems: 'center' }}>
+                    <AssocAvatar
+                      nombre={`${voluntarioSeleccionado.nombre} ${voluntarioSeleccionado.apellido_paterno}`}
+                      logoUrl={null}
+                      size="lg"
+                    />
                   </View>
 
-                  <TouchableOpacity 
-                    onPress={cerrarDetalles}
-                    style={{ 
-                      width: 36, 
-                      height: 36, 
-                      borderRadius: 18, 
-                      backgroundColor: '#F3F4F6', 
-                      justifyContent: 'center', 
-                      alignItems: 'center',
-                      marginLeft: 16
-                    }}
-                  >
-                    <Ionicons name="close" size={20} color={COLORS.textDark} />
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              <ScrollView contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 40 }}>
-                {postulacionSeleccionada && voluntarioSeleccionado && (
-                  <>
-                    {/* Datos del voluntario */}
-                    <View style={{ backgroundColor: COLORS.cardBg, padding: 16, borderRadius: 16, marginBottom: 20 }}>
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.textLight, marginBottom: 12, textTransform: 'uppercase' }}>
-                        Datos de contacto
-                      </Text>
-
-                      <View style={{ gap: 8 }}>
-                        <View>
-                          <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Email</Text>
-                          <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.textDark }}>
-                            {voluntarioSeleccionado.email}
-                          </Text>
-                        </View>
-                        <View>
-                          <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Teléfono</Text>
-                          <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.textDark }}>
-                            {voluntarioSeleccionado.telefono || 'No disponible'}
-                          </Text>
-                        </View>
+                  <View style={{ backgroundColor: COLORS.cardBg, padding: 16, borderRadius: 16 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.textLight, marginBottom: 12, textTransform: 'uppercase' }}>
+                      Datos de contacto
+                    </Text>
+                    <View style={{ gap: 8 }}>
+                      <View>
+                        <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Email</Text>
+                        <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.textDark }}>
+                          {voluntarioSeleccionado.email}
+                        </Text>
+                      </View>
+                      <View>
+                        <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Teléfono</Text>
+                        <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.textDark }}>
+                          {voluntarioSeleccionado.telefono || 'No disponible'}
+                        </Text>
                       </View>
                     </View>
+                  </View>
 
-                    {/* Historial de intentos */}
-                    {intentosPrevios[postulacionSeleccionada.voluntario_id] && (
-                      <View>
-                        <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.textDark, marginBottom: 12 }}>
-                          Historial de postulaciones
-                        </Text>
+                  {!!postulacionSeleccionada.capacidades?.latitud && !!postulacionSeleccionada.capacidades?.longitud && (
+                    <View>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.textLight, marginBottom: 8, textTransform: 'uppercase' }}>
+                        Zona de cobertura
+                      </Text>
+                      <AssocLocationMap
+                        latitud={postulacionSeleccionada.capacidades.latitud}
+                        longitud={postulacionSeleccionada.capacidades.longitud}
+                        radioKm={1}
+                        height={160}
+                      />
+                    </View>
+                  )}
+                </View>
 
-                        {intentosPrevios[postulacionSeleccionada.voluntario_id].map((intento: any) => (
-                          <View
-                            key={intento.id}
-                            style={{
-                              backgroundColor: COLORS.cardBg,
-                              padding: 12,
-                              borderRadius: 12,
-                              marginBottom: 10,
-                              borderLeftWidth: 3,
-                              borderLeftColor:
-                                intento.estado === 'aceptada'
-                                  ? COLORS.success
-                                  : intento.estado === 'rechazada'
-                                  ? COLORS.danger
-                                  : COLORS.warning,
-                            }}
-                          >
-                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.textDark }}>
-                                {intento.numero_intento}ª postulación
-                              </Text>
-                              <View
-                                style={{
-                                  paddingHorizontal: 10,
-                                  paddingVertical: 4,
-                                  borderRadius: 8,
-                                  backgroundColor:
-                                    intento.estado === 'aceptada'
-                                      ? 'rgba(39, 174, 96, 0.1)'
-                                      : intento.estado === 'rechazada'
-                                      ? 'rgba(231, 76, 60, 0.1)'
-                                      : 'rgba(243, 156, 18, 0.1)',
-                                }}
-                              >
-                                <Text
-                                  style={{
-                                    fontSize: 10,
-                                    fontWeight: '700',
-                                    color:
-                                      intento.estado === 'aceptada'
-                                        ? COLORS.success
-                                        : intento.estado === 'rechazada'
-                                        ? COLORS.danger
-                                        : COLORS.warning,
-                                    textTransform: 'capitalize',
-                                  }}
-                                >
-                                  {intento.estado}
-                                </Text>
-                              </View>
-                            </View>
+                {/* Columna derecha: capacidades + historial */}
+                <View style={{ flex: 1, gap: 20 }}>
+                  {postulacionSeleccionada.capacidades && (
+                    <View style={{ backgroundColor: COLORS.cardBg, padding: 16, borderRadius: 16 }}>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.textLight, marginBottom: 12, textTransform: 'uppercase' }}>
+                        Capacidades
+                      </Text>
 
-                            {intento.motivo_rechazo && (
-                              <Text style={{ fontSize: 11, color: COLORS.danger, marginTop: 6 }}>
-                                Motivo: {intento.motivo_rechazo}
-                              </Text>
-                            )}
-
-                            <Text style={{ fontSize: 10, color: COLORS.textLight, marginTop: 6 }}>
-                              {new Date(intento.created_at).toLocaleDateString('es-MX')}
+                      <View style={{ gap: 10 }}>
+                        {!!postulacionSeleccionada.capacidades.disponibilidad?.dias?.length && (
+                          <View>
+                            <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Días disponibles</Text>
+                            <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.textDark, textTransform: 'capitalize' }}>
+                              {postulacionSeleccionada.capacidades.disponibilidad.dias.join(', ')}
                             </Text>
                           </View>
-                        ))}
+                        )}
+                        {!!postulacionSeleccionada.capacidades.especies?.length && (
+                          <View>
+                            <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Especies que atiende</Text>
+                            <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.textDark, textTransform: 'capitalize' }}>
+                              {postulacionSeleccionada.capacidades.especies.join(', ')}
+                            </Text>
+                          </View>
+                        )}
+                        <View style={{ flexDirection: 'row', gap: 24 }}>
+                          <View>
+                            <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Mi Casa Temporal</Text>
+                            <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.textDark }}>
+                              {postulacionSeleccionada.capacidades.ofrece_casa_hogar ? 'Sí ofrece' : 'No ofrece'}
+                            </Text>
+                          </View>
+                          <View>
+                            <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Vehículo</Text>
+                            <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.textDark }}>
+                              {postulacionSeleccionada.capacidades.tiene_vehiculo ? 'Sí' : 'No'}
+                            </Text>
+                          </View>
+                        </View>
+                        {!!postulacionSeleccionada.capacidades.motivo_voluntario && (
+                          <View>
+                            <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Por qué quiere ser voluntario</Text>
+                            <Text style={{ fontSize: 13, color: COLORS.textDark }}>
+                              {postulacionSeleccionada.capacidades.motivo_voluntario}
+                            </Text>
+                          </View>
+                        )}
+                        {!!postulacionSeleccionada.capacidades.experiencia_previa && (
+                          <View>
+                            <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Experiencia previa</Text>
+                            <Text style={{ fontSize: 13, color: COLORS.textDark }}>
+                              {postulacionSeleccionada.capacidades.experiencia_previa}
+                            </Text>
+                          </View>
+                        )}
                       </View>
-                    )}
-                  </>
-                )}
-              </ScrollView>
-            </View>
-          </TouchableWithoutFeedback>
-        </TouchableOpacity>
-      </Modal>
+                    </View>
+                  )}
+
+                  {intentosPrevios[postulacionSeleccionada.voluntario_id] && (
+                    <View>
+                      <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.textDark, marginBottom: 12 }}>
+                        Historial de postulaciones
+                      </Text>
+
+                      {intentosPrevios[postulacionSeleccionada.voluntario_id].map((intento: any) => (
+                        <View
+                          key={intento.id}
+                          style={{
+                            backgroundColor: COLORS.cardBg,
+                            padding: 12,
+                            borderRadius: 12,
+                            marginBottom: 10,
+                            borderLeftWidth: 3,
+                            borderLeftColor:
+                              intento.estado === 'aceptada'
+                                ? COLORS.success
+                                : intento.estado === 'rechazada'
+                                ? COLORS.danger
+                                : COLORS.warning,
+                          }}
+                        >
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.textDark }}>
+                              {intento.numero_intento}ª postulación
+                            </Text>
+                            <View
+                              style={{
+                                paddingHorizontal: 10,
+                                paddingVertical: 4,
+                                borderRadius: 8,
+                                backgroundColor:
+                                  intento.estado === 'aceptada'
+                                    ? 'rgba(39, 174, 96, 0.1)'
+                                    : intento.estado === 'rechazada'
+                                    ? 'rgba(231, 76, 60, 0.1)'
+                                    : 'rgba(243, 156, 18, 0.1)',
+                              }}
+                            >
+                              <Text
+                                style={{
+                                  fontSize: 10,
+                                  fontWeight: '700',
+                                  color:
+                                    intento.estado === 'aceptada'
+                                      ? COLORS.success
+                                      : intento.estado === 'rechazada'
+                                      ? COLORS.danger
+                                      : COLORS.warning,
+                                  textTransform: 'capitalize',
+                                }}
+                              >
+                                {intento.estado}
+                              </Text>
+                            </View>
+                          </View>
+
+                          {intento.motivo_rechazo && (
+                            <Text style={{ fontSize: 11, color: COLORS.danger, marginTop: 6 }}>
+                              Motivo: {intento.motivo_rechazo}
+                            </Text>
+                          )}
+
+                          <Text style={{ fontSize: 10, color: COLORS.textLight, marginTop: 6 }}>
+                            {new Date(intento.created_at).toLocaleDateString('es-MX')}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              </View>
+            </ScrollView>
+          </View>
+        )}
+      </AppModal>
     </View>
   );
 }

@@ -37,6 +37,7 @@ class CapacidadesRequest(BaseModel):
     tiene_vehiculo: bool = False
     latitud: Optional[float] = None
     longitud: Optional[float] = None
+    motivo_voluntario: Optional[str] = None
     experiencia_previa: Optional[str] = None
     acepto_terminos: bool = False
 
