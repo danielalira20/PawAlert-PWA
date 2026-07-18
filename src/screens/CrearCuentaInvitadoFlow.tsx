@@ -189,7 +189,7 @@ export default function CrearCuentaInvitadoFlow({
             <TouchableOpacity
               onPress={() => {
                 onClose();
-                router.push('/login' as any);
+                router.push('/(tabs)/profile' as any);
               }}
               style={{ backgroundColor: petzen.colors.orange, paddingVertical: 16, borderRadius: petzen.radii.pill, alignItems: 'center', width: '100%', marginBottom: 12 }}
             >
