@@ -18,13 +18,16 @@ PESOS = {
     "disponibilidad": 0.20,
     "carga": 0.15,
 }
-MAX_CASOS_SIMULTANEOS = 2
+MAX_ANIMALES_CASA_HOGAR = 2
 DIAS = ["lun", "mar", "mie", "jue", "vie", "sab", "dom"]
 
 
 def obtener_candidatos(reporte_id: str) -> dict:
     """Devuelve el top 3 con desglose de score, listo para el endpoint."""
     reporte = _obtener_reporte(reporte_id)
+    especies_del_caso = {a["tipo_animal"] for a in reporte["animales"] if a.get("tipo_animal")}
+    total_animales_caso = sum(a.get("cantidad") or 1 for a in reporte["animales"])
+
     crudos = supabase.rpc(
         "candidatos_para_reporte", {"p_reporte_id": reporte_id}
     ).execute().data or []
@@ -35,14 +38,19 @@ def obtener_candidatos(reporte_id: str) -> dict:
     for c in crudos:
         if c["usuario_id"] in rechazaron:
             continue  # ya rechazo este caso; no volver a ofrecerselo
-        if c["casos_activos"] >= MAX_CASOS_SIMULTANEOS:
-            continue  # filtro de carga
+        if especies_del_caso and not especies_del_caso.issubset(set(c["especies"] or [])):
+            continue  # debe aceptar TODAS las especies del caso
+        if c.get("ofrece_casa_hogar") and total_animales_caso > MAX_ANIMALES_CASA_HOGAR:
+            continue  # limite fisico de casa-hogar, aplica a interno y externo por igual
+        disponible = (c["capacidad_animales"] or 0) - (c["carga_actual"] or 0)
+        if disponible < total_animales_caso:
+            continue  # filtro de carga, por suma de animales del caso
 
         desglose = {
             "proximidad": round(_score_proximidad(c["distancia_km"]) * PESOS["proximidad"]),
             "compatibilidad": round(_score_compatibilidad(reporte, c) * PESOS["compatibilidad"]),
             "disponibilidad": round(_score_disponibilidad(c["disponibilidad"]) * PESOS["disponibilidad"]),
-            "carga": round(_score_carga(c["casos_activos"]) * PESOS["carga"]),
+            "carga": round(_score_carga(c["capacidad_animales"], c["carga_actual"]) * PESOS["carga"]),
         }
         candidatos.append({
             "voluntario_id": c["voluntario_id"],
@@ -67,16 +75,13 @@ def _score_proximidad(distancia_km) -> float:
 
 
 def _score_compatibilidad(reporte, candidato) -> float:
-    """Especie del reporte en sus especies -> 60. Tamanio -> +40.
-    Si el reporte no trae tamanio, los 40 se otorgan (no castigar por dato faltante)."""
-    puntos = 0.0
-    especie = reporte.get("tipo_animal")
-    if especie and especie in (candidato["especies"] or []):
-        puntos += 60.0
-    tamanio = reporte.get("tamanio")
-    if not tamanio or tamanio in (candidato["tamanios"] or []):
-        puntos += 40.0
-    return puntos
+    """Especie ya es filtro duro (se valida antes de llegar aqui) -- el score
+    ahora solo mide tamanio: +100 si el candidato acepta el tamanio (o no hay
+    dato), no castiga por dato faltante."""
+    tamanios_del_caso = {a["tamanio"] for a in reporte["animales"] if a.get("tamanio")}
+    if not tamanios_del_caso or tamanios_del_caso & set(candidato["tamanios"] or []):
+        return 100.0
+    return 0.0
 
 
 def _score_disponibilidad(disponibilidad: dict) -> float:
@@ -95,9 +100,13 @@ def _score_disponibilidad(disponibilidad: dict) -> float:
     return 0.0
 
 
-def _score_carga(casos_activos: int) -> float:
-    """0 casos -> 100, 1 caso -> 50 (2+ ya fue excluido)."""
-    return 100.0 if casos_activos == 0 else 50.0
+def _score_carga(capacidad_animales, carga_actual) -> float:
+    """0% de espacio libre -> 0, 100% libre -> 100."""
+    capacidad_animales = capacidad_animales or 0
+    if capacidad_animales <= 0:
+        return 0.0
+    disponible = max(0, capacidad_animales - (carga_actual or 0))
+    return round(100.0 * disponible / capacidad_animales, 1)
 
 
 def _obtener_reporte(reporte_id: str) -> dict:
@@ -106,14 +115,7 @@ def _obtener_reporte(reporte_id: str) -> dict:
         "animal(orden, cantidad, tipo_animal_catalogo(clave), tamanio_catalogo(clave), condicion_catalogo(clave))"
     ).eq("id", reporte_id).single().execute()
     data = res.data
-    animales_crudos, animal_legado = shape_animal_embed(data.get("animal"))
-    animal_legado = animal_legado or {}
-    data["tipo_animal"] = (animal_legado.get("tipo_animal_catalogo") or {}).get("clave")
-    data["tamanio"] = (animal_legado.get("tamanio_catalogo") or {}).get("clave")
-    data["condicion"] = (animal_legado.get("condicion_catalogo") or {}).get("clave")
-    # `animales` (con especie/cantidad por animal) se deja listo para la
-    # Fase 7, donde el filtro de carga/especies pasa a evaluar el caso
-    # completo en vez de solo el animal legado.
+    animales_crudos, _ = shape_animal_embed(data.get("animal"))
     data["animales"] = [
         {
             "tipo_animal": (a.get("tipo_animal_catalogo") or {}).get("clave"),

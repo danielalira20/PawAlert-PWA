@@ -109,10 +109,9 @@ async def crear_reporte(
     reporte_original_id: str | None = None,
 ) -> dict:
 
-    # Shim temporal (Fase 3): mientras encontrar_asociacion_cercana y
-    # candidatos_para_reporte no soporten varias especies (Fase 7), la
-    # verificación de duplicados y la asignación automática de asociación
-    # se guían por el primer animal del arreglo, no por el más grave.
+    # La verificación de duplicados sigue guiándose por el primer animal del
+    # arreglo (no por el más grave); la asignación automática de asociación
+    # ya considera todas las especies del caso (ver especies_del_caso abajo).
     animal_principal = animales[0]
 
     print("=== DEBUG DUPLICADOS ===")
@@ -172,7 +171,8 @@ async def crear_reporte(
     asociacion = None
     asociacion_id = None
     if latitud and longitud:
-        asociacion = asignar_asociacion(latitud, longitud, tipo_animal=animal_principal.tipo_animal)
+        especies_del_caso = list(dict.fromkeys(_condicion_str(a.tipo_animal) for a in animales))
+        asociacion = asignar_asociacion(latitud, longitud, tipos_animales=especies_del_caso)
         if asociacion:
             asociacion_id = asociacion["id"]
 
