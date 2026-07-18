@@ -41,7 +41,8 @@ export default function RootLayout() {
         <Stack.Screen name="association" />
         <Stack.Screen name="capacidades-form" options={{ presentation: 'modal' }} />
         <Stack.Screen name="staff-asignacion" />
-         <Stack.Screen name="forgot-password" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="forgot-password" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="completar-cuenta" options={{ presentation: 'modal' }} />
       </Stack>
     </AuthProvider>
     </GestureHandlerRootView>

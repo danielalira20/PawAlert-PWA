@@ -39,4 +39,12 @@ class RespuestaApelacionBody(BaseModel):
     decision: str  # "aprobar" o "rechazar"
     respuesta: str | None = None
 
+class NuevoRepresentante(BaseModel):
+    nombre: str
+    apellido_paterno: str
+    apellido_materno: str | None = None
+    telefono: str
+    email: str 
+    es_staff: bool = False
+
     

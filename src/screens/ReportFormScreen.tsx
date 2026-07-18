@@ -16,6 +16,7 @@ import { useAuth } from '../context/AuthContext';
 import LocationPickerMap from './LocationPickerMap';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
+import CrearCuentaInvitadoFlow from './CrearCuentaInvitadoFlow';
 
 type TipoAnimal = 'Perro' | 'Gato' | 'Otro' | null;
 type Condition = 'green' | 'yellow' | 'red' | null;
@@ -121,6 +122,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
   const [resultadoEnvio, setResultadoEnvio] = useState<string | null>(null);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [mostrarCrearCuenta, setMostrarCrearCuenta] = useState(false);
 
   // ─── Modal de login inline ───
   const [showLoginModal, setShowLoginModal] = useState(false);
@@ -223,9 +225,9 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
         params: { lat, lon, format: 'json', addressdetails: 1 },
       });
       const address = res.data.address || {};
-      setCalleNombre(address.road || '');
+      setCalleNombre(address.road || address.pedestrian || address.square || address.footway || address.path || '');
       setNumero(address.house_number || '');
-      setColonia(address.suburb || address.neighbourhood || address.colonia || '');
+      setColonia(address.suburb || address.neighbourhood || address.colonia || address.city_district || address.quarter || address.residential || address.village || address.hamlet || address.borough || '');
       setMunicipio(address.city || address.town || address.municipality || address.county || '');
       setEstadoUbicacion(address.state || '');
       setDireccionConfirmada(res.data.display_name || '');
@@ -267,8 +269,10 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
       });
       if (res.data && res.data.length > 0) {
         const result = res.data[0];
+        const address = result.address || {};
         setPinLocation({ latitud: parseFloat(result.lat), longitud: parseFloat(result.lon) });
         setUbicacionConfirmada(true);
+        setEstadoUbicacion(address.state || '');
         setDireccionConfirmada(result.display_name);
         setErrors((prev) => ({ ...prev, ubicacion: '' }));
       } else {
@@ -290,10 +294,11 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
     const address = result.address || {};
     setPinLocation({ latitud: parseFloat(result.lat), longitud: parseFloat(result.lon) });
     setUbicacionConfirmada(true);
-    setCalleNombre(address.road || '');
+    setCalleNombre(address.road || address.pedestrian || address.square || address.footway || address.path || result.name || '');
     setNumero(address.house_number || '');
-    setColonia(address.suburb || address.neighbourhood || address.colonia || '');
+    setColonia(address.suburb || address.neighbourhood || address.colonia || address.city_district || address.quarter || address.residential || address.village || address.hamlet || address.borough || '');
     setMunicipio(address.city || address.town || address.municipality || address.county || '');
+    setEstadoUbicacion(address.state || '');
     setDireccionConfirmada(result.display_name);
     setSearchQuery('');
     setSearchResults([]);
@@ -925,15 +930,31 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
         <TouchableOpacity
           onPress={() => {
             setResultadoEnvio(null);
-            setTimeout(() => {
-              if (onClose) onClose();
-            }, 300);
+            if (!isLoggedIn) {
+              setMostrarCrearCuenta(true);
+            } else {
+              setTimeout(() => { if (onClose) onClose(); }, 300);
+            }
           }}
           style={{ backgroundColor: petzen.colors.orange, paddingVertical: 16, paddingHorizontal: 48, borderRadius: petzen.radii.pill, alignItems: 'center' }}
         >
           <Text style={{ fontFamily: petzen.fonts.bold, color: '#FFFFFF', fontSize: 16 }}>Entendido</Text>
         </TouchableOpacity>
       </View>
+    );
+  }
+
+  if (mostrarCrearCuenta) {
+    return (
+      <CrearCuentaInvitadoFlow
+        nombre={nombre}
+        apellidoPaterno={apellidoPaterno}
+        apellidoMaterno={apellidoMaterno}
+        telefono={telefono}
+        email={email}
+        petzen={petzen}
+        onClose={() => { if (onClose) onClose(); }}
+      />
     );
   }
 

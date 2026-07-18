@@ -83,6 +83,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
   const [numero, setNumero] = useState('');
   const [colonia, setColonia] = useState('');
   const [municipio, setMunicipio] = useState('');
+  const [estado, setEstado] = useState('');
   const [referencia, setReferencia] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [direccionConfirmada, setDireccionConfirmada] = useState('');
@@ -99,7 +100,8 @@ export default function AssociationFormScreen({ onClose }: Props) {
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
 
   const [subcategoriaOtro, setSubcategoriaOtro] = useState<string | null>(null);
-  const [especieDescripcionOtro, setEspecieDescripcionOtro] = useState('');
+  const [customTipos, setCustomTipos] = useState<string[]>([]);
+  const [customTipoInput, setCustomTipoInput] = useState('');
 
   useEffect(() => {
     const hasErrors = Object.values(errors).some(e => e !== '');
@@ -313,10 +315,11 @@ export default function AssociationFormScreen({ onClose }: Props) {
         params: { lat, lon, format: 'json', addressdetails: 1 },
       });
       const address = res.data.address || {};
-      setCalle(address.road || '');
+      setCalle(address.road || address.pedestrian || address.square || address.footway || address.path || '');
       setNumero(address.house_number || '');
-      setColonia(address.suburb || address.neighbourhood || address.colonia || '');
+      setColonia(address.suburb || address.neighbourhood || address.colonia || address.city_district || address.quarter || address.residential || address.village || address.hamlet || address.borough || '');
       setMunicipio(address.city || address.town || address.municipality || address.county || '');
+      setEstado(address.state || '');
       setDireccionConfirmada(res.data.display_name || '');
     } catch {}
   };
@@ -334,10 +337,11 @@ export default function AssociationFormScreen({ onClose }: Props) {
     const address = result.address || {};
     setPinLocation({ latitud: lat, longitud: lon });
     setUbicacionConfirmada(true);
-    setCalle(address.road || '');
+    setCalle(address.road || address.pedestrian || address.square || address.footway || address.path || result.name || '');
     setNumero(address.house_number || '');
-    setColonia(address.suburb || address.neighbourhood || address.colonia || '');
+    setColonia(address.suburb || address.neighbourhood || address.colonia || address.city_district || address.quarter || address.residential || address.village || address.hamlet || address.borough || '');
     setMunicipio(address.city || address.town || address.municipality || address.county || '');
+    setEstado(address.state || '');
     setDireccionConfirmada(result.display_name);
     setSearchQuery('');
     setSearchResults([]);
@@ -399,7 +403,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
     if (tiposAnimales.length === 0) newErrors.tiposAnimales = 'Selecciona al menos un tipo de animal.';
     if (tiposAnimales.includes('otro')) {
       if (!subcategoriaOtro) newErrors.subcategoriaOtro = 'Selecciona la categoría.';
-      if (subcategoriaOtro === 'Otro' && !especieDescripcionOtro.trim()) newErrors.especieDescripcionOtro = 'Describe la especie.';
+      if (subcategoriaOtro === 'Otro' && customTipos.length === 0) newErrors.customTipos = 'Agrega al menos un tipo.';
     }
     const radVal = parseInt(radioKm, 10);
     if (!radioKm.trim()) { newErrors.radioKm = 'Obligatorio.'; } else if (isNaN(radVal) || radVal <= 0) { newErrors.radioKm = 'Mayor a 0.'; }
@@ -423,7 +427,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
 
       const finalTiposAnimales: string[] = tiposAnimales.filter((t) => t !== 'otro');
       if (tiposAnimales.includes('otro')) {
-        if (subcategoriaOtro === 'Otro') finalTiposAnimales.push(especieDescripcionOtro.trim().toLowerCase());
+        if (subcategoriaOtro === 'Otro') finalTiposAnimales.push(...customTipos.map(t => t.trim().toLowerCase()));
         else if (subcategoriaOtro) finalTiposAnimales.push(subcategoriaOtro.toLowerCase());
       }
       formData.append('tipos_animales', JSON.stringify(finalTiposAnimales));
@@ -438,6 +442,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
        if (numero.trim()) formData.append('numero', numero.trim());
       if (colonia.trim()) formData.append('colonia', colonia.trim());
       if (municipio.trim()) formData.append('municipio', municipio.trim());
+      if (estado.trim()) formData.append('estado', estado.trim());
       if (referencia.trim()) formData.append('referencia', referencia.trim());
 
       if (logoUrl) formData.append('logo', { uri: logoUrl, name: `logo_${Date.now()}.jpg`, type: 'image/jpeg' } as any);
@@ -582,7 +587,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
                 {([{ id: 'perro', label: 'Perros' }, { id: 'gato', label: 'Gatos' }, { id: 'ave', label: 'Aves' }, { id: 'otro', label: 'Otros' }] as const).map((t) => {
                   const isSelected = tiposAnimales.includes(t.id);
                   return (
-                    <TouchableOpacity key={t.id} onPress={() => toggleTipoAnimal(t.id)} style={{ flex: 1, minWidth: '45%', paddingVertical: 14, borderRadius: 20, backgroundColor: isSelected ? COLORS.primary : COLORS.grayLight, borderWidth: errors.tiposAnimales ? 1 : 0, borderColor: COLORS.danger }}>
+                    <TouchableOpacity key={t.id} onPress={() => toggleTipoAnimal(t.id)} style={{ paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, backgroundColor: isSelected ? COLORS.primary : COLORS.grayLight, borderWidth: errors.tiposAnimales ? 1 : 0, borderColor: COLORS.danger }}>
                       <Text style={{ textAlign: 'center', fontWeight: '700', fontSize: 14, color: isSelected ? COLORS.bgWhite : COLORS.textLight }}>{t.label}</Text>
                     </TouchableOpacity>
                   );
@@ -603,7 +608,34 @@ export default function AssociationFormScreen({ onClose }: Props) {
                   {errors.subcategoriaOtro && <Text style={{ color: COLORS.danger, fontSize: 12 }}>{errors.subcategoriaOtro}</Text>}
 
                   {subcategoriaOtro === 'Otro' && (
-                    <Input label="Describe la especie *" placeholder="Ej. Tlacuache, caballo..." value={especieDescripcionOtro} onChangeText={(val) => { setEspecieDescripcionOtro(val); if (val.trim()) setErrors(prev => ({ ...prev, especieDescripcionOtro: '' })); }} error={errors.especieDescripcionOtro} />
+                    <View style={{ marginTop: 8 }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginBottom: 4 }}>Describe el tipo *</Text>
+                      <Text style={{ fontSize: 12, color: COLORS.textLight, marginBottom: 8 }}>(Presiona "Enter" en tu teclado para añadir el tipo)</Text>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: customTipos.length > 0 ? 12 : 0 }}>
+                        {customTipos.map((tipo, idx) => (
+                          <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.primary, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16 }}>
+                            <Text style={{ color: COLORS.bgWhite, fontWeight: '600', fontSize: 12, marginRight: 6 }}>{tipo}</Text>
+                            <TouchableOpacity onPress={() => setCustomTipos(prev => prev.filter((_, i) => i !== idx))}>
+                              <Ionicons name="close-circle" size={16} color={COLORS.bgWhite} />
+                            </TouchableOpacity>
+                          </View>
+                        ))}
+                      </View>
+                      <Input
+                        placeholder="Ej. Tlacuache, caballo..."
+                        value={customTipoInput}
+                        onChangeText={setCustomTipoInput}
+                        error={errors.customTipos}
+                        onSubmitEditing={() => {
+                          if (customTipoInput.trim()) {
+                            setCustomTipos(prev => [...prev, customTipoInput.trim()]);
+                            setCustomTipoInput('');
+                            setErrors(prev => ({ ...prev, customTipos: '' }));
+                          }
+                        }}
+                        blurOnSubmit={false}
+                      />
+                    </View>
                   )}
                 </View>
               )}
@@ -655,7 +687,10 @@ export default function AssociationFormScreen({ onClose }: Props) {
               </View>
               <View style={{ flexDirection: 'column' }}>
                  <View style={{ flex: 1 }}><Input label="Colonia" placeholder="Ej. Centro Histórico" value={colonia} onChangeText={setColonia} /></View>
-                 <View style={{ flex: 1 }}><Input label="Municipio / Ciudad" placeholder="Ej. Puebla" value={municipio} onChangeText={setMunicipio} /></View>
+                 <View style={styles.rowContainer}>
+                   <View style={styles.halfWidth}><Input label="Municipio / Ciudad" placeholder="Ej. Puebla" value={municipio} onChangeText={setMunicipio} /></View>
+                   <View style={styles.halfWidth}><Input label="Estado" placeholder="Ej. Puebla" value={estado} onChangeText={setEstado} /></View>
+                 </View>
               </View>
               <Input label="Referencia (Opcional)" placeholder="Ej. Casa azul" value={referencia} onChangeText={setReferencia} />
               
