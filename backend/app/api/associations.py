@@ -14,7 +14,9 @@ from app.services.voluntario_service import (
     reactivar_voluntario,
     listar_voluntarios_asociacion,
 )
+from app.models.association import NuevoRepresentante
 import json
+from app.services.email_service import email_bienvenida_staff
 
 router = APIRouter()
 
@@ -60,7 +62,7 @@ def _verificar_rol(usuario: dict, roles_permitidos: tuple[str, ...]) -> None:
         )
     
 def _verificar_asociacion_aprobada(asociacion_id: str) -> None:
-    asociacion = supabase.table("asociaciones").select("verificado").eq(
+    asociacion = supabase.table("asociaciones").select("verificado, nombre").eq(
         "id", asociacion_id
     ).execute()
  
@@ -311,37 +313,26 @@ async def get_mi_asociacion(authorization: str = Header(None)):
         "motivo_rechazo": asociacion.get("motivo_rechazo"),
     }
 
-
-class NuevoRepresentante(BaseModel):
-    nombre: str
-    apellido_paterno: str
-    apellido_materno: str | None = None
-    telefono: str
-    email: str | None = None
-    es_staff: bool = False
-
-
 @router.post("/{asociacion_id}/representantes", status_code=201)
 async def agregar_representante(asociacion_id: str, body: NuevoRepresentante, authorization: str = Header(None)):
     """Permite a un representante ya logueado agregar a alguien más como
     representante de la misma asociación. No crea contraseña aquí — solo deja
-    la fila lista para que esa persona se registre normal en /auth/register
-    con el mismo teléfono, momento en el que el flujo de reclamo de cuenta
-    de invitado (ya existente) la vincula automáticamente."""
+    la fila lista para que esa persona reclame su cuenta vía el correo de
+    bienvenida (mismo flujo de verificación SMS que usan los invitados)."""
     usuario = _obtener_usuario_autenticado(authorization)
     _verificar_rol(usuario, ("asociacion",))
 
     if usuario.get("asociacion_id") != asociacion_id:
         raise HTTPException(status_code=403, detail="No tienes permiso sobre esta asociación")
 
-    asociacion = supabase.table("asociaciones").select("verificado").eq("id", asociacion_id).execute()
+    asociacion = supabase.table("asociaciones").select("verificado, nombre").eq("id", asociacion_id).execute()
     if not asociacion.data or not asociacion.data[0]["verificado"]:
         raise HTTPException(status_code=403, detail="Tu asociación todavía no ha sido aprobada")
 
     telefono_limpio = body.telefono.replace(" ", "").replace("-", "")
     if not validar_telefono(telefono_limpio):
         raise HTTPException(status_code=422, detail="El teléfono debe tener exactamente 10 dígitos numéricos.")
-    if body.email and not validar_email(body.email):
+    if not validar_email(body.email):
         raise HTTPException(status_code=422, detail="Ingresa un correo electrónico válido.")
 
     rol_nombre = "staff" if body.es_staff else "asociacion"
@@ -357,9 +348,15 @@ async def agregar_representante(asociacion_id: str, body: NuevoRepresentante, au
             raise HTTPException(status_code=409, detail="Ese teléfono ya pertenece a una cuenta con acceso")
         supabase.table("usuarios").update({
             "asociacion_id": asociacion_id,
-            "rol_id": rol_id, 
+            "rol_id": rol_id,
+            "email": body.email,
         }).eq("id", existente.data[0]["id"]).execute()
     else:
+        # Validar que el correo no esté ya en uso por otra cuenta
+        existente_email = supabase.table("usuarios").select("id").eq("email", body.email).execute()
+        if existente_email.data:
+            raise HTTPException(status_code=409, detail="Ese correo ya pertenece a otra cuenta")
+
         supabase.table("usuarios").insert({
             "nombre": body.nombre,
             "apellido_paterno": body.apellido_paterno,
@@ -370,8 +367,19 @@ async def agregar_representante(asociacion_id: str, body: NuevoRepresentante, au
             "rol_id": rol_id,
         }).execute()
 
-    return {"mensaje": "Representante agregado. Podrá iniciar sesión registrándose con ese mismo teléfono."}
+    import secrets
+    from datetime import datetime, timedelta, timezone
+    from app.services.email_service import email_bienvenida_staff
 
+    token = secrets.token_urlsafe(24)
+    supabase.table("tokens_invitacion").insert({
+        "token": token,
+        "telefono": telefono_limpio,
+        "expira_at": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
+    }).execute()
+    email_bienvenida_staff(nombre=body.nombre, email=body.email, token=token, nombre_asociacion=asociacion.data[0]["nombre"])
+
+    return {"mensaje": "Representante agregado. Le enviamos un correo con las instrucciones para crear su cuenta."}
 @router.get("/me/reportes", status_code=200)
 async def get_reportes_asignados(authorization: str = Header(None)):
     usuario = _obtener_usuario_autenticado(authorization)

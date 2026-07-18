@@ -258,7 +258,9 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
 
   const handleEmailRepChange = (val: string) => {
     setEmailRep(val);
-    if (val.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val.trim())) {
+    if (!val.trim()) {
+      setErrorsRep(prev => ({ ...prev, emailRep: 'El correo es obligatorio.' }));
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val.trim())) {
       setErrorsRep(prev => ({ ...prev, emailRep: 'Ingresa un correo válido.' }));
     } else {
       setErrorsRep(prev => ({ ...prev, emailRep: '' }));
@@ -532,7 +534,10 @@ const confirmarReactivar = async () => {
     else if (/[a-zA-Z]/.test(telefonoRep)) { newErrors.telefonoRep = 'El teléfono no puede contener letras.'; hasErrors = true; }
     else if (!/^\d{10}$/.test(telefonoRep.trim())) { newErrors.telefonoRep = 'Debe tener 10 dígitos numéricos.'; hasErrors = true; }
 
-    if (emailRep.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailRep.trim())) {
+    if (!emailRep.trim()) {
+      newErrors.emailRep = 'El correo es obligatorio.';
+      hasErrors = true;
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailRep.trim())) {
       newErrors.emailRep = 'Ingresa un correo válido.';
       hasErrors = true;
     }
@@ -550,7 +555,7 @@ const confirmarReactivar = async () => {
         `${API_URL}/associations/${info.id}/representantes`,
         {
           nombre: nombreRep.trim(), apellido_paterno: apellidoRep.trim(), telefono: telefonoRep.replace(/\s|-/g, ''),
-          email: emailRep.trim() || undefined, es_staff: esStaff,
+          email: emailRep.trim(), es_staff: esStaff,
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -1444,7 +1449,7 @@ const confirmarReactivar = async () => {
                     <Input label="Teléfono" placeholder="Ej. 2221234567" value={telefonoRep} onChangeText={handleTelefonoRepChange} keyboardType="numeric" maxLength={10} error={errorsRep.telefonoRep} />
                   </View>
                   <View style={{ flexGrow: 1, flexBasis: 200, minWidth: 180 }}>
-                    <Input label="Correo (Opcional)" placeholder="Ej. correo@ejemplo.com" value={emailRep} onChangeText={handleEmailRepChange} keyboardType="email-address" autoCapitalize="none" error={errorsRep.emailRep} />
+                    <Input label="Correo " placeholder="Ej. correo@ejemplo.com" value={emailRep} onChangeText={handleEmailRepChange} keyboardType="email-address" autoCapitalize="none" error={errorsRep.emailRep} />
                   </View>
                 </View>
 
