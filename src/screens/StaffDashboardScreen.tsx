@@ -219,7 +219,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
       {reportesEsperandoConfirmacion.map((reporte) => (
         <View key={reporte.id} style={confirmStyles.card}>
           {reporte.foto_url && (
-            <Image source={{ uri: reporte.foto_url }} style={confirmStyles.photo} resizeMode="cover" />
+            <Image source={{ uri: reporte.foto_url }} style={confirmStyles.photo} resizeMode="contain" />
           )}
           <View style={confirmStyles.body}>
             <Text style={confirmStyles.title}>{reporte.animal?.tipo_animal || 'Animal'}</Text>
