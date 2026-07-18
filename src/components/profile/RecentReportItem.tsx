@@ -7,6 +7,7 @@ import { Brand } from '../../constants/theme';
 import { getCondicionPreview, getEstadoPreview } from './condicionEstadoColors';
 import { AnimalIcon } from './AnimalIcon';
 import type { ReporteResumen } from '../../hooks/useRecentReports';
+import { getAnimales, animalMasGrave, totalAnimales } from '../../types/reporte';
 
 interface Props {
   reporte: ReporteResumen;
@@ -14,11 +15,14 @@ interface Props {
 }
 
 export function RecentReportItem({ reporte, onPress }: Props) {
-  const cond = getCondicionPreview(reporte.animal?.condicion);
+  const animales = getAnimales(reporte);
+  const grave = animalMasGrave(animales);
+  const totalCaso = totalAnimales(animales);
+  const cond = getCondicionPreview(grave?.condicion ?? null);
   const est = getEstadoPreview(reporte.estado_reporte);
   const foto = reporte.fotos?.[0] || reporte.foto_url;
-  const tipoAnimal = reporte.animal?.tipo_animal ?? null;
-  const condicion = reporte.animal?.condicion ?? null;
+  const tipoAnimal = grave?.tipo_animal ?? null;
+  const condicion = grave?.condicion ?? null;
   const tipoLabel = tipoAnimal ? tipoAnimal[0].toUpperCase() + tipoAnimal.slice(1) : 'Animal';
   const lugar = [reporte.colonia, reporte.municipio].filter(Boolean).join(', ') || 'Sin ubicación';
   const tiempo = formatDistanceToNow(new Date(reporte.created_at), { addSuffix: false, locale: es });
@@ -41,12 +45,12 @@ export function RecentReportItem({ reporte, onPress }: Props) {
           <View style={styles.content}>
             <View style={styles.tipoRow}>
               <AnimalIcon tipoAnimal={tipoAnimal} condicion={condicion} size={22} />
-              <Text style={styles.tipo}>{tipoLabel}</Text>
+              <Text style={styles.tipo}>{tipoLabel}{totalCaso > 1 ? ` · ${totalCaso} animales` : ''}</Text>
             </View>
 
-            {!!reporte.animal?.descripcion && (
+            {!!grave?.descripcion && (
               <Text style={styles.descripcion} numberOfLines={1}>
-                {reporte.animal.descripcion}
+                {grave.descripcion}
               </Text>
             )}
 

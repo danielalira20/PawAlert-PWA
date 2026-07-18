@@ -14,6 +14,7 @@ import { EncontreModal } from '../components/staff-dashboard/EncontreModal';
 import { RefugioModal } from '../components/staff-dashboard/RefugioModal';
 import { Brand } from '../constants/theme';
 import type { ReporteStaff } from '../types/reportestaff';
+import { getAnimales, animalMasGrave, totalAnimales } from '../types/reporte';
 
 interface Props {
   onClose?: () => void;
@@ -216,13 +217,17 @@ export default function StaffDashboardScreen({ onClose }: Props) {
         </View>
       </View>
 
-      {reportesEsperandoConfirmacion.map((reporte) => (
+      {reportesEsperandoConfirmacion.map((reporte) => {
+        const animalesR = getAnimales(reporte);
+        const grave = animalMasGrave(animalesR);
+        const totalCaso = totalAnimales(animalesR);
+        return (
         <View key={reporte.id} style={confirmStyles.card}>
           {reporte.foto_url && (
             <Image source={{ uri: reporte.foto_url }} style={confirmStyles.photo} resizeMode="cover" />
           )}
           <View style={confirmStyles.body}>
-            <Text style={confirmStyles.title}>{reporte.animal?.tipo_animal || 'Animal'}</Text>
+            <Text style={confirmStyles.title}>{grave?.tipo_animal || 'Animal'}{totalCaso > 1 ? ` · ${totalCaso} animales` : ''}</Text>
             <View style={confirmStyles.metaRow}>
               <Ionicons name="location-outline" size={13} color={Brand.primary} />
               <Text style={confirmStyles.metaText} numberOfLines={1}>
@@ -239,7 +244,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
             )}
 
             <View style={confirmStyles.chipsRow}>
-              {[reporte.animal?.condicion, reporte.animal?.tamanio, reporte.animal?.sexo, reporte.animal?.edad_aproximada]
+              {[grave?.condicion, grave?.tamanio, grave?.sexo, grave?.edad_aproximada]
                 .filter(Boolean)
                 .map((dato, i) => (
                   <View key={i} style={confirmStyles.chip}>
@@ -265,7 +270,8 @@ export default function StaffDashboardScreen({ onClose }: Props) {
             </View>
           </View>
         </View>
-      ))}
+        );
+      })}
     </View>
   );
 

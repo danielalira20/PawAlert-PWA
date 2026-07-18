@@ -32,6 +32,7 @@ import { API_URL } from '../constants/api';
 import { ICON_CAT, ICON_DOG, ICON_PAW } from '../constants/mapIcons';
 import { petzen } from '../constants/petzenTheme';
 import { useAuth } from '../context/AuthContext';
+import { Animal, getAnimales, condicionMasGrave, totalAnimales, animalMasGrave } from '../types/reporte';
 
 interface ReporteItem {
   id: string;
@@ -43,14 +44,8 @@ interface ReporteItem {
   foto_url: string | null;
   fotos?: string[]; // si el backend manda varias fotos (animal_fotos), se usan aquí
   asociacion_nombre: string | null;
-  animal: {
-    tipo_animal: string | null;
-    condicion: string | null;
-    tamanio: string | null;
-    sexo: string | null;
-    edad_aproximada: string | null;
-    descripcion: string | null;
-  } | null;
+  animal: Animal | null;
+  animales?: Animal[];
 }
 
 interface MisReportesScreenProps {
@@ -254,7 +249,7 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
   reportes.forEach((r) => {
     const key = format(new Date(r.created_at), 'yyyy-MM-dd');
     if (!diasConReportes.has(key)) {
-      diasConReportes.set(key, getCondicion(r.animal?.condicion ?? null).color);
+      diasConReportes.set(key, getCondicion(condicionMasGrave(getAnimales(r))).color);
     }
   });
 
@@ -331,12 +326,15 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
   const renderCard = (reporte: ReporteItem, isLast: boolean) => {
     const isExpanded = expandedId === reporte.id;
     const estadoColor = getEstadoColor(reporte.estado_reporte);
-    const condCfg = getCondicion(reporte.animal?.condicion ?? null);
-    const condicionLabel = reporte.animal?.condicion
-      ? reporte.animal.condicion[0].toUpperCase() + reporte.animal.condicion.slice(1)
+    const animales = getAnimales(reporte);
+    const grave = animalMasGrave(animales);
+    const totalCaso = totalAnimales(animales);
+    const condCfg = getCondicion(grave?.condicion ?? null);
+    const condicionLabel = grave?.condicion
+      ? grave.condicion[0].toUpperCase() + grave.condicion.slice(1)
       : null;
-    const tipoLabel = reporte.animal?.tipo_animal
-      ? reporte.animal.tipo_animal[0].toUpperCase() + reporte.animal.tipo_animal.slice(1)
+    const tipoLabel = grave?.tipo_animal
+      ? grave.tipo_animal[0].toUpperCase() + grave.tipo_animal.slice(1)
       : 'Animal';
     const fotos = reporte.fotos && reporte.fotos.length > 0
       ? reporte.fotos
@@ -383,12 +381,19 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
 
               <View style={{ flexDirection: 'row', padding: 13, gap: 12, alignItems: 'center' }}>
                 {/* Foto o ícono */}
-                <View style={{ width: 72, height: 72, borderRadius: 14, overflow: 'hidden', flexShrink: 0, borderWidth: 1, borderColor: condCfg.color + '30' }}>
-                  {fotos.length > 0 ? (
-                    <Image source={{ uri: fotos[0] }} style={{ width: 72, height: 72 }} resizeMode="cover" />
-                  ) : (
-                    <View style={{ width: 72, height: 72, backgroundColor: condCfg.bg, alignItems: 'center', justifyContent: 'center' }}>
-                      <AnimalIcon tipoAnimal={reporte.animal?.tipo_animal ?? null} condicion={reporte.animal?.condicion ?? null} size={56} />
+                <View style={{ width: 72, height: 72, borderRadius: 14, overflow: 'visible', flexShrink: 0, borderWidth: 1, borderColor: condCfg.color + '30' }}>
+                  <View style={{ width: 72, height: 72, borderRadius: 14, overflow: 'hidden' }}>
+                    {fotos.length > 0 ? (
+                      <Image source={{ uri: fotos[0] }} style={{ width: 72, height: 72 }} resizeMode="cover" />
+                    ) : (
+                      <View style={{ width: 72, height: 72, backgroundColor: condCfg.bg, alignItems: 'center', justifyContent: 'center' }}>
+                        <AnimalIcon tipoAnimal={grave?.tipo_animal ?? null} condicion={grave?.condicion ?? null} size={56} />
+                      </View>
+                    )}
+                  </View>
+                  {totalCaso > 1 && (
+                    <View style={{ position: 'absolute', top: -5, right: -5, minWidth: 18, height: 18, paddingHorizontal: 4, borderRadius: 9, backgroundColor: petzen.colors.textDark, borderWidth: 2, borderColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ fontSize: 9, fontWeight: '800', color: '#FFFFFF' }}>{totalCaso}</Text>
                     </View>
                   )}
                 </View>
@@ -396,13 +401,13 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
                 {/* Info */}
                 <View style={{ flex: 1 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 5 }}>
-                    <AnimalIcon tipoAnimal={reporte.animal?.tipo_animal ?? null} condicion={reporte.animal?.condicion ?? null} size={28} />
+                    <AnimalIcon tipoAnimal={grave?.tipo_animal ?? null} condicion={grave?.condicion ?? null} size={28} />
                     <Text style={{ fontSize: 15, fontFamily: petzen.fonts.bold, color: petzen.colors.textDark }}>
-                      {tipoLabel}
+                      {tipoLabel}{totalCaso > 1 ? ` · ${totalCaso} animales` : ''}
                     </Text>
-                    {reporte.animal?.tamanio && (
+                    {grave?.tamanio && (
                       <Text style={{ fontSize: 12, color: petzen.colors.textSecondary }}>
-                        · {reporte.animal.tamanio[0].toUpperCase() + reporte.animal.tamanio.slice(1)}
+                        · {grave.tamanio[0].toUpperCase() + grave.tamanio.slice(1)}
                       </Text>
                     )}
                   </View>
@@ -479,12 +484,12 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
                     )}
 
                     {/* Datos del animal — siempre los 3, aunque digan "desconocido" */}
-                    {reporte.animal && (
+                    {grave && (
                       <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
                         {[
-                          { icon: 'male-female-outline', label: reporte.animal.sexo },
-                          { icon: 'time-outline', label: reporte.animal.edad_aproximada },
-                          { icon: 'resize-outline', label: reporte.animal.tamanio },
+                          { icon: 'male-female-outline', label: grave.sexo },
+                          { icon: 'time-outline', label: grave.edad_aproximada },
+                          { icon: 'resize-outline', label: grave.tamanio },
                         ]
                           .filter((d) => !!d.label)
                           .map((d, i) => (
@@ -517,14 +522,14 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
                     )}
 
                     {/* Descripción a todo el ancho */}
-                    {reporte.animal?.descripcion && (
+                    {grave?.descripcion && (
                       <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F5F0E8' }}>
                         <View style={{ width: 28, height: 28, borderRadius: 9, backgroundColor: '#9B59B620', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                           <Ionicons name="document-text-outline" size={14} color="#9B59B6" />
                         </View>
                         <View style={{ flex: 1, minWidth: 0 }}>
                           <Text style={{ fontSize: 10, color: petzen.colors.textSecondary, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.4 }}>Descripción</Text>
-                          <Text style={{ fontSize: 13, color: petzen.colors.textSecondary, lineHeight: 19 }}>{reporte.animal.descripcion}</Text>
+                          <Text style={{ fontSize: 13, color: petzen.colors.textSecondary, lineHeight: 19 }}>{grave.descripcion}</Text>
                         </View>
                       </View>
                     )}

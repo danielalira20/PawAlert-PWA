@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Brand, normalizeCondicion } from '../../constants/theme';
 import { ConditionBadge } from './ConditionBadge';
 import type { ReporteStaff } from '../../types/reportestaff';
+import { getAnimales, animalMasGrave, totalAnimales } from '../../types/reporte';
 
 const DESKTOP_BREAKPOINT = 900;
 
@@ -38,7 +39,10 @@ export function ReportDetailModal({
   onRefugio,
   puedeRegistrarHitos = true,
 }: Props) {
-  const condicion = reporte ? normalizeCondicion(reporte.animal?.condicion) : null;
+  const animales = reporte ? getAnimales(reporte) : [];
+  const grave = animalMasGrave(animales);
+  const totalCaso = totalAnimales(animales);
+  const condicion = reporte ? normalizeCondicion(grave?.condicion) : null;
   const { width } = useWindowDimensions();
   const isDesktop = width >= DESKTOP_BREAKPOINT;
 
@@ -72,19 +76,27 @@ export function ReportDetailModal({
               {condicion && (
                 <View style={styles.badgeRow}>
                   <ConditionBadge condicion={condicion} />
+                  {totalCaso > 1 && (
+                    <View style={styles.countPill}>
+                      <Ionicons name="paw" size={11} color={Brand.textDark} />
+                      <Text style={styles.countPillText}>{totalCaso} animales en este caso</Text>
+                    </View>
+                  )}
                 </View>
               )}
 
               <View style={styles.card}>
-                <Text style={styles.cardLabel}>Información del animal</Text>
-                <InfoRow label="Tipo" value={reporte.animal?.tipo_animal} />
-                <InfoRow label="Tamaño" value={reporte.animal?.tamanio} />
-                <InfoRow label="Sexo" value={reporte.animal?.sexo} />
-                <InfoRow label="Edad aproximada" value={reporte.animal?.edad_aproximada} />
-                {!!reporte.animal?.descripcion && (
+                <Text style={styles.cardLabel}>
+                  {totalCaso > 1 ? 'Información del animal más grave' : 'Información del animal'}
+                </Text>
+                <InfoRow label="Tipo" value={grave?.tipo_animal} />
+                <InfoRow label="Tamaño" value={grave?.tamanio} />
+                <InfoRow label="Sexo" value={grave?.sexo} />
+                <InfoRow label="Edad aproximada" value={grave?.edad_aproximada} />
+                {!!grave?.descripcion && (
                   <View style={styles.descripcionBlock}>
                     <Text style={styles.cardLabelSmall}>Descripción</Text>
-                    <Text style={styles.descripcionText}>{reporte.animal.descripcion}</Text>
+                    <Text style={styles.descripcionText}>{grave.descripcion}</Text>
                   </View>
                 )}
               </View>
@@ -152,7 +164,17 @@ const styles = StyleSheet.create({
   title: { fontSize: 18, fontWeight: '800', color: Brand.textDark },
   photo: { width: '100%', height: 240, borderRadius: 18, marginBottom: 12 },
   photoPlaceholder: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#E2D0B8' },
-  badgeRow: { marginBottom: 12, alignItems: 'flex-start' },
+  badgeRow: { marginBottom: 12, alignItems: 'flex-start', flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  countPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: `${Brand.secondary}22`,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  countPillText: { fontSize: 11, fontWeight: '700', color: Brand.textDark },
   card: { backgroundColor: Brand.cardWarm, borderRadius: 16, padding: 14, marginBottom: 12 },
   cardLabel: {
     fontSize: 11,

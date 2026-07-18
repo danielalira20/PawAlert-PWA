@@ -3,7 +3,7 @@ import L from 'leaflet';
 import { useEffect } from 'react';
 import 'leaflet/dist/leaflet.css';
 import { MapContainer, Marker, Popup, TileLayer, useMapEvents } from 'react-leaflet';
-import { Reporte } from '../types/reporte';
+import { Reporte, getAnimales, condicionMasGrave, especieMasGrave, totalAnimales } from '../types/reporte';
 
 const INITIAL_CENTER: [number, number] = [19.0414, -98.2063];
 const INITIAL_ZOOM = 13;
@@ -60,13 +60,28 @@ const DARK: Record<string, string> = {
 };
 
 // ─── Crear pin ────────────────────────────────────────────────────────────────
-const createPin = (condicion: string, tipoAnimal: string, selected = false) => {
+const createPin = (condicion: string, tipoAnimal: string, selected = false, count = 1) => {
   const cfg = getCfg(condicion);
   const dark = DARK[cfg.border] ?? cfg.border;
   const size = selected ? 54 : 46;
   const shadow = selected
     ? `0 6px 24px ${cfg.border}BB, 0 0 0 3px white, 0 0 0 5px ${dark}66`
     : `0 3px 12px ${cfg.border}88`;
+
+  // Badge de conteo — solo si el caso trae más de un animal. Vive fuera del
+  // círculo (que tiene overflow:hidden para recortar el ícono), en un
+  // wrapper aparte con overflow visible, para no quedar cortado.
+  const badge = count > 1 ? `
+      <div style="
+        position:absolute; top:-4px; right:-4px;
+        min-width:20px; height:20px; padding:0 4px;
+        border-radius:10px;
+        background:#2C3E50;
+        border:2px solid #FFFFFF;
+        display:flex; align-items:center; justify-content:center;
+        font-size:11px; font-weight:800; color:#FFFFFF; font-family:sans-serif;
+        box-shadow:0 2px 4px rgba(0,0,0,0.35);
+      ">${count}</div>` : '';
 
   const html = `
     <div style="
@@ -75,17 +90,21 @@ const createPin = (condicion: string, tipoAnimal: string, selected = false) => {
       transform-origin:bottom center;
       transition:transform 0.2s cubic-bezier(0.34,1.56,0.64,1);
     ">
-      <!-- Círculo de color sólido con borde oscuro -->
-      <div style="
-        width:${size}px; height:${size}px;
-        border-radius:50%;
-        border:3px solid ${dark};
-        background:${cfg.border};
-        overflow:hidden;
-        box-shadow:${shadow};
-        display:flex; align-items:center; justify-content:center;
-      ">
-        ${getAnimalImg(tipoAnimal, cfg.border)}
+      <!-- Wrapper con overflow visible, para que el badge no se recorte -->
+      <div style="position:relative; display:flex; align-items:center; justify-content:center;">
+        <!-- Círculo de color sólido con borde oscuro -->
+        <div style="
+          width:${size}px; height:${size}px;
+          border-radius:50%;
+          border:3px solid ${dark};
+          background:${cfg.border};
+          overflow:hidden;
+          box-shadow:${shadow};
+          display:flex; align-items:center; justify-content:center;
+        ">
+          ${getAnimalImg(tipoAnimal, cfg.border)}
+        </div>
+        ${badge}
       </div>
       <!-- Flecha del mismo color oscuro -->
       <div style="
@@ -209,11 +228,14 @@ export default function LeafletMap({
           .filter((r): r is typeof r & { latitud: number; longitud: number } =>
             r.latitud !== null && r.longitud !== null)
           .map((reporte) => {
-            const tipo = reporte.animal?.tipo_animal ?? '';
+            const animales = getAnimales(reporte);
+            const total = totalAnimales(animales);
+            const tipo = especieMasGrave(animales) ?? '';
             const tipoLabel = tipo ? tipo[0].toUpperCase() + tipo.slice(1) : 'Animal';
-            const tamanio = reporte.animal?.tamanio ?? '';
+            const tamanio = animales[0]?.tamanio ?? '';
             const tamanioLabel = tamanio ? tamanio[0].toUpperCase() + tamanio.slice(1) : '';
-            const cond = getCfg(reporte.animal?.condicion ?? '');
+            const condicionValor = condicionMasGrave(animales) ?? '';
+            const cond = getCfg(condicionValor);
             const est  = getEstado(reporte.estado_reporte ?? '');
             const loc  = reporte.colonia ?? reporte.municipio ?? '';
 
@@ -221,7 +243,7 @@ export default function LeafletMap({
               <Marker
                 key={reporte.id}
                 position={[reporte.latitud, reporte.longitud]}
-                icon={createPin(reporte.animal?.condicion ?? '', tipo, selectedReportId === reporte.id)}
+                icon={createPin(condicionValor, tipo, selectedReportId === reporte.id, total)}
                 eventHandlers={{ click: () => {} }}
               >
                 <Popup closeButton={false} className="pp-wrap" offset={[0, -6]}>
@@ -230,12 +252,12 @@ export default function LeafletMap({
                   <div className="pp-body">
                     {/* Título */}
                     <div className="pp-title">
-                      {tipoLabel}{tamanioLabel ? ` · ${tamanioLabel}` : ''}
+                      {tipoLabel}{tamanioLabel ? ` · ${tamanioLabel}` : ''}{total > 1 ? ` · ${total} animales` : ''}
                     </div>
                     {/* Badges de condición y estado */}
                     <div className="pp-badges">
                       <span className="pp-badge" style={{ background: cond.bg, color: cond.border }}>
-                        ● {reporte.animal?.condicion ?? ''}
+                        ● {condicionValor}
                       </span>
                       <span className="pp-badge" style={{ background: est.bg, color: est.color }}>
                         {est.label}

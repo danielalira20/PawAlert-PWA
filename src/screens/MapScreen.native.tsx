@@ -10,7 +10,7 @@ import AuthGateModal from '../components/AuthGateModal';
 import { ICON_CAT, ICON_CLOCK, ICON_CALENDAR, ICON_DOG, ICON_PAW, ICON_WARNING } from '../constants/mapIcons';
 import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
-import { Reporte } from '../types/reporte';
+import { Reporte, getAnimales, condicionMasGrave, especieMasGrave, totalAnimales, animalMasGrave } from '../types/reporte';
 import ReportFormScreen from './ReportFormScreen';
 
 const { width, height } = Dimensions.get('window');
@@ -58,8 +58,8 @@ const DARK: Record<string, string> = {
 };
 
 // ─── Marcador personalizado con íconos reales ─────────────────────────────────
-function AnimalMarker({ condicion, tipoAnimal, selected }: {
-  condicion: string; tipoAnimal: string; selected: boolean;
+function AnimalMarker({ condicion, tipoAnimal, selected, count = 1 }: {
+  condicion: string; tipoAnimal: string; selected: boolean; count?: number;
 }) {
   const cfg = getCfg(CONDICION_CONFIG, condicion);
   const dark = DARK[cfg.color] ?? cfg.color;
@@ -98,6 +98,17 @@ function AnimalMarker({ condicion, tipoAnimal, selected }: {
             resizeMode="contain"
           />
         </View>
+        {/* Badge de conteo — solo si el caso trae más de un animal */}
+        {count > 1 && (
+          <View style={{
+            position: 'absolute', top: -4, right: -4,
+            minWidth: 18, height: 18, paddingHorizontal: 3, borderRadius: 9,
+            backgroundColor: '#2C3E50', borderWidth: 2, borderColor: '#FFFFFF',
+            alignItems: 'center', justifyContent: 'center',
+          }}>
+            <Text style={{ fontSize: 9, fontWeight: '800', color: '#FFFFFF' }}>{count}</Text>
+          </View>
+        )}
       </View>
       {/* Flecha */}
       <View style={{
@@ -162,16 +173,17 @@ export default function MapScreen() {
   const reportesFiltrados = reportes
     .filter(r => {
       if (r.estado_reporte === 'cerrado') return false;
-      if (filtro !== 'todos' && r.animal?.condicion?.toLowerCase() !== filtro) return false;
-      if (filtroEspecie !== 'todos' && r.animal?.tipo_animal?.toLowerCase() !== filtroEspecie) return false;
+      const animalesR = getAnimales(r);
+      if (filtro !== 'todos' && !animalesR.some(a => a.condicion?.toLowerCase() === filtro)) return false;
+      if (filtroEspecie !== 'todos' && !animalesR.some(a => a.tipo_animal?.toLowerCase() === filtroEspecie)) return false;
       return true;
     })
     .sort((a, b) => {
       if (ordenar === 'reciente') return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
       if (ordenar === 'antiguo')  return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       if (ordenar === 'urgente') {
-        const ua = URGENCIA[a.animal?.condicion?.toLowerCase() ?? ''] ?? 3;
-        const ub = URGENCIA[b.animal?.condicion?.toLowerCase() ?? ''] ?? 3;
+        const ua = URGENCIA[condicionMasGrave(getAnimales(a))?.toLowerCase() ?? ''] ?? 3;
+        const ub = URGENCIA[condicionMasGrave(getAnimales(b))?.toLowerCase() ?? ''] ?? 3;
         return ua - ub;
       }
       return 0;
@@ -187,11 +199,14 @@ export default function MapScreen() {
         showsMyLocationButton={false}
       >
         {reportesFiltrados.map(reporte => {
-          const tipo = reporte.animal?.tipo_animal ?? '';
+          const animales = getAnimales(reporte);
+          const total = totalAnimales(animales);
+          const tipo = especieMasGrave(animales) ?? '';
           const tipoLabel = tipo ? tipo[0].toUpperCase() + tipo.slice(1) : 'Animal';
-          const tamanio = reporte.animal?.tamanio ?? '';
+          const tamanio = animales[0]?.tamanio ?? '';
           const tamanioLabel = tamanio ? tamanio[0].toUpperCase() + tamanio.slice(1) : '';
-          const condCfg = getCfg(CONDICION_CONFIG, reporte.animal?.condicion ?? '');
+          const condicionValor = condicionMasGrave(animales) ?? '';
+          const condCfg = getCfg(CONDICION_CONFIG, condicionValor);
           const estCfg  = getCfg(ESTADO_CONFIG, reporte.estado_reporte ?? '');
           const loc = reporte.colonia ?? reporte.municipio ?? '';
 
@@ -201,9 +216,10 @@ export default function MapScreen() {
               coordinate={{ latitude: reporte.latitud as number, longitude: reporte.longitud as number }}
             >
               <AnimalMarker
-                condicion={reporte.animal?.condicion ?? ''}
+                condicion={condicionValor}
                 tipoAnimal={tipo}
                 selected={selectedReport?.id === reporte.id}
+                count={total}
               />
               <Callout onPress={() => handleSelectReport(reporte)} tooltip={false}>
                 <View style={{ minWidth: 170, maxWidth: 220, padding: 12, borderRadius: 12 }}>
@@ -266,12 +282,13 @@ export default function MapScreen() {
             // al elegir esa misma pestaña.
             const base = reportes.filter(r => {
               if (r.estado_reporte === 'cerrado') return false;
-              if (filtroEspecie !== 'todos' && r.animal?.tipo_animal?.toLowerCase() !== filtroEspecie) return false;
+              const animalesR = getAnimales(r);
+              if (filtroEspecie !== 'todos' && !animalesR.some(a => a.tipo_animal?.toLowerCase() === filtroEspecie)) return false;
               return true;
             });
             const count = key === 'todos'
               ? base.length
-              : base.filter(r => r.animal?.condicion?.toLowerCase() === key).length;
+              : base.filter(r => getAnimales(r).some(a => a.condicion?.toLowerCase() === key)).length;
             return (
               <TouchableOpacity key={key} onPress={() => setFiltro(key)}
                 style={{ flex: 1, paddingVertical: 8, alignItems: 'center',
@@ -364,10 +381,13 @@ export default function MapScreen() {
       {/* Bottom Sheet */}
       {selectedReport && (() => {
         const r = selectedReport;
-        const condCfg = getCfg(CONDICION_CONFIG, r.animal?.condicion ?? '');
+        const animalesSel = getAnimales(r);
+        const totalSel = totalAnimales(animalesSel);
+        const grave = animalMasGrave(animalesSel);
+        const condCfg = getCfg(CONDICION_CONFIG, grave?.condicion ?? '');
         const estCfg  = getCfg(ESTADO_CONFIG, r.estado_reporte ?? '');
-        const tipoLabel = r.animal?.tipo_animal
-          ? r.animal.tipo_animal[0].toUpperCase() + r.animal.tipo_animal.slice(1)
+        const tipoLabel = grave?.tipo_animal
+          ? grave.tipo_animal[0].toUpperCase() + grave.tipo_animal.slice(1)
           : 'Animal';
 
         return (
@@ -391,17 +411,24 @@ export default function MapScreen() {
 
             <View style={{ paddingHorizontal: 16, paddingTop: 4 }}>
               <View style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start' }}>
-                <View style={{ width: 80, height: 80, borderRadius: 14, overflow: 'hidden', backgroundColor: condCfg.bg, flexShrink: 0 }}>
-                  {r.foto_url
-                    ? <Image source={{ uri: r.foto_url }} style={{ width: 80, height: 80 }} resizeMode="cover" />
-                    : <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-                        <Ionicons name="paw" size={32} color={condCfg.color} />
-                      </View>
-                  }
+                <View style={{ width: 80, height: 80, borderRadius: 14, overflow: 'visible', backgroundColor: condCfg.bg, flexShrink: 0 }}>
+                  <View style={{ width: 80, height: 80, borderRadius: 14, overflow: 'hidden' }}>
+                    {r.foto_url
+                      ? <Image source={{ uri: r.foto_url }} style={{ width: 80, height: 80 }} resizeMode="cover" />
+                      : <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                          <Ionicons name="paw" size={32} color={condCfg.color} />
+                        </View>
+                    }
+                  </View>
+                  {totalSel > 1 && (
+                    <View style={{ position: 'absolute', top: -5, right: -5, minWidth: 20, height: 20, paddingHorizontal: 4, borderRadius: 10, backgroundColor: COLORS.textDark, borderWidth: 2, borderColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ fontSize: 10, fontWeight: '800', color: '#FFFFFF' }}>{totalSel}</Text>
+                    </View>
+                  )}
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: 17, fontWeight: '900', color: COLORS.textDark, marginBottom: 4 }}>
-                    {tipoLabel}{r.animal?.tamanio ? ` · ${r.animal.tamanio[0].toUpperCase() + r.animal.tamanio.slice(1)}` : ''}
+                    {tipoLabel}{grave?.tamanio ? ` · ${grave.tamanio[0].toUpperCase() + grave.tamanio.slice(1)}` : ''}{totalSel > 1 ? ` · ${totalSel} animales` : ''}
                   </Text>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 8 }}>
                     <Ionicons name="location-sharp" size={11} color={COLORS.textLight} />
@@ -420,30 +447,30 @@ export default function MapScreen() {
                 </View>
               </View>
               {/* Detalles adicionales */}
-              {(r.animal?.sexo || r.animal?.edad_aproximada || r.animal?.descripcion) && (
+              {(grave?.sexo || grave?.edad_aproximada || grave?.descripcion) && (
                 <View style={{ marginTop: 12, gap: 6 }}>
-                  {r.animal?.sexo && (
+                  {grave?.sexo && (
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                       <View style={{ width: 26, height: 26, borderRadius: 8, backgroundColor: '#FFFAF6', alignItems: 'center', justifyContent: 'center' }}>
                         <Ionicons name="information-circle-outline" size={14} color="#5C4A3A" />
                       </View>
-                      <Text style={{ fontSize: 12, color: '#5C4A3A' }}>Sexo: {r.animal.sexo}</Text>
+                      <Text style={{ fontSize: 12, color: '#5C4A3A' }}>Sexo: {grave.sexo}</Text>
                     </View>
                   )}
-                  {r.animal?.edad_aproximada && (
+                  {grave?.edad_aproximada && (
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                       <View style={{ width: 26, height: 26, borderRadius: 8, backgroundColor: '#FFFAF6', alignItems: 'center', justifyContent: 'center' }}>
                         <Ionicons name="calendar-outline" size={14} color="#5C4A3A" />
                       </View>
-                      <Text style={{ fontSize: 12, color: '#5C4A3A' }}>Edad: {r.animal.edad_aproximada}</Text>
+                      <Text style={{ fontSize: 12, color: '#5C4A3A' }}>Edad: {grave.edad_aproximada}</Text>
                     </View>
                   )}
-                  {r.animal?.descripcion && (
+                  {grave?.descripcion && (
                     <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
                       <View style={{ width: 26, height: 26, borderRadius: 8, backgroundColor: '#FFFAF6', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                         <Ionicons name="document-text-outline" size={14} color="#5C4A3A" />
                       </View>
-                      <Text style={{ fontSize: 12, color: '#5C4A3A', flex: 1, lineHeight: 18, paddingTop: 4 }}>{r.animal.descripcion}</Text>
+                      <Text style={{ fontSize: 12, color: '#5C4A3A', flex: 1, lineHeight: 18, paddingTop: 4 }}>{grave.descripcion}</Text>
                     </View>
                   )}
                 </View>

@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View } from 'react-native';
+import { Text, View } from 'react-native';
 import MapView, { Marker, Region } from 'react-native-maps';
 import Animated, { ZoomIn } from 'react-native-reanimated';
 import { CondicionColors, normalizeCondicion } from '../../constants/theme';
 import type { ReporteStaff } from '../../types/reportestaff';
+import { getAnimales, condicionMasGrave, totalAnimales } from '../../types/reporte';
 
 // Misma región por defecto que ya usan en MapScreen.native.tsx (Puebla centro)
 const FALLBACK_REGION: Region = {
@@ -52,7 +53,9 @@ function calcularRegion(reportes: ReporteConCoords[]): Region {
 // el pin "Grave" se queda con un anillo estático en vez de pulsar en loop.
 function StaffMarker({ reporte, onPress }: { reporte: ReporteConCoords; onPress?: () => void }) {
   const [trackChanges, setTrackChanges] = useState(true);
-  const cond = normalizeCondicion(reporte.animal?.condicion);
+  const animales = getAnimales(reporte);
+  const total = totalAnimales(animales);
+  const cond = normalizeCondicion(condicionMasGrave(animales));
   const color = cond ? CondicionColors[cond] : '#9B8B7E';
 
   useEffect(() => {
@@ -91,6 +94,26 @@ function StaffMarker({ reporte, onPress }: { reporte: ReporteConCoords; onPress?
               borderColor: '#fff',
             }}
           />
+          {total > 1 && (
+            <View
+              style={{
+                position: 'absolute',
+                top: -6,
+                right: -6,
+                minWidth: 14,
+                height: 14,
+                paddingHorizontal: 2,
+                borderRadius: 7,
+                backgroundColor: '#2C3E50',
+                borderWidth: 1.5,
+                borderColor: '#fff',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Text style={{ fontSize: 8, fontWeight: '800', color: '#fff' }}>{total}</Text>
+            </View>
+          )}
         </View>
       </Animated.View>
     </Marker>

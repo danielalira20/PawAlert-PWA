@@ -13,6 +13,7 @@ import { es } from 'date-fns/locale';
 import { Brand, normalizeCondicion } from '../../constants/theme';
 import { ConditionBadge } from './ConditionBadge';
 import type { ReporteStaff } from '../../types/reportestaff';
+import { getAnimales, animalMasGrave, totalAnimales } from '../../types/reporte';
 
 const TRAY_WIDTH = 92;
 const SWIPE_OPEN_THRESHOLD = -44;
@@ -78,7 +79,10 @@ export function ReportCard({
 }: Props) {
   const translateX = useSharedValue(0);
   const action = useMemo(() => getQuickAction(reporte.estado_reporte), [reporte.estado_reporte]);
-  const condicion = normalizeCondicion(reporte.animal?.condicion);
+  const animales = useMemo(() => getAnimales(reporte), [reporte]);
+  const grave = animalMasGrave(animales);
+  const totalCaso = totalAnimales(animales);
+  const condicion = normalizeCondicion(grave?.condicion);
   const esCerrado = reporte.estado_reporte === 'cerrado';
 
   const ubicacion =
@@ -153,6 +157,13 @@ export function ReportCard({
                 </View>
               )}
 
+              {totalCaso > 1 && (
+                <View style={styles.countBadge}>
+                  <Ionicons name="paw" size={10} color="#fff" />
+                  <Text style={styles.countBadgeText}>{totalCaso}</Text>
+                </View>
+              )}
+
               {reporte.estado_reporte === 'en_camino' && (
                 <View style={styles.ribbon}>
                   <Ionicons name="car-outline" size={12} color="#fff" />
@@ -169,11 +180,11 @@ export function ReportCard({
 
             <View style={styles.body}>
               <Text style={styles.title} numberOfLines={1}>
-                {reporte.animal?.tipo_animal || 'Animal'}
+                {grave?.tipo_animal || 'Animal'}{totalCaso > 1 ? ` · ${totalCaso} animales` : ''}
               </Text>
-              {!!reporte.animal?.descripcion && (
+              {!!grave?.descripcion && (
                 <Text style={styles.subtitle} numberOfLines={1}>
-                  {reporte.animal.descripcion}
+                  {grave.descripcion}
                 </Text>
               )}
 
@@ -230,6 +241,19 @@ const styles = StyleSheet.create({
   photo: { width: '100%', height: '100%' },
   photoPlaceholder: { alignItems: 'center', justifyContent: 'center' },
   badgeSlot: { position: 'absolute', top: 10, right: 10 },
+  countBadge: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(46,42,38,0.72)',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  countBadgeText: { fontSize: 11, fontWeight: '800', color: '#fff' },
   ribbon: {
     position: 'absolute',
     bottom: 0,

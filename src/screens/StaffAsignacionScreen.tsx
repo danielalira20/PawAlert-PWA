@@ -14,6 +14,7 @@ import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
 import { useWindowDimensions } from 'react-native';
 import { PostulacionesPanel } from '../components/association-dashboard/PostulacionesPanel';
+import { Animal, getAnimales, totalAnimales, animalMasGrave } from '../types/reporte';
 
 // ─── PALETA DE COLORES PETZEN (misma que AssociationStatusScreen, sin
 // tocar — coherencia visual entre asociación y staff) ───
@@ -65,14 +66,8 @@ interface ReporteAsignado {
   created_at: string;
   foto_url: string | null;
   fotos_urls: string[];
-  animal: {
-    tipo_animal: string | null;
-    condicion: string | null;
-    tamanio: string | null;
-    sexo: string | null;
-    edad_aproximada: string | null;
-    descripcion: string | null;
-  };
+  animal: Animal;
+  animales?: Animal[];
 }
 
 // ── Tipos para la pestaña "Mis voluntarios" (nueva) ──
@@ -682,6 +677,9 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
                   const enProceso = ['en_camino', 'en_atencion'].includes(reporte.estado_reporte);
                   const esperandoConfirmacion = reporte.confirmacion_voluntario === 'esperando';
                   const yaRescatado = reporte.estado_reporte === 'rescatado';
+                  const animales = getAnimales(reporte);
+                  const grave = animalMasGrave(animales);
+                  const totalCaso = totalAnimales(animales);
                   return (
                     <View key={reporte.asignacion_id} style={{
                       flexGrow: 1, flexBasis: 260, maxWidth: 300,
@@ -690,9 +688,15 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
                     }}>
                       <View style={{ position: 'relative' }}>
                         <Image source={{ uri: reporte.foto_url || 'https://via.placeholder.com/400' }} style={{ width: '100%', height: 130 }} resizeMode="cover" />
-                        <View style={{ position: 'absolute', top: 12, right: 12, backgroundColor: getBadgeColor(reporte.animal?.condicion || ''), paddingHorizontal: 16, paddingVertical: 6, borderRadius: 16 }}>
-                          <Text style={{ color: COLORS.white, fontWeight: '800', fontSize: 12, textTransform: 'capitalize' }}>{reporte.animal?.condicion || 'Desconocido'}</Text>
+                        <View style={{ position: 'absolute', top: 12, right: 12, backgroundColor: getBadgeColor(grave?.condicion || ''), paddingHorizontal: 16, paddingVertical: 6, borderRadius: 16 }}>
+                          <Text style={{ color: COLORS.white, fontWeight: '800', fontSize: 12, textTransform: 'capitalize' }}>{grave?.condicion || 'Desconocido'}</Text>
                         </View>
+                        {totalCaso > 1 && (
+                          <View style={{ position: 'absolute', top: 12, left: 12, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                            <Ionicons name="paw" size={11} color={COLORS.white} />
+                            <Text style={{ color: COLORS.white, fontWeight: '800', fontSize: 11 }}>{totalCaso}</Text>
+                          </View>
+                        )}
                         {esperandoConfirmacion ? (
                           <View style={{ position: 'absolute', bottom: 0, width: '100%', backgroundColor: 'rgba(230, 168, 20, 0.9)', paddingVertical: 8, paddingHorizontal: 16 }}>
                             <Text style={{ color: COLORS.white, fontSize: 12, fontWeight: '600' }}><Ionicons name="time" size={12} /> Esperando confirmación del rescatista</Text>
@@ -705,7 +709,7 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
                       </View>
 
                       <View style={{ padding: 15 }}>
-                        <Text style={{ fontSize: 16, fontWeight: '800', color: COLORS.textDark, textTransform: 'capitalize' }}>{reporte.animal?.tipo_animal || 'Animal'}</Text>
+                        <Text style={{ fontSize: 16, fontWeight: '800', color: COLORS.textDark, textTransform: 'capitalize' }}>{grave?.tipo_animal || 'Animal'}{totalCaso > 1 ? ` · ${totalCaso} animales` : ''}</Text>
                         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
                           <Ionicons name="location-outline" size={13} color={COLORS.primary} />
                           <Text style={{ color: COLORS.textLight, fontSize: 12, marginLeft: 4 }} numberOfLines={1}>
@@ -726,7 +730,7 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
                         )}
 
                         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                          {[reporte.animal?.tamanio, reporte.animal?.sexo, reporte.animal?.edad_aproximada]
+                          {[grave?.tamanio, grave?.sexo, grave?.edad_aproximada]
                             .filter(Boolean)
                             .map((dato, i) => (
                               <View key={i} style={{ backgroundColor: 'rgba(74,55,40,0.06)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 100 }}>
@@ -941,26 +945,37 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
           <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
             <View style={{ backgroundColor: COLORS.cardBg, borderRadius: 32, padding: 32, width: '100%', maxWidth: 500, maxHeight: '90%' }}>
               <ScrollView showsVerticalScrollIndicator={false}>
-                <Text style={{ fontSize: 28, fontWeight: '900', color: COLORS.textDark, textTransform: 'capitalize', marginBottom: 4 }}>{reporteSeleccionado.animal?.tipo_animal}</Text>
-                <Text style={{ fontSize: 16, color: getBadgeColor(reporteSeleccionado.animal?.condicion || ''), fontWeight: '800', textTransform: 'uppercase', marginBottom: 16 }}>{reporteSeleccionado.animal?.condicion}</Text>
+                {(() => {
+                  const animalesSel = getAnimales(reporteSeleccionado);
+                  const graveSel = animalMasGrave(animalesSel);
+                  const totalSel = totalAnimales(animalesSel);
+                  return (
+                    <>
+                      <Text style={{ fontSize: 28, fontWeight: '900', color: COLORS.textDark, textTransform: 'capitalize', marginBottom: 4 }}>
+                        {graveSel?.tipo_animal}{totalSel > 1 ? ` · ${totalSel} animales en este caso` : ''}
+                      </Text>
+                      <Text style={{ fontSize: 16, color: getBadgeColor(graveSel?.condicion || ''), fontWeight: '800', textTransform: 'uppercase', marginBottom: 16 }}>{graveSel?.condicion}</Text>
 
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 24 }}>
-                  {[
-                    { label: 'Tamaño', value: reporteSeleccionado.animal?.tamanio },
-                    { label: 'Sexo', value: reporteSeleccionado.animal?.sexo },
-                    { label: 'Edad', value: reporteSeleccionado.animal?.edad_aproximada },
-                  ]
-                    .filter((d) => !!d.value)
-                    .map((d, i) => (
-                      <View key={i} style={{ backgroundColor: COLORS.white, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12 }}>
-                        <Text style={{ fontSize: 10, color: COLORS.textLight, fontWeight: '700', textTransform: 'uppercase' }}>{d.label}</Text>
-                        <Text style={{ fontSize: 14, color: COLORS.textDark, fontWeight: '700', textTransform: 'capitalize' }}>{d.value}</Text>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 24 }}>
+                        {[
+                          { label: 'Tamaño', value: graveSel?.tamanio },
+                          { label: 'Sexo', value: graveSel?.sexo },
+                          { label: 'Edad', value: graveSel?.edad_aproximada },
+                        ]
+                          .filter((d) => !!d.value)
+                          .map((d, i) => (
+                            <View key={i} style={{ backgroundColor: COLORS.white, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12 }}>
+                              <Text style={{ fontSize: 10, color: COLORS.textLight, fontWeight: '700', textTransform: 'uppercase' }}>{d.label}</Text>
+                              <Text style={{ fontSize: 14, color: COLORS.textDark, fontWeight: '700', textTransform: 'capitalize' }}>{d.value}</Text>
+                            </View>
+                          ))}
                       </View>
-                    ))}
-                </View>
 
-                <Text style={{ fontSize: 18, fontWeight: '800', color: COLORS.textDark, marginBottom: 8 }}>Descripción</Text>
-                <Text style={{ fontSize: 15, color: COLORS.textLight, marginBottom: 24, lineHeight: 22 }}>{reporteSeleccionado.animal?.descripcion || 'Sin descripción detallada.'}</Text>
+                      <Text style={{ fontSize: 18, fontWeight: '800', color: COLORS.textDark, marginBottom: 8 }}>Descripción</Text>
+                      <Text style={{ fontSize: 15, color: COLORS.textLight, marginBottom: 24, lineHeight: 22 }}>{graveSel?.descripcion || 'Sin descripción detallada.'}</Text>
+                    </>
+                  );
+                })()}
 
                 <Text style={{ fontSize: 18, fontWeight: '800', color: COLORS.textDark, marginBottom: 8 }}>Ubicación</Text>
                 <Text style={{ fontSize: 15, color: COLORS.textLight, lineHeight: 22 }}>{[reporteSeleccionado.calle, reporteSeleccionado.colonia, reporteSeleccionado.municipio].filter(Boolean).join(', ')}</Text>

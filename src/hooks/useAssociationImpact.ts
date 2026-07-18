@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { API_URL } from '../constants/api';
 import type { ImpactoReportante } from './useRecentReports';
+import { Animal, getAnimales } from '../types/reporte';
 
 // Misma forma que ImpactoReportante — así ambos roles pueden reutilizar,
 // si hace falta, el mismo tipo de componente visual sin duplicar interfaces.
@@ -11,10 +12,8 @@ export type ImpactoAsociacion = ImpactoReportante;
 interface ReporteAsignadoResumen {
   estado_reporte: string;
   created_at: string;
-  animal: {
-    tipo_animal: string | null;
-    condicion: string | null;
-  } | null;
+  animal: Animal | null;
+  animales?: Animal[];
 }
 
 const IMPACTO_VACIO: ImpactoAsociacion = {
@@ -63,15 +62,20 @@ export function useAssociationImpact(enabled: boolean = true) {
       let masAntiguo: string | null = null;
 
       todos.forEach((r) => {
-        const tipo = r.animal?.tipo_animal?.toLowerCase();
-        if (tipo === 'perro') porTipoAnimal.perro += 1;
-        else if (tipo === 'gato') porTipoAnimal.gato += 1;
-        else porTipoAnimal.otro += 1;
+        // Un caso puede traer varios animales — cada uno pesa por su
+        // `cantidad` (un grupo de 8 gatos cuenta como 8, no como 1 fila).
+        getAnimales(r).forEach((a) => {
+          const cantidad = a.cantidad ?? 1;
+          const tipo = a.tipo_animal?.toLowerCase();
+          if (tipo === 'perro') porTipoAnimal.perro += cantidad;
+          else if (tipo === 'gato') porTipoAnimal.gato += cantidad;
+          else porTipoAnimal.otro += cantidad;
 
-        const cond = r.animal?.condicion?.toLowerCase();
-        if (cond === 'estable') porCondicion.estable += 1;
-        else if (cond === 'herido') porCondicion.herido += 1;
-        else if (cond === 'grave') porCondicion.grave += 1;
+          const cond = a.condicion?.toLowerCase();
+          if (cond === 'estable') porCondicion.estable += cantidad;
+          else if (cond === 'herido') porCondicion.herido += cantidad;
+          else if (cond === 'grave') porCondicion.grave += cantidad;
+        });
 
         porEstado[r.estado_reporte] = (porEstado[r.estado_reporte] || 0) + 1;
 

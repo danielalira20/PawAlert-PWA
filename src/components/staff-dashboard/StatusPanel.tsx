@@ -3,6 +3,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming, withDelay } from 'react-native-reanimated';
 import { Brand, CondicionColors, normalizeCondicion, type Condicion } from '../../constants/theme';
 import type { ReporteStaff } from '../../types/reportestaff';
+import { getAnimales, condicionMasGrave } from '../../types/reporte';
 
 interface Props {
   // Reportes activos (no cerrados) sobre los que se calcula el resumen
@@ -52,7 +53,9 @@ export function StatusPanel({ reportes }: Props) {
   const counts = useMemo(() => {
     const base: Record<Condicion, number> = { estable: 0, herido: 0, grave: 0 };
     reportes.forEach((r) => {
-      const c = normalizeCondicion(r.animal?.condicion);
+      // Condición del caso = la más grave entre sus animales — el resumen
+      // sigue contando por caso, no por animal.
+      const c = normalizeCondicion(condicionMasGrave(getAnimales(r)));
       if (c) base[c] += 1;
     });
     return base;

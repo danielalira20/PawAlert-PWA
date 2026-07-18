@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { API_URL } from '../constants/api';
+import { Animal, getAnimales } from '../types/reporte';
 
 export interface ReporteResumen {
   id: string;
@@ -12,11 +13,8 @@ export interface ReporteResumen {
   created_at: string;
   foto_url: string | null;
   fotos?: string[];
-  animal: {
-    tipo_animal: string | null;
-    condicion: string | null;
-    descripcion: string | null;
-  } | null;
+  animal: Animal | null;
+  animales?: Animal[];
 }
 
 export interface ImpactoReportante {
@@ -87,15 +85,20 @@ export function useRecentReports() {
       const mesesSet = new Set<string>();
 
       ordenados.forEach((r) => {
-        const tipo = r.animal?.tipo_animal?.toLowerCase();
-        if (tipo === 'perro') porTipoAnimal.perro += 1;
-        else if (tipo === 'gato') porTipoAnimal.gato += 1;
-        else porTipoAnimal.otro += 1;
+        // Un caso puede traer varios animales — cada uno pesa por su
+        // `cantidad` (un grupo de 8 gatos cuenta como 8, no como 1 fila).
+        getAnimales(r).forEach((a) => {
+          const cantidad = a.cantidad ?? 1;
+          const tipo = a.tipo_animal?.toLowerCase();
+          if (tipo === 'perro') porTipoAnimal.perro += cantidad;
+          else if (tipo === 'gato') porTipoAnimal.gato += cantidad;
+          else porTipoAnimal.otro += cantidad;
 
-        const cond = r.animal?.condicion?.toLowerCase();
-        if (cond === 'estable') porCondicion.estable += 1;
-        else if (cond === 'herido') porCondicion.herido += 1;
-        else if (cond === 'grave') porCondicion.grave += 1;
+          const cond = a.condicion?.toLowerCase();
+          if (cond === 'estable') porCondicion.estable += cantidad;
+          else if (cond === 'herido') porCondicion.herido += cantidad;
+          else if (cond === 'grave') porCondicion.grave += cantidad;
+        });
 
         porEstado[r.estado_reporte] = (porEstado[r.estado_reporte] || 0) + 1;
 
