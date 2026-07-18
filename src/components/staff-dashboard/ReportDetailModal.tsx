@@ -13,6 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Brand, normalizeCondicion } from '../../constants/theme';
 import { ConditionBadge } from './ConditionBadge';
+import { AnimalCarousel } from '../common/AnimalCarousel';
 import type { ReporteStaff } from '../../types/reportestaff';
 import { getAnimales, animalMasGrave, totalAnimales } from '../../types/reporte';
 
@@ -87,18 +88,9 @@ export function ReportDetailModal({
 
               <View style={styles.card}>
                 <Text style={styles.cardLabel}>
-                  {totalCaso > 1 ? 'Información del animal más grave' : 'Información del animal'}
+                  {totalCaso > 1 ? 'Animales de este caso' : 'Información del animal'}
                 </Text>
-                <InfoRow label="Tipo" value={grave?.tipo_animal} />
-                <InfoRow label="Tamaño" value={grave?.tamanio} />
-                <InfoRow label="Sexo" value={grave?.sexo} />
-                <InfoRow label="Edad aproximada" value={grave?.edad_aproximada} />
-                {!!grave?.descripcion && (
-                  <View style={styles.descripcionBlock}>
-                    <Text style={styles.cardLabelSmall}>Descripción</Text>
-                    <Text style={styles.descripcionText}>{grave.descripcion}</Text>
-                  </View>
-                )}
+                <AnimalCarousel key={reporte.id} animales={animales} />
               </View>
 
               <View style={styles.card}>
@@ -131,15 +123,6 @@ export function ReportDetailModal({
         </View>
       </View>
     </Modal>
-  );
-}
-
-function InfoRow({ label, value }: { label: string; value?: string | null }) {
-  return (
-    <View style={styles.infoRow}>
-      <Text style={styles.infoLabel}>{label}:</Text>
-      <Text style={styles.infoValue}>{value || 'N/A'}</Text>
-    </View>
   );
 }
 

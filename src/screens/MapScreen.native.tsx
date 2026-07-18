@@ -11,6 +11,7 @@ import { ICON_CAT, ICON_CLOCK, ICON_CALENDAR, ICON_DOG, ICON_PAW, ICON_WARNING }
 import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
 import { Reporte, getAnimales, condicionMasGrave, especieMasGrave, totalAnimales, animalMasGrave } from '../types/reporte';
+import { AnimalCarousel } from '../components/common/AnimalCarousel';
 import ReportFormScreen from './ReportFormScreen';
 
 const { width, height } = Dimensions.get('window');
@@ -446,33 +447,10 @@ export default function MapScreen() {
                   </View>
                 </View>
               </View>
-              {/* Detalles adicionales */}
-              {(grave?.sexo || grave?.edad_aproximada || grave?.descripcion) && (
-                <View style={{ marginTop: 12, gap: 6 }}>
-                  {grave?.sexo && (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <View style={{ width: 26, height: 26, borderRadius: 8, backgroundColor: '#FFFAF6', alignItems: 'center', justifyContent: 'center' }}>
-                        <Ionicons name="information-circle-outline" size={14} color="#5C4A3A" />
-                      </View>
-                      <Text style={{ fontSize: 12, color: '#5C4A3A' }}>Sexo: {grave.sexo}</Text>
-                    </View>
-                  )}
-                  {grave?.edad_aproximada && (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <View style={{ width: 26, height: 26, borderRadius: 8, backgroundColor: '#FFFAF6', alignItems: 'center', justifyContent: 'center' }}>
-                        <Ionicons name="calendar-outline" size={14} color="#5C4A3A" />
-                      </View>
-                      <Text style={{ fontSize: 12, color: '#5C4A3A' }}>Edad: {grave.edad_aproximada}</Text>
-                    </View>
-                  )}
-                  {grave?.descripcion && (
-                    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
-                      <View style={{ width: 26, height: 26, borderRadius: 8, backgroundColor: '#FFFAF6', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        <Ionicons name="document-text-outline" size={14} color="#5C4A3A" />
-                      </View>
-                      <Text style={{ fontSize: 12, color: '#5C4A3A', flex: 1, lineHeight: 18, paddingTop: 4 }}>{grave.descripcion}</Text>
-                    </View>
-                  )}
+              {/* Detalles adicionales — navegable si el caso trae más de uno */}
+              {animalesSel.length > 0 && (
+                <View style={{ marginTop: 12 }}>
+                  <AnimalCarousel key={r.id} animales={animalesSel} compact />
                 </View>
               )}
               <View style={{ backgroundColor: '#FFF5EE', borderRadius: 10, padding: 8, marginTop: 12 }}>

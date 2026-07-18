@@ -9,6 +9,7 @@ import AuthGateModal from '../components/AuthGateModal';
 import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
 import { Reporte, getAnimales, condicionMasGrave, especieMasGrave, totalAnimales, animalMasGrave } from '../types/reporte';
+import { AnimalCarousel } from '../components/common/AnimalCarousel';
 import ReportFormScreen from './ReportFormScreen';
 
 const LeafletMap = lazy(() => import('./LeafletMap'));
@@ -300,10 +301,7 @@ export default function MapScreen() {
         {[
           { icon: 'time-outline', text: formatDistanceToNow(new Date(r.created_at), { addSuffix: true, locale: es }) },
           { icon: 'location-outline', text: [r.calle, r.colonia, r.municipio].filter(Boolean).join(', ') || 'Ubicación aproximada' },
-          grave?.sexo ? { icon: 'information-circle-outline', text: `Sexo: ${grave.sexo}` } : null,
-          grave?.edad_aproximada ? { icon: 'calendar-outline', text: `Edad: ${grave.edad_aproximada}` } : null,
-          grave?.descripcion ? { icon: 'document-text-outline', text: grave.descripcion } : null,
-        ].filter(Boolean).map((row: any, i) => (
+        ].map((row: any, i) => (
           <View key={i} style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start', marginBottom: 10 }}>
             <View style={{ width: 26, height: 26, borderRadius: 7, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <Ionicons name={row.icon} size={13} color={C.mid} />
@@ -311,6 +309,10 @@ export default function MapScreen() {
             <Text style={{ fontSize: 12, color: C.mid, flex: 1, lineHeight: 18, paddingTop: 4 }}>{row.text}</Text>
           </View>
         ))}
+
+        <View style={{ marginBottom: 14 }}>
+          <AnimalCarousel key={r.id} animales={animales} />
+        </View>
 
         <View style={{ backgroundColor: '#FFF5EE', borderRadius: 10, padding: 10, marginTop: 4 }}>
           <Text style={{ fontSize: 10, color: C.orange, fontStyle: 'italic' }}>📍 Ubicación exacta protegida por privacidad</Text>
@@ -602,33 +604,10 @@ export default function MapScreen() {
               </View>
             </View>
           </View>
-          {/* Detalles adicionales */}
-          {(grave?.sexo || grave?.edad_aproximada || grave?.descripcion) && (
-            <View style={{ marginTop: 12, gap: 7 }}>
-              {grave?.sexo && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <View style={{ width: 24, height: 24, borderRadius: 7, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center' }}>
-                    <Ionicons name="information-circle-outline" size={13} color={C.mid} />
-                  </View>
-                  <Text style={{ fontSize: 12, color: C.mid }}>Sexo: {grave.sexo}</Text>
-                </View>
-              )}
-              {grave?.edad_aproximada && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <View style={{ width: 24, height: 24, borderRadius: 7, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center' }}>
-                    <Ionicons name="calendar-outline" size={13} color={C.mid} />
-                  </View>
-                  <Text style={{ fontSize: 12, color: C.mid }}>Edad: {grave.edad_aproximada}</Text>
-                </View>
-              )}
-              {grave?.descripcion && (
-                <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
-                  <View style={{ width: 24, height: 24, borderRadius: 7, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <Ionicons name="document-text-outline" size={13} color={C.mid} />
-                  </View>
-                  <Text style={{ fontSize: 12, color: C.mid, flex: 1, lineHeight: 18, paddingTop: 3 }}>{grave.descripcion}</Text>
-                </View>
-              )}
+          {/* Detalles adicionales — navegable si el caso trae más de uno */}
+          {animales.length > 0 && (
+            <View style={{ marginTop: 12 }}>
+              <AnimalCarousel key={r.id} animales={animales} compact />
             </View>
           )}
           <View style={{ backgroundColor: '#FFF5EE', borderRadius: 10, padding: 8, marginTop: 12 }}>

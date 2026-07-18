@@ -15,6 +15,7 @@ import { useAuth } from '../context/AuthContext';
 import { useWindowDimensions } from 'react-native';
 import { PostulacionesPanel } from '../components/association-dashboard/PostulacionesPanel';
 import { Animal, getAnimales, totalAnimales, animalMasGrave } from '../types/reporte';
+import { AnimalCarousel } from '../components/common/AnimalCarousel';
 
 // ─── PALETA DE COLORES PETZEN (misma que AssociationStatusScreen, sin
 // tocar — coherencia visual entre asociación y staff) ───
@@ -728,14 +729,8 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
                           </View>
                         )}
 
-                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                          {[grave?.tamanio, grave?.sexo, grave?.edad_aproximada]
-                            .filter(Boolean)
-                            .map((dato, i) => (
-                              <View key={i} style={{ backgroundColor: 'rgba(74,55,40,0.06)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 100 }}>
-                                <Text style={{ fontSize: 10, color: COLORS.textDark, textTransform: 'capitalize', fontWeight: '600' }}>{dato}</Text>
-                              </View>
-                            ))}
+                        <View style={{ marginTop: 8 }}>
+                          <AnimalCarousel animales={animales} compact />
                         </View>
 
                         <TouchableOpacity onPress={() => setReporteSeleccionado(reporte)} style={{ marginTop: 8 }}>
@@ -946,33 +941,16 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
               <ScrollView showsVerticalScrollIndicator={false}>
                 {(() => {
                   const animalesSel = getAnimales(reporteSeleccionado);
-                  const graveSel = animalMasGrave(animalesSel);
                   const totalSel = totalAnimales(animalesSel);
                   return (
-                    <>
-                      <Text style={{ fontSize: 28, fontWeight: '900', color: COLORS.textDark, textTransform: 'capitalize', marginBottom: 4 }}>
-                        {graveSel?.tipo_animal}{totalSel > 1 ? ` · ${totalSel} animales en este caso` : ''}
-                      </Text>
-                      <Text style={{ fontSize: 16, color: getBadgeColor(graveSel?.condicion || ''), fontWeight: '800', textTransform: 'uppercase', marginBottom: 16 }}>{graveSel?.condicion}</Text>
-
-                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 24 }}>
-                        {[
-                          { label: 'Tamaño', value: graveSel?.tamanio },
-                          { label: 'Sexo', value: graveSel?.sexo },
-                          { label: 'Edad', value: graveSel?.edad_aproximada },
-                        ]
-                          .filter((d) => !!d.value)
-                          .map((d, i) => (
-                            <View key={i} style={{ backgroundColor: COLORS.white, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12 }}>
-                              <Text style={{ fontSize: 10, color: COLORS.textLight, fontWeight: '700', textTransform: 'uppercase' }}>{d.label}</Text>
-                              <Text style={{ fontSize: 14, color: COLORS.textDark, fontWeight: '700', textTransform: 'capitalize' }}>{d.value}</Text>
-                            </View>
-                          ))}
-                      </View>
-
-                      <Text style={{ fontSize: 18, fontWeight: '800', color: COLORS.textDark, marginBottom: 8 }}>Descripción</Text>
-                      <Text style={{ fontSize: 15, color: COLORS.textLight, marginBottom: 24, lineHeight: 22 }}>{graveSel?.descripcion || 'Sin descripción detallada.'}</Text>
-                    </>
+                    <View style={{ marginBottom: 24 }}>
+                      {totalSel > 1 && (
+                        <Text style={{ fontSize: 12, color: COLORS.textLight, fontWeight: '700', marginBottom: 8 }}>
+                          {totalSel} animales en este caso
+                        </Text>
+                      )}
+                      <AnimalCarousel animales={animalesSel} />
+                    </View>
                   );
                 })()}
 
