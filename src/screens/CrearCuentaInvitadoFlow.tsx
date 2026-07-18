@@ -5,6 +5,7 @@ import axios from 'axios';
 import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
 import { Toast, useToast } from '../components/Toast';
+import { router } from 'expo-router';
 
 interface Props {
   nombre: string;
@@ -151,11 +152,19 @@ export default function CrearCuentaInvitadoFlow({
           <Text style={{ fontFamily: petzen.fonts.regular, fontSize: 15, color: petzen.colors.textSecondary, textAlign: 'center', lineHeight: 22, marginBottom: 32 }}>
             Ya existe una cuenta con este número de teléfono. Inicia sesión para ver tu historial completo.
           </Text>
+
           <TouchableOpacity
-            onPress={onClose}
-            style={{ backgroundColor: petzen.colors.orange, paddingVertical: 16, borderRadius: petzen.radii.pill, alignItems: 'center', width: '100%' }}
+            onPress={() => {
+              onClose();
+              router.push('/login' as any);
+            }}
+            style={{ backgroundColor: petzen.colors.orange, paddingVertical: 16, borderRadius: petzen.radii.pill, alignItems: 'center', width: '100%', marginBottom: 12 }}
           >
-            <Text style={{ fontFamily: petzen.fonts.bold, color: '#FFFFFF', fontSize: 16 }}>Entendido</Text>
+            <Text style={{ fontFamily: petzen.fonts.bold, color: '#FFFFFF', fontSize: 16 }}>Iniciar sesión</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={onClose} style={{ paddingVertical: 12 }}>
+            <Text style={{ fontFamily: petzen.fonts.medium, color: petzen.colors.textSecondary, fontSize: 14 }}>Entendido</Text>
           </TouchableOpacity>
         </>
       )}
