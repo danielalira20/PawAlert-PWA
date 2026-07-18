@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet,
   useWindowDimensions, TextInput, ActivityIndicator, Platform,
+  Modal,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -47,6 +48,7 @@ export function LoggedOutProfile() {
   const { login, register } = useAuth();
   const { toast, translateY, showToast } = useToast();
   const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [modalCuentaExistente, setModalCuentaExistente] = useState<{ tipo: 'correo' | 'telefono'; valor: string } | null>(null);
 
   // Oculta el ojo nativo del browser en campos type="password" (Chrome/Edge)
   useEffect(() => {
@@ -222,7 +224,18 @@ export function LoggedOutProfile() {
       });
       setSuccessMessage('¡Cuenta creada!');
     } catch (error: any) {
-      showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'Error al crear la cuenta' });
+      const detalle = error?.response?.data?.detail || '';
+      if (error?.response?.status === 409) {
+        if (detalle.includes('correo')) {
+          setModalCuentaExistente({ tipo: 'correo', valor: regEmail.trim() });
+        } else if (detalle.includes('teléfono')) {
+          setModalCuentaExistente({ tipo: 'telefono', valor: telefono.replace(/\s|-/g, '') });
+        } else {
+          showToast({ type: 'error', title: 'Ya tienes una cuenta', message: detalle });
+        }
+      } else {
+        showToast({ type: 'error', title: 'Error', message: detalle || 'Error al crear la cuenta' });
+      }
     } finally {
       setIsLoading(false);
     }
@@ -259,13 +272,15 @@ export function LoggedOutProfile() {
 
   // ─── Formulario de auth embebido (login + registro) ───────────────────────
   const renderAuthPanel = () => (
+    <View style={{ flex: 1 }}>
+    <Toast toast={toast} translateY={translateY} />
+
     <ScrollView
       style={{ flex: 1, backgroundColor: C.bgSoft }}
       contentContainerStyle={{ padding: 24, flexGrow: 1, justifyContent: 'center', alignItems: 'center' }}
       showsVerticalScrollIndicator={false}
     >
-      <Toast toast={toast} translateY={translateY} />
-
+    
       {successMessage && (
         <View style={{
           position: 'absolute', top: 0, left: 0, right: 0, zIndex: 999,
@@ -531,6 +546,41 @@ export function LoggedOutProfile() {
         </TouchableOpacity>
       </View>
     </ScrollView>
+
+    <Modal visible={!!modalCuentaExistente} transparent animationType="fade">
+  <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+    <View style={{ backgroundColor: C.bg, borderRadius: 28, padding: 28, width: '100%', maxWidth: 380, alignItems: 'center' }}>
+      <Text style={{ fontFamily: F.displayBold, fontSize: 20, color: C.text, textAlign: 'center', marginBottom: 10 }}>
+        Ya tienes una cuenta
+      </Text>
+      <Text style={{ fontFamily: F.bodyRegular, fontSize: 14, color: C.muted, textAlign: 'center', lineHeight: 20, marginBottom: 24 }}>
+        Encontramos una cuenta existente con este {modalCuentaExistente?.tipo === 'correo' ? 'correo' : 'número de teléfono'}.
+      </Text>
+
+      <TouchableOpacity
+        onPress={() => {
+          if (modalCuentaExistente?.tipo === 'correo') setEmail(modalCuentaExistente.valor);
+          setModalCuentaExistente(null);
+          setTab('login');
+        }}
+        style={{ backgroundColor: C.primary, paddingVertical: 14, borderRadius: 20, alignItems: 'center', width: '100%', marginBottom: 10 }}
+      >
+        <Text style={{ color: C.bg, fontFamily: F.bodySemiBold, fontSize: 15 }}>Iniciar sesión</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        onPress={() => setModalCuentaExistente(null)}
+        style={{ paddingVertical: 12 }}
+      >
+        <Text style={{ color: C.muted, fontFamily: F.bodyMedium, fontSize: 13 }}>
+          Usar otro {modalCuentaExistente?.tipo === 'correo' ? 'correo' : 'teléfono'}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  </View>
+</Modal>
+
+    </View>
   );
 
   // ─── Vista landing ─────────────────────────────────────────────────────────

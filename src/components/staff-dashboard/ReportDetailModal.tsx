@@ -62,7 +62,7 @@ export function ReportDetailModal({
           {reporte && (
             <ScrollView showsVerticalScrollIndicator={false}>
               {reporte.foto_url ? (
-                <Image source={{ uri: reporte.foto_url }} style={styles.photo} resizeMode="cover" />
+                <Image source={{ uri: reporte.foto_url }} style={styles.photo} resizeMode="contain" />
               ) : (
                 <View style={[styles.photo, styles.photoPlaceholder]}>
                   <Ionicons name="paw-outline" size={48} color="#B0A098" />

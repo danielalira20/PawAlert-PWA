@@ -3,9 +3,20 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, EmailStr
 from app.db.supabase import supabase, supabase_admin, get_fresh_client
 from app.utils.validators import validar_telefono, validar_password, validar_email
+from app.config import settings
+import random
+from datetime import datetime, timedelta, timezone
+from twilio.rest import Client as TwilioClient
 
 router = APIRouter()
 
+class EnviarCodigoTelefonoRequest(BaseModel):
+    telefono: str
+
+
+class VerificarCodigoTelefonoRequest(BaseModel):
+    telefono: str
+    codigo: str
 
 class RegisterRequest(BaseModel):
     email: EmailStr
@@ -39,9 +50,39 @@ class ResetPasswordRequest(BaseModel):
     nueva_password: str
 
 
+def _cliente_twilio() -> TwilioClient:
+    return TwilioClient(
+        settings.twilio_account_sid,
+        settings.twilio_auth_token,
+    )
+
+
+
 @router.post("/register", status_code=201)
 async def register(body: RegisterRequest):
     telefono_limpio = body.telefono.replace(" ", "").replace("-", "")
+    verificacion = supabase.table("verificaciones_telefono").select("id").eq(
+        "telefono", telefono_limpio
+    ).eq("verificado", True).eq("consumido", False).gte(
+        "expira_at", datetime.now(timezone.utc).isoformat()
+    ).order("creado_at", desc=True).limit(1).execute()
+
+    telefono_verificado = bool(verificacion.data)
+
+    # Fase A (ahora): flag en "false", no bloquea nada — comportamiento
+    # idéntico a hoy. Fase B (futuro): cambiar a "true" en el .env y esta
+    # misma condición empieza a exigir verificación para TODO registro,
+    # sin tocar código.
+    
+    # Después
+    if settings.require_phone_verification and not telefono_verificado:
+        raise HTTPException(status_code=422, detail="Debes verificar tu número de teléfono primero.")
+
+    if telefono_verificado:
+        supabase.table("verificaciones_telefono").update({"consumido": True}).eq(
+            "id", verificacion.data[0]["id"]
+        ).execute()
+    
     if not validar_telefono(telefono_limpio):
         raise HTTPException(status_code=422, detail="El teléfono debe tener exactamente 10 dígitos numéricos.")
 
@@ -270,3 +311,100 @@ async def reset_password(body: ResetPasswordRequest):
         )
 
     return {"mensaje": "Contraseña actualizada correctamente."}
+
+@router.post("/enviar-codigo-telefono", status_code=200)
+async def enviar_codigo_telefono(body: EnviarCodigoTelefonoRequest):
+    """Genera y envía por SMS (Twilio) un código de 6 dígitos para verificar
+    que el teléfono es real, antes de que un invitado reclame su cuenta.
+    Sistema propio, separado del 'Phone provider' de Supabase Auth — este
+    último crearía una identidad de login paralela por teléfono, que no es
+    lo que queremos (la cuenta real sigue siendo por correo/contraseña)."""
+    telefono_limpio = body.telefono.replace(" ", "").replace("-", "")
+    if not validar_telefono(telefono_limpio):
+        raise HTTPException(status_code=422, detail="El teléfono debe tener exactamente 10 dígitos numéricos.")
+
+    # Evitar spam de reenvíos — si ya se mandó uno hace menos de 30 segundos,
+    # no generamos otro (protege el saldo de Twilio de abuso accidental).
+    reciente = supabase.table("verificaciones_telefono").select("creado_at").eq(
+        "telefono", telefono_limpio
+    ).order("creado_at", desc=True).limit(1).execute()
+
+    if reciente.data:
+        creado = datetime.fromisoformat(reciente.data[0]["creado_at"].replace("Z", "+00:00"))
+        if (datetime.now(timezone.utc) - creado) < timedelta(seconds=30):
+            raise HTTPException(status_code=429, detail="Espera unos segundos antes de pedir otro código.")
+
+    codigo = str(random.randint(100000, 999999))
+    expira = datetime.now(timezone.utc) + timedelta(minutes=10)
+
+    supabase.table("verificaciones_telefono").insert({
+        "telefono": telefono_limpio,
+        "codigo": codigo,
+        "expira_at": expira.isoformat(),
+    }).execute()
+
+    try:
+        _cliente_twilio().messages.create(
+            body=f"Tu código de verificación PawAlert es: {codigo}. Expira en 10 minutos.",
+            from_=settings.twilio_from_number,
+            to=f"+52{telefono_limpio}",
+        )
+    except Exception as e:
+        print(f"[TWILIO ERROR] {str(e)}")
+        raise HTTPException(status_code=500, detail="No pudimos enviar el SMS. Intenta de nuevo.")
+
+    return {"mensaje": "Te enviamos un código de verificación por SMS."}
+
+
+@router.post("/verificar-codigo-telefono", status_code=200)
+async def verificar_codigo_telefono(body: VerificarCodigoTelefonoRequest):
+    """Verifica el código de 6 dígitos. No 'consume' la verificación aquí
+    — eso pasa en register(), en el momento en que realmente se usa para
+    crear la cuenta. Aquí solo confirma que el código es válido."""
+    telefono_limpio = body.telefono.replace(" ", "").replace("-", "")
+    codigo_limpio = body.codigo.strip()
+
+    if len(codigo_limpio) != 6 or not codigo_limpio.isdigit():
+        raise HTTPException(status_code=422, detail="El código debe tener 6 dígitos.")
+
+    resultado = supabase.table("verificaciones_telefono").select("id, expira_at").eq(
+        "telefono", telefono_limpio
+    ).eq("codigo", codigo_limpio).eq("consumido", False).order(
+        "creado_at", desc=True
+    ).limit(1).execute()
+
+    if not resultado.data:
+        raise HTTPException(status_code=400, detail="Código inválido.")
+
+    expira = datetime.fromisoformat(resultado.data[0]["expira_at"].replace("Z", "+00:00"))
+    if datetime.now(timezone.utc) > expira:
+        raise HTTPException(status_code=400, detail="El código ya expiró. Solicita uno nuevo.")
+
+    supabase.table("verificaciones_telefono").update({"verificado": True}).eq(
+        "id", resultado.data[0]["id"]
+    ).execute()
+
+    return {"mensaje": "Teléfono verificado correctamente."}
+
+@router.get("/telefono-existe", status_code=200)
+async def telefono_existe(telefono: str):
+    """Consulta rápida, sin gastar SMS, para saber si ya existe una cuenta
+    REAL (con auth_user_id) asociada a este teléfono — se usa antes de
+    ofrecer 'crear cuenta' a un invitado que ya tiene cuenta."""
+    telefono_limpio = telefono.replace(" ", "").replace("-", "")
+    resultado = supabase.table("usuarios").select("auth_user_id").eq(
+        "telefono", telefono_limpio
+    ).execute()
+
+    existe_cuenta = bool(resultado.data and resultado.data[0].get("auth_user_id"))
+    return {"existe_cuenta": existe_cuenta}
+
+@router.get("/resolver-token-invitacion")
+async def resolver_token_invitacion(token: str):
+    resultado = supabase.table("tokens_invitacion").select("telefono, expira_at, usado").eq("token", token).execute()
+    if not resultado.data:
+        raise HTTPException(status_code=404, detail="Link inválido o ya usado.")
+    fila = resultado.data[0]
+    if fila["usado"] or datetime.fromisoformat(fila["expira_at"].replace("Z", "+00:00")) < datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="Este link ya expiró o ya fue usado.")
+    return {"telefono": fila["telefono"]}
