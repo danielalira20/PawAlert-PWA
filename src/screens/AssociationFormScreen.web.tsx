@@ -132,7 +132,16 @@ export default function AssociationFormScreen({ onClose }: Props) {
   // ─── Validaciones por paso ───
   const validarPaso1 = () => {
     const newErrors: { [key: string]: string } = {};
-    if (!nombre.trim()) newErrors.nombre = 'Obligatorio.';
+    if (!nombre.trim()) {
+      newErrors.nombre = 'Obligatorio.';
+    } else if (!/[a-zA-ZáéíóúÁÉÍÓÚñÑ]/.test(nombre)) {
+      newErrors.nombre = 'Debe contener al menos una letra.';
+    }
+
+    if (acercaDe.trim() && !/[a-zñáéíóú]/.test(acercaDe)) {
+      newErrors.acercaDe = 'Debe contener al menos una letra minúscula.';
+    }
+
     if (!nombreResponsable.trim()) newErrors.nombreResponsable = 'Obligatorio.';
     if (!apellidoResponsable.trim()) newErrors.apellidoResponsable = 'Obligatorio.';
     if (!telefono.trim()) { newErrors.telefono = 'Obligatorio.'; } else if (!/^\d{10}$/.test(telefono.trim())) { newErrors.telefono = '10 dígitos numéricos.'; }
@@ -165,22 +174,164 @@ export default function AssociationFormScreen({ onClose }: Props) {
     if (!radioKm.trim()) { newErrors.radioKm = 'Obligatorio.'; } else if (isNaN(radVal) || radVal <= 0) { newErrors.radioKm = 'Mayor a 0.'; }
     if (!ubicacionConfirmada) { newErrors.ubicacion = 'Ubica la asociación en el mapa.'; }
     
+    const soloLetrasRegex = /^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/;
+    if (calle.trim() && !soloLetrasRegex.test(calle)) newErrors.calle = 'Solo se permiten letras y espacios.';
+    if (colonia.trim() && !soloLetrasRegex.test(colonia)) newErrors.colonia = 'Solo se permiten letras y espacios.';
+    if (municipio.trim() && !soloLetrasRegex.test(municipio)) newErrors.municipio = 'Solo se permiten letras y espacios.';
+    if (estado.trim() && !soloLetrasRegex.test(estado)) newErrors.estado = 'Solo se permiten letras y espacios.';
+
+    const alfanumericoRegex = /^[a-zA-ZáéíóúÁÉÍÓÚñÑ0-9\s]+$/;
+    if (referencia.trim() && !alfanumericoRegex.test(referencia)) newErrors.referencia = 'Solo se permiten letras y números.';
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  // ─── Handlers de Inputs ───
-  const handleNombreChange = (val: string) => { setNombre(val); if (val.trim()) setErrors(prev => ({ ...prev, nombre: '' })); };
-  const handleNombreResponsableChange = (val: string) => { setNombreResponsable(val); if (val.trim()) setErrors(prev => ({ ...prev, nombreResponsable: '' })); };
-  const handleApellidoResponsableChange = (val: string) => { setApellidoResponsable(val); if (val.trim()) setErrors(prev => ({ ...prev, apellidoResponsable: '' })); };
-  const handleTelefonoChange = (val: string) => { setTelefono(val); if (val.trim() && /^\d{10}$/.test(val.trim())) setErrors(prev => ({ ...prev, telefono: '' })); };
-  const handleEmailChange = (val: string) => { setEmail(val); if (val.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val.trim())) setErrors(prev => ({ ...prev, email: '' })); };
-  const handlePasswordChange = (val: string) => { setPassword(val); if (validarPassword(val).valido) setErrors(prev => ({ ...prev, password: '' })); };
-  const handlePassword2Change = (val: string) => { setPassword2(val); if (val === password) setErrors(prev => ({ ...prev, password2: '' })); };
+  // ─── Handlers de Inputs con Validación en Tiempo Real ───
+  const handleNombreChange = (val: string) => {
+    setNombre(val);
+    if (!val.trim()) {
+      setErrors(prev => ({ ...prev, nombre: 'El nombre de la asociación es obligatorio.' }));
+    } else if (!/[a-zA-ZáéíóúÁÉÍÓÚñÑ]/.test(val)) {
+      setErrors(prev => ({ ...prev, nombre: 'Debe contener al menos una letra.' }));
+    } else {
+      setErrors(prev => ({ ...prev, nombre: '' }));
+    }
+  };
+
+  const handleAcercaDeChange = (val: string) => {
+    setAcercaDe(val);
+    if (val.trim() && !/[a-zA-ZáéíóúÁÉÍÓÚñÑ]/.test(val)) {
+      setErrors(prev => ({ ...prev, acercaDe: 'Debe contener al menos una letra.' }));
+    } else {
+      setErrors(prev => ({ ...prev, acercaDe: '' }));
+    }
+  };
+
+  const handleNombreResponsableChange = (val: string) => {
+    setNombreResponsable(val);
+    if (!val.trim()) setErrors(prev => ({ ...prev, nombreResponsable: 'El nombre del responsable es obligatorio.' }));
+    else if (/\d/.test(val)) setErrors(prev => ({ ...prev, nombreResponsable: 'El nombre no debe contener números.' }));
+    else setErrors(prev => ({ ...prev, nombreResponsable: '' }));
+  };
+
+  const handleApellidoResponsableChange = (val: string) => {
+    setApellidoResponsable(val);
+    if (!val.trim()) setErrors(prev => ({ ...prev, apellidoResponsable: 'El apellido del responsable es obligatorio.' }));
+    else if (/\d/.test(val)) setErrors(prev => ({ ...prev, apellidoResponsable: 'El apellido no debe contener números.' }));
+    else setErrors(prev => ({ ...prev, apellidoResponsable: '' }));
+  };
+
+  const handleTelefonoChange = (val: string) => {
+    setTelefono(val);
+    if (!val.trim()) {
+      setErrors(prev => ({ ...prev, telefono: 'El teléfono es obligatorio.' }));
+    } else if (/[a-zA-Z]/.test(val)) {
+      setErrors(prev => ({ ...prev, telefono: 'El teléfono no puede contener letras.' }));
+    } else if (!/^\d{10}$/.test(val.trim())) {
+      setErrors(prev => ({ ...prev, telefono: 'El teléfono debe tener exactamente 10 dígitos numéricos.' }));
+    } else {
+      setErrors(prev => ({ ...prev, telefono: '' }));
+    }
+  };
+
+  const handleEmailChange = (val: string) => {
+    setEmail(val);
+    if (!val.trim()) {
+      setErrors(prev => ({ ...prev, email: 'El correo es obligatorio.' }));
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val.trim())) {
+      setErrors(prev => ({ ...prev, email: 'Correo inválido.' }));
+    } else {
+      setErrors(prev => ({ ...prev, email: '' }));
+    }
+  };
+
+  const handlePasswordChange = (val: string) => {
+    setPassword(val);
+    if (!val) {
+      setErrors(prev => ({ ...prev, password: 'La contraseña es obligatoria.' }));
+    } else {
+      const resultado = validarPassword(val);
+      if (!resultado.valido) {
+        setErrors(prev => ({ ...prev, password: resultado.mensaje }));
+      } else {
+        setErrors(prev => ({ ...prev, password: '' }));
+      }
+    }
+    
+    // Validación cruzada en tiempo real
+    if (password2 && val !== password2) {
+      setErrors(prev => ({ ...prev, password2: 'Las contraseñas no coinciden.' }));
+    } else if (password2) {
+      setErrors(prev => ({ ...prev, password2: '' }));
+    }
+  };
+
+  const handlePassword2Change = (val: string) => {
+    setPassword2(val);
+    if (password && val !== password) {
+      setErrors(prev => ({ ...prev, password2: 'Las contraseñas no coinciden.' }));
+    } else {
+      setErrors(prev => ({ ...prev, password2: '' }));
+    }
+  };
+
+  const handleCalleChange = (val: string) => {
+    setCalle(val);
+    if (val.trim() && !/^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/.test(val)) {
+      setErrors(prev => ({ ...prev, calle: 'Solo se permiten letras y espacios.' }));
+    } else {
+      setErrors(prev => ({ ...prev, calle: '' }));
+    }
+  };
+
+  const handleColoniaChange = (val: string) => {
+    setColonia(val);
+    if (val.trim() && !/^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/.test(val)) {
+      setErrors(prev => ({ ...prev, colonia: 'Solo se permiten letras y espacios.' }));
+    } else {
+      setErrors(prev => ({ ...prev, colonia: '' }));
+    }
+  };
+
+  const handleMunicipioChange = (val: string) => {
+    setMunicipio(val);
+    if (val.trim() && !/^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/.test(val)) {
+      setErrors(prev => ({ ...prev, municipio: 'Solo se permiten letras y espacios.' }));
+    } else {
+      setErrors(prev => ({ ...prev, municipio: '' }));
+    }
+  };
+
+  const handleEstadoChange = (val: string) => {
+    setEstado(val);
+    if (val.trim() && !/^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/.test(val)) {
+      setErrors(prev => ({ ...prev, estado: 'Solo se permiten letras y espacios.' }));
+    } else {
+      setErrors(prev => ({ ...prev, estado: '' }));
+    }
+  };
+
+  const handleReferenciaChange = (val: string) => {
+    setReferencia(val);
+    if (val.trim() && !/^[a-zA-ZáéíóúÁÉÍÓÚñÑ0-9\s]+$/.test(val)) {
+      setErrors(prev => ({ ...prev, referencia: 'Solo se permiten letras y números.' }));
+    } else {
+      setErrors(prev => ({ ...prev, referencia: '' }));
+    }
+  };
+
   const handleRadioKmChange = (val: string) => {
     const cleaned = val.replace(/\D/g, '');
     setRadioKm(cleaned);
-    if (cleaned && parseInt(cleaned, 10) > 0) setErrors(prev => ({ ...prev, radioKm: '' }));
+    const radVal = parseInt(cleaned, 10);
+    if (!cleaned) {
+      setErrors(prev => ({ ...prev, radioKm: 'El radio es obligatorio.' }));
+    } else if (isNaN(radVal) || radVal <= 0) {
+      setErrors(prev => ({ ...prev, radioKm: 'Debe ser mayor a 0.' }));
+    } else {
+      setErrors(prev => ({ ...prev, radioKm: '' }));
+    }
   };
 
   // ─── Manejo de Multimedia ───
@@ -418,7 +569,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
             <Input label="Apellido del Responsable" placeholder="Ej. Pérez" value={apellidoResponsable} onChangeText={handleApellidoResponsableChange} error={errors.apellidoResponsable} required />
           </View>
         </View>
-        <Input label="Acerca de la Asociación (Opcional)" placeholder="Describe la misión o actividades..." value={acercaDe} onChangeText={setAcercaDe} multiline maxLength={300} style={{ height: 80, textAlignVertical: 'top', outlineStyle: 'none' } as any} />
+        <Input label="Acerca de la Asociación (Opcional)" placeholder="Describe la misión o actividades..." value={acercaDe} onChangeText={handleAcercaDeChange} error={errors.acercaDe} multiline maxLength={300} style={{ height: 80, textAlignVertical: 'top', outlineStyle: 'none' } as any} />
         <Text style={styles.charCounter}>{acercaDe.length}/300</Text>
 
         <Text style={styles.sectionLabel}>Logo de la Asociación (Opcional)</Text>
@@ -594,16 +745,16 @@ export default function AssociationFormScreen({ onClose }: Props) {
         )}
 
         <View style={styles.rowContainer}>
-          <View style={styles.halfWidth}><Input label="Calle" placeholder="Ej. Av. Reforma" value={calle} onChangeText={setCalle} /></View>
+          <View style={styles.halfWidth}><Input label="Calle" placeholder="Ej. Av. Reforma" value={calle} onChangeText={handleCalleChange} error={errors.calle} /></View>
           <View style={styles.halfWidth}><Input label="Número" placeholder="Ej. 123" value={numero} onChangeText={setNumero} /></View>
         </View>
         <View style={styles.rowContainer}>
-          <View style={styles.halfWidth}><Input label="Colonia" placeholder="Ej. Centro Histórico" value={colonia} onChangeText={setColonia} /></View>
-          <View style={styles.halfWidth}><Input label="Municipio / Ciudad" placeholder="Ej. Puebla" value={municipio} onChangeText={setMunicipio} /></View>
+          <View style={styles.halfWidth}><Input label="Colonia" placeholder="Ej. Centro Histórico" value={colonia} onChangeText={handleColoniaChange} error={errors.colonia} /></View>
+          <View style={styles.halfWidth}><Input label="Municipio / Ciudad" placeholder="Ej. Puebla" value={municipio} onChangeText={handleMunicipioChange} error={errors.municipio} /></View>
         </View>
         <View style={styles.rowContainer}>
-          <View style={styles.halfWidth}><Input label="Estado" placeholder="Ej. Puebla" value={estado} onChangeText={setEstado} /></View>
-          <View style={styles.halfWidth}><Input label="Referencia (Opcional)" placeholder="Ej. Casa azul" value={referencia} onChangeText={setReferencia} /></View>
+          <View style={styles.halfWidth}><Input label="Estado" placeholder="Ej. Puebla" value={estado} onChangeText={handleEstadoChange} error={errors.estado} /></View>
+          <View style={styles.halfWidth}><Input label="Referencia (Opcional)" placeholder="Ej. Casa azul" value={referencia} onChangeText={handleReferenciaChange} error={errors.referencia} /></View>
         </View>
 
         <Input label="Radio de Cobertura de Rescate (KM)" placeholder="Ej. 15" value={radioKm} onChangeText={handleRadioKmChange} error={errors.radioKm} keyboardType="numeric" required />
