@@ -119,6 +119,12 @@ export default function JoinAssociationScreen() {
   const [isReapplying, setIsReapplying] = useState(false);
   const [usuarioPerfil, setUsuarioPerfil] = useState<UsuarioPerfil | null>(null);
   const [showCapacidadesForm, setShowCapacidadesForm] = useState(false);
+  // Distingue el caso "acabo de postularme, falta guardar capacidades" del
+  // caso "ya soy voluntario activo, entré a editar/completar mi perfil" —
+  // ambos abren el mismo modal, pero solo el primero debe avisar
+  // "¡Postulación enviada!" hasta que se guarde el formulario.
+  const [esNuevaPostulacion, setEsNuevaPostulacion] = useState(false);
+  const [nombreAsociacionPostulada, setNombreAsociacionPostulada] = useState('');
 
   const [asociaciones, setAsociaciones] = useState<Asociacion[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -168,6 +174,8 @@ const fetchStatus = async () => {
     } catch (error: any) {
       console.error('Error fetching voluntario status:', error);
       setStatus(null);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -201,20 +209,24 @@ const fetchStatus = async () => {
   };
 
   useEffect(() => {
+    if (isAuthLoading) return;
     if (isLoggedIn && token) {
+      // fetchStatus() es quien realmente decide qué pantalla se muestra
+      // (selección vs. estado de una postulación existente), así que es el
+      // único que apaga isLoading — apagarlo antes (como se hacía antes,
+      // basado solo en que "asociaciones" existiera) dejaba ver la lista de
+      // selección un instante antes de que status llegara y cambiara la
+      // pantalla, lo cual se sentía como un parpadeo/bug.
       fetchStatus();
       fetchUsuarioPerfil();
       fetchAsociaciones();
       handleGetLocation();
-    }
-  }, [isLoggedIn, token]);
-
-  // Cuando termina de cargar, desactiva el loading
-  useEffect(() => {
-    if (!isAuthLoading && asociaciones.length >= 0) {
+    } else {
+      // No hay sesión — no hay nada que cargar, no dejamos el spinner
+      // pegado para siempre.
       setIsLoading(false);
     }
-  }, [isAuthLoading, asociaciones]);
+  }, [isAuthLoading, isLoggedIn, token]);
 
   // 4. Obtener GPS para ordenar la lista
   const handleGetLocation = async () => {
@@ -259,7 +271,7 @@ const fetchStatus = async () => {
       // POST /voluntarios/postulaciones
       // Envía tipo='interno' y asociacion_id
       // El backend crea el voluntario si no existe, o trae uno existente
-      const response = await axios.post(
+      await axios.post(
         `${API_URL}/voluntarios/postulaciones`,
         {
           tipo: 'interno',
@@ -270,19 +282,30 @@ const fetchStatus = async () => {
         }
       );
 
-      showToast({
-        type: 'success',
-        title: '¡Postulación enviada!',
-        message: `Tu solicitud fue enviada a ${assocSeleccionada.nombre}`,
-      });
-
-      setAssocSeleccionada(null);
-      setIsReapplying(false);
-
-      // Recargar estado para mostrar la pantalla de confirmación
-      await fetchStatus();
+      // Nuevo flujo: capacidades se llena ANTES de que la postulación se dé
+      // por enviada de cara al usuario. La fila en el backend ya existe
+      // (necesaria para poder guardar capacidades), pero el aviso de éxito,
+      // el refresco de estado y el cierre de la selección se posponen hasta
+      // que se guarde el formulario — si no, se siente como que ya se mandó
+      // y el formulario es un paso extra suelto, en vez de parte del mismo
+      // envío.
+      setNombreAsociacionPostulada(assocSeleccionada.nombre);
+      setEsNuevaPostulacion(true);
+      setShowCapacidadesForm(true);
     } catch (error: any) {
       console.error('Error al postular:', error);
+
+      if (error?.response?.status === 409) {
+        // Ya existe una postulación pendiente (ej. por una pestaña vieja,
+        // doble clic, o el estado no había cargado aún) — no es un error de
+        // verdad, solo mostramos lo que ya es cierto: su postulación sigue
+        // en revisión.
+        await fetchStatus();
+        setAssocSeleccionada(null);
+        setIsReapplying(false);
+        return;
+      }
+
       const message =
         error?.response?.data?.detail ||
         'No pudimos procesar tu solicitud. Intenta de nuevo.';
@@ -293,6 +316,36 @@ const fetchStatus = async () => {
       });
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // Cierre del modal de capacidades — sin importar si se llega desde el
+  // botón "Guardar" del formulario o desde la X/backdrop del AppModal, el
+  // resultado debe ser el mismo: si veníamos de postularnos, avisar y
+  // refrescar el estado; si solo era editar el perfil ya activo, únicamente
+  // refrescar sin repetir el aviso de "postulación enviada".
+  const handleCerrarCapacidadesForm = async () => {
+    // Refrescamos el estado ANTES de cerrar el modal — si cerramos primero,
+    // por un instante se ve la pantalla de abajo con el estado viejo (ej.
+    // "rechazada" de un intento anterior) hasta que el fetch resuelve y
+    // cambia a la pantalla correcta. Al refrescar primero, cuando el modal
+    // se cierra la pantalla de atrás ya está lista con el dato correcto.
+    await fetchStatus();
+    setShowCapacidadesForm(false);
+
+    if (esNuevaPostulacion) {
+      setEsNuevaPostulacion(false);
+      setAssocSeleccionada(null);
+      setIsReapplying(false);
+      showToast({
+        type: 'success',
+        title: '¡Postulación enviada!',
+        message: `Tu solicitud fue enviada a ${nombreAsociacionPostulada}`,
+      });
+      // Al terminar de postularse, se cierra la pantalla en vez de dejarte
+      // viendo "Postulación en revisión" aquí — ese estado ya lo puedes
+      // consultar después desde "Mi postulación" en el perfil.
+      setTimeout(() => router.replace('/'), 600);
     }
   };
 
@@ -863,6 +916,52 @@ const fetchStatus = async () => {
                 </View>
               )}
 
+              {(status?.estado === 'dado_de_baja' || status?.estado === 'baja_definitiva') && (
+                <View style={{ alignItems: 'center', width: '100%' }}>
+                  <View
+                    style={{
+                      width: 100,
+                      height: 100,
+                      borderRadius: 50,
+                      backgroundColor: COLORS.textLight + '15',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      marginBottom: 24,
+                    }}
+                  >
+                    <Ionicons
+                      name="pause-circle"
+                      size={48}
+                      color={COLORS.textLight}
+                    />
+                  </View>
+                  <Text
+                    style={{
+                      fontSize: 24,
+                      fontWeight: '900',
+                      color: COLORS.textDark,
+                      textAlign: 'center',
+                      marginBottom: 12,
+                    }}
+                  >
+                    {status.estado === 'baja_definitiva' ? 'Baja Definitiva' : 'Dado de Baja'}
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 15,
+                      color: COLORS.textLight,
+                      textAlign: 'center',
+                      lineHeight: 24,
+                      maxWidth: 320,
+                    }}
+                  >
+                    {status.estado === 'baja_definitiva'
+                      ? 'Tu cuenta como voluntario ha sido cerrada permanentemente.'
+                      : 'Tu cuenta como voluntario ha sido temporalmente desactivada. Contacta a tu asociación para más información.'}
+                  </Text>
+                </View>
+              )}
+
               {(status?.estado === 'activo_nivel_1' ||
                 status?.estado === 'activo_nivel_2') && (
                 <View style={{ alignItems: 'center', width: '100%' }}>
@@ -983,7 +1082,7 @@ const fetchStatus = async () => {
                   textAlign: 'center',
                 }}
               >
-                ¿Enviar postulación?
+                ¿Postularte a esta asociación?
               </Text>
             </View>
             <Text
@@ -995,11 +1094,11 @@ const fetchStatus = async () => {
                 lineHeight: 22,
               }}
             >
-              Se enviará tu solicitud a{' '}
+              A continuación llenarás tu perfil de capacidades para{' '}
               <Text style={{ fontWeight: '700', color: COLORS.textDark }}>
                 {assocSeleccionada?.nombre}
               </Text>
-              . Ellos revisarán tu perfil y te darán una respuesta.
+              . Tu postulación se envía al terminarlo.
             </Text>
             <View style={{ flexDirection: 'row', gap: 12 }}>
               <TouchableOpacity
@@ -1042,7 +1141,7 @@ const fetchStatus = async () => {
                       fontWeight: '800',
                     }}
                   >
-                    Enviar
+                    Continuar
                   </Text>
                 )}
               </TouchableOpacity>
@@ -1053,15 +1152,14 @@ const fetchStatus = async () => {
 
       <AppModal
         visible={showCapacidadesForm}
-        onClose={() => setShowCapacidadesForm(false)}
+        onClose={handleCerrarCapacidadesForm}
+        dismissable={!esNuevaPostulacion}
       >
         {showCapacidadesForm && (
           <CapacidadesFormScreen
             fromProfile={true}
-            onClose={() => {
-              setShowCapacidadesForm(false);
-              fetchStatus();
-            }}
+            esPostulacionNueva={esNuevaPostulacion}
+            onClose={handleCerrarCapacidadesForm}
           />
         )}
       </AppModal>

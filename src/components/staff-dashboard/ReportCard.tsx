@@ -145,7 +145,7 @@ export function ReportCard({
           <Pressable onPress={() => onOpenDetail(reporte)}>
             <View style={styles.photoWrap}>
               {reporte.foto_url ? (
-                <Image source={{ uri: reporte.foto_url }} style={styles.photo} resizeMode="cover" />
+                <Image source={{ uri: reporte.foto_url }} style={styles.photo} resizeMode="contain" />
               ) : (
                 <View style={[styles.photo, styles.photoPlaceholder]}>
                   <Ionicons name="paw-outline" size={32} color="#B0A098" />

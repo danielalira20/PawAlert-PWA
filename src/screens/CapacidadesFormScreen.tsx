@@ -59,6 +59,7 @@ interface Capacidades {
   tiene_vehiculo?: boolean;
   latitud?: number;
   longitud?: number;
+  motivo_voluntario?: string;
   experiencia_previa?: string;
   acepto_terminos?: boolean;
 }
@@ -66,9 +67,13 @@ interface Capacidades {
 interface Props {
   onClose?: () => void;
   fromProfile?: boolean;
+  // Cuando es true, "Guardar" no manda de inmediato — primero muestra una
+  // pantalla de revisión con lo que se llenó, para que la persona confirme
+  // o regrese a editar antes de que la postulación se dé por enviada.
+  esPostulacionNueva?: boolean;
 }
 
-export default function CapacidadesFormScreen({ onClose, fromProfile = false }: Props) {
+export default function CapacidadesFormScreen({ onClose, fromProfile = false, esPostulacionNueva = false }: Props) {
   const { token } = useAuth();
   const { toast, translateY, showToast } = useToast();
   const { width: screenWidth } = useWindowDimensions();
@@ -94,6 +99,7 @@ export default function CapacidadesFormScreen({ onClose, fromProfile = false }: 
   const [ubicacionConfirmada, setUbicacionConfirmada] = useState(false);
   const [isLoadingGps, setIsLoadingGps] = useState(false);
 
+  const [motivoVoluntario, setMotivoVoluntario] = useState('');
   const [experiencia, setExperiencia] = useState('');
   const [aceptoTerminos, setAceptoTerminos] = useState(false);
 
@@ -102,6 +108,7 @@ export default function CapacidadesFormScreen({ onClose, fromProfile = false }: 
   const [isLoading, setIsLoading] = useState(true);
 
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
+  const [mostrarConfirmacion, setMostrarConfirmacion] = useState(false);
 
   const ESPECIES = ['perro', 'gato', 'otro'];
   const TAMANOS = ['pequeno', 'mediano', 'grande'];
@@ -136,6 +143,7 @@ export default function CapacidadesFormScreen({ onClose, fromProfile = false }: 
           setUbicacion({ latitud: lat, longitud: lng });
           setUbicacionConfirmada(true);
         }
+        setMotivoVoluntario(cap?.motivo_voluntario ?? '');
         setExperiencia(cap?.experiencia_previa ?? '');
         setAceptoTerminos(cap?.acepto_terminos ?? false);
       } catch (err) {
@@ -220,6 +228,18 @@ export default function CapacidadesFormScreen({ onClose, fromProfile = false }: 
     return Object.keys(newErrors).length === 0;
   };
 
+  // Botón principal del formulario: si es una postulación nueva, primero
+  // muestra la pantalla de revisión (no manda nada todavía). Si es edición
+  // de un perfil ya existente, guarda directo como siempre.
+  const handleGuardarPress = () => {
+    if (!validateForm()) return;
+    if (esPostulacionNueva) {
+      setMostrarConfirmacion(true);
+    } else {
+      handleSubmit();
+    }
+  };
+
   const handleSubmit = async () => {
     if (!validateForm()) return;
 
@@ -241,6 +261,7 @@ export default function CapacidadesFormScreen({ onClose, fromProfile = false }: 
         tiene_vehiculo: tieneVehiculo,
         latitud: ubicacion.latitud,
         longitud: ubicacion.longitud,
+        motivo_voluntario: motivoVoluntario.trim(),
         experiencia_previa: experiencia.trim(),
         acepto_terminos: aceptoTerminos,
       };
@@ -257,7 +278,10 @@ export default function CapacidadesFormScreen({ onClose, fromProfile = false }: 
         router.push('/(tabs)/profile');
       }
     } catch (err: any) {
-      const message = err.response?.data?.detail || 'Error al guardar tus capacidades.';
+      const message =
+        err.response?.status === 401
+          ? 'Tu sesión expiró. Vuelve a iniciar sesión e intenta de nuevo.'
+          : err.response?.data?.detail || 'Error al guardar tus capacidades.';
       showToast({ title: 'Error', description: message, type: 'error' });
     } finally {
       setIsSubmitting(false);
@@ -268,6 +292,7 @@ export default function CapacidadesFormScreen({ onClose, fromProfile = false }: 
     return (
       diasSeleccionados.length > 0 ||
       especiesSeleccionadas.length > 0 ||
+      motivoVoluntario.trim() !== '' ||
       experiencia.trim() !== '' ||
       ofreceCasaHogar ||
       tieneVehiculo ||
@@ -307,8 +332,14 @@ export default function CapacidadesFormScreen({ onClose, fromProfile = false }: 
       <View style={styles.headerSection}>
         <View style={styles.headerContent}>
           <View style={styles.headerText}>
-            <Text style={styles.headerTitle}>Mis Capacidades</Text>
-            <Text style={styles.headerSubtitle}>Cuéntanos cómo puedes ayudar</Text>
+            <Text style={styles.headerTitle}>
+              {mostrarConfirmacion ? 'Revisa tu postulación' : 'Mis Capacidades'}
+            </Text>
+            <Text style={styles.headerSubtitle}>
+              {mostrarConfirmacion
+                ? 'Confirma que todo esté correcto antes de enviarla'
+                : 'Cuéntanos cómo puedes ayudar'}
+            </Text>
           </View>
         </View>
         <Image
@@ -319,6 +350,79 @@ export default function CapacidadesFormScreen({ onClose, fromProfile = false }: 
         />
       </View>
 
+      {mostrarConfirmacion ? (
+        <View style={styles.bodySection}>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+            <View style={{ backgroundColor: COLORS.cardBg, borderRadius: 20, padding: 20, gap: 16 }}>
+              <View>
+                <Text style={styles.sectionLabel}>Días disponibles</Text>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.textDark, textTransform: 'capitalize' }}>
+                  {diasSeleccionados.join(', ') || '—'}
+                </Text>
+              </View>
+              <View>
+                <Text style={styles.sectionLabel}>Horario</Text>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.textDark }}>
+                  {getDisplayTime(horaApertura)} – {getDisplayTime(horaCierre)}
+                </Text>
+              </View>
+              <View>
+                <Text style={styles.sectionLabel}>Mi Casa Temporal</Text>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.textDark }}>
+                  {ofreceCasaHogar ? 'Sí ofrece' : 'No ofrece'}
+                </Text>
+              </View>
+              {ofreceCasaHogar && (
+                <View>
+                  <Text style={styles.sectionLabel}>Especies y tamaños</Text>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.textDark, textTransform: 'capitalize' }}>
+                    {especiesSeleccionadas.join(', ') || '—'} · {tamanosSeleccionados.join(', ') || '—'}
+                  </Text>
+                </View>
+              )}
+              <View>
+                <Text style={styles.sectionLabel}>Vehículo</Text>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.textDark }}>
+                  {tieneVehiculo ? 'Sí' : 'No'}
+                </Text>
+              </View>
+              {!!motivoVoluntario.trim() && (
+                <View>
+                  <Text style={styles.sectionLabel}>Por qué quiere ser voluntario</Text>
+                  <Text style={{ fontSize: 14, color: COLORS.textDark }}>{motivoVoluntario}</Text>
+                </View>
+              )}
+              {!!experiencia.trim() && (
+                <View>
+                  <Text style={styles.sectionLabel}>Experiencia previa</Text>
+                  <Text style={{ fontSize: 14, color: COLORS.textDark }}>{experiencia}</Text>
+                </View>
+              )}
+            </View>
+
+            <View style={{ flexDirection: 'row', gap: 12, marginTop: 24 }}>
+              <TouchableOpacity
+                onPress={() => setMostrarConfirmacion(false)}
+                disabled={isSubmitting}
+                style={[styles.submitButton, { flex: 1, backgroundColor: COLORS.bgTeal, opacity: isSubmitting ? 0.6 : 1 }]}
+              >
+                <Text style={styles.submitButtonText}>Editar postulación</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleSubmit}
+                disabled={isSubmitting}
+                style={[styles.submitButton, { flex: 1, backgroundColor: COLORS.primary }]}
+              >
+                {isSubmitting ? (
+                  <ActivityIndicator color={COLORS.bgWhite} />
+                ) : (
+                  <Text style={styles.submitButtonText}>Enviar postulación</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </View>
+      ) : (
       <View style={styles.bodySection}>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
           {/* ─── Disponibilidad ─── */}
@@ -370,8 +474,8 @@ export default function CapacidadesFormScreen({ onClose, fromProfile = false }: 
 
           <Divider />
 
-          {/* ─── Casa Hogar ─── */}
-          <FormSection title="Casa Hogar" subtitle="¿Ofreces espacio en tu hogar para animales?">
+          {/* ─── Mi Casa Temporal ─── */}
+          <FormSection title="Mi Casa Temporal" subtitle="¿Ofreces espacio en tu hogar para animales?">
             <TouchableOpacity
               onPress={() => setOfreceCasaHogar(!ofreceCasaHogar)}
               style={[
@@ -387,7 +491,7 @@ export default function CapacidadesFormScreen({ onClose, fromProfile = false }: 
               >
                 {ofreceCasaHogar && <Ionicons name="checkmark" size={18} color={COLORS.bgWhite} />}
               </View>
-              <Text style={styles.checkboxLabel}>Ofrezco espacio en mi casa hogar</Text>
+              <Text style={styles.checkboxLabel}>Ofrezco espacio en mi casa temporal</Text>
             </TouchableOpacity>
 
             {ofreceCasaHogar && (
@@ -558,6 +662,27 @@ export default function CapacidadesFormScreen({ onClose, fromProfile = false }: 
 
           <Divider />
 
+          {/* ─── Motivo ─── */}
+          <FormSection title="Motivo" subtitle="¿Por qué quieres ser voluntario?">
+            <View style={[styles.textArea, { backgroundColor: COLORS.grayLight, padding: 0 }]}>
+              <textarea
+                value={motivoVoluntario}
+                onChange={(e) => setMotivoVoluntario(e.target.value)}
+                placeholder="Cuéntale a la asociación qué te motiva a ser voluntario..."
+                maxLength={500}
+                style={{
+                  width: '100%', height: 100, backgroundColor: 'transparent',
+                  border: 'none', padding: 12, outline: 'none',
+                  fontFamily: 'inherit', fontSize: 14, color: COLORS.textDark,
+                  resize: 'none'
+                }}
+              />
+            </View>
+            <Text style={styles.charCounter}>{motivoVoluntario.length}/500</Text>
+          </FormSection>
+
+          <Divider />
+
           {/* ─── Experiencia ─── */}
           <FormSection title="Experiencia" subtitle="Cuéntanos sobre tu experiencia con animales.">
             {/* Se cambia a TextInput normal para evitar confusión de importar componentes sin usar */}
@@ -613,18 +738,21 @@ export default function CapacidadesFormScreen({ onClose, fromProfile = false }: 
           </FormSection>
 
           <TouchableOpacity
-            onPress={handleSubmit}
+            onPress={handleGuardarPress}
             disabled={isSubmitting}
             style={[styles.submitButton, { backgroundColor: COLORS.primary }]}
           >
             {isSubmitting ? (
               <ActivityIndicator color={COLORS.bgWhite} />
             ) : (
-              <Text style={styles.submitButtonText}>Guardar Capacidades</Text>
+              <Text style={styles.submitButtonText}>
+                {esPostulacionNueva ? 'Revisar postulación' : 'Guardar Capacidades'}
+              </Text>
             )}
           </TouchableOpacity>
         </ScrollView>
       </View>
+      )}
 
       {/* MODAL: Selector de Horario */}
       <Modal visible={showTimePicker} transparent animationType="slide">

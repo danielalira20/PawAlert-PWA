@@ -159,7 +159,18 @@ useFocusEffect(
             isLast={tieneCapacidades !== false}
           />
           {tieneCapacidades === false && (
-            <AccessRow icon="construct-outline" label="Termina de completar tu perfil" onPress={onOpenCapacidades} isLast />
+            <>
+              <AccessRow
+                icon="home-outline"
+                label="Mi Casa Temporal"
+                onPress={onOpenCapacidades}
+                isLast
+                locked
+              />
+              <Text style={styles.capacidadesBanner}>
+                Se completa y verifica como parte de tu postulación a una asociación.
+              </Text>
+            </>
           )}
         </>
       )}
@@ -377,6 +388,12 @@ const styles = StyleSheet.create({
   divider: { height: 1, backgroundColor: 'rgba(46,42,38,0.08)', marginHorizontal: 20 },
   sectionPadding: { paddingHorizontal: 20, paddingVertical: 20 },
 
+  capacidadesBanner: {
+    fontSize: 12,
+    color: Brand.textFaint,
+    marginTop: 8,
+    lineHeight: 17,
+  },
   accessTitle: {
     fontSize: 11,
     fontWeight: '800',

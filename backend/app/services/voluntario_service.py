@@ -181,7 +181,9 @@ async def obtener_postulaciones_asociacion(asociacion_id: str, estado: str | Non
     query = supabase.table("postulaciones").select(
         "id, voluntario_id, tipo, estado, motivo_rechazo, numero_intento, "
         "created_at, resuelta_at, "
-        "voluntarios(usuario_id, usuarios(nombre, apellido_paterno, telefono, email))"
+        "voluntarios(usuario_id, usuarios(nombre, apellido_paterno, telefono, email), "
+        "capacidades(disponibilidad, ofrece_casa_hogar, capacidad_animales, especies, "
+        "tamanios, tiene_vehiculo, motivo_voluntario, experiencia_previa, latitud, longitud))"
     ).eq("asociacion_id", asociacion_id).order("created_at", desc=True)
 
     if estado:
@@ -193,6 +195,14 @@ async def obtener_postulaciones_asociacion(asociacion_id: str, estado: str | Non
     for p in resultado.data:
         voluntario = p.get("voluntarios") or {}
         usuario = voluntario.get("usuarios") or {}
+        # Según si voluntario_id tiene UNIQUE en la tabla capacidades,
+        # PostgREST lo embebe como objeto único o como lista — soportamos
+        # ambos casos para no depender de esa configuración.
+        capacidades_raw = voluntario.get("capacidades")
+        if isinstance(capacidades_raw, list):
+            capacidades = capacidades_raw[0] if capacidades_raw else None
+        else:
+            capacidades = capacidades_raw
 
         # Historial de intentos previos (si numero_intento > 1)
         historial_previo = []
@@ -218,6 +228,18 @@ async def obtener_postulaciones_asociacion(asociacion_id: str, estado: str | Non
                 "apellido_paterno": usuario.get("apellido_paterno"),
                 "telefono": usuario.get("telefono"),
                 "email": usuario.get("email"),
+            },
+            "capacidades": capacidades and {
+                "disponibilidad": capacidades.get("disponibilidad"),
+                "ofrece_casa_hogar": capacidades.get("ofrece_casa_hogar"),
+                "capacidad_animales": capacidades.get("capacidad_animales"),
+                "especies": capacidades.get("especies"),
+                "tamanios": capacidades.get("tamanios"),
+                "tiene_vehiculo": capacidades.get("tiene_vehiculo"),
+                "motivo_voluntario": capacidades.get("motivo_voluntario"),
+                "experiencia_previa": capacidades.get("experiencia_previa"),
+                "latitud": capacidades.get("latitud"),
+                "longitud": capacidades.get("longitud"),
             },
             "historial_intentos_previos": historial_previo,
         })
@@ -439,10 +461,10 @@ async def guardar_capacidades(voluntario_id: str, datos: dict) -> dict:
         raise HTTPException(status_code=404, detail="Voluntario no encontrado")
 
     estado_voluntario = voluntario.data[0]["estado"]
-    if estado_voluntario not in ("activo_nivel_1", "activo_nivel_2"):
+    if estado_voluntario not in ("postulacion_pendiente", "activo_nivel_1", "activo_nivel_2"):
         raise HTTPException(
             status_code=403,
-            detail="Solo puedes registrar capacidades si tu postulación fue aceptada"
+            detail="No puedes registrar capacidades en el estado actual de tu postulación"
         )
 
     # Validaciones de negocio

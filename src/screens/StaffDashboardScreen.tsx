@@ -224,7 +224,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
         return (
         <View key={reporte.id} style={confirmStyles.card}>
           {reporte.foto_url && (
-            <Image source={{ uri: reporte.foto_url }} style={confirmStyles.photo} resizeMode="cover" />
+            <Image source={{ uri: reporte.foto_url }} style={confirmStyles.photo} resizeMode="contain" />
           )}
           <View style={confirmStyles.body}>
             <Text style={confirmStyles.title}>{grave?.tipo_animal || 'Animal'}{totalCaso > 1 ? ` · ${totalCaso} animales` : ''}</Text>

@@ -12,6 +12,19 @@ export interface VoluntarioData {
   telefono: string;
 }
 
+export interface CapacidadesData {
+  disponibilidad?: { dias?: string[]; horarios?: { de: string; a: string }[] };
+  ofrece_casa_hogar?: boolean;
+  capacidad_animales?: number;
+  especies?: string[];
+  tamanios?: string[];
+  tiene_vehiculo?: boolean;
+  motivo_voluntario?: string;
+  experiencia_previa?: string;
+  latitud?: number;
+  longitud?: number;
+}
+
 export interface PostulacionItem {
   id: string;
   voluntario_id: string;
@@ -21,6 +34,7 @@ export interface PostulacionItem {
   created_at: string;
   resuelta_at?: string;
   voluntario?: VoluntarioData;
+  capacidades?: CapacidadesData | null;
 }
 
 export interface PostulacionesResponse {
@@ -65,6 +79,7 @@ export function usePostulacionesAsociacion() {
         created_at: item.created_at,
         resuelta_at: item.resuelta_at,
         voluntario: item.postulante,        // Backend: postulante -> Frontend: voluntario
+        capacidades: item.capacidades,
       }));
 
       // 4. Mapeamos el historial de intentos previos
