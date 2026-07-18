@@ -33,6 +33,7 @@ import { ICON_CAT, ICON_DOG, ICON_PAW } from '../constants/mapIcons';
 import { petzen } from '../constants/petzenTheme';
 import { useAuth } from '../context/AuthContext';
 import { Animal, getAnimales, condicionMasGrave, totalAnimales, animalMasGrave } from '../types/reporte';
+import { AnimalCarousel } from '../components/common/AnimalCarousel';
 
 interface ReporteItem {
   id: string;
@@ -482,22 +483,12 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
                       </View>
                     )}
 
-                    {/* Datos del animal — siempre los 3, aunque digan "desconocido" */}
-                    {grave && (
-                      <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
-                        {[
-                          { icon: 'male-female-outline', label: grave.sexo },
-                          { icon: 'time-outline', label: grave.edad_aproximada },
-                          { icon: 'resize-outline', label: grave.tamanio },
-                        ]
-                          .filter((d) => !!d.label)
-                          .map((d, i) => (
-                            <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: petzen.colors.peach + '40', paddingHorizontal: 9, paddingVertical: 4, borderRadius: 100 }}>
-                              <Ionicons name={d.icon as any} size={11} color={petzen.colors.orangeDark} />
-                              <Text style={{ fontSize: 11, color: petzen.colors.textDark, textTransform: 'capitalize', fontWeight: '600' }}>{d.label}</Text>
-                            </View>
-                          ))}
-                      </View>
+                    {/* Datos del animal — navegable si el caso trae más de uno.
+                    No-compact: incluye la descripción del animal actual, para
+                    que quede sincronizada con el índice del carrusel (antes
+                    era un bloque aparte que solo mostraba la del más grave). */}
+                    {animales.length > 0 && (
+                      <AnimalCarousel animales={animales} />
                     )}
                   </>
                 );
@@ -517,19 +508,6 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
                           <PhotoCarousel fotos={fotos} width={128} height={158} />
                         )}
                         <View style={{ flex: 1, gap: 11, minWidth: 0 }}>{detailRows}</View>
-                      </View>
-                    )}
-
-                    {/* Descripción a todo el ancho */}
-                    {grave?.descripcion && (
-                      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F5F0E8' }}>
-                        <View style={{ width: 28, height: 28, borderRadius: 9, backgroundColor: '#9B59B620', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                          <Ionicons name="document-text-outline" size={14} color="#9B59B6" />
-                        </View>
-                        <View style={{ flex: 1, minWidth: 0 }}>
-                          <Text style={{ fontSize: 10, color: petzen.colors.textSecondary, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.4 }}>Descripción</Text>
-                          <Text style={{ fontSize: 13, color: petzen.colors.textSecondary, lineHeight: 19 }}>{grave.descripcion}</Text>
-                        </View>
                       </View>
                     )}
                   </View>

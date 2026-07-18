@@ -10,6 +10,7 @@ import { Toast, useToast } from '../components/Toast';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
 import { AnimalIcon } from '../components/profile/AnimalIcon';
+import { AnimalThumbnailStrip, DuplicadoAnimal } from '../components/common/AnimalThumbnailStrip';
 import { API_URL } from '../constants/api';
 import { petzen } from '../constants/petzenTheme';
 import { useAuth } from '../context/AuthContext';
@@ -83,6 +84,8 @@ function nuevoAnimalDraft(esGrupo: boolean = false): AnimalDraft {
 interface DuplicadoInfo {
   existente: any;
   tiempoTexto: string;
+  escenario: 1 | 2;
+  animales: DuplicadoAnimal[];
 }
 
 interface ReportFormScreenProps {
@@ -661,7 +664,12 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
           const minutos = minutosTranscurridos % 60;
           tiempoTexto = `${horas} hora(s) y ${minutos} minuto(s)`;
         }
-        setDuplicadoInfo({ existente, tiempoTexto });
+        setDuplicadoInfo({
+          existente,
+          tiempoTexto,
+          escenario: data.escenario === 2 ? 2 : 1,
+          animales: existente.animales ?? [],
+        });
         return;
       }
 
@@ -1139,6 +1147,17 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
           {borrador.tipoAnimal && (
             <>
               {renderSelector('Sexo', ['Macho', 'Hembra', 'Desconocido'], borrador.sexo, (val: Sexo) => { actualizarBorrador({ sexo: val }); setErrors((prev) => ({ ...prev, sexo: '' })); }, errors.sexo)}
+
+              {(borrador.tipoAnimal === 'Perro' || borrador.tipoAnimal === 'Gato') && borrador.sexo === 'Hembra' && (
+                <>
+                  {renderBooleanSelector('¿Parece estar preñada?', borrador.estaPrenada, (val) => { actualizarBorrador({ estaPrenada: val }); setErrors((prev) => ({ ...prev, estaPrenada: '' })); }, errors.estaPrenada)}
+                  {renderBooleanSelector('¿Trae crías con ella?', borrador.traeCriasNacidas, (val) => { actualizarBorrador({ traeCriasNacidas: val, numeroCriasNacidas: val ? borrador.numeroCriasNacidas : '' }); setErrors((prev) => ({ ...prev, traeCriasNacidas: '' })); }, errors.traeCriasNacidas)}
+                  {borrador.traeCriasNacidas && (
+                    <Input label="¿Cuántas aproximadamente? (Opcional)" placeholder="Ej. 3" value={borrador.numeroCriasNacidas} onChangeText={(val) => actualizarBorrador({ numeroCriasNacidas: val.replace(/[^0-9]/g, '') })} keyboardType="numeric" maxLength={2} />
+                  )}
+                </>
+              )}
+
               {renderSelector('Edad Aproximada', ['Cachorro', 'Joven', 'Adulto', 'Senior', 'Desconocido'], borrador.edad, (val: Edad) => { actualizarBorrador({ edad: val }); setErrors((prev) => ({ ...prev, edad: '' })); }, errors.edad)}
               {renderSelector('Tamaño', ['Pequeño', 'Mediano', 'Grande'], borrador.size, (val: Size) => { actualizarBorrador({ size: val }); setErrors((prev) => ({ ...prev, size: '' })); }, errors.size)}
 
@@ -1147,15 +1166,6 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
                   {renderSelector('Raza', ['Mestizo', 'Labrador', 'Pitbull', 'Pastor Alemán', 'Chihuahua', 'Otro'], borrador.raza, (val: string) => { actualizarBorrador({ raza: val }); setErrors((prev) => ({ ...prev, raza: '' })); }, errors.raza)}
                   {renderBooleanSelector('¿Tiene collar?', borrador.tieneCollar, (val) => { actualizarBorrador({ tieneCollar: val }); setErrors((prev) => ({ ...prev, tieneCollar: '' })); }, errors.tieneCollar)}
                   {renderBooleanSelector('¿Parece agresivo?', borrador.esAgresivo, (val) => { actualizarBorrador({ esAgresivo: val }); setErrors((prev) => ({ ...prev, esAgresivo: '' })); }, errors.esAgresivo)}
-                  {borrador.sexo === 'Hembra' && (
-                    <>
-                      {renderBooleanSelector('¿Parece estar preñada?', borrador.estaPrenada, (val) => { actualizarBorrador({ estaPrenada: val }); setErrors((prev) => ({ ...prev, estaPrenada: '' })); }, errors.estaPrenada)}
-                      {renderBooleanSelector('¿Trae crías con ella?', borrador.traeCriasNacidas, (val) => { actualizarBorrador({ traeCriasNacidas: val, numeroCriasNacidas: val ? borrador.numeroCriasNacidas : '' }); setErrors((prev) => ({ ...prev, traeCriasNacidas: '' })); }, errors.traeCriasNacidas)}
-                      {borrador.traeCriasNacidas && (
-                        <Input label="¿Cuántas aproximadamente? (Opcional)" placeholder="Ej. 3" value={borrador.numeroCriasNacidas} onChangeText={(val) => actualizarBorrador({ numeroCriasNacidas: val.replace(/[^0-9]/g, '') })} keyboardType="numeric" maxLength={2} />
-                      )}
-                    </>
-                  )}
                 </>
               )}
 
@@ -1164,15 +1174,6 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
                   {renderSelector('Raza', ['Común', 'Siamés', 'Persa', 'Otro'], borrador.raza, (val: string) => { actualizarBorrador({ raza: val }); setErrors((prev) => ({ ...prev, raza: '' })); }, errors.raza)}
                   {renderBooleanSelector('¿Tiene collar?', borrador.tieneCollar, (val) => { actualizarBorrador({ tieneCollar: val }); setErrors((prev) => ({ ...prev, tieneCollar: '' })); }, errors.tieneCollar)}
                   {renderBooleanSelector('¿Es doméstico / se deja acercar?', borrador.esDomestico, (val) => { actualizarBorrador({ esDomestico: val }); setErrors((prev) => ({ ...prev, esDomestico: '' })); }, errors.esDomestico)}
-                  {borrador.sexo === 'Hembra' && (
-                    <>
-                      {renderBooleanSelector('¿Parece estar preñada?', borrador.estaPrenada, (val) => { actualizarBorrador({ estaPrenada: val }); setErrors((prev) => ({ ...prev, estaPrenada: '' })); }, errors.estaPrenada)}
-                      {renderBooleanSelector('¿Trae crías con ella?', borrador.traeCriasNacidas, (val) => { actualizarBorrador({ traeCriasNacidas: val, numeroCriasNacidas: val ? borrador.numeroCriasNacidas : '' }); setErrors((prev) => ({ ...prev, traeCriasNacidas: '' })); }, errors.traeCriasNacidas)}
-                      {borrador.traeCriasNacidas && (
-                        <Input label="¿Cuántas aproximadamente? (Opcional)" placeholder="Ej. 3" value={borrador.numeroCriasNacidas} onChangeText={(val) => actualizarBorrador({ numeroCriasNacidas: val.replace(/[^0-9]/g, '') })} keyboardType="numeric" maxLength={2} />
-                      )}
-                    </>
-                  )}
                 </>
               )}
             </>
@@ -1553,23 +1554,35 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
               {/* Contenido de la tarjeta */}
               <View style={{ padding: 24, paddingTop: 20 }}>
                 <Text style={{ fontSize: 19, fontFamily: petzen.fonts.extraBold, color: petzen.colors.textDark, textAlign: 'center', marginBottom: 6 }}>
-                  ¿Es el mismo animal?
+                  {duplicadoInfo?.escenario === 2 ? '¿Es parte de este grupo?' : '¿Es el mismo animal?'}
                 </Text>
-                <Text style={{ fontSize: 13, color: petzen.colors.textSecondary, textAlign: 'center', marginBottom: 22, lineHeight: 19 }}>
-                  Ya existe un reporte activo que coincide con la ubicación y el tipo de animal.
+                <Text style={{ fontSize: 13, color: petzen.colors.textSecondary, textAlign: 'center', marginBottom: 16, lineHeight: 19 }}>
+                  {duplicadoInfo?.escenario === 2
+                    ? 'Hay un reporte activo de un grupo más grande en esta zona — ¿este animal es parte de ese grupo, o es un caso aparte?'
+                    : 'Ya existe un reporte activo que coincide con la ubicación y el tipo de animal.'}
                 </Text>
+
+                {!!duplicadoInfo?.animales?.length && (
+                  <View style={{ marginBottom: 18 }}>
+                    <AnimalThumbnailStrip animales={duplicadoInfo.animales} />
+                  </View>
+                )}
 
                 <TouchableOpacity
                   onPress={() => { const info = duplicadoInfo; setDuplicadoInfo(null); if (info) handleSubmit(true, info.existente.id); }}
                   style={{ backgroundColor: petzen.colors.orange, paddingVertical: 15, borderRadius: petzen.radii.pill, alignItems: 'center', marginBottom: 10 }}
                 >
-                  <Text style={{ color: '#FFFFFF', fontFamily: petzen.fonts.bold, fontSize: 15 }}>Vincular al caso existente</Text>
+                  <Text style={{ color: '#FFFFFF', fontFamily: petzen.fonts.bold, fontSize: 15 }}>
+                    {duplicadoInfo?.escenario === 2 ? 'Es parte de ese grupo' : 'Vincular al caso existente'}
+                  </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() => { setDuplicadoInfo(null); handleSubmit(true); }}
                   style={{ borderWidth: 1.5, borderColor: 'rgba(0,0,0,0.15)', paddingVertical: 15, borderRadius: petzen.radii.pill, alignItems: 'center', marginBottom: 14, backgroundColor: 'rgba(255,255,255,0.4)' }}
                 >
-                  <Text style={{ color: petzen.colors.textDark, fontFamily: petzen.fonts.bold, fontSize: 15 }}>Crear un reporte nuevo</Text>
+                  <Text style={{ color: petzen.colors.textDark, fontFamily: petzen.fonts.bold, fontSize: 15 }}>
+                    {duplicadoInfo?.escenario === 2 ? 'Es un caso aparte, crear nuevo' : 'Crear un reporte nuevo'}
+                  </Text>
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => setDuplicadoInfo(null)} style={{ alignItems: 'center' }}>
                   <Text style={{ color: petzen.colors.textSecondary, fontSize: 13 }}>Cancelar</Text>

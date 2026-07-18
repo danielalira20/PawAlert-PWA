@@ -41,19 +41,41 @@ def registrar_historial(reporte_id: str, tipo_evento: str, descripcion: str, usu
         "datos_extra": datos_extra,
     }).execute()
 
-def verificar_duplicados(municipio: str | None, colonia: str | None, tipo_animal: str | None) -> list:
+MARGEN_CANTIDAD_DUPLICADO = 1.3  # >130% de la cantidad existente -> no es el mismo caso
+
+
+def _clasificar_escenario(animal_existente: dict, tipo_animal_ids_nuevo: list[str], cantidad_nueva: int) -> int | None:
+    """None = no dispara el modal. 1 = coincidencia simple. 2 = el existente
+    ya es un grupo que cubre la(s) especie(s) nueva(s)."""
+    especies_existente_ids = {a.get("tipo_animal_id") for a in animal_existente["animales"]}
+    especies_nuevo_ids = set(tipo_animal_ids_nuevo)
+    if not especies_nuevo_ids or not especies_nuevo_ids <= especies_existente_ids:
+        # Un conjunto vacío es matemáticamente subconjunto de cualquier cosa,
+        # pero "ninguna especie nueva resolvió catálogo" no debe tratarse
+        # como "cubre todo" — sin especies válidas no hay match posible.
+        return None
+
+    cantidad_existente = sum(a.get("cantidad") or 1 for a in animal_existente["animales"])
+    if cantidad_nueva > cantidad_existente * MARGEN_CANTIDAD_DUPLICADO:
+        return None  # cantidad claramente mayor -> situación distinta, no duplicado
+
+    existente_es_grupo = cantidad_existente > 1 or any(a.get("es_grupo") for a in animal_existente["animales"])
+    return 2 if existente_es_grupo else 1
+
+
+def verificar_duplicados(municipio: str | None, colonia: str | None, especies_nuevo: list[str], cantidad_nueva: int) -> list:
     if not municipio:
         return []
 
     hace_dos_horas = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
 
-    tipo_animal_id = None
-    if tipo_animal:
-        tipo_animal_id = obtener_id_catalogo("tipo_animal_catalogo", tipo_animal)
+    tipo_animal_ids_nuevo = [
+        tid for tid in (obtener_id_catalogo("tipo_animal_catalogo", e) for e in especies_nuevo) if tid
+    ]
 
     query = supabase.table("reportes").select(
         "id, estado_reporte, municipio, colonia, created_at, "
-        "animal(id, orden, tipo_animal_id, tipo_animal_catalogo(clave), condicion_catalogo(clave))"
+        "animal(id, orden, tipo_animal_id, cantidad, es_grupo, tipo_animal_catalogo(clave), condicion_catalogo(clave))"
     ).neq("estado_reporte", "cerrado").gte("created_at", hace_dos_horas).eq("municipio", municipio)
 
     if colonia:
@@ -67,23 +89,49 @@ def verificar_duplicados(municipio: str | None, colonia: str | None, tipo_animal
         d["animal"] = animal_legado
         d["animales"] = animales_existente
 
-    if tipo_animal_id:
-        # Coincide si CUALQUIER animal del caso existente comparte especie con
-        # el reporte entrante — no solo el legado (condición más grave).
+    if tipo_animal_ids_nuevo:
+        # Red amplia: cualquier animal del caso existente comparte especie con
+        # CUALQUIERA de las especies nuevas — el escenario exacto se decide
+        # después, con el subconjunto completo.
         duplicados = [
             d for d in duplicados
-            if any(a.get("tipo_animal_id") == tipo_animal_id for a in d.get("animales", []))
+            if any(a.get("tipo_animal_id") in tipo_animal_ids_nuevo for a in d.get("animales", []))
         ]
+
+    duplicados_clasificados = []
+    for d in duplicados:
+        escenario = _clasificar_escenario(d, tipo_animal_ids_nuevo, cantidad_nueva)
+        if escenario is not None:
+            d["escenario"] = escenario
+            duplicados_clasificados.append(d)
+    duplicados = duplicados_clasificados
 
     for duplicado in duplicados:
         animal = duplicado.get("animal")
+        duplicado["foto_url"] = None
         if animal and animal.get("id"):
             fotos_result = supabase.table("animal_fotos").select(
                 "foto_url, orden"
             ).eq("animal_id", animal["id"]).order("orden").limit(1).execute()
             duplicado["foto_url"] = fotos_result.data[0]["foto_url"] if fotos_result.data else None
-        else:
-            duplicado["foto_url"] = None
+
+        animal_ids = [a["id"] for a in duplicado["animales"] if a.get("id")]
+        fotos_por_animal: dict[str, str] = {}
+        if animal_ids:
+            fotos_result = supabase.table("animal_fotos").select(
+                "animal_id, foto_url, orden"
+            ).in_("animal_id", animal_ids).order("orden").execute()
+            for f in (fotos_result.data or []):
+                fotos_por_animal.setdefault(f["animal_id"], f["foto_url"])
+        duplicado["animales_resumen"] = [
+            {
+                "tipo_animal": (a.get("tipo_animal_catalogo") or {}).get("clave"),
+                "condicion": (a.get("condicion_catalogo") or {}).get("clave"),
+                "cantidad": a.get("cantidad"),
+                "foto_url": fotos_por_animal.get(a.get("id")),
+            }
+            for a in duplicado["animales"]
+        ]
 
     return duplicados
 
@@ -109,25 +157,23 @@ async def crear_reporte(
     reporte_original_id: str | None = None,
 ) -> dict:
 
-    # La verificación de duplicados sigue guiándose por el primer animal del
-    # arreglo (no por el más grave); la asignación automática de asociación
-    # ya considera todas las especies del caso (ver especies_del_caso abajo).
+    # La verificación de duplicados considera el caso completo (todas las
+    # especies + cantidad total), no solo el primer animal; la asignación
+    # automática de asociación también considera todas las especies del caso
+    # (ver especies_del_caso abajo).
     animal_principal = animales[0]
 
-    print("=== DEBUG DUPLICADOS ===")
-    print("municipio:", municipio)
-    print("colonia:", colonia)
-    print("tipo_animal:", animal_principal.tipo_animal)
-    print("========================")
-
     if es_duplicado_confirmado is None:
-        posibles_duplicados = verificar_duplicados(municipio, colonia, animal_principal.tipo_animal)
+        especies_nuevo = list(dict.fromkeys(_condicion_str(a.tipo_animal) for a in animales))
+        cantidad_nueva = sum(a.cantidad for a in animales)
+        posibles_duplicados = verificar_duplicados(municipio, colonia, especies_nuevo, cantidad_nueva)
 
         if posibles_duplicados:
             duplicado = posibles_duplicados[0]
 
             return {
                 "posible_duplicado": True,
+                "escenario": duplicado["escenario"],
                 "reporte_existente": {
                     "id": duplicado["id"],
                     "municipio": duplicado["municipio"],
@@ -136,6 +182,7 @@ async def crear_reporte(
                     "tipo_animal": duplicado.get("animal", {}).get("tipo_animal_catalogo", {}).get("clave"),
                     "condicion": duplicado.get("animal", {}).get("condicion_catalogo", {}).get("clave"),
                     "foto_url": duplicado.get("foto_url"),
+                    "animales": duplicado["animales_resumen"],
                 },
                 "total_duplicados": len(posibles_duplicados)
             }

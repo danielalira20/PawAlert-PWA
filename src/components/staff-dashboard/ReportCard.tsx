@@ -12,6 +12,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Brand, normalizeCondicion } from '../../constants/theme';
 import { ConditionBadge } from './ConditionBadge';
+import { AnimalCarousel } from '../common/AnimalCarousel';
 import type { ReporteStaff } from '../../types/reportestaff';
 import { getAnimales, animalMasGrave, totalAnimales } from '../../types/reporte';
 
@@ -188,6 +189,12 @@ export function ReportCard({
                 </Text>
               )}
 
+              {animales.length > 1 && (
+                <View style={styles.carouselSlot}>
+                  <AnimalCarousel animales={animales} compact />
+                </View>
+              )}
+
               <View style={styles.metaRow}>
                 <Ionicons name="location-outline" size={12} color={Brand.primary} />
                 <Text style={styles.metaText} numberOfLines={1}>
@@ -275,6 +282,7 @@ const styles = StyleSheet.create({
   },
   closedText: { fontSize: 16, fontWeight: '900', color: '#fff', letterSpacing: 1.5 },
   body: { padding: 14, gap: 6 },
+  carouselSlot: { marginTop: 2 },
   title: { fontSize: 17, fontWeight: '800', color: Brand.textDark },
   subtitle: { fontSize: 13, color: Brand.textMuted, fontWeight: '500' },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
