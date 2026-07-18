@@ -9,6 +9,7 @@ import { Image, Modal, Platform, ScrollView, Text, TouchableOpacity, View, useWi
 import { Toast, useToast } from '../components/Toast';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
+import { AnimalIcon } from '../components/profile/AnimalIcon';
 import { API_URL } from '../constants/api';
 import { petzen } from '../constants/petzenTheme';
 import { useAuth } from '../context/AuthContext';
@@ -27,6 +28,55 @@ interface AnimalFoto {
   foto_url: string;
   descripcion: string;
   orden: number;
+  // A qué animal (AnimalDraft.id) pertenece esta foto — un caso puede
+  // traer varios animales, cada uno con sus propias fotos.
+  animalLocalId: string;
+}
+
+// Un animal (o grupo homogéneo) capturado dentro del caso. Un reporte puede
+// traer varios de estos combinados: fichas individuales y grupos a la vez.
+interface AnimalDraft {
+  id: string;
+  esGrupo: boolean;
+  cantidad: number; // 1 en modo individual; >1 en modo grupo
+  tipoAnimal: TipoAnimal;
+  subcategoria: string | null;
+  especieDescripcion: string;
+  condition: Condition;
+  size: Size;
+  sexo: Sexo;
+  edad: Edad;
+  tieneCollar: boolean | null;
+  estaPrenada: boolean | null;
+  traeCriasNacidas: boolean | null;
+  numeroCriasNacidas: string;
+  esAgresivo: boolean | null;
+  esDomestico: boolean | null;
+  raza: string | null;
+  description: string;
+}
+
+function nuevoAnimalDraft(esGrupo: boolean = false): AnimalDraft {
+  return {
+    id: Math.random().toString(36).substring(2, 9),
+    esGrupo,
+    cantidad: esGrupo ? 2 : 1,
+    tipoAnimal: null,
+    subcategoria: null,
+    especieDescripcion: '',
+    condition: null,
+    size: null,
+    sexo: null,
+    edad: null,
+    tieneCollar: null,
+    estaPrenada: null,
+    traeCriasNacidas: null,
+    numeroCriasNacidas: '',
+    esAgresivo: null,
+    esDomestico: null,
+    raza: null,
+    description: '',
+  };
 }
 
 interface DuplicadoInfo {
@@ -38,8 +88,14 @@ interface ReportFormScreenProps {
   onClose?: () => void;
 }
 
-const PASO_NOMBRES = ['Situación del animal', 'Datos del animal', 'Tus datos'];
+const PASO_NOMBRES = ['Ubicación', 'Animal(es)', 'Tus datos'];
 const TOTAL_PASOS = 3;
+
+// Sub-pantallas dentro del Paso 2. `pregunta-*` son las preguntas del árbol
+// de decisión (solo se recorren para el primer animal); `ficha`/`grupo` son
+// las pantallas de captura; `grupo-distinto` es la pregunta de seguimiento
+// al terminar un grupo; `resumen` es el panel con lo ya agregado.
+type VistaPaso2 = 'pregunta-multi' | 'pregunta-especie' | 'pregunta-parecidos' | 'ficha' | 'grupo' | 'grupo-distinto' | 'resumen';
 
 export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
   const { user, isLoggedIn, logout, login, token } = useAuth();
@@ -72,22 +128,15 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
   const [loginPassword, setLoginPassword] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
-  // ─── Datos del animal ───
-  const [tipoAnimal, setTipoAnimal] = useState<TipoAnimal>(null);
-  const [sexo, setSexo] = useState<Sexo>(null);
-  const [edad, setEdad] = useState<Edad>(null);
-  const [tieneCollar, setTieneCollar] = useState<boolean | null>(null);
-  const [estaPrenada, setEstaPrenada] = useState<boolean | null>(null);
-  const [esAgresivo, setEsAgresivo] = useState<boolean | null>(null);
-  const [esDomestico, setEsDomestico] = useState<boolean | null>(null);
-  const [raza, setRaza] = useState<string | null>(null);
-  const [subcategoria, setSubcategoria] = useState<string | null>(null);
-  const [especieDescripcion, setEspecieDescripcion] = useState('');
-  const [condition, setCondition] = useState<Condition>(null);
-  const [size, setSize] = useState<Size>(null);
-  const [description, setDescription] = useState('');
+  // ─── Animal(es) del caso ───
+  // `animales` ya está confirmado (agregado al reporte); `borrador` es la
+  // ficha o el grupo que se está llenando en este momento.
+  const [animales, setAnimales] = useState<AnimalDraft[]>([]);
+  const [vistaPaso2, setVistaPaso2] = useState<VistaPaso2>('pregunta-multi');
+  const [borrador, setBorrador] = useState<AnimalDraft>(nuevoAnimalDraft());
 
-  // ─── Fotos ───
+  // ─── Fotos — un solo arreglo para todo el caso, cada foto etiquetada con
+  // el animal (AnimalDraft.id) al que pertenece ───
   const [fotos, setFotos] = useState<AnimalFoto[]>([]);
 
   // ─── Ubicación ───
@@ -251,8 +300,8 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
     setErrors((prev) => ({ ...prev, ubicacion: '' }));
   };
 
-  // ─── Fotos ───
-  const captureFoto = async (fromCamera: boolean) => {
+  // ─── Fotos (por animal) ───
+  const captureFoto = async (fromCamera: boolean, animalLocalId: string) => {
     const requestPermission = fromCamera
       ? ImagePicker.requestCameraPermissionsAsync
       : ImagePicker.requestMediaLibraryPermissionsAsync;
@@ -266,84 +315,172 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
     if (!result.canceled) {
       const asset = result.assets[0];
       const manipulated = await manipulateAsync(asset.uri, [], { compress: 0.8, format: SaveFormat.JPEG });
-      const newFoto: AnimalFoto = {
-        id: Math.random().toString(36).substring(2, 9),
-        foto_url: manipulated.uri,
-        descripcion: '',
-        orden: fotos.length + 1,
-      };
-      setFotos([...fotos, newFoto]);
+      setFotos((prev) => {
+        const ordenSiguiente = prev.filter((f) => f.animalLocalId === animalLocalId).length + 1;
+        const newFoto: AnimalFoto = {
+          id: Math.random().toString(36).substring(2, 9),
+          foto_url: manipulated.uri,
+          descripcion: '',
+          orden: ordenSiguiente,
+          animalLocalId,
+        };
+        return [...prev, newFoto];
+      });
       setErrors((prev) => ({ ...prev, foto: '' }));
     }
   };
 
-  const handleAddFoto = () => {
+  const handleAddFoto = (animalLocalId: string) => {
     if (Platform.OS === 'web') {
-      captureFoto(false);
+      captureFoto(false, animalLocalId);
       return;
     }
     // En native usamos Toast en lugar de Alert para consistencia
     // pero Alert es necesario aquí para opciones múltiples
     const { Alert } = require('react-native');
     Alert.alert('Agregar Foto del animalito', '¿Qué deseas hacer?', [
-      { text: 'Tomar Foto', onPress: () => captureFoto(true) },
-      { text: 'Elegir de Galería', onPress: () => captureFoto(false) },
+      { text: 'Tomar Foto', onPress: () => captureFoto(true, animalLocalId) },
+      { text: 'Elegir de Galería', onPress: () => captureFoto(false, animalLocalId) },
       { text: 'Cancelar', style: 'cancel' },
     ]);
   };
 
   const handleUpdateFotoDesc = (id: string, text: string) => {
-    setFotos(fotos.map((f) => (f.id === id ? { ...f, descripcion: text } : f)));
+    setFotos((prev) => prev.map((f) => (f.id === id ? { ...f, descripcion: text } : f)));
   };
 
   const handleDeleteFoto = (id: string) => {
-    setFotos(fotos.filter((f) => f.id !== id));
+    setFotos((prev) => prev.filter((f) => f.id !== id));
   };
 
-  // ─── Tipo de animal ───
-  const handleTipoAnimalChange = (t: TipoAnimal) => {
-    setTipoAnimal(t);
-    setErrors(prev => ({ ...prev, tipoAnimal: '' }));
-    setRaza(null);
-    setTieneCollar(null);
-    setEsAgresivo(null);
-    setEsDomestico(null);
-    setSubcategoria(null);
-    setEspecieDescripcion('');
+  // ─── Borrador del animal/grupo en edición ───
+  const actualizarBorrador = (patch: Partial<AnimalDraft>) => {
+    setBorrador((prev) => ({ ...prev, ...patch }));
+  };
+
+  const copiarDeAnterior = (anterior: AnimalDraft) => {
+    actualizarBorrador({
+      tipoAnimal: anterior.tipoAnimal,
+      size: anterior.size,
+      sexo: anterior.sexo,
+      edad: anterior.edad,
+      tieneCollar: anterior.tieneCollar,
+      raza: anterior.raza,
+      subcategoria: anterior.subcategoria,
+      especieDescripcion: anterior.especieDescripcion,
+    });
+  };
+
+  const iniciarFichaIndividual = () => {
+    setBorrador(nuevoAnimalDraft(false));
+    setErrors({});
+    setVistaPaso2('ficha');
+  };
+
+  const iniciarGrupo = () => {
+    setBorrador(nuevoAnimalDraft(true));
+    setErrors({});
+    setVistaPaso2('grupo');
+  };
+
+  const cancelarBorrador = () => {
+    // Limpia fotos huérfanas del borrador que se está cancelando.
+    setFotos((prev) => prev.filter((f) => f.animalLocalId !== borrador.id));
+    setErrors({});
+    setVistaPaso2(animales.length > 0 ? 'resumen' : 'pregunta-multi');
+  };
+
+  const editarAnimal = (index: number) => {
+    const a = animales[index];
+    setBorrador(a);
+    setAnimales((prev) => prev.filter((_, i) => i !== index));
+    setErrors({});
+    setVistaPaso2(a.esGrupo ? 'grupo' : 'ficha');
+  };
+
+  const eliminarAnimal = (index: number) => {
+    const a = animales[index];
+    setAnimales((prev) => prev.filter((_, i) => i !== index));
+    setFotos((prev) => prev.filter((f) => f.animalLocalId !== a.id));
+  };
+
+  // ─── Validación de ficha individual / grupo ───
+  const validarFicha = (d: AnimalDraft): boolean => {
+    const newErrors: { [key: string]: string } = {};
+    const fotosDelAnimal = fotos.filter((f) => f.animalLocalId === d.id);
+    if (fotosDelAnimal.length === 0) newErrors.foto = 'Agrega al menos una foto de este animal.';
+    if (!d.condition) newErrors.condition = 'Indica la condición del animal.';
+    if (!d.tipoAnimal) newErrors.tipoAnimal = 'Selecciona un tipo de animal.';
+    if (!d.sexo) newErrors.sexo = 'Indica el sexo del animal.';
+    if (!d.edad) newErrors.edad = 'Indica la edad aproximada.';
+    if (!d.size) newErrors.size = 'Indica el tamaño del animal.';
+    if (d.tipoAnimal === 'Perro') {
+      if (d.tieneCollar === null) newErrors.tieneCollar = 'Indica si tiene collar.';
+      if (d.esAgresivo === null) newErrors.esAgresivo = 'Indica si parece agresivo.';
+      if (!d.raza) newErrors.raza = 'Selecciona la raza aproximada.';
+      if (d.sexo === 'Hembra') {
+        if (d.estaPrenada === null) newErrors.estaPrenada = 'Indica si está preñada.';
+        if (d.traeCriasNacidas === null) newErrors.traeCriasNacidas = 'Indica si trae crías con ella.';
+      }
+    } else if (d.tipoAnimal === 'Gato') {
+      if (d.tieneCollar === null) newErrors.tieneCollar = 'Indica si tiene collar.';
+      if (d.esDomestico === null) newErrors.esDomestico = 'Indica si es dócil/doméstico.';
+      if (!d.raza) newErrors.raza = 'Selecciona la raza aproximada.';
+      if (d.sexo === 'Hembra') {
+        if (d.estaPrenada === null) newErrors.estaPrenada = 'Indica si está preñada.';
+        if (d.traeCriasNacidas === null) newErrors.traeCriasNacidas = 'Indica si trae crías con ella.';
+      }
+    } else if (d.tipoAnimal === 'Otro') {
+      if (!d.subcategoria) newErrors.subcategoria = 'Selecciona la subcategoría.';
+      if (d.subcategoria === 'Otro' && !d.especieDescripcion.trim()) newErrors.especieDescripcion = 'Describe la especie del animal.';
+    }
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const validarGrupo = (d: AnimalDraft): boolean => {
+    const newErrors: { [key: string]: string } = {};
+    if (!d.tipoAnimal) newErrors.tipoAnimal = 'Selecciona un tipo de animal.';
+    if (!d.condition) newErrors.condition = 'Indica la condición general.';
+    if (!d.size) newErrors.size = 'Indica el tamaño general.';
+    if (!d.edad) newErrors.edad = 'Indica la edad aproximada general.';
+    if (!d.cantidad || d.cantidad < 2) newErrors.cantidad = 'La cantidad debe ser mayor a 1 — si es solo uno, usa ficha individual.';
+    if (d.tipoAnimal === 'Otro') {
+      if (!d.subcategoria) newErrors.subcategoria = 'Selecciona la subcategoría.';
+      if (d.subcategoria === 'Otro' && !d.especieDescripcion.trim()) newErrors.especieDescripcion = 'Describe la especie del animal.';
+    }
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const confirmarFicha = () => {
+    if (!validarFicha(borrador)) return;
+    setAnimales((prev) => [...prev, borrador]);
+    setErrors({});
+    setVistaPaso2('resumen');
+  };
+
+  const confirmarGrupo = () => {
+    if (!validarGrupo(borrador)) return;
+    setAnimales((prev) => [...prev, borrador]);
+    setErrors({});
+    setVistaPaso2('grupo-distinto');
   };
 
   // ─── Validación por paso ───
   const validarPaso1 = () => {
     const newErrors: { [key: string]: string } = {};
-    if (fotos.length === 0) newErrors.foto = 'Debes adjuntar al menos una foto del animal.';
-    if (!condition) newErrors.condition = 'Indica la condición del animal.';
     if (!ubicacionConfirmada) newErrors.ubicacion = 'Busca la dirección, usa el GPS, o ajusta el pin en el mapa.';
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
   const validarPaso2 = () => {
-    const newErrors: { [key: string]: string } = {};
-    if (!tipoAnimal) newErrors.tipoAnimal = 'Selecciona un tipo de animal.';
-    if (!sexo) newErrors.sexo = 'Indica el sexo del animal.';
-    if (!edad) newErrors.edad = 'Indica la edad aproximada.';
-    if (!size) newErrors.size = 'Indica el tamaño del animal.';
-    if (tipoAnimal === 'Perro') {
-      if (tieneCollar === null) newErrors.tieneCollar = 'Indica si tiene collar.';
-      if (esAgresivo === null) newErrors.esAgresivo = 'Indica si parece agresivo.';
-      if (!raza) newErrors.raza = 'Selecciona la raza aproximada.';
-      if (sexo === 'Hembra' && estaPrenada === null) newErrors.estaPrenada = 'Indica si está preñada.';
-    } else if (tipoAnimal === 'Gato') {
-      if (tieneCollar === null) newErrors.tieneCollar = 'Indica si tiene collar.';
-      if (esDomestico === null) newErrors.esDomestico = 'Indica si es dócil/doméstico.';
-      if (!raza) newErrors.raza = 'Selecciona la raza aproximada.';
-      if (sexo === 'Hembra' && estaPrenada === null) newErrors.estaPrenada = 'Indica si está preñada.';
-    } else if (tipoAnimal === 'Otro') {
-      if (!subcategoria) newErrors.subcategoria = 'Selecciona la subcategoría.';
-      if (subcategoria === 'Otro' && !especieDescripcion.trim()) newErrors.especieDescripcion = 'Describe la especie del animal.';
+    if (animales.length === 0) {
+      showToast({ type: 'warning', title: 'Falta información', message: 'Agrega al menos un animal antes de continuar.' });
+      return false;
     }
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    return true;
   };
 
   const validarPaso3 = () => {
@@ -383,7 +520,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
   };
 
   const hasUnsavedChanges = () => {
-    return fotos.length > 0 || condition !== null || tipoAnimal !== null || nombre.trim() !== '' || ubicacionConfirmada;
+    return animales.length > 0 || nombre.trim() !== '' || ubicacionConfirmada;
   };
 
   const handleCloseRequest = () => {
@@ -414,6 +551,37 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
     return map[s];
   };
 
+  const mapAnimalDraftToPayload = (d: AnimalDraft) => {
+    const payload: any = {
+      tipo_animal: mapTipoAnimal(d.tipoAnimal),
+      condicion: mapCondicion(d.condition),
+      tamanio: mapTamanio(d.size),
+      sexo: d.sexo ? d.sexo.toLowerCase() : 'desconocido',
+      edad_aproximada: d.edad ? d.edad.toLowerCase() : 'desconocido',
+      es_grupo: d.esGrupo,
+      cantidad: d.esGrupo ? d.cantidad : 1,
+    };
+    if (d.tipoAnimal === 'Perro' || d.tipoAnimal === 'Gato') {
+      if (d.tieneCollar !== null) payload.tiene_collar = d.tieneCollar;
+      if (d.raza) payload.raza_clave = mapRaza(d.raza, d.tipoAnimal);
+      if (!d.esGrupo && d.sexo === 'Hembra') {
+        if (d.estaPrenada !== null) payload.esta_prenada = d.estaPrenada;
+        if (d.traeCriasNacidas !== null) payload.trae_crias_nacidas = d.traeCriasNacidas;
+        if (d.traeCriasNacidas && d.numeroCriasNacidas.trim()) {
+          const n = parseInt(d.numeroCriasNacidas, 10);
+          if (!isNaN(n)) payload.numero_crias_nacidas = n;
+        }
+      }
+      if (d.tipoAnimal === 'Perro' && d.esAgresivo !== null) payload.es_agresivo = d.esAgresivo;
+      if (d.tipoAnimal === 'Gato' && d.esDomestico !== null) payload.es_domestico_probable = d.esDomestico;
+    } else if (d.tipoAnimal === 'Otro') {
+      if (d.subcategoria) payload.tipo_animal_otro_clave = mapSubcategoria(d.subcategoria);
+      if (d.subcategoria === 'Otro' && d.especieDescripcion.trim()) payload.especie_descripcion = d.especieDescripcion.trim();
+    }
+    if (d.description.trim()) payload.descripcion = d.description.trim();
+    return payload;
+  };
+
   // ─── Envío ───
   const handleSubmit = async (esDuplicadoConfirmado: boolean = false, reporteOriginalId?: string) => {
     if (!esDuplicadoConfirmado && !validarPaso3()) return;
@@ -427,38 +595,36 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
       formData.append('telefono', telefono);
       if (email.trim()) formData.append('email', email);
 
+      formData.append('animales', JSON.stringify(animales.map(mapAnimalDraftToPayload)));
+
+      // Fotos de todos los animales, aplanadas — cada una lleva el índice
+      // (posición dentro de `animales`) del animal al que pertenece, para
+      // que el backend las reparta correctamente entre las filas de `animal`.
+      const fotosOrdenadas: AnimalFoto[] = [];
+      const fotosAnimalIndex: number[] = [];
+      animales.forEach((a, idx) => {
+        fotos.filter((f) => f.animalLocalId === a.id).forEach((f) => {
+          fotosOrdenadas.push(f);
+          fotosAnimalIndex.push(idx);
+        });
+      });
+
       if (Platform.OS === 'web') {
-        for (const f of fotos) {
+        for (const f of fotosOrdenadas) {
           const res = await fetch(f.foto_url);
           const blob = await res.blob();
           formData.append('fotos', blob, `foto_${f.id}_${Date.now()}.jpg`);
         }
       } else {
-        fotos.forEach((f) => {
+        fotosOrdenadas.forEach((f) => {
           formData.append('fotos', { uri: f.foto_url, name: `foto_${f.id}_${Date.now()}.jpg`, type: 'image/jpeg' } as any);
         });
       }
 
-      formData.append('fotos_descripciones', JSON.stringify(fotos.map((f) => f.descripcion || null)));
-      formData.append('fotos_ordenes', JSON.stringify(fotos.map((f) => f.orden)));
-      formData.append('tipo_animal', mapTipoAnimal(tipoAnimal));
-      formData.append('condicion', mapCondicion(condition));
-      formData.append('tamanio', mapTamanio(size));
-      formData.append('sexo', sexo ? sexo.toLowerCase() : 'desconocido');
-      formData.append('edad_aproximada', edad ? edad.toLowerCase() : 'desconocido');
+      formData.append('fotos_descripciones', JSON.stringify(fotosOrdenadas.map((f) => f.descripcion || null)));
+      formData.append('fotos_ordenes', JSON.stringify(fotosOrdenadas.map((f) => f.orden)));
+      formData.append('fotos_animal_index', JSON.stringify(fotosAnimalIndex));
 
-      if (tipoAnimal === 'Perro' || tipoAnimal === 'Gato') {
-        formData.append('tiene_collar', String(tieneCollar));
-        formData.append('raza_clave', mapRaza(raza!, tipoAnimal));
-        if (sexo === 'Hembra' && estaPrenada !== null) formData.append('esta_prenada', String(estaPrenada));
-        if (tipoAnimal === 'Perro') formData.append('es_agresivo', String(esAgresivo));
-        if (tipoAnimal === 'Gato') formData.append('es_domestico_probable', String(esDomestico));
-      } else if (tipoAnimal === 'Otro') {
-        formData.append('tipo_animal_otro_clave', mapSubcategoria(subcategoria!));
-        if (subcategoria === 'Otro') formData.append('especie_descripcion', especieDescripcion);
-      }
-
-      if (description.trim()) formData.append('descripcion', description);
       if (referencia.trim()) formData.append('referencia', referencia);
       formData.append('latitud', String(pinLocation.latitud));
       formData.append('longitud', String(pinLocation.longitud));
@@ -477,7 +643,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
           ...(isLoggedIn && token ? { Authorization: `Bearer ${token}` } : {}),
         },
       });
-      
+
       const data = response.data;
 
       if (data.posible_duplicado) {
@@ -503,9 +669,10 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
         // Mensaje por defecto para perros, gatos o subcategoría "Otro"
         let mensajeFinal = 'Tu reporte fue publicado. No encontramos asociaciones ni contactos de emergencia en tu zona. Te recomendamos contactar a tu Ayuntamiento local o Protección Civil municipal.';
 
-        // Mensajes personalizados para especies específicas
-        if (tipoAnimal === 'Otro') {
-          switch (subcategoria) {
+        // Mensaje personalizado si algún animal del caso es especie "Otro"
+        const otroConSubcategoria = animales.find((a) => a.tipoAnimal === 'Otro' && a.subcategoria);
+        if (otroConSubcategoria) {
+          switch (otroConSubcategoria.subcategoria) {
             case 'Ave':
               mensajeFinal = 'Tu reporte fue publicado. Actualmente no contamos con asociaciones especializadas en aves en nuestra red. Te recomendamos contactar a Protección Civil o buscar un veterinario de especies exóticas.';
               break;
@@ -579,6 +746,162 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
       </View>
       {error && <Text style={{ color: '#E74C3C', fontSize: 12, marginTop: 4 }}>{error}</Text>}
     </View>
+  );
+
+  // Semáforo de condición — reusado por la ficha individual y el modo grupo.
+  const renderSemaforo = (
+    value: Condition,
+    onChange: (c: Condition) => void,
+    error?: string,
+    titulo: string = 'Condición del animal',
+    ayuda: string = '¿Cómo se ve el animal en este momento?',
+  ) => (
+    <Card>
+      <Text style={{ fontSize: 16, fontFamily: petzen.fonts.bold, color: '#2C3E50', marginBottom: 4 }}>
+        {titulo} <Text style={{ color: '#E74C3C' }}>*</Text>
+      </Text>
+      <Text style={{ fontSize: 12, color: '#7F8C8D', marginBottom: 16 }}>{ayuda}</Text>
+
+      <View style={{ flexDirection: 'row', justifyContent: 'space-evenly', alignItems: 'center', backgroundColor: '#ECF0F1', paddingVertical: 14, borderRadius: 40, borderWidth: error ? 1 : 0, borderColor: '#E74C3C' }}>
+        <TouchableOpacity onPress={() => onChange('green')} style={{ alignItems: 'center' }}>
+          <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: value === 'green' ? '#27AE60' : '#A9DFBF', borderWidth: value === 'green' ? 4 : 2, borderColor: value === 'green' ? '#1E8449' : '#FFFFFF', justifyContent: 'center', alignItems: 'center', shadowColor: value === 'green' ? '#27AE60' : 'transparent', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.8, shadowRadius: 8, elevation: value === 'green' ? 10 : 0 }}>
+            <Text style={{ fontWeight: 'bold', fontSize: 11, color: value === 'green' ? '#FFFFFF' : '#1E8449' }}>Estable</Text>
+          </View>
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={() => onChange('yellow')} style={{ alignItems: 'center' }}>
+          <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: value === 'yellow' ? '#F39C12' : '#F9E79F', borderWidth: value === 'yellow' ? 4 : 2, borderColor: value === 'yellow' ? '#D68910' : '#FFFFFF', justifyContent: 'center', alignItems: 'center', shadowColor: value === 'yellow' ? '#F39C12' : 'transparent', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.8, shadowRadius: 8, elevation: value === 'yellow' ? 10 : 0 }}>
+            <Text style={{ fontWeight: 'bold', fontSize: 11, color: value === 'yellow' ? '#FFFFFF' : '#D68910' }}>Herido</Text>
+          </View>
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={() => onChange('red')} style={{ alignItems: 'center' }}>
+          <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: value === 'red' ? '#E74C3C' : '#F5B7B1', borderWidth: value === 'red' ? 4 : 2, borderColor: value === 'red' ? '#CB4335' : '#FFFFFF', justifyContent: 'center', alignItems: 'center', shadowColor: value === 'red' ? '#E74C3C' : 'transparent', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.8, shadowRadius: 8, elevation: value === 'red' ? 10 : 0 }}>
+            <Text style={{ fontWeight: 'bold', fontSize: 11, color: value === 'red' ? '#FFFFFF' : '#CB4335' }}>Grave</Text>
+          </View>
+        </TouchableOpacity>
+      </View>
+
+      {value === 'green' && (
+        <View style={{ marginTop: 12, backgroundColor: '#EAFAF1', padding: 12, borderRadius: 8, borderLeftWidth: 4, borderLeftColor: '#27AE60', flexDirection: 'row', alignItems: 'center' }}>
+          <Image source={require('../../assets/images/estable.png')} style={{ width: 60, height: 60, marginRight: 12 }} resizeMode="contain" />
+          <Text style={{ flex: 1, fontSize: 12, color: '#1E8449', lineHeight: 18 }}>
+            <Text style={{ fontWeight: 'bold' }}>Estable:</Text> Caminando, alerta, sin heridas visibles, probablemente extraviado.
+          </Text>
+        </View>
+      )}
+      {value === 'yellow' && (
+        <View style={{ marginTop: 12, backgroundColor: '#FEF9E7', padding: 12, borderRadius: 8, borderLeftWidth: 4, borderLeftColor: '#F39C12', flexDirection: 'row', alignItems: 'center' }}>
+          <Image source={require('../../assets/images/herido.png')} style={{ width: 60, height: 60, marginRight: 12 }} resizeMode="contain" />
+          <Text style={{ flex: 1, fontSize: 12, color: '#D68910', lineHeight: 18 }}>
+            <Text style={{ fontWeight: 'bold' }}>Herido:</Text> Cojeando, con heridas superficiales, desnutrición visible o desorientado.
+          </Text>
+        </View>
+      )}
+      {value === 'red' && (
+        <View style={{ marginTop: 12, backgroundColor: '#FDEDEC', padding: 12, borderRadius: 8, borderLeftWidth: 4, borderLeftColor: '#E74C3C', flexDirection: 'row', alignItems: 'center' }}>
+          <Image source={require('../../assets/images/grave.png')} style={{ width: 60, height: 60, marginRight: 12 }} resizeMode="contain" />
+          <Text style={{ flex: 1, fontSize: 12, color: '#CB4335', lineHeight: 18 }}>
+            <Text style={{ fontWeight: 'bold' }}>Grave:</Text> Atropellado, incapaz de moverse, con sangrado activo o en riesgo inminente.
+          </Text>
+        </View>
+      )}
+      {error && <Text style={{ color: '#E74C3C', fontSize: 12, marginTop: 6 }}>{error}</Text>}
+    </Card>
+  );
+
+  // Tarjeta de fotos — reusada por la ficha individual (obligatoria) y el
+  // modo grupo (opcional, "foto grupal").
+  const renderFotosCard = (animalLocalId: string, opcional: boolean = false) => {
+    const fotosDelAnimal = fotos.filter((f) => f.animalLocalId === animalLocalId);
+    return (
+      <Card>
+        <Text style={{ fontSize: 16, fontFamily: petzen.fonts.bold, color: '#2C3E50', marginBottom: 4 }}>
+          {opcional ? 'Foto grupal (Opcional)' : 'Foto del animalito'} {!opcional && <Text style={{ color: '#E74C3C' }}>*</Text>}
+        </Text>
+        <Text style={{ fontSize: 12, color: '#7F8C8D', marginBottom: 16 }}>
+          {opcional ? 'Una foto del grupo ayuda a identificarlos, pero no es obligatoria.' : 'Agrega al menos una imagen para que el rescate sea más fácil.'}
+        </Text>
+
+        {fotosDelAnimal.map((f, index) => (
+          <View key={f.id} style={{ borderBottomWidth: index === fotosDelAnimal.length - 1 ? 0 : 1, borderBottomColor: '#ECF0F1', paddingBottom: 16, marginBottom: 16 }}>
+            <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+              <Image source={{ uri: f.foto_url }} style={{ width: 80, height: 80, borderRadius: 8 }} />
+              <View style={{ flex: 1, gap: 4 }}>
+                <Input placeholder="Descripción de la foto..." value={f.descripcion} onChangeText={(text) => handleUpdateFotoDesc(f.id, text)} style={{ height: 38, paddingVertical: 4, fontSize: 13 }} maxLength={100} />
+                <Text style={{ textAlign: 'right', color: '#95A5A6', fontSize: 11 }}>{f.descripcion.length}/100</Text>
+                <TouchableOpacity onPress={() => handleDeleteFoto(f.id)} style={{ backgroundColor: '#FADBD8', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8, alignSelf: 'flex-end' }}>
+                  <Text style={{ color: '#E63946', fontWeight: 'bold', fontSize: 13 }}>Eliminar</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        ))}
+
+        <TouchableOpacity
+          onPress={() => handleAddFoto(animalLocalId)}
+          style={{
+            flexDirection: 'row',
+            justifyContent: 'center',
+            alignItems: 'center',
+            paddingVertical: 16,
+            borderRadius: 16,
+            borderWidth: 2,
+            borderStyle: 'dashed',
+            borderColor: petzen.colors.orange,
+            backgroundColor: petzen.colors.peach + '40',
+          }}
+        >
+          <Feather name="camera" size={18} color={petzen.colors.orange} style={{ marginRight: 8 }} />
+          <Text style={{ fontFamily: petzen.fonts.bold, fontSize: 14, color: petzen.colors.orange }}>
+            {opcional ? 'Agregar foto grupal' : 'Agregar Foto del animalito'}
+          </Text>
+        </TouchableOpacity>
+        {!opcional && errors.foto && <Text style={{ color: '#E74C3C', fontSize: 12, marginTop: 8 }}>{errors.foto}</Text>}
+      </Card>
+    );
+  };
+
+  // Pantalla de pregunta sí/no del árbol de decisión.
+  const renderPregunta = (
+    icono: keyof typeof Ionicons.glyphMap,
+    pregunta: string,
+    ayuda: string,
+    onSi: () => void,
+    onNo: () => void,
+    labelSi: string = 'Sí',
+    labelNo: string = 'No',
+    onAtras?: () => void,
+  ) => (
+    <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 40, flexGrow: 1, justifyContent: 'center' }}>
+      {onAtras && (
+        <TouchableOpacity onPress={onAtras} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16, alignSelf: 'flex-start' }}>
+          <Feather name="arrow-left" size={14} color={petzen.colors.textSecondary} />
+          <Text style={{ fontSize: 13, color: petzen.colors.textSecondary, marginLeft: 6 }}>Atrás</Text>
+        </TouchableOpacity>
+      )}
+      <Card>
+        <View style={{ alignItems: 'center', paddingVertical: 16, paddingHorizontal: 8 }}>
+          <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: petzen.colors.peach + '80', alignItems: 'center', justifyContent: 'center', marginBottom: 18 }}>
+            <Ionicons name={icono} size={34} color={petzen.colors.orange} />
+          </View>
+          <Text style={{ fontSize: 18, fontFamily: petzen.fonts.extraBold, color: petzen.colors.textDark, textAlign: 'center', marginBottom: 8, lineHeight: 24 }}>
+            {pregunta}
+          </Text>
+          <Text style={{ fontSize: 13, color: petzen.colors.textSecondary, textAlign: 'center', marginBottom: 26, lineHeight: 19 }}>
+            {ayuda}
+          </Text>
+          <View style={{ flexDirection: 'row', gap: 12, width: '100%' }}>
+            <TouchableOpacity onPress={onNo} style={{ flex: 1, paddingVertical: 15, borderRadius: petzen.radii.pill, borderWidth: 1.5, borderColor: petzen.colors.teal, alignItems: 'center', backgroundColor: '#FFFFFF' }}>
+              <Text style={{ color: petzen.colors.tealDark, fontFamily: petzen.fonts.bold, fontSize: 15, textAlign: 'center' }}>{labelNo}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={onSi} style={{ flex: 1, paddingVertical: 15, borderRadius: petzen.radii.pill, alignItems: 'center', backgroundColor: petzen.colors.orange }}>
+              <Text style={{ color: '#FFFFFF', fontFamily: petzen.fonts.bold, fontSize: 15, textAlign: 'center' }}>{labelSi}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Card>
+    </ScrollView>
   );
 
   // ─── Pantalla de confirmación ───
@@ -658,120 +981,19 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
     </View>
   );
 
-    const CONDICION_DUPLICADO: Record<string, { color: string; bg: string; label: string }> = {
+  const CONDICION_DUPLICADO: Record<string, { color: string; bg: string; label: string }> = {
     estable: { color: '#27AE60', bg: '#EAFAF1', label: 'Estable' },
     herido:  { color: '#F39C12', bg: '#FEF9E7', label: 'Herido' },
     grave:   { color: '#E74C3C', bg: '#FDEDEC', label: 'Grave' },
   };
 
-  // ─── PASO 1: Situación del animal ───
+  // ─── PASO 1: Ubicación ───
   const renderPaso1 = () => (
     <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 40 }}>
       <Text style={{ fontSize: 14, color: '#7F8C8D', marginBottom: 24 }}>
-        Empieza con lo más importante: una foto, la condición del animal y dónde está.
+        Indica dónde está el animal — en el siguiente paso nos cuentas de él.
       </Text>
 
-      {/* Fotos */}
-      <Card>
-        <Text style={{ fontSize: 16, fontFamily: petzen.fonts.bold, color: '#2C3E50', marginBottom: 4 }}>
-          Foto del animalito <Text style={{ color: '#E74C3C' }}>*</Text>
-        </Text>
-        <Text style={{ fontSize: 12, color: '#7F8C8D', marginBottom: 16 }}>
-          Agrega al menos una imagen para que el rescate sea más fácil.
-        </Text>
-
-        {fotos.map((f, index) => (
-          <View key={f.id} style={{ borderBottomWidth: index === fotos.length - 1 ? 0 : 1, borderBottomColor: '#ECF0F1', paddingBottom: 16, marginBottom: 16 }}>
-            <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
-              <Image source={{ uri: f.foto_url }} style={{ width: 80, height: 80, borderRadius: 8 }} />
-              <View style={{ flex: 1, gap: 4 }}>
-                <Input placeholder="Descripción de la foto..." value={f.descripcion} onChangeText={(text) => handleUpdateFotoDesc(f.id, text)} style={{ height: 38, paddingVertical: 4, fontSize: 13 }} maxLength={100} />
-                <Text style={{ textAlign: 'right', color: '#95A5A6', fontSize: 11 }}>{f.descripcion.length}/100</Text>
-                <TouchableOpacity onPress={() => handleDeleteFoto(f.id)} style={{ backgroundColor: '#FADBD8', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8, alignSelf: 'flex-end' }}>
-                  <Text style={{ color: '#E63946', fontWeight: 'bold', fontSize: 13 }}>Eliminar</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        ))}
-
-        <TouchableOpacity
-          onPress={handleAddFoto}
-          style={{
-            flexDirection: 'row',
-            justifyContent: 'center',
-            alignItems: 'center',
-            paddingVertical: 16,
-            borderRadius: 16,
-            borderWidth: 2,
-            borderStyle: 'dashed',
-            borderColor: petzen.colors.orange,
-            backgroundColor: petzen.colors.peach + '40',
-          }}
-        >
-          <Feather name="camera" size={18} color={petzen.colors.orange} style={{ marginRight: 8 }} />
-          <Text style={{ fontFamily: petzen.fonts.bold, fontSize: 14, color: petzen.colors.orange }}>Agregar Foto del animalito</Text>
-        </TouchableOpacity>
-        {errors.foto && <Text style={{ color: '#E74C3C', fontSize: 12, marginTop: 8 }}>{errors.foto}</Text>}
-      </Card>
-
-      {/* Condición semáforo */}
-      <Card>
-        <Text style={{ fontSize: 16, fontFamily: petzen.fonts.bold, color: '#2C3E50', marginBottom: 4 }}>
-          Condición del animal <Text style={{ color: '#E74C3C' }}>*</Text>
-        </Text>
-        <Text style={{ fontSize: 12, color: '#7F8C8D', marginBottom: 16 }}>
-          ¿Cómo se ve el animal en este momento?
-        </Text>
-
-        <View style={{ flexDirection: 'row', justifyContent: 'space-evenly', alignItems: 'center', backgroundColor: '#ECF0F1', paddingVertical: 14, borderRadius: 40, borderWidth: errors.condition ? 1 : 0, borderColor: '#E74C3C' }}>
-          <TouchableOpacity onPress={() => { setCondition('green'); setErrors(prev => ({ ...prev, condition: '' })); }} style={{ alignItems: 'center' }}>
-            <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: condition === 'green' ? '#27AE60' : '#A9DFBF', borderWidth: condition === 'green' ? 4 : 2, borderColor: condition === 'green' ? '#1E8449' : '#FFFFFF', justifyContent: 'center', alignItems: 'center', shadowColor: condition === 'green' ? '#27AE60' : 'transparent', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.8, shadowRadius: 8, elevation: condition === 'green' ? 10 : 0 }}>
-              <Text style={{ fontWeight: 'bold', fontSize: 11, color: condition === 'green' ? '#FFFFFF' : '#1E8449' }}>Estable</Text>
-            </View>
-          </TouchableOpacity>
-
-          <TouchableOpacity onPress={() => { setCondition('yellow'); setErrors(prev => ({ ...prev, condition: '' })); }} style={{ alignItems: 'center' }}>
-            <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: condition === 'yellow' ? '#F39C12' : '#F9E79F', borderWidth: condition === 'yellow' ? 4 : 2, borderColor: condition === 'yellow' ? '#D68910' : '#FFFFFF', justifyContent: 'center', alignItems: 'center', shadowColor: condition === 'yellow' ? '#F39C12' : 'transparent', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.8, shadowRadius: 8, elevation: condition === 'yellow' ? 10 : 0 }}>
-              <Text style={{ fontWeight: 'bold', fontSize: 11, color: condition === 'yellow' ? '#FFFFFF' : '#D68910' }}>Herido</Text>
-            </View>
-          </TouchableOpacity>
-
-          <TouchableOpacity onPress={() => { setCondition('red'); setErrors(prev => ({ ...prev, condition: '' })); }} style={{ alignItems: 'center' }}>
-            <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: condition === 'red' ? '#E74C3C' : '#F5B7B1', borderWidth: condition === 'red' ? 4 : 2, borderColor: condition === 'red' ? '#CB4335' : '#FFFFFF', justifyContent: 'center', alignItems: 'center', shadowColor: condition === 'red' ? '#E74C3C' : 'transparent', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.8, shadowRadius: 8, elevation: condition === 'red' ? 10 : 0 }}>
-              <Text style={{ fontWeight: 'bold', fontSize: 11, color: condition === 'red' ? '#FFFFFF' : '#CB4335' }}>Grave</Text>
-            </View>
-          </TouchableOpacity>
-        </View>
-
-        {condition === 'green' && (
-          <View style={{ marginTop: 12, backgroundColor: '#EAFAF1', padding: 12, borderRadius: 8, borderLeftWidth: 4, borderLeftColor: '#27AE60', flexDirection: 'row', alignItems: 'center' }}>
-            <Image source={require('../../assets/images/estable.png')} style={{ width: 60, height: 60, marginRight: 12 }} resizeMode="contain" />
-            <Text style={{ flex: 1, fontSize: 12, color: '#1E8449', lineHeight: 18 }}>
-              <Text style={{ fontWeight: 'bold' }}>Estable:</Text> Caminando, alerta, sin heridas visibles, probablemente extraviado.
-            </Text>
-          </View>
-        )}
-        {condition === 'yellow' && (
-          <View style={{ marginTop: 12, backgroundColor: '#FEF9E7', padding: 12, borderRadius: 8, borderLeftWidth: 4, borderLeftColor: '#F39C12', flexDirection: 'row', alignItems: 'center' }}>
-            <Image source={require('../../assets/images/herido.png')} style={{ width: 60, height: 60, marginRight: 12 }} resizeMode="contain" />
-            <Text style={{ flex: 1, fontSize: 12, color: '#D68910', lineHeight: 18 }}>
-              <Text style={{ fontWeight: 'bold' }}>Herido:</Text> Cojeando, con heridas superficiales, desnutrición visible o desorientado.
-            </Text>
-          </View>
-        )}
-        {condition === 'red' && (
-          <View style={{ marginTop: 12, backgroundColor: '#FDEDEC', padding: 12, borderRadius: 8, borderLeftWidth: 4, borderLeftColor: '#E74C3C', flexDirection: 'row', alignItems: 'center' }}>
-            <Image source={require('../../assets/images/grave.png')} style={{ width: 60, height: 60, marginRight: 12 }} resizeMode="contain" />
-            <Text style={{ flex: 1, fontSize: 12, color: '#CB4335', lineHeight: 18 }}>
-              <Text style={{ fontWeight: 'bold' }}>Grave:</Text> Atropellado, incapaz de moverse, con sangrado activo o en riesgo inminente.
-            </Text>
-          </View>
-        )}
-        {errors.condition && <Text style={{ color: '#E74C3C', fontSize: 12, marginTop: 6 }}>{errors.condition}</Text>}
-      </Card>
-
-      {/* Ubicación */}
       <Card>
         <Text style={{ fontSize: 16, fontFamily: petzen.fonts.bold, color: '#2C3E50', marginBottom: 4 }}>
           Ubicación del animal <Text style={{ color: '#E74C3C' }}>*</Text>
@@ -844,70 +1066,316 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
     </ScrollView>
   );
 
-  // ─── PASO 2: Datos del animal ───
-  const renderPaso2 = () => (
+  // ─── PASO 2 · Ficha individual (un animal) ───
+  const renderFichaIndividual = () => {
+    const animalesIndividualesPrevios = animales.filter((a) => !a.esGrupo);
+    const anterior = animalesIndividualesPrevios[animalesIndividualesPrevios.length - 1];
+    const puedeCopiar = !!anterior && !borrador.tipoAnimal;
+    const numeroFicha = animales.length + 1;
+
+    return (
+      <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 40 }}>
+        <Text style={{ fontSize: 14, color: '#7F8C8D', marginBottom: 16 }}>
+          {animales.length > 0
+            ? `Animal #${numeroFicha} — cuéntanos de este.`
+            : 'Cuéntanos sobre el animal para poder asignar la ayuda adecuada.'}
+        </Text>
+
+        {puedeCopiar && (
+          <TouchableOpacity
+            onPress={() => copiarDeAnterior(anterior)}
+            style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: petzen.colors.tealDark + '18', borderRadius: 12, padding: 12, marginBottom: 16, gap: 8 }}
+          >
+            <Ionicons name="copy-outline" size={16} color={petzen.colors.tealDark} />
+            <Text style={{ fontSize: 12, color: petzen.colors.textDark, flex: 1, lineHeight: 16 }}>
+              Copiar tipo, tamaño, sexo, edad, collar y raza del animal anterior
+            </Text>
+            <Feather name="chevron-right" size={14} color={petzen.colors.textSecondary} />
+          </TouchableOpacity>
+        )}
+
+        {renderFotosCard(borrador.id, false)}
+        {renderSemaforo(borrador.condition, (c) => { actualizarBorrador({ condition: c }); setErrors((prev) => ({ ...prev, condition: '' })); }, errors.condition)}
+
+        <Card>
+          {renderSelector('Tipo de Animal', ['Perro', 'Gato', 'Otro'], borrador.tipoAnimal, (t: TipoAnimal) => {
+            actualizarBorrador({ tipoAnimal: t, raza: null, tieneCollar: null, esAgresivo: null, esDomestico: null, subcategoria: null, especieDescripcion: '' });
+            setErrors((prev) => ({ ...prev, tipoAnimal: '' }));
+          }, errors.tipoAnimal)}
+
+          {borrador.tipoAnimal === 'Otro' && (
+            <>
+              {renderSelector('Categoría', ['Ave', 'Reptil', 'Roedor', 'Fauna silvestre', 'Otro'], borrador.subcategoria, (val: string) => { actualizarBorrador({ subcategoria: val }); setErrors((prev) => ({ ...prev, subcategoria: '' })); }, errors.subcategoria)}
+              {borrador.subcategoria === 'Otro' && (
+                <View>
+                  <Input label="Describe la especie *" placeholder="Ej. Tlacuache, caballo, etc." value={borrador.especieDescripcion} onChangeText={(val) => { actualizarBorrador({ especieDescripcion: val }); if (val.trim()) setErrors((prev) => ({ ...prev, especieDescripcion: '' })); }} error={errors.especieDescripcion} maxLength={100} />
+                  <Text style={{ textAlign: 'right', color: '#95A5A6', fontSize: 12, marginTop: -12, marginBottom: 8 }}>{borrador.especieDescripcion.length}/100</Text>
+                </View>
+              )}
+            </>
+          )}
+
+          {borrador.tipoAnimal && (
+            <>
+              {renderSelector('Sexo', ['Macho', 'Hembra', 'Desconocido'], borrador.sexo, (val: Sexo) => { actualizarBorrador({ sexo: val }); setErrors((prev) => ({ ...prev, sexo: '' })); }, errors.sexo)}
+              {renderSelector('Edad Aproximada', ['Cachorro', 'Joven', 'Adulto', 'Senior', 'Desconocido'], borrador.edad, (val: Edad) => { actualizarBorrador({ edad: val }); setErrors((prev) => ({ ...prev, edad: '' })); }, errors.edad)}
+              {renderSelector('Tamaño', ['Pequeño', 'Mediano', 'Grande'], borrador.size, (val: Size) => { actualizarBorrador({ size: val }); setErrors((prev) => ({ ...prev, size: '' })); }, errors.size)}
+
+              {borrador.tipoAnimal === 'Perro' && (
+                <>
+                  {renderSelector('Raza', ['Mestizo', 'Labrador', 'Pitbull', 'Pastor Alemán', 'Chihuahua', 'Otro'], borrador.raza, (val: string) => { actualizarBorrador({ raza: val }); setErrors((prev) => ({ ...prev, raza: '' })); }, errors.raza)}
+                  {renderBooleanSelector('¿Tiene collar?', borrador.tieneCollar, (val) => { actualizarBorrador({ tieneCollar: val }); setErrors((prev) => ({ ...prev, tieneCollar: '' })); }, errors.tieneCollar)}
+                  {renderBooleanSelector('¿Parece agresivo?', borrador.esAgresivo, (val) => { actualizarBorrador({ esAgresivo: val }); setErrors((prev) => ({ ...prev, esAgresivo: '' })); }, errors.esAgresivo)}
+                  {borrador.sexo === 'Hembra' && (
+                    <>
+                      {renderBooleanSelector('¿Parece estar preñada?', borrador.estaPrenada, (val) => { actualizarBorrador({ estaPrenada: val }); setErrors((prev) => ({ ...prev, estaPrenada: '' })); }, errors.estaPrenada)}
+                      {renderBooleanSelector('¿Trae crías con ella?', borrador.traeCriasNacidas, (val) => { actualizarBorrador({ traeCriasNacidas: val, numeroCriasNacidas: val ? borrador.numeroCriasNacidas : '' }); setErrors((prev) => ({ ...prev, traeCriasNacidas: '' })); }, errors.traeCriasNacidas)}
+                      {borrador.traeCriasNacidas && (
+                        <Input label="¿Cuántas aproximadamente? (Opcional)" placeholder="Ej. 3" value={borrador.numeroCriasNacidas} onChangeText={(val) => actualizarBorrador({ numeroCriasNacidas: val.replace(/[^0-9]/g, '') })} keyboardType="numeric" maxLength={2} />
+                      )}
+                    </>
+                  )}
+                </>
+              )}
+
+              {borrador.tipoAnimal === 'Gato' && (
+                <>
+                  {renderSelector('Raza', ['Común', 'Siamés', 'Persa', 'Otro'], borrador.raza, (val: string) => { actualizarBorrador({ raza: val }); setErrors((prev) => ({ ...prev, raza: '' })); }, errors.raza)}
+                  {renderBooleanSelector('¿Tiene collar?', borrador.tieneCollar, (val) => { actualizarBorrador({ tieneCollar: val }); setErrors((prev) => ({ ...prev, tieneCollar: '' })); }, errors.tieneCollar)}
+                  {renderBooleanSelector('¿Es doméstico / se deja acercar?', borrador.esDomestico, (val) => { actualizarBorrador({ esDomestico: val }); setErrors((prev) => ({ ...prev, esDomestico: '' })); }, errors.esDomestico)}
+                  {borrador.sexo === 'Hembra' && (
+                    <>
+                      {renderBooleanSelector('¿Parece estar preñada?', borrador.estaPrenada, (val) => { actualizarBorrador({ estaPrenada: val }); setErrors((prev) => ({ ...prev, estaPrenada: '' })); }, errors.estaPrenada)}
+                      {renderBooleanSelector('¿Trae crías con ella?', borrador.traeCriasNacidas, (val) => { actualizarBorrador({ traeCriasNacidas: val, numeroCriasNacidas: val ? borrador.numeroCriasNacidas : '' }); setErrors((prev) => ({ ...prev, traeCriasNacidas: '' })); }, errors.traeCriasNacidas)}
+                      {borrador.traeCriasNacidas && (
+                        <Input label="¿Cuántas aproximadamente? (Opcional)" placeholder="Ej. 3" value={borrador.numeroCriasNacidas} onChangeText={(val) => actualizarBorrador({ numeroCriasNacidas: val.replace(/[^0-9]/g, '') })} keyboardType="numeric" maxLength={2} />
+                      )}
+                    </>
+                  )}
+                </>
+              )}
+            </>
+          )}
+
+          <View style={{ marginBottom: 8 }}>
+            <Input label="Descripción adicional (Opcional)" placeholder="Detalles sobre el animal o la situación..." value={borrador.description} onChangeText={(val) => actualizarBorrador({ description: val })} multiline maxLength={300} numberOfLines={3} style={{ height: 80, textAlignVertical: 'top' }} />
+            <Text style={{ textAlign: 'right', color: '#95A5A6', fontSize: 12 }}>{borrador.description.length}/300</Text>
+          </View>
+        </Card>
+
+        <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
+          <TouchableOpacity onPress={cancelarBorrador} style={{ flex: 1, paddingVertical: 16, borderRadius: 30, alignItems: 'center', borderWidth: 1.5, borderColor: '#BDC3C7' }}>
+            <Text style={{ color: '#7F8C8D', fontFamily: petzen.fonts.bold, fontSize: 15 }}>Cancelar</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={confirmarFicha} style={{ flex: 2, backgroundColor: petzen.colors.orange, paddingVertical: 16, borderRadius: 30, alignItems: 'center' }}>
+            <Text style={{ fontFamily: petzen.fonts.bold, color: '#FFFFFF', fontSize: 16 }}>
+              {animales.length > 0 ? 'Agregar a mi reporte' : 'Siguiente →'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    );
+  };
+
+  // ─── PASO 2 · Modo grupo (varios animales parecidos) ───
+  const renderPantallaGrupo = () => (
     <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 40 }}>
-      <Text style={{ fontSize: 14, color: '#7F8C8D', marginBottom: 24 }}>
-        Cuéntanos más sobre el animal para poder asignar la ayuda adecuada.
-      </Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: petzen.colors.tealDark + '18', borderRadius: 12, padding: 12, marginBottom: 20, gap: 10 }}>
+        <Ionicons name="people-outline" size={20} color={petzen.colors.tealDark} />
+        <Text style={{ fontSize: 12, color: petzen.colors.textDark, flex: 1, lineHeight: 17 }}>
+          Modo grupo: descríbelos juntos con datos generales — no hace falta una ficha por cada uno.
+        </Text>
+      </View>
+
+      {renderFotosCard(borrador.id, true)}
 
       <Card>
-        {renderSelector('Tipo de Animal', ['Perro', 'Gato', 'Otro'], tipoAnimal, handleTipoAnimalChange, errors.tipoAnimal)}
+        {renderSelector('Tipo de Animal', ['Perro', 'Gato', 'Otro'], borrador.tipoAnimal, (t: TipoAnimal) => {
+          actualizarBorrador({ tipoAnimal: t, subcategoria: null, especieDescripcion: '' });
+          setErrors((prev) => ({ ...prev, tipoAnimal: '' }));
+        }, errors.tipoAnimal)}
 
-        {/* Si es 'Otro': mostrar Categoría justo después del selector de Animal */}
-        {tipoAnimal === 'Otro' && (
+        {borrador.tipoAnimal === 'Otro' && (
           <>
-            {renderSelector('Categoría', ['Ave', 'Reptil', 'Roedor', 'Fauna silvestre', 'Otro'], subcategoria, (val: any) => { setSubcategoria(val); setErrors(prev => ({ ...prev, subcategoria: '' })); }, errors.subcategoria)}
-            {subcategoria === 'Otro' && (
+            {renderSelector('Categoría', ['Ave', 'Reptil', 'Roedor', 'Fauna silvestre', 'Otro'], borrador.subcategoria, (val: string) => { actualizarBorrador({ subcategoria: val }); setErrors((prev) => ({ ...prev, subcategoria: '' })); }, errors.subcategoria)}
+            {borrador.subcategoria === 'Otro' && (
               <View>
-                <Input label="Describe la especie *" placeholder="Ej. Tlacuache, caballo, etc." value={especieDescripcion} onChangeText={(val) => { setEspecieDescripcion(val); if (val.trim()) setErrors(prev => ({ ...prev, especieDescripcion: '' })); }} error={errors.especieDescripcion} maxLength={100} />
-                <Text style={{ textAlign: 'right', color: '#95A5A6', fontSize: 12, marginTop: -12, marginBottom: 8 }}>{especieDescripcion.length}/100</Text>
+                <Input label="Describe la especie *" placeholder="Ej. Tlacuaches, palomas, etc." value={borrador.especieDescripcion} onChangeText={(val) => { actualizarBorrador({ especieDescripcion: val }); if (val.trim()) setErrors((prev) => ({ ...prev, especieDescripcion: '' })); }} error={errors.especieDescripcion} maxLength={100} />
+                <Text style={{ textAlign: 'right', color: '#95A5A6', fontSize: 12, marginTop: -12, marginBottom: 8 }}>{borrador.especieDescripcion.length}/100</Text>
               </View>
             )}
           </>
         )}
 
-        {tipoAnimal && (
-          <>
-            {renderSelector('Sexo', ['Macho', 'Hembra', 'Desconocido'], sexo, (val: any) => { setSexo(val); setErrors(prev => ({ ...prev, sexo: '' })); }, errors.sexo)}
-            {renderSelector('Edad Aproximada', ['Cachorro', 'Joven', 'Adulto', 'Senior', 'Desconocido'], edad, (val: any) => { setEdad(val); setErrors(prev => ({ ...prev, edad: '' })); }, errors.edad)}
-            {renderSelector('Tamaño', ['Pequeño', 'Mediano', 'Grande'], size, (val: any) => { setSize(val); setErrors(prev => ({ ...prev, size: '' })); }, errors.size)}
-
-            {tipoAnimal === 'Perro' && (
-              <>
-                {renderSelector('Raza', ['Mestizo', 'Labrador', 'Pitbull', 'Pastor Alemán', 'Chihuahua', 'Otro'], raza, (val: any) => { setRaza(val); setErrors(prev => ({ ...prev, raza: '' })); }, errors.raza)}
-                {renderBooleanSelector('¿Tiene collar?', tieneCollar, (val: any) => { setTieneCollar(val); setErrors(prev => ({ ...prev, tieneCollar: '' })); }, errors.tieneCollar)}
-                {renderBooleanSelector('¿Parece agresivo?', esAgresivo, (val: any) => { setEsAgresivo(val); setErrors(prev => ({ ...prev, esAgresivo: '' })); }, errors.esAgresivo)}
-                {sexo === 'Hembra' && renderBooleanSelector('¿Parece estar preñada?', estaPrenada, (val: any) => { setEstaPrenada(val); setErrors(prev => ({ ...prev, estaPrenada: '' })); }, errors.estaPrenada)}
-              </>
-            )}
-
-            {tipoAnimal === 'Gato' && (
-              <>
-                {renderSelector('Raza', ['Común', 'Siamés', 'Persa', 'Otro'], raza, (val: any) => { setRaza(val); setErrors(prev => ({ ...prev, raza: '' })); }, errors.raza)}
-                {renderBooleanSelector('¿Tiene collar?', tieneCollar, (val: any) => { setTieneCollar(val); setErrors(prev => ({ ...prev, tieneCollar: '' })); }, errors.tieneCollar)}
-                {renderBooleanSelector('¿Es doméstico / se deja acercar?', esDomestico, (val: any) => { setEsDomestico(val); setErrors(prev => ({ ...prev, esDomestico: '' })); }, errors.esDomestico)}
-                {sexo === 'Hembra' && renderBooleanSelector('¿Parece estar preñada?', estaPrenada, (val: any) => { setEstaPrenada(val); setErrors(prev => ({ ...prev, estaPrenada: '' })); }, errors.estaPrenada)}
-              </>
-            )}
-          </>
-        )}
-
-
-        <View style={{ marginBottom: 8 }}>
-          <Input label="Descripción adicional (Opcional)" placeholder="Detalles sobre el animal o la situación..." value={description} onChangeText={setDescription} multiline maxLength={300} numberOfLines={3} style={{ height: 80, textAlignVertical: 'top' }} />
-          <Text style={{ textAlign: 'right', color: '#95A5A6', fontSize: 12 }}>{description.length}/300</Text>
+        <View style={{ marginBottom: 20 }}>
+          <Text style={{ fontSize: 14, fontWeight: '600', color: '#2C3E50', marginBottom: 8 }}>¿Cuántos son aproximadamente? <Text style={{ color: '#E74C3C' }}>*</Text></Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+            <TouchableOpacity
+              onPress={() => actualizarBorrador({ cantidad: Math.max(2, borrador.cantidad - 1) })}
+              style={{ width: 40, height: 40, borderRadius: 20, borderWidth: 1.5, borderColor: petzen.colors.orange, alignItems: 'center', justifyContent: 'center' }}
+            >
+              <Feather name="minus" size={18} color={petzen.colors.orange} />
+            </TouchableOpacity>
+            <Text style={{ fontSize: 24, fontFamily: petzen.fonts.extraBold, color: petzen.colors.textDark, minWidth: 44, textAlign: 'center' }}>{borrador.cantidad}</Text>
+            <TouchableOpacity
+              onPress={() => actualizarBorrador({ cantidad: borrador.cantidad + 1 })}
+              style={{ width: 40, height: 40, borderRadius: 20, borderWidth: 1.5, borderColor: petzen.colors.orange, alignItems: 'center', justifyContent: 'center' }}
+            >
+              <Feather name="plus" size={18} color={petzen.colors.orange} />
+            </TouchableOpacity>
+          </View>
+          {errors.cantidad && <Text style={{ color: '#E74C3C', fontSize: 12, marginTop: 4 }}>{errors.cantidad}</Text>}
         </View>
       </Card>
 
-      <TouchableOpacity
-        onPress={handleSiguiente}
-        style={{ backgroundColor: petzen.colors.orange, paddingVertical: 16, borderRadius: 30, alignItems: 'center', marginTop: 8 }}
-      >
-        <Text style={{ fontFamily: petzen.fonts.bold, color: '#FFFFFF', fontSize: 16 }}>Siguiente →</Text>
-      </TouchableOpacity>
+      {renderSemaforo(borrador.condition, (c) => { actualizarBorrador({ condition: c }); setErrors((prev) => ({ ...prev, condition: '' })); }, errors.condition, 'Condición general', '¿Cómo se ve la mayoría del grupo?')}
+
+      <Card>
+        {renderSelector('Tamaño general', ['Pequeño', 'Mediano', 'Grande'], borrador.size, (val: Size) => { actualizarBorrador({ size: val }); setErrors((prev) => ({ ...prev, size: '' })); }, errors.size)}
+        {renderSelector('Edad aproximada general', ['Cachorro', 'Joven', 'Adulto', 'Senior', 'Desconocido'], borrador.edad, (val: Edad) => { actualizarBorrador({ edad: val }); setErrors((prev) => ({ ...prev, edad: '' })); }, errors.edad)}
+
+        <View style={{ marginBottom: 8 }}>
+          <Input label="Descripción adicional (Opcional)" placeholder="Ej. Están debajo de una camioneta abandonada..." value={borrador.description} onChangeText={(val) => actualizarBorrador({ description: val })} multiline maxLength={300} numberOfLines={3} style={{ height: 80, textAlignVertical: 'top' }} />
+          <Text style={{ textAlign: 'right', color: '#95A5A6', fontSize: 12 }}>{borrador.description.length}/300</Text>
+        </View>
+      </Card>
+
+      <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
+        <TouchableOpacity onPress={cancelarBorrador} style={{ flex: 1, paddingVertical: 16, borderRadius: 30, alignItems: 'center', borderWidth: 1.5, borderColor: '#BDC3C7' }}>
+          <Text style={{ color: '#7F8C8D', fontFamily: petzen.fonts.bold, fontSize: 15 }}>Cancelar</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={confirmarGrupo} style={{ flex: 2, backgroundColor: petzen.colors.orange, paddingVertical: 16, borderRadius: 30, alignItems: 'center' }}>
+          <Text style={{ fontFamily: petzen.fonts.bold, color: '#FFFFFF', fontSize: 16 }}>Agregar grupo a mi reporte</Text>
+        </TouchableOpacity>
+      </View>
     </ScrollView>
   );
+
+  // ─── PASO 2 · Resumen de animales agregados ───
+  const renderResumenAnimales = () => {
+    const totalAnimalesCount = animales.reduce((sum, a) => sum + (a.esGrupo ? a.cantidad : 1), 0);
+    return (
+      <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 40 }}>
+        <Text style={{ fontSize: 14, color: '#7F8C8D', marginBottom: 20 }}>
+          {totalAnimalesCount === 1
+            ? 'Este es el animal de tu reporte.'
+            : `Tu reporte incluye ${totalAnimalesCount} animales en total.`}
+        </Text>
+
+        {animales.map((a, index) => {
+          const fotosDelAnimal = fotos.filter((f) => f.animalLocalId === a.id);
+          const especieLabel = a.tipoAnimal === 'Otro' ? (a.subcategoria || 'Otro') : (a.tipoAnimal || 'Animal');
+          return (
+            <View key={a.id} style={{ flexDirection: 'row', gap: 12, backgroundColor: '#FFFFFF', borderRadius: 16, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: '#F0E8DC', alignItems: 'center' }}>
+              <View style={{ width: 56, height: 56, borderRadius: 14, overflow: 'hidden', backgroundColor: '#F5F0E8', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                {fotosDelAnimal[0] ? (
+                  <Image source={{ uri: fotosDelAnimal[0].foto_url }} style={{ width: 56, height: 56 }} resizeMode="cover" />
+                ) : (
+                  <AnimalIcon tipoAnimal={a.tipoAnimal} condicion={mapCondicion(a.condition)} size={40} bare />
+                )}
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={{ fontSize: 14, fontFamily: petzen.fonts.bold, color: '#2C3E50' }} numberOfLines={1}>
+                  {especieLabel}{a.esGrupo ? ` · Grupo de ${a.cantidad}` : ''}
+                </Text>
+                <Text style={{ fontSize: 12, color: '#7F8C8D', marginTop: 2 }} numberOfLines={1}>
+                  {[a.size, a.condition && mapCondicion(a.condition)].filter(Boolean).join(' · ') || 'Sin detalles'}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => editarAnimal(index)} style={{ padding: 8 }}>
+                <Feather name="edit-2" size={16} color={petzen.colors.tealDark} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => eliminarAnimal(index)} style={{ padding: 8 }}>
+                <Feather name="trash-2" size={16} color="#E74C3C" />
+              </TouchableOpacity>
+            </View>
+          );
+        })}
+
+        <View style={{ flexDirection: 'row', gap: 10, marginTop: 4, marginBottom: 24, flexWrap: 'wrap' }}>
+          <TouchableOpacity onPress={iniciarFichaIndividual} style={{ flexGrow: 1, flexBasis: 150, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 16, borderWidth: 2, borderStyle: 'dashed', borderColor: petzen.colors.tealDark, backgroundColor: petzen.colors.tealDark + '10' }}>
+            <Feather name="plus" size={16} color={petzen.colors.tealDark} />
+            <Text style={{ fontSize: 13, fontFamily: petzen.fonts.bold, color: petzen.colors.tealDark }}>Otro animal</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={iniciarGrupo} style={{ flexGrow: 1, flexBasis: 150, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 16, borderWidth: 2, borderStyle: 'dashed', borderColor: petzen.colors.orange, backgroundColor: petzen.colors.peach + '40' }}>
+            <Feather name="users" size={16} color={petzen.colors.orange} />
+            <Text style={{ fontSize: 13, fontFamily: petzen.fonts.bold, color: petzen.colors.orange }}>Grupo similar</Text>
+          </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity
+          onPress={handleSiguiente}
+          style={{ backgroundColor: petzen.colors.orange, paddingVertical: 16, borderRadius: 30, alignItems: 'center' }}
+        >
+          <Text style={{ fontFamily: petzen.fonts.bold, color: '#FFFFFF', fontSize: 16 }}>Siguiente →</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    );
+  };
+
+  // ─── PASO 2: despacha a la sub-vista activa ───
+  const renderPaso2 = () => {
+    switch (vistaPaso2) {
+      case 'pregunta-multi':
+        return renderPregunta(
+          'paw-outline',
+          '¿Hay más de un animal en este lugar?',
+          'Por ejemplo, una colonia de gatos o una camada — así no llenas una ficha completa para cada uno si son parecidos.',
+          () => setVistaPaso2('pregunta-especie'),
+          () => iniciarFichaIndividual(),
+          'Sí, hay más',
+          'No, solo uno',
+        );
+      case 'pregunta-especie':
+        return renderPregunta(
+          'git-compare-outline',
+          '¿Son todos de la misma especie?',
+          'Ej. todos perros, o todos gatos.',
+          () => setVistaPaso2('pregunta-parecidos'),
+          () => iniciarFichaIndividual(),
+          'Sí, misma especie',
+          'No, especies distintas',
+          () => setVistaPaso2('pregunta-multi'),
+        );
+      case 'pregunta-parecidos':
+        return renderPregunta(
+          'resize-outline',
+          '¿Son parecidos en tamaño y condición?',
+          'Si se ven todos más o menos igual de sanos (o heridos) y del mismo tamaño, podemos describirlos juntos.',
+          () => iniciarGrupo(),
+          () => iniciarFichaIndividual(),
+          'Sí, son parecidos',
+          'No, hay diferencias',
+          () => setVistaPaso2('pregunta-especie'),
+        );
+      case 'grupo-distinto':
+        return renderPregunta(
+          'alert-circle-outline',
+          '¿Alguno del grupo se ve distinto o herido?',
+          'Sepáralo en su propia ficha — no hace falta describir al resto de nuevo.',
+          () => {
+            setAnimales((prev) => {
+              if (prev.length === 0) return prev;
+              const copia = [...prev];
+              const idx = copia.length - 1;
+              copia[idx] = { ...copia[idx], cantidad: Math.max(1, copia[idx].cantidad - 1) };
+              return copia;
+            });
+            iniciarFichaIndividual();
+          },
+          () => setVistaPaso2('resumen'),
+          'Sí, separar uno',
+          'No, listo así',
+        );
+      case 'ficha':
+        return renderFichaIndividual();
+      case 'grupo':
+        return renderPantallaGrupo();
+      case 'resumen':
+      default:
+        return renderResumenAnimales();
+    }
+  };
 
   // ─── PASO 3: Datos del reportante ───
   const renderPaso3 = () => (
@@ -988,7 +1456,6 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
         {paso === 3 && renderPaso3()}
       </View>
 
-      {/* Modal: Duplicado */}
       {/* Modal: Duplicado */}
       <Modal visible={!!duplicadoInfo} transparent animationType="fade" onRequestClose={() => setDuplicadoInfo(null)}>
         <View
@@ -1091,7 +1558,6 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
           </View>
         </View>
       </Modal>
-          
 
       {/* Modal: Login inline — sin cerrar el formulario */}
       <Modal visible={showLoginModal} transparent animationType="slide" onRequestClose={() => setShowLoginModal(false)}>
