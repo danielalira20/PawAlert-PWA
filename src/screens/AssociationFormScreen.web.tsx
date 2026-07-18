@@ -60,7 +60,8 @@ export default function AssociationFormScreen({ onClose }: Props) {
   const [horaCierre, setHoraCierre] = useState('');
   const [tiposAnimales, setTiposAnimales] = useState<TipoAnimal[]>([]);
   const [subcategoriaOtro, setSubcategoriaOtro] = useState<string | null>(null);
-  const [especieDescripcionOtro, setEspecieDescripcionOtro] = useState('');
+  const [customTipos, setCustomTipos] = useState<string[]>([]);
+  const [customTipoInput, setCustomTipoInput] = useState('');
 
   const [pinLocation, setPinLocation] = useState<{ latitud: number; longitud: number }>({ latitud: 19.0414, longitud: -98.2063 });
   const [ubicacionConfirmada, setUbicacionConfirmada] = useState(false);
@@ -70,6 +71,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
   const [numero, setNumero] = useState('');
   const [colonia, setColonia] = useState('');
   const [municipio, setMunicipio] = useState('');
+  const [estado, setEstado] = useState('');
   const [referencia, setReferencia] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [direccionConfirmada, setDireccionConfirmada] = useState('');
@@ -150,7 +152,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
     if (tiposAnimales.length === 0) newErrors.tiposAnimales = 'Selecciona al menos un tipo de animal.';
     if (tiposAnimales.includes('otro')) {
       if (!subcategoriaOtro) newErrors.subcategoriaOtro = 'Selecciona la categoría.';
-      if (subcategoriaOtro === 'Otro' && !especieDescripcionOtro.trim()) newErrors.especieDescripcionOtro = 'Describe la especie.';
+      if (subcategoriaOtro === 'Otro' && customTipos.length === 0) newErrors.customTipos = 'Agrega al menos un tipo.';
     }
     
     setErrors(newErrors);
@@ -227,10 +229,11 @@ export default function AssociationFormScreen({ onClose }: Props) {
         params: { lat, lon, format: 'json', addressdetails: 1 },
       });
       const address = res.data.address || {};
-      setCalle(address.road || '');
+      setCalle(address.road || address.pedestrian || address.square || address.footway || address.path || '');
       setNumero(address.house_number || '');
-      setColonia(address.suburb || address.neighbourhood || address.colonia || '');
+      setColonia(address.suburb || address.neighbourhood || address.colonia || address.city_district || address.quarter || address.residential || address.village || address.hamlet || address.borough || '');
       setMunicipio(address.city || address.town || address.municipality || address.county || '');
+      setEstado(address.state || '');
       setDireccionConfirmada(res.data.display_name || '');
     } catch (error) {
       console.error('Error al obtener la dirección:', error);
@@ -251,10 +254,11 @@ export default function AssociationFormScreen({ onClose }: Props) {
     
     setPinLocation({ latitud: lat, longitud: lon });
     setUbicacionConfirmada(true);
-    setCalle(address.road || '');
+    setCalle(address.road || address.pedestrian || address.square || address.footway || address.path || result.name || '');
     setNumero(address.house_number || '');
-    setColonia(address.suburb || address.neighbourhood || address.colonia || '');
+    setColonia(address.suburb || address.neighbourhood || address.colonia || address.city_district || address.quarter || address.residential || address.village || address.hamlet || address.borough || '');
     setMunicipio(address.city || address.town || address.municipality || address.county || '');
+    setEstado(address.state || '');
     setDireccionConfirmada(result.display_name);
     setSearchQuery('');
     setSearchResults([]);
@@ -328,7 +332,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
 
       const finalTiposAnimales: string[] = tiposAnimales.filter((t) => t !== 'otro');
       if (tiposAnimales.includes('otro')) {
-        if (subcategoriaOtro === 'Otro') finalTiposAnimales.push(especieDescripcionOtro.trim().toLowerCase());
+        if (subcategoriaOtro === 'Otro') finalTiposAnimales.push(...customTipos.map(t => t.trim().toLowerCase()));
         else if (subcategoriaOtro) finalTiposAnimales.push(subcategoriaOtro.toLowerCase());
       }
       formData.append('tipos_animales', JSON.stringify(finalTiposAnimales));
@@ -343,6 +347,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
       if (numero.trim()) formData.append('numero', numero.trim());
       if (colonia.trim()) formData.append('colonia', colonia.trim());
       if (municipio.trim()) formData.append('municipio', municipio.trim());
+      if (estado.trim()) formData.append('estado', estado.trim());
       if (referencia.trim()) formData.append('referencia', referencia.trim());
 
       if (logoUrl) {
@@ -516,7 +521,34 @@ export default function AssociationFormScreen({ onClose }: Props) {
             </View>
             {errors.subcategoriaOtro && <Text style={styles.errorText}>{errors.subcategoriaOtro}</Text>}
             {subcategoriaOtro === 'Otro' && (
-              <Input label="Describe la especie *" placeholder="Ej. Tlacuache, caballo..." value={especieDescripcionOtro} onChangeText={(val) => { setEspecieDescripcionOtro(val); if (val.trim()) setErrors(prev => ({ ...prev, especieDescripcionOtro: '' })); }} error={errors.especieDescripcionOtro} />
+              <View style={{ marginTop: 8 }}>
+                <Text style={[styles.sectionLabel, { marginBottom: 4 }]}>Describe el tipo *</Text>
+                <Text style={{ fontSize: 12, color: COLORS.textLight, marginBottom: 8 }}>(Presiona "Enter" en tu teclado para añadir el tipo)</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: customTipos.length > 0 ? 12 : 0 }}>
+                  {customTipos.map((tipo, idx) => (
+                    <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.primary, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16 }}>
+                      <Text style={{ color: COLORS.bgWhite, fontWeight: '600', fontSize: 12, marginRight: 6 }}>{tipo}</Text>
+                      <TouchableOpacity onPress={() => setCustomTipos(prev => prev.filter((_, i) => i !== idx))}>
+                        <Ionicons name="close-circle" size={16} color={COLORS.bgWhite} />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+                <Input
+                  placeholder="Ej. Tlacuache, caballo..."
+                  value={customTipoInput}
+                  onChangeText={setCustomTipoInput}
+                  error={errors.customTipos}
+                  onSubmitEditing={() => {
+                    if (customTipoInput.trim()) {
+                      setCustomTipos(prev => [...prev, customTipoInput.trim()]);
+                      setCustomTipoInput('');
+                      setErrors(prev => ({ ...prev, customTipos: '' }));
+                    }
+                  }}
+                  blurOnSubmit={false}
+                />
+              </View>
             )}
           </View>
         )}
@@ -569,8 +601,11 @@ export default function AssociationFormScreen({ onClose }: Props) {
           <View style={styles.halfWidth}><Input label="Colonia" placeholder="Ej. Centro Histórico" value={colonia} onChangeText={setColonia} /></View>
           <View style={styles.halfWidth}><Input label="Municipio / Ciudad" placeholder="Ej. Puebla" value={municipio} onChangeText={setMunicipio} /></View>
         </View>
+        <View style={styles.rowContainer}>
+          <View style={styles.halfWidth}><Input label="Estado" placeholder="Ej. Puebla" value={estado} onChangeText={setEstado} /></View>
+          <View style={styles.halfWidth}><Input label="Referencia (Opcional)" placeholder="Ej. Casa azul" value={referencia} onChangeText={setReferencia} /></View>
+        </View>
 
-        <Input label="Referencia (Opcional)" placeholder="Ej. Casa azul" value={referencia} onChangeText={setReferencia} />
         <Input label="Radio de Cobertura de Rescate (KM)" placeholder="Ej. 15" value={radioKm} onChangeText={handleRadioKmChange} error={errors.radioKm} keyboardType="numeric" required />
       </FormSection>
 
@@ -726,7 +761,7 @@ const styles = StyleSheet.create({
   animalLabel: { marginTop: 24 },
   required: { color: COLORS.danger },
   animalChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 },
-  animalChip: { flex: 1, minWidth: '45%', paddingVertical: 14, borderRadius: 20 },
+  animalChip: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20 },
   errorText: { color: COLORS.danger, fontSize: 12, marginTop: 4, marginBottom: 16 },
   searchingText: { fontSize: 12, color: COLORS.textLight, marginTop: -8, marginBottom: 10 },
   searchResults: { backgroundColor: COLORS.bgWhite, borderWidth: 1, borderColor: COLORS.border, borderRadius: 16, marginTop: -10, marginBottom: 16, overflow: 'hidden' },
