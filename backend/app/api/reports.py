@@ -1,10 +1,13 @@
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Header
 from fastapi.responses import JSONResponse
-from app.models.report import ReportResponse, CondicionEnum, TipoAnimalEnum, TamanioEnum, SexoEnum, EdadEnum, ReportListItem, HitoRequest, RechazarReporteRequest
+from pydantic import ValidationError
+from app.models.report import ReportResponse, AnimalInput, ReportListItem, HitoRequest, RechazarReporteRequest
 from app.services.report_service import crear_reporte, obtener_reportes, cambiar_estado_reporte, obtener_reportes_usuario
 from app.utils.validators import validar_telefono, validar_email
+from app.utils.animal_shaping import shape_animal_embed, condicion_mas_grave
 from typing import Optional, List
 from app.db.supabase import supabase
+import json
 
 
 router = APIRouter()
@@ -51,9 +54,8 @@ async def create_report(
     usuario_id: Optional[str] = Form(None),
     fotos: Optional[List[UploadFile]] = File(None),
     fotos_ordenes: Optional[str] = Form(None),
-    condicion: CondicionEnum = Form(...),
-    tipo_animal: TipoAnimalEnum = Form(...),
-    tamanio: TamanioEnum = Form(...),
+    fotos_animal_index: Optional[str] = Form(None),
+    animales: str = Form(...),
     latitud: Optional[float] = Form(None),
     longitud: Optional[float] = Form(None),
     calle: Optional[str] = Form(None),
@@ -61,16 +63,6 @@ async def create_report(
     municipio: Optional[str] = Form(None),
     estado_ubicacion: Optional[str] = Form(None),
     referencia: Optional[str] = Form(None),
-    descripcion: Optional[str] = Form(None),
-    sexo: Optional[SexoEnum] = Form(None),
-    edad_aproximada: Optional[EdadEnum] = Form(None),
-    tiene_collar: Optional[bool] = Form(None),
-    esta_prenada: Optional[bool] = Form(None),
-    es_agresivo: Optional[bool] = Form(None),
-    es_domestico_probable: Optional[bool] = Form(None),
-    raza_clave: Optional[str] = Form(None),
-    tipo_animal_otro_clave: Optional[str] = Form(None),
-    especie_descripcion: Optional[str] = Form(None),
     es_duplicado_confirmado: Optional[bool] = Form(None),
     reporte_original_id: Optional[str] = Form(None),
     authorization: Optional[str] = Header(None),
@@ -123,11 +115,18 @@ async def create_report(
                     detail="Todas las fotos deben ser imágenes JPG, PNG o WEBP"
                 )
 
-    if descripcion and len(descripcion) > 300:
-        raise HTTPException(
-            status_code=422,
-            detail="La descripción no puede superar 300 caracteres"
-        )
+    try:
+        animales_raw = json.loads(animales)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=422, detail="animales debe ser un JSON válido")
+
+    if not isinstance(animales_raw, list) or not animales_raw:
+        raise HTTPException(status_code=422, detail="animales debe ser una lista con al menos un animal")
+
+    try:
+        animales_data = [AnimalInput(**a) for a in animales_raw]
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=f"Datos de animal inválidos: {e}")
 
     resultado = await crear_reporte(
         nombre=nombre,
@@ -138,26 +137,15 @@ async def create_report(
         usuario_id=usuario_id,
         fotos=fotos,
         fotos_ordenes=fotos_ordenes,
-        tipo_animal=tipo_animal,
-        tamanio=tamanio,
+        fotos_animal_index=fotos_animal_index,
+        animales=animales_data,
         latitud=latitud,
         longitud=longitud,
-        condicion=condicion,
-        descripcion=descripcion,
         calle=calle,
         colonia=colonia,
         municipio=municipio,
         estado_ubicacion=estado_ubicacion,
         referencia=referencia,
-        sexo=sexo,
-        edad_aproximada=edad_aproximada,
-        tiene_collar=tiene_collar,
-        esta_prenada=esta_prenada,
-        es_agresivo=es_agresivo,
-        es_domestico_probable=es_domestico_probable,
-        raza_clave=raza_clave,
-        tipo_animal_otro_clave=tipo_animal_otro_clave,
-        especie_descripcion=especie_descripcion,
         es_duplicado_confirmado=es_duplicado_confirmado,
         reporte_original_id=reporte_original_id,
     )
@@ -221,7 +209,7 @@ async def asignar_staff(reporte_id: str, body: dict, authorization: str = Header
 
     casos = casos_activos.data or []
     tiene_caso_grave = any(
-        c.get("animal", {}).get("condicion_catalogo", {}).get("clave") == "grave"
+        condicion_mas_grave(shape_animal_embed(c.get("animal"))[0]) == "grave"
         for c in casos
     )
 

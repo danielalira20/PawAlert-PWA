@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 from enum import Enum
 
@@ -59,6 +59,33 @@ class AnimalResponse(BaseModel):
     raza: Optional[str] = None
     especie_descripcion: Optional[str] = None
     descripcion: Optional[str] = None
+    orden: Optional[int] = None
+    es_grupo: Optional[bool] = None
+    cantidad: Optional[int] = None
+    trae_crias_nacidas: Optional[bool] = None
+    numero_crias_nacidas: Optional[int] = None
+
+## Un elemento del arreglo `animales` que manda el formulario al crear un
+## reporte — el mismo animal puede venir de ficha individual o de modo grupo.
+class AnimalInput(BaseModel):
+    condicion: CondicionEnum
+    tipo_animal: TipoAnimalEnum
+    tamanio: TamanioEnum
+    sexo: Optional[SexoEnum] = None
+    edad_aproximada: Optional[EdadEnum] = None
+    tiene_collar: Optional[bool] = None
+    esta_prenada: Optional[bool] = None
+    es_agresivo: Optional[bool] = None
+    es_domestico_probable: Optional[bool] = None
+    raza_clave: Optional[str] = None
+    tipo_animal_otro_clave: Optional[str] = None
+    especie_descripcion: Optional[str] = None
+    descripcion: Optional[str] = Field(default=None, max_length=300)
+    orden: int = 1
+    es_grupo: bool = False
+    cantidad: int = Field(default=1, ge=1)
+    trae_crias_nacidas: Optional[bool] = None
+    numero_crias_nacidas: Optional[int] = None
 
 class ReportResponse(BaseModel):
     id: str
@@ -77,6 +104,7 @@ class ReportListItem(BaseModel):
     created_at: str
     foto_url: Optional[str] = None
     animal: Optional[AnimalResponse] = None
+    animales: list[AnimalResponse] = []
 
 ## Lo usa el staff para registrar el avance del rescate
 class HitoRequest(BaseModel):

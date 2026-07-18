@@ -5,7 +5,19 @@ from app.services.storage_service import subir_foto
 from app.services.assignment_service import asignar_asociacion, obtener_contactos_emergencia
 from datetime import datetime, timezone, timedelta
 from app.services import matching
+from app.models.report import AnimalInput
+from app.utils.animal_shaping import shape_animal_embed, shape_animal_response, CONDICION_SEVERIDAD
 import json
+
+def _condicion_str(condicion) -> str:
+    return condicion.value if hasattr(condicion, "value") else str(condicion)
+
+def _condicion_mas_grave_de(animales: list[AnimalInput]) -> str:
+    """Igual que `condicion_mas_grave` en animal_shaping, pero sobre los
+    `AnimalInput` que llegan del formulario (antes de insertarse), no sobre
+    filas ya leídas de la BD."""
+    peor = max(animales, key=lambda a: CONDICION_SEVERIDAD.get(_condicion_str(a.condicion), 0))
+    return _condicion_str(peor.condicion)
 
 def obtener_id_catalogo(tabla: str, clave: str) -> str | None:
     clave_str = clave.value if hasattr(clave, 'value') else str(clave)
@@ -41,7 +53,7 @@ def verificar_duplicados(municipio: str | None, colonia: str | None, tipo_animal
 
     query = supabase.table("reportes").select(
         "id, estado_reporte, municipio, colonia, created_at, "
-        "animal(id, tipo_animal_id, tipo_animal_catalogo(clave), condicion_catalogo(clave))"
+        "animal(id, orden, tipo_animal_id, tipo_animal_catalogo(clave), condicion_catalogo(clave))"
     ).neq("estado_reporte", "cerrado").gte("created_at", hace_dos_horas).eq("municipio", municipio)
 
     if colonia:
@@ -50,10 +62,17 @@ def verificar_duplicados(municipio: str | None, colonia: str | None, tipo_animal
     resultado = query.execute()
     duplicados = resultado.data if resultado.data else []
 
+    for d in duplicados:
+        animales_existente, animal_legado = shape_animal_embed(d.get("animal"))
+        d["animal"] = animal_legado
+        d["animales"] = animales_existente
+
     if tipo_animal_id:
+        # Coincide si CUALQUIER animal del caso existente comparte especie con
+        # el reporte entrante — no solo el legado (condición más grave).
         duplicados = [
             d for d in duplicados
-            if d.get("animal", {}).get("tipo_animal_id") == tipo_animal_id
+            if any(a.get("tipo_animal_id") == tipo_animal_id for a in d.get("animales", []))
         ]
 
     for duplicado in duplicados:
@@ -74,41 +93,36 @@ async def crear_reporte(
     apellido_materno: str | None,
     telefono: str | None,
     email: str | None,
-    condicion: str,
-    tipo_animal: str,
-    tamanio: str,
+    animales: list[AnimalInput],
     latitud: float | None,
     longitud: float | None,
     calle: str | None,
     colonia: str | None,
     municipio: str | None,
     referencia: str | None,
-    descripcion: str | None,
     fotos: list | None = None,
     fotos_ordenes: str | None = None,
+    fotos_animal_index: str | None = None,
     estado_ubicacion: str | None = None,
-    sexo: str | None = None,
-    edad_aproximada: str | None = None,
-    tiene_collar: bool | None = None,
-    esta_prenada: bool | None = None,
-    es_agresivo: bool | None = None,
-    es_domestico_probable: bool | None = None,
-    raza_clave: str | None = None,
-    tipo_animal_otro_clave: str | None = None,
-    especie_descripcion: str | None = None,
     usuario_id: str | None = None,
     es_duplicado_confirmado: bool | None = None,
     reporte_original_id: str | None = None,
 ) -> dict:
 
+    # Shim temporal (Fase 3): mientras encontrar_asociacion_cercana y
+    # candidatos_para_reporte no soporten varias especies (Fase 7), la
+    # verificación de duplicados y la asignación automática de asociación
+    # se guían por el primer animal del arreglo, no por el más grave.
+    animal_principal = animales[0]
+
     print("=== DEBUG DUPLICADOS ===")
     print("municipio:", municipio)
     print("colonia:", colonia)
-    print("tipo_animal:", tipo_animal)
+    print("tipo_animal:", animal_principal.tipo_animal)
     print("========================")
 
     if es_duplicado_confirmado is None:
-        posibles_duplicados = verificar_duplicados(municipio, colonia, tipo_animal)
+        posibles_duplicados = verificar_duplicados(municipio, colonia, animal_principal.tipo_animal)
 
         if posibles_duplicados:
             duplicado = posibles_duplicados[0]
@@ -127,18 +141,38 @@ async def crear_reporte(
                 "total_duplicados": len(posibles_duplicados)
             }
 
-    tipo_animal_id = obtener_id_catalogo("tipo_animal_catalogo", tipo_animal)
-    condicion_id = obtener_id_catalogo("condicion_catalogo", condicion)
-    tamanio_id = obtener_id_catalogo("tamanio_catalogo", tamanio)
     estado_id = obtener_id_catalogo("reporte_estados", "pendiente")
-
-    if not tipo_animal_id or not condicion_id or not tamanio_id or not estado_id:
+    if not estado_id:
         raise HTTPException(status_code=500, detail="Error al resolver catálogos de la BD")
+
+    # Catálogos por animal, resueltos ANTES de insertar el reporte — si algo
+    # no resuelve, se corta aquí sin haber creado nada todavía.
+    animales_resueltos = []
+    for animal_in in animales:
+        tipo_animal_id = obtener_id_catalogo("tipo_animal_catalogo", animal_in.tipo_animal)
+        condicion_id = obtener_id_catalogo("condicion_catalogo", animal_in.condicion)
+        tamanio_id = obtener_id_catalogo("tamanio_catalogo", animal_in.tamanio)
+        if not tipo_animal_id or not condicion_id or not tamanio_id:
+            raise HTTPException(status_code=500, detail="Error al resolver catálogos de la BD")
+
+        raza_id = obtener_id_catalogo("raza_catalogo", animal_in.raza_clave) if animal_in.raza_clave else None
+        tipo_animal_otro_id = (
+            obtener_id_catalogo("tipo_animal_otro", animal_in.tipo_animal_otro_clave)
+            if animal_in.tipo_animal_otro_clave else None
+        )
+        animales_resueltos.append({
+            "animal_in": animal_in,
+            "tipo_animal_id": tipo_animal_id,
+            "condicion_id": condicion_id,
+            "tamanio_id": tamanio_id,
+            "raza_id": raza_id,
+            "tipo_animal_otro_id": tipo_animal_otro_id,
+        })
 
     asociacion = None
     asociacion_id = None
     if latitud and longitud:
-        asociacion = asignar_asociacion(latitud, longitud, tipo_animal=tipo_animal) 
+        asociacion = asignar_asociacion(latitud, longitud, tipo_animal=animal_principal.tipo_animal)
         if asociacion:
             asociacion_id = asociacion["id"]
 
@@ -168,44 +202,59 @@ async def crear_reporte(
     reporte_id = reporte.data[0]["id"]
     created_at = reporte.data[0]["created_at"]
 
-    raza_id = None
-    if raza_clave:
-        raza_id = obtener_id_catalogo("raza_catalogo", raza_clave)
+    # Inserta cada animal y sus fotos. Sin transacción real (Supabase REST no
+    # la soporta sin una función SQL dedicada, fuera de alcance de esta
+    # fase) — si algo falla a medio loop, se limpia manualmente lo ya
+    # insertado en vez de dejar un caso con animales incompletos, que es
+    # peor que el huérfano de siempre porque parece un caso más chico de lo
+    # que en realidad es.
+    animal_ids = []
+    try:
+        for resuelto in animales_resueltos:
+            animal_in = resuelto["animal_in"]
+            animal_data = {
+                "reporte_id": reporte_id,
+                "tipo_animal_id": resuelto["tipo_animal_id"],
+                "condicion_id": resuelto["condicion_id"],
+                "tamanio_id": resuelto["tamanio_id"],
+                "sexo": animal_in.sexo or "desconocido",
+                "edad_aproximada": animal_in.edad_aproximada or "desconocido",
+                "tiene_collar": animal_in.tiene_collar,
+                "esta_prenada": animal_in.esta_prenada,
+                "es_agresivo": animal_in.es_agresivo,
+                "es_domestico_probable": animal_in.es_domestico_probable,
+                "raza_id": resuelto["raza_id"],
+                "tipo_animal_otro_id": resuelto["tipo_animal_otro_id"],
+                "especie_descripcion": animal_in.especie_descripcion,
+                "descripcion": animal_in.descripcion,
+                "orden": animal_in.orden,
+                "es_grupo": animal_in.es_grupo,
+                "cantidad": animal_in.cantidad,
+                "trae_crias_nacidas": animal_in.trae_crias_nacidas,
+                "numero_crias_nacidas": animal_in.numero_crias_nacidas,
+            }
+            animal_result = supabase.table("animal").insert(animal_data).execute()
+            animal_ids.append(animal_result.data[0]["id"])
 
-    tipo_animal_otro_id = None
-    if tipo_animal_otro_clave:
-        tipo_animal_otro_id = obtener_id_catalogo("tipo_animal_otro", tipo_animal_otro_clave)
-
-    animal_data = {
-        "reporte_id": reporte_id,
-        "tipo_animal_id": tipo_animal_id,
-        "condicion_id": condicion_id,
-        "tamanio_id": tamanio_id,
-        "sexo": sexo or "desconocido",
-        "edad_aproximada": edad_aproximada or "desconocido",
-        "tiene_collar": tiene_collar,
-        "esta_prenada": esta_prenada,
-        "es_agresivo": es_agresivo,
-        "es_domestico_probable": es_domestico_probable,
-        "raza_id": raza_id,
-        "tipo_animal_otro_id": tipo_animal_otro_id,
-        "especie_descripcion": especie_descripcion,
-        "descripcion": descripcion,
-    }
-
-    animal_result = supabase.table("animal").insert(animal_data).execute()
-    animal_id = animal_result.data[0]["id"]
-
-    if fotos:
-        ordenes = json.loads(fotos_ordenes) if fotos_ordenes and fotos_ordenes.strip() else []
-        for i, foto in enumerate(fotos):
-            if foto and foto.filename:
-                foto_url = await subir_foto(foto, carpeta="animales/fotos")
-                supabase.table("animal_fotos").insert({
-                    "animal_id": animal_id,
-                    "foto_url": foto_url,
-                    "orden": ordenes[i] if i < len(ordenes) else i + 1,
-                }).execute()
+        if fotos:
+            ordenes = json.loads(fotos_ordenes) if fotos_ordenes and fotos_ordenes.strip() else []
+            indices = json.loads(fotos_animal_index) if fotos_animal_index and fotos_animal_index.strip() else []
+            for i, foto in enumerate(fotos):
+                if foto and foto.filename:
+                    animal_idx = indices[i] if i < len(indices) else 0
+                    foto_url = await subir_foto(foto, carpeta="animales/fotos")
+                    supabase.table("animal_fotos").insert({
+                        "animal_id": animal_ids[animal_idx],
+                        "foto_url": foto_url,
+                        "orden": ordenes[i] if i < len(ordenes) else i + 1,
+                    }).execute()
+    except Exception as e:
+        print(f"[ERROR] Falló la creación de animales/fotos, limpiando reporte {reporte_id}: {e}")
+        for animal_id in animal_ids:
+            supabase.table("animal_fotos").delete().eq("animal_id", animal_id).execute()
+        supabase.table("animal").delete().eq("reporte_id", reporte_id).execute()
+        supabase.table("reportes").delete().eq("id", reporte_id).execute()
+        raise HTTPException(status_code=500, detail="No se pudo crear el reporte, intenta de nuevo.")
 
     if asociacion_id:
         estado_asignacion_id = obtener_id_catalogo("asignacion_estados", "notificada")
@@ -251,7 +300,10 @@ async def crear_reporte(
             # seguridad si esto no corrió por cualquier razón.
             print(f"[WARN] No se pudo calcular candidatos iniciales al crear el reporte: {e}")
 
-        condicion_str = condicion.value if hasattr(condicion, 'value') else str(condicion)
+        # Condición más grave del caso, no de un animal en particular — un
+        # solo email por caso, igual que hoy, pero ya no ignora al resto de
+        # los animales si el primero llegó como "estable" y otro es "grave".
+        condicion_str = _condicion_mas_grave_de(animales)
         if condicion_str == "grave":
             try:
                 asociacion_data = supabase.table("asociaciones").select(
@@ -273,7 +325,12 @@ async def crear_reporte(
         usuario_id=usuario_id,
         tipo_evento="reporte_creado",
         descripcion=f"Reporte creado por {nombre or 'usuario'} {apellido_paterno or ''}".strip(),
-        datos_extra={"tipo_animal": tipo_animal, "condicion": condicion, "municipio": municipio}
+        datos_extra={
+            "tipo_animal": _condicion_str(animal_principal.tipo_animal),
+            "condicion": _condicion_mas_grave_de(animales),
+            "municipio": municipio,
+            "total_animales": len(animales),
+        }
     )
 
     if asociacion_id:
@@ -287,11 +344,15 @@ async def crear_reporte(
 
     contactos = []
     if not asociacion_id:
-        contactos = obtener_contactos_emergencia(
-            tipo_animal=tipo_animal,
-            municipio=municipio,
-            estado=estado_ubicacion
-        )
+        # Un caso puede traer varias especies — se junta la lista de
+        # contactos de cada especie distinta presente, sin duplicar.
+        tipos_presentes = list(dict.fromkeys(_condicion_str(a.tipo_animal) for a in animales))
+        contactos_vistos = set()
+        for tipo in tipos_presentes:
+            for c in obtener_contactos_emergencia(tipo_animal=tipo, municipio=municipio, estado=estado_ubicacion):
+                if c.get("id") not in contactos_vistos:
+                    contactos_vistos.add(c.get("id"))
+                    contactos.append(c)
     return {
         "id": reporte_id,
         "estado": "asignado" if asociacion_id else "pendiente",
@@ -319,28 +380,21 @@ TRANSICIONES_PERMITIDAS = {
 async def obtener_reportes() -> list:
     resultado = supabase.table("reportes").select(
         "id, estado_reporte, estado_id, latitud, longitud, municipio, colonia, created_at, "
-        "animal(tipo_animal_id, condicion_id, tamanio_id, sexo, edad_aproximada, descripcion, "
+        "animal(orden, es_grupo, cantidad, trae_crias_nacidas, numero_crias_nacidas, "
+        "tipo_animal_id, condicion_id, tamanio_id, sexo, edad_aproximada, descripcion, "
         "tipo_animal_catalogo(clave), condicion_catalogo(clave), tamanio_catalogo(clave), "
         "animal_fotos(foto_url, orden))"
     ).neq("estado_reporte", "cerrado").execute()
 
     reportes = []
     for r in resultado.data:
-        animal = r.get("animal")
-        animal_data = None
+        animales_crudos, animal_legado = shape_animal_embed(r.get("animal"))
+        animales = [shape_animal_response(a) for a in animales_crudos]
+        animal_data = shape_animal_response(animal_legado) if animal_legado else None
+
         foto_url = None
-
-        if animal:
-            animal_data = {
-                "tipo_animal": animal.get("tipo_animal_catalogo", {}).get("clave"),
-                "condicion": animal.get("condicion_catalogo", {}).get("clave"),
-                "tamanio": animal.get("tamanio_catalogo", {}).get("clave"),
-                "sexo": animal.get("sexo"),
-                "edad_aproximada": animal.get("edad_aproximada"),
-                "descripcion": animal.get("descripcion"),
-            }
-
-            fotos = animal.get("animal_fotos") or []
+        if animal_legado:
+            fotos = animal_legado.get("animal_fotos") or []
             if fotos:
                 fotos_ordenadas = sorted(fotos, key=lambda f: f.get("orden", 0))
                 foto_url = fotos_ordenadas[0]["foto_url"]
@@ -355,6 +409,7 @@ async def obtener_reportes() -> list:
             "created_at": str(r["created_at"]),
             "foto_url": foto_url,
             "animal": animal_data,
+            "animales": animales,
         })
 
     return reportes
@@ -416,7 +471,8 @@ async def obtener_reportes_usuario(usuario_id: str) -> list:
     resultado = supabase.table("reportes").select(
         "id, estado_reporte, latitud, longitud, municipio, colonia, calle, created_at, "
         "asociacion_asignada_id, "
-        "animal(id, tipo_animal_id, condicion_id, sexo, edad_aproximada, descripcion, "
+        "animal(id, orden, es_grupo, cantidad, trae_crias_nacidas, numero_crias_nacidas, "
+        "tipo_animal_id, condicion_id, sexo, edad_aproximada, descripcion, "
         "tipo_animal_catalogo(clave), condicion_catalogo(clave), tamanio_catalogo(clave), "
         "animal_fotos(foto_url, orden)), "
         "asociaciones!reportes_asociacion_asignada_id_fkey(nombre)"
@@ -424,22 +480,14 @@ async def obtener_reportes_usuario(usuario_id: str) -> list:
 
     reportes = []
     for r in resultado.data:
-        animal = r.get("animal")
-        animal_data = None
+        animales_crudos, animal_legado = shape_animal_embed(r.get("animal"))
+        animales = [shape_animal_response(a) for a in animales_crudos]
+        animal_data = shape_animal_response(animal_legado) if animal_legado else None
+
         foto_url = None
         fotos_urls = []
-
-        if animal:
-            animal_data = {
-                "tipo_animal": animal.get("tipo_animal_catalogo", {}).get("clave"),
-                "condicion": animal.get("condicion_catalogo", {}).get("clave"),
-                "tamanio": animal.get("tamanio_catalogo", {}).get("clave"),
-                "sexo": animal.get("sexo"),
-                "edad_aproximada": animal.get("edad_aproximada"),
-                "descripcion": animal.get("descripcion"),
-            }
-
-            fotos = animal.get("animal_fotos") or []
+        if animal_legado:
+            fotos = animal_legado.get("animal_fotos") or []
             if fotos:
                 # Mismo patrón que obtener_reportes_usuario: devolvemos el
                 # arreglo completo ordenado, no solo la primera foto,
@@ -459,6 +507,7 @@ async def obtener_reportes_usuario(usuario_id: str) -> list:
             "foto_url": foto_url,
             "fotos": fotos_urls,
             "animal": animal_data,
+            "animales": animales,
         })
 
     return reportes
