@@ -138,7 +138,7 @@ async def crear_reporte(
     asociacion = None
     asociacion_id = None
     if latitud and longitud:
-        asociacion = asignar_asociacion(latitud, longitud)
+        asociacion = asignar_asociacion(latitud, longitud, tipo_animal=tipo_animal) 
         if asociacion:
             asociacion_id = asociacion["id"]
 
@@ -310,7 +310,8 @@ ESTADOS_VALIDOS = [
 TRANSICIONES_PERMITIDAS = {
     "asignado":   ["en_camino", "pendiente"],       # confirmación salida / rechazado / timeout
     "en_camino":  ["en_atencion", "pendiente", "cerrado"],  # llegada / no_se_pudo_llegar / falsa_alarma
-    "en_atencion": ["cerrado"],                      # rescatado / muerto / no_localizado -> razones, no estados
+    "en_atencion": ["rescatado", "cerrado"], 
+    "rescatado":  ["cerrado"],                     # rescatado / muerto / no_localizado -> razones, no estados
     "pendiente":  ["sin_cobertura"],
     "sin_cobertura": ["pendiente"],
 }
@@ -384,6 +385,17 @@ async def cambiar_estado_reporte(reporte_id: str, nuevo_estado: str, razon: str 
         "estado_reporte": nuevo_estado,
         "estado_id": nuevo_estado_id,
     }).eq("id", reporte_id).execute()
+
+    # Cuando el caso se cierra, también hay que reflejarlo en
+    # reporte_asignaciones — es lo que usa el frontend (estado_asignacion_clave)
+    # para el sub-filtro "Completados" dentro de la pestaña "Aceptadas".
+    if nuevo_estado == "cerrado":
+        estado_completada = supabase.table("asignacion_estados").select("id").eq("clave", "completada").execute()
+        if estado_completada.data:
+            supabase.table("reporte_asignaciones").update({
+                "estado_id": estado_completada.data[0]["id"],
+                "estado": "completada",
+            }).eq("reporte_id", reporte_id).execute()
 
     registrar_historial(
         reporte_id=reporte_id,
