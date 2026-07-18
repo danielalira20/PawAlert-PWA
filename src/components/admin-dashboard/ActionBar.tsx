@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, StyleSheet } from 'react-native';
+import { View, Text, TextInput, StyleSheet, useWindowDimensions } from 'react-native';
 import { Brand } from '../../constants/theme';
 import { AdminActionButton } from './AdminActionButton';
+
+const DESKTOP_BREAKPOINT = 900;
 
 interface Props {
   onAprobar: () => void;
@@ -13,6 +15,8 @@ export function ActionBar({ onAprobar, onRechazar, isSubmitting }: Props) {
   const [rechazando, setRechazando] = useState(false);
   const [motivo, setMotivo] = useState('');
   const puedeConfirmarRechazo = motivo.trim().length > 0;
+  const { width } = useWindowDimensions();
+  const isDesktop = width >= DESKTOP_BREAKPOINT;
 
   const handleRechazarPress = () => {
     if (!rechazando) {
@@ -25,7 +29,7 @@ export function ActionBar({ onAprobar, onRechazar, isSubmitting }: Props) {
   return (
     <View style={styles.container}>
       {rechazando && (
-        <View style={styles.motivoBlock}>
+        <View style={[styles.motivoBlock, isDesktop && styles.motivoBlockDesktop]}>
           <Text style={styles.motivoLabel}>
             Motivo de rechazo <Text style={{ color: Brand.danger }}>*</Text>
           </Text>
@@ -42,7 +46,7 @@ export function ActionBar({ onAprobar, onRechazar, isSubmitting }: Props) {
         </View>
       )}
 
-      <View style={styles.buttonsRow}>
+      <View style={[styles.buttonsRow, isDesktop && styles.buttonsRowDesktop]}>
         <AdminActionButton
           variant="aprobar"
           label="Aprobar"
@@ -68,6 +72,7 @@ export function ActionBar({ onAprobar, onRechazar, isSubmitting }: Props) {
 const styles = StyleSheet.create({
   container: { borderTopWidth: 1, borderTopColor: '#E4D3B8', backgroundColor: Brand.cardWarm },
   motivoBlock: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 },
+  motivoBlockDesktop: { width: '100%', maxWidth: 760, alignSelf: 'center' },
   motivoLabel: {
     fontSize: 10,
     textTransform: 'uppercase',
@@ -88,4 +93,5 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
   buttonsRow: { flexDirection: 'row', gap: 12, padding: 16 },
+  buttonsRowDesktop: { width: '100%', maxWidth: 760, alignSelf: 'center' },
 });

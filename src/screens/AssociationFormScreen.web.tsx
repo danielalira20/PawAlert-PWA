@@ -60,7 +60,8 @@ export default function AssociationFormScreen({ onClose }: Props) {
   const [horaCierre, setHoraCierre] = useState('');
   const [tiposAnimales, setTiposAnimales] = useState<TipoAnimal[]>([]);
   const [subcategoriaOtro, setSubcategoriaOtro] = useState<string | null>(null);
-  const [especieDescripcionOtro, setEspecieDescripcionOtro] = useState('');
+  const [customTipos, setCustomTipos] = useState<string[]>([]);
+  const [customTipoInput, setCustomTipoInput] = useState('');
 
   const [pinLocation, setPinLocation] = useState<{ latitud: number; longitud: number }>({ latitud: 19.0414, longitud: -98.2063 });
   const [ubicacionConfirmada, setUbicacionConfirmada] = useState(false);
@@ -70,6 +71,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
   const [numero, setNumero] = useState('');
   const [colonia, setColonia] = useState('');
   const [municipio, setMunicipio] = useState('');
+  const [estado, setEstado] = useState('');
   const [referencia, setReferencia] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [direccionConfirmada, setDireccionConfirmada] = useState('');
@@ -130,7 +132,16 @@ export default function AssociationFormScreen({ onClose }: Props) {
   // ─── Validaciones por paso ───
   const validarPaso1 = () => {
     const newErrors: { [key: string]: string } = {};
-    if (!nombre.trim()) newErrors.nombre = 'Obligatorio.';
+    if (!nombre.trim()) {
+      newErrors.nombre = 'Obligatorio.';
+    } else if (!/[a-zA-ZáéíóúÁÉÍÓÚñÑ]/.test(nombre)) {
+      newErrors.nombre = 'Debe contener al menos una letra.';
+    }
+
+    if (acercaDe.trim() && !/[a-zñáéíóú]/.test(acercaDe)) {
+      newErrors.acercaDe = 'Debe contener al menos una letra minúscula.';
+    }
+
     if (!nombreResponsable.trim()) newErrors.nombreResponsable = 'Obligatorio.';
     if (!apellidoResponsable.trim()) newErrors.apellidoResponsable = 'Obligatorio.';
     if (!telefono.trim()) { newErrors.telefono = 'Obligatorio.'; } else if (!/^\d{10}$/.test(telefono.trim())) { newErrors.telefono = '10 dígitos numéricos.'; }
@@ -150,7 +161,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
     if (tiposAnimales.length === 0) newErrors.tiposAnimales = 'Selecciona al menos un tipo de animal.';
     if (tiposAnimales.includes('otro')) {
       if (!subcategoriaOtro) newErrors.subcategoriaOtro = 'Selecciona la categoría.';
-      if (subcategoriaOtro === 'Otro' && !especieDescripcionOtro.trim()) newErrors.especieDescripcionOtro = 'Describe la especie.';
+      if (subcategoriaOtro === 'Otro' && customTipos.length === 0) newErrors.customTipos = 'Agrega al menos un tipo.';
     }
     
     setErrors(newErrors);
@@ -163,22 +174,164 @@ export default function AssociationFormScreen({ onClose }: Props) {
     if (!radioKm.trim()) { newErrors.radioKm = 'Obligatorio.'; } else if (isNaN(radVal) || radVal <= 0) { newErrors.radioKm = 'Mayor a 0.'; }
     if (!ubicacionConfirmada) { newErrors.ubicacion = 'Ubica la asociación en el mapa.'; }
     
+    const soloLetrasRegex = /^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/;
+    if (calle.trim() && !soloLetrasRegex.test(calle)) newErrors.calle = 'Solo se permiten letras y espacios.';
+    if (colonia.trim() && !soloLetrasRegex.test(colonia)) newErrors.colonia = 'Solo se permiten letras y espacios.';
+    if (municipio.trim() && !soloLetrasRegex.test(municipio)) newErrors.municipio = 'Solo se permiten letras y espacios.';
+    if (estado.trim() && !soloLetrasRegex.test(estado)) newErrors.estado = 'Solo se permiten letras y espacios.';
+
+    const alfanumericoRegex = /^[a-zA-ZáéíóúÁÉÍÓÚñÑ0-9\s]+$/;
+    if (referencia.trim() && !alfanumericoRegex.test(referencia)) newErrors.referencia = 'Solo se permiten letras y números.';
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  // ─── Handlers de Inputs ───
-  const handleNombreChange = (val: string) => { setNombre(val); if (val.trim()) setErrors(prev => ({ ...prev, nombre: '' })); };
-  const handleNombreResponsableChange = (val: string) => { setNombreResponsable(val); if (val.trim()) setErrors(prev => ({ ...prev, nombreResponsable: '' })); };
-  const handleApellidoResponsableChange = (val: string) => { setApellidoResponsable(val); if (val.trim()) setErrors(prev => ({ ...prev, apellidoResponsable: '' })); };
-  const handleTelefonoChange = (val: string) => { setTelefono(val); if (val.trim() && /^\d{10}$/.test(val.trim())) setErrors(prev => ({ ...prev, telefono: '' })); };
-  const handleEmailChange = (val: string) => { setEmail(val); if (val.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val.trim())) setErrors(prev => ({ ...prev, email: '' })); };
-  const handlePasswordChange = (val: string) => { setPassword(val); if (validarPassword(val).valido) setErrors(prev => ({ ...prev, password: '' })); };
-  const handlePassword2Change = (val: string) => { setPassword2(val); if (val === password) setErrors(prev => ({ ...prev, password2: '' })); };
+  // ─── Handlers de Inputs con Validación en Tiempo Real ───
+  const handleNombreChange = (val: string) => {
+    setNombre(val);
+    if (!val.trim()) {
+      setErrors(prev => ({ ...prev, nombre: 'El nombre de la asociación es obligatorio.' }));
+    } else if (!/[a-zA-ZáéíóúÁÉÍÓÚñÑ]/.test(val)) {
+      setErrors(prev => ({ ...prev, nombre: 'Debe contener al menos una letra.' }));
+    } else {
+      setErrors(prev => ({ ...prev, nombre: '' }));
+    }
+  };
+
+  const handleAcercaDeChange = (val: string) => {
+    setAcercaDe(val);
+    if (val.trim() && !/[a-zA-ZáéíóúÁÉÍÓÚñÑ]/.test(val)) {
+      setErrors(prev => ({ ...prev, acercaDe: 'Debe contener al menos una letra.' }));
+    } else {
+      setErrors(prev => ({ ...prev, acercaDe: '' }));
+    }
+  };
+
+  const handleNombreResponsableChange = (val: string) => {
+    setNombreResponsable(val);
+    if (!val.trim()) setErrors(prev => ({ ...prev, nombreResponsable: 'El nombre del responsable es obligatorio.' }));
+    else if (/\d/.test(val)) setErrors(prev => ({ ...prev, nombreResponsable: 'El nombre no debe contener números.' }));
+    else setErrors(prev => ({ ...prev, nombreResponsable: '' }));
+  };
+
+  const handleApellidoResponsableChange = (val: string) => {
+    setApellidoResponsable(val);
+    if (!val.trim()) setErrors(prev => ({ ...prev, apellidoResponsable: 'El apellido del responsable es obligatorio.' }));
+    else if (/\d/.test(val)) setErrors(prev => ({ ...prev, apellidoResponsable: 'El apellido no debe contener números.' }));
+    else setErrors(prev => ({ ...prev, apellidoResponsable: '' }));
+  };
+
+  const handleTelefonoChange = (val: string) => {
+    setTelefono(val);
+    if (!val.trim()) {
+      setErrors(prev => ({ ...prev, telefono: 'El teléfono es obligatorio.' }));
+    } else if (/[a-zA-Z]/.test(val)) {
+      setErrors(prev => ({ ...prev, telefono: 'El teléfono no puede contener letras.' }));
+    } else if (!/^\d{10}$/.test(val.trim())) {
+      setErrors(prev => ({ ...prev, telefono: 'El teléfono debe tener exactamente 10 dígitos numéricos.' }));
+    } else {
+      setErrors(prev => ({ ...prev, telefono: '' }));
+    }
+  };
+
+  const handleEmailChange = (val: string) => {
+    setEmail(val);
+    if (!val.trim()) {
+      setErrors(prev => ({ ...prev, email: 'El correo es obligatorio.' }));
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val.trim())) {
+      setErrors(prev => ({ ...prev, email: 'Correo inválido.' }));
+    } else {
+      setErrors(prev => ({ ...prev, email: '' }));
+    }
+  };
+
+  const handlePasswordChange = (val: string) => {
+    setPassword(val);
+    if (!val) {
+      setErrors(prev => ({ ...prev, password: 'La contraseña es obligatoria.' }));
+    } else {
+      const resultado = validarPassword(val);
+      if (!resultado.valido) {
+        setErrors(prev => ({ ...prev, password: resultado.mensaje }));
+      } else {
+        setErrors(prev => ({ ...prev, password: '' }));
+      }
+    }
+    
+    // Validación cruzada en tiempo real
+    if (password2 && val !== password2) {
+      setErrors(prev => ({ ...prev, password2: 'Las contraseñas no coinciden.' }));
+    } else if (password2) {
+      setErrors(prev => ({ ...prev, password2: '' }));
+    }
+  };
+
+  const handlePassword2Change = (val: string) => {
+    setPassword2(val);
+    if (password && val !== password) {
+      setErrors(prev => ({ ...prev, password2: 'Las contraseñas no coinciden.' }));
+    } else {
+      setErrors(prev => ({ ...prev, password2: '' }));
+    }
+  };
+
+  const handleCalleChange = (val: string) => {
+    setCalle(val);
+    if (val.trim() && !/^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/.test(val)) {
+      setErrors(prev => ({ ...prev, calle: 'Solo se permiten letras y espacios.' }));
+    } else {
+      setErrors(prev => ({ ...prev, calle: '' }));
+    }
+  };
+
+  const handleColoniaChange = (val: string) => {
+    setColonia(val);
+    if (val.trim() && !/^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/.test(val)) {
+      setErrors(prev => ({ ...prev, colonia: 'Solo se permiten letras y espacios.' }));
+    } else {
+      setErrors(prev => ({ ...prev, colonia: '' }));
+    }
+  };
+
+  const handleMunicipioChange = (val: string) => {
+    setMunicipio(val);
+    if (val.trim() && !/^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/.test(val)) {
+      setErrors(prev => ({ ...prev, municipio: 'Solo se permiten letras y espacios.' }));
+    } else {
+      setErrors(prev => ({ ...prev, municipio: '' }));
+    }
+  };
+
+  const handleEstadoChange = (val: string) => {
+    setEstado(val);
+    if (val.trim() && !/^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/.test(val)) {
+      setErrors(prev => ({ ...prev, estado: 'Solo se permiten letras y espacios.' }));
+    } else {
+      setErrors(prev => ({ ...prev, estado: '' }));
+    }
+  };
+
+  const handleReferenciaChange = (val: string) => {
+    setReferencia(val);
+    if (val.trim() && !/^[a-zA-ZáéíóúÁÉÍÓÚñÑ0-9\s]+$/.test(val)) {
+      setErrors(prev => ({ ...prev, referencia: 'Solo se permiten letras y números.' }));
+    } else {
+      setErrors(prev => ({ ...prev, referencia: '' }));
+    }
+  };
+
   const handleRadioKmChange = (val: string) => {
     const cleaned = val.replace(/\D/g, '');
     setRadioKm(cleaned);
-    if (cleaned && parseInt(cleaned, 10) > 0) setErrors(prev => ({ ...prev, radioKm: '' }));
+    const radVal = parseInt(cleaned, 10);
+    if (!cleaned) {
+      setErrors(prev => ({ ...prev, radioKm: 'El radio es obligatorio.' }));
+    } else if (isNaN(radVal) || radVal <= 0) {
+      setErrors(prev => ({ ...prev, radioKm: 'Debe ser mayor a 0.' }));
+    } else {
+      setErrors(prev => ({ ...prev, radioKm: '' }));
+    }
   };
 
   // ─── Manejo de Multimedia ───
@@ -227,10 +380,11 @@ export default function AssociationFormScreen({ onClose }: Props) {
         params: { lat, lon, format: 'json', addressdetails: 1 },
       });
       const address = res.data.address || {};
-      setCalle(address.road || '');
+      setCalle(address.road || address.pedestrian || address.square || address.footway || address.path || '');
       setNumero(address.house_number || '');
-      setColonia(address.suburb || address.neighbourhood || address.colonia || '');
+      setColonia(address.suburb || address.neighbourhood || address.colonia || address.city_district || address.quarter || address.residential || address.village || address.hamlet || address.borough || '');
       setMunicipio(address.city || address.town || address.municipality || address.county || '');
+      setEstado(address.state || '');
       setDireccionConfirmada(res.data.display_name || '');
     } catch (error) {
       console.error('Error al obtener la dirección:', error);
@@ -251,10 +405,11 @@ export default function AssociationFormScreen({ onClose }: Props) {
     
     setPinLocation({ latitud: lat, longitud: lon });
     setUbicacionConfirmada(true);
-    setCalle(address.road || '');
+    setCalle(address.road || address.pedestrian || address.square || address.footway || address.path || result.name || '');
     setNumero(address.house_number || '');
-    setColonia(address.suburb || address.neighbourhood || address.colonia || '');
+    setColonia(address.suburb || address.neighbourhood || address.colonia || address.city_district || address.quarter || address.residential || address.village || address.hamlet || address.borough || '');
     setMunicipio(address.city || address.town || address.municipality || address.county || '');
+    setEstado(address.state || '');
     setDireccionConfirmada(result.display_name);
     setSearchQuery('');
     setSearchResults([]);
@@ -328,7 +483,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
 
       const finalTiposAnimales: string[] = tiposAnimales.filter((t) => t !== 'otro');
       if (tiposAnimales.includes('otro')) {
-        if (subcategoriaOtro === 'Otro') finalTiposAnimales.push(especieDescripcionOtro.trim().toLowerCase());
+        if (subcategoriaOtro === 'Otro') finalTiposAnimales.push(...customTipos.map(t => t.trim().toLowerCase()));
         else if (subcategoriaOtro) finalTiposAnimales.push(subcategoriaOtro.toLowerCase());
       }
       formData.append('tipos_animales', JSON.stringify(finalTiposAnimales));
@@ -343,6 +498,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
       if (numero.trim()) formData.append('numero', numero.trim());
       if (colonia.trim()) formData.append('colonia', colonia.trim());
       if (municipio.trim()) formData.append('municipio', municipio.trim());
+      if (estado.trim()) formData.append('estado', estado.trim());
       if (referencia.trim()) formData.append('referencia', referencia.trim());
 
       if (logoUrl) {
@@ -413,7 +569,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
             <Input label="Apellido del Responsable" placeholder="Ej. Pérez" value={apellidoResponsable} onChangeText={handleApellidoResponsableChange} error={errors.apellidoResponsable} required />
           </View>
         </View>
-        <Input label="Acerca de la Asociación (Opcional)" placeholder="Describe la misión o actividades..." value={acercaDe} onChangeText={setAcercaDe} multiline maxLength={300} style={{ height: 80, textAlignVertical: 'top', outlineStyle: 'none' } as any} />
+        <Input label="Acerca de la Asociación (Opcional)" placeholder="Describe la misión o actividades..." value={acercaDe} onChangeText={handleAcercaDeChange} error={errors.acercaDe} multiline maxLength={300} style={{ height: 80, textAlignVertical: 'top', outlineStyle: 'none' } as any} />
         <Text style={styles.charCounter}>{acercaDe.length}/300</Text>
 
         <Text style={styles.sectionLabel}>Logo de la Asociación (Opcional)</Text>
@@ -516,7 +672,34 @@ export default function AssociationFormScreen({ onClose }: Props) {
             </View>
             {errors.subcategoriaOtro && <Text style={styles.errorText}>{errors.subcategoriaOtro}</Text>}
             {subcategoriaOtro === 'Otro' && (
-              <Input label="Describe la especie *" placeholder="Ej. Tlacuache, caballo..." value={especieDescripcionOtro} onChangeText={(val) => { setEspecieDescripcionOtro(val); if (val.trim()) setErrors(prev => ({ ...prev, especieDescripcionOtro: '' })); }} error={errors.especieDescripcionOtro} />
+              <View style={{ marginTop: 8 }}>
+                <Text style={[styles.sectionLabel, { marginBottom: 4 }]}>Describe el tipo *</Text>
+                <Text style={{ fontSize: 12, color: COLORS.textLight, marginBottom: 8 }}>(Presiona "Enter" en tu teclado para añadir el tipo)</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: customTipos.length > 0 ? 12 : 0 }}>
+                  {customTipos.map((tipo, idx) => (
+                    <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.primary, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16 }}>
+                      <Text style={{ color: COLORS.bgWhite, fontWeight: '600', fontSize: 12, marginRight: 6 }}>{tipo}</Text>
+                      <TouchableOpacity onPress={() => setCustomTipos(prev => prev.filter((_, i) => i !== idx))}>
+                        <Ionicons name="close-circle" size={16} color={COLORS.bgWhite} />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+                <Input
+                  placeholder="Ej. Tlacuache, caballo..."
+                  value={customTipoInput}
+                  onChangeText={setCustomTipoInput}
+                  error={errors.customTipos}
+                  onSubmitEditing={() => {
+                    if (customTipoInput.trim()) {
+                      setCustomTipos(prev => [...prev, customTipoInput.trim()]);
+                      setCustomTipoInput('');
+                      setErrors(prev => ({ ...prev, customTipos: '' }));
+                    }
+                  }}
+                  blurOnSubmit={false}
+                />
+              </View>
             )}
           </View>
         )}
@@ -562,15 +745,18 @@ export default function AssociationFormScreen({ onClose }: Props) {
         )}
 
         <View style={styles.rowContainer}>
-          <View style={styles.halfWidth}><Input label="Calle" placeholder="Ej. Av. Reforma" value={calle} onChangeText={setCalle} /></View>
+          <View style={styles.halfWidth}><Input label="Calle" placeholder="Ej. Av. Reforma" value={calle} onChangeText={handleCalleChange} error={errors.calle} /></View>
           <View style={styles.halfWidth}><Input label="Número" placeholder="Ej. 123" value={numero} onChangeText={setNumero} /></View>
         </View>
         <View style={styles.rowContainer}>
-          <View style={styles.halfWidth}><Input label="Colonia" placeholder="Ej. Centro Histórico" value={colonia} onChangeText={setColonia} /></View>
-          <View style={styles.halfWidth}><Input label="Municipio / Ciudad" placeholder="Ej. Puebla" value={municipio} onChangeText={setMunicipio} /></View>
+          <View style={styles.halfWidth}><Input label="Colonia" placeholder="Ej. Centro Histórico" value={colonia} onChangeText={handleColoniaChange} error={errors.colonia} /></View>
+          <View style={styles.halfWidth}><Input label="Municipio / Ciudad" placeholder="Ej. Puebla" value={municipio} onChangeText={handleMunicipioChange} error={errors.municipio} /></View>
+        </View>
+        <View style={styles.rowContainer}>
+          <View style={styles.halfWidth}><Input label="Estado" placeholder="Ej. Puebla" value={estado} onChangeText={handleEstadoChange} error={errors.estado} /></View>
+          <View style={styles.halfWidth}><Input label="Referencia (Opcional)" placeholder="Ej. Casa azul" value={referencia} onChangeText={handleReferenciaChange} error={errors.referencia} /></View>
         </View>
 
-        <Input label="Referencia (Opcional)" placeholder="Ej. Casa azul" value={referencia} onChangeText={setReferencia} />
         <Input label="Radio de Cobertura de Rescate (KM)" placeholder="Ej. 15" value={radioKm} onChangeText={handleRadioKmChange} error={errors.radioKm} keyboardType="numeric" required />
       </FormSection>
 
@@ -726,7 +912,7 @@ const styles = StyleSheet.create({
   animalLabel: { marginTop: 24 },
   required: { color: COLORS.danger },
   animalChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 },
-  animalChip: { flex: 1, minWidth: '45%', paddingVertical: 14, borderRadius: 20 },
+  animalChip: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20 },
   errorText: { color: COLORS.danger, fontSize: 12, marginTop: 4, marginBottom: 16 },
   searchingText: { fontSize: 12, color: COLORS.textLight, marginTop: -8, marginBottom: 10 },
   searchResults: { backgroundColor: COLORS.bgWhite, borderWidth: 1, borderColor: COLORS.border, borderRadius: 16, marginTop: -10, marginBottom: 16, overflow: 'hidden' },
