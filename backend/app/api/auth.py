@@ -398,3 +398,13 @@ async def telefono_existe(telefono: str):
 
     existe_cuenta = bool(resultado.data and resultado.data[0].get("auth_user_id"))
     return {"existe_cuenta": existe_cuenta}
+
+@router.get("/resolver-token-invitacion")
+async def resolver_token_invitacion(token: str):
+    resultado = supabase.table("tokens_invitacion").select("telefono, expira_at, usado").eq("token", token).execute()
+    if not resultado.data:
+        raise HTTPException(status_code=404, detail="Link inválido o ya usado.")
+    fila = resultado.data[0]
+    if fila["usado"] or datetime.fromisoformat(fila["expira_at"].replace("Z", "+00:00")) < datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="Este link ya expiró o ya fue usado.")
+    return {"telefono": fila["telefono"]}

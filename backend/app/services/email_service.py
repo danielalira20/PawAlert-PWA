@@ -7,7 +7,7 @@ from app.services.email_templates.asociacion_rechazada import get_html as html_a
 from app.services.email_templates.apelacion_aprobada import get_html as html_apelacion_aprobada
 from app.services.email_templates.apelacion_rechazada import get_html as html_apelacion_rechazada
 from app.services.email_templates.caso_urgente import get_html as html_caso_urgente
-
+from app.services.email_templates.staff_bienvenida import get_html as html_staff_bienvenida
 
 def _get_api_instance():
     api_key = settings.brevo_api_key
@@ -56,3 +56,8 @@ def email_apelacion_rechazada(nombre_asociacion: str, email: str, respuesta: str
 def email_reporte_grave(nombre_asociacion: str, email: str, municipio: str | None, tipo_animal: str | None):
     html = html_caso_urgente(nombre_asociacion=nombre_asociacion, municipio=municipio, tipo_animal=tipo_animal)
     enviar_email(email, nombre_asociacion, "🚨 Caso urgente asignado a tu asociación", html)
+
+def email_bienvenida_staff(nombre: str, email: str, token: str, nombre_asociacion: str):
+    url = f"{settings.frontend_url}/completar-cuenta?token={token}"
+    html = html_staff_bienvenida(nombre=nombre, url_completar_cuenta=url, nombre_asociacion=nombre_asociacion)
+    enviar_email(email, nombre, "¡Bienvenido a PawAlert!", html)
