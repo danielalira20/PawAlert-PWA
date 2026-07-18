@@ -547,7 +547,6 @@ async def obtener_reportes_voluntario(usuario_id: str) -> dict:
                 "nombre": r.get("asociaciones", {}).get("nombre"),
                 "telefono": r.get("asociaciones", {}).get("contacto_telefono"),
             },
-            "animal": shape_animal_response(animal_legado) if animal_legado else None,
             "animales": [shape_animal_response(a) for a in animales_crudos],
         }
 

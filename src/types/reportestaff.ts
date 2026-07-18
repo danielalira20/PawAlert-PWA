@@ -1,7 +1,5 @@
 import { Animal } from './reporte';
 
-export type AnimalStaff = Animal;
-
 export interface ReporteStaff {
   id: string;
   estado_reporte: string;
@@ -13,8 +11,7 @@ export interface ReporteStaff {
   longitud?: number;
   created_at: string;
   foto_url: string | null;
-  animal: AnimalStaff;
-  animales?: Animal[];
+  animales: Animal[];
   asociacion: {
     nombre: string | null;
     telefono: string | null;

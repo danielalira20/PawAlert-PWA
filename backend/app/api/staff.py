@@ -87,7 +87,6 @@ async def get_reportes_staff(authorization: str = Header(None)):
                 "nombre": r.get("asociaciones", {}).get("nombre"),
                 "telefono": r.get("asociaciones", {}).get("contacto_telefono"),
             },
-            "animal": shape_animal_response(animal_legado) if animal_legado else None,
             "animales": [shape_animal_response(a) for a in animales_crudos],
         }
 

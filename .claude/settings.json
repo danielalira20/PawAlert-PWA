@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(npm ls *)",
-      "Bash(npm ping *)"
+      "Bash(npm ping *)",
+      "Bash(curl -s http://localhost:8000/reports)",
+      "Bash(python3 -c ' *)"
     ]
   }
 }

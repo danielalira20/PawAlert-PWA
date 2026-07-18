@@ -103,7 +103,6 @@ class ReportListItem(BaseModel):
     colonia: Optional[str] = None
     created_at: str
     foto_url: Optional[str] = None
-    animal: Optional[AnimalResponse] = None
     animales: list[AnimalResponse] = []
 
 ## Lo usa el staff para registrar el avance del rescate

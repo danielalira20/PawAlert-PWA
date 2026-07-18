@@ -44,8 +44,7 @@ interface ReporteItem {
   foto_url: string | null;
   fotos?: string[]; // si el backend manda varias fotos (animal_fotos), se usan aquí
   asociacion_nombre: string | null;
-  animal: Animal | null;
-  animales?: Animal[];
+  animales: Animal[];
 }
 
 interface MisReportesScreenProps {

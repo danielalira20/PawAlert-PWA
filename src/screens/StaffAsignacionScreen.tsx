@@ -66,8 +66,7 @@ interface ReporteAsignado {
   created_at: string;
   foto_url: string | null;
   fotos_urls: string[];
-  animal: Animal;
-  animales?: Animal[];
+  animales: Animal[];
 }
 
 // ── Tipos para la pestaña "Mis voluntarios" (nueva) ──

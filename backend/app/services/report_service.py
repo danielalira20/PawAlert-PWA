@@ -390,7 +390,6 @@ async def obtener_reportes() -> list:
     for r in resultado.data:
         animales_crudos, animal_legado = shape_animal_embed(r.get("animal"))
         animales = [shape_animal_response(a) for a in animales_crudos]
-        animal_data = shape_animal_response(animal_legado) if animal_legado else None
 
         foto_url = None
         if animal_legado:
@@ -408,7 +407,6 @@ async def obtener_reportes() -> list:
             "colonia": r.get("colonia"),
             "created_at": str(r["created_at"]),
             "foto_url": foto_url,
-            "animal": animal_data,
             "animales": animales,
         })
 
@@ -482,7 +480,6 @@ async def obtener_reportes_usuario(usuario_id: str) -> list:
     for r in resultado.data:
         animales_crudos, animal_legado = shape_animal_embed(r.get("animal"))
         animales = [shape_animal_response(a) for a in animales_crudos]
-        animal_data = shape_animal_response(animal_legado) if animal_legado else None
 
         foto_url = None
         fotos_urls = []
@@ -506,7 +503,6 @@ async def obtener_reportes_usuario(usuario_id: str) -> list:
             "created_at": str(r["created_at"]),
             "foto_url": foto_url,
             "fotos": fotos_urls,
-            "animal": animal_data,
             "animales": animales,
         })
 

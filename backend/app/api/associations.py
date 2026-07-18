@@ -456,7 +456,6 @@ async def get_reportes_asignados(authorization: str = Header(None)):
             "created_at": str(rep["created_at"]),
             "foto_url": foto_url,
             "fotos_urls": fotos_urls,
-            "animal": shape_animal_response(animal_legado) if animal_legado else None,
             "animales": [shape_animal_response(a) for a in animales_crudos],
         })
 

@@ -70,8 +70,7 @@ interface ReporteAsignado {
   created_at: string;
   foto_url: string | null;
   fotos_urls: string[];
-  animal: Animal;
-  animales?: Animal[];
+  animales: Animal[];
 }
 
 type FiltroAsignacion = 'todas' | 'pendientes' | 'aceptadas' | 'rechazadas';

@@ -25,15 +25,12 @@ export interface Reporte {
   municipio: string | null;
   colonia: string | null;
   created_at: string;
-  animal?: Animal | null;
-  animales?: Animal[];
+  animales: Animal[];
 }
 
-/** Lista de animales de un reporte, con fallback al `animal` legado
- * mientras el backend siga mandando ambos (compatibilidad temporal). */
-export function getAnimales(r: { animales?: Animal[] | null; animal?: Animal | null }): Animal[] {
-  if (r.animales && r.animales.length > 0) return r.animales;
-  return r.animal ? [r.animal] : [];
+/** Lista de animales de un reporte. */
+export function getAnimales(r: { animales?: Animal[] | null }): Animal[] {
+  return r.animales ?? [];
 }
 
 const CONDICION_SEVERIDAD: Record<string, number> = { grave: 3, herido: 2, estable: 1 };

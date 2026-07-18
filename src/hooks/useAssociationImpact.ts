@@ -12,8 +12,7 @@ export type ImpactoAsociacion = ImpactoReportante;
 interface ReporteAsignadoResumen {
   estado_reporte: string;
   created_at: string;
-  animal: Animal | null;
-  animales?: Animal[];
+  animales: Animal[];
 }
 
 const IMPACTO_VACIO: ImpactoAsociacion = {

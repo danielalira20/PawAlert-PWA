@@ -13,8 +13,7 @@ export interface ReporteResumen {
   created_at: string;
   foto_url: string | null;
   fotos?: string[];
-  animal: Animal | null;
-  animales?: Animal[];
+  animales: Animal[];
 }
 
 export interface ImpactoReportante {

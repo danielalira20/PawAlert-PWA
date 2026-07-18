@@ -10,8 +10,7 @@ export type ImpactoStaff = ImpactoReportante;
 interface ReporteStaffResumen {
   estado_reporte: string;
   created_at: string;
-  animal: Animal | null;
-  animales?: Animal[];
+  animales: Animal[];
 }
 
 interface RespuestaStaffReportes {
