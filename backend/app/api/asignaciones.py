@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 from app.services import matching
 from app.db.supabase import supabase
+from app.utils.animal_shaping import shape_animal_embed, condicion_mas_grave
 
 router = APIRouter()
 
@@ -202,8 +203,8 @@ def _reporte_o_404(reporte_id: str) -> dict:
     if not res.data:
         raise HTTPException(status_code=404, detail="Reporte no encontrado")
     data = res.data
-    animal = data.get("animal") or {}
-    data["condicion"] = (animal.get("condicion_catalogo") or {}).get("clave")
+    animales, _ = shape_animal_embed(data.get("animal"))
+    data["condicion"] = condicion_mas_grave(animales)
     return data
 
 

@@ -3,6 +3,7 @@ from math import radians, sin, cos, asin, sqrt
 from fastapi import HTTPException
 from app.db.supabase import supabase
 from app.services.report_service import obtener_id_catalogo, registrar_historial
+from app.utils.animal_shaping import shape_animal_embed, shape_animal_response
 
 
 def _distancia_km(lat1, lon1, lat2, lon2) -> float | None:
@@ -511,25 +512,26 @@ async def obtener_reportes_voluntario(usuario_id: str) -> dict:
         "id, estado_reporte, confirmacion_voluntario, municipio, colonia, calle, referencia, "
         "latitud, longitud, created_at, "
         "asociaciones(nombre, contacto_telefono), "
-        "animal(id, sexo, edad_aproximada, descripcion, "
+        "animal(id, orden, es_grupo, cantidad, trae_crias_nacidas, numero_crias_nacidas, "
+        "sexo, edad_aproximada, descripcion, "
         "tipo_animal_catalogo(clave), condicion_catalogo(clave), tamanio_catalogo(clave), "
         "animal_fotos(foto_url, orden))"
     ).eq("staff_asignado_id", usuario_id).order("created_at", desc=True).execute()
-    
+
     esperando_confirmacion = []
     pendientes = []
     en_accion = []
     completados = []
     historial = []
- 
+
     for r in resultado.data or []:
-        animal = r.get("animal") or {}
-        fotos = animal.get("animal_fotos") or []
+        animales_crudos, animal_legado = shape_animal_embed(r.get("animal"))
+        fotos = (animal_legado or {}).get("animal_fotos") or []
         foto_url = None
         if fotos:
             fotos_ordenadas = sorted(fotos, key=lambda f: f.get("orden", 0))
             foto_url = fotos_ordenadas[0]["foto_url"]
- 
+
         reporte = {
             "id": r["id"],
             "estado_reporte": r.get("estado_reporte"),
@@ -545,14 +547,8 @@ async def obtener_reportes_voluntario(usuario_id: str) -> dict:
                 "nombre": r.get("asociaciones", {}).get("nombre"),
                 "telefono": r.get("asociaciones", {}).get("contacto_telefono"),
             },
-            "animal": {
-                "tipo_animal": animal.get("tipo_animal_catalogo", {}).get("clave"),
-                "condicion": animal.get("condicion_catalogo", {}).get("clave"),
-                "tamanio": animal.get("tamanio_catalogo", {}).get("clave"),
-                "sexo": animal.get("sexo"),
-                "edad_aproximada": animal.get("edad_aproximada"),
-                "descripcion": animal.get("descripcion"),
-            }
+            "animal": shape_animal_response(animal_legado) if animal_legado else None,
+            "animales": [shape_animal_response(a) for a in animales_crudos],
         }
 
         estado = r.get("estado_reporte")

@@ -14,6 +14,7 @@ from app.services.voluntario_service import (
     reactivar_voluntario,
     listar_voluntarios_asociacion,
 )
+from app.utils.animal_shaping import shape_animal_embed, shape_animal_response, condicion_mas_grave
 import json
 
 router = APIRouter()
@@ -389,7 +390,8 @@ async def get_reportes_asignados(authorization: str = Header(None)):
     "id, assigned_at, accepted_at, closed_at, notas, "
     "asignacion_estados!reporte_asignaciones_estado_id_fkey(clave, descripcion), "
     "reportes(id, estado_reporte, confirmacion_voluntario, municipio, colonia, calle, latitud, longitud, created_at, "  # ← agregar latitud, longitud
-    "animal(id, sexo, edad_aproximada, descripcion, "
+    "animal(id, orden, es_grupo, cantidad, trae_crias_nacidas, numero_crias_nacidas, "
+    "sexo, edad_aproximada, descripcion, "
     "tipo_animal_catalogo(clave), condicion_catalogo(clave), tamanio_catalogo(clave), "
     "animal_fotos(foto_url, orden)))"
     ).eq("asociacion_id", usuario["asociacion_id"]).order("assigned_at", desc=True).execute()
@@ -430,8 +432,8 @@ async def get_reportes_asignados(authorization: str = Header(None)):
         elif r.get("accepted_at"):
             estado_asignacion_clave = "aceptada"
 
-        animal = rep.get("animal") or {}
-        fotos = animal.get("animal_fotos") or []
+        animales_crudos, animal_legado = shape_animal_embed(rep.get("animal"))
+        fotos = (animal_legado or {}).get("animal_fotos") or []
         foto_url = None
         fotos_urls = []
         if fotos:
@@ -449,19 +451,13 @@ async def get_reportes_asignados(authorization: str = Header(None)):
             "municipio": rep.get("municipio"),
             "colonia": rep.get("colonia"),
             "calle": rep.get("calle"),
-            "latitud": rep.get("latitud"),    
+            "latitud": rep.get("latitud"),
             "longitud": rep.get("longitud"),
             "created_at": str(rep["created_at"]),
             "foto_url": foto_url,
             "fotos_urls": fotos_urls,
-            "animal": {
-                "tipo_animal": animal.get("tipo_animal_catalogo", {}).get("clave"),
-                "condicion": animal.get("condicion_catalogo", {}).get("clave"),
-                "tamanio": animal.get("tamanio_catalogo", {}).get("clave"),
-                "sexo": animal.get("sexo"),
-                "edad_aproximada": animal.get("edad_aproximada"),
-                "descripcion": animal.get("descripcion"),
-            }
+            "animal": shape_animal_response(animal_legado) if animal_legado else None,
+            "animales": [shape_animal_response(a) for a in animales_crudos],
         })
 
     return reportes
@@ -511,7 +507,7 @@ async def get_staff_asociacion(authorization: str = Header(None)):
 
         casos = casos_activos.data or []
         tiene_caso_grave = any(
-            c.get("animal", {}).get("condicion_catalogo", {}).get("clave") == "grave"
+            condicion_mas_grave(shape_animal_embed(c.get("animal"))[0]) == "grave"
             for c in casos
         )
         total_casos_activos = len(casos)

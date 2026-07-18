@@ -5,6 +5,7 @@ aqui vive el score explicable de 4 componentes y el top 3.
 from datetime import datetime
 
 from app.db.supabase import supabase
+from app.utils.animal_shaping import shape_animal_embed
 
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -102,13 +103,26 @@ def _score_carga(casos_activos: int) -> float:
 def _obtener_reporte(reporte_id: str) -> dict:
     res = supabase.table("reportes").select(
         "id, asociacion_asignada_id, latitud, longitud, candidatos_presentados_at, "
-        "animal(tipo_animal_catalogo(clave), tamanio_catalogo(clave), condicion_catalogo(clave))"
+        "animal(orden, cantidad, tipo_animal_catalogo(clave), tamanio_catalogo(clave), condicion_catalogo(clave))"
     ).eq("id", reporte_id).single().execute()
     data = res.data
-    animal = data.get("animal") or {}
-    data["tipo_animal"] = (animal.get("tipo_animal_catalogo") or {}).get("clave")
-    data["tamanio"] = (animal.get("tamanio_catalogo") or {}).get("clave")
-    data["condicion"] = (animal.get("condicion_catalogo") or {}).get("clave")
+    animales_crudos, animal_legado = shape_animal_embed(data.get("animal"))
+    animal_legado = animal_legado or {}
+    data["tipo_animal"] = (animal_legado.get("tipo_animal_catalogo") or {}).get("clave")
+    data["tamanio"] = (animal_legado.get("tamanio_catalogo") or {}).get("clave")
+    data["condicion"] = (animal_legado.get("condicion_catalogo") or {}).get("clave")
+    # `animales` (con especie/cantidad por animal) se deja listo para la
+    # Fase 7, donde el filtro de carga/especies pasa a evaluar el caso
+    # completo en vez de solo el animal legado.
+    data["animales"] = [
+        {
+            "tipo_animal": (a.get("tipo_animal_catalogo") or {}).get("clave"),
+            "tamanio": (a.get("tamanio_catalogo") or {}).get("clave"),
+            "condicion": (a.get("condicion_catalogo") or {}).get("clave"),
+            "cantidad": a.get("cantidad"),
+        }
+        for a in animales_crudos
+    ]
     return data
 
 def _voluntarios_que_rechazaron(reporte_id: str) -> set:

@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 
 from app.db.supabase import supabase
 from app.services import matching
+from app.utils.animal_shaping import shape_animal_embed, condicion_mas_grave
 
 MODOS_CON_ESCALAMIENTO = ("semi_automatico", "automatico")
 
@@ -93,8 +94,8 @@ def _reportes_esperando_asignacion() -> list:
     )
     reportes = res.data or []
     for r in reportes:
-        animal = r.get("animal") or {}
-        r["condicion"] = (animal.get("condicion_catalogo") or {}).get("clave")
+        animales, _ = shape_animal_embed(r.get("animal"))
+        r["condicion"] = condicion_mas_grave(animales)
     return reportes
 
 def _minutos_desde(iso_timestamp: str) -> float:
