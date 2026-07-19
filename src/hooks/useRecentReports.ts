@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { API_URL } from '../constants/api';
-import { Animal, getAnimales } from '../types/reporte';
+import { Animal, getAnimales, totalAnimales } from '../types/reporte';
 
 export interface ReporteResumen {
   id: string;
@@ -21,6 +21,9 @@ export interface ImpactoReportante {
   rescatados: number;
   enProceso: number;
   porcentajeRescate: number;
+  // Suma real de animales (campo `cantidad`) en reportes cerrados — no
+  // confundir con `rescatados`, que cuenta reportes/casos, no animales.
+  animalesRescatados: number;
 
   // Nuevo: desglose por tipo de animal reportado
   porTipoAnimal: { perro: number; gato: number; otro: number };
@@ -43,6 +46,7 @@ const IMPACTO_VACIO: ImpactoReportante = {
   rescatados: 0,
   enProceso: 0,
   porcentajeRescate: 0,
+  animalesRescatados: 0,
   porTipoAnimal: { perro: 0, gato: 0, otro: 0 },
   porEstado: {},
   porCondicion: { estable: 0, herido: 0, grave: 0 },
@@ -76,6 +80,9 @@ export function useRecentReports() {
       const rescatados = ordenados.filter((r) => r.estado_reporte === 'cerrado').length;
       const enProceso = total - rescatados;
       const porcentajeRescate = total > 0 ? Math.round((rescatados / total) * 100) : 0;
+      const animalesRescatados = ordenados
+        .filter((r) => r.estado_reporte === 'cerrado')
+        .reduce((sum, r) => sum + totalAnimales(getAnimales(r)), 0);
 
       // ── Nuevos desgloses (todo del mismo array, sin llamada extra) ──────
       const porTipoAnimal = { perro: 0, gato: 0, otro: 0 };
@@ -116,6 +123,7 @@ export function useRecentReports() {
         rescatados,
         enProceso,
         porcentajeRescate,
+        animalesRescatados,
         porTipoAnimal,
         porEstado,
         porCondicion,

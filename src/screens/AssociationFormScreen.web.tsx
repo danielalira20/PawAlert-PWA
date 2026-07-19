@@ -363,7 +363,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
 
       const response = await axios.post(`${API_URL}/associations`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
 
-      await setSession(response.data.usuario, response.data.access_token);
+      await setSession(response.data.usuario, response.data.access_token, response.data.refresh_token);
       setRegistroExitoso(true);
     } catch (error: any) {
       const mensaje = error?.response?.data?.detail || error?.message || 'Error desconocido';

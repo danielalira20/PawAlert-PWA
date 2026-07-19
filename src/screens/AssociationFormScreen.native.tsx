@@ -450,7 +450,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
 
       const response = await axios.post(`${API_URL}/associations`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
 
-      await setSession(response.data.usuario, response.data.access_token);
+      await setSession(response.data.usuario, response.data.access_token, response.data.refresh_token);
       showToast({ type: 'success', title: '¡Registro exitoso!', message: response.data.mensaje || 'Tu solicitud ha sido registrada.' });
       handleResetForm();
       if (onClose) onClose();

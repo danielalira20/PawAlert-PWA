@@ -47,7 +47,6 @@ export function ImpactStatsBase({ impacto, isLoading, copy }: Props) {
 
   const {
     total,
-    rescatados,
     enProceso,
     porcentajeRescate,
     porTipoAnimal,
@@ -128,7 +127,7 @@ export function ImpactStatsBase({ impacto, isLoading, copy }: Props) {
                 </View>
 
                 <View style={styles.ringTextCol}>
-                  <Text style={styles.message}>{copy.mensajeCalido(rescatados)}</Text>
+                  <Text style={styles.message}>{copy.mensajeCalido(impacto.animalesRescatados)}</Text>
                   <Text style={styles.detail}>{copy.detalleTexto(total, enProceso)}</Text>
                   <View style={styles.activePill}>
                     <Ionicons name="trending-up-outline" size={13} color={Brand.secondary} />

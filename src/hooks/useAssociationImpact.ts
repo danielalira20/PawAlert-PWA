@@ -3,7 +3,7 @@ import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { API_URL } from '../constants/api';
 import type { ImpactoReportante } from './useRecentReports';
-import { Animal, getAnimales } from '../types/reporte';
+import { Animal, getAnimales, totalAnimales } from '../types/reporte';
 
 // Misma forma que ImpactoReportante — así ambos roles pueden reutilizar,
 // si hace falta, el mismo tipo de componente visual sin duplicar interfaces.
@@ -20,6 +20,7 @@ const IMPACTO_VACIO: ImpactoAsociacion = {
   rescatados: 0,
   enProceso: 0,
   porcentajeRescate: 0,
+  animalesRescatados: 0,
   porTipoAnimal: { perro: 0, gato: 0, otro: 0 },
   porEstado: {},
   porCondicion: { estable: 0, herido: 0, grave: 0 },
@@ -53,6 +54,9 @@ export function useAssociationImpact(enabled: boolean = true) {
       const rescatados = todos.filter((r) => r.estado_reporte === 'cerrado').length;
       const enProceso = total - rescatados;
       const porcentajeRescate = total > 0 ? Math.round((rescatados / total) * 100) : 0;
+      const animalesRescatados = todos
+        .filter((r) => r.estado_reporte === 'cerrado')
+        .reduce((sum, r) => sum + totalAnimales(getAnimales(r)), 0);
 
       const porTipoAnimal = { perro: 0, gato: 0, otro: 0 };
       const porCondicion = { estable: 0, herido: 0, grave: 0 };
@@ -91,6 +95,7 @@ export function useAssociationImpact(enabled: boolean = true) {
         rescatados,
         enProceso,
         porcentajeRescate,
+        animalesRescatados,
         porTipoAnimal,
         porEstado,
         porCondicion,

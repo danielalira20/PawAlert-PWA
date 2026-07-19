@@ -19,6 +19,12 @@ def _condicion_mas_grave_de(animales: list[AnimalInput]) -> str:
     peor = max(animales, key=lambda a: CONDICION_SEVERIDAD.get(_condicion_str(a.condicion), 0))
     return _condicion_str(peor.condicion)
 
+def _tipo_animal_mas_grave_de(animales: list[AnimalInput]) -> str:
+    """Igual que `_condicion_mas_grave_de`, pero regresa la especie del
+    animal más grave en vez de su condición."""
+    peor = max(animales, key=lambda a: CONDICION_SEVERIDAD.get(_condicion_str(a.condicion), 0))
+    return _condicion_str(peor.tipo_animal)
+
 def obtener_id_catalogo(tabla: str, clave: str) -> str | None:
     clave_str = clave.value if hasattr(clave, 'value') else str(clave)
     resultado = supabase.table(tabla).select("id").eq("clave", clave_str).eq("activo", True).execute()
@@ -362,7 +368,7 @@ async def crear_reporte(
                         nombre_asociacion=asociacion_data.data[0]["nombre"],
                         email=asociacion_data.data[0]["contacto_email"],
                         municipio=municipio,
-                        tipo_animal=condicion_str
+                        tipo_animal=_tipo_animal_mas_grave_de(animales)
                     )
             except Exception as e:
                 print(f"[WARN] No se pudo enviar email de reporte grave: {e}")

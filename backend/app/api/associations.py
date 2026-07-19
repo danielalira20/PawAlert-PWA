@@ -234,6 +234,7 @@ async def create_association(
     return {
         "mensaje": "Asociación registrada. Tu cuenta quedará activa para recibir reportes cuando sea aprobada.",
         "access_token": login_response.session.access_token,
+        "refresh_token": login_response.session.refresh_token,
         "usuario": {
             "id": usuario_id,
             "nombre": nombre_responsable,
