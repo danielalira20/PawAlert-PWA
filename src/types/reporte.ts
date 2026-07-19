@@ -10,6 +10,8 @@ export interface Animal {
   cantidad?: number | null;
   trae_crias_nacidas?: boolean | null;
   numero_crias_nacidas?: number | null;
+  foto_url?: string | null;   
+  fotos?: string[]; 
 }
 
 export interface Reporte {
@@ -22,6 +24,7 @@ export interface Reporte {
   estado_reporte: string | null;
   latitud: number | null;
   longitud: number | null;
+  calle: string | null;
   municipio: string | null;
   colonia: string | null;
   created_at: string;

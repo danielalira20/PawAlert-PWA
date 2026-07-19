@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Brand, normalizeCondicion } from '../../constants/theme';
@@ -9,6 +9,7 @@ interface Props {
   animales: Animal[];
   initialIndex?: number;
   compact?: boolean;
+  onIndexChange?: (index: number) => void;
 }
 
 function tituloAnimal(a: Animal): string {
@@ -24,8 +25,29 @@ function indiceInicial(animales: Animal[], initialIndex?: number): number {
   return idx >= 0 ? idx : 0;
 }
 
-export function AnimalCarousel({ animales, initialIndex, compact = false }: Props) {
+export function AnimalCarousel({ animales, initialIndex, compact = false, onIndexChange }: Props) {
   const [index, setIndex] = useState(() => indiceInicial(animales, initialIndex));
+
+  useEffect(() => {
+    onIndexChange?.(index);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const irAnterior = () => {
+    setIndex((i) => {
+      const nuevo = i === 0 ? animales.length - 1 : i - 1;
+      onIndexChange?.(nuevo);
+      return nuevo;
+    });
+  };
+
+  const irSiguiente = () => {
+    setIndex((i) => {
+      const nuevo = i === animales.length - 1 ? 0 : i + 1;
+      onIndexChange?.(nuevo);
+      return nuevo;
+    });
+  };
 
   if (animales.length === 0) return null;
 
@@ -60,10 +82,11 @@ export function AnimalCarousel({ animales, initialIndex, compact = false }: Prop
       {hayVarios && (
         <View style={styles.navRow}>
           <TouchableOpacity
-            onPress={() => setIndex((i) => (i === 0 ? animales.length - 1 : i - 1))}
-            style={styles.navBtn}
+            onPress={irAnterior} 
+            style={styles.navBtn} 
             hitSlop={8}
-          >
+            >
+          
             <Ionicons name="chevron-back" size={16} color={Brand.textMuted} />
           </TouchableOpacity>
 
@@ -74,7 +97,7 @@ export function AnimalCarousel({ animales, initialIndex, compact = false }: Prop
           </View>
 
           <TouchableOpacity
-            onPress={() => setIndex((i) => (i === animales.length - 1 ? 0 : i + 1))}
+            onPress={irSiguiente}
             style={styles.navBtn}
             hitSlop={8}
           >

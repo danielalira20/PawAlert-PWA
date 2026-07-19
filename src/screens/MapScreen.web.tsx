@@ -68,6 +68,9 @@ export default function MapScreen() {
 
   const isMobile = windowWidth < 768;
 
+  //para actualizar el animal reporte
+  const [fotoIndexPorReporte, setFotoIndexPorReporte] = useState<Record<string, number>>({});
+  
   // useCallback evita que fetchReportes cambie en cada render
   const fetchReportes = useCallback(async () => {
     try {
@@ -265,9 +268,11 @@ export default function MapScreen() {
       <ScrollView contentContainerStyle={{ padding: 16 }}>
         <TouchableOpacity onPress={() => abrirImagenAmpliada(r)} activeOpacity={0.85}>
           <View style={{ borderRadius: 14, overflow: 'hidden', height: 220, backgroundColor: condCfg.bg, marginBottom: 14 }}>
-            {r.foto_url
-              ? <Image source={{ uri: r.foto_url }} style={{ width: '100%', height: 220 }} resizeMode="cover" />
-              : <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><Ionicons name="paw" size={48} color={condCfg.color} /></View>}
+          {(animales[fotoIndexPorReporte[r.id] ?? 0]?.foto_url || r.foto_url) ? (
+              <Image source={{ uri: (animales[fotoIndexPorReporte[r.id] ?? 0]?.foto_url || r.foto_url ) ?? undefined }} style={{ width: '100%', height: 220 }} resizeMode="cover" />
+          ) : (
+            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><Ionicons name="paw" size={48} color={condCfg.color} /></View>
+          )}
             <View style={{ position: 'absolute', top: 10, right: 10, backgroundColor: condCfg.color, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 }}>
               <Text style={{ fontSize: 9, fontWeight: '800', color: '#FFF', textTransform: 'uppercase' }}>{condCfg.label}</Text>
             </View>
@@ -311,7 +316,7 @@ export default function MapScreen() {
         ))}
 
         <View style={{ marginBottom: 14 }}>
-          <AnimalCarousel key={r.id} animales={animales} />
+          <AnimalCarousel key={r.id} animales={animales} onIndexChange={(i) => setFotoIndexPorReporte((prev) => ({ ...prev, [r.id]: i }))} />
         </View>
 
         <View style={{ backgroundColor: '#FFF5EE', borderRadius: 10, padding: 10, marginTop: 4 }}>
@@ -553,7 +558,7 @@ export default function MapScreen() {
 
     return (
       <Animated.View style={{
-        position: 'absolute', bottom: 0, left: 0, right: 0,
+        position: 'absolute', bottom: TAB_BAR_CLEARANCE, left: 0, right: 0,
         transform: [{ translateY: sheetY }],
         backgroundColor: '#FFF', borderTopLeftRadius: 20, borderTopRightRadius: 20,
         shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.12, shadowRadius: 16,
@@ -573,9 +578,25 @@ export default function MapScreen() {
             <TouchableOpacity onPress={() => abrirImagenAmpliada(r)} activeOpacity={0.85}>
               <View style={{ width: 72, height: 72, borderRadius: 12, overflow: 'visible', backgroundColor: condCfg.bg, flexShrink: 0 }}>
                 <View style={{ width: 72, height: 72, borderRadius: 12, overflow: 'hidden' }}>
-                  {r.foto_url
-                    ? <Image source={{ uri: r.foto_url }} style={{ width: 72, height: 72 }} resizeMode="cover" />
-                    : <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><Ionicons name="paw" size={28} color={condCfg.color} /></View>}
+                  {(animales[fotoIndexPorReporte[r.id] ?? 0]?.foto_url || r.foto_url) ? (
+                    <Image
+                      source={{ uri: (animales[fotoIndexPorReporte[r.id] ?? 0]?.foto_url || r.foto_url) ?? undefined }}
+                      style={{ width: 72, height: 72 }}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                      <Ionicons name="paw" size={28} color={condCfg.color} />
+                    </View>
+                  )}
+                  {r.foto_url && (
+                    <View style={{ position: 'absolute', bottom: 10, right: 10, backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 16, padding: 6, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                      <Ionicons name="expand" size={14} color="#FFF" />
+                      {r.fotos && r.fotos.length > 1 && (
+                        <Text style={{ color: '#FFF', fontSize: 10, fontWeight: '700' }}>{r.fotos.length}</Text>
+                      )}
+                    </View>
+                  )}
                 </View>
                 {total > 1 && (
                   <View style={{ position: 'absolute', top: -5, right: -5, minWidth: 20, height: 20, paddingHorizontal: 4, borderRadius: 10, backgroundColor: C.dark, borderWidth: 2, borderColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' }}>
@@ -607,7 +628,7 @@ export default function MapScreen() {
           {/* Detalles adicionales — navegable si el caso trae más de uno */}
           {animales.length > 0 && (
             <View style={{ marginTop: 12 }}>
-              <AnimalCarousel key={r.id} animales={animales} compact />
+              <AnimalCarousel key={r.id} animales={animales} compact  onIndexChange={(i) => setFotoIndexPorReporte((prev) => ({ ...prev, [r.id]: i }))}/>
             </View>
           )}
           <View style={{ backgroundColor: '#FFF5EE', borderRadius: 10, padding: 8, marginTop: 12 }}>

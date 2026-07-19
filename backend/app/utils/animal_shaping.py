@@ -61,6 +61,10 @@ def shape_animal_response(animal: dict) -> dict:
     """Aplana un registro `animal` (con catálogos embebidos) a la forma que
     ya devolvían los endpoints de listado de reportes, más los 5 campos
     nuevos de multi-animal."""
+    fotos_raw = animal.get("animal_fotos") or []
+    fotos_ordenadas = sorted(fotos_raw, key=lambda f: f.get("orden", 0))
+    fotos = [f["foto_url"] for f in fotos_ordenadas]
+    foto_url = fotos[0] if fotos else None
     return {
         "tipo_animal": (animal.get("tipo_animal_catalogo") or {}).get("clave"),
         "condicion": _condicion_de(animal),
@@ -73,4 +77,6 @@ def shape_animal_response(animal: dict) -> dict:
         "cantidad": animal.get("cantidad"),
         "trae_crias_nacidas": animal.get("trae_crias_nacidas"),
         "numero_crias_nacidas": animal.get("numero_crias_nacidas"),
+        "fotos": fotos,
+        "foto_url": foto_url,
     }

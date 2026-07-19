@@ -64,6 +64,8 @@ class AnimalResponse(BaseModel):
     cantidad: Optional[int] = None
     trae_crias_nacidas: Optional[bool] = None
     numero_crias_nacidas: Optional[int] = None
+    foto_url: Optional[str] = None    
+    fotos: Optional[list[str]] = None  
 
 ## Un elemento del arreglo `animales` que manda el formulario al crear un
 ## reporte — el mismo animal puede venir de ficha individual o de modo grupo.
