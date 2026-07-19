@@ -19,6 +19,12 @@ def _condicion_mas_grave_de(animales: list[AnimalInput]) -> str:
     peor = max(animales, key=lambda a: CONDICION_SEVERIDAD.get(_condicion_str(a.condicion), 0))
     return _condicion_str(peor.condicion)
 
+def _tipo_animal_mas_grave_de(animales: list[AnimalInput]) -> str:
+    """Igual que `_condicion_mas_grave_de`, pero regresa la especie del
+    animal más grave en vez de su condición."""
+    peor = max(animales, key=lambda a: CONDICION_SEVERIDAD.get(_condicion_str(a.condicion), 0))
+    return _condicion_str(peor.tipo_animal)
+
 def obtener_id_catalogo(tabla: str, clave: str) -> str | None:
     clave_str = clave.value if hasattr(clave, 'value') else str(clave)
     resultado = supabase.table(tabla).select("id").eq("clave", clave_str).eq("activo", True).execute()
@@ -362,7 +368,7 @@ async def crear_reporte(
                         nombre_asociacion=asociacion_data.data[0]["nombre"],
                         email=asociacion_data.data[0]["contacto_email"],
                         municipio=municipio,
-                        tipo_animal=condicion_str
+                        tipo_animal=_tipo_animal_mas_grave_de(animales)
                     )
             except Exception as e:
                 print(f"[WARN] No se pudo enviar email de reporte grave: {e}")
@@ -418,7 +424,7 @@ ESTADOS_VALIDOS = [
 TRANSICIONES_PERMITIDAS = {
     "asignado":   ["en_camino", "pendiente"],       # confirmación salida / rechazado / timeout
     "en_camino":  ["en_atencion", "pendiente", "cerrado"],  # llegada / no_se_pudo_llegar / falsa_alarma
-    "en_atencion": ["rescatado", "cerrado"], 
+    "en_atencion": ["rescatado", "cerrado"],
     "rescatado":  ["cerrado"],                     # rescatado / muerto / no_localizado -> razones, no estados
     "pendiente":  ["sin_cobertura"],
     "sin_cobertura": ["pendiente"],
@@ -445,11 +451,15 @@ async def obtener_reportes() -> list:
                 fotos_ordenadas = sorted(fotos, key=lambda f: f.get("orden", 0))
                 foto_url = fotos_ordenadas[0]["foto_url"]
 
+        # Endpoint público sin auth — se redondea a ~100m de precisión para no
+        # exponer la ubicación exacta (posible domicilio) del reportante.
+        lat = r.get("latitud")
+        lng = r.get("longitud")
         reportes.append({
             "id": r["id"],
             "estado_reporte": r.get("estado_reporte"),
-            "latitud": r.get("latitud"),
-            "longitud": r.get("longitud"),
+            "latitud": round(lat, 3) if lat is not None else None,
+            "longitud": round(lng, 3) if lng is not None else None,
             "municipio": r.get("municipio"),
             "colonia": r.get("colonia"),
             "created_at": str(r["created_at"]),

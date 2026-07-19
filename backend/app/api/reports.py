@@ -422,7 +422,8 @@ async def rechazar_reporte(reporte_id: str, body: RechazarReporteRequest, author
 
     # Verificar que el reporte existe y pertenece a esta asociación
     reporte = supabase.table("reportes").select(
-        "id, estado_reporte, asociacion_asignada_id, latitud, longitud, municipio"
+        "id, estado_reporte, asociacion_asignada_id, latitud, longitud, municipio, "
+        "animal(tipo_animal_catalogo(clave))"
     ).eq("id", reporte_id).execute()
 
     if not reporte.data:
@@ -432,6 +433,15 @@ async def rechazar_reporte(reporte_id: str, body: RechazarReporteRequest, author
 
     if reporte["asociacion_asignada_id"] != asociacion_id:
         raise HTTPException(status_code=403, detail="Este reporte no pertenece a tu asociación")
+
+    # Especies del caso, derivadas una sola vez — las usan tanto la
+    # reasignación automática como los contactos de emergencia si no hay
+    # cobertura (antes ninguna de las dos consideraba la especie real).
+    animales_crudos, _ = shape_animal_embed(reporte.get("animal"))
+    especies_del_caso = list(dict.fromkeys(
+        (a.get("tipo_animal_catalogo") or {}).get("clave") for a in animales_crudos
+    ))
+    especies_del_caso = [e for e in especies_del_caso if e]
 
     if reporte["estado_reporte"] != "asignado":
         raise HTTPException(status_code=400, detail="Solo puedes rechazar reportes en estado asignado")
@@ -469,7 +479,11 @@ async def rechazar_reporte(reporte_id: str, body: RechazarReporteRequest, author
     nueva_asociacion = None
 
     if reporte.get("latitud") and reporte.get("longitud"):
-        candidata = asignar_asociacion(reporte["latitud"], reporte["longitud"], excluir_ids=ids_rechazadas)
+        candidata = asignar_asociacion(
+            reporte["latitud"], reporte["longitud"],
+            excluir_ids=ids_rechazadas,
+            tipos_animales=especies_del_caso or None,
+        )
         if candidata:
             nueva_asociacion = candidata
 
@@ -533,10 +547,13 @@ async def rechazar_reporte(reporte_id: str, body: RechazarReporteRequest, author
             datos_extra={"motivo_rechazo": body.motivo}
         )
 
-        contactos = obtener_contactos_emergencia(
-            tipo_animal="perro",
-            municipio=reporte.get("municipio")
-        )
+        contactos_vistos = set()
+        contactos = []
+        for especie in especies_del_caso:
+            for c in obtener_contactos_emergencia(tipo_animal=especie, municipio=reporte.get("municipio")):
+                if c.get("id") not in contactos_vistos:
+                    contactos_vistos.add(c.get("id"))
+                    contactos.append(c)
 
         return {
             "mensaje": "Reporte rechazado. No hay más asociaciones disponibles en la zona.",
@@ -550,7 +567,24 @@ async def get_reports():
     return await obtener_reportes()
 
 @router.patch("/{reporte_id}/status", status_code=200)
-async def update_report_status(reporte_id: str, body: dict):
+async def update_report_status(reporte_id: str, body: dict, authorization: str = Header(None)):
+    usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion", "staff"))
+
+    asociacion_id = usuario.get("asociacion_id")
+    if not asociacion_id:
+        raise HTTPException(status_code=403, detail="No estás vinculado a ninguna asociación")
+
+    reporte = supabase.table("reportes").select(
+        "id, asociacion_asignada_id"
+    ).eq("id", reporte_id).execute()
+
+    if not reporte.data:
+        raise HTTPException(status_code=404, detail="Reporte no encontrado")
+
+    if reporte.data[0]["asociacion_asignada_id"] != asociacion_id:
+        raise HTTPException(status_code=403, detail="Este reporte no pertenece a tu asociación")
+
     return await cambiar_estado_reporte(reporte_id, body.get("estado"))
 
 @router.get("/me", status_code=200)

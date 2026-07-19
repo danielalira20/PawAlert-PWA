@@ -78,6 +78,7 @@ def obtener_candidatos(reporte_id: str, authorization: Optional[str] = Header(No
     )
     resultado["modo_asignacion"] = aso["modo_asignacion"]
     resultado["timeout_min"] = 0 if aso["modo_asignacion"] == "automatico" else _timeout_por_condicion(aso, reporte.get("condicion"))
+    resultado["confirmacion_voluntario"] = reporte.get("confirmacion_voluntario")
 
     # Primera presentacion: sellar timestamp + evento (solo una vez)
     if reporte.get("candidatos_presentados_at") is None and resultado["candidatos"]:
