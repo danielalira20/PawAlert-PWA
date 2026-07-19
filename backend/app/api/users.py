@@ -5,8 +5,18 @@ router = APIRouter()
 
 
 @router.get("/phone/{telefono}", status_code=200)
-async def get_user_by_phone(telefono: str):
-    """Flujo invitado: busca usuario por teléfono para autorellenar el formulario."""
+async def get_user_by_phone(telefono: str, authorization: str = Header(None)):
+    """Busca usuario por teléfono. Requiere sesión — antes era público, lo
+    que permitía enumerar nombre/correo de cualquier persona con solo su
+    número de teléfono."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="No autenticado")
+    token = authorization.replace("Bearer ", "")
+    try:
+        supabase.auth.get_user(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Token inválido o expirado")
+
     telefono_limpio = telefono.replace(" ", "").replace("-", "")
 
     resultado = supabase.table("usuarios").select(

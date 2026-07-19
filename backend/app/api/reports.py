@@ -550,7 +550,24 @@ async def get_reports():
     return await obtener_reportes()
 
 @router.patch("/{reporte_id}/status", status_code=200)
-async def update_report_status(reporte_id: str, body: dict):
+async def update_report_status(reporte_id: str, body: dict, authorization: str = Header(None)):
+    usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion", "staff"))
+
+    asociacion_id = usuario.get("asociacion_id")
+    if not asociacion_id:
+        raise HTTPException(status_code=403, detail="No estás vinculado a ninguna asociación")
+
+    reporte = supabase.table("reportes").select(
+        "id, asociacion_asignada_id"
+    ).eq("id", reporte_id).execute()
+
+    if not reporte.data:
+        raise HTTPException(status_code=404, detail="Reporte no encontrado")
+
+    if reporte.data[0]["asociacion_asignada_id"] != asociacion_id:
+        raise HTTPException(status_code=403, detail="Este reporte no pertenece a tu asociación")
+
     return await cambiar_estado_reporte(reporte_id, body.get("estado"))
 
 @router.get("/me", status_code=200)

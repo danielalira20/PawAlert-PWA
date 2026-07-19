@@ -418,7 +418,7 @@ ESTADOS_VALIDOS = [
 TRANSICIONES_PERMITIDAS = {
     "asignado":   ["en_camino", "pendiente"],       # confirmación salida / rechazado / timeout
     "en_camino":  ["en_atencion", "pendiente", "cerrado"],  # llegada / no_se_pudo_llegar / falsa_alarma
-    "en_atencion": ["rescatado", "cerrado"], 
+    "en_atencion": ["rescatado", "cerrado"],
     "rescatado":  ["cerrado"],                     # rescatado / muerto / no_localizado -> razones, no estados
     "pendiente":  ["sin_cobertura"],
     "sin_cobertura": ["pendiente"],
@@ -445,11 +445,15 @@ async def obtener_reportes() -> list:
                 fotos_ordenadas = sorted(fotos, key=lambda f: f.get("orden", 0))
                 foto_url = fotos_ordenadas[0]["foto_url"]
 
+        # Endpoint público sin auth — se redondea a ~100m de precisión para no
+        # exponer la ubicación exacta (posible domicilio) del reportante.
+        lat = r.get("latitud")
+        lng = r.get("longitud")
         reportes.append({
             "id": r["id"],
             "estado_reporte": r.get("estado_reporte"),
-            "latitud": r.get("latitud"),
-            "longitud": r.get("longitud"),
+            "latitud": round(lat, 3) if lat is not None else None,
+            "longitud": round(lng, 3) if lng is not None else None,
             "municipio": r.get("municipio"),
             "colonia": r.get("colonia"),
             "created_at": str(r["created_at"]),
