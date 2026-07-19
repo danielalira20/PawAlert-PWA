@@ -657,12 +657,15 @@ const confirmarReactivar = async () => {
       const interval = setInterval(async () => {
         try {
           const res = await axios.get(`${API_URL}/reports/${reporteAccionId}/candidatos`, { headers: { Authorization: `Bearer ${token}` } });
-          const estado = res.data?.estado_asignacion_voluntario;
-          if (estado === 'confirmado') {
+          const confirmacion = res.data?.confirmacion_voluntario;
+          if (confirmacion === 'confirmado') {
             clearInterval(interval);
             setPollingRef(null);
             setEstadoVoluntarios('confirmado');
-          } else if (estado === 'rechazado') {
+          } else if (confirmacion !== 'esperando') {
+            // null/undefined mientras se esperaba 'esperando' = el voluntario
+            // rechazó (o fue dado de baja a medio camino) — el backend nunca
+            // escribe un valor 'rechazado' literal, resetea a null.
             clearInterval(interval);
             setPollingRef(null);
             setEstadoVoluntarios('rechazado_mostrando_siguiente');
