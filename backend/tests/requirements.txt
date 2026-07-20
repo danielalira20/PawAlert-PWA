@@ -1,0 +1,4 @@
+# Dependencias exclusivas de la suite automatizada.
+# Instalar después de backend/requirements.txt:
+#   uv pip install --python backend/venv/bin/python -r backend/tests/requirements.txt
+pytest>=8.0,<10.0
