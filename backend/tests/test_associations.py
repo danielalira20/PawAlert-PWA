@@ -1,3 +1,6 @@
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
+
 import pytest
 from fastapi.testclient import TestClient
 from app.main import app
@@ -45,8 +48,46 @@ def test_associations_me_reportes_sin_token():
 
 
 def test_associations_me_reportes_token_invalido():
-    response = client.get(
-        "/associations/me/reportes",
-        headers={"Authorization": "Bearer token_falso_invalido"}
-    )
+    # El fallo se simula localmente: nunca se envía el token falso a Supabase.
+    with patch("app.api.associations.supabase.auth.get_user", side_effect=Exception("token inválido")):
+        response = client.get(
+            "/associations/me/reportes",
+            headers={"Authorization": "Bearer token_falso_invalido"}
+        )
     assert response.status_code == 401
+
+
+def test_registro_asociacion_devuelve_access_y_refresh_token(make_query):
+    tablas = {
+        "asociaciones": make_query(data=[{"id": "aso-1"}]),
+        "roles": make_query(data=[{"id": "rol-asociacion"}]),
+        "usuarios": make_query(execute_results=[
+            SimpleNamespace(data=[], count=None),
+            SimpleNamespace(data=[{"id": "user-aso-1"}], count=None),
+        ]),
+        "asociacion_tipo_animal": make_query(data=[]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+
+    auth_creado = SimpleNamespace(user=SimpleNamespace(id="auth-user-1"))
+    login = SimpleNamespace(session=SimpleNamespace(
+        access_token="access-asociacion",
+        refresh_token="refresh-asociacion",
+    ))
+
+    with (
+        patch("app.api.associations.supabase", supabase),
+        patch("app.api.associations.supabase_admin") as admin,
+        patch("app.api.associations.get_fresh_client") as fresh_client,
+        patch("app.api.associations.obtener_id_catalogo", return_value="tipo-perro-id"),
+    ):
+        admin.auth.admin.create_user.return_value = auth_creado
+        fresh_client.return_value.auth.sign_in_with_password.return_value = login
+        response = client.post("/associations", data=BASE_DATA)
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["access_token"] == "access-asociacion"
+    assert body["refresh_token"] == "refresh-asociacion"
+    assert body["usuario"]["id"] == "user-aso-1"
