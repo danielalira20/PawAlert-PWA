@@ -20,6 +20,7 @@ def test_login_credenciales_invalidas():
 def test_login_devuelve_token():
     mock_session = MagicMock()
     mock_session.session.access_token = "token_de_prueba_123"
+    mock_session.session.refresh_token = "refresh_de_prueba_456"
     mock_session.user.id = "auth-user-uuid"
 
     mock_usuario = MagicMock()
@@ -50,4 +51,5 @@ def test_login_devuelve_token():
     data = response.json()
     assert "access_token" in data
     assert data["access_token"] == "token_de_prueba_123"
+    assert data["refresh_token"] == "refresh_de_prueba_456"
     assert "usuario" in data
