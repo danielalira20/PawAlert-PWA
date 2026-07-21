@@ -227,29 +227,20 @@ export default function LandingScreen() {
         Animated.timing(expandTranslateY, { toValue: -10, duration: 200, useNativeDriver: true })
       ]).start(() => setSelectedRoleId(null));
     } else {
-      if (selectedRoleId) {
-        Animated.parallel([
-          Animated.timing(expandOpacity, { toValue: 0, duration: 150, useNativeDriver: true }),
-          Animated.timing(expandTranslateY, { toValue: -10, duration: 150, useNativeDriver: true })
-        ]).start(() => {
-          setSelectedRoleId(id);
-          expandTranslateY.setValue(20);
-          Animated.parallel([
-            Animated.timing(expandOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
-            Animated.timing(expandTranslateY, { toValue: 0, duration: 300, useNativeDriver: true })
-          ]).start();
-        });
-      } else {
-        setSelectedRoleId(id);
-        expandOpacity.setValue(0);
-        expandTranslateY.setValue(20);
-        Animated.parallel([
-          Animated.timing(expandOpacity, { toValue: 1, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-          Animated.timing(expandTranslateY, { toValue: 0, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true })
-        ]).start();
-      }
+      setSelectedRoleId(id);
     }
   };
+
+  useEffect(() => {
+    if (selectedRoleId) {
+      expandOpacity.setValue(0);
+      expandTranslateY.setValue(20);
+      Animated.parallel([
+        Animated.timing(expandOpacity, { toValue: 1, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+        Animated.timing(expandTranslateY, { toValue: 0, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true })
+      ]).start();
+    }
+  }, [selectedRoleId]);
 
   // ── Font loading ──
   const [fontsLoaded] = useFonts({
@@ -1227,9 +1218,6 @@ export default function LandingScreen() {
 
           <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12, fontFamily: F.bodyMedium, marginBottom: 4 }}>
             © 2026 PawAlert · Juntos salvando vidas
-          </Text>
-          <Text style={{ color: 'rgba(255,255,255,0.15)', fontSize: 11, fontFamily: F.bodyRegular }}>
-            Hecho con ❤️ para los que no tienen voz
           </Text>
         </View>
 

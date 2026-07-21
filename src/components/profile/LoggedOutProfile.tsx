@@ -378,14 +378,13 @@ export function LoggedOutProfile() {
                 >
                   <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={C.muted} />
                 </TouchableOpacity>
-
-                 <TouchableOpacity onPress={() => setShowForgotPassword(true)} style={{ alignSelf: 'flex-end', marginTop: 8 }}>
-                  <Text style={{ color: '#EC802B', fontSize: 13, fontWeight: '600' }}>
-                    ¿Olvidaste tu contraseña?
-                  </Text>
-                </TouchableOpacity>
-
               </View>
+
+              <TouchableOpacity onPress={() => setShowForgotPassword(true)} style={{ alignSelf: 'flex-end', marginTop: 8 }}>
+                <Text style={{ color: '#EC802B', fontSize: 13, fontWeight: '600' }}>
+                  ¿Olvidaste tu contraseña?
+                </Text>
+              </TouchableOpacity>
               {errors.password ? <Text style={{ ...errorStyle, marginTop: 4 }}>{errors.password}</Text> : <View style={{ marginBottom: 28 }} />}
                   
             </View>
