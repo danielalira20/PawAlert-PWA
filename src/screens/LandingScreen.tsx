@@ -33,6 +33,7 @@ import {
 // IMPORTANTE: Importamos el formulario de forma "perezosa" (Lazy Load)
 const AssociationFormScreen = lazy(() => import('./AssociationFormScreen'));
 const ReportGuideScreen = lazy(() => import('./ReportGuideScreen'));
+const ExternalVolunteerFormScreen = lazy(() => import('./ExternalVolunteerFormScreen'));
 
 const isWeb = Platform.OS === 'web';
 
@@ -147,8 +148,8 @@ const ROLES = [
     icon: 'home-outline',
     does: 'Ofrece su hogar de forma temporal para el resguardo de animales rescatados.',
     requirements: 'Completar un formulario de postulación y validación básica del espacio disponible.',
-    ctaLabel: 'Próximamente',
-    ctaRoute: null,
+    ctaLabel: 'Postularme', 
+    ctaRoute: '/external-volunteer-register', 
   },
   {
     id: 'asociacion',
@@ -213,6 +214,7 @@ export default function LandingScreen() {
   const router = useRouter();
   const [isAssociationFormVisible, setIsAssociationFormVisible] = useState(false);
   const [isReportGuideVisible, setIsReportGuideVisible] = useState(false);
+  const [isExternalVolunteerFormVisible, setIsExternalVolunteerFormVisible] = useState(false);
   const [recentPhotos, setRecentPhotos] = useState<string[]>([]);
   const [showFullMissionVision, setShowFullMissionVision] = useState(false);
 
@@ -684,6 +686,8 @@ export default function LandingScreen() {
                                 <AnimatedButton onPress={() => {
                                   if (activeRole.ctaRoute === '/association-register') {
                                     setIsAssociationFormVisible(true);
+                                  } else if (activeRole.ctaRoute === '/external-volunteer-register') {
+                                    setIsExternalVolunteerFormVisible(true);
                                   } else if (activeRole.ctaRoute) {
                                     router.push(activeRole.ctaRoute);
                                   }
@@ -1238,6 +1242,24 @@ export default function LandingScreen() {
             </View>
           }>
             <AssociationFormScreen onClose={() => setIsAssociationFormVisible(false)} />
+          </Suspense>
+        )}
+      </Modal>
+      {/* ── MODAL REGISTRO VOLUNTARIO EXTERNO ────────────────────────────────────── */}
+      <Modal
+        visible={isExternalVolunteerFormVisible}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setIsExternalVolunteerFormVisible(false)}
+      >
+        {isExternalVolunteerFormVisible && (
+          <Suspense fallback={
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.4)' }}>
+              <ActivityIndicator size="large" color={C.primary} />
+              <Text style={{ marginTop: 12, color: '#FFF', fontFamily: F.bodyMedium }}>Cargando formulario...</Text>
+            </View>
+          }>
+            <ExternalVolunteerFormScreen onClose={() => setIsExternalVolunteerFormVisible(false)} />
           </Suspense>
         )}
       </Modal>

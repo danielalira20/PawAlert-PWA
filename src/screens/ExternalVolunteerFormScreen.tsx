@@ -1,0 +1,806 @@
+import axios from 'axios';
+import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
+import { router } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { Image, Modal, ScrollView, Text, TextInput, TouchableOpacity, View, ActivityIndicator, StyleSheet, Platform } from 'react-native';
+import { Ionicons, Feather } from '@expo/vector-icons';
+import { Toast, useToast } from '../components/Toast';
+import { Input } from '../components/ui/Input';
+import { API_URL } from '../constants/api';
+import { useAuth } from '../context/AuthContext';
+import LocationPickerMap from './LocationPickerMap';
+
+const COLORS = {
+  bgTeal: '#66BCB4',
+  bgWhite: '#FFFFFF',
+  primary: '#EC802B',
+  secondary: '#EDC55B',
+  textDark: '#4A3728',
+  textLight: '#8C7A6B',
+  danger: '#E74C3C',
+  grayLight: '#F3F4F6',
+  border: '#E5E7EB'
+};
+
+const FORM_MAX_WIDTH = 750;
+
+const PASO_NOMBRES = ['Tu hogar', 'Convivencia y capacidad', 'Seguridad y compromisos', 'Evidencia'];
+const TOTAL_PASOS = 4;
+
+const HORAS_DISPONIBLES = Array.from({ length: 48 }, (_, i) => {
+  const horas = Math.floor(i / 2);
+  const minutos = i % 2 === 0 ? '00' : '30';
+  const ampm = horas < 12 ? 'AM' : 'PM';
+  const h = horas === 0 ? 12 : horas > 12 ? horas - 12 : horas;
+  return `${String(h).padStart(2, '0')}:${minutos} ${ampm}`;
+});
+
+interface Props { onClose?: () => void; }
+
+export default function ExternalVolunteerFormScreen({ onClose }: Props) {
+  const { setSession, token } = useAuth();
+  const { toast, translateY, showToast } = useToast();
+
+  const [paso, setPaso] = useState(1);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errors, setErrors] = useState<{ [key: string]: string }>({});
+  const [showSubmitError, setShowSubmitError] = useState(false);
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
+  const [registroExitoso, setRegistroExitoso] = useState(false);
+
+  // Modal genérico para selectores
+  const [selectorActivo, setSelectorActivo] = useState<string | null>(null);
+  const [showInfoIdentidad, setShowInfoIdentidad] = useState(false);
+
+  // ─── PASO 1: Tu hogar ───
+  const [pinLocation, setPinLocation] = useState<{ latitud: number; longitud: number }>({ latitud: 19.0414, longitud: -98.2063 });
+  const [ubicacionConfirmada, setUbicacionConfirmada] = useState(false);
+  const [isLoadingGps, setIsLoadingGps] = useState(false);
+  const [calle, setCalle] = useState('');
+  const [numero, setNumero] = useState('');
+  const [colonia, setColonia] = useState('');
+  const [municipio, setMunicipio] = useState('');
+  const [estado, setEstado] = useState('');
+  const [referencia, setReferencia] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [direccionConfirmada, setDireccionConfirmada] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+
+  const [tipoVivienda, setTipoVivienda] = useState('');
+  const [autorizacion, setAutorizacion] = useState('');
+  const [ubicacionAnimal, setUbicacionAnimal] = useState('');
+  const [aceptaVisita, setAceptaVisita] = useState('');
+
+  // ─── PASO 2: Convivencia y capacidad ───
+  const [numAdultos, setNumAdultos] = useState('');
+  const [ninosEdades, setNinosEdades] = useState('');
+  const [otrosAnimales, setOtrosAnimales] = useState('');
+  const [vacunados, setVacunados] = useState('');
+  const [puedeSeparar, setPuedeSeparar] = useState('');
+  const [horasSolo, setHorasSolo] = useState('');
+  const [preferenciaEspecie, setPreferenciaEspecie] = useState<string[]>([]);
+  const [preferenciaTamanio, setPreferenciaTamanio] = useState<string[]>([]);
+  const [tiempoResguardo, setTiempoResguardo] = useState('');
+
+  // ─── PASO 3: Seguridad y compromisos ───
+  const [checkAccesos, setCheckAccesos] = useState(false);
+  const [checkBardas, setCheckBardas] = useState(false);
+  const [checkBalcones, setCheckBalcones] = useState(false);
+  const [checkEspacio, setCheckEspacio] = useState(false);
+  const [checkAislamiento, setCheckAislamiento] = useState(false);
+  const [checkCuarentena, setCheckCuarentena] = useState(false);
+  const [checkNoEntregar, setCheckNoEntregar] = useState(false);
+  const [nombreEmergencia, setNombreEmergencia] = useState('');
+  const [telEmergencia, setTelEmergencia] = useState('');
+
+  // ─── PASO 4: Evidencia y disponibilidad ───
+  const [identificacionUrl, setIdentificacionUrl] = useState('');
+  const [videoUrl, setVideoUrl] = useState('');
+  const [horario1Dia, setHorario1Dia] = useState('');
+  const [horario1Hora, setHorario1Hora] = useState('');
+  const [horario2Dia, setHorario2Dia] = useState('');
+  const [horario2Hora, setHorario2Hora] = useState('');
+  const [horario3Dia, setHorario3Dia] = useState('');
+  const [horario3Hora, setHorario3Hora] = useState('');
+  const [consentimiento, setConsentimiento] = useState(false);
+
+  useEffect(() => {
+    const hasErrors = Object.values(errors).some(e => e !== '');
+    if (!hasErrors) setShowSubmitError(false);
+  }, [errors]);
+
+  const handleCloseRequest = () => setShowCloseConfirm(true);
+
+  const handleSiguiente = () => {
+    let valido = false;
+    if (paso === 1) valido = validarPaso1();
+    if (paso === 2) valido = validarPaso2();
+    if (paso === 3) valido = validarPaso3();
+
+    if (valido) {
+      setErrors({});
+      setShowSubmitError(false);
+      setPaso(paso + 1);
+    } else {
+      setShowSubmitError(true);
+    }
+  };
+
+  const handleAnterior = () => {
+    setErrors({});
+    setShowSubmitError(false);
+    if (paso === 1) handleCloseRequest();
+    else setPaso(paso - 1);
+  };
+
+  // ─── VALIDACIONES ───
+  const validarPaso1 = () => {
+    const newErrors: { [key: string]: string } = {};
+    if (!ubicacionConfirmada) newErrors.ubicacion = 'Ubica tu hogar en el mapa.';
+
+    if (!tipoVivienda) newErrors.tipoVivienda = 'Selecciona una opción.';
+    if (!autorizacion) newErrors.autorizacion = 'Selecciona una opción.';
+    if (!ubicacionAnimal) newErrors.ubicacionAnimal = 'Selecciona una opción.';
+    if (!aceptaVisita) newErrors.aceptaVisita = 'Selecciona una opción.';
+    
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const validarPaso2 = () => {
+    const newErrors: { [key: string]: string } = {};
+    if (!numAdultos) newErrors.numAdultos = 'Obligatorio.';
+    if (!ninosEdades) newErrors.ninosEdades = 'Obligatorio.';
+    if (!otrosAnimales) newErrors.otrosAnimales = 'Obligatorio.';
+    if (!vacunados) newErrors.vacunados = 'Selecciona una opción.';
+    if (!puedeSeparar) newErrors.puedeSeparar = 'Selecciona una opción.';
+    if (!horasSolo) newErrors.horasSolo = 'Obligatorio.';
+    if (preferenciaEspecie.length === 0) newErrors.preferenciaEspecie = 'Selecciona al menos uno.';
+    if (preferenciaTamanio.length === 0) newErrors.preferenciaTamanio = 'Selecciona al menos uno.';
+    if (!tiempoResguardo) newErrors.tiempoResguardo = 'Selecciona el tiempo máximo.';
+    
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const validarPaso3 = () => {
+    const newErrors: { [key: string]: string } = {};
+    // Checklists ya no son obligatorios
+
+    if (!nombreEmergencia.trim()) newErrors.nombreEmergencia = 'Obligatorio.';
+    else if (!/^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/.test(nombreEmergencia)) newErrors.nombreEmergencia = 'Solo letras.';
+
+    if (!telEmergencia.trim()) newErrors.telEmergencia = 'Obligatorio.';
+    else if (!/^\d{10}$/.test(telEmergencia.trim())) newErrors.telEmergencia = '10 dígitos numéricos.';
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const validarPaso4 = () => {
+    const newErrors: { [key: string]: string } = {};
+    if (!identificacionUrl) newErrors.identificacionUrl = 'Debes subir una identificación.';
+    if (!horario1Dia || !horario1Hora) newErrors.horarios = 'Ingresa al menos la primera opción completa.';
+    if (!consentimiento) newErrors.consentimiento = 'Debes aceptar los términos.';
+    
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  // ─── HANDLERS ───
+  const handleRegexChange = (val: string, setter: any, errorKey: string, regex: RegExp, errorMsg: string) => {
+    setter(val);
+    if (val.trim() && !regex.test(val)) setErrors(prev => ({ ...prev, [errorKey]: errorMsg }));
+    else setErrors(prev => ({ ...prev, [errorKey]: '' }));
+  };
+
+  const toggleArray = (item: string, state: string[], setState: any, errorKey: string) => {
+    const isSelected = state.includes(item);
+    const newState = isSelected ? state.filter(i => i !== item) : [...state, item];
+    setState(newState);
+    if (newState.length > 0) setErrors(prev => ({ ...prev, [errorKey]: '' }));
+  };
+
+  // ─── LÓGICA DE SELECTORES MODALES ───
+  const getSelectorOptions = () => {
+    switch (selectorActivo) {
+      case 'adultos': return Array.from({ length: 30 }, (_, i) => String(i + 1));
+      case 'horasSolo': return Array.from({ length: 25 }, (_, i) => String(i));
+      case 'ninos': return ['No hay', 'Bebés (0-3 años)', 'Niños (4-12 años)', 'Adolescentes (13-17 años)', 'Varias edades'];
+      case 'otrosAnimales': return ['Ninguno', '1 Perro', '2+ Perros', '1 Gato', '2+ Gatos', 'Perros y Gatos', 'Aves/Otros'];
+      case 'dia1': case 'dia2': case 'dia3': return ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+      case 'hora1': case 'hora2': case 'hora3': return HORAS_DISPONIBLES;
+      default: return [];
+    }
+  };
+
+  const handleSelectorSelect = (val: string) => {
+    if (selectorActivo === 'adultos') { setNumAdultos(val); setErrors(prev => ({ ...prev, numAdultos: '' })); }
+    if (selectorActivo === 'horasSolo') { setHorasSolo(val); setErrors(prev => ({ ...prev, horasSolo: '' })); }
+    if (selectorActivo === 'ninos') { setNinosEdades(val); setErrors(prev => ({ ...prev, ninosEdades: '' })); }
+    if (selectorActivo === 'otrosAnimales') { setOtrosAnimales(val); setErrors(prev => ({ ...prev, otrosAnimales: '' })); }
+    
+    if (selectorActivo === 'dia1') { setHorario1Dia(val); setErrors(prev => ({ ...prev, horarios: '' })); }
+    if (selectorActivo === 'hora1') { setHorario1Hora(val); setErrors(prev => ({ ...prev, horarios: '' })); }
+    if (selectorActivo === 'dia2') setHorario2Dia(val);
+    if (selectorActivo === 'hora2') setHorario2Hora(val);
+    if (selectorActivo === 'dia3') setHorario3Dia(val);
+    if (selectorActivo === 'hora3') setHorario3Hora(val);
+
+    setSelectorActivo(null);
+  };
+
+  // ─── MAPAS ───
+  const reverseGeocode = async (lat: number, lon: number) => {
+    try {
+      const res = await axios.get('https://nominatim.openstreetmap.org/reverse', { params: { lat, lon, format: 'json', addressdetails: 1 } });
+      const address = res.data.address || {};
+      setCalle(address.road || address.pedestrian || '');
+      setNumero(address.house_number || '');
+      setColonia(address.suburb || address.neighbourhood || '');
+      setMunicipio(address.city || address.town || '');
+      setEstado(address.state || '');
+      setDireccionConfirmada(res.data.display_name || '');
+    } catch (error) {}
+  };
+
+  const handlePinLocationSelect = (latitud: number, longitud: number) => {
+    setPinLocation({ latitud, longitud });
+    setUbicacionConfirmada(true);
+    setErrors((prev) => ({ ...prev, ubicacion: '' }));
+    reverseGeocode(latitud, longitud); 
+  };
+
+  useEffect(() => {
+    if (searchQuery.trim().length < 4) { setSearchResults([]); return; }
+    const timeout = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const res = await axios.get('https://nominatim.openstreetmap.org/search', { params: { q: searchQuery + ', México', format: 'json', addressdetails: 1, limit: 5 } });
+        setSearchResults(res.data);
+      } catch (error) { setSearchResults([]); } finally { setIsSearching(false); }
+    }, 600);
+    return () => clearTimeout(timeout);
+  }, [searchQuery]);
+
+  const handleGetLocation = async () => {
+    setIsLoadingGps(true);
+    if (typeof window !== 'undefined' && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          handlePinLocationSelect(position.coords.latitude, position.coords.longitude);
+          setIsLoadingGps(false);
+        },
+        () => { setIsLoadingGps(false); showToast({ type: 'error', title: 'Error', message: 'Verifica tu GPS.' }); },
+        { enableHighAccuracy: true, timeout: 8000 }
+      );
+    } else { setIsLoadingGps(false); }
+  };
+
+  // ─── MULTIMEDIA ───
+  const handlePickIdentificacion = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 });
+    if (!result.canceled) {
+      setIdentificacionUrl(result.assets[0].uri);
+      setErrors(prev => ({ ...prev, identificacionUrl: '' }));
+    }
+  };
+
+  const handlePickVideo = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Videos, quality: 0.8 });
+    if (!result.canceled) setVideoUrl(result.assets[0].uri);
+  };
+
+  // ─── ENVÍO ───
+  const handleSubmit = async () => {
+    if (!validarPaso4()) { setShowSubmitError(true); return; }
+    setShowSubmitError(false);
+    setIsSubmitting(true);
+    try {
+      setTimeout(() => {
+        setIsSubmitting(false);
+        setRegistroExitoso(true);
+        showToast({ type: 'success', title: '¡Éxito!', message: 'Tu postulación ha sido enviada.' });
+      }, 1500);
+    } catch (error: any) {
+      showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'Error al enviar.' });
+      setIsSubmitting(false);
+    }
+  };
+
+  // ─── COMPONENTES UI ───
+  const SelectInput = ({ label, value, placeholder, onPress, error }: any) => (
+    <View style={{ marginBottom: 16 }}>
+      {label && <Text style={[styles.sectionLabel, { marginTop: 0 }]}>{label}</Text>}
+      <TouchableOpacity onPress={onPress} style={[styles.selectInput, error ? { borderColor: COLORS.danger } : {}]}>
+        <Text style={{ color: value ? COLORS.textDark : COLORS.textLight, fontSize: 15 }}>{value || placeholder}</Text>
+        <Ionicons name="chevron-down" size={20} color={COLORS.textLight} />
+      </TouchableOpacity>
+      {error && <Text style={styles.errorText}>{error}</Text>}
+    </View>
+  );
+
+  const renderHeader = () => (
+    <View style={styles.headerSection}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', zIndex: 10 }}>
+        <TouchableOpacity onPress={handleAnterior} style={styles.headerBackButton}>
+          <Feather name="chevron-left" size={20} color="#FFFFFF" />
+        </TouchableOpacity>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.headerTitle}>Postulación Rescatista</Text>
+          <Text style={styles.headerSubtitle}>Paso {paso} de {TOTAL_PASOS}: {PASO_NOMBRES[paso - 1]}</Text>
+        </View>
+        {onClose && (
+          <TouchableOpacity onPress={handleCloseRequest} style={styles.closeButton}>
+            <Feather name="x" size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+        )}
+      </View>
+      <View style={{ height: 4, backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: 2, marginTop: 18, zIndex: 10 }}>
+        <View style={{ height: 4, backgroundColor: COLORS.secondary, borderRadius: 2, width: `${(paso / TOTAL_PASOS) * 100}%` }} />
+      </View>
+      <Image pointerEvents="none" source={{ uri: 'https://cdn-icons-png.flaticon.com/512/3047/3047928.png' }} style={styles.decorationImage} resizeMode="contain" />
+    </View>
+  );
+
+  const renderChipOptions = (opciones: string[], state: string, setState: any, errorKey: string) => (
+    <View style={styles.animalChips}>
+      {opciones.map((op) => (
+        <TouchableOpacity key={op} onPress={() => { setState(op); setErrors(prev => ({...prev, [errorKey]: ''})) }} 
+          style={[styles.animalChip, { backgroundColor: state === op ? COLORS.primary : COLORS.grayLight }]}>
+          <Text style={{ fontWeight: '700', fontSize: 14, color: state === op ? COLORS.bgWhite : COLORS.textLight }}>{op}</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+
+  const renderCheckbox = (label: string, value: boolean, setValue: any, errorKey?: string) => (
+    <View style={{ marginBottom: 12 }}>
+      <TouchableOpacity onPress={() => { setValue(!value); if (errorKey) setErrors(prev => ({...prev, [errorKey]: ''})) }} style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <Ionicons name={value ? "checkbox" : "square-outline"} size={24} color={value ? COLORS.primary : COLORS.textLight} />
+        <Text style={{ marginLeft: 10, color: COLORS.textDark, flex: 1, fontSize: 15, lineHeight: 22 }}>{label}</Text>
+      </TouchableOpacity>
+      {errorKey && errors[errorKey] && <Text style={styles.errorText}>{errors[errorKey]}</Text>}
+    </View>
+  );
+
+  const renderPaso1 = () => (
+    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <FormSection title="Ubicación Física" subtitle="Ajusta el pin en el mapa en el lugar exacto de resguardo.">
+        <Input placeholder="Buscar dirección" value={searchQuery} onChangeText={setSearchQuery} />
+        {isSearching && <Text style={styles.searchingText}>Buscando...</Text>}
+        {searchResults.length > 0 && (
+          <View style={styles.searchResults}>
+            {searchResults.map((result, idx) => (
+              <TouchableOpacity key={idx} onPress={() => {
+                handlePinLocationSelect(parseFloat(result.lat), parseFloat(result.lon));
+                setSearchQuery(''); setSearchResults([]);
+              }} style={[styles.searchResult, { borderBottomWidth: idx === searchResults.length - 1 ? 0 : 1 }]}>
+                <Text style={styles.searchResultText}>{result.display_name}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+
+        <TouchableOpacity onPress={handleGetLocation} style={styles.locationButton}>
+          <Ionicons name="location" size={18} color={COLORS.bgTeal} />
+          <Text style={styles.locationButtonText}>{isLoadingGps ? 'Obteniendo tu ubicación...' : 'Usar mi ubicación actual'}</Text>
+        </TouchableOpacity>
+
+        <View style={[styles.mapContainer, { borderWidth: errors.ubicacion ? 2 : 0, borderColor: COLORS.danger }]}>
+          <LocationPickerMap selectedPosition={pinLocation} onLocationSelect={handlePinLocationSelect} />
+        </View>
+        {errors.ubicacion && <Text style={styles.errorText}>{errors.ubicacion}</Text>}
+
+        <View style={styles.rowContainer}>
+          <View style={styles.halfWidth}><Input label="Calle" value={calle} onChangeText={setCalle} /></View>
+          <View style={styles.halfWidth}><Input label="Número" value={numero} onChangeText={setNumero} /></View>
+        </View>
+        <View style={styles.rowContainer}>
+          <View style={styles.halfWidth}><Input label="Colonia" value={colonia} onChangeText={setColonia} /></View>
+          <View style={styles.halfWidth}><Input label="Municipio" value={municipio} onChangeText={setMunicipio} /></View>
+        </View>
+        <View style={styles.rowContainer}>
+          <View style={styles.halfWidth}><Input label="Estado" value={estado} onChangeText={setEstado} /></View>
+          <View style={styles.halfWidth}><Input label="Referencia" value={referencia} onChangeText={setReferencia} /></View>
+        </View>
+      </FormSection>
+
+      <Divider />
+
+      <FormSection title="Detalles del Hogar">
+        <Text style={styles.sectionLabel}>Tipo de vivienda</Text>
+        {renderChipOptions(['Casa', 'Departamento', 'Otro'], tipoVivienda, setTipoVivienda, 'tipoVivienda')}
+        {errors.tipoVivienda && <Text style={styles.errorText}>{errors.tipoVivienda}</Text>}
+
+        <Text style={styles.sectionLabel}>¿Tienes autorización del propietario / roomies?</Text>
+        {renderChipOptions(['Sí', 'No', 'Soy propietario único'], autorizacion, setAutorizacion, 'autorizacion')}
+        {errors.autorizacion && <Text style={styles.errorText}>{errors.autorizacion}</Text>}
+
+        <Text style={styles.sectionLabel}>¿Dónde permanecerá el animal?</Text>
+        {renderChipOptions(['Interior', 'Patio protegido', 'Ambos'], ubicacionAnimal, setUbicacionAnimal, 'ubicacionAnimal')}
+        {errors.ubicacionAnimal && <Text style={styles.errorText}>{errors.ubicacionAnimal}</Text>}
+
+        <Text style={styles.sectionLabel}>¿Aceptas una visita de verificación presencial?</Text>
+        {renderChipOptions(['Sí', 'No'], aceptaVisita, setAceptaVisita, 'aceptaVisita')}
+        {errors.aceptaVisita && <Text style={styles.errorText}>{errors.aceptaVisita}</Text>}
+      </FormSection>
+
+      {showSubmitError && <Text style={styles.submitError}>Revisa los campos en rojo arriba.</Text>}
+      <TouchableOpacity onPress={handleSiguiente} style={styles.submitButton}><Text style={styles.submitButtonText}>Siguiente →</Text></TouchableOpacity>
+    </ScrollView>
+  );
+
+  const renderPaso2 = () => (
+    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <FormSection title="Convivencia">
+        <View style={styles.rowContainer}>
+          <View style={styles.halfWidth}>
+            <SelectInput label="Adultos en el hogar" placeholder="Selecciona" value={numAdultos} onPress={() => setSelectorActivo('adultos')} error={errors.numAdultos} />
+          </View>
+          <View style={styles.halfWidth}>
+            <SelectInput label="Horas solo al día" placeholder="Selecciona" value={horasSolo} onPress={() => setSelectorActivo('horasSolo')} error={errors.horasSolo} />
+          </View>
+        </View>
+        
+        <SelectInput label="Niños en el hogar (Edades)" placeholder="Selecciona" value={ninosEdades} onPress={() => setSelectorActivo('ninos')} error={errors.ninosEdades} />
+        <SelectInput label="Otros animales en casa" placeholder="Selecciona" value={otrosAnimales} onPress={() => setSelectorActivo('otrosAnimales')} error={errors.otrosAnimales} />
+        
+        <Text style={styles.sectionLabel}>¿Tus animales están vacunados y esterilizados?</Text>
+        {renderChipOptions(['Sí', 'No', 'No aplica (No tengo)'], vacunados, setVacunados, 'vacunados')}
+        {errors.vacunados && <Text style={styles.errorText}>{errors.vacunados}</Text>}
+
+        <Text style={styles.sectionLabel}>¿Puedes aislar al animal recién llegado los primeros días?</Text>
+        {renderChipOptions(['Sí', 'No'], puedeSeparar, setPuedeSeparar, 'puedeSeparar')}
+        {errors.puedeSeparar && <Text style={styles.errorText}>{errors.puedeSeparar}</Text>}
+      </FormSection>
+
+      <Divider />
+
+      <FormSection title="Capacidad de Resguardo">
+        <View style={{ backgroundColor: 'rgba(236, 128, 43, 0.1)', padding: 16, borderRadius: 16, marginBottom: 16 }}>
+          <Text style={{ color: COLORS.primary, fontWeight: '700' }}>🐾 Capacidad inicial limitada a 1 animal por seguridad. La asociación podrá autorizar más tras la verificación.</Text>
+        </View>
+
+        <Text style={styles.sectionLabel}>Preferencias de especie (Selecciona varias si aplica)</Text>
+        <View style={styles.animalChips}>
+          {['Perros', 'Gatos', 'Aves', 'Otros'].map(op => {
+            const isSelected = preferenciaEspecie.includes(op);
+            return (
+              <TouchableOpacity key={op} onPress={() => toggleArray(op, preferenciaEspecie, setPreferenciaEspecie, 'preferenciaEspecie')} style={[styles.animalChip, { backgroundColor: isSelected ? COLORS.primary : COLORS.grayLight }]}>
+                <Text style={{ fontWeight: '700', fontSize: 14, color: isSelected ? COLORS.bgWhite : COLORS.textLight }}>{op}</Text>
+              </TouchableOpacity>
+            )
+          })}
+        </View>
+        {errors.preferenciaEspecie && <Text style={styles.errorText}>{errors.preferenciaEspecie}</Text>}
+
+        <Text style={styles.sectionLabel}>Tamaños que puedes manejar</Text>
+        <View style={styles.animalChips}>
+          {['Chico', 'Mediano', 'Grande'].map(op => {
+            const isSelected = preferenciaTamanio.includes(op);
+            return (
+              <TouchableOpacity key={op} onPress={() => toggleArray(op, preferenciaTamanio, setPreferenciaTamanio, 'preferenciaTamanio')} style={[styles.animalChip, { backgroundColor: isSelected ? COLORS.secondary : COLORS.grayLight }]}>
+                <Text style={{ fontWeight: '700', fontSize: 14, color: isSelected ? COLORS.textDark : COLORS.textLight }}>{op}</Text>
+              </TouchableOpacity>
+            )
+          })}
+        </View>
+        {errors.preferenciaTamanio && <Text style={styles.errorText}>{errors.preferenciaTamanio}</Text>}
+
+        <Text style={styles.sectionLabel}>Tiempo máximo de resguardo ofrecido</Text>
+        {renderChipOptions(['Una semana', 'Un mes', 'Más de un mes', 'Flexible'], tiempoResguardo, setTiempoResguardo, 'tiempoResguardo')}
+        {errors.tiempoResguardo && <Text style={styles.errorText}>{errors.tiempoResguardo}</Text>}
+      </FormSection>
+
+      {showSubmitError && <Text style={styles.submitError}>Revisa los campos en rojo arriba.</Text>}
+      <TouchableOpacity onPress={handleSiguiente} style={styles.submitButton}><Text style={styles.submitButtonText}>Siguiente →</Text></TouchableOpacity>
+    </ScrollView>
+  );
+
+  const renderPaso3 = () => (
+    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <FormSection title="Checklist de Seguridad (Opcional)" subtitle="Declaro que mi hogar cumple con lo siguiente:">
+        {renderCheckbox('Puertas, ventanas y accesos seguros para evitar escapes.', checkAccesos, setCheckAccesos)}
+        {renderCheckbox('Bardas o protecciones suficientes de acuerdo a las especies que acepto.', checkBardas, setCheckBardas)}
+        {renderCheckbox('NO tengo balcones abiertos, azoteas accesibles, albercas sin protección ni salida directa a la calle.', checkBalcones, setCheckBalcones)}
+        {renderCheckbox('Cuento con espacio ventilado, con sombra, agua constante y zona de descanso.', checkEspacio, setCheckEspacio)}
+      </FormSection>
+
+      <Divider />
+
+      <FormSection title="Compromisos Operativos (Opcional)">
+        {renderCheckbox('Tengo la posibilidad de aislar al animal en sus primeros días de llegada.', checkAislamiento, setCheckAislamiento)}
+        {renderCheckbox('Acepto mantener la cuarentena preventiva y seguir todas las indicaciones médicas de la asociación.', checkCuarentena, setCheckCuarentena)}
+        {renderCheckbox('Me comprometo a NO entregar, dar en adopción ni trasladar al animal sin autorización previa de PawAlert o la Asociación.', checkNoEntregar, setCheckNoEntregar)}
+      </FormSection>
+
+      <Divider />
+
+      <FormSection title="Contacto de Emergencia" subtitle="Por seguridad del rescatista en campo.">
+        <Input label="Nombre de contacto" placeholder="Ej. María Pérez " value={nombreEmergencia} onChangeText={(v) => handleRegexChange(v, setNombreEmergencia, 'nombreEmergencia', /^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/, 'Solo letras')} error={errors.nombreEmergencia} />
+        <Input label="Teléfono de emergencia" placeholder="Ej. 2221234567" value={telEmergencia} onChangeText={(v) => handleRegexChange(v, setTelEmergencia, 'telEmergencia', /^\d{10}$/, '10 dígitos numéricos')} keyboardType="numeric" maxLength={10} error={errors.telEmergencia} />
+      </FormSection>
+
+      {showSubmitError && <Text style={styles.submitError}>Revisa los campos en rojo arriba.</Text>}
+      <TouchableOpacity onPress={handleSiguiente} style={styles.submitButton}><Text style={styles.submitButtonText}>Siguiente →</Text></TouchableOpacity>
+    </ScrollView>
+  );
+
+  const renderPaso4 = () => (
+    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <FormSection title="Evidencia de Identidad">
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+          <Text style={{ fontSize: 13, color: COLORS.textLight, lineHeight: 20, flex: 1 }}>
+            Solo el equipo verificador verá este documento para validar tu postulación.
+          </Text>
+          <TouchableOpacity onPress={() => setShowInfoIdentidad(true)} style={{ marginLeft: 8, padding: 4 }}>
+            <Ionicons name="information-circle" size={24} color={COLORS.primary} />
+          </TouchableOpacity>
+        </View>
+
+        {identificacionUrl ? (
+          <View style={styles.fotoItem}>
+            <Image source={{ uri: identificacionUrl }} style={styles.fotoImage} />
+            <View style={styles.fotoContent}>
+              <Text style={{ fontWeight: '700', color: COLORS.textDark, marginBottom: 4 }}>Identificación cargada</Text>
+              <TouchableOpacity onPress={() => setIdentificacionUrl('')}><Text style={styles.fotoDelete}>Eliminar y re-subir</Text></TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          <TouchableOpacity onPress={handlePickIdentificacion} style={[styles.addPhotoButton, { width: '100%', borderColor: errors.identificacionUrl ? COLORS.danger : COLORS.primary }]}>
+            <Text style={styles.addPhotoText}><Ionicons name="card" size={16}/> Subir Foto de INE/Pasaporte</Text>
+          </TouchableOpacity>
+        )}
+        {errors.identificacionUrl && <Text style={styles.errorText}>{errors.identificacionUrl}</Text>}
+      </FormSection>
+
+      <Divider />
+
+      <FormSection title="Recorrido del Hogar (Opcional pero recomendado)" subtitle="Un video corto mostrando los accesos y el lugar donde dormirá el animal agiliza tu aprobación.">
+        {videoUrl ? (
+          <View style={[styles.fotoItem, { backgroundColor: 'rgba(102, 188, 180, 0.1)' }]}>
+            <Ionicons name="videocam" size={32} color={COLORS.bgTeal} style={{ marginHorizontal: 16 }} />
+            <View style={styles.fotoContent}>
+              <Text style={{ fontWeight: '700', color: COLORS.textDark, marginBottom: 4 }}>Video cargado</Text>
+              <TouchableOpacity onPress={() => setVideoUrl('')}><Text style={styles.fotoDelete}>Eliminar video</Text></TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          <TouchableOpacity onPress={handlePickVideo} style={[styles.addPhotoButton, { width: '100%', borderColor: COLORS.bgTeal }]}>
+            <Text style={{ color: COLORS.bgTeal, fontWeight: '700' }}><Ionicons name="videocam" size={16}/> Subir Video Recorrido</Text>
+          </TouchableOpacity>
+        )}
+      </FormSection>
+
+      <Divider />
+
+      <FormSection title="Disponibilidad para Visita" subtitle="Brinda 3 opciones de horarios (Día y hora) para tu visita de verificación.">
+        <Text style={[styles.sectionLabel, { marginTop: 0 }]}>Opción 1 *</Text>
+        <View style={styles.rowContainer}>
+          <View style={styles.halfWidth}><SelectInput placeholder="Día" value={horario1Dia} onPress={() => setSelectorActivo('dia1')} /></View>
+          <View style={styles.halfWidth}><SelectInput placeholder="Hora" value={horario1Hora} onPress={() => setSelectorActivo('hora1')} /></View>
+        </View>
+        
+        <Text style={[styles.sectionLabel, { marginTop: 0 }]}>Opción 2</Text>
+        <View style={styles.rowContainer}>
+          <View style={styles.halfWidth}><SelectInput placeholder="Día" value={horario2Dia} onPress={() => setSelectorActivo('dia2')} /></View>
+          <View style={styles.halfWidth}><SelectInput placeholder="Hora" value={horario2Hora} onPress={() => setSelectorActivo('hora2')} /></View>
+        </View>
+
+        <Text style={[styles.sectionLabel, { marginTop: 0 }]}>Opción 3</Text>
+        <View style={styles.rowContainer}>
+          <View style={styles.halfWidth}><SelectInput placeholder="Día" value={horario3Dia} onPress={() => setSelectorActivo('dia3')} /></View>
+          <View style={styles.halfWidth}><SelectInput placeholder="Hora" value={horario3Hora} onPress={() => setSelectorActivo('hora3')} /></View>
+        </View>
+
+        {errors.horarios && <Text style={[styles.errorText, {marginTop: -10}]}>{errors.horarios}</Text>}
+      </FormSection>
+
+      <FormSection title="Términos Finales">
+        {renderCheckbox('Doy mi consentimiento para el tratamiento de la evidencia proporcionada y acepto coordinar la visita presencial a mi hogar.', consentimiento, setConsentimiento, 'consentimiento')}
+      </FormSection>
+
+      {showSubmitError && <Text style={styles.submitError}>Revisa los campos en rojo arriba.</Text>}
+      <TouchableOpacity onPress={handleSubmit} disabled={isSubmitting} style={[styles.submitButton, { opacity: isSubmitting ? 0.7 : 1 }]}>
+        {isSubmitting ? <ActivityIndicator color={COLORS.bgWhite} /> : <Text style={styles.submitButtonText}>Enviar Postulación</Text>}
+      </TouchableOpacity>
+    </ScrollView>
+  );
+
+  return (
+    <View style={[styles.outerContainer, { backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' } as any]}>
+      <Toast toast={toast} translateY={translateY} />
+
+      {registroExitoso ? (
+         <View style={[styles.centeredContent, { maxWidth: 500 }]}>
+           <View style={[styles.cardContainer, { padding: 40, alignItems: 'center' }]}>
+             <Ionicons name="checkmark-circle" size={80} color={COLORS.bgTeal} style={{ marginBottom: 20 }} />
+             <Text style={{ fontSize: 24, fontWeight: '900', color: COLORS.textDark, textAlign: 'center', marginBottom: 16 }}>¡Postulación Enviada!</Text>
+             <Text style={{ fontSize: 16, color: COLORS.textLight, textAlign: 'center', lineHeight: 24, marginBottom: 32 }}>Tu información está en revisión segura. Las asociaciones cercanas podrán ver tu perfil anonimizado y se pondrán en contacto para la visita.</Text>
+             <TouchableOpacity onPress={onClose} style={[styles.submitButton, { width: '100%' }]}>
+               <Text style={styles.submitButtonText}>Volver al Inicio</Text>
+             </TouchableOpacity>
+           </View>
+         </View>
+      ) : (
+        <>
+          <View style={[styles.centeredContent]}>
+            <View style={styles.cardContainer}>
+              {renderHeader()}
+              <View style={styles.bodySection}>
+                {paso === 1 && renderPaso1()}
+                {paso === 2 && renderPaso2()}
+                {paso === 3 && renderPaso3()}
+                {paso === 4 && renderPaso4()}
+              </View>
+            </View>
+          </View>
+
+          {/* Modal Selectores Genérico */}
+          <Modal visible={selectorActivo !== null} transparent animationType="fade" onRequestClose={() => setSelectorActivo(null)}>
+            <View style={styles.modalBackdrop}>
+              <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>Selecciona una opción</Text>
+                <ScrollView showsVerticalScrollIndicator={false} style={styles.modalScroll}>
+                  {getSelectorOptions().map((opcion) => (
+                    <TouchableOpacity key={opcion} onPress={() => handleSelectorSelect(opcion)} style={styles.horaOption}>
+                      <Text style={styles.horaText}>{opcion}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+                <TouchableOpacity onPress={() => setSelectorActivo(null)} style={styles.modalCancel}>
+                  <Text style={styles.modalCancelText}>Cancelar</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Modal>
+
+          {/* Modal Información de Identidad */}
+          <Modal visible={showInfoIdentidad} transparent animationType="fade" onRequestClose={() => setShowInfoIdentidad(false)}>
+            <View style={styles.modalBackdrop}>
+              <View style={styles.modalContent}>
+                <Ionicons name="shield-checkmark" size={48} color={COLORS.primary} style={{ alignSelf: 'center', marginBottom: 16 }} />
+                <Text style={styles.modalTitle}>Verificación de Identidad</Text>
+                
+                <Text style={{ fontSize: 15, color: COLORS.textDark, marginBottom: 12, fontWeight: '700' }}>
+                  Documentos válidos:
+                </Text>
+                <Text style={{ fontSize: 14, color: COLORS.textLight, marginBottom: 20, lineHeight: 22 }}>
+                  • Credencial para votar (INE) {"\n"}
+                  • Pasaporte vigente {"\n"}
+                  • Cédula Profesional con fotografía
+                </Text>
+
+                <View style={{ backgroundColor: 'rgba(236, 128, 43, 0.1)', padding: 16, borderRadius: 16, marginBottom: 24 }}>
+                  <Text style={{ color: COLORS.primary, fontWeight: '700', fontSize: 14, lineHeight: 20 }}>
+                    ¡Importante! Una vez que nuestro equipo revise y verifique tu identidad, este documento se borrará permanentemente de nuestra base de datos por tu seguridad y privacidad.
+                  </Text>
+                </View>
+
+                <TouchableOpacity onPress={() => setShowInfoIdentidad(false)} style={styles.submitButton}>
+                  <Text style={styles.submitButtonText}>Entendido</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Modal>
+
+          <Modal visible={showCloseConfirm} transparent animationType="fade" onRequestClose={() => setShowCloseConfirm(false)}>
+            <View style={styles.modalBackdrop}>
+              <View style={styles.confirmModal}>
+                <Text style={styles.confirmTitle}>¿Seguro que deseas salir?</Text>
+                <Text style={styles.confirmMessage}>Los datos ingresados se perderán y tendrás que empezar de nuevo.</Text>
+                <View style={styles.confirmButtons}>
+                  <TouchableOpacity onPress={() => setShowCloseConfirm(false)} style={styles.confirmButtonCancel}>
+                    <Text style={styles.confirmButtonCancelText}>Me quedo</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => { setShowCloseConfirm(false); if (onClose) onClose(); }} style={styles.confirmButtonExit}>
+                    <Text style={styles.confirmButtonExitText}>Sí, salir</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </Modal>
+        </>
+      )}
+    </View>
+  );
+}
+
+// ── Componentes internos ──────
+function FormSection({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
+  return (
+    <View style={styles.formSection}>
+      <Text style={styles.formSectionTitle}>{title}</Text>
+      {subtitle && <Text style={styles.formSectionSubtitle}>{subtitle}</Text>}
+      {children}
+    </View>
+  );
+}
+
+function Divider() {
+  return <View style={styles.divider} />;
+}
+
+// ── Estilos ────────────────────────────────
+const styles = StyleSheet.create({
+  outerContainer: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999, backgroundColor: 'rgba(0, 0, 0, 0.4)' },
+  centeredContent: { width: '100%', maxWidth: FORM_MAX_WIDTH, maxHeight: '90%', alignSelf: 'center' },
+  cardContainer: { flex: 1, backgroundColor: COLORS.bgWhite, borderRadius: 32, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.25, shadowRadius: 20, elevation: 15, flexDirection: 'column' },
+  headerSection: { paddingHorizontal: 32, paddingTop: 24, paddingBottom: 32, backgroundColor: COLORS.bgTeal, position: 'relative', zIndex: 1 },
+  headerTitle: { fontSize: 24, fontWeight: '900', color: COLORS.bgWhite },
+  headerSubtitle: { fontSize: 13, fontWeight: '600', color: COLORS.bgWhite, opacity: 0.9, marginTop: 4 },
+  headerBackButton: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  closeButton: { backgroundColor: 'rgba(255,255,255,0.3)', padding: 8, borderRadius: 20 },
+  decorationImage: { width: 120, height: 120, position: 'absolute', bottom: -10, right: 30, zIndex: 0 },
+  bodySection: { flex: 1, backgroundColor: COLORS.bgWhite, borderTopLeftRadius: 40, borderTopRightRadius: 40, paddingHorizontal: 32, paddingTop: 32, paddingBottom: 20, zIndex: 2 },
+  scrollContent: { paddingBottom: 40 },
+  formSection: { marginBottom: 24 },
+  formSectionTitle: { fontSize: 20, fontWeight: '800', color: COLORS.textDark, marginBottom: 4 },
+  formSectionSubtitle: { fontSize: 13, color: COLORS.textLight, marginBottom: 16, lineHeight: 20 },
+  rowContainer: { flexDirection: 'row', gap: 16, marginBottom: 16 },
+  halfWidth: { flex: 1 },
+  charCounter: { textAlign: 'right', color: COLORS.textLight, fontSize: 12, marginTop: -10, marginBottom: 16 },
+  sectionLabel: { fontSize: 14, fontWeight: '700', color: COLORS.textDark, marginBottom: 8, marginTop: 8 },
+  logoPreview: { alignSelf: 'flex-start', position: 'relative', marginBottom: 16 },
+  logoImage: { width: 100, height: 100, borderRadius: 30 },
+  logoDeleteButton: { position: 'absolute', top: -10, right: -10, backgroundColor: COLORS.bgWhite, padding: 6, borderRadius: 20 },
+  uploadButton: { backgroundColor: COLORS.grayLight, height: 100, width: 150, borderRadius: 24, borderWidth: 2, borderStyle: 'dashed', borderColor: COLORS.border, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
+  uploadText: { color: COLORS.textLight, fontWeight: '600', marginTop: 4 },
+  divider: { height: 1, backgroundColor: COLORS.border, marginVertical: 24 },
+  daysContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
+  dayChip: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20 },
+  dayChipText: { fontWeight: '700', fontSize: 13 },
+  timeContainer: { flexDirection: 'row', gap: 12, marginBottom: 24 },
+  timeLabel: { fontSize: 12, color: COLORS.textLight, marginBottom: 4, fontWeight: '700' },
+  timeButton: { backgroundColor: COLORS.grayLight, borderRadius: 16, padding: 16 },
+  timeButtonText: { fontWeight: '600' },
+  animalLabel: { marginTop: 24 },
+  required: { color: COLORS.danger },
+  animalChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 },
+  animalChip: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20 },
+  errorText: { color: COLORS.danger, fontSize: 12, marginTop: 4, marginBottom: 16 },
+  searchingText: { fontSize: 12, color: COLORS.textLight, marginTop: -8, marginBottom: 10 },
+  searchResults: { backgroundColor: COLORS.bgWhite, borderWidth: 1, borderColor: COLORS.border, borderRadius: 16, marginTop: -10, marginBottom: 16, overflow: 'hidden' },
+  searchResult: { padding: 14, borderBottomColor: COLORS.grayLight },
+  searchResultText: { fontSize: 13, color: COLORS.textDark },
+  locationButton: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
+  locationButtonText: { fontSize: 14, color: COLORS.bgTeal, fontWeight: '700', marginLeft: 4 },
+  mapContainer: { borderRadius: 24, overflow: 'hidden', marginBottom: 8 },
+  directionConfirm: { backgroundColor: 'rgba(102, 188, 180, 0.1)', padding: 12, borderRadius: 12, marginBottom: 16 },
+  directionConfirmText: { fontSize: 13, color: COLORS.textDark },
+  fotoItem: { flexDirection: 'row', gap: 16, backgroundColor: COLORS.grayLight, padding: 12, borderRadius: 20, marginBottom: 12, alignItems: 'center' },
+  fotoImage: { width: 70, height: 70, borderRadius: 12 },
+  fotoContent: { flex: 1, justifyContent: 'center' },
+  fotoInput: { fontSize: 13, color: COLORS.textDark, borderBottomWidth: 1, borderBottomColor: COLORS.border, paddingBottom: 4, marginBottom: 8 },
+  fotoDelete: { color: COLORS.danger, fontWeight: '700', fontSize: 12 },
+  addPhotoButton: { padding: 16, width: 200, backgroundColor: 'rgba(236, 128, 43, 0.1)', borderRadius: 20, alignItems: 'center', borderWidth: 2, borderColor: COLORS.primary, borderStyle: 'dashed' },
+  addPhotoText: { color: COLORS.primary, fontWeight: '700' },
+  submitError: { color: COLORS.danger, textAlign: 'center', marginBottom: 12, fontWeight: '700', fontSize: 14 },
+  submitButton: { backgroundColor: COLORS.primary, paddingVertical: 18, borderRadius: 24, alignItems: 'center', marginBottom: 16 },
+  submitButtonText: { color: COLORS.bgWhite, fontWeight: '900', fontSize: 18 },
+  
+  // Estilos Modal Selectores
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 16 },
+  modalContent: { backgroundColor: COLORS.bgWhite, width: '100%', maxWidth: 400, borderRadius: 24, padding: 32, maxHeight: '60%' },
+  modalTitle: { fontSize: 20, fontWeight: '800', color: COLORS.textDark, textAlign: 'center', marginBottom: 20 },
+  modalScroll: { marginBottom: 16 },
+  horaOption: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: COLORS.grayLight },
+  horaText: { fontSize: 16, color: COLORS.textDark, textAlign: 'center', fontWeight: '500' },
+  modalCancel: { alignItems: 'center', marginTop: 20, backgroundColor: COLORS.grayLight, padding: 16, borderRadius: 20 },
+  modalCancelText: { color: COLORS.textDark, fontWeight: '700' },
+  
+  // Custom Select Input Style
+  selectInput: { borderWidth: 1.5, borderColor: COLORS.border, borderRadius: 16, padding: 16, backgroundColor: COLORS.bgWhite, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+
+  confirmModal: { backgroundColor: COLORS.bgWhite, borderRadius: 32, padding: 32, width: '100%', maxWidth: 400 },
+  confirmTitle: { fontSize: 22, fontWeight: '800', color: COLORS.textDark, textAlign: 'center', marginBottom: 12 },
+  confirmMessage: { fontSize: 15, color: COLORS.textLight, textAlign: 'center', marginBottom: 24, lineHeight: 22 },
+  confirmButtons: { flexDirection: 'row', gap: 12 },
+  confirmButtonCancel: { flex: 1, paddingVertical: 16, borderRadius: 20, backgroundColor: COLORS.grayLight, alignItems: 'center' },
+  confirmButtonCancelText: { color: COLORS.textDark, fontWeight: '700' },
+  confirmButtonExit: { flex: 1, paddingVertical: 16, borderRadius: 20, backgroundColor: COLORS.danger, alignItems: 'center' },
+  confirmButtonExitText: { color: COLORS.bgWhite, fontWeight: '700' },
+});
