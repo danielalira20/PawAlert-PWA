@@ -241,6 +241,7 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
     reporte_creado: { label: 'Reporte creado', icon: 'flag-outline' },
     hito_encontre_animal: { label: 'Animal encontrado', icon: 'paw-outline' },
     hito_llegue_refugio: { label: 'Llegada al refugio', icon: 'home-outline' },
+    caso_cerrado: { label: 'Caso cerrado', icon: 'checkmark-done-circle-outline' },
   };
 
 
@@ -480,7 +481,7 @@ const confirmarReactivar = async () => {
   }, [info?.estado, token]);
 
   useEffect(() => {
-    if (reporteSeleccionado && subFiltroAceptadas === 'por_cerrar') {
+    if (reporteSeleccionado && (subFiltroAceptadas === 'por_cerrar' || subFiltroAceptadas === 'completados')) {
       cargarHistorialReporte(reporteSeleccionado.reporte_id);
     } else {
       setHistorialTimeline(null);
@@ -768,6 +769,34 @@ const confirmarReactivar = async () => {
     }
   };
 
+  // Mismo mecanismo que ya usa el flujo de staff para subir fotos de hitos
+  // (useStaffReports.ts: subirFotoHito) — incluyendo el manejo de blob URI
+  // en web, que ImagePicker regresa como "blob:..." y no se puede mandar
+  // tal cual en un FormData.
+  const subirFotoCierre = async (reporteId: string, fotoUri: string): Promise<string | null> => {
+    try {
+      const formData = new FormData();
+      if (Platform.OS === 'web') {
+        const res = await fetch(fotoUri);
+        const blob = await res.blob();
+        const file = new File([blob], `cierre_${Date.now()}.jpg`, { type: 'image/jpeg' });
+        formData.append('foto', file);
+      } else {
+        formData.append('foto', {
+          uri: fotoUri,
+          name: `cierre_${Date.now()}.jpg`,
+          type: 'image/jpeg',
+        } as any);
+      }
+      const res = await axios.post(`${API_URL}/reports/${reporteId}/hitos/foto`, formData, {
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' },
+      });
+      return res.data.foto_url;
+    } catch {
+      return null;
+    }
+  };
+
   const registrarCierre = async () => {
     if (!reporteAccionId || !estadoCierre) {
       showToast({ type: 'warning', title: 'Faltan datos', message: 'Selecciona cómo concluyó el rescate.' });
@@ -775,7 +804,13 @@ const confirmarReactivar = async () => {
     }
     setIsSubmittingAccion(true);
     try {
-      await axios.patch(`${API_URL}/reports/${reporteAccionId}/status`, { estado: 'cerrado', conclusion: estadoCierre, notas: notasHito.trim() }, { headers: { Authorization: `Bearer ${token}` } });
+      // La foto es opcional: si falla la subida o no se adjuntó ninguna,
+      // el cierre sigue igual que antes, solo sin foto_url en el evento.
+      let foto_url: string | null = null;
+      if (fotoHito) {
+        foto_url = await subirFotoCierre(reporteAccionId, fotoHito);
+      }
+      await axios.patch(`${API_URL}/reports/${reporteAccionId}/status`, { estado: 'cerrado', conclusion: estadoCierre, notas: notasHito.trim(), foto_url }, { headers: { Authorization: `Bearer ${token}` } });
       await cargarReportes();
       showToast({ type: 'success', title: 'Caso cerrado', message: 'El rescate ha finalizado correctamente.' });
     } catch (error: any) {
@@ -1281,7 +1316,7 @@ const confirmarReactivar = async () => {
                                 // El staff ya mandó su hito final ("llegué al refugio") — ya
                                 // se puede cerrar el caso formalmente.
                                 <View style={{ gap: 10 }}>
-                                  <TouchableOpacity onPress={() => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=$${reporte.latitud},${reporte.longitud}`)} style={{ backgroundColor: COLORS.primary, paddingVertical: 14, borderRadius: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}>
+                                  <TouchableOpacity onPress={() => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${reporte.latitud},${reporte.longitud}`)} style={{ backgroundColor: COLORS.primary, paddingVertical: 14, borderRadius: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}>
                                     <Ionicons name="map" size={16} color={COLORS.white} style={{ marginRight: 6 }} />
                                     <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Cómo llegar</Text>
                                   </TouchableOpacity>
@@ -1294,7 +1329,7 @@ const confirmarReactivar = async () => {
                                 // "Hito rescate" NO va aquí — le pertenece al dashboard del
                                 // staff (el backend lo rechaza con 403 si alguien más lo llama).
                                 // La asociación solo monitorea mientras tanto.
-                                <TouchableOpacity onPress={() => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=$${reporte.latitud},${reporte.longitud}`)} style={{ backgroundColor: COLORS.primary, paddingVertical: 14, borderRadius: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}>
+                                <TouchableOpacity onPress={() => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${reporte.latitud},${reporte.longitud}`)} style={{ backgroundColor: COLORS.primary, paddingVertical: 14, borderRadius: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}>
                                   <Ionicons name="map" size={16} color={COLORS.white} style={{ marginRight: 6 }} />
                                   <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Cómo llegar</Text>
                                 </TouchableOpacity>
@@ -1515,7 +1550,7 @@ const confirmarReactivar = async () => {
       {reporteSeleccionado && (
         <Modal visible={true} transparent animationType="slide">
           <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
-            <View style={{ backgroundColor: COLORS.cardBg, borderRadius: 32, padding: 32, width: '100%', maxWidth: 500, maxHeight: '90%', position: 'relative' }}>
+            <View style={{ backgroundColor: COLORS.cardBg, borderRadius: 32, padding: 32, width: '100%', maxWidth: 500, maxHeight: '90%', position: 'relative', overflow: 'hidden' }}>
               <TouchableOpacity
                 onPress={() => setReporteSeleccionado(null)}
                 hitSlop={8}
@@ -1523,7 +1558,7 @@ const confirmarReactivar = async () => {
               >
                 <Ionicons name="close" size={20} color={COLORS.textDark} />
               </TouchableOpacity>
-              <ScrollView showsVerticalScrollIndicator={false}>
+              <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={true}>
 
                 {/* ─── Foto(s) del reporte ─── */}
               {(() => {
@@ -1591,8 +1626,8 @@ const confirmarReactivar = async () => {
                 <Text style={{ fontSize: 18, fontWeight: '800', color: COLORS.textDark, marginBottom: 8 }}>Ubicación</Text>
                 <Text style={{ fontSize: 15, color: COLORS.textLight, lineHeight: 22 }}>{[reporteSeleccionado.calle, reporteSeleccionado.colonia, reporteSeleccionado.municipio].filter(Boolean).join(', ')}</Text>
 
-                {/* ── Línea de tiempo: solo para el sub-filtro "Por cerrar" ── */}
-                {subFiltroAceptadas === 'por_cerrar' && (
+                {/* ── Línea de tiempo: sub-filtros "Por cerrar" y "Completados" ── */}
+                {(subFiltroAceptadas === 'por_cerrar' || subFiltroAceptadas === 'completados') && (
                   <View style={{ marginTop: 24 }}>
                     <Text style={{ fontSize: 18, fontWeight: '800', color: COLORS.textDark, marginBottom: 12 }}>Línea de tiempo</Text>
 
