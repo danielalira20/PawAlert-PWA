@@ -28,13 +28,13 @@ const FORM_MAX_WIDTH = 750;
 const PASO_NOMBRES = ['Tu hogar', 'Convivencia y capacidad', 'Seguridad y compromisos', 'Evidencia'];
 const TOTAL_PASOS = 4;
 
-const HORAS_DISPONIBLES = Array.from({ length: 48 }, (_, i) => {
-  const horas = Math.floor(i / 2);
-  const minutos = i % 2 === 0 ? '00' : '30';
-  const ampm = horas < 12 ? 'AM' : 'PM';
-  const h = horas === 0 ? 12 : horas > 12 ? horas - 12 : horas;
-  return `${String(h).padStart(2, '0')}:${minutos} ${ampm}`;
-});
+const HORAS_DISPONIBLES = [
+  '07:00 AM', '07:30 AM', '08:00 AM', '08:30 AM', '09:00 AM', '09:30 AM',
+  '10:00 AM', '10:30 AM', '11:00 AM', '11:30 AM', '12:00 PM', '12:30 PM',
+  '01:00 PM', '01:30 PM', '02:00 PM', '02:30 PM', '03:00 PM', '03:30 PM',
+  '04:00 PM', '04:30 PM', '05:00 PM', '05:30 PM', '06:00 PM', '06:30 PM',
+  '07:00 PM'
+];
 
 interface Props { onClose?: () => void; }
 
@@ -69,6 +69,9 @@ export default function ExternalVolunteerFormScreen({ onClose }: Props) {
   const [isSearching, setIsSearching] = useState(false);
 
   const [tipoVivienda, setTipoVivienda] = useState('');
+  const [subcategoriaVivienda, setSubcategoriaVivienda] = useState('');
+  const [customViviendaInput, setCustomViviendaInput] = useState('');
+  
   const [autorizacion, setAutorizacion] = useState('');
   const [ubicacionAnimal, setUbicacionAnimal] = useState('');
   const [aceptaVisita, setAceptaVisita] = useState('');
@@ -81,17 +84,24 @@ export default function ExternalVolunteerFormScreen({ onClose }: Props) {
   const [puedeSeparar, setPuedeSeparar] = useState('');
   const [horasSolo, setHorasSolo] = useState('');
   const [preferenciaEspecie, setPreferenciaEspecie] = useState<string[]>([]);
+  const [subcategoriaOtroEspecie, setSubcategoriaOtroEspecie] = useState('');
+  const [customOtroEspecieInput, setCustomOtroEspecieInput] = useState('');
   const [preferenciaTamanio, setPreferenciaTamanio] = useState<string[]>([]);
   const [tiempoResguardo, setTiempoResguardo] = useState('');
+  const [tiempoResguardoDias, setTiempoResguardoDias] = useState('');
 
   // ─── PASO 3: Seguridad y compromisos ───
   const [checkAccesos, setCheckAccesos] = useState(false);
   const [checkBardas, setCheckBardas] = useState(false);
   const [checkBalcones, setCheckBalcones] = useState(false);
   const [checkEspacio, setCheckEspacio] = useState(false);
+  const [checkNingunoSeguridad, setCheckNingunoSeguridad] = useState(false);
+
   const [checkAislamiento, setCheckAislamiento] = useState(false);
   const [checkCuarentena, setCheckCuarentena] = useState(false);
   const [checkNoEntregar, setCheckNoEntregar] = useState(false);
+  const [checkNingunoCompromiso, setCheckNingunoCompromiso] = useState(false);
+
   const [nombreEmergencia, setNombreEmergencia] = useState('');
   const [telEmergencia, setTelEmergencia] = useState('');
 
@@ -141,6 +151,11 @@ export default function ExternalVolunteerFormScreen({ onClose }: Props) {
     if (!ubicacionConfirmada) newErrors.ubicacion = 'Ubica tu hogar en el mapa.';
 
     if (!tipoVivienda) newErrors.tipoVivienda = 'Selecciona una opción.';
+    else if (tipoVivienda === 'Otro') {
+      if (!subcategoriaVivienda) newErrors.subcategoriaVivienda = 'Selecciona la categoría.';
+      else if (subcategoriaVivienda === 'Otra específica' && !customViviendaInput.trim()) newErrors.customViviendaInput = 'Especifica el tipo de vivienda.';
+    }
+
     if (!autorizacion) newErrors.autorizacion = 'Selecciona una opción.';
     if (!ubicacionAnimal) newErrors.ubicacionAnimal = 'Selecciona una opción.';
     if (!aceptaVisita) newErrors.aceptaVisita = 'Selecciona una opción.';
@@ -157,9 +172,17 @@ export default function ExternalVolunteerFormScreen({ onClose }: Props) {
     if (!vacunados) newErrors.vacunados = 'Selecciona una opción.';
     if (!puedeSeparar) newErrors.puedeSeparar = 'Selecciona una opción.';
     if (!horasSolo) newErrors.horasSolo = 'Obligatorio.';
+    
     if (preferenciaEspecie.length === 0) newErrors.preferenciaEspecie = 'Selecciona al menos uno.';
+    if (preferenciaEspecie.includes('Otros')) {
+      if (!subcategoriaOtroEspecie) newErrors.subcategoriaOtroEspecie = 'Selecciona la categoría.';
+      else if (subcategoriaOtroEspecie === 'Otro' && !customOtroEspecieInput.trim()) newErrors.customOtroEspecieInput = 'Especifica el animal.';
+    }
+
     if (preferenciaTamanio.length === 0) newErrors.preferenciaTamanio = 'Selecciona al menos uno.';
+    
     if (!tiempoResguardo) newErrors.tiempoResguardo = 'Selecciona el tiempo máximo.';
+    else if (tiempoResguardo === 'Flexible' && !tiempoResguardoDias.trim()) newErrors.tiempoResguardoDias = 'Indica el aproximado de días.';
     
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -167,7 +190,14 @@ export default function ExternalVolunteerFormScreen({ onClose }: Props) {
 
   const validarPaso3 = () => {
     const newErrors: { [key: string]: string } = {};
-    // Checklists ya no son obligatorios
+
+    if (!checkAccesos && !checkBardas && !checkBalcones && !checkEspacio && !checkNingunoSeguridad) {
+      newErrors.seguridadGeneral = 'Debes marcar al menos una opción o indicar que no cumples con ninguna.';
+    }
+
+    if (!checkAislamiento && !checkCuarentena && !checkNoEntregar && !checkNingunoCompromiso) {
+      newErrors.compromisosGeneral = 'Debes marcar al menos una opción o indicar que no cumples con ninguna.';
+    }
 
     if (!nombreEmergencia.trim()) newErrors.nombreEmergencia = 'Obligatorio.';
     else if (!/^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/.test(nombreEmergencia)) newErrors.nombreEmergencia = 'Solo letras.';
@@ -203,10 +233,38 @@ export default function ExternalVolunteerFormScreen({ onClose }: Props) {
     if (newState.length > 0) setErrors(prev => ({ ...prev, [errorKey]: '' }));
   };
 
+  const handleSeguridadCheck = (setter: any, value: boolean) => {
+    setter(value);
+    if (value) setCheckNingunoSeguridad(false);
+    setErrors(prev => ({...prev, seguridadGeneral: ''}));
+  };
+
+  const handleNingunoSeguridad = (value: boolean) => {
+    setCheckNingunoSeguridad(value);
+    if (value) {
+      setCheckAccesos(false); setCheckBardas(false); setCheckBalcones(false); setCheckEspacio(false);
+    }
+    setErrors(prev => ({...prev, seguridadGeneral: ''}));
+  };
+
+  const handleCompromisoCheck = (setter: any, value: boolean) => {
+    setter(value);
+    if (value) setCheckNingunoCompromiso(false);
+    setErrors(prev => ({...prev, compromisosGeneral: ''}));
+  };
+
+  const handleNingunoCompromiso = (value: boolean) => {
+    setCheckNingunoCompromiso(value);
+    if (value) {
+      setCheckAislamiento(false); setCheckCuarentena(false); setCheckNoEntregar(false);
+    }
+    setErrors(prev => ({...prev, compromisosGeneral: ''}));
+  };
+
   // ─── LÓGICA DE SELECTORES MODALES ───
   const getSelectorOptions = () => {
     switch (selectorActivo) {
-      case 'adultos': return Array.from({ length: 30 }, (_, i) => String(i + 1));
+      case 'adultos': return Array.from({ length: 20 }, (_, i) => String(i + 1));
       case 'horasSolo': return Array.from({ length: 25 }, (_, i) => String(i));
       case 'ninos': return ['No hay', 'Bebés (0-3 años)', 'Niños (4-12 años)', 'Adolescentes (13-17 años)', 'Varias edades'];
       case 'otrosAnimales': return ['Ninguno', '1 Perro', '2+ Perros', '1 Gato', '2+ Gatos', 'Perros y Gatos', 'Aves/Otros'];
@@ -232,15 +290,15 @@ export default function ExternalVolunteerFormScreen({ onClose }: Props) {
     setSelectorActivo(null);
   };
 
-  // ─── MAPAS ───
+// ─── MAPAS ───
   const reverseGeocode = async (lat: number, lon: number) => {
     try {
       const res = await axios.get('https://nominatim.openstreetmap.org/reverse', { params: { lat, lon, format: 'json', addressdetails: 1 } });
       const address = res.data.address || {};
-      setCalle(address.road || address.pedestrian || '');
+      setCalle(address.road || address.pedestrian || address.square || address.footway || address.path || '');
       setNumero(address.house_number || '');
-      setColonia(address.suburb || address.neighbourhood || '');
-      setMunicipio(address.city || address.town || '');
+      setColonia(address.suburb || address.neighbourhood || address.colonia || address.city_district || address.quarter || address.residential || address.village || address.hamlet || address.borough || '');
+      setMunicipio(address.city || address.town || address.municipality || address.county || '');
       setEstado(address.state || '');
       setDireccionConfirmada(res.data.display_name || '');
     } catch (error) {}
@@ -251,6 +309,24 @@ export default function ExternalVolunteerFormScreen({ onClose }: Props) {
     setUbicacionConfirmada(true);
     setErrors((prev) => ({ ...prev, ubicacion: '' }));
     reverseGeocode(latitud, longitud); 
+  };
+
+  const handleSelectSearchResult = (result: any) => {
+    const lat = parseFloat(result.lat);
+    const lon = parseFloat(result.lon);
+    const address = result.address || {};
+    
+    setPinLocation({ latitud: lat, longitud: lon });
+    setUbicacionConfirmada(true);
+    setCalle(address.road || address.pedestrian || address.square || address.footway || address.path || result.name || '');
+    setNumero(address.house_number || '');
+    setColonia(address.suburb || address.neighbourhood || address.colonia || address.city_district || address.quarter || address.residential || address.village || address.hamlet || address.borough || '');
+    setMunicipio(address.city || address.town || address.municipality || address.county || '');
+    setEstado(address.state || '');
+    setDireccionConfirmada(result.display_name);
+    setSearchQuery('');
+    setSearchResults([]);
+    setErrors((prev) => ({ ...prev, ubicacion: '' }));
   };
 
   useEffect(() => {
@@ -394,6 +470,16 @@ export default function ExternalVolunteerFormScreen({ onClose }: Props) {
         </View>
         {errors.ubicacion && <Text style={styles.errorText}>{errors.ubicacion}</Text>}
 
+        {/* --- NUEVA TARJETA AZUL DE DIRECCIÓN CONFIRMADA --- */}
+        {direccionConfirmada !== '' && (
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', backgroundColor: '#EAF6FF', padding: 10, borderRadius: 8, marginTop: 8, marginBottom: 16 }}>
+            <Feather name="map-pin" size={14} color="#2C3E50" style={{ marginRight: 6, marginTop: 2 }} />
+            <Text style={{ fontSize: 12, color: '#2C3E50', flex: 1 }}>
+              Ubicación seleccionada: <Text style={{ fontWeight: '600' }}>{direccionConfirmada}</Text>
+            </Text>
+          </View>
+        )}
+
         <View style={styles.rowContainer}>
           <View style={styles.halfWidth}><Input label="Calle" value={calle} onChangeText={setCalle} /></View>
           <View style={styles.halfWidth}><Input label="Número" value={numero} onChangeText={setNumero} /></View>
@@ -413,6 +499,19 @@ export default function ExternalVolunteerFormScreen({ onClose }: Props) {
       <FormSection title="Detalles del Hogar">
         <Text style={styles.sectionLabel}>Tipo de vivienda</Text>
         {renderChipOptions(['Casa', 'Departamento', 'Otro'], tipoVivienda, setTipoVivienda, 'tipoVivienda')}
+        
+        {tipoVivienda === 'Otro' && (
+          <View style={{ marginTop: 12, padding: 12, backgroundColor: COLORS.grayLight, borderRadius: 16 }}>
+            <Text style={styles.sectionLabel}>¿Qué tipo de lugar es?</Text>
+            {renderChipOptions(['Quinta', 'Local comercial', 'Rancho', 'Terreno/Lote', 'Oficina', 'Otra específica'], subcategoriaVivienda, setSubcategoriaVivienda, 'subcategoriaVivienda')}
+            {subcategoriaVivienda === 'Otra específica' && (
+              <View style={{ marginTop: 8 }}>
+                <Input placeholder="Especifique el tipo de vivienda" value={customViviendaInput} onChangeText={(v) => {setCustomViviendaInput(v); setErrors(prev=>({...prev, customViviendaInput: ''}))}} error={errors.customViviendaInput} />
+              </View>
+            )}
+            {errors.subcategoriaVivienda && <Text style={styles.errorText}>{errors.subcategoriaVivienda}</Text>}
+          </View>
+        )}
         {errors.tipoVivienda && <Text style={styles.errorText}>{errors.tipoVivienda}</Text>}
 
         <Text style={styles.sectionLabel}>¿Tienes autorización del propietario / roomies?</Text>
@@ -438,10 +537,10 @@ export default function ExternalVolunteerFormScreen({ onClose }: Props) {
       <FormSection title="Convivencia">
         <View style={styles.rowContainer}>
           <View style={styles.halfWidth}>
-            <SelectInput label="Adultos en el hogar" placeholder="Selecciona" value={numAdultos} onPress={() => setSelectorActivo('adultos')} error={errors.numAdultos} />
+            <SelectInput label="Adultos en el hogar (Mayores de 18 años)" placeholder="Selecciona" value={numAdultos} onPress={() => setSelectorActivo('adultos')} error={errors.numAdultos} />
           </View>
           <View style={styles.halfWidth}>
-            <SelectInput label="Horas solo al día" placeholder="Selecciona" value={horasSolo} onPress={() => setSelectorActivo('horasSolo')} error={errors.horasSolo} />
+            <SelectInput label="Horas al día que el animal pasaría solo" placeholder="Selecciona" value={horasSolo} onPress={() => setSelectorActivo('horasSolo')} error={errors.horasSolo} />
           </View>
         </View>
         
@@ -466,7 +565,7 @@ export default function ExternalVolunteerFormScreen({ onClose }: Props) {
 
         <Text style={styles.sectionLabel}>Preferencias de especie (Selecciona varias si aplica)</Text>
         <View style={styles.animalChips}>
-          {['Perros', 'Gatos', 'Aves', 'Otros'].map(op => {
+          {['Perros', 'Gatos', 'Otros'].map(op => {
             const isSelected = preferenciaEspecie.includes(op);
             return (
               <TouchableOpacity key={op} onPress={() => toggleArray(op, preferenciaEspecie, setPreferenciaEspecie, 'preferenciaEspecie')} style={[styles.animalChip, { backgroundColor: isSelected ? COLORS.primary : COLORS.grayLight }]}>
@@ -476,6 +575,19 @@ export default function ExternalVolunteerFormScreen({ onClose }: Props) {
           })}
         </View>
         {errors.preferenciaEspecie && <Text style={styles.errorText}>{errors.preferenciaEspecie}</Text>}
+
+        {preferenciaEspecie.includes('Otros') && (
+          <View style={{ marginTop: 12, padding: 12, backgroundColor: COLORS.grayLight, borderRadius: 16 }}>
+            <Text style={styles.sectionLabel}>Categoría del animal</Text>
+            {renderChipOptions(['Ave', 'Reptil', 'Roedor', 'Fauna silvestre', 'Otro'], subcategoriaOtroEspecie, setSubcategoriaOtroEspecie, 'subcategoriaOtroEspecie')}
+            {subcategoriaOtroEspecie === 'Otro' && (
+              <View style={{ marginTop: 8 }}>
+                <Input placeholder="Especifica qué animal" value={customOtroEspecieInput} onChangeText={(v) => {setCustomOtroEspecieInput(v); setErrors(prev=>({...prev, customOtroEspecieInput: ''}))}} error={errors.customOtroEspecieInput} />
+              </View>
+            )}
+            {errors.subcategoriaOtroEspecie && <Text style={styles.errorText}>{errors.subcategoriaOtroEspecie}</Text>}
+          </View>
+        )}
 
         <Text style={styles.sectionLabel}>Tamaños que puedes manejar</Text>
         <View style={styles.animalChips}>
@@ -492,6 +604,21 @@ export default function ExternalVolunteerFormScreen({ onClose }: Props) {
 
         <Text style={styles.sectionLabel}>Tiempo máximo de resguardo ofrecido</Text>
         {renderChipOptions(['Una semana', 'Un mes', 'Más de un mes', 'Flexible'], tiempoResguardo, setTiempoResguardo, 'tiempoResguardo')}
+        {tiempoResguardo === 'Flexible' && (
+          <View style={{ marginTop: 8 }}>
+            <Input 
+              label="¿Aproximadamente cuántos días?" 
+              keyboardType="numeric" 
+              value={tiempoResguardoDias} 
+              onChangeText={(v) => {
+                setTiempoResguardoDias(v.replace(/[^0-9]/g, '')); 
+                setErrors(prev=>({...prev, tiempoResguardoDias: ''}));
+              }} 
+              error={errors.tiempoResguardoDias} 
+              placeholder="Ej. 15" 
+            />
+          </View>
+        )}
         {errors.tiempoResguardo && <Text style={styles.errorText}>{errors.tiempoResguardo}</Text>}
       </FormSection>
 
@@ -502,25 +629,29 @@ export default function ExternalVolunteerFormScreen({ onClose }: Props) {
 
   const renderPaso3 = () => (
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-      <FormSection title="Checklist de Seguridad (Opcional)" subtitle="Declaro que mi hogar cumple con lo siguiente:">
-        {renderCheckbox('Puertas, ventanas y accesos seguros para evitar escapes.', checkAccesos, setCheckAccesos)}
-        {renderCheckbox('Bardas o protecciones suficientes de acuerdo a las especies que acepto.', checkBardas, setCheckBardas)}
-        {renderCheckbox('NO tengo balcones abiertos, azoteas accesibles, albercas sin protección ni salida directa a la calle.', checkBalcones, setCheckBalcones)}
-        {renderCheckbox('Cuento con espacio ventilado, con sombra, agua constante y zona de descanso.', checkEspacio, setCheckEspacio)}
+      <FormSection title="Checklist de Seguridad" subtitle="Selecciona las opciones con las que cumples (Obligatorio marcar al menos una):">
+        {renderCheckbox('Puertas, ventanas y accesos seguros para evitar escapes.', checkAccesos, (v: boolean) => handleSeguridadCheck(setCheckAccesos, v))}
+        {renderCheckbox('Bardas o protecciones suficientes de acuerdo a las especies que acepto.', checkBardas, (v: boolean) => handleSeguridadCheck(setCheckBardas, v))}
+        {renderCheckbox('NO tengo balcones abiertos, azoteas accesibles, albercas sin protección ni salida directa a la calle.', checkBalcones, (v: boolean) => handleSeguridadCheck(setCheckBalcones, v))}
+        {renderCheckbox('Cuento con espacio ventilado, con sombra, agua constante y zona de descanso.', checkEspacio, (v: boolean) => handleSeguridadCheck(setCheckEspacio, v))}
+        {renderCheckbox('No cumplo con ninguna de las anteriores.', checkNingunoSeguridad, handleNingunoSeguridad)}
+        {errors.seguridadGeneral && <Text style={styles.errorText}>{errors.seguridadGeneral}</Text>}
       </FormSection>
 
       <Divider />
 
-      <FormSection title="Compromisos Operativos (Opcional)">
-        {renderCheckbox('Tengo la posibilidad de aislar al animal en sus primeros días de llegada.', checkAislamiento, setCheckAislamiento)}
-        {renderCheckbox('Acepto mantener la cuarentena preventiva y seguir todas las indicaciones médicas de la asociación.', checkCuarentena, setCheckCuarentena)}
-        {renderCheckbox('Me comprometo a NO entregar, dar en adopción ni trasladar al animal sin autorización previa de PawAlert o la Asociación.', checkNoEntregar, setCheckNoEntregar)}
+      <FormSection title="Compromisos Operativos" subtitle="Selecciona las opciones con las que cumples (Obligatorio marcar al menos una):">
+        {renderCheckbox('Tengo la posibilidad de aislar al animal en sus primeros días de llegada.', checkAislamiento, (v: boolean) => handleCompromisoCheck(setCheckAislamiento, v))}
+        {renderCheckbox('Acepto mantener la cuarentena preventiva y seguir todas las indicaciones médicas de la asociación.', checkCuarentena, (v: boolean) => handleCompromisoCheck(setCheckCuarentena, v))}
+        {renderCheckbox('Me comprometo a NO entregar, dar en adopción ni trasladar al animal sin autorización previa de PawAlert o la Asociación.', checkNoEntregar, (v: boolean) => handleCompromisoCheck(setCheckNoEntregar, v))}
+        {renderCheckbox('No cumplo con ninguna de las anteriores.', checkNingunoCompromiso, handleNingunoCompromiso)}
+        {errors.compromisosGeneral && <Text style={styles.errorText}>{errors.compromisosGeneral}</Text>}
       </FormSection>
 
       <Divider />
 
       <FormSection title="Contacto de Emergencia" subtitle="Por seguridad del rescatista en campo.">
-        <Input label="Nombre de contacto" placeholder="Ej. María Pérez " value={nombreEmergencia} onChangeText={(v) => handleRegexChange(v, setNombreEmergencia, 'nombreEmergencia', /^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/, 'Solo letras')} error={errors.nombreEmergencia} />
+        <Input label="Nombre de contacto" placeholder="Ej. Juan Pérez" value={nombreEmergencia} onChangeText={(v) => handleRegexChange(v, setNombreEmergencia, 'nombreEmergencia', /^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/, 'Solo letras')} error={errors.nombreEmergencia} />
         <Input label="Teléfono de emergencia" placeholder="Ej. 2221234567" value={telEmergencia} onChangeText={(v) => handleRegexChange(v, setTelEmergencia, 'telEmergencia', /^\d{10}$/, '10 dígitos numéricos')} keyboardType="numeric" maxLength={10} error={errors.telEmergencia} />
       </FormSection>
 
@@ -577,7 +708,7 @@ export default function ExternalVolunteerFormScreen({ onClose }: Props) {
 
       <Divider />
 
-      <FormSection title="Disponibilidad para Visita" subtitle="Brinda 3 opciones de horarios (Día y hora) para tu visita de verificación.">
+      <FormSection title="Disponibilidad para Visita" subtitle="Brinda 3 opciones de horarios (Día y hora) para tu visita de verificación. Horarios de visita disponibles: 7:00 AM a 7:00 PM.">
         <Text style={[styles.sectionLabel, { marginTop: 0 }]}>Opción 1 *</Text>
         <View style={styles.rowContainer}>
           <View style={styles.halfWidth}><SelectInput placeholder="Día" value={horario1Dia} onPress={() => setSelectorActivo('dia1')} /></View>
