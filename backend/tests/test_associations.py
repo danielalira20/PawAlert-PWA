@@ -91,3 +91,110 @@ def test_registro_asociacion_devuelve_access_y_refresh_token(make_query):
     assert body["access_token"] == "access-asociacion"
     assert body["refresh_token"] == "refresh-asociacion"
     assert body["usuario"]["id"] == "user-aso-1"
+
+
+def _mock_usuario_autenticado(tablas: dict, make_query) -> None:
+    """Fila de `usuarios` que resuelve `_obtener_usuario_autenticado`: rol
+    'asociacion' vinculado a 'aso-1' — reusada por las pruebas del
+    historial de reporte."""
+    tablas["usuarios"] = make_query(data=[{
+        "id": "user-1",
+        "asociacion_id": "aso-1",
+        "roles": {"nombre": "asociacion"},
+    }])
+
+
+def test_historial_reporte_caso_feliz(make_query):
+    tablas = {
+        "asociaciones": make_query(data=[{"verificado": True}]),
+        "reportes": make_query(data=[{
+            "id": "reporte-1",
+            "created_at": "2026-07-20T10:00:00+00:00",
+            "asociacion_asignada_id": "aso-1",
+            "usuario_id": None,
+            "reportante_nombre": "Juan",
+            "reportante_apellido_paterno": "Pérez",
+            "animal": [{
+                "orden": 1,
+                "condicion_catalogo": {"clave": "grave"},
+                "animal_fotos": [{"foto_url": "https://x/foto-reporte.jpg", "orden": 1}],
+            }],
+        }]),
+        "historial_reporte": make_query(data=[
+            {
+                "tipo_evento": "hito_llegue_refugio",
+                "created_at": "2026-07-20T11:00:00+00:00",
+                "datos_extra": {"foto_url": "https://x/foto-refugio.jpg"},
+                "usuarios": {"nombre": "Carlos", "apellido_paterno": "Ruiz"},
+            },
+            {
+                "tipo_evento": "hito_encontre_animal",
+                "created_at": "2026-07-20T10:30:00+00:00",
+                "datos_extra": {"foto_url": "https://x/foto-encontrado.jpg"},
+                "usuarios": {"nombre": "Carlos", "apellido_paterno": "Ruiz"},
+            },
+        ]),
+    }
+    _mock_usuario_autenticado(tablas, make_query)
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    supabase.auth.get_user.return_value = SimpleNamespace(user=SimpleNamespace(id="auth-user-1"))
+
+    with patch("app.api.associations.supabase", supabase):
+        response = client.get(
+            "/associations/me/reportes/reporte-1/historial",
+            headers={"Authorization": "Bearer token-valido"},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["reporte_id"] == "reporte-1"
+    tipos = [e["tipo_evento"] for e in body["eventos"]]
+    # Orden cronológico (created_at asc), sin importar el orden en que
+    # historial_reporte haya regresado los hitos.
+    assert tipos == ["reporte_creado", "hito_encontre_animal", "hito_llegue_refugio"]
+
+    creado = body["eventos"][0]
+    assert creado["foto_url"] == "https://x/foto-reporte.jpg"
+    assert creado["reportante_nombre"] == "Juan Pérez"
+
+    encontrado = body["eventos"][1]
+    assert encontrado["foto_url"] == "https://x/foto-encontrado.jpg"
+    assert encontrado["usuario_nombre"] == "Carlos Ruiz"
+
+    refugio = body["eventos"][2]
+    assert refugio["foto_url"] == "https://x/foto-refugio.jpg"
+    assert refugio["usuario_nombre"] == "Carlos Ruiz"
+
+
+def test_historial_reporte_sin_hitos(make_query):
+    tablas = {
+        "asociaciones": make_query(data=[{"verificado": True}]),
+        "reportes": make_query(data=[{
+            "id": "reporte-2",
+            "created_at": "2026-07-21T09:00:00+00:00",
+            "asociacion_asignada_id": "aso-1",
+            "usuario_id": None,
+            "reportante_nombre": None,
+            "reportante_apellido_paterno": None,
+            "animal": [],
+        }]),
+        "historial_reporte": make_query(data=[]),
+    }
+    _mock_usuario_autenticado(tablas, make_query)
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    supabase.auth.get_user.return_value = SimpleNamespace(user=SimpleNamespace(id="auth-user-1"))
+
+    with patch("app.api.associations.supabase", supabase):
+        response = client.get(
+            "/associations/me/reportes/reporte-2/historial",
+            headers={"Authorization": "Bearer token-valido"},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["eventos"]) == 1
+    assert body["eventos"][0]["tipo_evento"] == "reporte_creado"
+    assert body["eventos"][0]["foto_url"] is None
+    assert body["eventos"][0]["reportante_nombre"] == "anónimo"

@@ -473,6 +473,95 @@ async def get_reportes_asignados(authorization: str = Header(None)):
     return reportes
 
 
+# Tipos de hito que la línea de tiempo del panel de asociación necesita
+# mostrar además del evento de creación. Los valores reales que escribe
+# POST /reports/{id}/hitos son "hito_{tipo_hito}" (ver reports.py), es decir
+# "hito_encontre_animal" y "hito_llegue_refugio" — no "hito_encontrado"/
+# "hito_refugio".
+TIPOS_HITO_TIMELINE = ["hito_encontre_animal", "hito_llegue_refugio"]
+
+
+@router.get("/me/reportes/{reporte_id}/historial", status_code=200)
+async def get_historial_reporte(reporte_id: str, authorization: str = Header(None)):
+    """Línea de tiempo de un reporte para el panel de asociación: creación
+    del caso (foto + reportante) y los hitos de campo registrados por
+    staff/voluntario, en orden cronológico. Solo lee de historial_reporte
+    (más los datos del reporte para foto/reportante) — no escribe nada."""
+    usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion", "staff"))
+
+    if not usuario.get("asociacion_id"):
+        raise HTTPException(status_code=404, detail="Este usuario no está vinculado a ninguna asociación")
+
+    asociacion = supabase.table("asociaciones").select("verificado").eq(
+        "id", usuario["asociacion_id"]
+    ).execute()
+
+    if not asociacion.data or not asociacion.data[0]["verificado"]:
+        raise HTTPException(status_code=403, detail="Tu asociación todavía no ha sido aprobada")
+
+    reporte = supabase.table("reportes").select(
+        "id, created_at, asociacion_asignada_id, usuario_id, "
+        "reportante_nombre, reportante_apellido_paterno, "
+        "animal(orden, condicion_catalogo(clave), animal_fotos(foto_url, orden))"
+    ).eq("id", reporte_id).execute()
+
+    if not reporte.data:
+        raise HTTPException(status_code=404, detail="Reporte no encontrado")
+
+    reporte = reporte.data[0]
+
+    if reporte.get("asociacion_asignada_id") != usuario["asociacion_id"]:
+        raise HTTPException(status_code=403, detail="Este reporte no pertenece a tu asociación")
+
+    animales_crudos, animal_legado = shape_animal_embed(reporte.get("animal"))
+    fotos = (animal_legado or {}).get("animal_fotos") or []
+    foto_reporte = None
+    if fotos:
+        fotos_ordenadas = sorted(fotos, key=lambda f: f.get("orden", 0))
+        foto_reporte = fotos_ordenadas[0]["foto_url"]
+
+    if reporte.get("usuario_id"):
+        usuario_reportante = supabase.table("usuarios").select(
+            "nombre, apellido_paterno"
+        ).eq("id", reporte["usuario_id"]).execute()
+        datos_reportante = usuario_reportante.data[0] if usuario_reportante.data else {}
+    else:
+        datos_reportante = {
+            "nombre": reporte.get("reportante_nombre"),
+            "apellido_paterno": reporte.get("reportante_apellido_paterno"),
+        }
+
+    reportante_nombre = f"{datos_reportante.get('nombre') or ''} {datos_reportante.get('apellido_paterno') or ''}".strip()
+
+    eventos = [{
+        "tipo_evento": "reporte_creado",
+        "created_at": str(reporte["created_at"]),
+        "foto_url": foto_reporte,
+        "reportante_nombre": reportante_nombre or "anónimo",
+    }]
+
+    hitos = supabase.table("historial_reporte").select(
+        "tipo_evento, created_at, datos_extra, usuarios(nombre, apellido_paterno)"
+    ).eq("reporte_id", reporte_id).in_(
+        "tipo_evento", TIPOS_HITO_TIMELINE
+    ).order("created_at").execute()
+
+    for hito in hitos.data or []:
+        datos_extra = hito.get("datos_extra") or {}
+        vol = hito.get("usuarios") or {}
+        usuario_nombre = f"{vol.get('nombre') or ''} {vol.get('apellido_paterno') or ''}".strip()
+        eventos.append({
+            "tipo_evento": hito["tipo_evento"],
+            "created_at": str(hito["created_at"]),
+            "foto_url": datos_extra.get("foto_url"),
+            "usuario_nombre": usuario_nombre or None,
+        })
+
+    eventos.sort(key=lambda e: e["created_at"])
+
+    return {"reporte_id": reporte_id, "eventos": eventos}
+
 
 @router.get("/me/staff", status_code=200)
 async def get_staff_asociacion(authorization: str = Header(None)):
