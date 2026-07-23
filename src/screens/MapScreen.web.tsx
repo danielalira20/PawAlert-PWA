@@ -5,6 +5,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Dimensions, Image, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { router, useLocalSearchParams } from 'expo-router';
 import AuthGateModal from '../components/AuthGateModal';
 import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
@@ -46,6 +47,7 @@ type SidebarView = 'list' | 'detail' | 'form';
 // ─── Componente principal ─────────────────────────────────────────────────────
 export default function MapScreen() {
   const { isLoggedIn } = useAuth();
+  const params = useLocalSearchParams<{ action?: string }>();
   const [windowWidth, setWindowWidth] = useState(Dimensions.get('window').width);
   const [isClient, setIsClient] = useState(false);
   const [reportes, setReportes] = useState<Reporte[]>([]);
@@ -104,6 +106,14 @@ export default function MapScreen() {
       if (clockTimeoutRef.current) clearTimeout(clockTimeoutRef.current);
     };
   }, [fetchReportes]);
+
+  // Handle action parameter (e.g. action=create from landing CTA)
+  useEffect(() => {
+    if (params.action === 'create') {
+      handleCrearReporte();
+      router.setParams({ action: undefined });
+    }
+  }, [params.action]);
 
   // Listener de dimensiones separado para evitar re-renders en cascada
   useEffect(() => {

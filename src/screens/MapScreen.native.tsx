@@ -4,6 +4,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Dimensions, Image, Modal, Text, TouchableOpacity, View } from 'react-native';
+import { router, useLocalSearchParams } from 'expo-router';
 import MapView, { Callout, Region } from 'react-native-maps';
 import { TrackedMarker } from './TrackedMarker';
 import AuthGateModal from '../components/AuthGateModal';
@@ -129,6 +130,7 @@ function AnimalMarker({ condicion, tipoAnimal, selected, count = 1 }: {
 // ─── Componente principal ─────────────────────────────────────────────────────
 export default function MapScreen() {
   const { isLoggedIn } = useAuth();
+  const params = useLocalSearchParams<{ action?: string }>();
   const [reportes, setReportes] = useState<Reporte[]>([]);
   const [selectedReport, setSelectedReport] = useState<Reporte | null>(null);
   const [isFormVisible, setIsFormVisible] = useState(false);
@@ -164,6 +166,17 @@ export default function MapScreen() {
     const tickInterval = setInterval(() => setTick(t => t + 1), 60000);
     return () => { clearInterval(fetchInterval); clearInterval(tickInterval); };
   }, []);
+
+  useEffect(() => {
+    if (params.action === 'create') {
+      if (isLoggedIn) {
+        setIsFormVisible(true);
+      } else {
+        setIsAuthGateVisible(true);
+      }
+      router.setParams({ action: undefined });
+    }
+  }, [params.action, isLoggedIn]);
 
   const handleSelectReport = (reporte: Reporte) => {
     setSelectedReport(reporte);

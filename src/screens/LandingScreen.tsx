@@ -144,12 +144,12 @@ const ROLES = [
   },
   {
     id: 'voluntario-externo',
-    title: 'Voluntario externo – Casa hogar',
+    title: 'Voluntario externo – Casa temporal',
     icon: 'home-outline',
     does: 'Ofrece su hogar de forma temporal para el resguardo de animales rescatados.',
     requirements: 'Completar un formulario de postulación y validación básica del espacio disponible.',
-    ctaLabel: 'Postularme', 
-    ctaRoute: '/external-volunteer-register', 
+    ctaLabel: 'Postularme',
+    ctaRoute: '/external-volunteer-register',
   },
   {
     id: 'asociacion',
@@ -349,7 +349,7 @@ export default function LandingScreen() {
           </View>
 
           {/* CTA pill */}
-          <AnimatedButton onPress={() => router.push('/map')}>
+          <AnimatedButton onPress={() => router.push({ pathname: '/map', params: { action: 'create' } })}>
             <View style={{
               backgroundColor: C.primary,
               paddingHorizontal: 18, paddingVertical: 9,
@@ -357,8 +357,8 @@ export default function LandingScreen() {
               flexDirection: 'row', alignItems: 'center', gap: 6,
               ...(isWeb ? { boxShadow: `0 4px 14px ${C.primary}40` } : {}),
             } as any}>
-              <Ionicons name="map-outline" size={14} color="#FFF" />
-              <Text style={{ color: '#FFF', fontSize: 13, fontFamily: F.bodySemiBold }}>Ver mapa</Text>
+              <Ionicons name="add-circle-outline" size={16} color="#FFF" />
+              <Text style={{ color: '#FFF', fontSize: 13, fontFamily: F.bodySemiBold }}>Crear reporte</Text>
             </View>
           </AnimatedButton>
         </View>
@@ -413,31 +413,33 @@ export default function LandingScreen() {
 
                 {/* CTAs */}
                 <View style={{ flexDirection: isDesktop ? 'row' : 'column', gap: 16, width: '100%', maxWidth: 480 }}>
-                  <AnimatedButton onPress={() => router.push('/map')} style={{ flex: 1 }}>
+                  <AnimatedButton onPress={() => router.push({ pathname: '/map', params: { action: 'create' } })} style={{ flex: 1 }}>
                     <View style={{
                       backgroundColor: C.primary,
-                      paddingVertical: 16, paddingHorizontal: 28,
+                      paddingVertical: 12, paddingHorizontal: 20,
+                      minHeight: 58,
                       borderRadius: 100,
                       alignItems: 'center', flexDirection: 'row',
                       justifyContent: 'center', gap: 10,
                       ...(isWeb ? { boxShadow: `0 8px 28px ${C.primary}50` } : { elevation: 6 }),
                     } as any}>
-                      <Ionicons name="map" size={20} color="#FFF" />
-                      <Text style={{ color: '#FFF', fontSize: 16, fontFamily: F.bodySemiBold }}>Ver Reportes en Vivo</Text>
+                      <Ionicons name="add-circle" size={20} color="#FFF" />
+                      <Text style={{ color: '#FFF', fontSize: 16, fontFamily: F.bodySemiBold, textAlign: 'center' }}>Crear Reporte</Text>
                     </View>
                   </AnimatedButton>
 
                   <AnimatedButton onPress={() => setIsAssociationFormVisible(true)} style={{ flex: 1 }}>
                     <View style={{
                       backgroundColor: C.bg,
-                      paddingVertical: 16, paddingHorizontal: 28,
+                      paddingVertical: 12, paddingHorizontal: 20,
+                      minHeight: 58,
                       borderRadius: 100,
                       alignItems: 'center', flexDirection: 'row',
                       justifyContent: 'center', gap: 10,
                       borderWidth: 2, borderColor: C.primary,
                     }}>
                       <Ionicons name="business-outline" size={20} color={C.primary} />
-                      <Text style={{ color: C.primary, fontSize: 16, fontFamily: F.bodySemiBold }}>Registrar Asociación</Text>
+                      <Text style={{ color: C.primary, fontSize: 16, fontFamily: F.bodySemiBold, textAlign: 'center' }}>Registrar Asociación</Text>
                     </View>
                   </AnimatedButton>
                 </View>
