@@ -4,7 +4,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow, formatDistanceStrict } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { ActivityIndicator, Dimensions, Image, Linking, Modal, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -74,6 +74,14 @@ interface ReporteAsignado {
   animales: Animal[];
 }
 
+interface HistorialEvento {
+  tipo_evento: string;
+  created_at: string;
+  foto_url: string | null;
+  reportante_nombre?: string;
+  usuario_nombre?: string | null;
+}
+
 type FiltroAsignacion = 'todas' | 'pendientes' | 'aceptadas' | 'rechazadas';
 type ActiveTab = 'reportes' | 'postulaciones' | 'voluntarios';
 
@@ -140,6 +148,10 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
   const [reporteSeleccionado, setReporteSeleccionado] = useState<ReporteAsignado | null>(null);
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
   const [showFullImage, setShowFullImage] = useState(false);
+
+  // ── Línea de tiempo del caso — solo se pide/muestra para "por cerrar" ──
+  const [historialTimeline, setHistorialTimeline] = useState<HistorialEvento[] | null>(null);
+  const [isLoadingHistorial, setIsLoadingHistorial] = useState(false);
 
   const [showAcceptModal, setShowAcceptModal] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
@@ -221,6 +233,12 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
     'Animal adoptado',
     'No se pudo rescatar'
   ];
+
+  const TIMELINE_LABELS: Record<string, { label: string; icon: keyof typeof Ionicons.glyphMap }> = {
+    reporte_creado: { label: 'Reporte creado', icon: 'flag-outline' },
+    hito_encontre_animal: { label: 'Animal encontrado', icon: 'paw-outline' },
+    hito_llegue_refugio: { label: 'Llegada al refugio', icon: 'home-outline' },
+  };
 
 
   // 2. Funciones de validación en tiempo real para el formulario de miembro
@@ -313,6 +331,18 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
     } catch {
     } finally {
       setIsLoadingReportes(false);
+    }
+  };
+
+  const cargarHistorialReporte = async (reporteId: string) => {
+    setIsLoadingHistorial(true);
+    try {
+      const res = await axios.get(`${API_URL}/associations/me/reportes/${reporteId}/historial`, { headers: { Authorization: `Bearer ${token}` } });
+      setHistorialTimeline(res.data.eventos || []);
+    } catch {
+      setHistorialTimeline([]);
+    } finally {
+      setIsLoadingHistorial(false);
     }
   };
 
@@ -445,6 +475,14 @@ const confirmarReactivar = async () => {
     }, 60000);
     return () => clearInterval(interval);
   }, [info?.estado, token]);
+
+  useEffect(() => {
+    if (reporteSeleccionado && subFiltroAceptadas === 'por_cerrar') {
+      cargarHistorialReporte(reporteSeleccionado.reporte_id);
+    } else {
+      setHistorialTimeline(null);
+    }
+  }, [reporteSeleccionado, subFiltroAceptadas]);
 
   const handlePickDocument = async () => {
     if (apelacionDocs.length >= 3) {
@@ -791,6 +829,14 @@ const confirmarReactivar = async () => {
     if (filtro === 'rechazadas') return ['rechazada', 'cancelada'].includes(r.estado_asignacion_clave);
     return true;
   });
+
+  const tiempoTotalTranscurrido = historialTimeline && historialTimeline.length > 1
+    ? formatDistanceStrict(
+        new Date(historialTimeline[historialTimeline.length - 1].created_at),
+        new Date(historialTimeline[0].created_at),
+        { locale: es }
+      )
+    : null;
 
   if (!standalone) {
     return (
@@ -1534,10 +1580,80 @@ const confirmarReactivar = async () => {
 
                 <Text style={{ fontSize: 18, fontWeight: '800', color: COLORS.textDark, marginBottom: 8 }}>Ubicación</Text>
                 <Text style={{ fontSize: 15, color: COLORS.textLight, lineHeight: 22 }}>{[reporteSeleccionado.calle, reporteSeleccionado.colonia, reporteSeleccionado.municipio].filter(Boolean).join(', ')}</Text>
+
+                {/* ── Línea de tiempo: solo para el sub-filtro "Por cerrar" ── */}
+                {subFiltroAceptadas === 'por_cerrar' && (
+                  <View style={{ marginTop: 24 }}>
+                    <Text style={{ fontSize: 18, fontWeight: '800', color: COLORS.textDark, marginBottom: 12 }}>Línea de tiempo</Text>
+
+                    {isLoadingHistorial ? (
+                      <ActivityIndicator color={COLORS.primary} style={{ marginVertical: 12 }} />
+                    ) : !historialTimeline || historialTimeline.length === 0 ? (
+                      <Text style={{ color: COLORS.textLight, fontSize: 13 }}>Sin eventos registrados todavía.</Text>
+                    ) : (
+                      <View>
+                        {historialTimeline.map((evento, idx) => {
+                          const meta = TIMELINE_LABELS[evento.tipo_evento] || { label: evento.tipo_evento, icon: 'ellipse-outline' as const };
+                          const persona = evento.tipo_evento === 'reporte_creado'
+                            ? (evento.reportante_nombre || 'anónimo')
+                            : (evento.usuario_nombre || 'Staff');
+                          return (
+                            <View key={`${evento.tipo_evento}-${idx}`} style={{ flexDirection: 'row', gap: 12, marginBottom: 16 }}>
+                              <View style={{ alignItems: 'center' }}>
+                                <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: COLORS.secondary, alignItems: 'center', justifyContent: 'center' }}>
+                                  <Ionicons name={meta.icon} size={16} color={COLORS.white} />
+                                </View>
+                                {idx < historialTimeline.length - 1 && (
+                                  <View style={{ width: 2, flex: 1, backgroundColor: 'rgba(0,0,0,0.1)', marginTop: 4 }} />
+                                )}
+                              </View>
+                              <View style={{ flex: 1, paddingBottom: 4 }}>
+                                <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.textDark }}>{meta.label}</Text>
+                                <Text style={{ fontSize: 12, color: COLORS.textLight, marginTop: 2 }}>
+                                  {persona} · {formatDistanceToNow(new Date(evento.created_at), { addSuffix: true, locale: es })}
+                                </Text>
+                                {evento.foto_url && (
+                                  <Image
+                                    source={{ uri: evento.foto_url }}
+                                    style={{ width: 96, height: 72, borderRadius: 10, marginTop: 8, backgroundColor: '#2E2A26' }}
+                                    resizeMode="cover"
+                                  />
+                                )}
+                              </View>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    )}
+
+                    {tiempoTotalTranscurrido && (
+                      <View style={{ backgroundColor: COLORS.cardBg, borderRadius: 14, padding: 12, marginTop: 4, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Ionicons name="hourglass-outline" size={16} color={COLORS.primary} />
+                        <Text style={{ color: COLORS.textDark, fontSize: 13, fontWeight: '700' }}>
+                          Tiempo total transcurrido: {tiempoTotalTranscurrido}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                )}
               </ScrollView>
               <TouchableOpacity onPress={() => setReporteSeleccionado(null)} style={{ backgroundColor: COLORS.accent, paddingVertical: 16, borderRadius: 20, alignItems: 'center', marginTop: 24 }}>
                 <Text style={{ color: COLORS.white, fontWeight: 'bold', fontSize: 16 }}>Cerrar detalles</Text>
               </TouchableOpacity>
+              {subFiltroAceptadas === 'por_cerrar' && (
+                <TouchableOpacity
+                  onPress={() => {
+                    const reporteId = reporteSeleccionado.reporte_id;
+                    setReporteSeleccionado(null);
+                    resetModales();
+                    setReporteAccionId(reporteId);
+                    setShowCerrarModal(true);
+                  }}
+                  style={{ backgroundColor: COLORS.primary, paddingVertical: 16, borderRadius: 20, alignItems: 'center', marginTop: 12 }}
+                >
+                  <Text style={{ color: COLORS.white, fontWeight: 'bold', fontSize: 16 }}>Cerrar caso</Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
         </Modal>
