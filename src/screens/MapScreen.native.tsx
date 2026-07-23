@@ -8,7 +8,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import MapView, { Callout, Region } from 'react-native-maps';
 import { TrackedMarker } from './TrackedMarker';
 import AuthGateModal from '../components/AuthGateModal';
-import { ICON_CAT, ICON_CLOCK, ICON_CALENDAR, ICON_DOG, ICON_PAW, ICON_WARNING } from '../constants/mapIcons';
+import { ICON_CAT, ICON_CLOCK, ICON_CALENDAR, ICON_DOG, ICON_PAW, ICON_WARNING, ICON_MULTIPLE } from '../constants/mapIcons';
 import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
 import { Reporte, getAnimales, condicionMasGrave, especieMasGrave, totalAnimales, animalMasGrave } from '../types/reporte';
@@ -70,7 +70,7 @@ function AnimalMarker({ condicion, tipoAnimal, selected, count = 1 }: {
   const iconSize = size * 0.72;
   const innerSize = size - 8;
 
-  const iconUri = tipo === 'perro' ? ICON_DOG : tipo === 'gato' ? ICON_CAT : ICON_PAW;
+  const iconUri = count > 1 ? ICON_MULTIPLE : (tipo === 'perro' ? ICON_DOG : tipo === 'gato' ? ICON_CAT : ICON_PAW);
 
   return (
     <View style={{ alignItems: 'center' }}>

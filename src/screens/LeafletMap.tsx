@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import 'leaflet/dist/leaflet.css';
 import { MapContainer, Marker, Popup, TileLayer, useMapEvents } from 'react-leaflet';
 import { Reporte, getAnimales, condicionMasGrave, especieMasGrave, totalAnimales } from '../types/reporte';
+import { ICON_MULTIPLE } from '../constants/mapIcons';
 
 const INITIAL_CENTER: [number, number] = [19.0414, -98.2063];
 const INITIAL_ZOOM = 13;
@@ -25,7 +26,13 @@ const getCfg = (c: string) =>
 
 
 // ─── Ícono por tipo de animal ─────────────────────────────────────────────────
-const getAnimalImg = (tipoAnimal: string, condColor: string): string => {
+const getAnimalImg = (tipoAnimal: string, condColor: string, count: number = 1): string => {
+  if (count > 1) {
+    return `
+      <div style="width:${46-8}px;height:${46-8}px;border-radius:50%;background:rgba(255,255,255,0.88);display:flex;align-items:center;justify-content:center;">
+        <img src="${ICON_MULTIPLE}" style="width:34px;height:34px;object-fit:contain;" />
+      </div>`;
+  }
   const tipo = tipoAnimal?.toLowerCase();
   if (tipo === 'perro') {
     return `
@@ -102,7 +109,7 @@ const createPin = (condicion: string, tipoAnimal: string, selected = false, coun
           box-shadow:${shadow};
           display:flex; align-items:center; justify-content:center;
         ">
-          ${getAnimalImg(tipoAnimal, cfg.border)}
+          ${getAnimalImg(tipoAnimal, cfg.border, count)}
         </div>
         ${badge}
       </div>

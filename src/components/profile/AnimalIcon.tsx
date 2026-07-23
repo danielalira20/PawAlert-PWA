@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Image } from 'react-native';
-import { ICON_CAT, ICON_DOG, ICON_PAW } from '../../constants/mapIcons';
+import { ICON_CAT, ICON_DOG, ICON_PAW, ICON_MULTIPLE } from '../../constants/mapIcons';
 import { getCondicionPreview } from './condicionEstadoColors';
 
 interface Props {
@@ -11,14 +11,15 @@ interface Props {
   // cuando el contenedor padre ya trae su propio color de fondo, para no
   // duplicar el círculo de color.
   bare?: boolean;
+  count?: number;
 }
 
 // Mismo componente/lógica que ya usa MisReportesScreen.tsx — ícono real de
 // perro/gato (o huella si no aplica ninguno), coloreado según la condición.
-export function AnimalIcon({ tipoAnimal, condicion, size = 34, bare = false }: Props) {
+export function AnimalIcon({ tipoAnimal, condicion, size = 34, bare = false, count = 1 }: Props) {
   const cfg = getCondicionPreview(condicion);
   const tipo = tipoAnimal?.toLowerCase();
-  const iconUri = tipo === 'perro' ? ICON_DOG : tipo === 'gato' ? ICON_CAT : ICON_PAW;
+  const iconUri = count > 1 ? ICON_MULTIPLE : (tipo === 'perro' ? ICON_DOG : tipo === 'gato' ? ICON_CAT : ICON_PAW);
   const iconSize = size * 0.7;
 
   const image = (

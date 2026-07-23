@@ -29,7 +29,7 @@ import {
   View,
 } from 'react-native';
 import { API_URL } from '../constants/api';
-import { ICON_CAT, ICON_DOG, ICON_PAW } from '../constants/mapIcons';
+import { ICON_CAT, ICON_DOG, ICON_PAW, ICON_MULTIPLE } from '../constants/mapIcons';
 import { petzen } from '../constants/petzenTheme';
 import { useAuth } from '../context/AuthContext';
 import { Animal, getAnimales, condicionMasGrave, totalAnimales, animalMasGrave } from '../types/reporte';
@@ -94,10 +94,10 @@ const getCondicion = (c: string | null) =>
   CONDICION[c?.toLowerCase() ?? ''] ?? { color: '#95A5A6', bg: '#F2F3F4' };
 
 // ─── Ícono real (perro/gato/huella) en vez de emoji ─────────────────────────
-function AnimalIcon({ tipoAnimal, condicion, size = 34 }: { tipoAnimal: string | null; condicion: string | null; size?: number }) {
+function AnimalIcon({ tipoAnimal, condicion, size = 34, count = 1 }: { tipoAnimal: string | null; condicion: string | null; size?: number; count?: number }) {
   const cfg = getCondicion(condicion);
   const tipo = tipoAnimal?.toLowerCase();
-  const iconUri = tipo === 'perro' ? ICON_DOG : tipo === 'gato' ? ICON_CAT : ICON_PAW;
+  const iconUri = count > 1 ? ICON_MULTIPLE : (tipo === 'perro' ? ICON_DOG : tipo === 'gato' ? ICON_CAT : ICON_PAW);
   const iconSize = size * 0.7;
 
   return (
@@ -387,7 +387,7 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
                       <Image source={{ uri: fotos[0] }} style={{ width: 72, height: 72 }} resizeMode="cover" />
                     ) : (
                       <View style={{ width: 72, height: 72, backgroundColor: condCfg.bg, alignItems: 'center', justifyContent: 'center' }}>
-                        <AnimalIcon tipoAnimal={grave?.tipo_animal ?? null} condicion={grave?.condicion ?? null} size={56} />
+                        <AnimalIcon tipoAnimal={grave?.tipo_animal ?? null} condicion={grave?.condicion ?? null} size={56} count={totalCaso} />
                       </View>
                     )}
                   </View>
@@ -401,7 +401,7 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
                 {/* Info */}
                 <View style={{ flex: 1 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 5 }}>
-                    <AnimalIcon tipoAnimal={grave?.tipo_animal ?? null} condicion={grave?.condicion ?? null} size={28} />
+                    <AnimalIcon tipoAnimal={grave?.tipo_animal ?? null} condicion={grave?.condicion ?? null} size={28} count={totalCaso} />
                     <Text style={{ fontSize: 15, fontFamily: petzen.fonts.bold, color: petzen.colors.textDark }}>
                       {tipoLabel}{totalCaso > 1 ? ` · ${totalCaso} animales` : ''}
                     </Text>
