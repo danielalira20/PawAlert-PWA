@@ -22,6 +22,7 @@ import LocationPickerMap from './LocationPickerMap';
 
 const COLORS = {
   bgTeal: '#66BCB4',
+  bgTealLight: '#EDF8F7',
   bgWhite: '#FFFFFF',
   primary: '#EC802B',
   secondary: '#EDC55B',
@@ -193,6 +194,7 @@ interface Props {
   onClose?: () => void;
   fromProfile?: boolean;
   esPostulacionNueva?: boolean;
+  mostrarNotaVerificacionHogar?: boolean;
 }
 
 function labels(values: string[], options: Option[]) {
@@ -217,6 +219,7 @@ export default function CapacidadesFormScreen({
   onClose,
   fromProfile = false,
   esPostulacionNueva = false,
+  mostrarNotaVerificacionHogar = false,
 }: Props) {
   const { token } = useAuth();
   const { toast, translateY, showToast } = useToast();
@@ -831,6 +834,16 @@ export default function CapacidadesFormScreen({
             <Text style={styles.successText}>
               Recibimos tu información y tus capacidades. Podrás consultar el avance desde tu perfil.
             </Text>
+            {mostrarNotaVerificacionHogar && (
+              <View style={styles.verificationNote}>
+                <Ionicons name="home-outline" size={22} color={COLORS.bgTeal} />
+                <Text style={styles.verificationNoteText}>
+                  Una asociación revisará tu postulación. Si hay una persona verificadora disponible cerca de ti,
+                  se pondrán en contacto para coordinar una visita a tu hogar. Si no es posible, revisarán la
+                  evidencia que enviaste.
+                </Text>
+              </View>
+            )}
             <TouchableOpacity
               style={[styles.primaryButton, styles.successButton]}
               onPress={() => {
@@ -1163,6 +1176,22 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 25,
     textAlign: 'center',
+  },
+  verificationNote: {
+    width: '100%',
+    marginTop: 24,
+    padding: 18,
+    borderRadius: 16,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    backgroundColor: COLORS.bgTealLight,
+  },
+  verificationNoteText: {
+    flex: 1,
+    color: COLORS.textDark,
+    fontSize: 14,
+    lineHeight: 21,
   },
   successButton: {
     width: '100%',
