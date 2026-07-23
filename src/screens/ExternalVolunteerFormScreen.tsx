@@ -799,8 +799,14 @@ export default function ExternalVolunteerFormScreen({ onClose }: Props) {
              <Ionicons name="checkmark-circle" size={80} color={COLORS.bgTeal} style={{ marginBottom: 20 }} />
              <Text style={{ fontSize: 24, fontWeight: '900', color: COLORS.textDark, textAlign: 'center', marginBottom: 16 }}>¡Postulación Enviada!</Text>
              <Text style={{ fontSize: 16, color: COLORS.textLight, textAlign: 'center', lineHeight: 24, marginBottom: 32 }}>Tu información está en revisión segura. Las asociaciones cercanas podrán ver tu perfil anonimizado y se pondrán en contacto para la visita.</Text>
-             <TouchableOpacity onPress={onClose} style={[styles.submitButton, { width: '100%' }]}>
-               <Text style={styles.submitButtonText}>Volver al Inicio</Text>
+             <TouchableOpacity 
+               onPress={() => {
+                 if (onClose) onClose(); 
+                 router.push('/capacidades'); 
+               }} 
+               style={[styles.submitButton, { width: '100%' }]}
+             >
+               <Text style={styles.submitButtonText}>Formulario de Capacidades</Text>
              </TouchableOpacity>
            </View>
          </View>
