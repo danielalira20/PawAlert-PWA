@@ -116,6 +116,7 @@ def test_historial_reporte_caso_feliz(make_query):
             "reportante_apellido_paterno": "Pérez",
             "animal": [{
                 "orden": 1,
+                "descripcion": "Cojea de la pata trasera derecha",
                 "condicion_catalogo": {"clave": "grave"},
                 "animal_fotos": [{"foto_url": "https://x/foto-reporte.jpg", "orden": 1}],
             }],
@@ -124,13 +125,17 @@ def test_historial_reporte_caso_feliz(make_query):
             {
                 "tipo_evento": "hito_llegue_refugio",
                 "created_at": "2026-07-20T11:00:00+00:00",
-                "datos_extra": {"foto_url": "https://x/foto-refugio.jpg"},
+                "datos_extra": {"foto_url": "https://x/foto-refugio.jpg", "condicion_observada": "Igual que en el reporte"},
                 "usuarios": {"nombre": "Carlos", "apellido_paterno": "Ruiz"},
             },
             {
                 "tipo_evento": "hito_encontre_animal",
                 "created_at": "2026-07-20T10:30:00+00:00",
-                "datos_extra": {"foto_url": "https://x/foto-encontrado.jpg"},
+                "datos_extra": {
+                    "foto_url": "https://x/foto-encontrado.jpg",
+                    "condicion_observada": "Peor de lo esperado",
+                    "comentario": "Tiene una herida en la pata",
+                },
                 "usuarios": {"nombre": "Carlos", "apellido_paterno": "Ruiz"},
             },
         ]),
@@ -157,14 +162,19 @@ def test_historial_reporte_caso_feliz(make_query):
     creado = body["eventos"][0]
     assert creado["foto_url"] == "https://x/foto-reporte.jpg"
     assert creado["reportante_nombre"] == "Juan Pérez"
+    assert creado["nota"] == "Cojea de la pata trasera derecha"
 
     encontrado = body["eventos"][1]
     assert encontrado["foto_url"] == "https://x/foto-encontrado.jpg"
     assert encontrado["usuario_nombre"] == "Carlos Ruiz"
+    # condicion_observada (opción elegida) + comentario (texto libre), no el
+    # "descripcion" genérico que escribe registrar_historial() para hitos.
+    assert encontrado["nota"] == "Peor de lo esperado — Tiene una herida en la pata"
 
     refugio = body["eventos"][2]
     assert refugio["foto_url"] == "https://x/foto-refugio.jpg"
     assert refugio["usuario_nombre"] == "Carlos Ruiz"
+    assert refugio["nota"] == "Igual que en el reporte"
 
 
 def test_historial_reporte_sin_hitos(make_query):
@@ -196,5 +206,6 @@ def test_historial_reporte_sin_hitos(make_query):
     body = response.json()
     assert len(body["eventos"]) == 1
     assert body["eventos"][0]["tipo_evento"] == "reporte_creado"
+    assert body["eventos"][0]["nota"] is None
     assert body["eventos"][0]["foto_url"] is None
     assert body["eventos"][0]["reportante_nombre"] == "anónimo"

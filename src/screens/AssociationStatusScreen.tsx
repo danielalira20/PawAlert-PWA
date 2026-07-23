@@ -20,6 +20,7 @@ import { Animated } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Animal, getAnimales, totalAnimales, animalMasGrave } from '../types/reporte';
 import { AnimalCarousel } from '../components/common/AnimalCarousel';
+import { ImageLightbox } from '../components/common/ImageLightbox';
 
 // ─── PALETA DE COLORES PETZEN ───
 const COLORS = {
@@ -80,6 +81,7 @@ interface HistorialEvento {
   foto_url: string | null;
   reportante_nombre?: string;
   usuario_nombre?: string | null;
+  nota?: string | null;
 }
 
 type FiltroAsignacion = 'todas' | 'pendientes' | 'aceptadas' | 'rechazadas';
@@ -152,6 +154,7 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
   // ── Línea de tiempo del caso — solo se pide/muestra para "por cerrar" ──
   const [historialTimeline, setHistorialTimeline] = useState<HistorialEvento[] | null>(null);
   const [isLoadingHistorial, setIsLoadingHistorial] = useState(false);
+  const [fotoTimelineAmpliada, setFotoTimelineAmpliada] = useState<string | null>(null);
 
   const [showAcceptModal, setShowAcceptModal] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
@@ -1512,9 +1515,16 @@ const confirmarReactivar = async () => {
       {reporteSeleccionado && (
         <Modal visible={true} transparent animationType="slide">
           <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
-            <View style={{ backgroundColor: COLORS.cardBg, borderRadius: 32, padding: 32, width: '100%', maxWidth: 500, maxHeight: '90%' }}>
+            <View style={{ backgroundColor: COLORS.cardBg, borderRadius: 32, padding: 32, width: '100%', maxWidth: 500, maxHeight: '90%', position: 'relative' }}>
+              <TouchableOpacity
+                onPress={() => setReporteSeleccionado(null)}
+                hitSlop={8}
+                style={{ position: 'absolute', top: 16, right: 16, zIndex: 10, width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(0,0,0,0.06)', alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Ionicons name="close" size={20} color={COLORS.textDark} />
+              </TouchableOpacity>
               <ScrollView showsVerticalScrollIndicator={false}>
-   
+
                 {/* ─── Foto(s) del reporte ─── */}
               {(() => {
                 const fotos = reporteSeleccionado.fotos_urls?.length
@@ -1612,12 +1622,32 @@ const confirmarReactivar = async () => {
                                 <Text style={{ fontSize: 12, color: COLORS.textLight, marginTop: 2 }}>
                                   {persona} · {formatDistanceToNow(new Date(evento.created_at), { addSuffix: true, locale: es })}
                                 </Text>
+                                {evento.nota && (
+                                  <View style={{
+                                    flexDirection: 'row',
+                                    alignItems: 'center',
+                                    alignSelf: 'flex-start',
+                                    backgroundColor: `${COLORS.accent}33`,
+                                    borderRadius: 999,
+                                    paddingHorizontal: 10,
+                                    paddingVertical: 5,
+                                    marginTop: 6,
+                                    gap: 5,
+                                  }}>
+                                    <Ionicons name="chatbubble-outline" size={11} color={COLORS.textDark} />
+                                    <Text style={{ fontSize: 11, color: COLORS.textDark, fontWeight: '600' }}>
+                                      {evento.nota}
+                                    </Text>
+                                  </View>
+                                )}
                                 {evento.foto_url && (
-                                  <Image
-                                    source={{ uri: evento.foto_url }}
-                                    style={{ width: 96, height: 72, borderRadius: 10, marginTop: 8, backgroundColor: '#2E2A26' }}
-                                    resizeMode="cover"
-                                  />
+                                  <TouchableOpacity onPress={() => setFotoTimelineAmpliada(evento.foto_url)} activeOpacity={0.85}>
+                                    <Image
+                                      source={{ uri: evento.foto_url }}
+                                      style={{ width: 96, height: 72, borderRadius: 10, marginTop: 8, backgroundColor: '#2E2A26' }}
+                                      resizeMode="cover"
+                                    />
+                                  </TouchableOpacity>
                                 )}
                               </View>
                             </View>
@@ -1637,9 +1667,6 @@ const confirmarReactivar = async () => {
                   </View>
                 )}
               </ScrollView>
-              <TouchableOpacity onPress={() => setReporteSeleccionado(null)} style={{ backgroundColor: COLORS.accent, paddingVertical: 16, borderRadius: 20, alignItems: 'center', marginTop: 24 }}>
-                <Text style={{ color: COLORS.white, fontWeight: 'bold', fontSize: 16 }}>Cerrar detalles</Text>
-              </TouchableOpacity>
               {subFiltroAceptadas === 'por_cerrar' && (
                 <TouchableOpacity
                   onPress={() => {
@@ -1704,6 +1731,12 @@ const confirmarReactivar = async () => {
           </Modal>
         );
       })()}
+
+      <ImageLightbox
+        visible={!!fotoTimelineAmpliada}
+        fotos={fotoTimelineAmpliada ? [fotoTimelineAmpliada] : []}
+        onClose={() => setFotoTimelineAmpliada(null)}
+      />
 
       <Modal visible={showAcceptModal} transparent animationType="fade">
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>

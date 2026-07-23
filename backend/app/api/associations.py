@@ -503,7 +503,7 @@ async def get_historial_reporte(reporte_id: str, authorization: str = Header(Non
     reporte = supabase.table("reportes").select(
         "id, created_at, asociacion_asignada_id, usuario_id, "
         "reportante_nombre, reportante_apellido_paterno, "
-        "animal(orden, condicion_catalogo(clave), animal_fotos(foto_url, orden))"
+        "animal(orden, descripcion, condicion_catalogo(clave), animal_fotos(foto_url, orden))"
     ).eq("id", reporte_id).execute()
 
     if not reporte.data:
@@ -520,6 +520,7 @@ async def get_historial_reporte(reporte_id: str, authorization: str = Header(Non
     if fotos:
         fotos_ordenadas = sorted(fotos, key=lambda f: f.get("orden", 0))
         foto_reporte = fotos_ordenadas[0]["foto_url"]
+    nota_reporte = (animal_legado or {}).get("descripcion")
 
     if reporte.get("usuario_id"):
         usuario_reportante = supabase.table("usuarios").select(
@@ -539,6 +540,7 @@ async def get_historial_reporte(reporte_id: str, authorization: str = Header(Non
         "created_at": str(reporte["created_at"]),
         "foto_url": foto_reporte,
         "reportante_nombre": reportante_nombre or "anónimo",
+        "nota": nota_reporte,
     }]
 
     hitos = supabase.table("historial_reporte").select(
@@ -551,11 +553,20 @@ async def get_historial_reporte(reporte_id: str, authorization: str = Header(Non
         datos_extra = hito.get("datos_extra") or {}
         vol = hito.get("usuarios") or {}
         usuario_nombre = f"{vol.get('nombre') or ''} {vol.get('apellido_paterno') or ''}".strip()
+
+        # `historial_reporte.descripcion` es un texto genérico fijo ("Hito
+        # registrado: encontre_animal"), no la nota del voluntario — la nota
+        # real vive en datos_extra: la opción elegida (condicion_observada)
+        # y/o el comentario libre.
+        nota_partes = [p for p in (datos_extra.get("condicion_observada"), datos_extra.get("comentario")) if p]
+        nota_hito = " — ".join(nota_partes) if nota_partes else None
+
         eventos.append({
             "tipo_evento": hito["tipo_evento"],
             "created_at": str(hito["created_at"]),
             "foto_url": datos_extra.get("foto_url"),
             "usuario_nombre": usuario_nombre or None,
+            "nota": nota_hito,
         })
 
     eventos.sort(key=lambda e: e["created_at"])
