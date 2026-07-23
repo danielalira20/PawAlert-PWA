@@ -96,6 +96,7 @@ class ExperienciaCampoEnum(str, Enum):
     enfermedad_cuarentena = "enfermedad_cuarentena"
     reactivo_agresivo = "reactivo_agresivo"
     lesion_movilidad_reducida = "lesion_movilidad_reducida"
+    sin_experiencia = "sin_experiencia"
 
 
 class ViaTratamientoEnum(str, Enum):
@@ -267,6 +268,14 @@ class CapacidadesRequest(BaseModel):
         ):
             raise ValueError(
                 "'sin_experiencia' no puede combinarse con otras trayectorias"
+            )
+
+        if (
+            ExperienciaCampoEnum.sin_experiencia in self.experiencias_campo
+            and len(self.experiencias_campo) > 1
+        ):
+            raise ValueError(
+                "'sin_experiencia' no puede combinarse con experiencia de campo"
             )
 
         if (

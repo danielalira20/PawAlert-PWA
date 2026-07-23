@@ -71,11 +71,24 @@ def test_capacidades_v2_no_permite_tamanios_de_traslado_sin_vehiculo_apto():
             ["sin_experiencia", "mascotas_propias"],
             "'sin_experiencia'",
         ),
+        (
+            "experiencias_campo",
+            ["sin_experiencia", "docil_estable"],
+            "'sin_experiencia'",
+        ),
     ],
 )
 def test_capacidades_v2_respeta_opciones_excluyentes(campo, valores, mensaje):
     with pytest.raises(ValidationError, match=mensaje):
         CapacidadesRequest(**{campo: valores})
+
+
+def test_capacidades_v2_acepta_sin_experiencia_en_campo():
+    capacidades = CapacidadesRequest(
+        experiencias_campo=["sin_experiencia"],
+    )
+
+    assert capacidades.experiencias_campo == ["sin_experiencia"]
 
 
 def test_capacidades_v2_exige_otro_para_detallar_otras_especies():
@@ -89,3 +102,18 @@ def test_capacidades_v2_exige_otro_para_detallar_otras_especies():
 def test_capacidades_v2_limita_comentarios_a_250_caracteres():
     with pytest.raises(ValidationError):
         CapacidadesRequest(comentarios_adicionales="x" * 251)
+
+
+def test_capacidades_v2_no_sobrescribe_campos_legado_si_no_llegan_en_payload():
+    capacidades = CapacidadesRequest(
+        disponibilidad={"dias": ["lun"], "franjas": ["matutino"]},
+        radio_max_km=10,
+        acepto_terminos=True,
+    )
+
+    datos = capacidades.model_dump(mode="json", exclude_unset=True)
+
+    assert "ofrece_casa_hogar" not in datos
+    assert "capacidad_animales" not in datos
+    assert "otros_animales_en_casa" not in datos
+    assert "ninos_en_casa" not in datos

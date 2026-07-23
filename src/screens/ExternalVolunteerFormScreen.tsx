@@ -802,7 +802,7 @@ export default function ExternalVolunteerFormScreen({ onClose }: Props) {
              <TouchableOpacity 
                onPress={() => {
                  if (onClose) onClose(); 
-                 router.push('/capacidades'); 
+                 router.push('/capacidades' as any);
                }} 
                style={[styles.submitButton, { width: '100%' }]}
              >

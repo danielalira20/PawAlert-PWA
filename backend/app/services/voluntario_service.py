@@ -474,7 +474,7 @@ async def guardar_capacidades(voluntario_id: str, datos: dict) -> dict:
         )
 
     # Validaciones de negocio
-    if datos["capacidad_animales"] > 2:
+    if datos.get("capacidad_animales", 0) > 2:
         raise HTTPException(status_code=422, detail="La capacidad máxima es de 2 animales por voluntario")
 
     if not validar_claves_catalogo("tipo_animal_catalogo", datos.get("especies", [])):

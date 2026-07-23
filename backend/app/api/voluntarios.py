@@ -83,7 +83,10 @@ async def put_mis_capacidades(body: CapacidadesRequest, authorization: str = Hea
     voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
     # mode="json" convierte los Enum del contrato v2 a las claves de texto
     # que se persisten en PostgreSQL.
-    return await guardar_capacidades(voluntario_id, body.model_dump(mode="json"))
+    return await guardar_capacidades(
+        voluntario_id,
+        body.model_dump(mode="json", exclude_unset=True),
+    )
 
 
 @router.get("/me/reportes", status_code=200)

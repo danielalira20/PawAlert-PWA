@@ -160,7 +160,7 @@ BEGIN
       CHECK (
         experiencias_campo <@ ARRAY[
           'docil_estable', 'cachorros_neonatos', 'enfermedad_cuarentena',
-          'reactivo_agresivo', 'lesion_movilidad_reducida'
+          'reactivo_agresivo', 'lesion_movilidad_reducida', 'sin_experiencia'
         ]::text[]
       );
   END IF;
