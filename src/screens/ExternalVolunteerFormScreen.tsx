@@ -370,16 +370,64 @@ export default function ExternalVolunteerFormScreen({ onClose }: Props) {
   };
 
   // ─── ENVÍO ───
+  // ─── ENVÍO ───
   const handleSubmit = async () => {
     if (!validarPaso4()) { setShowSubmitError(true); return; }
     setShowSubmitError(false);
     setIsSubmitting(true);
     try {
-      setTimeout(() => {
-        setIsSubmitting(false);
-        setRegistroExitoso(true);
-        showToast({ type: 'success', title: '¡Éxito!', message: 'Tu postulación ha sido enviada.' });
-      }, 1500);
+      const formData = new FormData();
+
+      // 1. Empaquetar todas las respuestas en un solo objeto JSON
+      const datosFormulario = {
+        latitud: pinLocation.latitud,
+        longitud: pinLocation.longitud,
+        calle, numero, colonia, municipio, estado, referencia,
+        tipoVivienda, subcategoriaVivienda, customViviendaInput,
+        autorizacion, ubicacionAnimal, aceptaVisita,
+        numAdultos, horasSolo, ninosEdades, otrosAnimales, vacunados, puedeSeparar,
+        preferenciaEspecie, subcategoriaOtroEspecie, customOtroEspecieInput, preferenciaTamanio,
+        tiempoResguardo, tiempoResguardoDias,
+        checkAccesos, checkBardas, checkBalcones, checkEspacio,
+        checkAislamiento, checkCuarentena, checkNoEntregar,
+        nombreEmergencia, telEmergencia,
+        consentimiento,
+        // Agrupamos los horarios en un solo JSON bonito
+        horariosVisita: [
+          { dia: horario1Dia, hora: horario1Hora },
+          ...(horario2Dia ? [{ dia: horario2Dia, hora: horario2Hora }] : []),
+          ...(horario3Dia ? [{ dia: horario3Dia, hora: horario3Hora }] : [])
+        ]
+      };
+
+      // Adjuntamos todo el JSON como un solo campo de texto
+      formData.append('datos', JSON.stringify(datosFormulario));
+
+      // 2. Adjuntar los archivos multimedia (adaptado para Expo)
+      if (Platform.OS === 'web') {
+        const idRes = await fetch(identificacionUrl);
+        formData.append('identificacion', await idRes.blob(), `ine_${Date.now()}.jpg`);
+        if (videoUrl) {
+          const vidRes = await fetch(videoUrl);
+          formData.append('video', await vidRes.blob(), `video_${Date.now()}.mp4`);
+        }
+      } else {
+        formData.append('identificacion', { uri: identificacionUrl, name: `ine_${Date.now()}.jpg`, type: 'image/jpeg' } as any);
+        if (videoUrl) {
+          formData.append('video', { uri: videoUrl, name: `video_${Date.now()}.mp4`, type: 'video/mp4' } as any);
+        }
+      }
+
+      // 3. Hacer la petición al endpoint que acabamos de crear en FastAPI
+      await axios.post(`${API_URL}/voluntarios/externo/postular`, formData, { 
+        headers: { 
+          Authorization: `Bearer ${token}` 
+        } 
+      });
+
+      setIsSubmitting(false);
+      setRegistroExitoso(true);
+      
     } catch (error: any) {
       showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'Error al enviar.' });
       setIsSubmitting(false);

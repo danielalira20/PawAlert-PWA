@@ -1,12 +1,15 @@
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException, Header, UploadFile, File, Form
 from app.db.supabase import supabase
 from app.models.voluntario import PostulacionRequest, CapacidadesRequest
+import json
+
 from app.services.voluntario_service import (
     crear_postulacion,
     obtener_mi_voluntario,
     obtener_capacidades,
     guardar_capacidades,
     obtener_reportes_voluntario,
+    crear_perfil_externo,
 )
 
 router = APIRouter()
@@ -89,3 +92,54 @@ async def get_mis_reportes_voluntario(authorization: str = Header(None)):
     externo) puede ver sus casos asignados."""
     usuario = _obtener_usuario_autenticado(authorization)
     return await obtener_reportes_voluntario(usuario["id"])
+
+
+# ---------------------------------------------------------------------------
+# NUEVO ENDPOINT: POSTULACIÓN VOLUNTARIO EXTERNO (CASA TEMPORAL)
+# ---------------------------------------------------------------------------
+@router.post("/externo/postular", status_code=201)
+async def postular_voluntario_externo(
+    datos: str = Form(...),
+    identificacion: UploadFile = File(...),
+    video: UploadFile = File(None),
+    authorization: str = Header(None)
+):
+    """Recibe el formulario de casa temporal empaquetado (JSON + Archivos).
+    Se encarga de crear el perfil de voluntario si no existe y luego guardar
+    los detalles del hogar temporal."""
+    
+    usuario = _obtener_usuario_autenticado(authorization)
+
+    # 1. Asegurar que el usuario tenga un registro base en "voluntarios"
+    resultado = supabase.table("voluntarios").select("id").eq("usuario_id", usuario["id"]).execute()
+    
+    if resultado.data:
+        voluntario_id = resultado.data[0]["id"]
+    else:
+        nuevo = supabase.table("voluntarios").insert({
+            "usuario_id": usuario["id"],
+            "estado": "postulacion_pendiente"
+        }).execute()
+        voluntario_id = nuevo.data[0]["id"]
+
+    # 2. Parsear el string JSON a diccionario de Python
+    try:
+        datos_json = json.loads(datos)
+    except Exception:
+        raise HTTPException(status_code=400, detail="El campo 'datos' no tiene un formato válido.")
+
+    # 3. Enviar todo al servicio de lógica
+    try:
+        perfil = await crear_perfil_externo(
+            voluntario_id=voluntario_id,
+            datos_json=datos_json,
+            identificacion_file=identificacion,
+            video_file=video
+        )
+        return {
+            "message": "Postulación como casa temporal recibida con éxito", 
+            "perfil_id": perfil["id"]
+        }
+    except Exception as e:
+        # Esto atrapará errores de Supabase (como intentar postularse dos veces) o de storage
+        raise HTTPException(status_code=400, detail=f"Error al guardar postulación: {str(e)}")

@@ -1,10 +1,10 @@
 from datetime import datetime, timezone
 from math import radians, sin, cos, asin, sqrt
 from fastapi import HTTPException
-from app.db.supabase import supabase
+from app.db.supabase import supabase, supabase_admin
 from app.services.report_service import obtener_id_catalogo, registrar_historial
 from app.utils.animal_shaping import shape_animal_embed, shape_animal_response
-
+from app.services import storage_service
 
 def _distancia_km(lat1, lon1, lat2, lon2) -> float | None:
     """Haversine simple, solo informativo (no participa en el ranking de matching)."""
@@ -600,4 +600,73 @@ async def obtener_reportes_voluntario(usuario_id: str) -> dict:
         "historial": historial,
     }
  
+# ---------------------------------------------------------------------------
+# Perfil Voluntario Externo (Casa Temporal)
+# ---------------------------------------------------------------------------
+import json
+
+
+async def crear_perfil_externo(voluntario_id: str, datos_json: dict, identificacion_file, video_file=None) -> dict:
+    # 1. Subir los archivos a tu bucket de Supabase
+    # Ajusta "storage_service.upload" al nombre real de la función que uses en tu proyecto
+    identificacion_url = await storage_service.subir_foto(identificacion_file, "identificaciones")
+    video_url = None
+    if video_file:
+        video_url = await storage_service.subir_foto(video_file, "videos_recorridos")
+
+    # 2. Armar el diccionario con exactamente los nombres de las columnas que creaste en SQL
+    payload = {
+        "voluntario_id": voluntario_id,
         
+        "latitud": datos_json.get("latitud"),
+        "longitud": datos_json.get("longitud"),
+        "calle": datos_json.get("calle"),
+        "numero": datos_json.get("numero"),
+        "colonia": datos_json.get("colonia"),
+        "municipio": datos_json.get("municipio"),
+        "estado_ubicacion": datos_json.get("estado"),
+        "referencia": datos_json.get("referencia"),
+        
+        "tipo_vivienda": datos_json.get("tipoVivienda"),
+        "subcategoria_vivienda": datos_json.get("subcategoriaVivienda"),
+        "vivienda_otra_desc": datos_json.get("customViviendaInput"),
+        "autorizacion_propietario": datos_json.get("autorizacion"),
+        "ubicacion_animal": datos_json.get("ubicacionAnimal"),
+        "acepta_visita": datos_json.get("aceptaVisita"),
+        
+        "adultos_hogar": int(datos_json.get("numAdultos", 0)),
+        "horas_solo": int(datos_json.get("horasSolo", 0)),
+        "ninos_hogar": datos_json.get("ninosEdades"),
+        "otros_animales": datos_json.get("otrosAnimales"),
+        "animales_vacunados": datos_json.get("vacunados"),
+        "puede_aislar": datos_json.get("puedeSeparar"),
+        
+        "preferencia_especies": datos_json.get("preferenciaEspecie", []),
+        "subcategoria_otra_especie": datos_json.get("subcategoriaOtroEspecie"),
+        "especie_otra_desc": datos_json.get("customOtroEspecieInput"),
+        "preferencia_tamanios": datos_json.get("preferenciaTamanio", []),
+        
+        "tiempo_resguardo": datos_json.get("tiempoResguardo"),
+        "tiempo_resguardo_dias": int(datos_json.get("tiempoResguardoDias")) if datos_json.get("tiempoResguardoDias") else None,
+        
+        "chk_accesos_seguros": datos_json.get("checkAccesos", False),
+        "chk_bardas": datos_json.get("checkBardas", False),
+        "chk_balcones": datos_json.get("checkBalcones", False),
+        "chk_espacio": datos_json.get("checkEspacio", False),
+        "chk_aislamiento": datos_json.get("checkAislamiento", False),
+        "chk_cuarentena": datos_json.get("checkCuarentena", False),
+        "chk_no_entregar": datos_json.get("checkNoEntregar", False),
+        
+        "contacto_emergencia_nombre": datos_json.get("nombreEmergencia"),
+        "contacto_emergencia_telefono": datos_json.get("telEmergencia"),
+        
+        "identificacion_url": identificacion_url,
+        "video_recorrido_url": video_url,
+        "horarios_visita": datos_json.get("horariosVisita", []),
+        "consentimiento_evidencia": datos_json.get("consentimiento", False)
+    }
+
+    # 3. Guardar en la base de datos usando el cliente de Supabase
+    resultado = supabase_admin.table("perfil_casa_temporal").insert(payload).execute()
+    
+    return resultado.data[0]
