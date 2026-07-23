@@ -585,7 +585,14 @@ async def update_report_status(reporte_id: str, body: dict, authorization: str =
     if reporte.data[0]["asociacion_asignada_id"] != asociacion_id:
         raise HTTPException(status_code=403, detail="Este reporte no pertenece a tu asociación")
 
-    return await cambiar_estado_reporte(reporte_id, body.get("estado"))
+    return await cambiar_estado_reporte(
+        reporte_id,
+        body.get("estado"),
+        conclusion=body.get("conclusion"),
+        notas=body.get("notas"),
+        usuario_id=usuario["id"],
+        foto_url=body.get("foto_url"),
+    )
 
 @router.get("/me", status_code=200)
 async def get_mis_reportes(authorization: str = Header(None)):

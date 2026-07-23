@@ -59,7 +59,113 @@ def test_cambio_estado_permite_a_asociacion_duena(make_query):
         )
 
     assert response.status_code == 200
-    cambiar.assert_awaited_once_with("rep-1", "en_camino")
+    cambiar.assert_awaited_once_with(
+        "rep-1", "en_camino", conclusion=None, notas=None, usuario_id="user-aso", foto_url=None
+    )
+
+
+def test_cerrar_caso_registra_conclusion_notas_y_usuario(make_query):
+    tablas = {
+        "reportes": make_query(data=[{
+            "id": "rep-1", "estado_reporte": "rescatado", "usuario_id": None,
+            "updated_at": "2026-07-23T12:00:00+00:00",
+        }]),
+        "reporte_estados": make_query(data=[{"id": "estado-cerrado"}]),
+        "asignacion_estados": make_query(data=[{"id": "asignacion-completada"}]),
+        "reporte_asignaciones": make_query(data=[]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+
+    with (
+        patch.object(report_service, "supabase", supabase),
+        patch.object(report_service, "registrar_historial") as historial,
+    ):
+        import asyncio
+        resultado = asyncio.run(report_service.cambiar_estado_reporte(
+            "rep-1", "cerrado",
+            conclusion="Animal rescatado y estable",
+            notas="Se llevó al refugio sin incidentes",
+            usuario_id="user-aso-1",
+            foto_url="https://x/foto-cierre.jpg",
+        ))
+
+    assert resultado["estado"] == "cerrado"
+    historial.assert_called_once_with(
+        reporte_id="rep-1",
+        usuario_id="user-aso-1",
+        tipo_evento="caso_cerrado",
+        descripcion="Caso cerrado: Animal rescatado y estable — Se llevó al refugio sin incidentes",
+        datos_extra={
+            "estado_anterior": "rescatado",
+            "estado_nuevo": "cerrado",
+            "conclusion": "Animal rescatado y estable",
+            "notas": "Se llevó al refugio sin incidentes",
+            "foto_url": "https://x/foto-cierre.jpg",
+        },
+    )
+
+
+def test_cerrar_caso_sin_foto_no_incluye_foto_url(make_query):
+    # La foto es opcional: si no se adjunta, el cierre debe seguir
+    # funcionando igual que antes, solo con foto_url=None en datos_extra.
+    tablas = {
+        "reportes": make_query(data=[{
+            "id": "rep-1", "estado_reporte": "rescatado", "usuario_id": None,
+            "updated_at": "2026-07-23T12:00:00+00:00",
+        }]),
+        "reporte_estados": make_query(data=[{"id": "estado-cerrado"}]),
+        "asignacion_estados": make_query(data=[{"id": "asignacion-completada"}]),
+        "reporte_asignaciones": make_query(data=[]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+
+    with (
+        patch.object(report_service, "supabase", supabase),
+        patch.object(report_service, "registrar_historial") as historial,
+    ):
+        import asyncio
+        resultado = asyncio.run(report_service.cambiar_estado_reporte(
+            "rep-1", "cerrado",
+            conclusion="Animal rescatado y estable",
+            usuario_id="user-aso-1",
+        ))
+
+    assert resultado["estado"] == "cerrado"
+    _, kwargs = historial.call_args
+    assert kwargs["datos_extra"]["foto_url"] is None
+
+
+def test_transicion_no_cerrado_mantiene_historial_generico(make_query):
+    # Cualquier transición que no sea el cierre del caso debe seguir
+    # exactamente igual que antes: tipo_evento genérico y usuario_id=None,
+    # sin importar si el llamador manda usuario_id/conclusion/notas o no.
+    tablas = {
+        "reportes": make_query(data=[{
+            "id": "rep-1", "estado_reporte": "asignado", "usuario_id": None,
+            "updated_at": "2026-07-23T12:00:00+00:00",
+        }]),
+        "reporte_estados": make_query(data=[{"id": "estado-en-camino"}]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+
+    with (
+        patch.object(report_service, "supabase", supabase),
+        patch.object(report_service, "registrar_historial") as historial,
+    ):
+        import asyncio
+        resultado = asyncio.run(report_service.cambiar_estado_reporte("rep-1", "en_camino"))
+
+    assert resultado["estado"] == "en_camino"
+    historial.assert_called_once_with(
+        reporte_id="rep-1",
+        usuario_id=None,
+        tipo_evento="estado_cambiado",
+        descripcion="Estado cambiado de asignado a en_camino",
+        datos_extra={"estado_anterior": "asignado", "estado_nuevo": "en_camino", "razon": None},
+    )
 
 
 def test_busqueda_telefono_sin_token_devuelve_401():

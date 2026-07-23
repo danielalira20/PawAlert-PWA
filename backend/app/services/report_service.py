@@ -469,7 +469,15 @@ async def obtener_reportes() -> list:
 
     return reportes
 
-async def cambiar_estado_reporte(reporte_id: str, nuevo_estado: str, razon: str | None = None) -> dict:
+async def cambiar_estado_reporte(
+    reporte_id: str,
+    nuevo_estado: str,
+    razon: str | None = None,
+    conclusion: str | None = None,
+    notas: str | None = None,
+    usuario_id: str | None = None,
+    foto_url: str | None = None,
+) -> dict:
     resultado = supabase.table("reportes").select(
         "id, estado_reporte, usuario_id"
     ).eq("id", reporte_id).execute()
@@ -507,14 +515,36 @@ async def cambiar_estado_reporte(reporte_id: str, nuevo_estado: str, razon: str 
                 "estado": "completada",
             }).eq("reporte_id", reporte_id).execute()
 
-    registrar_historial(
-        reporte_id=reporte_id,
-        usuario_id=None,
-        tipo_evento="estado_cambiado",
-        descripcion=f"Estado cambiado de {estado_actual} a {nuevo_estado}"
-                    + (f" (razón: {razon})" if razon else ""),
-        datos_extra={"estado_anterior": estado_actual, "estado_nuevo": nuevo_estado, "razon": razon}
-    )
+    if nuevo_estado == "cerrado":
+        # Cierre de caso: registro específico con la conclusión elegida por
+        # quien cierra (dropdown "¿Cómo concluyó el rescate?") + nota libre,
+        # y el usuario_id real — a diferencia del resto de transiciones,
+        # aquí sí importa saber quién cerró el caso.
+        descripcion_cierre = f"Caso cerrado: {conclusion}" if conclusion else "Caso cerrado"
+        if notas:
+            descripcion_cierre += f" — {notas}"
+        registrar_historial(
+            reporte_id=reporte_id,
+            usuario_id=usuario_id,
+            tipo_evento="caso_cerrado",
+            descripcion=descripcion_cierre,
+            datos_extra={
+                "estado_anterior": estado_actual,
+                "estado_nuevo": nuevo_estado,
+                "conclusion": conclusion,
+                "notas": notas,
+                "foto_url": foto_url,
+            }
+        )
+    else:
+        registrar_historial(
+            reporte_id=reporte_id,
+            usuario_id=None,
+            tipo_evento="estado_cambiado",
+            descripcion=f"Estado cambiado de {estado_actual} a {nuevo_estado}"
+                        + (f" (razón: {razon})" if razon else ""),
+            datos_extra={"estado_anterior": estado_actual, "estado_nuevo": nuevo_estado, "razon": razon}
+        )
 
     return {
         "id": reporte_id,
