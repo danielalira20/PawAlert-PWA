@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -222,6 +222,7 @@ export default function CapacidadesFormScreen({
   const { toast, translateY, showToast } = useToast();
   const { width } = useWindowDimensions();
   const compact = width < 700;
+  const formScrollRef = useRef<ScrollView>(null);
 
   const [paso, setPaso] = useState(1);
   const [mostrarConfirmacion, setMostrarConfirmacion] = useState(false);
@@ -269,6 +270,14 @@ export default function CapacidadesFormScreen({
   const [motivaciones, setMotivaciones] = useState<string[]>([]);
   const [comentarios, setComentarios] = useState('');
   const [aceptoTerminos, setAceptoTerminos] = useState(false);
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      formScrollRef.current?.scrollTo({ y: 0, animated: false });
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [paso, mostrarConfirmacion]);
 
   useEffect(() => {
     const cargar = async () => {
@@ -870,7 +879,7 @@ export default function CapacidadesFormScreen({
           </View>
 
           {mostrarConfirmacion ? (
-            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+            <ScrollView ref={formScrollRef} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
               <ReviewRow label="Cuándo puedes ayudar" value={`${labels(dias, DIAS).join(', ')} · ${labels(franjas, FRANJAS).join(', ')}`} />
               <ReviewRow label="Tiempo para responder" value={TIEMPOS_REACCION.find((item) => item.value === tiempoReaccion)?.label || '—'} />
               <ReviewRow label="Ayuda en emergencias" value={URGENCIAS.find((item) => item.value === urgencias)?.label || '—'} />
@@ -900,7 +909,7 @@ export default function CapacidadesFormScreen({
             </ScrollView>
           ) : (
             <>
-              <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+              <ScrollView ref={formScrollRef} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
                 {renderPaso()}
               </ScrollView>
               <View style={styles.fixedFooter}>
