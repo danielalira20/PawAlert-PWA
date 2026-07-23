@@ -473,12 +473,13 @@ async def get_reportes_asignados(authorization: str = Header(None)):
     return reportes
 
 
-# Tipos de hito que la línea de tiempo del panel de asociación necesita
+# Tipos de evento que la línea de tiempo del panel de asociación necesita
 # mostrar además del evento de creación. Los valores reales que escribe
 # POST /reports/{id}/hitos son "hito_{tipo_hito}" (ver reports.py), es decir
 # "hito_encontre_animal" y "hito_llegue_refugio" — no "hito_encontrado"/
-# "hito_refugio".
-TIPOS_HITO_TIMELINE = ["hito_encontre_animal", "hito_llegue_refugio"]
+# "hito_refugio". "caso_cerrado" lo escribe cambiar_estado_reporte()
+# (report_service.py) cuando nuevo_estado == "cerrado".
+TIPOS_HITO_TIMELINE = ["hito_encontre_animal", "hito_llegue_refugio", "caso_cerrado"]
 
 
 @router.get("/me/reportes/{reporte_id}/historial", status_code=200)
@@ -557,8 +558,12 @@ async def get_historial_reporte(reporte_id: str, authorization: str = Header(Non
         # `historial_reporte.descripcion` es un texto genérico fijo ("Hito
         # registrado: encontre_animal"), no la nota del voluntario — la nota
         # real vive en datos_extra: la opción elegida (condicion_observada)
-        # y/o el comentario libre.
-        nota_partes = [p for p in (datos_extra.get("condicion_observada"), datos_extra.get("comentario")) if p]
+        # y/o el comentario libre. Para "caso_cerrado" los campos equivalentes
+        # son conclusion/notas (ver cambiar_estado_reporte).
+        if hito["tipo_evento"] == "caso_cerrado":
+            nota_partes = [p for p in (datos_extra.get("conclusion"), datos_extra.get("notas")) if p]
+        else:
+            nota_partes = [p for p in (datos_extra.get("condicion_observada"), datos_extra.get("comentario")) if p]
         nota_hito = " — ".join(nota_partes) if nota_partes else None
 
         eventos.append({

@@ -138,6 +138,17 @@ def test_historial_reporte_caso_feliz(make_query):
                 },
                 "usuarios": {"nombre": "Carlos", "apellido_paterno": "Ruiz"},
             },
+            {
+                "tipo_evento": "caso_cerrado",
+                "created_at": "2026-07-20T12:00:00+00:00",
+                "datos_extra": {
+                    "estado_anterior": "rescatado",
+                    "estado_nuevo": "cerrado",
+                    "conclusion": "Animal rescatado y estable",
+                    "notas": "Se quedó en el refugio",
+                },
+                "usuarios": {"nombre": "Ana", "apellido_paterno": "Gómez"},
+            },
         ]),
     }
     _mock_usuario_autenticado(tablas, make_query)
@@ -156,8 +167,9 @@ def test_historial_reporte_caso_feliz(make_query):
     assert body["reporte_id"] == "reporte-1"
     tipos = [e["tipo_evento"] for e in body["eventos"]]
     # Orden cronológico (created_at asc), sin importar el orden en que
-    # historial_reporte haya regresado los hitos.
-    assert tipos == ["reporte_creado", "hito_encontre_animal", "hito_llegue_refugio"]
+    # historial_reporte haya regresado los hitos. "caso_cerrado" queda al
+    # final porque su created_at es el más reciente, no por un caso especial.
+    assert tipos == ["reporte_creado", "hito_encontre_animal", "hito_llegue_refugio", "caso_cerrado"]
 
     creado = body["eventos"][0]
     assert creado["foto_url"] == "https://x/foto-reporte.jpg"
@@ -175,6 +187,13 @@ def test_historial_reporte_caso_feliz(make_query):
     assert refugio["foto_url"] == "https://x/foto-refugio.jpg"
     assert refugio["usuario_nombre"] == "Carlos Ruiz"
     assert refugio["nota"] == "Igual que en el reporte"
+
+    cierre = body["eventos"][3]
+    assert cierre["foto_url"] is None
+    assert cierre["usuario_nombre"] == "Ana Gómez"
+    # conclusion (elegida en "¿Cómo concluyó el rescate?") + notas libres,
+    # no condicion_observada/comentario — esos campos son de los hitos.
+    assert cierre["nota"] == "Animal rescatado y estable — Se quedó en el refugio"
 
 
 def test_historial_reporte_sin_hitos(make_query):
