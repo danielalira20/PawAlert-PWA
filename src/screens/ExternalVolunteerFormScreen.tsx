@@ -797,8 +797,10 @@ export default function ExternalVolunteerFormScreen({ onClose }: Props) {
          <View style={[styles.centeredContent, { maxWidth: 500 }]}>
            <View style={[styles.cardContainer, { padding: 40, alignItems: 'center' }]}>
              <Ionicons name="checkmark-circle" size={80} color={COLORS.bgTeal} style={{ marginBottom: 20 }} />
-             <Text style={{ fontSize: 24, fontWeight: '900', color: COLORS.textDark, textAlign: 'center', marginBottom: 16 }}>¡Postulación Enviada!</Text>
-             <Text style={{ fontSize: 16, color: COLORS.textLight, textAlign: 'center', lineHeight: 24, marginBottom: 32 }}>Tu información está en revisión segura. Las asociaciones cercanas podrán ver tu perfil anonimizado y se pondrán en contacto para la visita.</Text>
+             <Text style={{ fontSize: 24, fontWeight: '900', color: COLORS.textDark, textAlign: 'center', marginBottom: 16 }}>¡Información guardada!</Text>
+             <Text style={{ fontSize: 16, color: COLORS.textLight, textAlign: 'center', lineHeight: 24, marginBottom: 32 }}>
+               Para terminar tu postulación, cuéntanos cómo puedes ayudar.
+             </Text>
              <TouchableOpacity 
                onPress={() => {
                  if (onClose) onClose(); 
@@ -806,7 +808,7 @@ export default function ExternalVolunteerFormScreen({ onClose }: Props) {
                }} 
                style={[styles.submitButton, { width: '100%' }]}
              >
-               <Text style={styles.submitButtonText}>Formulario de Capacidades</Text>
+               <Text style={styles.submitButtonText}>Completar mis capacidades</Text>
              </TouchableOpacity>
            </View>
          </View>

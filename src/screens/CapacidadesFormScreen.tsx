@@ -34,12 +34,12 @@ const COLORS = {
 };
 
 const PASOS = [
-  'Disponibilidad',
-  'Movilidad',
-  'Manejo animal',
-  'Equipo y seguridad',
-  'Contacto',
-  'Motivación',
+  'Tus tiempos',
+  'Tu zona y movilidad',
+  'Tu experiencia',
+  'Equipo y bienestar',
+  'Cómo contactarte',
+  'Para conocerte mejor',
 ];
 
 type Option = { value: string; label: string; description?: string };
@@ -55,32 +55,32 @@ const DIAS: Option[] = [
 ];
 
 const FRANJAS: Option[] = [
-  { value: 'matutino', label: 'Matutino', description: '6:00–12:00' },
-  { value: 'vespertino', label: 'Vespertino', description: '12:00–18:00' },
-  { value: 'nocturno', label: 'Nocturno', description: '18:00–22:00' },
-  { value: 'madrugada', label: 'Madrugada', description: '22:00–6:00' },
+  { value: 'matutino', label: 'Por la mañana', description: '6:00–12:00' },
+  { value: 'vespertino', label: 'Por la tarde', description: '12:00–18:00' },
+  { value: 'nocturno', label: 'Por la noche', description: '18:00–22:00' },
+  { value: 'madrugada', label: 'De madrugada', description: '22:00–6:00' },
 ];
 
 const TIEMPOS_REACCION: Option[] = [
-  { value: 'inmediata', label: 'Respuesta inmediata' },
-  { value: 'una_hora', label: 'Mínimo 1 hora' },
-  { value: 'tres_horas', label: 'Al menos 3 horas' },
-  { value: 'un_dia', label: 'Con un día previo' },
+  { value: 'inmediata', label: 'De inmediato' },
+  { value: 'una_hora', label: 'En alrededor de 1 hora' },
+  { value: 'tres_horas', label: 'En unas 3 horas' },
+  { value: 'un_dia', label: 'Necesito aviso con un día de anticipación' },
 ];
 
 const URGENCIAS: Option[] = [
   { value: 'si', label: 'Sí' },
-  { value: 'ocasional', label: 'Únicamente en ciertas ocasiones' },
+  { value: 'ocasional', label: 'Solo en algunas ocasiones' },
   { value: 'no', label: 'No' },
 ];
 
 const MEDIOS_TRANSPORTE: Option[] = [
-  { value: 'automovil', label: 'Automóvil particular' },
+  { value: 'automovil', label: 'Auto propio' },
   { value: 'motocicleta', label: 'Motocicleta' },
   { value: 'transporte_publico', label: 'Transporte público' },
   { value: 'bicicleta', label: 'Bicicleta' },
   { value: 'a_pie', label: 'A pie' },
-  { value: 'depende_terceros', label: 'Dependo de terceros' },
+  { value: 'depende_terceros', label: 'Necesito apoyo de alguien más' },
 ];
 
 const TAMANIOS: Option[] = [
@@ -90,8 +90,8 @@ const TAMANIOS: Option[] = [
 ];
 
 const ESPECIES: Option[] = [
-  { value: 'perro', label: 'Caninos' },
-  { value: 'gato', label: 'Felinos' },
+  { value: 'perro', label: 'Perros' },
+  { value: 'gato', label: 'Gatos' },
   { value: 'otro', label: 'Otras especies' },
 ];
 
@@ -104,33 +104,33 @@ const OTRAS_ESPECIES: Option[] = [
 ];
 
 const PRIMEROS_AUXILIOS: Option[] = [
-  { value: 'sin_formacion', label: 'Sin formación previa' },
-  { value: 'basico', label: 'Nivel básico' },
-  { value: 'formal', label: 'Capacitación formal declarada' },
+  { value: 'sin_formacion', label: 'Todavía no tengo experiencia' },
+  { value: 'basico', label: 'Conozco lo básico' },
+  { value: 'formal', label: 'He tomado una capacitación formal' },
 ];
 
 const EXPERIENCIAS_CAMPO: Option[] = [
   { value: 'docil_estable', label: 'Animales dóciles y estables' },
   { value: 'cachorros_neonatos', label: 'Cachorros o neonatos' },
-  { value: 'enfermedad_cuarentena', label: 'Enfermedad o cuarentena' },
-  { value: 'reactivo_agresivo', label: 'Conducta reactiva o agresiva' },
-  { value: 'lesion_movilidad_reducida', label: 'Lesiones o movilidad reducida' },
+  { value: 'enfermedad_cuarentena', label: 'Animales enfermos o que necesitan estar separados' },
+  { value: 'reactivo_agresivo', label: 'Animales nerviosos, defensivos o agresivos' },
+  { value: 'lesion_movilidad_reducida', label: 'Animales lesionados o con dificultad para moverse' },
   { value: 'sin_experiencia', label: 'Sin experiencia en estas situaciones' },
 ];
 
 const VIAS_TRATAMIENTO: Option[] = [
-  { value: 'oral', label: 'Vía oral' },
-  { value: 'topica', label: 'Aplicación tópica' },
+  { value: 'oral', label: 'Medicamentos por boca' },
+  { value: 'topica', label: 'Cremas o tratamientos en la piel' },
   { value: 'inyectable_avanzado', label: 'Inyecciones o tratamientos avanzados' },
 ];
 
 const TRAYECTORIAS: Option[] = [
-  { value: 'mascotas_propias', label: 'Cuidado de mascotas propias' },
-  { value: 'rescate_independiente', label: 'Rescates independientes' },
-  { value: 'casa_temporal', label: 'Experiencia previa como casa temporal' },
-  { value: 'refugio_asociacion', label: 'Refugios u organizaciones' },
-  { value: 'clinica_veterinaria', label: 'Clínicas veterinarias' },
-  { value: 'sin_experiencia', label: 'Sin trayectoria previa' },
+  { value: 'mascotas_propias', label: 'Cuidando a mis propias mascotas' },
+  { value: 'rescate_independiente', label: 'Ayudando en rescates por mi cuenta' },
+  { value: 'casa_temporal', label: 'Ofreciendo casa temporal' },
+  { value: 'refugio_asociacion', label: 'Colaborando con refugios u organizaciones' },
+  { value: 'clinica_veterinaria', label: 'Trabajando en una clínica veterinaria' },
+  { value: 'sin_experiencia', label: 'Aún no tengo experiencia' },
 ];
 
 const ANIOS_EXPERIENCIA: Option[] = [
@@ -143,7 +143,7 @@ const ANIOS_EXPERIENCIA: Option[] = [
 const EQUIPAMIENTO: Option[] = [
   { value: 'transportadora_chica', label: 'Transportadora chica' },
   { value: 'transportadora_grande', label: 'Transportadora grande' },
-  { value: 'jaula_contencion', label: 'Box o jaula de contención' },
+  { value: 'jaula_contencion', label: 'Jaula de contención' },
   { value: 'correas_arneses', label: 'Correas, arneses o pecheras' },
   { value: 'proteccion_vehiculo', label: 'Protección interior para vehículo' },
   { value: 'guantes_manejo', label: 'Guantes de manejo especializado' },
@@ -173,20 +173,20 @@ const CANALES: Option[] = [
 ];
 
 const PROYECCIONES: Option[] = [
-  { value: 'ocasional', label: 'Intervenciones ocasionales' },
+  { value: 'ocasional', label: 'De vez en cuando' },
   { value: 'uno_tres_meses', label: 'De 1 a 3 meses' },
   { value: 'tres_seis_meses', label: 'De 3 a 6 meses' },
   { value: 'mas_seis_meses', label: 'Más de 6 meses' },
-  { value: 'continua', label: 'Participación continua' },
+  { value: 'continua', label: 'De forma continua' },
 ];
 
 const MOTIVACIONES: Option[] = [
-  { value: 'salvar_animales', label: 'Salvaguardar animales en peligro' },
-  { value: 'apoyar_colectivos', label: 'Respaldar colectivos locales' },
-  { value: 'aplicar_conocimientos', label: 'Aplicar conocimientos previos' },
-  { value: 'adquirir_experiencia', label: 'Adquirir experiencia y capacitación' },
-  { value: 'impacto_social', label: 'Fomentar un impacto social positivo' },
-  { value: 'apoyar_recuperacion', label: 'Apoyar procesos de recuperación' },
+  { value: 'salvar_animales', label: 'Ayudar a animales en peligro' },
+  { value: 'apoyar_colectivos', label: 'Apoyar a asociaciones de mi comunidad' },
+  { value: 'aplicar_conocimientos', label: 'Compartir lo que ya sé' },
+  { value: 'adquirir_experiencia', label: 'Aprender y adquirir experiencia' },
+  { value: 'impacto_social', label: 'Generar un cambio positivo' },
+  { value: 'apoyar_recuperacion', label: 'Acompañar la recuperación de los animales' },
 ];
 
 interface Props {
@@ -225,6 +225,7 @@ export default function CapacidadesFormScreen({
 
   const [paso, setPaso] = useState(1);
   const [mostrarConfirmacion, setMostrarConfirmacion] = useState(false);
+  const [postulacionCompletada, setPostulacionCompletada] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
@@ -531,12 +532,15 @@ export default function CapacidadesFormScreen({
       await axios.put(`${API_URL}/voluntarios/me/capacidades`, payload, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (esPostulacionNueva) {
+        setMostrarConfirmacion(false);
+        setPostulacionCompletada(true);
+        return;
+      }
       showToast({
         type: 'success',
         title: '¡Listo!',
-        message: esPostulacionNueva
-          ? 'Tu postulación y capacidades quedaron registradas.'
-          : 'Tus capacidades fueron actualizadas.',
+        message: 'Tus capacidades fueron actualizadas.',
       });
       if (fromProfile && onClose) {
         onClose();
@@ -560,19 +564,19 @@ export default function CapacidadesFormScreen({
     if (paso === 1) {
       return (
         <>
-          <FormSection title="Días disponibles" subtitle="Puedes seleccionar varios días.">
+          <FormSection title="¿Qué días sueles estar disponible?" subtitle="Elige todos los días en los que normalmente podrías ayudar.">
             <MultiOptions options={DIAS} selected={dias} onToggle={(value) => toggle(value, dias, setDias)} error={errors.dias} />
           </FormSection>
-          <FormSection title="Franjas de mayor facilidad" subtitle="Selecciona todos los bloques que normalmente puedas cubrir.">
+          <FormSection title="¿En qué horarios te queda más fácil ayudar?" subtitle="Puedes elegir más de un horario.">
             <MultiOptions options={FRANJAS} selected={franjas} onToggle={(value) => toggle(value, franjas, setFranjas)} error={errors.franjas} />
           </FormSection>
-          <FormSection title="Tiempo estimado de reacción">
+          <FormSection title="Si recibes una alerta, ¿cuánto tardarías en responder?">
             <SingleOptions options={TIEMPOS_REACCION} selected={tiempoReaccion} onSelect={setTiempoReaccion} error={errors.tiempoReaccion} />
           </FormSection>
-          <FormSection title="¿Puedes atender incidencias críticas?">
+          <FormSection title="¿Podrías ayudar en una emergencia?">
             <SingleOptions options={URGENCIAS} selected={urgencias} onSelect={setUrgencias} error={errors.urgencias} />
           </FormSection>
-          <FormSection title="Límite de casos simultáneos">
+          <FormSection title="¿Cuántos casos podrías atender al mismo tiempo?">
             <SingleOptions
               options={[1, 2, 3].map((value) => ({ value: String(value), label: `${value} caso${value > 1 ? 's' : ''}` }))}
               selected={String(maxCasos)}
@@ -586,7 +590,7 @@ export default function CapacidadesFormScreen({
     if (paso === 2) {
       return (
         <>
-          <FormSection title="Área geográfica base" subtitle="La asociación verá una zona aproximada, no una dirección de casa.">
+          <FormSection title="¿Desde qué zona podrías apoyar?" subtitle="Solo compartiremos una zona aproximada, no la dirección de tu casa.">
             <TouchableOpacity style={styles.locationButton} onPress={handleGetLocation} disabled={isLoadingGps}>
               <Ionicons name="locate" size={18} color={COLORS.bgTeal} />
               <Text style={styles.locationButtonText}>
@@ -596,8 +600,8 @@ export default function CapacidadesFormScreen({
             <View style={[styles.mapContainer, errors.ubicacion && styles.errorBorder]}>
               <LocationPickerMap
                 selectedPosition={ubicacion}
-                instructionText="Toca el mapa para marcar tu zona base"
-                helperText="Puedes arrastrar el pin; se usará como punto operativo aproximado"
+                instructionText="Toca el mapa para marcar la zona desde la que ayudarías"
+                helperText="Puedes mover el pin para ajustar la zona"
                 onLocationSelect={(latitud, longitud) => {
                   setUbicacion({ latitud, longitud });
                   setUbicacionConfirmada(true);
@@ -606,7 +610,7 @@ export default function CapacidadesFormScreen({
             </View>
             {errors.ubicacion && <ErrorText text={errors.ubicacion} />}
           </FormSection>
-          <FormSection title="Distancia máxima de desplazamiento">
+          <FormSection title="¿Qué tan lejos podrías desplazarte?">
             <SingleOptions
               options={[5, 10, 20, 30].map((km) => ({ value: String(km), label: `Hasta ${km} km` }))}
               selected={radioMaxKm ? String(radioMaxKm) : ''}
@@ -614,17 +618,17 @@ export default function CapacidadesFormScreen({
               error={errors.radio}
             />
           </FormSection>
-          <FormSection title="Medios de transporte habituales">
+          <FormSection title="¿Cómo sueles trasladarte?">
             <MultiOptions options={MEDIOS_TRANSPORTE} selected={mediosTransporte} onToggle={(value) => toggle(value, mediosTransporte, setMediosTransporte)} error={errors.medios} />
           </FormSection>
-          <FormSection title="¿Tienes una unidad apta para trasladar animales?">
+          <FormSection title="¿Tienes un vehículo donde puedas llevar animales?">
             <BooleanOptions value={vehiculoApto} onChange={(value) => {
               setVehiculoApto(value);
               if (!value) setTamaniosTraslado([]);
             }} error={errors.vehiculo} />
           </FormSection>
           {vehiculoApto && (
-            <FormSection title="Tamaños que puedes trasladar">
+            <FormSection title="¿Qué tamaños podrías trasladar en tu vehículo?">
               <MultiOptions options={TAMANIOS} selected={tamaniosTraslado} onToggle={(value) => toggle(value, tamaniosTraslado, setTamaniosTraslado)} error={errors.tamaniosTraslado} />
             </FormSection>
           )}
@@ -636,7 +640,7 @@ export default function CapacidadesFormScreen({
       const todasSeleccionadas = ESPECIES.every((option) => especiesManejo.includes(option.value));
       return (
         <>
-          <FormSection title="Especies con las que estás familiarizado">
+          <FormSection title="¿Con qué animales te sientes cómodo ayudando?">
             <TouchableOpacity
               style={[styles.allButton, todasSeleccionadas && styles.allButtonSelected]}
               onPress={() => setEspeciesManejo(todasSeleccionadas ? [] : ESPECIES.map((option) => option.value))}
@@ -649,20 +653,20 @@ export default function CapacidadesFormScreen({
             }} error={errors.especies} />
           </FormSection>
           {especiesManejo.includes('otro') && (
-            <FormSection title="¿Qué otras especies?">
+            <FormSection title="¿Con qué otros animales?">
               <MultiOptions options={OTRAS_ESPECIES} selected={otrasEspecies} onToggle={(value) => toggle(value, otrasEspecies, setOtrasEspecies)} error={errors.otrasEspecies} />
             </FormSection>
           )}
-          <FormSection title="Tamaños que puedes contener con seguridad">
+          <FormSection title="¿Qué tamaños puedes manejar de forma segura?">
             <MultiOptions options={TAMANIOS} selected={tamaniosManejo} onToggle={(value) => toggle(value, tamaniosManejo, setTamaniosManejo)} error={errors.tamaniosManejo} />
           </FormSection>
-          <FormSection title="Formación en primeros auxilios veterinarios" subtitle="Esta respuesta es experiencia declarada; no representa una certificación verificada.">
+          <FormSection title="¿Qué tanto sabes de primeros auxilios para animales?">
             <SingleOptions options={PRIMEROS_AUXILIOS} selected={primerosAuxilios} onSelect={setPrimerosAuxilios} error={errors.primerosAuxilios} />
           </FormSection>
-          <FormSection title="Experiencia específica en campo">
+          <FormSection title="¿En qué situaciones has ayudado antes?">
             <MultiOptions options={EXPERIENCIAS_CAMPO} selected={experienciasCampo} onToggle={(value) => toggle(value, experienciasCampo, setExperienciasCampo, 'sin_experiencia')} error={errors.experienciasCampo} />
           </FormSection>
-          <FormSection title="Suministro de tratamientos" subtitle="Selecciona únicamente lo que hayas realizado previamente.">
+          <FormSection title="¿Has dado alguno de estos tratamientos?" subtitle="Elige solo los que ya hayas realizado.">
             <TouchableOpacity
               style={[styles.allButton, sinTratamientos && styles.allButtonSelected]}
               onPress={() => {
@@ -677,7 +681,7 @@ export default function CapacidadesFormScreen({
               toggle(value, viasTratamiento, setViasTratamiento);
             }} error={errors.tratamientos} />
           </FormSection>
-          <FormSection title="Trayectoria previa">
+          <FormSection title="¿Dónde has adquirido experiencia?">
             <MultiOptions options={TRAYECTORIAS} selected={trayectorias} onToggle={(value) => {
               toggle(value, trayectorias, setTrayectorias, 'sin_experiencia');
               if (value === 'sin_experiencia') setExperienciaAnios('sin_experiencia');
@@ -686,7 +690,7 @@ export default function CapacidadesFormScreen({
               }
             }} error={errors.trayectorias} />
           </FormSection>
-          <FormSection title="Años de experiencia">
+          <FormSection title="¿Cuánto tiempo llevas cuidando o ayudando animales?">
             <SingleOptions options={ANIOS_EXPERIENCIA} selected={experienciaAnios} onSelect={(value) => {
               setExperienciaAnios(value);
               if (value === 'sin_experiencia') {
@@ -705,13 +709,13 @@ export default function CapacidadesFormScreen({
     if (paso === 4) {
       return (
         <>
-          <FormSection title="Equipo disponible actualmente">
+          <FormSection title="¿Con qué equipo cuentas actualmente?">
             <MultiOptions options={EQUIPAMIENTO} selected={equipamiento} onToggle={(value) => toggle(value, equipamiento, setEquipamiento, 'sin_equipo')} error={errors.equipamiento} />
           </FormSection>
-          <FormSection title="Restricciones para realizar esfuerzos" subtitle="No solicitamos diagnósticos médicos. Esta información es privada y protege tu seguridad.">
+          <FormSection title="¿Hay algún esfuerzo físico que prefieras evitar?" subtitle="Esto nos ayuda a proponerte actividades cómodas y seguras para ti.">
             <MultiOptions options={RESTRICCIONES} selected={restricciones} onToggle={(value) => toggle(value, restricciones, setRestricciones, 'ninguna')} error={errors.restricciones} />
           </FormSection>
-          <FormSection title="¿Aceptarías capacitaciones de la asociación?">
+          <FormSection title="¿Te gustaría recibir capacitación?">
             <SingleOptions options={CAPACITACION} selected={aceptaCapacitacion} onSelect={setAceptaCapacitacion} error={errors.capacitacion} />
           </FormSection>
         </>
@@ -721,10 +725,10 @@ export default function CapacidadesFormScreen({
     if (paso === 5) {
       return (
         <>
-          <FormSection title="Canal preferente para avisos">
+          <FormSection title="¿Cómo prefieres recibir avisos?">
             <SingleOptions options={CANALES} selected={canalContacto} onSelect={setCanalContacto} error={errors.canal} />
           </FormSection>
-          <FormSection title="Contacto de emergencia" subtitle="Solo se utilizará para soporte y seguridad durante actividades en campo.">
+          <FormSection title="¿A quién podemos llamar en una emergencia?" subtitle="Solo usaremos este contacto para cuidarte durante una actividad.">
             <TextInput
               style={[styles.input, errors.contactoNombre && styles.errorBorder]}
               value={contactoNombre}
@@ -745,21 +749,21 @@ export default function CapacidadesFormScreen({
             />
             {errors.contactoTelefono && <ErrorText text={errors.contactoTelefono} />}
           </FormSection>
-          <FormSection title="Compromisos operativos">
+          <FormSection title="Acuerdos para trabajar en equipo">
             <ConsentOption
               selected={compromisoComunicacion}
               onPress={() => setCompromisoComunicacion(!compromisoComunicacion)}
-              label="Me comprometo a mantener comunicación durante un caso asignado."
+              label="Mantendré comunicación mientras esté ayudando en un caso."
               error={errors.compromisoComunicacion}
             />
             <ConsentOption
               selected={compromisoNotificar}
               onPress={() => setCompromisoNotificar(!compromisoNotificar)}
-              label="Me comprometo a avisar si no puedo continuar con una asignación."
+              label="Avisaré con tiempo si no puedo continuar con un caso."
               error={errors.compromisoNotificar}
             />
           </FormSection>
-          <FormSection title="Proyección de colaboración">
+          <FormSection title="¿Por cuánto tiempo te gustaría participar?">
             <SingleOptions options={PROYECCIONES} selected={proyeccion} onSelect={setProyeccion} error={errors.proyeccion} />
           </FormSection>
         </>
@@ -771,7 +775,7 @@ export default function CapacidadesFormScreen({
         <FormSection title="¿Qué te motiva a participar?">
           <MultiOptions options={MOTIVACIONES} selected={motivaciones} onToggle={(value) => toggle(value, motivaciones, setMotivaciones)} error={errors.motivaciones} />
         </FormSection>
-        <FormSection title="Comentarios adicionales" subtitle="Opcional. La asociación podrá leerlos al revisar tu perfil.">
+        <FormSection title="¿Quieres contarnos algo más?" subtitle="Es opcional y la asociación podrá leerlo al revisar tu perfil.">
           <TextInput
             style={[styles.textArea, errors.comentarios && styles.errorBorder]}
             value={comentarios}
@@ -785,11 +789,11 @@ export default function CapacidadesFormScreen({
           <Text style={styles.counter}>{comentarios.length}/250</Text>
           {errors.comentarios && <ErrorText text={errors.comentarios} />}
         </FormSection>
-        <FormSection title="Términos y privacidad">
+        <FormSection title="Antes de terminar">
           <ConsentOption
             selected={aceptoTerminos}
             onPress={() => setAceptoTerminos(!aceptoTerminos)}
-            label="Acepto proporcionar información veraz, mantener comunicación y cumplir los protocolos de seguridad y bienestar animal."
+            label="Confirmo que mis respuestas son verdaderas y que seguiré las medidas de seguridad y bienestar animal."
             error={errors.terminos}
           />
         </FormSection>
@@ -801,7 +805,34 @@ export default function CapacidadesFormScreen({
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.loadingText}>Cargando tus capacidades…</Text>
+        <Text style={styles.loadingText}>Preparando tu formulario…</Text>
+      </View>
+    );
+  }
+
+  if (postulacionCompletada) {
+    return (
+      <View style={styles.outerContainer}>
+        <View style={styles.successContainer}>
+          <View style={styles.successCard}>
+            <View style={styles.successIcon}>
+              <Ionicons name="checkmark" size={54} color={COLORS.bgWhite} />
+            </View>
+            <Text style={styles.successTitle}>¡Postulación enviada!</Text>
+            <Text style={styles.successText}>
+              Recibimos tu información y tus capacidades. Podrás consultar el avance desde tu perfil.
+            </Text>
+            <TouchableOpacity
+              style={[styles.primaryButton, styles.successButton]}
+              onPress={() => {
+                if (onClose) onClose();
+                else router.replace('/');
+              }}
+            >
+              <Text style={styles.primaryButtonText}>Volver al inicio</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </View>
     );
   }
@@ -820,11 +851,11 @@ export default function CapacidadesFormScreen({
             </TouchableOpacity>
             <View style={styles.headerText}>
               <Text style={styles.title}>
-                {mostrarConfirmacion ? 'Revisa tus capacidades' : 'Mis capacidades'}
+                {mostrarConfirmacion ? 'Revisa tus respuestas' : 'Cuéntanos cómo puedes ayudar'}
               </Text>
               <Text style={styles.subtitle}>
                 {mostrarConfirmacion
-                  ? 'Confirma la información antes de enviarla'
+                  ? 'Si todo se ve bien, ya puedes terminar'
                   : `Paso ${paso} de ${PASOS.length}: ${PASOS[paso - 1]}`}
               </Text>
             </View>
@@ -840,18 +871,18 @@ export default function CapacidadesFormScreen({
 
           {mostrarConfirmacion ? (
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-              <ReviewRow label="Disponibilidad" value={`${labels(dias, DIAS).join(', ')} · ${labels(franjas, FRANJAS).join(', ')}`} />
-              <ReviewRow label="Reacción" value={TIEMPOS_REACCION.find((item) => item.value === tiempoReaccion)?.label || '—'} />
-              <ReviewRow label="Urgencias" value={URGENCIAS.find((item) => item.value === urgencias)?.label || '—'} />
-              <ReviewRow label="Carga máxima" value={`${maxCasos} caso${maxCasos > 1 ? 's' : ''}`} />
-              <ReviewRow label="Radio de acción" value={`${radioMaxKm} km`} />
-              <ReviewRow label="Transporte" value={labels(mediosTransporte, MEDIOS_TRANSPORTE).join(', ')} />
-              <ReviewRow label="Especies" value={labels(especiesManejo, ESPECIES).join(', ')} />
-              <ReviewRow label="Tamaños de manejo" value={labels(tamaniosManejo, TAMANIOS).join(', ')} />
+              <ReviewRow label="Cuándo puedes ayudar" value={`${labels(dias, DIAS).join(', ')} · ${labels(franjas, FRANJAS).join(', ')}`} />
+              <ReviewRow label="Tiempo para responder" value={TIEMPOS_REACCION.find((item) => item.value === tiempoReaccion)?.label || '—'} />
+              <ReviewRow label="Ayuda en emergencias" value={URGENCIAS.find((item) => item.value === urgencias)?.label || '—'} />
+              <ReviewRow label="Casos al mismo tiempo" value={`${maxCasos} caso${maxCasos > 1 ? 's' : ''}`} />
+              <ReviewRow label="Qué tan lejos" value={`${radioMaxKm} km`} />
+              <ReviewRow label="Cómo te trasladas" value={labels(mediosTransporte, MEDIOS_TRANSPORTE).join(', ')} />
+              <ReviewRow label="Animales con los que puedes ayudar" value={labels(especiesManejo, ESPECIES).join(', ')} />
+              <ReviewRow label="Tamaños que puedes manejar" value={labels(tamaniosManejo, TAMANIOS).join(', ')} />
               <ReviewRow label="Primeros auxilios" value={PRIMEROS_AUXILIOS.find((item) => item.value === primerosAuxilios)?.label || '—'} />
-              <ReviewRow label="Equipo" value={labels(equipamiento, EQUIPAMIENTO).join(', ')} />
-              <ReviewRow label="Contacto preferido" value={CANALES.find((item) => item.value === canalContacto)?.label || '—'} />
-              <ReviewRow label="Colaboración" value={PROYECCIONES.find((item) => item.value === proyeccion)?.label || '—'} />
+              <ReviewRow label="Equipo disponible" value={labels(equipamiento, EQUIPAMIENTO).join(', ')} />
+              <ReviewRow label="Cómo prefieres recibir avisos" value={CANALES.find((item) => item.value === canalContacto)?.label || '—'} />
+              <ReviewRow label="Tiempo de colaboración" value={PROYECCIONES.find((item) => item.value === proyeccion)?.label || '—'} />
               <View style={[styles.footerButtons, compact && styles.footerButtonsCompact]}>
                 <TouchableOpacity style={[styles.secondaryButton, compact && styles.fullButton]} onPress={() => setMostrarConfirmacion(false)} disabled={isSubmitting}>
                   <Text style={styles.secondaryButtonText}>Editar</Text>
@@ -1083,6 +1114,50 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 820,
     maxHeight: Platform.OS === 'web' ? '94%' : '100%',
+  },
+  successContainer: {
+    width: '100%',
+    maxWidth: 620,
+    padding: 24,
+  },
+  successCard: {
+    alignItems: 'center',
+    paddingHorizontal: 42,
+    paddingVertical: 54,
+    borderRadius: 30,
+    backgroundColor: COLORS.bgWhite,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 12,
+  },
+  successIcon: {
+    width: 96,
+    height: 96,
+    marginBottom: 26,
+    borderRadius: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.bgTeal,
+  },
+  successTitle: {
+    marginBottom: 14,
+    color: COLORS.textDark,
+    fontSize: 28,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  successText: {
+    maxWidth: 460,
+    color: COLORS.textLight,
+    fontSize: 16,
+    lineHeight: 25,
+    textAlign: 'center',
+  },
+  successButton: {
+    width: '100%',
+    marginTop: 32,
   },
   card: {
     flex: 1,
