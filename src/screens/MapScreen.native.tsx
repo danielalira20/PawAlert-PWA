@@ -127,11 +127,57 @@ function AnimalMarker({ condicion, tipoAnimal, selected, count = 1 }: {
   );
 }
 
+interface AsociacionMapa {
+  id: string;
+  nombre: string;
+  latitud: number;
+  longitud: number;
+  contacto_telefono?: string | null;
+}
+
+const ASOC_COLOR = '#2E86DE';
+const ASOC_DARK = '#1B4F91';
+
+// ─── Marcador de asociación (casita azul) ─────────────────────────────────────
+function AssocMarker({ selected }: { selected: boolean }) {
+  const size = selected ? 52 : 44;
+  return (
+    <View style={{ alignItems: 'center' }}>
+      <View style={{
+        width: size, height: size, borderRadius: size / 2,
+        backgroundColor: ASOC_COLOR,
+        borderWidth: selected ? 3.5 : 2.5,
+        borderColor: ASOC_DARK,
+        alignItems: 'center', justifyContent: 'center',
+        shadowColor: selected ? ASOC_COLOR : '#000',
+        shadowOffset: { width: 0, height: selected ? 5 : 2 },
+        shadowOpacity: selected ? 0.45 : 0.2,
+        shadowRadius: selected ? 12 : 5,
+        elevation: selected ? 10 : 4,
+        transform: [{ scale: selected ? 1.1 : 1 }],
+      }}>
+        <Ionicons name="home" size={size * 0.5} color="#FFFFFF" />
+      </View>
+      <View style={{
+        width: 0, height: 0,
+        borderLeftWidth: 5, borderRightWidth: 5, borderTopWidth: 8,
+        borderStyle: 'solid',
+        borderLeftColor: 'transparent', borderRightColor: 'transparent',
+        borderTopColor: ASOC_DARK,
+        marginTop: -1,
+      }} />
+      <View style={{ width: 3, height: 3, borderRadius: 1.5, backgroundColor: ASOC_DARK, opacity: 0.7 }} />
+    </View>
+  );
+}
+
 // ─── Componente principal ─────────────────────────────────────────────────────
 export default function MapScreen() {
   const { isLoggedIn } = useAuth();
   const params = useLocalSearchParams<{ action?: string }>();
   const [reportes, setReportes] = useState<Reporte[]>([]);
+  const [asociaciones, setAsociaciones] = useState<AsociacionMapa[]>([]);
+  const [mostrarAsociaciones, setMostrarAsociaciones] = useState(true);
   const [selectedReport, setSelectedReport] = useState<Reporte | null>(null);
   const [isFormVisible, setIsFormVisible] = useState(false);
   const [isAuthGateVisible, setIsAuthGateVisible] = useState(false);
@@ -160,8 +206,16 @@ export default function MapScreen() {
     } catch {}
   };
 
+  const fetchAsociaciones = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/associations`);
+      setAsociaciones(response.data.filter((a: AsociacionMapa) => a.latitud && a.longitud));
+    } catch {}
+  };
+
   useEffect(() => {
     fetchReportes();
+    fetchAsociaciones();
     const fetchInterval = setInterval(fetchReportes, 600000);
     const tickInterval = setInterval(() => setTick(t => t + 1), 60000);
     return () => { clearInterval(fetchInterval); clearInterval(tickInterval); };
@@ -267,6 +321,29 @@ export default function MapScreen() {
             </TrackedMarker>
           );
         })}
+        {mostrarAsociaciones && asociaciones.map(asociacion => (
+          <TrackedMarker
+            key={`asoc-${asociacion.id}`}
+            coordinate={{ latitude: asociacion.latitud, longitude: asociacion.longitud }}
+          >
+            <AssocMarker selected={false} />
+            <Callout tooltip={false}>
+              <View style={{ minWidth: 170, maxWidth: 220, padding: 12, borderRadius: 12 }}>
+                <Text style={{ fontSize: 13, fontWeight: '900', color: '#1A1A1A', marginBottom: 7 }}>
+                  {asociacion.nombre}
+                </Text>
+                <View style={{ backgroundColor: `${ASOC_COLOR}20`, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, alignSelf: 'flex-start' }}>
+                  <Text style={{ fontSize: 9, fontWeight: '800', color: ASOC_DARK, textTransform: 'uppercase' }}>
+                    Asociación
+                  </Text>
+                </View>
+                {!!asociacion.contacto_telefono && (
+                  <Text style={{ fontSize: 10, color: '#9B8B7A', marginTop: 9 }}>{asociacion.contacto_telefono}</Text>
+                )}
+              </View>
+            </Callout>
+          </TrackedMarker>
+        ))}
       </MapView>
 
       {/* Barra de filtros interactivos — portada de MapScreen.web.tsx.
@@ -342,6 +419,12 @@ export default function MapScreen() {
               <Image source={{ uri: icon }} style={{ width: 16, height: 16, tintColor: ordenar === key ? '#FFF' : '#B0A090' }} />
             </TouchableOpacity>
           ))}
+          <TouchableOpacity onPress={() => setMostrarAsociaciones(v => !v)}
+            style={{ width: 28, height: 28, borderRadius: 14, borderWidth: 1.5,
+              borderColor: ASOC_COLOR, alignItems: 'center', justifyContent: 'center',
+              backgroundColor: mostrarAsociaciones ? ASOC_COLOR : 'transparent' }}>
+            <Ionicons name="home" size={14} color={mostrarAsociaciones ? '#FFF' : ASOC_COLOR} />
+          </TouchableOpacity>
         </View>
       </View>
 

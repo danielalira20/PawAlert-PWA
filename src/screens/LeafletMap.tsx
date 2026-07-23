@@ -146,6 +146,62 @@ const ESTADO: Record<string, { color: string; bg: string; label: string }> = {
 const getEstado = (e: string) =>
   ESTADO[e?.toLowerCase()] ?? { color: '#95A5A6', bg: '#F2F3F4', label: e ?? '' };
 
+// ─── Pin de asociación (casita azul) ──────────────────────────────────────────
+const ASOC_COLOR = '#2E86DE';
+const ASOC_DARK = '#1B4F91';
+const createAssocPin = (selected = false) => {
+  const size = selected ? 50 : 42;
+  const shadow = selected
+    ? `0 6px 24px ${ASOC_COLOR}BB, 0 0 0 3px white, 0 0 0 5px ${ASOC_DARK}66`
+    : `0 3px 12px ${ASOC_COLOR}88`;
+
+  const html = `
+    <div style="
+      display:flex; flex-direction:column; align-items:center;
+      transform:scale(${selected ? 1.1 : 1});
+      transform-origin:bottom center;
+      transition:transform 0.2s cubic-bezier(0.34,1.56,0.64,1);
+    ">
+      <div style="
+        width:${size}px; height:${size}px;
+        border-radius:50%;
+        border:3px solid ${ASOC_DARK};
+        background:${ASOC_COLOR};
+        box-shadow:${shadow};
+        display:flex; align-items:center; justify-content:center;
+      ">
+        <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='22' height='22'>
+          <path fill='white' d='M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z'/>
+        </svg>
+      </div>
+      <div style="
+        width:0; height:0;
+        border-left:6px solid transparent;
+        border-right:6px solid transparent;
+        border-top:9px solid ${ASOC_DARK};
+        margin-top:-1px;
+        filter:drop-shadow(0 2px 2px ${ASOC_COLOR}55);
+      "></div>
+      <div style="width:3px;height:3px;border-radius:50%;background:${ASOC_DARK};opacity:0.8;"></div>
+    </div>`;
+
+  const totalH = size + 14;
+  return L.divIcon({
+    className: 'pawalert-marker',
+    html,
+    iconSize: [size + 8, totalH],
+    iconAnchor: [(size + 8) / 2, totalH],
+  });
+};
+
+export interface AsociacionMapa {
+  id: string;
+  nombre: string;
+  latitud: number;
+  longitud: number;
+  contacto_telefono?: string | null;
+}
+
 // ─── Click handler con ref para evitar re-suscripciones ──────────────────────
 function MapClickHandler({ onMapClick }: { onMapClick: () => void }) {
   const ref = useRef(onMapClick);
@@ -157,6 +213,7 @@ function MapClickHandler({ onMapClick }: { onMapClick: () => void }) {
 // ─── Props ────────────────────────────────────────────────────────────────────
 interface LeafletMapProps {
   reportes: Reporte[];
+  asociaciones?: AsociacionMapa[];
   selectedReportId?: string | null;
   getMarkerColor?: (reporte: Reporte) => string;
   width?: string | number;
@@ -166,8 +223,9 @@ interface LeafletMapProps {
 }
 
 // ─── Componente ───────────────────────────────────────────────────────────────
-export default function LeafletMap({ 
-  reportes, 
+export default function LeafletMap({
+  reportes,
+  asociaciones = [],
   getMarkerColor, 
   selectedReportId, 
   onSelectReport, 
@@ -290,6 +348,34 @@ export default function LeafletMap({
               </Marker>
             );
           })}
+        {asociaciones
+          .filter((a): a is AsociacionMapa & { latitud: number; longitud: number } =>
+            a.latitud !== null && a.longitud !== null)
+          .map((asociacion) => (
+            <Marker
+              key={`asoc-${asociacion.id}`}
+              position={[asociacion.latitud, asociacion.longitud]}
+              icon={createAssocPin()}
+            >
+              <Popup closeButton={false} className="pp-wrap" offset={[0, -6]}>
+                <div className="pp-accent" style={{ background: ASOC_COLOR }} />
+                <div className="pp-body">
+                  <div className="pp-title">{asociacion.nombre}</div>
+                  <div className="pp-badges">
+                    <span className="pp-badge" style={{ background: `${ASOC_COLOR}20`, color: ASOC_DARK }}>
+                      ● Asociación
+                    </span>
+                  </div>
+                  {asociacion.contacto_telefono && (
+                    <div className="pp-loc">
+                      <span style={{ color: ASOC_COLOR, fontWeight: 700, fontSize: 10 }}>▪</span>
+                      {asociacion.contacto_telefono}
+                    </div>
+                  )}
+                </div>
+              </Popup>
+            </Marker>
+          ))}
       </MapContainer>
     </>
   );

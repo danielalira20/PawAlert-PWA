@@ -12,6 +12,7 @@ import { useAuth } from '../context/AuthContext';
 import { Reporte, getAnimales, condicionMasGrave, especieMasGrave, totalAnimales, animalMasGrave } from '../types/reporte';
 import { AnimalCarousel } from '../components/common/AnimalCarousel';
 import ReportFormScreen from './ReportFormScreen';
+import type { AsociacionMapa } from './LeafletMap';
 
 const LeafletMap = lazy(() => import('./LeafletMap'));
 
@@ -51,6 +52,8 @@ export default function MapScreen() {
   const [windowWidth, setWindowWidth] = useState(Dimensions.get('window').width);
   const [isClient, setIsClient] = useState(false);
   const [reportes, setReportes] = useState<Reporte[]>([]);
+  const [asociaciones, setAsociaciones] = useState<AsociacionMapa[]>([]);
+  const [mostrarAsociaciones, setMostrarAsociaciones] = useState(true);
   const [selectedReport, setSelectedReport] = useState<Reporte | null>(null);
   const [sidebarView, setSidebarView] = useState<SidebarView>('list');
   const [filtro, setFiltro] = useState('todos');
@@ -82,6 +85,13 @@ export default function MapScreen() {
     } catch {}
   }, []);
 
+  const fetchAsociaciones = useCallback(async () => {
+    try {
+      const res = await axios.get(`${API_URL}/associations`);
+      setAsociaciones(res.data.filter((a: AsociacionMapa) => a.latitud && a.longitud));
+    } catch {}
+  }, []);
+
   const handleClockPress = () => {
     if (!isMobile) return;
     setShowClockLabel(true);
@@ -98,6 +108,7 @@ export default function MapScreen() {
   useEffect(() => {
     setIsClient(true);
     fetchReportes();
+    fetchAsociaciones();
     const fetchInterval = setInterval(fetchReportes, 600000);
     const tickInterval = setInterval(() => setTick(t => t + 1), 60000);
     return () => {
@@ -105,7 +116,7 @@ export default function MapScreen() {
       clearInterval(tickInterval);
       if (clockTimeoutRef.current) clearTimeout(clockTimeoutRef.current);
     };
-  }, [fetchReportes]);
+  }, [fetchReportes, fetchAsociaciones]);
 
   // Handle action parameter (e.g. action=create from landing CTA)
   useEffect(() => {
@@ -414,6 +425,15 @@ export default function MapScreen() {
             <Text style={{ fontSize: 9, fontWeight: '700', color: ordenar === key ? '#FFF' : '#B0A090' }}>{label}</Text>
           </TouchableOpacity>
         ))}
+        <View style={{ width: 1, height: 16, backgroundColor: C.border, marginHorizontal: 2 }} />
+        <TouchableOpacity onPress={() => setMostrarAsociaciones(v => !v)}
+          style={{ paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20, borderWidth: 1.5,
+            borderColor: '#2E86DE', height: 26, alignItems: 'center', justifyContent: 'center',
+            flexDirection: 'row', gap: 4,
+            backgroundColor: mostrarAsociaciones ? '#2E86DE' : 'transparent' }}>
+          <Ionicons name="home" size={12} color={mostrarAsociaciones ? '#FFF' : '#2E86DE'} />
+          <Text style={{ fontSize: 9, fontWeight: '700', color: mostrarAsociaciones ? '#FFF' : '#2E86DE' }}>Asociaciones</Text>
+        </TouchableOpacity>
       </ScrollView>
     </View>
   );
@@ -425,6 +445,7 @@ export default function MapScreen() {
         <Suspense fallback={<View style={{ flex: 1, backgroundColor: '#EAE0D0' }} />}>
           <LeafletMap
             reportes={reportesFiltrados}
+            asociaciones={mostrarAsociaciones ? asociaciones : []}
             selectedReportId={selectedReport?.id ?? null}
             onSelectReport={handleSelectReport}
             onMapClick={handleMapClick}
@@ -547,6 +568,12 @@ export default function MapScreen() {
                 <Image source={{ uri: icon }} style={{ width: 16, height: 16, tintColor: ordenar === key ? '#FFF' : '#B0A090' }} />
               </TouchableOpacity>
             ))}
+            <TouchableOpacity onPress={() => setMostrarAsociaciones(v => !v)}
+              style={{ width: 28, height: 28, borderRadius: 14, borderWidth: 1.5,
+                borderColor: '#2E86DE', alignItems: 'center', justifyContent: 'center',
+                backgroundColor: mostrarAsociaciones ? '#2E86DE' : 'transparent' }}>
+              <Ionicons name="home" size={14} color={mostrarAsociaciones ? '#FFF' : '#2E86DE'} />
+            </TouchableOpacity>
           </View>
         </View>
       )}
