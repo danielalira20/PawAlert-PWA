@@ -29,6 +29,7 @@ import {
   Poppins_500Medium,
   Poppins_600SemiBold,
 } from '@expo-google-fonts/poppins';
+import { useAuth } from '../context/AuthContext';
 
 // IMPORTANTE: Importamos el formulario de forma "perezosa" (Lazy Load)
 const AssociationFormScreen = lazy(() => import('./AssociationFormScreen'));
@@ -212,6 +213,7 @@ export default function LandingScreen() {
   const isDesktop = width > 768;
 
   const router = useRouter();
+  const { isLoggedIn } = useAuth(); // Obtener si está logueado
   const [isAssociationFormVisible, setIsAssociationFormVisible] = useState(false);
   const [isReportGuideVisible, setIsReportGuideVisible] = useState(false);
   const [isExternalVolunteerFormVisible, setIsExternalVolunteerFormVisible] = useState(false);
@@ -689,7 +691,12 @@ export default function LandingScreen() {
                                   if (activeRole.ctaRoute === '/association-register') {
                                     setIsAssociationFormVisible(true);
                                   } else if (activeRole.ctaRoute === '/external-volunteer-register') {
-                                    setIsExternalVolunteerFormVisible(true);
+                                    // NUEVO: Verificamos si tiene cuenta antes de abrir el modal
+                                    if (isLoggedIn) {
+                                      setIsExternalVolunteerFormVisible(true);
+                                    } else {
+                                      router.push('/login'); 
+                                    }
                                   } else if (activeRole.ctaRoute) {
                                     router.push(activeRole.ctaRoute);
                                   }
