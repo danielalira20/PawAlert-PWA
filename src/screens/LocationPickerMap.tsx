@@ -6,6 +6,8 @@ import { TrackedMarker } from './TrackedMarker';
 interface Props {
   onLocationSelect: (lat: number, lng: number) => void;
   selectedPosition?: { latitud: number; longitud: number } | null;
+  instructionText?: string;
+  helperText?: string;
 }
 
 const PUEBLA_CENTER = { latitude: 19.0414, longitude: -98.2063 };
@@ -44,7 +46,12 @@ function LocationPin() {
   );
 }
 
-export default function LocationPickerMap({ onLocationSelect, selectedPosition }: Props) {
+export default function LocationPickerMap({
+  onLocationSelect,
+  selectedPosition,
+  instructionText = 'Toca el mapa para marcar la ubicación del animal',
+  helperText = 'También puedes arrastrar el pin para ajustar la posición',
+}: Props) {
   const mapRef = useRef<MapView>(null);
   const [markerCoord, setMarkerCoord] = useState(
     selectedPosition
@@ -75,7 +82,7 @@ export default function LocationPickerMap({ onLocationSelect, selectedPosition }
       }}>
         <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#EC802B' }} />
         <Text style={{ fontSize: 11, color: '#D4691A', fontWeight: '600', flex: 1 }}>
-          Toca el mapa para marcar la ubicación del animal
+          {instructionText}
         </Text>
       </View>
 
@@ -107,7 +114,7 @@ export default function LocationPickerMap({ onLocationSelect, selectedPosition }
 
       {/* Instrucción inferior */}
       <Text style={{ fontSize: 11, color: '#9B8B7A', textAlign: 'center', marginTop: 6 }}>
-        También puedes arrastrar el pin para ajustar la posición
+        {helperText}
       </Text>
     </View>
   );

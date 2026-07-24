@@ -28,6 +28,7 @@ export interface CapacidadesData {
 export interface PostulacionItem {
   id: string;
   voluntario_id: string;
+  tipo?: 'interno' | 'externo';
   estado: 'pendiente' | 'aceptada' | 'rechazada';
   motivo_rechazo?: string;
   numero_intento: number;
@@ -73,6 +74,7 @@ export function usePostulacionesAsociacion() {
       const postulacionesFormateadas = rawData.map((item: any) => ({
         id: item.postulacion_id,            // Backend: postulacion_id -> Frontend: id
         voluntario_id: item.voluntario_id,
+        tipo: item.tipo,
         estado: item.estado,
         motivo_rechazo: item.motivo_rechazo,
         numero_intento: item.numero_intento,

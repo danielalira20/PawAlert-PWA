@@ -273,6 +273,19 @@ async def resolver_postulacion(
     tipo = postulacion["tipo"]
 
     if accion == "aceptar":
+        if tipo == "externo":
+            # Para una casa temporal, aceptar la revisión NO activa todavía
+            # al voluntario. Primero se busca quién pueda verificar el hogar
+            # o se habilita el fallback remoto.
+            from app.services.home_verification_service import (
+                preparar_verificacion_hogar,
+            )
+
+            return preparar_verificacion_hogar(
+                postulacion_id=postulacion_id,
+                asociacion_id=asociacion_id,
+            )
+
         # 1. Voluntario pasa a activo_nivel_1 (se vincula a la asociación que lo aceptó,
         # sea interno o externo)
         supabase.table("voluntarios").update({
@@ -317,6 +330,14 @@ async def resolver_postulacion(
         supabase.table("voluntarios").update({
             "estado": "rechazado",
         }).eq("id", voluntario_id).execute()
+
+        if tipo == "externo":
+            supabase_admin.table("verificaciones_hogar").update({
+                "estado": "rechazada",
+                "motivo_resultado": motivo.strip(),
+                "resuelta_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }).eq("postulacion_id", postulacion_id).execute()
 
         return {"mensaje": "Postulación rechazada", "estado": "rechazado"}
 
@@ -442,19 +463,25 @@ async def listar_voluntarios_asociacion(asociacion_id: str) -> list:
 # ---------------------------------------------------------------------------
 
 async def obtener_capacidades(voluntario_id: str) -> dict:
+    perfil = supabase.table("voluntarios").select(
+        "disponible_operativamente, contacto_emergencia_nombre, "
+        "contacto_emergencia_telefono"
+    ).eq("id", voluntario_id).execute()
+    datos_perfil = perfil.data[0] if perfil.data else {}
+
     resultado = supabase.table("capacidades").select("*").eq(
         "voluntario_id", voluntario_id
     ).execute()
 
     if not resultado.data:
-        return {"tiene_capacidades": False}
+        return {"tiene_capacidades": False, **datos_perfil}
 
-    return {"tiene_capacidades": True, **resultado.data[0]}
+    return {"tiene_capacidades": True, **resultado.data[0], **datos_perfil}
 
 
 async def guardar_capacidades(voluntario_id: str, datos: dict) -> dict:
     voluntario = supabase.table("voluntarios").select(
-        "estado"
+        "estado, disponible_operativamente"
     ).eq("id", voluntario_id).execute()
 
     if not voluntario.data:
@@ -468,7 +495,7 @@ async def guardar_capacidades(voluntario_id: str, datos: dict) -> dict:
         )
 
     # Validaciones de negocio
-    if datos["capacidad_animales"] > 2:
+    if datos.get("capacidad_animales", 0) > 2:
         raise HTTPException(status_code=422, detail="La capacidad máxima es de 2 animales por voluntario")
 
     if not validar_claves_catalogo("tipo_animal_catalogo", datos.get("especies", [])):
@@ -485,6 +512,25 @@ async def guardar_capacidades(voluntario_id: str, datos: dict) -> dict:
 
     if not datos.get("acepto_terminos"):
         raise HTTPException(status_code=422, detail="Debes aceptar los términos y el aviso de privacidad")
+
+    # Estos datos se capturan en el mismo formulario por seguridad y
+    # conveniencia, pero pertenecen al perfil del voluntario, no a sus
+    # capacidades operativas.
+    datos_perfil = {}
+    for campo in (
+        "disponible_operativamente",
+        "contacto_emergencia_nombre",
+        "contacto_emergencia_telefono",
+    ):
+        valor = datos.pop(campo, None)
+        if valor is not None:
+            datos_perfil[campo] = valor
+
+    if datos_perfil:
+        datos_perfil["updated_at"] = datetime.now(timezone.utc).isoformat()
+        supabase.table("voluntarios").update(datos_perfil).eq(
+            "id", voluntario_id
+        ).execute()
 
     payload = {**datos, "voluntario_id": voluntario_id}
 
@@ -668,5 +714,14 @@ async def crear_perfil_externo(voluntario_id: str, datos_json: dict, identificac
 
     # 3. Guardar en la base de datos usando el cliente de Supabase
     resultado = supabase_admin.table("perfil_casa_temporal").insert(payload).execute()
+
+    # El contacto de emergencia es común a cualquier voluntario. Se conserva
+    # también en perfil_casa_temporal por compatibilidad con el flujo actual,
+    # pero voluntarios pasa a ser la fuente canónica para capacidades v2.
+    supabase_admin.table("voluntarios").update({
+        "contacto_emergencia_nombre": datos_json.get("nombreEmergencia"),
+        "contacto_emergencia_telefono": datos_json.get("telEmergencia"),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }).eq("id", voluntario_id).execute()
     
     return resultado.data[0]

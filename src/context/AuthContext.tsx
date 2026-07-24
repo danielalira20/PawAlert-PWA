@@ -36,11 +36,27 @@ interface AuthContextType {
   logout: () => void;
 }
 
+interface RefreshSubscriber {
+  resolve: (newToken: string) => void;
+  reject: (error: unknown) => void;
+}
+
 const AuthContext = createContext<AuthContextType | null>(null);
 
 const STORAGE_KEY_TOKEN = '@pawalert_token';
 const STORAGE_KEY_REFRESH = '@pawalert_refresh_token';
 const STORAGE_KEY_USER = '@pawalert_user';
+
+export function shouldAttemptTokenRefresh(
+  status: number | undefined,
+  requestUrl: string,
+  alreadyRetried: boolean,
+) {
+  const isAuthEndpoint = ['/auth/login', '/auth/register', '/auth/refresh']
+    .some((path) => requestUrl.includes(path));
+
+  return status === 401 && !alreadyRetried && !isAuthEndpoint;
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<Usuario | null>(null);
@@ -52,7 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const tokenRef = useRef<string | null>(null);
   const refreshTokenRef = useRef<string | null>(null);
   const isRefreshingRef = useRef(false);
-  const refreshSubscribersRef = useRef<Array<(newToken: string) => void>>([]);
+  const refreshSubscribersRef = useRef<RefreshSubscriber[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -153,9 +169,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       (response) => response,
       async (error) => {
         const originalRequest = error.config;
+        const requestUrl = String(originalRequest?.url ?? '');
 
-        // Solo actuamos sobre 401, y solo una vez por request (evita loop infinito)
-        if (error.response?.status !== 401 || originalRequest._retry) {
+        // Los propios endpoints de autenticación nunca deben intentar renovarse:
+        // si /auth/refresh responde 401 y vuelve a entrar aquí, se produce una
+        // espera circular que deja cualquier formulario cargando para siempre.
+        if (
+          !originalRequest
+          || !shouldAttemptTokenRefresh(
+            error.response?.status,
+            requestUrl,
+            Boolean(originalRequest._retry),
+          )
+        ) {
           return Promise.reject(error);
         }
 
@@ -165,9 +191,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // en lugar de disparar otro refresh en paralelo.
         if (isRefreshingRef.current) {
           return new Promise((resolve, reject) => {
-            refreshSubscribersRef.current.push((newToken: string) => {
-              originalRequest.headers.Authorization = `Bearer ${newToken}`;
-              resolve(axios(originalRequest));
+            refreshSubscribersRef.current.push({
+              resolve: (newToken: string) => {
+                originalRequest.headers.Authorization = `Bearer ${newToken}`;
+                resolve(axios(originalRequest));
+              },
+              reject,
             });
           });
         }
@@ -202,7 +231,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
 
           // Avisamos a todas las peticiones que esperaban este refresh
-          refreshSubscribersRef.current.forEach((cb) => cb(newAccessToken));
+          refreshSubscribersRef.current.forEach((subscriber) => {
+            subscriber.resolve(newAccessToken);
+          });
           refreshSubscribersRef.current = [];
 
           // Reintentamos la petición original con el token nuevo
@@ -212,6 +243,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // El refresh_token también expiró — la sesión realmente terminó.
           // Limpiamos todo y dejamos que la app redirija a login de forma natural
           // (isLoggedIn pasará a false).
+          refreshSubscribersRef.current.forEach((subscriber) => {
+            subscriber.reject(refreshError);
+          });
           refreshSubscribersRef.current = [];
           logout();
           return Promise.reject(refreshError);

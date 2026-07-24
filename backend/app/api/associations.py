@@ -6,13 +6,20 @@ from app.db.supabase import supabase, supabase_admin, get_fresh_client
 from app.services.storage_service import subir_foto
 from app.services.report_service import obtener_id_catalogo
 from app.utils.validators import validar_telefono, validar_email
-from app.models.voluntario import ResolverPostulacionRequest
+from app.models.voluntario import (
+    AsignarVerificadorRequest,
+    ResolverPostulacionRequest,
+)
 from app.services.voluntario_service import (
     obtener_postulaciones_asociacion,
     resolver_postulacion,
     dar_de_baja_voluntario,
     reactivar_voluntario,
     listar_voluntarios_asociacion,
+)
+from app.services.home_verification_service import (
+    asignar_verificador_hogar,
+    obtener_verificacion_postulacion,
 )
 from app.models.association import NuevoRepresentante
 from app.utils.animal_shaping import shape_animal_embed, shape_animal_response, condicion_mas_grave
@@ -853,6 +860,52 @@ async def patch_resolver_postulacion(
         asociacion_id=usuario["asociacion_id"],
         accion=body.accion.value,
         motivo=body.motivo,
+    )
+
+
+@router.get(
+    "/me/postulaciones/{postulacion_id}/verificacion",
+    status_code=200,
+)
+async def get_verificacion_postulacion(
+    postulacion_id: str,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion", "staff"))
+    if not usuario.get("asociacion_id"):
+        raise HTTPException(
+            status_code=404,
+            detail="Este usuario no está vinculado a ninguna asociación",
+        )
+    _verificar_asociacion_aprobada(usuario["asociacion_id"])
+    return obtener_verificacion_postulacion(
+        postulacion_id,
+        usuario["asociacion_id"],
+    )
+
+
+@router.post(
+    "/me/verificaciones/{verificacion_id}/asignar",
+    status_code=201,
+)
+async def post_asignar_verificador(
+    verificacion_id: str,
+    body: AsignarVerificadorRequest,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion", "staff"))
+    if not usuario.get("asociacion_id"):
+        raise HTTPException(
+            status_code=404,
+            detail="Este usuario no está vinculado a ninguna asociación",
+        )
+    _verificar_asociacion_aprobada(usuario["asociacion_id"])
+    return asignar_verificador_hogar(
+        verificacion_id=verificacion_id,
+        verificador_voluntario_id=body.voluntario_id,
+        asociacion_id=usuario["asociacion_id"],
     )
  
  

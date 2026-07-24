@@ -11,6 +11,7 @@ from app.services.voluntario_service import (
     obtener_reportes_voluntario,
     crear_perfil_externo,
 )
+from app.services.home_verification_service import finalizar_postulacion_externa
 
 router = APIRouter()
 
@@ -81,7 +82,12 @@ async def get_mis_capacidades(authorization: str = Header(None)):
 async def put_mis_capacidades(body: CapacidadesRequest, authorization: str = Header(None)):
     usuario = _obtener_usuario_autenticado(authorization)
     voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
-    return await guardar_capacidades(voluntario_id, body.model_dump())
+    # mode="json" convierte los Enum del contrato v2 a las claves de texto
+    # que se persisten en PostgreSQL.
+    return await guardar_capacidades(
+        voluntario_id,
+        body.model_dump(mode="json", exclude_unset=True),
+    )
 
 
 @router.get("/me/reportes", status_code=200)
@@ -143,3 +149,18 @@ async def postular_voluntario_externo(
     except Exception as e:
         # Esto atrapará errores de Supabase (como intentar postularse dos veces) o de storage
         raise HTTPException(status_code=400, detail=f"Error al guardar postulación: {str(e)}")
+
+
+@router.post("/externo/finalizar", status_code=201)
+async def finalizar_postulacion_voluntario_externo(
+    authorization: str = Header(None),
+):
+    """Finaliza el expediente después de guardar casa y capacidades.
+
+    Asigna la postulación a la asociación activa y verificada más cercana y
+    crea el proceso de verificación de hogar. Repetir la petición no duplica
+    el expediente.
+    """
+    usuario = _obtener_usuario_autenticado(authorization)
+    voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
+    return await finalizar_postulacion_externa(voluntario_id)

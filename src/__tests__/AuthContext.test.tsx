@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
+import { shouldAttemptTokenRefresh } from '../context/AuthContext';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
@@ -54,5 +55,21 @@ describe('AuthContext — comportamiento de login/logout', () => {
 
     expect(AsyncStorage.removeItem).toHaveBeenCalledWith(STORAGE_KEY_TOKEN);
     expect(AsyncStorage.removeItem).toHaveBeenCalledWith(STORAGE_KEY_USER);
+  });
+
+  it('no intenta renovar nuevamente cuando falla /auth/refresh', () => {
+    expect(
+      shouldAttemptTokenRefresh(401, 'http://localhost:8000/auth/refresh', false),
+    ).toBe(false);
+  });
+
+  it('sí intenta renovar una petición protegida con sesión vencida', () => {
+    expect(
+      shouldAttemptTokenRefresh(
+        401,
+        'http://localhost:8000/voluntarios/externo/postular',
+        false,
+      ),
+    ).toBe(true);
   });
 });

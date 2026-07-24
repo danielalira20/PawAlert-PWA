@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from 'react'
 interface Props {
   onLocationSelect: (latitud: number, longitud: number) => void
   selectedPosition?: { latitud: number; longitud: number } | null
+  instructionText?: string
+  helperText?: string
 }
 
 const DEFAULT_CENTER: [number, number] = [19.0414, -98.2063]
@@ -27,7 +29,12 @@ const PIN_HTML = `
   </div>
 `
 
-export default function LocationPickerMap({ onLocationSelect, selectedPosition }: Props) {
+export default function LocationPickerMap({
+  onLocationSelect,
+  selectedPosition,
+  instructionText = 'Toca el mapa para marcar la ubicación del animal',
+  helperText = 'También puedes arrastrar el pin para ajustar la posición exacta',
+}: Props) {
   const mapRef = useRef<HTMLDivElement>(null)
   const mapInstanceRef = useRef<any>(null)
   const markerInstanceRef = useRef<any>(null)
@@ -135,7 +142,7 @@ export default function LocationPickerMap({ onLocationSelect, selectedPosition }
       }}>
         <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#EC802B', flexShrink: 0 }} />
         <span style={{ fontSize: '12px', color: '#D4691A', fontWeight: 600 }}>
-          Toca el mapa para marcar la ubicación del animal
+          {instructionText}
         </span>
       </div>
 
@@ -153,7 +160,7 @@ export default function LocationPickerMap({ onLocationSelect, selectedPosition }
 
       {/* Instrucción inferior */}
       <p style={{ fontSize: '11px', color: '#9B8B7A', textAlign: 'center', margin: '6px 0 0' }}>
-        También puedes arrastrar el pin para ajustar la posición exacta
+        {helperText}
       </p>
     </div>
   )

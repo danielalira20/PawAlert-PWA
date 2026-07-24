@@ -1,9 +1,20 @@
+import { Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { Toast, useToast } from '../components/Toast';
 import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
@@ -11,6 +22,7 @@ import LocationPickerMap from './LocationPickerMap';
 
 const COLORS = {
   bgTeal: '#66BCB4',
+  bgTealLight: '#EDF8F7',
   bgWhite: '#FFFFFF',
   primary: '#EC802B',
   secondary: '#EDC55B',
@@ -19,812 +31,944 @@ const COLORS = {
   danger: '#E74C3C',
   grayLight: '#F3F4F6',
   border: '#E5E7EB',
-  cardBg: '#FAF3EA',
+  cardBg: '#FFF9F1',
 };
 
-const FORM_MAX_WIDTH = 700;
-const DIAS_SEMANA = ['lun', 'mar', 'mié', 'jue', 'vie', 'sab', 'dom'];
-const DIAS_VALORES = ['lun', 'mar', 'mie', 'jue', 'vie', 'sab', 'dom'];
-
-// Opciones de horarios a mostrar en el selector
-const TIME_OPTIONS = [
-  { label: '6:00 am', value: '06:00' },
-  { label: '7:00 am', value: '07:00' },
-  { label: '8:00 am', value: '08:00' },
-  { label: '9:00 am', value: '09:00' },
-  { label: '10:00 am', value: '10:00' },
-  { label: '11:00 am', value: '11:00' },
-  { label: '12:00 pm', value: '12:00' },
-  { label: '1:00 pm', value: '13:00' },
-  { label: '2:00 pm', value: '14:00' },
-  { label: '3:00 pm', value: '15:00' },
-  { label: '4:00 pm', value: '16:00' },
-  { label: '5:00 pm', value: '17:00' },
-  { label: '6:00 pm', value: '18:00' },
-  { label: '7:00 pm', value: '19:00' },
-  { label: '8:00 pm', value: '20:00' },
-  { label: '9:00 pm', value: '21:00' },
-  { label: '10:00 pm', value: '22:00' },
-  { label: '11:00 pm', value: '23:00' },
+const PASOS = [
+  'Tus tiempos',
+  'Tu zona y movilidad',
+  'Tu experiencia',
+  'Equipo y bienestar',
+  'Cómo contactarte',
+  'Para conocerte mejor',
 ];
 
-interface Capacidades {
-  disponibilidad?: { dias: string[]; horarios: Array<{ de: string; a: string }> };
-  ofrece_casa_hogar?: boolean;
-  capacidad_animales?: number;
-  especies?: string[];
-  tamanios?: string[];
-  otros_animales_en_casa?: boolean;
-  ninos_en_casa?: boolean;
-  tiene_vehiculo?: boolean;
-  latitud?: number;
-  longitud?: number;
-  motivo_voluntario?: string;
-  experiencia_previa?: string;
-  acepto_terminos?: boolean;
-}
+type Option = { value: string; label: string; description?: string };
+
+const DIAS: Option[] = [
+  { value: 'lun', label: 'Lunes' },
+  { value: 'mar', label: 'Martes' },
+  { value: 'mie', label: 'Miércoles' },
+  { value: 'jue', label: 'Jueves' },
+  { value: 'vie', label: 'Viernes' },
+  { value: 'sab', label: 'Sábado' },
+  { value: 'dom', label: 'Domingo' },
+];
+
+const FRANJAS: Option[] = [
+  { value: 'matutino', label: 'Por la mañana', description: '6:00–12:00' },
+  { value: 'vespertino', label: 'Por la tarde', description: '12:00–18:00' },
+  { value: 'nocturno', label: 'Por la noche', description: '18:00–22:00' },
+  { value: 'madrugada', label: 'De madrugada', description: '22:00–6:00' },
+];
+
+const TIEMPOS_REACCION: Option[] = [
+  { value: 'inmediata', label: 'De inmediato' },
+  { value: 'una_hora', label: 'En alrededor de 1 hora' },
+  { value: 'tres_horas', label: 'En unas 3 horas' },
+  { value: 'un_dia', label: 'Necesito aviso con un día de anticipación' },
+];
+
+const URGENCIAS: Option[] = [
+  { value: 'si', label: 'Sí' },
+  { value: 'ocasional', label: 'Solo en algunas ocasiones' },
+  { value: 'no', label: 'No' },
+];
+
+const MEDIOS_TRANSPORTE: Option[] = [
+  { value: 'automovil', label: 'Auto propio' },
+  { value: 'motocicleta', label: 'Motocicleta' },
+  { value: 'transporte_publico', label: 'Transporte público' },
+  { value: 'bicicleta', label: 'Bicicleta' },
+  { value: 'a_pie', label: 'A pie' },
+  { value: 'depende_terceros', label: 'Necesito apoyo de alguien más' },
+];
+
+const TAMANIOS: Option[] = [
+  { value: 'pequeno', label: 'Pequeño' },
+  { value: 'mediano', label: 'Mediano' },
+  { value: 'grande', label: 'Grande' },
+];
+
+const ESPECIES: Option[] = [
+  { value: 'perro', label: 'Perros' },
+  { value: 'gato', label: 'Gatos' },
+  { value: 'otro', label: 'Otras especies' },
+];
+
+const OTRAS_ESPECIES: Option[] = [
+  { value: 'aves', label: 'Aves' },
+  { value: 'pequenos_mamiferos', label: 'Conejos y pequeños mamíferos' },
+  { value: 'reptiles', label: 'Reptiles' },
+  { value: 'granja', label: 'Animales de granja' },
+  { value: 'otra', label: 'Otra' },
+];
+
+const PRIMEROS_AUXILIOS: Option[] = [
+  { value: 'sin_formacion', label: 'Todavía no tengo experiencia' },
+  { value: 'basico', label: 'Conozco lo básico' },
+  { value: 'formal', label: 'He tomado una capacitación formal' },
+];
+
+const EXPERIENCIAS_CAMPO: Option[] = [
+  { value: 'docil_estable', label: 'Animales dóciles y estables' },
+  { value: 'cachorros_neonatos', label: 'Cachorros o neonatos' },
+  { value: 'enfermedad_cuarentena', label: 'Animales enfermos o que necesitan estar separados' },
+  { value: 'reactivo_agresivo', label: 'Animales nerviosos, defensivos o agresivos' },
+  { value: 'lesion_movilidad_reducida', label: 'Animales lesionados o con dificultad para moverse' },
+  { value: 'sin_experiencia', label: 'Sin experiencia en estas situaciones' },
+];
+
+const VIAS_TRATAMIENTO: Option[] = [
+  { value: 'oral', label: 'Medicamentos por boca' },
+  { value: 'topica', label: 'Cremas o tratamientos en la piel' },
+  { value: 'inyectable_avanzado', label: 'Inyecciones o tratamientos avanzados' },
+];
+
+const TRAYECTORIAS: Option[] = [
+  { value: 'mascotas_propias', label: 'Cuidando a mis propias mascotas' },
+  { value: 'rescate_independiente', label: 'Ayudando en rescates por mi cuenta' },
+  { value: 'casa_temporal', label: 'Ofreciendo casa temporal' },
+  { value: 'refugio_asociacion', label: 'Colaborando con refugios u organizaciones' },
+  { value: 'clinica_veterinaria', label: 'Trabajando en una clínica veterinaria' },
+  { value: 'sin_experiencia', label: 'Aún no tengo experiencia' },
+];
+
+const ANIOS_EXPERIENCIA: Option[] = [
+  { value: 'sin_experiencia', label: 'Sin experiencia' },
+  { value: 'menos_1', label: 'Menos de 1 año' },
+  { value: 'entre_1_3', label: 'De 1 a 3 años' },
+  { value: 'mas_3', label: 'Más de 3 años' },
+];
+
+const EQUIPAMIENTO: Option[] = [
+  { value: 'transportadora_chica', label: 'Transportadora chica' },
+  { value: 'transportadora_grande', label: 'Transportadora grande' },
+  { value: 'jaula_contencion', label: 'Jaula de contención' },
+  { value: 'correas_arneses', label: 'Correas, arneses o pecheras' },
+  { value: 'proteccion_vehiculo', label: 'Protección interior para vehículo' },
+  { value: 'guantes_manejo', label: 'Guantes de manejo especializado' },
+  { value: 'sin_equipo', label: 'Sin equipamiento propio' },
+];
+
+const RESTRICCIONES: Option[] = [
+  { value: 'ninguna', label: 'Ninguna' },
+  { value: 'evitar_carga_mayor_5kg', label: 'Evitar cargas mayores a 5 kg' },
+  { value: 'evitar_carga_mayor_15kg', label: 'Evitar cargas mayores a 15 kg' },
+  { value: 'evitar_escaleras', label: 'Evitar escaleras' },
+  { value: 'evitar_caminatas_prolongadas', label: 'Evitar caminatas prolongadas' },
+  { value: 'evitar_pie_prolongado', label: 'Evitar permanecer de pie por mucho tiempo' },
+  { value: 'prefiere_comentarlo', label: 'Prefiero comentarlo con la asociación' },
+];
+
+const CAPACITACION: Option[] = [
+  { value: 'si', label: 'Sí' },
+  { value: 'solo_virtual', label: 'Solo si es virtual' },
+  { value: 'no', label: 'No por el momento' },
+];
+
+const CANALES: Option[] = [
+  { value: 'whatsapp', label: 'WhatsApp' },
+  { value: 'llamada', label: 'Llamada telefónica' },
+  { value: 'plataforma', label: 'Notificación en PawAlert' },
+];
+
+const PROYECCIONES: Option[] = [
+  { value: 'ocasional', label: 'De vez en cuando' },
+  { value: 'uno_tres_meses', label: 'De 1 a 3 meses' },
+  { value: 'tres_seis_meses', label: 'De 3 a 6 meses' },
+  { value: 'mas_seis_meses', label: 'Más de 6 meses' },
+  { value: 'continua', label: 'De forma continua' },
+];
+
+const MOTIVACIONES: Option[] = [
+  { value: 'salvar_animales', label: 'Ayudar a animales en peligro' },
+  { value: 'apoyar_colectivos', label: 'Apoyar a asociaciones de mi comunidad' },
+  { value: 'aplicar_conocimientos', label: 'Compartir lo que ya sé' },
+  { value: 'adquirir_experiencia', label: 'Aprender y adquirir experiencia' },
+  { value: 'impacto_social', label: 'Generar un cambio positivo' },
+  { value: 'apoyar_recuperacion', label: 'Acompañar la recuperación de los animales' },
+];
 
 interface Props {
   onClose?: () => void;
   fromProfile?: boolean;
-  // Cuando es true, "Guardar" no manda de inmediato — primero muestra una
-  // pantalla de revisión con lo que se llenó, para que la persona confirme
-  // o regrese a editar antes de que la postulación se dé por enviada.
   esPostulacionNueva?: boolean;
+  esPostulacionExterna?: boolean;
 }
 
-export default function CapacidadesFormScreen({ onClose, fromProfile = false, esPostulacionNueva = false }: Props) {
+function labels(values: string[], options: Option[]) {
+  return values.map((value) => options.find((option) => option.value === value)?.label || value);
+}
+
+function franjasDesdeHorarioLegado(horarios: Array<{ de?: string; a?: string }>) {
+  if (!horarios?.length) return [];
+  const seleccionadas = new Set<string>();
+  horarios.forEach(({ de = '00:00', a = '23:59' }) => {
+    const inicio = Number(de.split(':')[0]);
+    const fin = Number(a.split(':')[0]);
+    if (inicio < 12 && fin >= 6) seleccionadas.add('matutino');
+    if (inicio < 18 && fin >= 12) seleccionadas.add('vespertino');
+    if (inicio < 22 && fin >= 18) seleccionadas.add('nocturno');
+    if (inicio >= 22 || fin <= 6) seleccionadas.add('madrugada');
+  });
+  return [...seleccionadas];
+}
+
+export default function CapacidadesFormScreen({
+  onClose,
+  fromProfile = false,
+  esPostulacionNueva = false,
+  esPostulacionExterna = false,
+}: Props) {
   const { token } = useAuth();
   const { toast, translateY, showToast } = useToast();
-  const { width: screenWidth } = useWindowDimensions();
+  const { width } = useWindowDimensions();
+  const compact = width < 700;
+  const formScrollRef = useRef<ScrollView>(null);
 
-  const [diasSeleccionados, setDiasSeleccionados] = useState<string[]>([]);
-  const [horaApertura, setHoraApertura] = useState('09:00');
-  const [horaCierre, setHoraCierre] = useState('18:00');
+  const [paso, setPaso] = useState(1);
+  const [mostrarConfirmacion, setMostrarConfirmacion] = useState(false);
+  const [postulacionCompletada, setPostulacionCompletada] = useState(false);
+  const [asociacionRevisora, setAsociacionRevisora] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Estados para el Modal de horas
-  const [showTimePicker, setShowTimePicker] = useState(false);
-  const [timePickerTarget, setTimePickerTarget] = useState<'apertura' | 'cierre' | null>(null);
+  const [dias, setDias] = useState<string[]>([]);
+  const [franjas, setFranjas] = useState<string[]>([]);
+  const [tiempoReaccion, setTiempoReaccion] = useState('');
+  const [urgencias, setUrgencias] = useState('');
+  const [maxCasos, setMaxCasos] = useState(1);
 
-  const [ofreceCasaHogar, setOfreceCasaHogar] = useState(false);
-  const [capacidadAnimales, setCapacidadAnimales] = useState(1);
-  const [especiesSeleccionadas, setEspeciesSeleccionadas] = useState<string[]>([]);
-  const [tamanosSeleccionados, setTamanosSeleccionados] = useState<string[]>([]);
-  const [otrosAnimales, setOtrosAnimales] = useState(false);
-  const [ninos, setNinos] = useState(false);
-
-  const [tieneVehiculo, setTieneVehiculo] = useState(false);
-
-  const [ubicacion, setUbicacion] = useState<{ latitud: number; longitud: number }>({ latitud: 19.0414, longitud: -98.2063 });
+  const [ubicacion, setUbicacion] = useState({ latitud: 19.0414, longitud: -98.2063 });
   const [ubicacionConfirmada, setUbicacionConfirmada] = useState(false);
   const [isLoadingGps, setIsLoadingGps] = useState(false);
+  const [radioMaxKm, setRadioMaxKm] = useState<number | null>(null);
+  const [mediosTransporte, setMediosTransporte] = useState<string[]>([]);
+  const [vehiculoApto, setVehiculoApto] = useState<boolean | null>(null);
+  const [tamaniosTraslado, setTamaniosTraslado] = useState<string[]>([]);
 
-  const [motivoVoluntario, setMotivoVoluntario] = useState('');
-  const [experiencia, setExperiencia] = useState('');
+  const [especiesManejo, setEspeciesManejo] = useState<string[]>([]);
+  const [otrasEspecies, setOtrasEspecies] = useState<string[]>([]);
+  const [tamaniosManejo, setTamaniosManejo] = useState<string[]>([]);
+  const [primerosAuxilios, setPrimerosAuxilios] = useState('');
+  const [experienciasCampo, setExperienciasCampo] = useState<string[]>([]);
+  const [viasTratamiento, setViasTratamiento] = useState<string[]>([]);
+  const [sinTratamientos, setSinTratamientos] = useState(false);
+  const [trayectorias, setTrayectorias] = useState<string[]>([]);
+  const [experienciaAnios, setExperienciaAnios] = useState('');
+
+  const [equipamiento, setEquipamiento] = useState<string[]>([]);
+  const [restricciones, setRestricciones] = useState<string[]>([]);
+  const [aceptaCapacitacion, setAceptaCapacitacion] = useState('');
+
+  const [canalContacto, setCanalContacto] = useState('');
+  const [contactoNombre, setContactoNombre] = useState('');
+  const [contactoTelefono, setContactoTelefono] = useState('');
+  const [compromisoComunicacion, setCompromisoComunicacion] = useState(false);
+  const [compromisoNotificar, setCompromisoNotificar] = useState(false);
+  const [proyeccion, setProyeccion] = useState('');
+
+  const [motivaciones, setMotivaciones] = useState<string[]>([]);
+  const [comentarios, setComentarios] = useState('');
   const [aceptoTerminos, setAceptoTerminos] = useState(false);
 
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [errors, setErrors] = useState<{ [key: string]: string }>({});
-  const [isLoading, setIsLoading] = useState(true);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      formScrollRef.current?.scrollTo({ y: 0, animated: false });
+    });
 
-  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
-  const [mostrarConfirmacion, setMostrarConfirmacion] = useState(false);
-
-  const ESPECIES = ['perro', 'gato', 'otro'];
-  const TAMANOS = ['pequeno', 'mediano', 'grande'];
+    return () => cancelAnimationFrame(frame);
+  }, [paso, mostrarConfirmacion]);
 
   useEffect(() => {
-    const cargarCapacidades = async () => {
+    const cargar = async () => {
+      if (!token) {
+        setIsLoading(false);
+        return;
+      }
       try {
-        if (!token) {
-          setIsLoading(false);
-          return;
-        }
-        const response = await axios.get(`${API_URL}/voluntarios/me/capacidades`, {
+        const { data } = await axios.get(`${API_URL}/voluntarios/me/capacidades`, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        const cap = response.data;
-        if (cap?.disponibilidad?.dias) setDiasSeleccionados(cap.disponibilidad.dias);
-        if (cap?.disponibilidad?.horarios?.[0]) {
-          setHoraApertura(cap.disponibilidad.horarios[0].de);
-          setHoraCierre(cap.disponibilidad.horarios[0].a);
-        }
-        setOfreceCasaHogar(cap?.ofrece_casa_hogar ?? false);
-        setCapacidadAnimales(cap?.capacidad_animales ?? 1);
-        setEspeciesSeleccionadas(cap?.especies ?? []);
-        setTamanosSeleccionados(cap?.tamanios ?? []);
-        setOtrosAnimales(cap?.otros_animales_en_casa ?? false);
-        setNinos(cap?.ninos_en_casa ?? false);
-        setTieneVehiculo(cap?.tiene_vehiculo ?? false);
-        
-        const lat = cap?.latitud;
-        const lng = cap?.longitud;
-        if (lat && lng) {
-          setUbicacion({ latitud: lat, longitud: lng });
+        const disponibilidad = data?.disponibilidad || {};
+        const tieneDatosV2 =
+          data?.radio_max_km != null ||
+          data?.tiempo_reaccion != null ||
+          (data?.especies_manejo?.length ?? 0) > 0;
+
+        setDias(disponibilidad.dias || []);
+        setFranjas(
+          disponibilidad.franjas?.length
+            ? disponibilidad.franjas
+            : franjasDesdeHorarioLegado(disponibilidad.horarios || [])
+        );
+        setTiempoReaccion(data?.tiempo_reaccion || '');
+        setUrgencias(data?.disponibilidad_urgencias || '');
+        setMaxCasos(data?.max_casos_simultaneos || 1);
+
+        if (data?.latitud != null && data?.longitud != null) {
+          setUbicacion({
+            latitud: Number(data.latitud),
+            longitud: Number(data.longitud),
+          });
           setUbicacionConfirmada(true);
         }
-        setMotivoVoluntario(cap?.motivo_voluntario ?? '');
-        setExperiencia(cap?.experiencia_previa ?? '');
-        setAceptoTerminos(cap?.acepto_terminos ?? false);
-      } catch (err) {
-        console.error('Error cargando capacidades:', err);
+        setRadioMaxKm(data?.radio_max_km ?? null);
+        setMediosTransporte(data?.medios_transporte || []);
+        setVehiculoApto(
+          tieneDatosV2
+            ? Boolean(data?.vehiculo_apto_traslado)
+            : data?.tiene_vehiculo == null
+              ? null
+              : Boolean(data.tiene_vehiculo)
+        );
+        setTamaniosTraslado(data?.tamanios_traslado || []);
+
+        setEspeciesManejo(
+          data?.especies_manejo?.length ? data.especies_manejo : data?.especies || []
+        );
+        setOtrasEspecies(data?.otras_especies_manejo || []);
+        setTamaniosManejo(
+          data?.tamanios_manejo?.length ? data.tamanios_manejo : data?.tamanios || []
+        );
+        setPrimerosAuxilios(data?.primeros_auxilios_nivel || '');
+        setExperienciasCampo(data?.experiencias_campo || []);
+        setViasTratamiento(data?.vias_tratamiento || []);
+        setSinTratamientos(
+          tieneDatosV2 && (data?.vias_tratamiento?.length ?? 0) === 0
+        );
+        setTrayectorias(data?.trayectoria_tipos || []);
+        setExperienciaAnios(data?.experiencia_anios || '');
+
+        setEquipamiento(data?.equipamiento || []);
+        setRestricciones(data?.restricciones_fisicas || []);
+        setAceptaCapacitacion(data?.acepta_capacitacion || '');
+
+        setCanalContacto(data?.canal_contacto || '');
+        setContactoNombre(data?.contacto_emergencia_nombre || '');
+        setContactoTelefono(data?.contacto_emergencia_telefono || '');
+        setCompromisoComunicacion(Boolean(data?.compromiso_comunicacion));
+        setCompromisoNotificar(Boolean(data?.compromiso_notificar));
+        setProyeccion(data?.proyeccion_colaboracion || '');
+        setMotivaciones(data?.motivaciones || []);
+        setComentarios(data?.comentarios_adicionales || '');
+        setAceptoTerminos(Boolean(data?.acepto_terminos));
+      } catch (error) {
+        console.error('Error cargando capacidades:', error);
       } finally {
         setIsLoading(false);
       }
     };
-    cargarCapacidades();
+    cargar();
   }, [token]);
 
+  const toggle = (
+    value: string,
+    selected: string[],
+    setter: (next: string[]) => void,
+    exclusiveValue?: string
+  ) => {
+    if (value === exclusiveValue) {
+      setter(selected.includes(value) ? [] : [value]);
+      return;
+    }
+    const withoutExclusive = exclusiveValue
+      ? selected.filter((item) => item !== exclusiveValue)
+      : selected;
+    setter(
+      withoutExclusive.includes(value)
+        ? withoutExclusive.filter((item) => item !== value)
+        : [...withoutExclusive, value]
+    );
+  };
+
   const handleGetLocation = async () => {
+    setIsLoadingGps(true);
     try {
-      setIsLoadingGps(true);
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        showToast({ title: 'Permiso denegado', description: 'No pudimos acceder a tu ubicación.', type: 'error' });
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (permission.status !== 'granted') {
+        showToast({
+          type: 'error',
+          title: 'Permiso denegado',
+          message: 'No pudimos acceder a tu ubicación.',
+        });
         return;
       }
-      const location = await Location.getCurrentPositionAsync({});
-      setUbicacion({ latitud: location.coords.latitude, longitud: location.coords.longitude });
+      const current = await Location.getCurrentPositionAsync({});
+      setUbicacion({
+        latitud: current.coords.latitude,
+        longitud: current.coords.longitude,
+      });
       setUbicacionConfirmada(true);
-    } catch (err) {
-      showToast({ title: 'Error', description: 'No pudimos obtener tu ubicación.', type: 'error' });
+    } catch {
+      showToast({
+        type: 'error',
+        title: 'Ubicación no disponible',
+        message: 'Ajusta manualmente el marcador en el mapa.',
+      });
     } finally {
       setIsLoadingGps(false);
     }
   };
 
-  const toggleDia = (dia: string) => {
-    setDiasSeleccionados(prev => prev.includes(dia) ? prev.filter(d => d !== dia) : [...prev, dia]);
-    setErrors(prev => ({ ...prev, dias: '' }));
-  };
-
-  const toggleEspecie = (especie: string) => {
-    setEspeciesSeleccionadas(prev => prev.includes(especie) ? prev.filter(e => e !== especie) : [...prev, especie]);
-  };
-
-  const toggleTamano = (tamano: string) => {
-    setTamanosSeleccionados(prev => prev.includes(tamano) ? prev.filter(t => t !== tamano) : [...prev, tamano]);
-  };
-
-  const openTimePicker = (target: 'apertura' | 'cierre') => {
-    setTimePickerTarget(target);
-    setShowTimePicker(true);
-  };
-
-  const handleSelectTime = (value: string) => {
-    if (timePickerTarget === 'apertura') {
-      setHoraApertura(value);
-    } else if (timePickerTarget === 'cierre') {
-      setHoraCierre(value);
+  const validarPaso = (numero: number) => {
+    const nuevos: Record<string, string> = {};
+    if (numero === 1) {
+      if (!dias.length) nuevos.dias = 'Selecciona al menos un día.';
+      if (!franjas.length) nuevos.franjas = 'Selecciona al menos una franja.';
+      if (!tiempoReaccion) nuevos.tiempoReaccion = 'Selecciona una opción.';
+      if (!urgencias) nuevos.urgencias = 'Selecciona una opción.';
     }
-    setShowTimePicker(false);
-    setErrors(prev => ({ ...prev, horaApertura: '', horaCierre: '' }));
-  };
-
-  // Función para obtener la etiqueta "9:00 am" a partir del valor "09:00"
-  const getDisplayTime = (val: string) => {
-    return TIME_OPTIONS.find(o => o.value === val)?.label || val;
-  };
-
-  const validateForm = (): boolean => {
-    const newErrors: { [key: string]: string } = {};
-
-    if (diasSeleccionados.length === 0) newErrors.dias = 'Selecciona al menos un día disponible.';
-    if (!horaApertura) newErrors.horaApertura = 'Selecciona la hora de inicio.';
-    if (!horaCierre) newErrors.horaCierre = 'Selecciona la hora de fin.';
-
-    if (ofreceCasaHogar) {
-      if (especiesSeleccionadas.length === 0) newErrors.especies = 'Selecciona al menos una especie que puedas acoger.';
-      if (tamanosSeleccionados.length === 0) newErrors.tamanos = 'Selecciona al menos un tamaño.';
+    if (numero === 2) {
+      if (!ubicacionConfirmada) nuevos.ubicacion = 'Confirma tu zona en el mapa.';
+      if (!radioMaxKm) nuevos.radio = 'Selecciona una distancia máxima.';
+      if (!mediosTransporte.length) nuevos.medios = 'Selecciona al menos un medio.';
+      if (vehiculoApto === null) nuevos.vehiculo = 'Selecciona sí o no.';
+      if (vehiculoApto && !tamaniosTraslado.length) {
+        nuevos.tamaniosTraslado = 'Selecciona al menos un tamaño.';
+      }
     }
-
-    if (!ubicacionConfirmada || !ubicacion.latitud || !ubicacion.longitud) {
-      newErrors.ubicacion = 'Por favor, confirma tu zona de cobertura en el mapa.';
+    if (numero === 3) {
+      if (!especiesManejo.length) nuevos.especies = 'Selecciona al menos una especie.';
+      if (especiesManejo.includes('otro') && !otrasEspecies.length) {
+        nuevos.otrasEspecies = 'Detalla al menos una categoría.';
+      }
+      if (!tamaniosManejo.length) nuevos.tamaniosManejo = 'Selecciona al menos un tamaño.';
+      if (!primerosAuxilios) nuevos.primerosAuxilios = 'Selecciona una opción.';
+      if (!experienciasCampo.length) nuevos.experienciasCampo = 'Selecciona al menos una opción.';
+      if (!viasTratamiento.length && !sinTratamientos) {
+        nuevos.tratamientos = 'Indica una habilidad o selecciona “Ninguna”.';
+      }
+      if (!trayectorias.length) nuevos.trayectorias = 'Selecciona al menos una opción.';
+      if (!experienciaAnios) nuevos.experienciaAnios = 'Selecciona una opción.';
     }
-
-    if (!aceptoTerminos) newErrors.aceptoTerminos = 'Debes aceptar los términos y condiciones.';
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    if (numero === 4) {
+      if (!equipamiento.length) nuevos.equipamiento = 'Selecciona al menos una opción.';
+      if (!restricciones.length) nuevos.restricciones = 'Selecciona al menos una opción.';
+      if (!aceptaCapacitacion) nuevos.capacitacion = 'Selecciona una opción.';
+    }
+    if (numero === 5) {
+      if (!canalContacto) nuevos.canal = 'Selecciona un canal.';
+      if (contactoNombre.trim().length < 3) nuevos.contactoNombre = 'Ingresa el nombre completo.';
+      if (!/^\d{10}$/.test(contactoTelefono)) nuevos.contactoTelefono = 'Ingresa 10 dígitos.';
+      if (!compromisoComunicacion) nuevos.compromisoComunicacion = 'Debes aceptar este compromiso.';
+      if (!compromisoNotificar) nuevos.compromisoNotificar = 'Debes aceptar este compromiso.';
+      if (!proyeccion) nuevos.proyeccion = 'Selecciona una opción.';
+    }
+    if (numero === 6) {
+      if (!motivaciones.length) nuevos.motivaciones = 'Selecciona al menos una motivación.';
+      if (comentarios.length > 250) nuevos.comentarios = 'Máximo 250 caracteres.';
+      if (!aceptoTerminos) nuevos.terminos = 'Debes aceptar los términos.';
+    }
+    setErrors(nuevos);
+    if (Object.keys(nuevos).length) {
+      showToast({
+        type: 'warning',
+        title: 'Falta información',
+        message: 'Revisa las preguntas marcadas antes de continuar.',
+      });
+      return false;
+    }
+    return true;
   };
 
-  // Botón principal del formulario: si es una postulación nueva, primero
-  // muestra la pantalla de revisión (no manda nada todavía). Si es edición
-  // de un perfil ya existente, guarda directo como siempre.
-  const handleGuardarPress = () => {
-    if (!validateForm()) return;
-    if (esPostulacionNueva) {
+  const avanzar = () => {
+    if (!validarPaso(paso)) return;
+    if (paso === PASOS.length) {
       setMostrarConfirmacion(true);
-    } else {
-      handleSubmit();
+      return;
     }
+    setPaso((actual) => actual + 1);
+    setErrors({});
   };
+
+  const retroceder = () => {
+    if (paso === 1) {
+      setShowCloseConfirm(true);
+      return;
+    }
+    setPaso((actual) => actual - 1);
+    setErrors({});
+  };
+
+  const payload = useMemo(
+    () => ({
+      disponibilidad: { dias, franjas },
+      tiempo_reaccion: tiempoReaccion,
+      disponibilidad_urgencias: urgencias,
+      max_casos_simultaneos: maxCasos,
+      radio_max_km: radioMaxKm,
+      medios_transporte: mediosTransporte,
+      vehiculo_apto_traslado: Boolean(vehiculoApto),
+      tamanios_traslado: vehiculoApto ? tamaniosTraslado : [],
+      especies_manejo: especiesManejo,
+      otras_especies_manejo: especiesManejo.includes('otro') ? otrasEspecies : [],
+      tamanios_manejo: tamaniosManejo,
+      primeros_auxilios_nivel: primerosAuxilios,
+      experiencias_campo: experienciasCampo,
+      vias_tratamiento: sinTratamientos ? [] : viasTratamiento,
+      trayectoria_tipos: trayectorias,
+      experiencia_anios: experienciaAnios,
+      equipamiento,
+      restricciones_fisicas: restricciones,
+      acepta_capacitacion: aceptaCapacitacion,
+      canal_contacto: canalContacto,
+      contacto_emergencia_nombre: contactoNombre.trim(),
+      contacto_emergencia_telefono: contactoTelefono,
+      compromiso_comunicacion: compromisoComunicacion,
+      compromiso_notificar: compromisoNotificar,
+      proyeccion_colaboracion: proyeccion,
+      motivaciones,
+      comentarios_adicionales: comentarios.trim() || null,
+      latitud: ubicacion.latitud,
+      longitud: ubicacion.longitud,
+      acepto_terminos: aceptoTerminos,
+    }),
+    [
+      dias, franjas, tiempoReaccion, urgencias, maxCasos, radioMaxKm,
+      mediosTransporte, vehiculoApto, tamaniosTraslado, especiesManejo,
+      otrasEspecies, tamaniosManejo, primerosAuxilios, experienciasCampo,
+      sinTratamientos, viasTratamiento, trayectorias, experienciaAnios,
+      equipamiento, restricciones, aceptaCapacitacion, canalContacto,
+      contactoNombre, contactoTelefono, compromisoComunicacion,
+      compromisoNotificar, proyeccion, motivaciones, comentarios,
+      ubicacion, aceptoTerminos,
+    ]
+  );
 
   const handleSubmit = async () => {
-    if (!validateForm()) return;
-
     setIsSubmitting(true);
     try {
-      const disponibilidad = {
-        dias: diasSeleccionados,
-        horarios: [{ de: horaApertura, a: horaCierre }],
-      };
-
-      const payload: Capacidades = {
-        disponibilidad,
-        ofrece_casa_hogar: ofreceCasaHogar,
-        capacidad_animales: ofreceCasaHogar ? capacidadAnimales : 0,
-        especies: ofreceCasaHogar ? especiesSeleccionadas : [],
-        tamanios: ofreceCasaHogar ? tamanosSeleccionados : [],
-        otros_animales_en_casa: otrosAnimales,
-        ninos_en_casa: ninos,
-        tiene_vehiculo: tieneVehiculo,
-        latitud: ubicacion.latitud,
-        longitud: ubicacion.longitud,
-        motivo_voluntario: motivoVoluntario.trim(),
-        experiencia_previa: experiencia.trim(),
-        acepto_terminos: aceptoTerminos,
-      };
-
       await axios.put(`${API_URL}/voluntarios/me/capacidades`, payload, {
         headers: { Authorization: `Bearer ${token}` },
       });
-
-      showToast({ title: '¡Listo!', description: 'Tus capacidades han sido guardadas.', type: 'success' });
-
-      if (fromProfile) {
-        if (onClose) onClose();
-      } else {
-        router.push('/(tabs)/profile');
+      if (esPostulacionNueva) {
+        if (esPostulacionExterna) {
+          const { data: finalizacion } = await axios.post(
+            `${API_URL}/voluntarios/externo/finalizar`,
+            {},
+            { headers: { Authorization: `Bearer ${token}` } },
+          );
+          setAsociacionRevisora(finalizacion?.asociacion_nombre || null);
+        }
+        setMostrarConfirmacion(false);
+        setPostulacionCompletada(true);
+        return;
       }
-    } catch (err: any) {
-      const message =
-        err.response?.status === 401
-          ? 'Tu sesión expiró. Vuelve a iniciar sesión e intenta de nuevo.'
-          : err.response?.data?.detail || 'Error al guardar tus capacidades.';
-      showToast({ title: 'Error', description: message, type: 'error' });
+      showToast({
+        type: 'success',
+        title: '¡Listo!',
+        message: 'Tus capacidades fueron actualizadas.',
+      });
+      if (fromProfile && onClose) {
+        onClose();
+      } else {
+        router.replace('/(tabs)/profile');
+      }
+    } catch (error: any) {
+      showToast({
+        type: 'error',
+        title: 'No pudimos guardar',
+        message:
+          error?.response?.data?.detail ||
+          'Verifica tu conexión e intenta nuevamente.',
+      });
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const hasUnsavedChanges = () => {
-    return (
-      diasSeleccionados.length > 0 ||
-      especiesSeleccionadas.length > 0 ||
-      motivoVoluntario.trim() !== '' ||
-      experiencia.trim() !== '' ||
-      ofreceCasaHogar ||
-      tieneVehiculo ||
-      aceptoTerminos
-    );
-  };
-
-  const handleCloseRequest = () => {
-    if (hasUnsavedChanges()) {
-      setShowCloseConfirm(true);
-    } else {
-      if (onClose) onClose();
+  const renderPaso = () => {
+    if (paso === 1) {
+      return (
+        <>
+          <FormSection title="¿Qué días sueles estar disponible?" subtitle="Elige todos los días en los que normalmente podrías ayudar.">
+            <MultiOptions options={DIAS} selected={dias} onToggle={(value) => toggle(value, dias, setDias)} error={errors.dias} />
+          </FormSection>
+          <FormSection title="¿En qué horarios te queda más fácil ayudar?" subtitle="Puedes elegir más de un horario.">
+            <MultiOptions options={FRANJAS} selected={franjas} onToggle={(value) => toggle(value, franjas, setFranjas)} error={errors.franjas} />
+          </FormSection>
+          <FormSection title="Si recibes una alerta, ¿cuánto tardarías en responder?">
+            <SingleOptions options={TIEMPOS_REACCION} selected={tiempoReaccion} onSelect={setTiempoReaccion} error={errors.tiempoReaccion} />
+          </FormSection>
+          <FormSection title="¿Podrías ayudar en una emergencia?">
+            <SingleOptions options={URGENCIAS} selected={urgencias} onSelect={setUrgencias} error={errors.urgencias} />
+          </FormSection>
+          <FormSection title="¿Cuántos casos podrías atender al mismo tiempo?">
+            <SingleOptions
+              options={[1, 2, 3].map((value) => ({ value: String(value), label: `${value} caso${value > 1 ? 's' : ''}` }))}
+              selected={String(maxCasos)}
+              onSelect={(value) => setMaxCasos(Number(value))}
+            />
+          </FormSection>
+        </>
+      );
     }
+
+    if (paso === 2) {
+      return (
+        <>
+          <FormSection title="¿Desde qué zona podrías apoyar?" subtitle="Solo compartiremos una zona aproximada, no la dirección de tu casa.">
+            <TouchableOpacity style={styles.locationButton} onPress={handleGetLocation} disabled={isLoadingGps}>
+              <Ionicons name="locate" size={18} color={COLORS.bgTeal} />
+              <Text style={styles.locationButtonText}>
+                {isLoadingGps ? 'Obteniendo ubicación…' : 'Usar mi ubicación actual'}
+              </Text>
+            </TouchableOpacity>
+            <View style={[styles.mapContainer, errors.ubicacion && styles.errorBorder]}>
+              <LocationPickerMap
+                selectedPosition={ubicacion}
+                instructionText="Toca el mapa para marcar la zona desde la que ayudarías"
+                helperText="Puedes mover el pin para ajustar la zona"
+                onLocationSelect={(latitud, longitud) => {
+                  setUbicacion({ latitud, longitud });
+                  setUbicacionConfirmada(true);
+                }}
+              />
+            </View>
+            {errors.ubicacion && <ErrorText text={errors.ubicacion} />}
+          </FormSection>
+          <FormSection title="¿Qué tan lejos podrías desplazarte?">
+            <SingleOptions
+              options={[5, 10, 20, 30].map((km) => ({ value: String(km), label: `Hasta ${km} km` }))}
+              selected={radioMaxKm ? String(radioMaxKm) : ''}
+              onSelect={(value) => setRadioMaxKm(Number(value))}
+              error={errors.radio}
+            />
+          </FormSection>
+          <FormSection title="¿Cómo sueles trasladarte?">
+            <MultiOptions options={MEDIOS_TRANSPORTE} selected={mediosTransporte} onToggle={(value) => toggle(value, mediosTransporte, setMediosTransporte)} error={errors.medios} />
+          </FormSection>
+          <FormSection title="¿Tienes un vehículo donde puedas llevar animales?">
+            <BooleanOptions value={vehiculoApto} onChange={(value) => {
+              setVehiculoApto(value);
+              if (!value) setTamaniosTraslado([]);
+            }} error={errors.vehiculo} />
+          </FormSection>
+          {vehiculoApto && (
+            <FormSection title="¿Qué tamaños podrías trasladar en tu vehículo?">
+              <MultiOptions options={TAMANIOS} selected={tamaniosTraslado} onToggle={(value) => toggle(value, tamaniosTraslado, setTamaniosTraslado)} error={errors.tamaniosTraslado} />
+            </FormSection>
+          )}
+        </>
+      );
+    }
+
+    if (paso === 3) {
+      const todasSeleccionadas = ESPECIES.every((option) => especiesManejo.includes(option.value));
+      return (
+        <>
+          <FormSection title="¿Con qué animales te sientes cómodo ayudando?">
+            <TouchableOpacity
+              style={[styles.allButton, todasSeleccionadas && styles.allButtonSelected]}
+              onPress={() => setEspeciesManejo(todasSeleccionadas ? [] : ESPECIES.map((option) => option.value))}
+            >
+              <Text style={[styles.allButtonText, todasSeleccionadas && styles.selectedText]}>Todas las anteriores</Text>
+            </TouchableOpacity>
+            <MultiOptions options={ESPECIES} selected={especiesManejo} onToggle={(value) => {
+              toggle(value, especiesManejo, setEspeciesManejo);
+              if (value === 'otro' && especiesManejo.includes('otro')) setOtrasEspecies([]);
+            }} error={errors.especies} />
+          </FormSection>
+          {especiesManejo.includes('otro') && (
+            <FormSection title="¿Con qué otros animales?">
+              <MultiOptions options={OTRAS_ESPECIES} selected={otrasEspecies} onToggle={(value) => toggle(value, otrasEspecies, setOtrasEspecies)} error={errors.otrasEspecies} />
+            </FormSection>
+          )}
+          <FormSection title="¿Qué tamaños puedes manejar de forma segura?">
+            <MultiOptions options={TAMANIOS} selected={tamaniosManejo} onToggle={(value) => toggle(value, tamaniosManejo, setTamaniosManejo)} error={errors.tamaniosManejo} />
+          </FormSection>
+          <FormSection title="¿Qué tanto sabes de primeros auxilios para animales?">
+            <SingleOptions options={PRIMEROS_AUXILIOS} selected={primerosAuxilios} onSelect={setPrimerosAuxilios} error={errors.primerosAuxilios} />
+          </FormSection>
+          <FormSection title="¿En qué situaciones has ayudado antes?">
+            <MultiOptions options={EXPERIENCIAS_CAMPO} selected={experienciasCampo} onToggle={(value) => toggle(value, experienciasCampo, setExperienciasCampo, 'sin_experiencia')} error={errors.experienciasCampo} />
+          </FormSection>
+          <FormSection title="¿Has dado alguno de estos tratamientos?" subtitle="Elige solo los que ya hayas realizado.">
+            <TouchableOpacity
+              style={[styles.allButton, sinTratamientos && styles.allButtonSelected]}
+              onPress={() => {
+                setSinTratamientos(!sinTratamientos);
+                setViasTratamiento([]);
+              }}
+            >
+              <Text style={[styles.allButtonText, sinTratamientos && styles.selectedText]}>Ninguna</Text>
+            </TouchableOpacity>
+            <MultiOptions options={VIAS_TRATAMIENTO} selected={viasTratamiento} onToggle={(value) => {
+              setSinTratamientos(false);
+              toggle(value, viasTratamiento, setViasTratamiento);
+            }} error={errors.tratamientos} />
+          </FormSection>
+          <FormSection title="¿Dónde has adquirido experiencia?">
+            <MultiOptions options={TRAYECTORIAS} selected={trayectorias} onToggle={(value) => {
+              toggle(value, trayectorias, setTrayectorias, 'sin_experiencia');
+              if (value === 'sin_experiencia') setExperienciaAnios('sin_experiencia');
+              if (value !== 'sin_experiencia' && experienciaAnios === 'sin_experiencia') {
+                setExperienciaAnios('');
+              }
+            }} error={errors.trayectorias} />
+          </FormSection>
+          <FormSection title="¿Cuánto tiempo llevas cuidando o ayudando animales?">
+            <SingleOptions options={ANIOS_EXPERIENCIA} selected={experienciaAnios} onSelect={(value) => {
+              setExperienciaAnios(value);
+              if (value === 'sin_experiencia') {
+                setTrayectorias(['sin_experiencia']);
+                setExperienciasCampo(['sin_experiencia']);
+              } else {
+                setTrayectorias((current) => current.filter((item) => item !== 'sin_experiencia'));
+                setExperienciasCampo((current) => current.filter((item) => item !== 'sin_experiencia'));
+              }
+            }} error={errors.experienciaAnios} />
+          </FormSection>
+        </>
+      );
+    }
+
+    if (paso === 4) {
+      return (
+        <>
+          <FormSection title="¿Con qué equipo cuentas actualmente?">
+            <MultiOptions options={EQUIPAMIENTO} selected={equipamiento} onToggle={(value) => toggle(value, equipamiento, setEquipamiento, 'sin_equipo')} error={errors.equipamiento} />
+          </FormSection>
+          <FormSection title="¿Hay algún esfuerzo físico que prefieras evitar?" subtitle="Esto nos ayuda a proponerte actividades cómodas y seguras para ti.">
+            <MultiOptions options={RESTRICCIONES} selected={restricciones} onToggle={(value) => toggle(value, restricciones, setRestricciones, 'ninguna')} error={errors.restricciones} />
+          </FormSection>
+          <FormSection title="¿Te gustaría recibir capacitación?">
+            <SingleOptions options={CAPACITACION} selected={aceptaCapacitacion} onSelect={setAceptaCapacitacion} error={errors.capacitacion} />
+          </FormSection>
+        </>
+      );
+    }
+
+    if (paso === 5) {
+      return (
+        <>
+          <FormSection title="¿Cómo prefieres recibir avisos?">
+            <SingleOptions options={CANALES} selected={canalContacto} onSelect={setCanalContacto} error={errors.canal} />
+          </FormSection>
+          <FormSection title="¿A quién podemos llamar en una emergencia?" subtitle="Solo usaremos este contacto para cuidarte durante una actividad.">
+            <TextInput
+              style={[styles.input, errors.contactoNombre && styles.errorBorder]}
+              value={contactoNombre}
+              onChangeText={setContactoNombre}
+              placeholder="Nombre completo"
+              placeholderTextColor={COLORS.textLight}
+              maxLength={120}
+            />
+            {errors.contactoNombre && <ErrorText text={errors.contactoNombre} />}
+            <TextInput
+              style={[styles.input, errors.contactoTelefono && styles.errorBorder]}
+              value={contactoTelefono}
+              onChangeText={(value) => setContactoTelefono(value.replace(/\D/g, '').slice(0, 10))}
+              placeholder="Teléfono de 10 dígitos"
+              placeholderTextColor={COLORS.textLight}
+              keyboardType="phone-pad"
+              maxLength={10}
+            />
+            {errors.contactoTelefono && <ErrorText text={errors.contactoTelefono} />}
+          </FormSection>
+          <FormSection title="Acuerdos para trabajar en equipo">
+            <ConsentOption
+              selected={compromisoComunicacion}
+              onPress={() => setCompromisoComunicacion(!compromisoComunicacion)}
+              label="Mantendré comunicación mientras esté ayudando en un caso."
+              error={errors.compromisoComunicacion}
+            />
+            <ConsentOption
+              selected={compromisoNotificar}
+              onPress={() => setCompromisoNotificar(!compromisoNotificar)}
+              label="Avisaré con tiempo si no puedo continuar con un caso."
+              error={errors.compromisoNotificar}
+            />
+          </FormSection>
+          <FormSection title="¿Por cuánto tiempo te gustaría participar?">
+            <SingleOptions options={PROYECCIONES} selected={proyeccion} onSelect={setProyeccion} error={errors.proyeccion} />
+          </FormSection>
+        </>
+      );
+    }
+
+    return (
+      <>
+        <FormSection title="¿Qué te motiva a participar?">
+          <MultiOptions options={MOTIVACIONES} selected={motivaciones} onToggle={(value) => toggle(value, motivaciones, setMotivaciones)} error={errors.motivaciones} />
+        </FormSection>
+        <FormSection title="¿Quieres contarnos algo más?" subtitle="Es opcional y la asociación podrá leerlo al revisar tu perfil.">
+          <TextInput
+            style={[styles.textArea, errors.comentarios && styles.errorBorder]}
+            value={comentarios}
+            onChangeText={(value) => setComentarios(value.slice(0, 250))}
+            placeholder="¿Hay algo más que la asociación deba saber?"
+            placeholderTextColor={COLORS.textLight}
+            multiline
+            maxLength={250}
+            textAlignVertical="top"
+          />
+          <Text style={styles.counter}>{comentarios.length}/250</Text>
+          {errors.comentarios && <ErrorText text={errors.comentarios} />}
+        </FormSection>
+        <FormSection title="Antes de terminar">
+          <ConsentOption
+            selected={aceptoTerminos}
+            onPress={() => setAceptoTerminos(!aceptoTerminos)}
+            label="Confirmo que mis respuestas son verdaderas y que seguiré las medidas de seguridad y bienestar animal."
+            error={errors.terminos}
+          />
+        </FormSection>
+      </>
+    );
   };
 
   if (isLoading) {
     return (
-      <View style={styles.container}>
-        <View style={styles.headerSection}>
-          <View style={styles.headerContent}>
-            <View style={styles.headerText}>
-              <Text style={styles.headerTitle}>Cargando...</Text>
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={styles.loadingText}>Preparando tu formulario…</Text>
+      </View>
+    );
+  }
+
+  if (postulacionCompletada) {
+    return (
+      <View style={styles.outerContainer}>
+        <View style={styles.successContainer}>
+          <View style={styles.successCard}>
+            <View style={styles.successIcon}>
+              <Ionicons name="checkmark" size={54} color={COLORS.bgWhite} />
             </View>
+            <Text style={styles.successTitle}>¡Postulación enviada!</Text>
+            <Text style={styles.successText}>
+              Recibimos tu información y tus capacidades.
+              {asociacionRevisora
+                ? ` ${asociacionRevisora} revisará tu expediente.`
+                : ' Una asociación cercana revisará tu expediente.'}
+              {' '}Podrás consultar el avance desde tu perfil.
+            </Text>
+            {esPostulacionExterna && (
+              <View style={styles.verificationNote}>
+                <Ionicons name="home-outline" size={22} color={COLORS.bgTeal} />
+                <Text style={styles.verificationNoteText}>
+                  Una asociación revisará tu postulación. Si hay una persona verificadora disponible cerca de ti,
+                  se pondrán en contacto para coordinar una visita a tu hogar. Si no es posible, revisarán la
+                  evidencia que enviaste.
+                </Text>
+              </View>
+            )}
+            <TouchableOpacity
+              style={[styles.primaryButton, styles.successButton]}
+              onPress={() => {
+                if (onClose) onClose();
+                else router.replace('/');
+              }}
+            >
+              <Text style={styles.primaryButtonText}>Volver al inicio</Text>
+            </TouchableOpacity>
           </View>
-        </View>
-        <View style={[styles.bodySection, { justifyContent: 'center', alignItems: 'center' }]}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
         </View>
       </View>
     );
   }
 
   return (
-    // 1. Contenedor principal que oscurece y difumina el fondo
-    <View style={[styles.outerContainer, { backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' } as any]}>
+    <View style={styles.outerContainer}>
       <Toast toast={toast} translateY={translateY} />
-
-      {/* 2. Contenedores que centran y dan forma a la tarjeta flotante */}
       <View style={styles.centeredContent}>
-        <View style={styles.cardContainer}>
-          
-          <View style={styles.headerSection}>
-            {/* Botón de cerrar (X) */}
-            <TouchableOpacity 
-              style={styles.closeButton} 
-              onPress={() => setShowCloseConfirm(true)}
+        <View style={styles.card}>
+          <View style={styles.header}>
+            <TouchableOpacity
+              style={styles.headerButton}
+              onPress={() => mostrarConfirmacion ? setMostrarConfirmacion(false) : retroceder()}
             >
-              <Ionicons name="close" size={26} color={COLORS.bgWhite} />
+              <Ionicons name="chevron-back" size={22} color={COLORS.bgWhite} />
             </TouchableOpacity>
-
-            <View style={styles.headerContent}>
-              <View style={styles.headerText}>
-                <Text style={styles.headerTitle}>
-                  {mostrarConfirmacion ? 'Revisa tu postulación' : 'Mis Capacidades'}
-                </Text>
-                <Text style={styles.headerSubtitle}>
-                  {mostrarConfirmacion
-                    ? 'Confirma que todo esté correcto antes de enviarla'
-                    : 'Cuéntanos cómo puedes ayudar'}
-                </Text>
-              </View>
+            <View style={styles.headerText}>
+              <Text style={styles.title}>
+                {mostrarConfirmacion ? 'Revisa tus respuestas' : 'Cuéntanos cómo puedes ayudar'}
+              </Text>
+              <Text style={styles.subtitle}>
+                {mostrarConfirmacion
+                  ? 'Si todo se ve bien, ya puedes terminar'
+                  : `Paso ${paso} de ${PASOS.length}: ${PASOS[paso - 1]}`}
+              </Text>
             </View>
-            <Image
-              pointerEvents="none"
-              source={{ uri: 'https://cdn-icons-png.flaticon.com/512/3047/3047928.png' }}
-              style={styles.decorationImage}
-              resizeMode="contain"
-            />
+            <TouchableOpacity style={styles.headerButton} onPress={() => setShowCloseConfirm(true)}>
+              <Ionicons name="close" size={22} color={COLORS.bgWhite} />
+            </TouchableOpacity>
+            {!mostrarConfirmacion && (
+              <View style={styles.progressTrack}>
+                <View style={[styles.progressFill, { width: `${(paso / PASOS.length) * 100}%` }]} />
+              </View>
+            )}
           </View>
 
           {mostrarConfirmacion ? (
-            <View style={styles.bodySection}>
-              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-                <View style={{ backgroundColor: COLORS.cardBg, borderRadius: 20, padding: 20, gap: 16 }}>
-                  <View>
-                    <Text style={styles.sectionLabel}>Días disponibles</Text>
-                    <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.textDark, textTransform: 'capitalize' }}>
-                      {diasSeleccionados.join(', ') || '—'}
-                    </Text>
-                  </View>
-                  <View>
-                    <Text style={styles.sectionLabel}>Horario</Text>
-                    <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.textDark }}>
-                      {getDisplayTime(horaApertura)} – {getDisplayTime(horaCierre)}
-                    </Text>
-                  </View>
-                  <View>
-                    <Text style={styles.sectionLabel}>Mi Casa Temporal</Text>
-                    <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.textDark }}>
-                      {ofreceCasaHogar ? 'Sí ofrece' : 'No ofrece'}
-                    </Text>
-                  </View>
-                  {ofreceCasaHogar && (
-                    <View>
-                      <Text style={styles.sectionLabel}>Especies y tamaños</Text>
-                      <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.textDark, textTransform: 'capitalize' }}>
-                        {especiesSeleccionadas.join(', ') || '—'} · {tamanosSeleccionados.join(', ') || '—'}
-                      </Text>
-                    </View>
-                  )}
-                  <View>
-                    <Text style={styles.sectionLabel}>Vehículo</Text>
-                    <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.textDark }}>
-                      {tieneVehiculo ? 'Sí' : 'No'}
-                    </Text>
-                  </View>
-                  {!!motivoVoluntario.trim() && (
-                    <View>
-                      <Text style={styles.sectionLabel}>Por qué quiere ser voluntario</Text>
-                      <Text style={{ fontSize: 14, color: COLORS.textDark }}>{motivoVoluntario}</Text>
-                    </View>
-                  )}
-                  {!!experiencia.trim() && (
-                    <View>
-                      <Text style={styles.sectionLabel}>Experiencia previa</Text>
-                      <Text style={{ fontSize: 14, color: COLORS.textDark }}>{experiencia}</Text>
-                    </View>
-                  )}
-                </View>
-
-                <View style={{ flexDirection: 'row', gap: 12, marginTop: 24 }}>
-                  <TouchableOpacity
-                    onPress={() => setMostrarConfirmacion(false)}
-                    disabled={isSubmitting}
-                    style={[styles.submitButton, { flex: 1, backgroundColor: COLORS.bgTeal, opacity: isSubmitting ? 0.6 : 1 }]}
-                  >
-                    <Text style={styles.submitButtonText}>Editar postulación</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={handleSubmit}
-                    disabled={isSubmitting}
-                    style={[styles.submitButton, { flex: 1, backgroundColor: COLORS.primary }]}
-                  >
-                    {isSubmitting ? (
-                      <ActivityIndicator color={COLORS.bgWhite} />
-                    ) : (
-                      <Text style={styles.submitButtonText}>Enviar postulación</Text>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              </ScrollView>
-            </View>
-          ) : (
-          <View style={styles.bodySection}>
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-              {/* ─── Disponibilidad ─── */}
-              <FormSection title="Disponibilidad" subtitle="¿Qué días y horas puedes atender?">
-                <Text style={styles.sectionLabel}>Días disponibles *</Text>
-                <View style={styles.daysContainer}>
-                  {DIAS_SEMANA.map((dia, idx) => {
-                    const valor = DIAS_VALORES[idx];
-                    const isSelected = diasSeleccionados.includes(valor);
-                    return (
-                      <TouchableOpacity
-                        key={valor}
-                        onPress={() => toggleDia(valor)}
-                        style={[styles.dayChip, { backgroundColor: isSelected ? COLORS.primary : COLORS.grayLight }]}
-                      >
-                        <Text style={[styles.dayChipText, { color: isSelected ? COLORS.bgWhite : COLORS.textLight }]}>
-                          {dia}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-                {errors.dias && <Text style={styles.errorText}>{errors.dias}</Text>}
-
-                <View style={{ marginTop: 20 }}>
-                  <Text style={styles.sectionLabel}>Rango horario *</Text>
-                  <View style={styles.timeContainer}>
-                    {/* Botones que abren el Modal de Horario */}
-                    <View style={styles.timeField}>
-                      <Text style={styles.timeLabel}>Desde</Text>
-                      <TouchableOpacity onPress={() => openTimePicker('apertura')} style={styles.timeSelectorBtn}>
-                        <Text style={styles.timeSelectorBtnText}>{getDisplayTime(horaApertura)}</Text>
-                        <Ionicons name="chevron-down" size={16} color={COLORS.textLight} />
-                      </TouchableOpacity>
-                    </View>
-                    <View style={styles.timeField}>
-                      <Text style={styles.timeLabel}>Hasta</Text>
-                      <TouchableOpacity onPress={() => openTimePicker('cierre')} style={styles.timeSelectorBtn}>
-                        <Text style={styles.timeSelectorBtnText}>{getDisplayTime(horaCierre)}</Text>
-                        <Ionicons name="chevron-down" size={16} color={COLORS.textLight} />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                  {(errors.horaApertura || errors.horaCierre) && (
-                    <Text style={styles.errorText}>{errors.horaApertura || errors.horaCierre}</Text>
-                  )}
-                </View>
-              </FormSection>
-
-              <Divider />
-
-              {/* ─── Mi Casa Temporal ─── */}
-              <FormSection title="Mi Casa Temporal" subtitle="¿Ofreces espacio en tu hogar para animales?">
-                <TouchableOpacity
-                  onPress={() => setOfreceCasaHogar(!ofreceCasaHogar)}
-                  style={[
-                    styles.checkboxContainer,
-                    { borderColor: ofreceCasaHogar ? COLORS.primary : COLORS.border }
-                  ]}
-                >
-                  <View
-                    style={[
-                      styles.checkbox,
-                      { backgroundColor: ofreceCasaHogar ? COLORS.primary : 'transparent', borderColor: COLORS.primary }
-                    ]}
-                  >
-                    {ofreceCasaHogar && <Ionicons name="checkmark" size={18} color={COLORS.bgWhite} />}
-                  </View>
-                  <Text style={styles.checkboxLabel}>Ofrezco espacio en mi casa temporal</Text>
+            <ScrollView ref={formScrollRef} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+              <ReviewRow label="Cuándo puedes ayudar" value={`${labels(dias, DIAS).join(', ')} · ${labels(franjas, FRANJAS).join(', ')}`} />
+              <ReviewRow label="Tiempo para responder" value={TIEMPOS_REACCION.find((item) => item.value === tiempoReaccion)?.label || '—'} />
+              <ReviewRow label="Ayuda en emergencias" value={URGENCIAS.find((item) => item.value === urgencias)?.label || '—'} />
+              <ReviewRow label="Casos al mismo tiempo" value={`${maxCasos} caso${maxCasos > 1 ? 's' : ''}`} />
+              <ReviewRow label="Qué tan lejos" value={`${radioMaxKm} km`} />
+              <ReviewRow label="Cómo te trasladas" value={labels(mediosTransporte, MEDIOS_TRANSPORTE).join(', ')} />
+              <ReviewRow label="Animales con los que puedes ayudar" value={labels(especiesManejo, ESPECIES).join(', ')} />
+              <ReviewRow label="Tamaños que puedes manejar" value={labels(tamaniosManejo, TAMANIOS).join(', ')} />
+              <ReviewRow label="Primeros auxilios" value={PRIMEROS_AUXILIOS.find((item) => item.value === primerosAuxilios)?.label || '—'} />
+              <ReviewRow label="Equipo disponible" value={labels(equipamiento, EQUIPAMIENTO).join(', ')} />
+              <ReviewRow label="Cómo prefieres recibir avisos" value={CANALES.find((item) => item.value === canalContacto)?.label || '—'} />
+              <ReviewRow label="Tiempo de colaboración" value={PROYECCIONES.find((item) => item.value === proyeccion)?.label || '—'} />
+              <View style={[styles.footerButtons, compact && styles.footerButtonsCompact]}>
+                <TouchableOpacity style={[styles.secondaryButton, compact && styles.fullButton]} onPress={() => setMostrarConfirmacion(false)} disabled={isSubmitting}>
+                  <Text style={styles.secondaryButtonText}>Editar</Text>
                 </TouchableOpacity>
-
-                {ofreceCasaHogar && (
-                  <View style={{ marginTop: 20 }}>
-                    <Text style={styles.sectionLabel}>Capacidad de animales *</Text>
-                    <View style={styles.capacityContainer}>
-                      {[1, 2].map(cap => (
-                        <TouchableOpacity
-                          key={cap}
-                          onPress={() => setCapacidadAnimales(cap)}
-                          style={[
-                            styles.capacityChip,
-                            { backgroundColor: capacidadAnimales === cap ? COLORS.secondary : COLORS.grayLight }
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.capacityChipText,
-                              { color: capacidadAnimales === cap ? COLORS.textDark : COLORS.textLight }
-                            ]}
-                          >
-                            {cap} animal{cap > 1 ? 'es' : ''}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-
-                    <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Especies que puedes acoger *</Text>
-                    <View style={styles.chipContainer}>
-                      {ESPECIES.map(especie => {
-                        const isSelected = especiesSeleccionadas.includes(especie);
-                        return (
-                          <TouchableOpacity
-                            key={especie}
-                            onPress={() => toggleEspecie(especie)}
-                            style={[
-                              styles.chip,
-                              { backgroundColor: isSelected ? COLORS.primary : COLORS.grayLight }
-                            ]}
-                          >
-                            <Text
-                              style={{
-                                fontWeight: '700',
-                                fontSize: 13,
-                                color: isSelected ? COLORS.bgWhite : COLORS.textLight,
-                                textTransform: 'capitalize'
-                              }}
-                            >
-                              {especie}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-                    {errors.especies && <Text style={styles.errorText}>{errors.especies}</Text>}
-
-                    <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Tamaños de animales *</Text>
-                    <View style={styles.chipContainer}>
-                      {TAMANOS.map(tamano => {
-                        const isSelected = tamanosSeleccionados.includes(tamano);
-                        return (
-                          <TouchableOpacity
-                            key={tamano}
-                            onPress={() => toggleTamano(tamano)}
-                            style={[
-                              styles.chip,
-                              { backgroundColor: isSelected ? COLORS.secondary : COLORS.grayLight }
-                            ]}
-                          >
-                            <Text
-                              style={{
-                                fontWeight: '700',
-                                fontSize: 13,
-                                color: isSelected ? COLORS.textDark : COLORS.textLight,
-                                textTransform: 'capitalize'
-                              }}
-                            >
-                              {tamano}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-                    {errors.tamanos && <Text style={styles.errorText}>{errors.tamanos}</Text>}
-
-                    <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Tu situación en casa</Text>
-                    <TouchableOpacity
-                      onPress={() => setOtrosAnimales(!otrosAnimales)}
-                      style={[styles.checkboxContainer, { borderColor: COLORS.border }]}
-                    >
-                      <View
-                        style={[
-                          styles.checkbox,
-                          { backgroundColor: otrosAnimales ? COLORS.primary : 'transparent', borderColor: COLORS.primary }
-                        ]}
-                      >
-                        {otrosAnimales && <Ionicons name="checkmark" size={16} color={COLORS.bgWhite} />}
-                      </View>
-                      <Text style={styles.checkboxLabel}>Tengo otros animales en casa</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      onPress={() => setNinos(!ninos)}
-                      style={[styles.checkboxContainer, { borderColor: COLORS.border, marginTop: 12 }]}
-                    >
-                      <View
-                        style={[
-                          styles.checkbox,
-                          { backgroundColor: ninos ? COLORS.primary : 'transparent', borderColor: COLORS.primary }
-                        ]}
-                      >
-                        {ninos && <Ionicons name="checkmark" size={16} color={COLORS.bgWhite} />}
-                      </View>
-                      <Text style={styles.checkboxLabel}>Tengo niños en casa</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </FormSection>
-
-              <Divider />
-
-              {/* ─── Transporte ─── */}
-              <FormSection title="Transporte" subtitle="¿Cuentas con vehículo?">
-                <TouchableOpacity
-                  onPress={() => setTieneVehiculo(!tieneVehiculo)}
-                  style={[styles.checkboxContainer, { borderColor: COLORS.border }]}
-                >
-                  <View
-                    style={[
-                      styles.checkbox,
-                      { backgroundColor: tieneVehiculo ? COLORS.primary : 'transparent', borderColor: COLORS.primary }
-                    ]}
-                  >
-                    {tieneVehiculo && <Ionicons name="checkmark" size={18} color={COLORS.bgWhite} />}
-                  </View>
-                  <Text style={styles.checkboxLabel}>Tengo vehículo disponible</Text>
+                <TouchableOpacity style={[styles.primaryButton, compact && styles.fullButton]} onPress={handleSubmit} disabled={isSubmitting}>
+                  {isSubmitting ? (
+                    <ActivityIndicator color={COLORS.bgWhite} />
+                  ) : (
+                    <Text style={styles.primaryButtonText}>
+                      {esPostulacionNueva ? 'Enviar postulación' : 'Guardar capacidades'}
+                    </Text>
+                  )}
                 </TouchableOpacity>
-              </FormSection>
-
-              <Divider />
-
-              {/* ─── Zona de Cobertura ─── */}
-              <FormSection title="Zona de Cobertura" subtitle="¿Desde qué zona puedes ayudar? Puede ser aproximado (el centro de tu colonia está bien).">
-                <TouchableOpacity onPress={handleGetLocation} style={styles.locationButton} disabled={isLoadingGps}>
-                  <Ionicons name="location" size={18} color={COLORS.bgTeal} />
-                  <Text style={styles.locationButtonText}>
-                    {isLoadingGps ? 'Obteniendo tu ubicación...' : 'Usar mi ubicación actual'}
-                  </Text>
-                </TouchableOpacity>
-
-                <View
-                  style={[
-                    styles.mapContainer,
-                    { borderWidth: errors.ubicacion ? 2 : 0, borderColor: COLORS.danger }
-                  ]}
-                >
-                  <LocationPickerMap
-                    selectedPosition={ubicacion}
-                    onLocationSelect={(lat, lng) => {
-                      setUbicacion({ latitud: lat, longitud: lng });
-                      setUbicacionConfirmada(true);
-                      setErrors(prev => ({ ...prev, ubicacion: '' }));
-                    }}
-                  />
-                </View>
-                {errors.ubicacion && <Text style={styles.errorText}>{errors.ubicacion}</Text>}
-              </FormSection>
-
-              <Divider />
-
-              {/* ─── Motivo ─── */}
-              <FormSection title="Motivo" subtitle="¿Por qué quieres ser voluntario?">
-                <View style={[styles.textArea, { backgroundColor: COLORS.grayLight, padding: 0 }]}>
-                  <textarea
-                    value={motivoVoluntario}
-                    onChange={(e) => setMotivoVoluntario(e.target.value)}
-                    placeholder="Cuéntale a la asociación qué te motiva a ser voluntario..."
-                    maxLength={500}
-                    style={{
-                      width: '100%', height: 100, backgroundColor: 'transparent',
-                      border: 'none', padding: 12, outline: 'none',
-                      fontFamily: 'inherit', fontSize: 14, color: COLORS.textDark,
-                      resize: 'none'
-                    }}
-                  />
-                </View>
-                <Text style={styles.charCounter}>{motivoVoluntario.length}/500</Text>
-              </FormSection>
-
-              <Divider />
-
-              {/* ─── Experiencia ─── */}
-              <FormSection title="Experiencia" subtitle="Cuéntanos sobre tu experiencia con animales.">
-                <View style={[styles.textArea, { backgroundColor: COLORS.grayLight, padding: 0 }]}>
-                  <Text style={{ display: 'none' }} /> 
-                  <textarea 
-                    value={experiencia}
-                    onChange={(e) => setExperiencia(e.target.value)}
-                    placeholder="Ej. He trabajado 2 años en un refugio, tengo experiencia con perros de gran tamaño..."
-                    maxLength={500}
-                    style={{
-                      width: '100%', height: 100, backgroundColor: 'transparent',
-                      border: 'none', padding: 12, outline: 'none',
-                      fontFamily: 'inherit', fontSize: 14, color: COLORS.textDark,
-                      resize: 'none'
-                    }}
-                  />
-                </View>
-                <Text style={styles.charCounter}>{experiencia.length}/500</Text>
-              </FormSection>
-
-              <Divider />
-
-              {/* ─── Términos y Condiciones ─── */}
-              <FormSection title="Términos y Privacidad">
-                <TouchableOpacity
-                  onPress={() => setAceptoTerminos(!aceptoTerminos)}
-                  style={[
-                    styles.checkboxContainer,
-                    { borderColor: aceptoTerminos ? COLORS.primary : COLORS.border }
-                  ]}
-                >
-                  <View
-                    style={[
-                      styles.checkbox,
-                      { backgroundColor: aceptoTerminos ? COLORS.primary : 'transparent', borderColor: COLORS.primary }
-                    ]}
-                  >
-                    {aceptoTerminos && <Ionicons name="checkmark" size={18} color={COLORS.bgWhite} />}
-                  </View>
-                  <Text style={styles.checkboxLabel}>
-                    Acepto los términos y condiciones, y el aviso de privacidad *
-                  </Text>
-                </TouchableOpacity>
-                {errors.aceptoTerminos && <Text style={styles.errorText}>{errors.aceptoTerminos}</Text>}
-
-                <View style={styles.termsBox}>
-                  <Text style={styles.termsText}>
-                    Al aceptar, reconozco que proporcionaré información veraz, que mantendré comunicación continua
-                    con la asociación, y que cumpliré con los protocolos de seguridad y bienestar animal.
-                  </Text>
-                </View>
-              </FormSection>
-
-              <TouchableOpacity
-                onPress={handleGuardarPress}
-                disabled={isSubmitting}
-                style={[styles.submitButton, { backgroundColor: COLORS.primary }]}
-              >
-                {isSubmitting ? (
-                  <ActivityIndicator color={COLORS.bgWhite} />
-                ) : (
-                  <Text style={styles.submitButtonText}>
-                    {esPostulacionNueva ? 'Revisar postulación' : 'Guardar Capacidades'}
-                  </Text>
-                )}
-              </TouchableOpacity>
+              </View>
             </ScrollView>
-          </View>
+          ) : (
+            <>
+              <ScrollView ref={formScrollRef} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+                {renderPaso()}
+              </ScrollView>
+              <View style={styles.fixedFooter}>
+                <TouchableOpacity style={styles.primaryButton} onPress={avanzar}>
+                  <Text style={styles.primaryButtonText}>
+                    {paso === PASOS.length ? 'Revisar información' : 'Continuar'}
+                  </Text>
+                  <Ionicons name="arrow-forward" size={18} color={COLORS.bgWhite} />
+                </TouchableOpacity>
+              </View>
+            </>
           )}
-
         </View>
       </View>
 
-      {/* MODAL: Selector de Horario - (Se mantienen fuera de la tarjeta blanca para funcionar bien) */}
-      <Modal visible={showTimePicker} transparent animationType="slide">
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowTimePicker(false)}>
-          <View style={styles.pickerModalContent}>
-            <View style={styles.pickerHeader}>
-              <Text style={styles.pickerTitle}>
-                Selecciona la hora de {timePickerTarget === 'apertura' ? 'inicio' : 'fin'}
-              </Text>
-              <TouchableOpacity onPress={() => setShowTimePicker(false)}>
-                <Ionicons name="close" size={24} color={COLORS.textDark} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 300 }}>
-              {TIME_OPTIONS.map((item) => (
-                <TouchableOpacity
-                  key={item.value}
-                  style={styles.pickerOption}
-                  onPress={() => handleSelectTime(item.value)}
-                >
-                  <Text style={styles.pickerOptionText}>{item.label}</Text>
-                  {((timePickerTarget === 'apertura' && horaApertura === item.value) ||
-                    (timePickerTarget === 'cierre' && horaCierre === item.value)) && (
-                    <Ionicons name="checkmark-circle" size={20} color={COLORS.primary} />
-                  )}
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        </TouchableOpacity>
-      </Modal>
-
-      {/* Modal de confirmación al cerrar */}
       <Modal visible={showCloseConfirm} transparent animationType="fade">
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
-          <View style={{ backgroundColor: COLORS.cardBg, borderRadius: 32, padding: 32, width: '100%', maxWidth: 400 }}>
-            <Text style={{ fontSize: 20, fontWeight: '800', color: COLORS.textDark, marginBottom: 16, textAlign: 'center' }}>
-              ¿Descartar cambios?
-            </Text>
-            <Text style={{ fontSize: 15, color: COLORS.textLight, textAlign: 'center', marginBottom: 32, lineHeight: 22 }}>
-              Tienes cambios sin guardar. ¿Estás seguro de que deseas salir sin guardar?
-            </Text>
-            <View style={{ flexDirection: 'row', gap: 12 }}>
-              <TouchableOpacity
-                onPress={() => setShowCloseConfirm(false)}
-                style={{ flex: 1, paddingVertical: 16, alignItems: 'center', borderRadius: 20, backgroundColor: '#E5E7EB' }}
-              >
-                <Text style={{ color: COLORS.textLight, fontWeight: 'bold' }}>Volver</Text>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.confirmCard}>
+            <Text style={styles.confirmTitle}>¿Salir del formulario?</Text>
+            <Text style={styles.confirmText}>Los cambios que no hayas guardado se perderán.</Text>
+            <View style={styles.confirmActions}>
+              <TouchableOpacity style={styles.secondaryButton} onPress={() => setShowCloseConfirm(false)}>
+                <Text style={styles.secondaryButtonText}>Continuar llenando</Text>
               </TouchableOpacity>
               <TouchableOpacity
+                style={[styles.primaryButton, { backgroundColor: COLORS.danger }]}
                 onPress={() => {
                   setShowCloseConfirm(false);
                   if (onClose) onClose();
+                  else router.back();
                 }}
-                style={{ flex: 1, paddingVertical: 16, alignItems: 'center', borderRadius: 20, backgroundColor: COLORS.danger }}
               >
-                <Text style={{ color: COLORS.bgWhite, fontWeight: 'bold' }}>Descartar</Text>
+                <Text style={styles.primaryButtonText}>Salir</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -834,386 +978,410 @@ export default function CapacidadesFormScreen({ onClose, fromProfile = false, es
   );
 }
 
-function FormSection({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode; }) {
+function FormSection({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <View style={styles.formSection}>
-      <Text style={styles.formSectionTitle}>{title}</Text>
-      {subtitle && <Text style={styles.formSectionSubtitle}>{subtitle}</Text>}
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>{title}</Text>
+      {subtitle ? <Text style={styles.sectionSubtitle}>{subtitle}</Text> : null}
       {children}
     </View>
   );
 }
 
-function Divider() {
-  return <View style={styles.divider} />;
+function MultiOptions({
+  options,
+  selected,
+  onToggle,
+  error,
+}: {
+  options: Option[];
+  selected: string[];
+  onToggle: (value: string) => void;
+  error?: string;
+}) {
+  return (
+    <>
+      <View style={styles.optionsWrap}>
+        {options.map((option) => {
+          const active = selected.includes(option.value);
+          return (
+            <TouchableOpacity
+              key={option.value}
+              style={[styles.optionChip, active && styles.optionChipSelected]}
+              onPress={() => onToggle(option.value)}
+            >
+              <Ionicons
+                name={active ? 'checkmark-circle' : 'ellipse-outline'}
+                size={18}
+                color={active ? COLORS.bgWhite : COLORS.textLight}
+              />
+              <View style={{ flexShrink: 1 }}>
+                <Text style={[styles.optionText, active && styles.selectedText]}>{option.label}</Text>
+                {option.description ? (
+                  <Text style={[styles.optionDescription, active && styles.selectedDescription]}>{option.description}</Text>
+                ) : null}
+              </View>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+      {error ? <ErrorText text={error} /> : null}
+    </>
+  );
+}
+
+function SingleOptions({
+  options,
+  selected,
+  onSelect,
+  error,
+}: {
+  options: Option[];
+  selected: string;
+  onSelect: (value: string) => void;
+  error?: string;
+}) {
+  return (
+    <>
+      <View style={styles.optionsWrap}>
+        {options.map((option) => {
+          const active = selected === option.value;
+          return (
+            <TouchableOpacity
+              key={option.value}
+              style={[styles.optionChip, active && styles.optionChipSelected]}
+              onPress={() => onSelect(option.value)}
+            >
+              <Ionicons
+                name={active ? 'radio-button-on' : 'radio-button-off'}
+                size={18}
+                color={active ? COLORS.bgWhite : COLORS.textLight}
+              />
+              <Text style={[styles.optionText, active && styles.selectedText]}>{option.label}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+      {error ? <ErrorText text={error} /> : null}
+    </>
+  );
+}
+
+function BooleanOptions({
+  value,
+  onChange,
+  error,
+}: {
+  value: boolean | null;
+  onChange: (value: boolean) => void;
+  error?: string;
+}) {
+  return (
+    <SingleOptions
+      options={[
+        { value: 'si', label: 'Sí' },
+        { value: 'no', label: 'No' },
+      ]}
+      selected={value === null ? '' : value ? 'si' : 'no'}
+      onSelect={(selected) => onChange(selected === 'si')}
+      error={error}
+    />
+  );
+}
+
+function ConsentOption({
+  selected,
+  onPress,
+  label,
+  error,
+}: {
+  selected: boolean;
+  onPress: () => void;
+  label: string;
+  error?: string;
+}) {
+  return (
+    <>
+      <TouchableOpacity style={[styles.consent, selected && styles.consentSelected]} onPress={onPress}>
+        <Ionicons
+          name={selected ? 'checkbox' : 'square-outline'}
+          size={23}
+          color={selected ? COLORS.primary : COLORS.textLight}
+        />
+        <Text style={styles.consentText}>{label}</Text>
+      </TouchableOpacity>
+      {error ? <ErrorText text={error} /> : null}
+    </>
+  );
+}
+
+function ErrorText({ text }: { text: string }) {
+  return <Text style={styles.errorText}>{text}</Text>;
+}
+
+function ReviewRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.reviewRow}>
+      <Text style={styles.reviewLabel}>{label}</Text>
+      <Text style={styles.reviewValue}>{value || '—'}</Text>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
-  // ─── NUEVOS CONTENEDORES MODAL ───
   outerContainer: {
-    position: 'fixed',
-    top: 0,
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 9999,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: Platform.OS === 'web' ? 24 : 0,
+    backgroundColor: 'rgba(28, 20, 14, 0.52)',
+  },
+  centeredContent: {
+    width: '100%',
+    maxWidth: 820,
+    maxHeight: Platform.OS === 'web' ? '94%' : '100%',
+  },
+  successContainer: {
+    width: '100%',
+    maxWidth: 620,
+    padding: 24,
+  },
+  successCard: {
+    alignItems: 'center',
+    paddingHorizontal: 42,
+    paddingVertical: 54,
+    borderRadius: 30,
+    backgroundColor: COLORS.bgWhite,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 12,
+  },
+  successIcon: {
+    width: 96,
+    height: 96,
+    marginBottom: 26,
+    borderRadius: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.bgTeal,
+  },
+  successTitle: {
+    marginBottom: 14,
+    color: COLORS.textDark,
+    fontSize: 28,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  successText: {
+    maxWidth: 460,
+    color: COLORS.textLight,
+    fontSize: 16,
+    lineHeight: 25,
+    textAlign: 'center',
+  },
+  verificationNote: {
+    width: '100%',
+    marginTop: 24,
+    padding: 18,
+    borderRadius: 16,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    backgroundColor: COLORS.bgTealLight,
+  },
+  verificationNoteText: {
+    flex: 1,
+    color: COLORS.textDark,
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  successButton: {
+    width: '100%',
+    marginTop: 32,
+  },
+  card: {
+    flex: 1,
+    overflow: 'hidden',
+    backgroundColor: COLORS.bgWhite,
+    borderRadius: Platform.OS === 'web' ? 30 : 0,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 12,
+  },
+  header: {
+    position: 'relative',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 24,
+    paddingTop: 22,
+    paddingBottom: 28,
+    backgroundColor: COLORS.bgTeal,
+  },
+  headerButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.2)',
+  },
+  headerText: { flex: 1 },
+  title: { color: COLORS.bgWhite, fontSize: 23, fontWeight: '900' },
+  subtitle: { color: COLORS.bgWhite, fontSize: 13, fontWeight: '600', opacity: 0.9, marginTop: 3 },
+  progressTrack: {
+    position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 9999,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    height: 5,
+    backgroundColor: 'rgba(255,255,255,0.25)',
   },
-  
-  centeredContent: {
-    width: '95%',          
-    maxWidth: 900,         
-    maxHeight: '90%',
-    alignSelf: 'center',
-  },
-  
-  cardContainer: {
-    flex: 1,
-    backgroundColor: COLORS.bgWhite,
-    borderRadius: 32,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    elevation: 15,
-    flexDirection: 'column',
-  },
-  // ────────────────────────────────
-
-  headerSection: {
-    paddingHorizontal: 32,
-    paddingTop: 24,
-    paddingBottom: 32,
-    backgroundColor: COLORS.bgTeal,
-    position: 'relative',
-    overflow: 'hidden',
-  },
-
-  closeButton: {
-    position: 'absolute',
-    top: 24,
-    right: 24,
-    zIndex: 20, // Asegura que esté por encima de la imagen decorativa y se pueda hacer clic
-    backgroundColor: 'rgba(0, 0, 0, 0.15)', // Fondo sutil para que resalte
-    padding: 6,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  
-  headerContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    zIndex: 10,
-  },
-
-  headerText: {
-    flex: 1,
-    zIndex: 10,
-  },
-
-  headerTitle: {
-    fontSize: 36,
-    fontWeight: '900',
-    color: COLORS.bgWhite,
-  },
-
-  headerSubtitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: COLORS.bgWhite,
-    opacity: 0.9,
-  },
-
-  decorationImage: {
-    width: 120,
-    height: 120,
-    position: 'absolute',
-    bottom: -10,
-    right: 30,
-    zIndex: 0,
-  },
-
-  bodySection: {
-    flex: 1,
-    backgroundColor: COLORS.bgWhite,
-    paddingHorizontal: 32,
-    paddingTop: 32,
-  },
-
-  scrollContent: {
-    paddingBottom: 40,
-  },
-
-  formSection: {
-    marginBottom: 24,
-  },
-
-  formSectionTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: COLORS.textDark,
-    marginBottom: 4,
-  },
-
-  formSectionSubtitle: {
-    fontSize: 13,
-    color: COLORS.textLight,
-    marginBottom: 16,
-  },
-
-  sectionLabel: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: COLORS.textDark,
-    marginBottom: 8,
-  },
-
-  divider: {
-    height: 1,
-    backgroundColor: COLORS.border,
-    marginVertical: 24,
-  },
-
-  daysContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 16,
-  },
-
-  dayChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
-  },
-
-  dayChipText: {
-    fontWeight: '700',
-    fontSize: 12,
-    textTransform: 'capitalize',
-  },
-
-  timeContainer: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 16,
-  },
-
-  timeField: {
-    flex: 1,
-  },
-
-  timeLabel: {
-    fontSize: 12,
-    color: COLORS.textLight,
-    marginBottom: 6,
-    fontWeight: '600',
-  },
-
-  timeSelectorBtn: {
-    backgroundColor: COLORS.grayLight,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
+  progressFill: { height: 5, backgroundColor: COLORS.secondary },
+  scrollContent: { padding: 28, paddingBottom: 36 },
+  section: {
+    padding: 20,
+    marginBottom: 18,
     borderWidth: 1,
     borderColor: COLORS.border,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-
-  timeSelectorBtnText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: COLORS.textDark,
-  },
-
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
-  },
-
-  pickerModalContent: {
+    borderRadius: 22,
     backgroundColor: COLORS.bgWhite,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingBottom: 30, // Safe area
-    maxHeight: '60%',
-    alignSelf: 'center',
-    width: '100%',
-    maxWidth: 480,
   },
-
-  pickerHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-  },
-
-  pickerTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: COLORS.textDark,
-  },
-
-  pickerOption: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.grayLight,
-  },
-
-  pickerOptionText: {
-    fontSize: 16,
-    color: COLORS.textDark,
-    fontWeight: '600',
-  },
-
-  checkboxContainer: {
+  sectionTitle: { color: COLORS.textDark, fontSize: 17, fontWeight: '800', marginBottom: 6 },
+  sectionSubtitle: { color: COLORS.textLight, fontSize: 13, lineHeight: 19, marginBottom: 14 },
+  optionsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 8 },
+  optionChip: {
+    minHeight: 44,
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
-    borderWidth: 2,
-    borderRadius: 12,
-    borderColor: COLORS.border,
-    marginBottom: 8,
-    backgroundColor: COLORS.grayLight,
-  },
-
-  checkbox: {
-    width: 24,
-    height: 24,
-    borderRadius: 6,
-    borderWidth: 2,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-
-  checkboxLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.textDark,
-    flex: 1,
-  },
-
-  capacityContainer: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 16,
-  },
-
-  capacityChip: {
-    flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-
-  capacityChipText: {
-    fontWeight: '700',
-    fontSize: 13,
-  },
-
-  chipContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 8,
-    marginBottom: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    borderRadius: 16,
+    backgroundColor: COLORS.grayLight,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
-
-  chip: {
+  optionChipSelected: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  optionText: { color: COLORS.textDark, fontSize: 13, fontWeight: '700', flexShrink: 1 },
+  optionDescription: { color: COLORS.textLight, fontSize: 11, marginTop: 2 },
+  selectedText: { color: COLORS.bgWhite },
+  selectedDescription: { color: 'rgba(255,255,255,0.82)' },
+  allButton: {
+    alignSelf: 'flex-start',
     paddingHorizontal: 14,
     paddingVertical: 10,
-    borderRadius: 16,
-  },
-
-  locationButton: {
-    backgroundColor: 'rgba(102, 188, 180, 0.1)',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 16,
+    borderRadius: 14,
+    backgroundColor: COLORS.cardBg,
     borderWidth: 1,
-    borderColor: COLORS.bgTeal,
+    borderColor: COLORS.secondary,
+    marginTop: 8,
   },
-
-  locationButtonText: {
-    color: COLORS.bgTeal,
-    fontWeight: '600',
-    fontSize: 13,
-  },
-
-  mapContainer: {
-    marginBottom: 16,
-  },
-
-  textArea: {
-    borderRadius: 12,
+  allButtonSelected: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  allButtonText: { color: COLORS.textDark, fontSize: 13, fontWeight: '800' },
+  locationButton: { flexDirection: 'row', alignItems: 'center', gap: 7, marginVertical: 10 },
+  locationButtonText: { color: COLORS.bgTeal, fontSize: 14, fontWeight: '800' },
+  mapContainer: { height: 260, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: COLORS.border },
+  input: {
     borderWidth: 1,
     borderColor: COLORS.border,
-    overflow: 'hidden',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    marginTop: 10,
+    color: COLORS.textDark,
+    fontSize: 14,
+    backgroundColor: COLORS.grayLight,
   },
-
-  charCounter: {
-    textAlign: 'right',
-    color: COLORS.textLight,
-    fontSize: 12,
-    marginTop: 6,
-    marginBottom: 16,
-  },
-
-  termsBox: {
-    backgroundColor: 'rgba(102, 188, 180, 0.05)',
-    borderRadius: 12,
-    padding: 12,
-    marginTop: 16,
+  textArea: {
+    minHeight: 115,
     borderWidth: 1,
-    borderColor: 'rgba(102, 188, 180, 0.2)',
+    borderColor: COLORS.border,
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 10,
+    color: COLORS.textDark,
+    fontSize: 14,
+    backgroundColor: COLORS.grayLight,
   },
-
-  termsText: {
-    fontSize: 12,
-    color: COLORS.textLight,
-    lineHeight: 18,
+  counter: { textAlign: 'right', color: COLORS.textLight, fontSize: 12, marginTop: 6 },
+  consent: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    padding: 14,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 15,
+    backgroundColor: COLORS.grayLight,
   },
-
-  submitButton: {
-    paddingVertical: 16,
-    borderRadius: 20,
+  consentSelected: { borderColor: COLORS.primary, backgroundColor: '#FFF4E9' },
+  consentText: { flex: 1, color: COLORS.textDark, fontSize: 13, lineHeight: 20, fontWeight: '600' },
+  errorText: { color: COLORS.danger, fontSize: 12, fontWeight: '700', marginTop: 8 },
+  errorBorder: { borderColor: COLORS.danger, borderWidth: 2 },
+  fixedFooter: {
+    paddingHorizontal: 28,
+    paddingVertical: 18,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    backgroundColor: COLORS.bgWhite,
+  },
+  primaryButton: {
+    minHeight: 50,
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 24,
-    marginBottom: 16,
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 22,
+    borderRadius: 18,
+    backgroundColor: COLORS.primary,
   },
-
-  submitButtonText: {
-    color: COLORS.bgWhite,
-    fontWeight: '900',
-    fontSize: 16,
+  primaryButtonText: { color: COLORS.bgWhite, fontSize: 15, fontWeight: '900' },
+  secondaryButton: {
+    minHeight: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 22,
+    borderRadius: 18,
+    backgroundColor: COLORS.grayLight,
   },
-
-  errorText: {
-    color: COLORS.danger,
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: -8,
-    marginBottom: 12,
+  secondaryButtonText: { color: COLORS.textDark, fontSize: 14, fontWeight: '800' },
+  reviewRow: {
+    padding: 17,
+    marginBottom: 10,
+    borderRadius: 17,
+    backgroundColor: COLORS.cardBg,
   },
+  reviewLabel: { color: COLORS.textLight, fontSize: 12, fontWeight: '800', textTransform: 'uppercase' },
+  reviewValue: { color: COLORS.textDark, fontSize: 14, fontWeight: '700', lineHeight: 21, marginTop: 5 },
+  footerButtons: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 20 },
+  footerButtonsCompact: { flexDirection: 'column' },
+  fullButton: { width: '100%' },
+  modalBackdrop: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+    backgroundColor: 'rgba(0,0,0,0.58)',
+  },
+  confirmCard: { width: '100%', maxWidth: 440, padding: 28, borderRadius: 25, backgroundColor: COLORS.bgWhite },
+  confirmTitle: { color: COLORS.textDark, fontSize: 21, fontWeight: '900', textAlign: 'center' },
+  confirmText: { color: COLORS.textLight, fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 9 },
+  confirmActions: { flexDirection: 'row', gap: 10, marginTop: 24 },
+  loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.bgWhite },
+  loadingText: { color: COLORS.textLight, fontSize: 14, fontWeight: '700', marginTop: 12 },
 });
