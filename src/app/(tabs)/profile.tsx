@@ -12,6 +12,7 @@ import StaffAsignacionScreen from '../../screens/StaffAsignacionScreen';
 import MiPostulacionScreen from '../../screens/MiPostulacionScreen'; 
 import CapacidadesFormScreen from '../../screens/CapacidadesFormScreen';
 import ExternalVolunteerFormScreen from '../../screens/ExternalVolunteerFormScreen';
+import MisVerificacionesScreen from '../../screens/MisVerificacionesScreen';
 import { AppModal } from '@/components/AppModal';
 import { LoggedOutProfile } from '../../components/profile/LoggedOutProfile';
 import { LoggedInProfile } from '../../components/profile/LoggedInProfile';
@@ -35,6 +36,7 @@ export default function ProfileScreen() {
   const [isPostulacionVisible, setIsPostulacionVisible] = useState(false);
   const [isCapacidadesVisible, setIsCapacidadesVisible] = useState(false);
   const [isExternalRetryVisible, setIsExternalRetryVisible] = useState(false);
+  const [isVerificacionesVisible, setIsVerificacionesVisible] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(24)).current;
@@ -61,6 +63,7 @@ export default function ProfileScreen() {
       setIsPostulacionVisible(false);
       setIsCapacidadesVisible(false);
       setIsExternalRetryVisible(false);
+      setIsVerificacionesVisible(false);
     }
   }, [isLoggedIn]);
 
@@ -78,6 +81,7 @@ export default function ProfileScreen() {
         onOpenAdminPanel={() => setIsAdminVisible(true)}
         onOpenAssociationPanel={() => setIsAssociationVisible(true)}
         onOpenStaffPanel={() => setIsStaffVisible(true)}
+        onOpenVerificaciones={() => setIsVerificacionesVisible(true)}
         onOpenStaffAsignacion={() => setIsStaffAsignacionVisible(true)}
         // 3. Pasar las funciones de apertura al componente
         onOpenPostulacion={() => setIsPostulacionVisible(true)}
@@ -145,6 +149,18 @@ export default function ProfileScreen() {
               setCapacidadesRefreshKey((k) => k + 1);
             }}
             fromProfile={true} 
+          />
+        )}
+      </AppModal>
+
+      <AppModal
+        visible={isVerificacionesVisible}
+        onClose={() => setIsVerificacionesVisible(false)}
+        maxWidth={1000}
+      >
+        {isVerificacionesVisible && (
+          <MisVerificacionesScreen
+            onClose={() => setIsVerificacionesVisible(false)}
           />
         )}
       </AppModal>

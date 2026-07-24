@@ -29,6 +29,7 @@ interface Props {
   onOpenAdminPanel: () => void;
   onOpenAssociationPanel: () => void;
   onOpenStaffPanel: () => void;
+  onOpenVerificaciones: () => void;
   // Abre el panel de ASIGNACIÓN de staff (candidatos, modo de asignación,
   // postulaciones, mis voluntarios) — distinto de onOpenStaffPanel, que
   // abre "mis casos" (StaffDashboardScreen, compartido con voluntarios).
@@ -44,6 +45,7 @@ export function LoggedInProfile({
   onOpenAdminPanel,
   onOpenAssociationPanel,
   onOpenStaffPanel,
+  onOpenVerificaciones,
   onOpenStaffAsignacion,
   onOpenPostulacion, // <-- NUEVA PROP
   onOpenCapacidades, // <-- NUEVA PROP
@@ -172,6 +174,13 @@ useFocusEffect(
       )}
       {esVoluntarioActivo && (
         <AccessRow icon="briefcase-outline" label="Mis casos" onPress={onOpenStaffPanel} />
+      )}
+      {esVoluntarioInterno && (
+        <AccessRow
+          icon="home-outline"
+          label="Mis verificaciones"
+          onPress={onOpenVerificaciones}
+        />
       )}
       {puedeVerPostulacion && (
         <>
