@@ -52,6 +52,7 @@ type VerificationData = {
   id: string;
   estado: string;
   modalidad: 'por_definir' | 'presencial' | 'remota';
+  candidatos?: Candidato[];
   distancia_asociacion_km?: number | null;
   resumen_expediente?: any;
   analisis_video?: {
@@ -360,6 +361,7 @@ export function ExternalVerificationDetail({
         { headers: { Authorization: `Bearer ${token}` } },
       );
       setVerification(data);
+      setCandidatos(data.candidatos || []);
     } catch (error: any) {
       if (!silencioso) {
         showToast({

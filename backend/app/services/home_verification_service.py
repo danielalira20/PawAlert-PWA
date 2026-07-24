@@ -449,6 +449,17 @@ def obtener_verificacion_postulacion(
         verificacion["asignacion_actual"] = actual
     else:
         verificacion["asignacion_actual"] = None
+
+    # La lista no debe depender del estado temporal del frontend. Si la
+    # asociación cierra y vuelve a abrir el expediente, reconstruimos los
+    # candidatos elegibles a partir de la función de matching.
+    if verificacion["estado"] in ("pendiente_asignacion", "reagendar"):
+        verificacion["candidatos"] = supabase_admin.rpc(
+            "candidatos_verificacion_hogar",
+            {"p_verificacion_hogar_id": verificacion["id"]},
+        ).execute().data or []
+    else:
+        verificacion["candidatos"] = []
     return verificacion
 
 

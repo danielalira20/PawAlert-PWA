@@ -85,6 +85,45 @@ def test_generar_resumen_expediente_senala_respuestas_a_revisar_sin_decidir():
     assert "decision" not in resumen
 
 
+def test_obtener_verificacion_recarga_candidatos_pendientes(make_query):
+    verificaciones = make_query(data=[{
+        "id": "ver-1",
+        "perfil_casa_temporal_id": "perfil-1",
+        "estado": "pendiente_asignacion",
+    }])
+    perfiles = make_query(data=[{
+        "id": "perfil-1",
+        "municipio": "Apizaco",
+    }])
+    asignaciones = make_query(data=[])
+    candidatos = make_query(data=[{
+        "voluntario_id": "vol-zenaida",
+        "nombre": "Zenaida Huerta",
+        "distancia_km": 2.41,
+    }])
+    cliente = MagicMock()
+    cliente.table.side_effect = lambda tabla: {
+        "verificaciones_hogar": verificaciones,
+        "perfil_casa_temporal": perfiles,
+        "asignaciones_verificacion_hogar": asignaciones,
+    }[tabla]
+    cliente.rpc.return_value = candidatos
+
+    with patch.object(home_verification_service, "supabase_admin", cliente):
+        resultado = (
+            home_verification_service.obtener_verificacion_postulacion(
+                "post-1",
+                "asoc-1",
+            )
+        )
+
+    assert resultado["candidatos"][0]["voluntario_id"] == "vol-zenaida"
+    cliente.rpc.assert_called_once_with(
+        "candidatos_verificacion_hogar",
+        {"p_verificacion_hogar_id": "ver-1"},
+    )
+
+
 def test_finalizar_postulacion_externa_asigna_asociacion_y_crea_verificacion(
     make_query,
 ):
