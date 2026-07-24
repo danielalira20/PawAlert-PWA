@@ -130,6 +130,12 @@ function formatTime(value?: string | null) {
   });
 }
 
+function formatElapsed(totalMinutes: number) {
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return hours ? `${hours} h ${minutes.toString().padStart(2, '0')} min` : `${minutes} min`;
+}
+
 export default function VisitExecutionPanel({
   assignmentId,
   verificationState,
@@ -151,11 +157,19 @@ export default function VisitExecutionPanel({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [resultChoice, setResultChoice] = useState<Result | null>(null);
   const [resultReasonInput, setResultReasonInput] = useState('');
+  const [safetyNow, setSafetyNow] = useState(Date.now());
 
   useEffect(() => {
     setAnswers(checklist || EMPTY_CHECKLIST);
     setNotes(visitNotes || '');
   }, [checklist, visitNotes]);
+
+  useEffect(() => {
+    if (!checkInAt || checkOutAt) return;
+    setSafetyNow(Date.now());
+    const interval = setInterval(() => setSafetyNow(Date.now()), 30000);
+    return () => clearInterval(interval);
+  }, [checkInAt, checkOutAt]);
 
   const completedAnswers = useMemo(
     () => QUESTIONS.filter((question) => Boolean(answers[question.key])).length,
@@ -167,6 +181,15 @@ export default function VisitExecutionPanel({
   );
   const inProgress = Boolean(checkInAt) && !checkOutAt;
   const finishedVisit = Boolean(checkOutAt);
+  const elapsedMinutes = checkInAt
+    ? Math.max(
+        0,
+        Math.floor(
+          ((checkOutAt ? new Date(checkOutAt).getTime() : safetyNow)
+            - new Date(checkInAt).getTime()) / 60000,
+        ),
+      )
+    : 0;
 
   const request = async (
     method: 'patch' | 'put',
@@ -372,6 +395,30 @@ export default function VisitExecutionPanel({
 
         {inProgress && (
           <View style={{ gap: 13 }}>
+            <View style={{
+              padding: 14,
+              borderRadius: 16,
+              backgroundColor: elapsedMinutes >= 50 ? '#FFF7E6' : '#EAF7F6',
+              borderWidth: 1,
+              borderColor: elapsedMinutes >= 50 ? '#F5DCA7' : '#D0ECE8',
+              gap: 7,
+            }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons
+                  name="timer-outline"
+                  size={21}
+                  color={elapsedMinutes >= 50 ? COLORS.warning : COLORS.accent}
+                />
+                <Text style={{ color: COLORS.textDark, fontSize: 13, fontWeight: '900' }}>
+                  Tiempo en la visita: {formatElapsed(elapsedMinutes)}
+                </Text>
+              </View>
+              <Text style={{ color: COLORS.textLight, fontSize: 11, lineHeight: 17 }}>
+                {elapsedMinutes >= 50
+                  ? 'Ya transcurrió el tiempo aproximado de revisión. Si terminaste, guarda el checklist y registra tu salida para avisar que estás bien.'
+                  : 'Una revisión suele tomar alrededor de 50 minutos. Recuerda registrar tu salida cuando termines.'}
+              </Text>
+            </View>
             <View>
               <Text style={{ color: COLORS.textDark, fontSize: 15, fontWeight: '900' }}>
                 Revisión presencial

@@ -21,6 +21,7 @@ import {
 } from '../../hooks/usePostulacionesAsociacion';
 import { Toast, useToast } from '../Toast';
 import { AssocLocationMap } from '../admin-dashboard/AssocLocationMap';
+import VisitSafetyMap from '../home-verification/VisitSafetyMap';
 
 const COLORS = {
   primary: '#EC802B',
@@ -115,6 +116,8 @@ type VerificationData = {
     motivo_reagenda?: string | null;
     check_in_at?: string | null;
     check_out_at?: string | null;
+    check_in_latitud?: number | null;
+    check_in_longitud?: number | null;
     check_in_distancia_m?: number | null;
     checklist?: Record<string, string> | null;
     notas_visita?: string | null;
@@ -180,6 +183,14 @@ function textList(values?: unknown[]) {
 
 function lowerText(value: string) {
   return value.toLocaleLowerCase('es-MX');
+}
+
+function formatElapsed(totalMinutes: number) {
+  const safeMinutes = Math.max(0, totalMinutes);
+  const hours = Math.floor(safeMinutes / 60);
+  const minutes = safeMinutes % 60;
+  if (!hours) return `${minutes} min`;
+  return `${hours} h ${minutes.toString().padStart(2, '0')} min`;
 }
 
 function joinNatural(values?: unknown[]) {
@@ -385,6 +396,7 @@ export function ExternalVerificationDetail({
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRetryingAnalysis, setIsRetryingAnalysis] = useState(false);
+  const [safetyNow, setSafetyNow] = useState(Date.now());
   const [decisionModal, setDecisionModal] = useState<'aprobar' | 'evidencia' | null>(null);
   const [motivoEvidencia, setMotivoEvidencia] = useState('');
 
@@ -422,6 +434,17 @@ export function ExternalVerificationDetail({
     }, 5000);
     return () => clearInterval(interval);
   }, [verification?.analisis_video_estado, postulacion.id, token]);
+
+  useEffect(() => {
+    const visit = verification?.asignacion_actual;
+    if (!visit?.check_in_at || visit.check_out_at) return;
+    setSafetyNow(Date.now());
+    const interval = setInterval(() => setSafetyNow(Date.now()), 30000);
+    return () => clearInterval(interval);
+  }, [
+    verification?.asignacion_actual?.check_in_at,
+    verification?.asignacion_actual?.check_out_at,
+  ]);
 
   const prepararVisita = async () => {
     if (!token) return;
@@ -611,6 +634,28 @@ export function ExternalVerificationDetail({
   const videoAnalysis = verification.analisis_video;
   const videoAnalysisState = verification.analisis_video_estado || 'pendiente';
   const coordinatesState = verification.estado_coordenadas || 'pendiente';
+  const activeVisit = verification.asignacion_actual;
+  const elapsedVisitMinutes = activeVisit?.check_in_at
+    ? Math.max(
+        0,
+        Math.floor(
+          ((activeVisit.check_out_at
+            ? new Date(activeVisit.check_out_at).getTime()
+            : safetyNow)
+            - new Date(activeVisit.check_in_at).getTime()) / 60000,
+        ),
+      )
+    : 0;
+  const needsSafetyFollowUp = Boolean(
+    activeVisit?.check_in_at
+    && !activeVisit.check_out_at
+    && elapsedVisitMinutes >= 60,
+  );
+  const reachedExpectedDuration = Boolean(
+    activeVisit?.check_in_at
+    && !activeVisit.check_out_at
+    && elapsedVisitMinutes >= 50,
+  );
   const applicationSummary = buildApplicationSummary({
     nombre: voluntario.nombre,
     verification,
@@ -1210,15 +1255,103 @@ export function ExternalVerificationDetail({
                   gap: 9,
                 }}>
                   <Text style={{
-                    color: verification.estado === 'visita_en_curso' ? COLORS.warning : COLORS.accent,
+                    color: needsSafetyFollowUp
+                      ? COLORS.danger
+                      : verification.estado === 'visita_en_curso'
+                        ? COLORS.warning
+                        : COLORS.accent,
                     fontWeight: '900',
                   }}>
-                    {verification.estado === 'visita_en_curso'
-                      ? 'La visita está en curso'
+                    {needsSafetyFollowUp
+                      ? 'La visita necesita seguimiento'
+                      : verification.estado === 'visita_en_curso'
+                      ? reachedExpectedDuration
+                        ? 'Se alcanzó el tiempo estimado'
+                        : 'La visita está en curso'
                       : verification.estado === 'visita_realizada'
                         ? 'La visita terminó'
                         : 'Resultado de la visita'}
                   </Text>
+                  <View style={{
+                    padding: 13,
+                    borderRadius: 14,
+                    backgroundColor: COLORS.white,
+                    gap: 7,
+                  }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
+                      <Ionicons
+                        name={needsSafetyFollowUp ? 'alert-circle-outline' : 'timer-outline'}
+                        size={21}
+                        color={needsSafetyFollowUp ? COLORS.danger : COLORS.accent}
+                      />
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: COLORS.textDark, fontSize: 13, fontWeight: '900' }}>
+                          {verification.asignacion_actual.check_out_at
+                            ? `Duración total: ${formatElapsed(elapsedVisitMinutes)}`
+                            : `Tiempo transcurrido: ${formatElapsed(elapsedVisitMinutes)}`}
+                        </Text>
+                        <Text style={{ marginTop: 2, color: COLORS.textLight, fontSize: 10, lineHeight: 15 }}>
+                          Tiempo estimado para una revisión: aproximadamente 50 minutos.
+                        </Text>
+                      </View>
+                    </View>
+                    {!verification.asignacion_actual.check_out_at && (
+                      <>
+                        <View style={{ height: 7, borderRadius: 4, backgroundColor: '#F3ECE3', overflow: 'hidden' }}>
+                          <View style={{
+                            width: `${Math.min(100, (elapsedVisitMinutes / 50) * 100)}%`,
+                            height: '100%',
+                            borderRadius: 4,
+                            backgroundColor: needsSafetyFollowUp
+                              ? COLORS.danger
+                              : reachedExpectedDuration
+                                ? COLORS.warning
+                                : COLORS.accent,
+                          }} />
+                        </View>
+                        {needsSafetyFollowUp && (
+                          <Text style={{ color: COLORS.danger, fontSize: 11, lineHeight: 17, fontWeight: '700' }}>
+                            No se ha registrado la salida. Confirma con {verification.asignacion_actual.verificador_nombre || 'la persona verificadora'} que se encuentre bien.
+                          </Text>
+                        )}
+                        {reachedExpectedDuration && !needsSafetyFollowUp && (
+                          <Text style={{ color: COLORS.warning, fontSize: 11, lineHeight: 17 }}>
+                            La duración puede variar; si no hay salida al cumplir 60 minutos, conviene confirmar que todo esté bien.
+                          </Text>
+                        )}
+                      </>
+                    )}
+                  </View>
+                  {verification.asignacion_actual.check_in_latitud != null
+                    && verification.asignacion_actual.check_in_longitud != null
+                    && hogar.latitud != null
+                    && hogar.longitud != null && (
+                    <View style={{ padding: 11, borderRadius: 15, backgroundColor: COLORS.white, gap: 9 }}>
+                      <Text style={{ color: COLORS.textDark, fontSize: 12, fontWeight: '900' }}>
+                        Punto registrado al llegar
+                      </Text>
+                      <VisitSafetyMap
+                        homeLatitude={Number(hogar.latitud)}
+                        homeLongitude={Number(hogar.longitud)}
+                        checkInLatitude={Number(verification.asignacion_actual.check_in_latitud)}
+                        checkInLongitude={Number(verification.asignacion_actual.check_in_longitud)}
+                        height={220}
+                      />
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                          <View style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: COLORS.primary }} />
+                          <Text style={{ color: COLORS.textLight, fontSize: 10 }}>Hogar declarado</Text>
+                        </View>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                          <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: COLORS.accent }} />
+                          <Text style={{ color: COLORS.textLight, fontSize: 10 }}>Check-in del verificador</Text>
+                        </View>
+                      </View>
+                      <Text style={{ color: COLORS.textLight, fontSize: 9, lineHeight: 14 }}>
+                        Es una ubicación puntual tomada al registrar la entrada; no representa seguimiento en tiempo real.
+                      </Text>
+                    </View>
+                  )}
                   <View style={{ flexDirection: isMobile ? 'column' : 'row', gap: 10 }}>
                     <View style={{ flex: 1, padding: 11, borderRadius: 13, backgroundColor: COLORS.white }}>
                       <Text style={{ color: COLORS.textLight, fontSize: 10, fontWeight: '800' }}>LLEGADA</Text>
