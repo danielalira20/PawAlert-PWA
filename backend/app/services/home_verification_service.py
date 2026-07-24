@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from fastapi import HTTPException
 
 from app.db.supabase import supabase_admin
+from app.services import storage_service
 
 
 DIAS = {
@@ -574,4 +575,202 @@ def asignar_verificador_hogar(
         "estado": "visita_propuesta",
         "verificador": candidato,
         "mensaje": "La propuesta de visita fue enviada al voluntario.",
+    }
+
+
+def resolver_verificacion_remota(
+    verificacion_id: str,
+    asociacion_id: str,
+    decision: str,
+    motivo: str | None = None,
+) -> dict:
+    """Cierra o devuelve a corrección una revisión remota.
+
+    Gemini y los metadatos solo aportan evidencia. Esta transición siempre
+    parte de una decisión explícita de la asociación.
+    """
+    resultado = supabase_admin.table("verificaciones_hogar").select(
+        "id, postulacion_id, voluntario_postulante_id, asociacion_id, "
+        "estado, modalidad"
+    ).eq("id", verificacion_id).eq(
+        "asociacion_id", asociacion_id
+    ).limit(1).execute()
+    if not resultado.data:
+        raise HTTPException(status_code=404, detail="Verificación no encontrada")
+
+    verificacion = resultado.data[0]
+    if (
+        verificacion["estado"] != "revision_remota"
+        or verificacion["modalidad"] != "remota"
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="Esta verificación no está lista para una decisión remota",
+        )
+
+    postulacion = supabase_admin.table("postulaciones").select(
+        "id, estado"
+    ).eq("id", verificacion["postulacion_id"]).limit(1).execute()
+    if not postulacion.data or postulacion.data[0]["estado"] != "pendiente":
+        raise HTTPException(
+            status_code=409,
+            detail="La postulación ya fue resuelta",
+        )
+
+    motivo_limpio = (motivo or "").strip()
+    if decision in ("solicitar_evidencia", "rechazar") and not motivo_limpio:
+        raise HTTPException(
+            status_code=422,
+            detail="Explica brevemente el motivo para orientar al postulante",
+        )
+
+    ahora = datetime.now(timezone.utc).isoformat()
+    if decision == "solicitar_evidencia":
+        supabase_admin.table("verificaciones_hogar").update({
+            "estado": "requiere_cambios",
+            "motivo_resultado": motivo_limpio,
+            "resuelta_at": None,
+            "updated_at": ahora,
+        }).eq("id", verificacion_id).execute()
+        return {
+            "estado": "requiere_cambios",
+            "mensaje": "Se solicitó un nuevo recorrido al postulante.",
+        }
+
+    voluntario_id = verificacion["voluntario_postulante_id"]
+    if decision == "rechazar":
+        supabase_admin.table("postulaciones").update({
+            "estado": "rechazada",
+            "motivo_rechazo": motivo_limpio,
+            "resuelta_at": ahora,
+        }).eq("id", verificacion["postulacion_id"]).execute()
+        supabase_admin.table("voluntarios").update({
+            "estado": "rechazado",
+            "updated_at": ahora,
+        }).eq("id", voluntario_id).execute()
+        supabase_admin.table("verificaciones_hogar").update({
+            "estado": "rechazada",
+            "motivo_resultado": motivo_limpio,
+            "resuelta_at": ahora,
+            "updated_at": ahora,
+        }).eq("id", verificacion_id).execute()
+        return {
+            "estado": "rechazada",
+            "mensaje": "La casa temporal no fue aprobada.",
+        }
+
+    if decision != "aprobar":
+        raise HTTPException(status_code=422, detail="Decisión no válida")
+
+    voluntario = supabase_admin.table("voluntarios").select(
+        "id, usuario_id"
+    ).eq("id", voluntario_id).limit(1).execute()
+    if not voluntario.data:
+        raise HTTPException(status_code=404, detail="Voluntario no encontrado")
+
+    rol = supabase_admin.table("roles").select("id").eq(
+        "nombre", "voluntario_externo"
+    ).limit(1).execute()
+    if not rol.data:
+        raise HTTPException(
+            status_code=500,
+            detail="No está configurado el rol de voluntario externo",
+        )
+
+    supabase_admin.table("voluntarios").update({
+        "estado": "activo_nivel_2",
+        "asociacion_id": asociacion_id,
+        "updated_at": ahora,
+    }).eq("id", voluntario_id).execute()
+    supabase_admin.table("usuarios").update({
+        "rol_id": rol.data[0]["id"],
+        "asociacion_id": asociacion_id,
+        "updated_at": ahora,
+    }).eq("id", voluntario.data[0]["usuario_id"]).execute()
+    supabase_admin.table("postulaciones").update({
+        "estado": "aceptada",
+        "motivo_rechazo": None,
+        "resuelta_at": ahora,
+    }).eq("id", verificacion["postulacion_id"]).execute()
+    supabase_admin.table("verificaciones_hogar").update({
+        "estado": "aprobada",
+        "motivo_resultado": motivo_limpio or None,
+        "resuelta_at": ahora,
+        "updated_at": ahora,
+    }).eq("id", verificacion_id).execute()
+    return {
+        "estado": "aprobada",
+        "nivel_voluntario": "activo_nivel_2",
+        "mensaje": "La casa temporal fue aprobada.",
+    }
+
+
+async def reemplazar_video_solicitado(
+    voluntario_id: str,
+    video_file,
+) -> dict:
+    """Reemplaza solo el recorrido cuando la asociación pidió evidencia."""
+    if not video_file or not (video_file.content_type or "").startswith("video/"):
+        raise HTTPException(
+            status_code=422,
+            detail="Selecciona un archivo de video válido",
+        )
+
+    postulacion = supabase_admin.table("postulaciones").select(
+        "id"
+    ).eq("voluntario_id", voluntario_id).eq(
+        "tipo", "externo"
+    ).eq("estado", "pendiente").order(
+        "numero_intento", desc=True
+    ).limit(1).execute()
+    if not postulacion.data:
+        raise HTTPException(
+            status_code=404,
+            detail="No tienes una postulación externa pendiente",
+        )
+
+    verificacion = supabase_admin.table("verificaciones_hogar").select(
+        "id, perfil_casa_temporal_id, estado, modalidad"
+    ).eq("postulacion_id", postulacion.data[0]["id"]).limit(1).execute()
+    if not verificacion.data:
+        raise HTTPException(status_code=404, detail="Verificación no encontrada")
+    registro = verificacion.data[0]
+    if (
+        registro["estado"] != "requiere_cambios"
+        or registro["modalidad"] != "remota"
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="La asociación no ha solicitado un nuevo recorrido",
+        )
+
+    video_url = await storage_service.subir_foto(
+        video_file,
+        "videos_recorridos",
+    )
+    ahora = datetime.now(timezone.utc).isoformat()
+    supabase_admin.table("perfil_casa_temporal").update({
+        "video_recorrido_url": video_url,
+        "updated_at": ahora,
+    }).eq("id", registro["perfil_casa_temporal_id"]).execute()
+    supabase_admin.table("verificaciones_hogar").update({
+        "estado": "revision_remota",
+        "analisis_video": None,
+        "analisis_video_estado": "pendiente",
+        "analisis_video_modelo": None,
+        "analisis_video_error": None,
+        "analisis_video_iniciado_at": None,
+        "analisis_video_procesado_at": None,
+        "estado_coordenadas": "pendiente",
+        "coordenadas_video_lat": None,
+        "coordenadas_video_lng": None,
+        "distancia_coordenadas_m": None,
+        "coordenadas_fuente": None,
+        "coordenadas_detalle": {},
+        "updated_at": ahora,
+    }).eq("id", registro["id"]).execute()
+    return {
+        "verificacion_id": registro["id"],
+        "estado": "revision_remota",
+        "mensaje": "El nuevo recorrido fue enviado a revisión.",
     }

@@ -1,5 +1,5 @@
 import asyncio
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.services.home_verification_service import generar_resumen_expediente
 from app.services import home_verification_service
@@ -186,3 +186,113 @@ def test_finalizar_postulacion_externa_es_idempotente(make_query):
     assert resultado["verificacion_id"] == "ver-1"
     assert resultado["ya_existia"] is True
     cliente.rpc.assert_not_called()
+
+
+def test_revision_remota_puede_solicitar_nueva_evidencia(make_query):
+    verificaciones = make_query(data=[{
+        "id": "ver-1",
+        "postulacion_id": "post-1",
+        "voluntario_postulante_id": "vol-1",
+        "asociacion_id": "asoc-1",
+        "estado": "revision_remota",
+        "modalidad": "remota",
+    }])
+    postulaciones = make_query(data=[{"id": "post-1", "estado": "pendiente"}])
+    cliente = MagicMock()
+    cliente.table.side_effect = lambda tabla: {
+        "verificaciones_hogar": verificaciones,
+        "postulaciones": postulaciones,
+    }[tabla]
+
+    with patch.object(home_verification_service, "supabase_admin", cliente):
+        resultado = home_verification_service.resolver_verificacion_remota(
+            "ver-1",
+            "asoc-1",
+            "solicitar_evidencia",
+            "Muestra accesos y ventanas.",
+        )
+
+    actualizacion = verificaciones.update.call_args.args[0]
+    assert resultado["estado"] == "requiere_cambios"
+    assert actualizacion["estado"] == "requiere_cambios"
+    assert actualizacion["motivo_resultado"] == "Muestra accesos y ventanas."
+    postulaciones.update.assert_not_called()
+
+
+def test_aprobar_revision_remota_activa_nivel_2(make_query):
+    verificaciones = make_query(data=[{
+        "id": "ver-1",
+        "postulacion_id": "post-1",
+        "voluntario_postulante_id": "vol-1",
+        "asociacion_id": "asoc-1",
+        "estado": "revision_remota",
+        "modalidad": "remota",
+    }])
+    postulaciones = make_query(data=[{"id": "post-1", "estado": "pendiente"}])
+    voluntarios = make_query(data=[{"id": "vol-1", "usuario_id": "user-1"}])
+    roles = make_query(data=[{"id": "rol-externo"}])
+    usuarios = make_query(data=[{"id": "user-1"}])
+    cliente = MagicMock()
+    cliente.table.side_effect = lambda tabla: {
+        "verificaciones_hogar": verificaciones,
+        "postulaciones": postulaciones,
+        "voluntarios": voluntarios,
+        "roles": roles,
+        "usuarios": usuarios,
+    }[tabla]
+
+    with patch.object(home_verification_service, "supabase_admin", cliente):
+        resultado = home_verification_service.resolver_verificacion_remota(
+            "ver-1",
+            "asoc-1",
+            "aprobar",
+        )
+
+    assert resultado["estado"] == "aprobada"
+    assert voluntarios.update.call_args.args[0]["estado"] == "activo_nivel_2"
+    assert postulaciones.update.call_args.args[0]["estado"] == "aceptada"
+    assert usuarios.update.call_args.args[0]["rol_id"] == "rol-externo"
+    assert verificaciones.update.call_args.args[0]["estado"] == "aprobada"
+
+
+def test_reemplazar_video_devuelve_expediente_a_revision_remota(make_query):
+    postulaciones = make_query(data=[{"id": "post-1"}])
+    verificaciones = make_query(data=[{
+        "id": "ver-1",
+        "perfil_casa_temporal_id": "perfil-1",
+        "estado": "requiere_cambios",
+        "modalidad": "remota",
+    }])
+    perfiles = make_query(data=[{"id": "perfil-1"}])
+    cliente = MagicMock()
+    cliente.table.side_effect = lambda tabla: {
+        "postulaciones": postulaciones,
+        "verificaciones_hogar": verificaciones,
+        "perfil_casa_temporal": perfiles,
+    }[tabla]
+    video = MagicMock()
+    video.content_type = "video/mp4"
+
+    with (
+        patch.object(home_verification_service, "supabase_admin", cliente),
+        patch.object(
+            home_verification_service.storage_service,
+            "subir_foto",
+            new=AsyncMock(return_value="https://storage.test/nuevo.mp4"),
+        ),
+    ):
+        resultado = asyncio.run(
+            home_verification_service.reemplazar_video_solicitado(
+                "vol-1",
+                video,
+            )
+        )
+
+    assert resultado["estado"] == "revision_remota"
+    assert perfiles.update.call_args.args[0]["video_recorrido_url"].endswith(
+        "nuevo.mp4"
+    )
+    actualizacion = verificaciones.update.call_args.args[0]
+    assert actualizacion["estado"] == "revision_remota"
+    assert actualizacion["analisis_video_estado"] == "pendiente"
+    assert actualizacion["analisis_video"] is None

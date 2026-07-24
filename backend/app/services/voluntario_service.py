@@ -145,6 +145,16 @@ async def obtener_mi_voluntario(usuario_id: str) -> dict:
             "resuelta_at": str(p["resuelta_at"]) if p.get("resuelta_at") else None,
         }
 
+        if p.get("tipo") == "externo":
+            verificacion = supabase_admin.table(
+                "verificaciones_hogar"
+            ).select(
+                "estado, modalidad, motivo_resultado, analisis_video_estado, "
+                "updated_at"
+            ).eq("postulacion_id", p["id"]).limit(1).execute()
+            if verificacion.data:
+                postulacion_data["verificacion_hogar"] = verificacion.data[0]
+
         if p["numero_intento"] > 1:
             previos = supabase.table("postulaciones").select(
                 "id, numero_intento, estado, motivo_rechazo, created_at, resuelta_at, "

@@ -21,6 +21,7 @@ from app.services.voluntario_service import (
     obtener_perfil_externo,
 )
 from app.services.home_verification_service import finalizar_postulacion_externa
+from app.services.home_verification_service import reemplazar_video_solicitado
 from app.services.video_evidence_service import procesar_evidencia_verificacion
 
 router = APIRouter()
@@ -188,5 +189,23 @@ async def finalizar_postulacion_voluntario_externo(
     background_tasks.add_task(
         procesar_evidencia_verificacion,
         resultado["verificacion_id"],
+    )
+    return resultado
+
+
+@router.post("/externo/evidencia-solicitada", status_code=202)
+async def post_evidencia_solicitada_voluntario_externo(
+    background_tasks: BackgroundTasks,
+    video: UploadFile = File(...),
+    authorization: str = Header(None),
+):
+    """Permite reemplazar solo el video cuando la asociación pide evidencia."""
+    usuario = _obtener_usuario_autenticado(authorization)
+    voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
+    resultado = await reemplazar_video_solicitado(voluntario_id, video)
+    background_tasks.add_task(
+        procesar_evidencia_verificacion,
+        resultado["verificacion_id"],
+        True,
     )
     return resultado
