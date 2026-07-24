@@ -49,6 +49,9 @@ export function PostulacionesPanel({ visible }: Props) {
   const isMobile = width < 900;
 
   const [filtro, setFiltro] = useState<FiltroPostulacion>('pendientes');
+  // NUEVO: Estado para el filtro de tipo de voluntario
+  const [filtroTipo, setFiltroTipo] = useState<'todos' | 'interno' | 'externo'>('todos');
+  
   const [postulacionSeleccionada, setPostulacionSeleccionada] = useState<PostulacionItem | null>(null);
   const [voluntarioSeleccionado, setVoluntarioSeleccionado] = useState<VoluntarioData | null>(null);
   const [showRejectModal, setShowRejectModal] = useState(false);
@@ -81,9 +84,17 @@ export function PostulacionesPanel({ visible }: Props) {
   const pendientesCount = data?.pendientes_count || 0;
   const intentosPrevios = data?.intentos_previos || {};
 
+  // ACTUALIZADO: Lógica de doble filtrado
   const postulacionesFiltradas = postulacionesLista.filter((p) => {
-    if (filtro === 'pendientes') return p.estado === 'pendiente';
-    if (filtro === 'resueltas') return ['aceptada', 'rechazada'].includes(p.estado);
+    // 1. Filtro de estado
+    if (filtro === 'pendientes' && p.estado !== 'pendiente') return false;
+    if (filtro === 'resueltas' && !['aceptada', 'rechazada'].includes(p.estado)) return false;
+
+    // 2. Filtro de tipo (internos vs externos)
+    if (filtroTipo === 'externo' && p.tipo !== 'externo') return false;
+    // Si no es externo, lo consideramos interno
+    if (filtroTipo === 'interno' && p.tipo === 'externo') return false;
+
     return true;
   });
 
@@ -166,8 +177,8 @@ export function PostulacionesPanel({ visible }: Props) {
         )}
       </View>
 
-      {/* Filtros */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20, paddingHorizontal: 24 }}>
+      {/* Filtros principales de estado */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12, paddingHorizontal: 24 }}>
         <View style={{ flexDirection: 'row', gap: 10 }}>
           {(['pendientes', 'resueltas'] as FiltroPostulacion[]).map((f) => (
             <TouchableOpacity
@@ -190,6 +201,39 @@ export function PostulacionesPanel({ visible }: Props) {
                 }}
               >
                 {f === 'pendientes' ? 'Pendientes' : 'Resueltas'}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </ScrollView>
+
+      {/* Sub-filtros por tipo de voluntario con estilos unificados */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20, paddingHorizontal: 24 }}>
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          {([
+            { key: 'todos', label: 'Todos' },
+            { key: 'interno', label: 'Voluntario de Asociación' },
+            { key: 'externo', label: 'Casa Temporal Externa' },
+          ] as const).map((ft) => (
+            <TouchableOpacity
+              key={ft.key}
+              onPress={() => setFiltroTipo(ft.key)}
+              style={{
+                paddingHorizontal: 16,
+                paddingVertical: 8,
+                borderRadius: 20,
+                backgroundColor: filtroTipo === ft.key ? COLORS.primary : COLORS.cardBg,
+                borderWidth: filtroTipo === ft.key ? 0 : 1,
+                borderColor: 'rgba(0,0,0,0.05)',
+              }}
+            >
+              <Text
+                style={{
+                  color: filtroTipo === ft.key ? COLORS.white : COLORS.textDark,
+                  fontWeight: '700',
+                }}
+              >
+                {ft.label}
               </Text>
             </TouchableOpacity>
           ))}
