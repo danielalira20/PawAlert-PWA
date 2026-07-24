@@ -40,3 +40,30 @@ def test_guardar_capacidades_v2_separa_datos_del_perfil(make_query):
     assert capacidad_guardada["radio_max_km"] == 30
     assert capacidad_guardada["voluntario_id"] == "vol-1"
     assert resultado == {"mensaje": "Capacidades guardadas correctamente"}
+
+
+def test_guardar_capacidades_permite_preparar_repostulacion_rechazada(make_query):
+    voluntarios = make_query(
+        data=[{"estado": "rechazado", "disponible_operativamente": False}]
+    )
+    capacidades = make_query(data=[{"voluntario_id": "vol-1"}])
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda tabla: {
+        "voluntarios": voluntarios,
+        "capacidades": capacidades,
+    }[tabla]
+
+    datos = {
+        "radio_max_km": 10,
+        "acepto_terminos": True,
+        "latitud": 19.04,
+        "longitud": -98.20,
+    }
+
+    with patch.object(voluntario_service, "supabase", supabase):
+        resultado = asyncio.run(
+            voluntario_service.guardar_capacidades("vol-1", datos)
+        )
+
+    capacidades.update.assert_called_once()
+    assert resultado == {"mensaje": "Capacidades guardadas correctamente"}
