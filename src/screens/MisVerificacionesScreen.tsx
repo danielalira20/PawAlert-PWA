@@ -15,6 +15,7 @@ import {
 
 import { Toast, useToast } from '../components/Toast';
 import SchedulePickerModal from '../components/home-verification/SchedulePickerModal';
+import VisitExecutionPanel from '../components/home-verification/VisitExecutionPanel';
 import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
 
@@ -60,6 +61,14 @@ type Propuesta = {
     | 'confirmado';
   horario_respondido_at?: string | null;
   motivo_reagenda?: string | null;
+  check_in_at?: string | null;
+  check_out_at?: string | null;
+  check_in_distancia_m?: number | null;
+  checklist?: Record<string, any> | null;
+  notas_visita?: string | null;
+  resultado_visita?: 'aprobar' | 'solicitar_ajustes' | 'rechazar' | null;
+  motivo_resultado_visita?: string | null;
+  resultado_at?: string | null;
   asociacion_nombre: string;
   postulante_nombre: string;
   zona_hogar?: {
@@ -322,7 +331,8 @@ export default function MisVerificacionesScreen({ onClose }: Props) {
   if (detalle) {
     const hogar = detalle.hogar || {};
     const resumen = detalle.resumen_expediente || {};
-    const aceptada = detalle.estado === 'aceptada';
+    const aceptada = ['aceptada', 'completada'].includes(detalle.estado);
+    const visitaIniciada = Boolean(detalle.check_in_at);
     const analisis = detalle.analisis_video;
     return (
       <View style={{ flex: 1, backgroundColor: COLORS.background }}>
@@ -371,10 +381,16 @@ export default function MisVerificacionesScreen({ onClose }: Props) {
             gap: 7,
           }}>
             <Text style={{ color: aceptada ? COLORS.accent : COLORS.primary, fontSize: 16, fontWeight: '900' }}>
-              {aceptada ? 'Aceptaste realizar esta visita' : 'Tu asociación necesita apoyo'}
+              {detalle.estado === 'completada'
+                ? 'Esta verificación ya fue finalizada'
+                : aceptada
+                  ? 'Aceptaste realizar esta visita'
+                  : 'Tu asociación necesita apoyo'}
             </Text>
             <Text style={{ color: COLORS.textDark, fontSize: 13, lineHeight: 20 }}>
-              {aceptada
+              {detalle.estado === 'completada'
+                ? 'La asociación y el postulante ya pueden consultar el resultado registrado.'
+                : aceptada
                 ? 'Ya puedes consultar la dirección y las evidencias. En el siguiente paso coordinaremos el horario con el postulante.'
                 : `La casa se encuentra aproximadamente a ${detalle.distancia_km} km de tu zona base.`}
             </Text>
@@ -502,6 +518,7 @@ export default function MisVerificacionesScreen({ onClose }: Props) {
                   </Text>
                 )}
 
+                {!visitaIniciada && detalle.estado === 'aceptada' && (
                 <View style={{ flexDirection: isMobile ? 'column' : 'row', gap: 9 }}>
                   {detalle.horario_estado === 'pendiente_verificador' && (
                     <TouchableOpacity
@@ -543,7 +560,22 @@ export default function MisVerificacionesScreen({ onClose }: Props) {
                     </Text>
                   </TouchableOpacity>
                 </View>
+                )}
               </View>
+
+              <VisitExecutionPanel
+                assignmentId={detalle.id}
+                verificationState={detalle.estado_verificacion}
+                checkInAt={detalle.check_in_at}
+                checkOutAt={detalle.check_out_at}
+                checkInDistanceM={detalle.check_in_distancia_m}
+                checklist={detalle.checklist}
+                visitNotes={detalle.notas_visita}
+                result={detalle.resultado_visita}
+                resultReason={detalle.motivo_resultado_visita}
+                onUpdated={recargarDetalle}
+                onFeedback={(feedback) => showToast(feedback)}
+              />
 
               <View style={{ padding: 17, borderRadius: 18, backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.border, gap: 12 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>

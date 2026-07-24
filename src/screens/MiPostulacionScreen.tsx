@@ -84,6 +84,8 @@ export default function MiPostulacionScreen({ onClose, onRetryExternal }: Props)
       case 'coordinando_visita':
         return COLORS.warning;
       case 'visita_programada':
+      case 'visita_en_curso':
+      case 'visita_realizada':
         return COLORS.bgTeal;
       case 'rechazada':
       case 'rechazado':
@@ -109,6 +111,8 @@ export default function MiPostulacionScreen({ onClose, onRetryExternal }: Props)
       visita_aceptada: 'Visita aceptada',
       coordinando_visita: 'Coordinando visita',
       visita_programada: 'Visita programada',
+      visita_en_curso: 'Visita en curso',
+      visita_realizada: 'Visita realizada',
     };
     return labels[estado] || estado;
   };
@@ -133,6 +137,10 @@ export default function MiPostulacionScreen({ onClose, onRetryExternal }: Props)
         'Estamos acordando contigo la fecha y hora de la visita.',
       visita_programada:
         'La fecha y hora de tu visita ya fueron confirmadas.',
+      visita_en_curso:
+        'La persona verificadora registró su llegada y está revisando el hogar.',
+      visita_realizada:
+        'La visita terminó y se está registrando el resultado.',
       dado_de_baja: 'Tu cuenta como voluntario ha sido temporalmente desactivada.',
       baja_definitiva: 'Tu cuenta como voluntario ha sido cerrada permanentemente.',
     };
@@ -153,6 +161,10 @@ export default function MiPostulacionScreen({ onClose, onRetryExternal }: Props)
         return 'time-outline';
       case 'visita_programada':
         return 'calendar-outline';
+      case 'visita_en_curso':
+        return 'shield-checkmark-outline';
+      case 'visita_realizada':
+        return 'clipboard-outline';
       case 'requiere_cambios':
         return 'videocam-outline';
       case 'rechazada':
@@ -222,6 +234,8 @@ export default function MiPostulacionScreen({ onClose, onRetryExternal }: Props)
     'visita_aceptada',
     'coordinando_visita',
     'visita_programada',
+    'visita_en_curso',
+    'visita_realizada',
   ];
   const estadoPresentado = verificacionHogar?.estado
     && estadosVisiblesVerificacion.includes(verificacionHogar.estado)
@@ -364,7 +378,13 @@ export default function MiPostulacionScreen({ onClose, onRetryExternal }: Props)
             )}
 
             {verificacionHogar?.estado &&
-              ['visita_aceptada', 'coordinando_visita', 'visita_programada']
+              [
+                'visita_aceptada',
+                'coordinando_visita',
+                'visita_programada',
+                'visita_en_curso',
+                'visita_realizada',
+              ]
                 .includes(verificacionHogar.estado) && (
                 <VisitCoordinationCard onUpdated={refetch} />
               )}

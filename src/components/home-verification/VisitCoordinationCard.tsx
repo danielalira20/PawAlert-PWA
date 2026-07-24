@@ -38,6 +38,8 @@ type Coordinacion = {
     | 'confirmado';
   visita_programada_at?: string | null;
   motivo_reagenda?: string | null;
+  check_in_at?: string | null;
+  check_out_at?: string | null;
   horarios_declarados?: Array<{ dia?: string; hora?: string }>;
 };
 
@@ -137,6 +139,7 @@ export default function VisitCoordinationCard({ onUpdated }: Props) {
 
   const proposedDate = data.horario_propuesto_at;
   const confirmed = data.horario_estado === 'confirmado';
+  const visitStarted = Boolean(data.check_in_at);
 
   return (
     <>
@@ -162,7 +165,13 @@ export default function VisitCoordinationCard({ onUpdated }: Props) {
           </View>
           <View style={{ flex: 1 }}>
             <Text style={{ color: COLORS.textDark, fontSize: 15, fontWeight: '900' }}>
-              {confirmed ? 'Tu visita está programada' : 'Coordinación de la visita'}
+              {data.check_out_at
+                ? 'La visita fue realizada'
+                : visitStarted
+                  ? 'La visita está en curso'
+                  : confirmed
+                    ? 'Tu visita está programada'
+                    : 'Coordinación de la visita'}
             </Text>
             <Text style={{ marginTop: 2, color: COLORS.textLight, fontSize: 11 }}>
               {data.asociacion_nombre} · {data.verificador_nombre}
@@ -233,7 +242,7 @@ export default function VisitCoordinationCard({ onUpdated }: Props) {
           </View>
         )}
 
-        {confirmed && (
+        {confirmed && !visitStarted && (
           <>
             <Text style={{ color: COLORS.accent, fontSize: 12, fontWeight: '800' }}>
               Ambas partes confirmaron este horario.
@@ -255,6 +264,28 @@ export default function VisitCoordinationCard({ onUpdated }: Props) {
               </Text>
             </TouchableOpacity>
           </>
+        )}
+
+        {visitStarted && !data.check_out_at && (
+          <View style={{ padding: 12, borderRadius: 13, backgroundColor: COLORS.white, gap: 5 }}>
+            <Text style={{ color: COLORS.accent, fontSize: 12, fontWeight: '900' }}>
+              La persona verificadora ya llegó
+            </Text>
+            <Text style={{ color: COLORS.textLight, fontSize: 11, lineHeight: 17 }}>
+              Está realizando la revisión del hogar. La asociación también puede consultar este avance.
+            </Text>
+          </View>
+        )}
+
+        {!!data.check_out_at && (
+          <View style={{ padding: 12, borderRadius: 13, backgroundColor: COLORS.white, gap: 5 }}>
+            <Text style={{ color: COLORS.accent, fontSize: 12, fontWeight: '900' }}>
+              La visita terminó
+            </Text>
+            <Text style={{ color: COLORS.textLight, fontSize: 11, lineHeight: 17 }}>
+              La persona verificadora está registrando el resultado final.
+            </Text>
+          </View>
         )}
 
         {!!feedback && (

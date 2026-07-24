@@ -113,6 +113,14 @@ type VerificationData = {
       | 'confirmado';
     horario_respondido_at?: string | null;
     motivo_reagenda?: string | null;
+    check_in_at?: string | null;
+    check_out_at?: string | null;
+    check_in_distancia_m?: number | null;
+    checklist?: Record<string, string> | null;
+    notas_visita?: string | null;
+    resultado_visita?: 'aprobar' | 'solicitar_ajustes' | 'rechazar' | null;
+    motivo_resultado_visita?: string | null;
+    resultado_at?: string | null;
   } | null;
   hogar?: {
     latitud?: number;
@@ -144,11 +152,25 @@ const ESTADOS: Record<string, string> = {
   visita_aceptada: 'Visita aceptada',
   coordinando_visita: 'Coordinando visita',
   visita_programada: 'Visita programada',
+  visita_en_curso: 'Visita en curso',
+  visita_realizada: 'Visita realizada',
   revision_remota: 'Revisión remota',
   reagendar: 'Por reagendar',
   requiere_cambios: 'Requiere cambios',
   aprobada: 'Aprobada',
   rechazada: 'Rechazada',
+};
+
+const CHECKLIST_VISITA_LABELS: Record<string, string> = {
+  identidad_coincide: 'La identidad no coincide',
+  espacio_coincide_video: 'El espacio no coincide con el recorrido',
+  accesos_seguros: 'Los accesos necesitan atención',
+  cierres_perimetrales: 'Las bardas, rejas o límites necesitan atención',
+  ventanas_balcones: 'Las ventanas o balcones necesitan protección',
+  espacio_aislamiento: 'No se comprobó un espacio adecuado de aislamiento',
+  higiene_ventilacion: 'La higiene o ventilación necesita atención',
+  convivencia_hogar: 'La convivencia del hogar necesita medidas adicionales',
+  autorizacion_vivienda: 'No se comprobó autorización para recibir animales',
 };
 
 function textList(values?: unknown[]) {
@@ -1174,6 +1196,97 @@ export function ExternalVerificationDetail({
                         Motivo del cambio: {verification.asignacion_actual.motivo_reagenda}
                       </Text>
                     )}
+                </View>
+              )}
+
+            {['visita_en_curso', 'visita_realizada', 'aprobada', 'requiere_cambios', 'rechazada'].includes(verification.estado) &&
+              verification.asignacion_actual?.check_in_at && (
+                <View style={{
+                  padding: 16,
+                  borderRadius: 18,
+                  backgroundColor: verification.estado === 'visita_en_curso' ? '#FFF7E6' : '#EAF7F6',
+                  borderWidth: 1,
+                  borderColor: verification.estado === 'visita_en_curso' ? '#F5DCA7' : '#D0ECE8',
+                  gap: 9,
+                }}>
+                  <Text style={{
+                    color: verification.estado === 'visita_en_curso' ? COLORS.warning : COLORS.accent,
+                    fontWeight: '900',
+                  }}>
+                    {verification.estado === 'visita_en_curso'
+                      ? 'La visita está en curso'
+                      : verification.estado === 'visita_realizada'
+                        ? 'La visita terminó'
+                        : 'Resultado de la visita'}
+                  </Text>
+                  <View style={{ flexDirection: isMobile ? 'column' : 'row', gap: 10 }}>
+                    <View style={{ flex: 1, padding: 11, borderRadius: 13, backgroundColor: COLORS.white }}>
+                      <Text style={{ color: COLORS.textLight, fontSize: 10, fontWeight: '800' }}>LLEGADA</Text>
+                      <Text style={{ marginTop: 3, color: COLORS.textDark, fontSize: 12, fontWeight: '800' }}>
+                        {new Date(verification.asignacion_actual.check_in_at).toLocaleString('es-MX')}
+                      </Text>
+                      {verification.asignacion_actual.check_in_distancia_m != null && (
+                        <Text style={{ marginTop: 3, color: COLORS.textLight, fontSize: 10 }}>
+                          Aprox. a {Math.round(verification.asignacion_actual.check_in_distancia_m)} m del hogar
+                        </Text>
+                      )}
+                    </View>
+                    {!!verification.asignacion_actual.check_out_at && (
+                      <View style={{ flex: 1, padding: 11, borderRadius: 13, backgroundColor: COLORS.white }}>
+                        <Text style={{ color: COLORS.textLight, fontSize: 10, fontWeight: '800' }}>SALIDA</Text>
+                        <Text style={{ marginTop: 3, color: COLORS.textDark, fontSize: 12, fontWeight: '800' }}>
+                          {new Date(verification.asignacion_actual.check_out_at).toLocaleString('es-MX')}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                  {!!verification.asignacion_actual.checklist?.completado_at && (
+                    <View style={{ gap: 5 }}>
+                      <Text style={{ color: COLORS.textDark, fontSize: 12, lineHeight: 18 }}>
+                        La persona verificadora completó los nueve puntos de la revisión presencial.
+                      </Text>
+                      {Object.entries(verification.asignacion_actual.checklist)
+                        .filter(([, value]) => value === 'no_cumple')
+                        .map(([key]) => (
+                          <Text key={key} style={{ color: COLORS.danger, fontSize: 11, lineHeight: 17 }}>
+                            • {CHECKLIST_VISITA_LABELS[key] || key}
+                          </Text>
+                        ))}
+                    </View>
+                  )}
+                  {!!verification.asignacion_actual.notas_visita && (
+                    <View style={{ padding: 11, borderRadius: 13, backgroundColor: COLORS.white, gap: 4 }}>
+                      <Text style={{ color: COLORS.textLight, fontSize: 10, fontWeight: '800' }}>NOTAS DE LA VISITA</Text>
+                      <Text style={{ color: COLORS.textDark, fontSize: 11, lineHeight: 17 }}>
+                        {verification.asignacion_actual.notas_visita}
+                      </Text>
+                    </View>
+                  )}
+                  {!!verification.asignacion_actual.resultado_visita && (
+                    <View style={{ padding: 11, borderRadius: 13, backgroundColor: COLORS.white, gap: 4 }}>
+                      <Text style={{ color: COLORS.textLight, fontSize: 10, fontWeight: '800' }}>RESULTADO</Text>
+                      <Text style={{
+                        color: verification.asignacion_actual.resultado_visita === 'aprobar'
+                          ? COLORS.accent
+                          : verification.asignacion_actual.resultado_visita === 'solicitar_ajustes'
+                            ? COLORS.warning
+                            : COLORS.danger,
+                        fontSize: 12,
+                        fontWeight: '900',
+                      }}>
+                        {verification.asignacion_actual.resultado_visita === 'aprobar'
+                          ? 'Hogar aprobado'
+                          : verification.asignacion_actual.resultado_visita === 'solicitar_ajustes'
+                            ? 'Se solicitaron ajustes'
+                            : 'Hogar no aprobado'}
+                      </Text>
+                      {!!verification.asignacion_actual.motivo_resultado_visita && (
+                        <Text style={{ color: COLORS.textDark, fontSize: 11, lineHeight: 17 }}>
+                          {verification.asignacion_actual.motivo_resultado_visita}
+                        </Text>
+                      )}
+                    </View>
+                  )}
                 </View>
               )}
 
