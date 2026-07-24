@@ -432,6 +432,23 @@ def obtener_verificacion_postulacion(
         "video_recorrido_url, horarios_visita"
     ).eq("id", verificacion["perfil_casa_temporal_id"]).limit(1).execute()
     verificacion["hogar"] = perfil.data[0] if perfil.data else None
+
+    asignacion = supabase_admin.table(
+        "asignaciones_verificacion_hogar"
+    ).select(
+        "id, verificador_voluntario_id, distancia_km, estado, propuesta_at, "
+        "respondida_at, visita_programada_at, motivo_rechazo"
+    ).eq("verificacion_hogar_id", verificacion["id"]).order(
+        "propuesta_at", desc=True
+    ).limit(1).execute()
+    if asignacion.data:
+        actual = asignacion.data[0]
+        actual["verificador_nombre"] = _nombre_voluntario(
+            actual["verificador_voluntario_id"]
+        )
+        verificacion["asignacion_actual"] = actual
+    else:
+        verificacion["asignacion_actual"] = None
     return verificacion
 
 
@@ -773,4 +790,215 @@ async def reemplazar_video_solicitado(
         "verificacion_id": registro["id"],
         "estado": "revision_remota",
         "mensaje": "El nuevo recorrido fue enviado a revisión.",
+    }
+
+
+def _nombre_voluntario(voluntario_id: str) -> str:
+    voluntario = supabase_admin.table("voluntarios").select(
+        "usuario_id"
+    ).eq("id", voluntario_id).limit(1).execute()
+    if not voluntario.data:
+        return "Persona voluntaria"
+    usuario = supabase_admin.table("usuarios").select(
+        "nombre, apellido_paterno"
+    ).eq("id", voluntario.data[0]["usuario_id"]).limit(1).execute()
+    if not usuario.data:
+        return "Persona voluntaria"
+    return " ".join(
+        parte for parte in (
+            usuario.data[0].get("nombre"),
+            usuario.data[0].get("apellido_paterno"),
+        ) if parte
+    )
+
+
+def listar_propuestas_verificacion_hogar(
+    verificador_voluntario_id: str,
+) -> list[dict]:
+    asignaciones = supabase_admin.table(
+        "asignaciones_verificacion_hogar"
+    ).select(
+        "id, verificacion_hogar_id, distancia_km, tramo_distancia, estado, "
+        "propuesta_at, respondida_at, visita_programada_at, motivo_rechazo"
+    ).eq(
+        "verificador_voluntario_id", verificador_voluntario_id
+    ).order("propuesta_at", desc=True).execute().data or []
+
+    respuesta = []
+    for asignacion in asignaciones:
+        verificacion = supabase_admin.table("verificaciones_hogar").select(
+            "id, perfil_casa_temporal_id, voluntario_postulante_id, "
+            "asociacion_id, estado, modalidad, resumen_expediente"
+        ).eq(
+            "id", asignacion["verificacion_hogar_id"]
+        ).limit(1).execute()
+        if not verificacion.data:
+            continue
+        hogar = verificacion.data[0]
+        perfil = supabase_admin.table("perfil_casa_temporal").select(
+            "municipio, colonia, estado_ubicacion, tipo_vivienda"
+        ).eq("id", hogar["perfil_casa_temporal_id"]).limit(1).execute()
+        asociacion = supabase_admin.table("asociaciones").select(
+            "nombre"
+        ).eq("id", hogar["asociacion_id"]).limit(1).execute()
+        zona = perfil.data[0] if perfil.data else {}
+        respuesta.append({
+            **asignacion,
+            "estado_verificacion": hogar["estado"],
+            "asociacion_nombre": (
+                asociacion.data[0]["nombre"]
+                if asociacion.data
+                else "Tu asociación"
+            ),
+            "postulante_nombre": "Postulante de casa temporal",
+            "zona_hogar": {
+                "municipio": zona.get("municipio"),
+                "colonia": zona.get("colonia"),
+                "estado": zona.get("estado_ubicacion"),
+                "tipo_vivienda": zona.get("tipo_vivienda"),
+            },
+            "resumen_previo": {
+                "hogar": (hogar.get("resumen_expediente") or {}).get("hogar"),
+                "disponibilidad": (
+                    hogar.get("resumen_expediente") or {}
+                ).get("disponibilidad"),
+            },
+        })
+    return respuesta
+
+
+def obtener_propuesta_verificacion_hogar(
+    asignacion_id: str,
+    verificador_voluntario_id: str,
+) -> dict:
+    asignacion = supabase_admin.table(
+        "asignaciones_verificacion_hogar"
+    ).select(
+        "id, verificacion_hogar_id, distancia_km, tramo_distancia, estado, "
+        "propuesta_at, respondida_at, visita_programada_at, notas_previas, "
+        "motivo_rechazo"
+    ).eq("id", asignacion_id).eq(
+        "verificador_voluntario_id", verificador_voluntario_id
+    ).limit(1).execute()
+    if not asignacion.data:
+        raise HTTPException(status_code=404, detail="Propuesta no encontrada")
+
+    detalle = asignacion.data[0]
+    verificacion = supabase_admin.table("verificaciones_hogar").select(
+        "id, perfil_casa_temporal_id, voluntario_postulante_id, "
+        "asociacion_id, estado, modalidad, resumen_expediente, "
+        "analisis_video, analisis_video_estado, estado_coordenadas, "
+        "distancia_coordenadas_m, motivo_resultado"
+    ).eq("id", detalle["verificacion_hogar_id"]).limit(1).execute()
+    if not verificacion.data:
+        raise HTTPException(status_code=404, detail="Verificación no encontrada")
+    hogar = verificacion.data[0]
+    perfil_campos = (
+        "municipio, colonia, estado_ubicacion, tipo_vivienda, "
+        "preferencia_especies, preferencia_tamanios, horarios_visita"
+    )
+    if detalle["estado"] == "aceptada":
+        perfil_campos += (
+            ", latitud, longitud, calle, numero, referencia, "
+            "identificacion_url, video_recorrido_url"
+        )
+    perfil = supabase_admin.table("perfil_casa_temporal").select(
+        perfil_campos
+    ).eq("id", hogar["perfil_casa_temporal_id"]).limit(1).execute()
+    asociacion = supabase_admin.table("asociaciones").select(
+        "nombre"
+    ).eq("id", hogar["asociacion_id"]).limit(1).execute()
+
+    respuesta = {
+        **detalle,
+        "estado_verificacion": hogar["estado"],
+        "asociacion_nombre": (
+            asociacion.data[0]["nombre"] if asociacion.data else "Tu asociación"
+        ),
+        "postulante_nombre": (
+            _nombre_voluntario(hogar["voluntario_postulante_id"])
+            if detalle["estado"] == "aceptada"
+            else "Postulante de casa temporal"
+        ),
+        "hogar": perfil.data[0] if perfil.data else {},
+        "resumen_expediente": hogar.get("resumen_expediente") or {},
+    }
+    if detalle["estado"] == "aceptada":
+        respuesta.update({
+            "analisis_video": hogar.get("analisis_video"),
+            "analisis_video_estado": hogar.get("analisis_video_estado"),
+            "estado_coordenadas": hogar.get("estado_coordenadas"),
+            "distancia_coordenadas_m": hogar.get(
+                "distancia_coordenadas_m"
+            ),
+        })
+    return respuesta
+
+
+def responder_propuesta_verificacion_hogar(
+    asignacion_id: str,
+    verificador_voluntario_id: str,
+    respuesta: str,
+    motivo: str | None = None,
+) -> dict:
+    asignacion = supabase_admin.table(
+        "asignaciones_verificacion_hogar"
+    ).select(
+        "id, verificacion_hogar_id, estado"
+    ).eq("id", asignacion_id).eq(
+        "verificador_voluntario_id", verificador_voluntario_id
+    ).limit(1).execute()
+    if not asignacion.data:
+        raise HTTPException(status_code=404, detail="Propuesta no encontrada")
+    propuesta = asignacion.data[0]
+    if propuesta["estado"] != "propuesta":
+        raise HTTPException(
+            status_code=409,
+            detail="Esta propuesta ya fue respondida",
+        )
+
+    motivo_limpio = (motivo or "").strip()
+    if respuesta == "rechazar" and not motivo_limpio:
+        raise HTTPException(
+            status_code=422,
+            detail="Indica brevemente por qué no puedes realizar la visita",
+        )
+    ahora = datetime.now(timezone.utc).isoformat()
+    if respuesta == "aceptar":
+        supabase_admin.table(
+            "asignaciones_verificacion_hogar"
+        ).update({
+            "estado": "aceptada",
+            "respondida_at": ahora,
+            "motivo_rechazo": None,
+            "updated_at": ahora,
+        }).eq("id", asignacion_id).execute()
+        supabase_admin.table("verificaciones_hogar").update({
+            "estado": "visita_aceptada",
+            "updated_at": ahora,
+        }).eq("id", propuesta["verificacion_hogar_id"]).execute()
+        return {
+            "estado": "aceptada",
+            "estado_verificacion": "visita_aceptada",
+            "mensaje": "Aceptaste la visita. El siguiente paso es acordar el horario.",
+        }
+
+    if respuesta != "rechazar":
+        raise HTTPException(status_code=422, detail="Respuesta no válida")
+    supabase_admin.table(
+        "asignaciones_verificacion_hogar"
+    ).update({
+        "estado": "rechazada",
+        "respondida_at": ahora,
+        "motivo_rechazo": motivo_limpio,
+        "updated_at": ahora,
+    }).eq("id", asignacion_id).execute()
+    supabase_admin.table("verificaciones_hogar").update({
+        "estado": "pendiente_asignacion",
+        "updated_at": ahora,
+    }).eq("id", propuesta["verificacion_hogar_id"]).execute()
+    return {
+        "estado": "rechazada",
+        "estado_verificacion": "pendiente_asignacion",
+        "mensaje": "Rechazaste la visita. La asociación buscará a otra persona.",
     }

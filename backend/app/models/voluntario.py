@@ -44,6 +44,18 @@ class ResolverVerificacionRemotaRequest(BaseModel):
     motivo: Optional[str] = Field(default=None, max_length=250)
 
 
+class RespuestaPropuestaVerificacionEnum(str, Enum):
+    aceptar = "aceptar"
+    rechazar = "rechazar"
+
+
+class ResponderPropuestaVerificacionRequest(BaseModel):
+    """Respuesta del voluntario interno a una propuesta de visita."""
+
+    respuesta: RespuestaPropuestaVerificacionEnum
+    motivo: Optional[str] = Field(default=None, max_length=250)
+
+
 class DiaSemanaEnum(str, Enum):
     lun = "lun"
     mar = "mar"

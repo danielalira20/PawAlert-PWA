@@ -8,7 +8,11 @@ from fastapi import (
     Form,
 )
 from app.db.supabase import supabase
-from app.models.voluntario import PostulacionRequest, CapacidadesRequest
+from app.models.voluntario import (
+    CapacidadesRequest,
+    PostulacionRequest,
+    ResponderPropuestaVerificacionRequest,
+)
 import json
 
 from app.services.voluntario_service import (
@@ -20,8 +24,13 @@ from app.services.voluntario_service import (
     crear_perfil_externo,
     obtener_perfil_externo,
 )
-from app.services.home_verification_service import finalizar_postulacion_externa
-from app.services.home_verification_service import reemplazar_video_solicitado
+from app.services.home_verification_service import (
+    finalizar_postulacion_externa,
+    listar_propuestas_verificacion_hogar,
+    obtener_propuesta_verificacion_hogar,
+    reemplazar_video_solicitado,
+    responder_propuesta_verificacion_hogar,
+)
 from app.services.video_evidence_service import procesar_evidencia_verificacion
 
 router = APIRouter()
@@ -80,6 +89,47 @@ def _obtener_voluntario_id_propio(usuario_id: str) -> str:
         raise HTTPException(status_code=404, detail="No tienes un perfil de voluntario")
 
     return resultado.data[0]["id"]
+
+
+@router.get("/me/verificaciones", status_code=200)
+async def get_mis_verificaciones_hogar(
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
+    return listar_propuestas_verificacion_hogar(voluntario_id)
+
+
+@router.get("/me/verificaciones/{asignacion_id}", status_code=200)
+async def get_mi_verificacion_hogar(
+    asignacion_id: str,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
+    return obtener_propuesta_verificacion_hogar(
+        asignacion_id,
+        voluntario_id,
+    )
+
+
+@router.patch(
+    "/me/verificaciones/{asignacion_id}/responder",
+    status_code=200,
+)
+async def patch_responder_verificacion_hogar(
+    asignacion_id: str,
+    body: ResponderPropuestaVerificacionRequest,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
+    return responder_propuesta_verificacion_hogar(
+        asignacion_id=asignacion_id,
+        verificador_voluntario_id=voluntario_id,
+        respuesta=body.respuesta.value,
+        motivo=body.motivo,
+    )
 
 
 @router.get("/me/capacidades", status_code=200)

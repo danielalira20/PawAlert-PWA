@@ -296,3 +296,66 @@ def test_reemplazar_video_devuelve_expediente_a_revision_remota(make_query):
     assert actualizacion["estado"] == "revision_remota"
     assert actualizacion["analisis_video_estado"] == "pendiente"
     assert actualizacion["analisis_video"] is None
+
+
+def test_verificador_acepta_propuesta_sin_marcar_visita_programada(make_query):
+    asignaciones = make_query(data=[{
+        "id": "asig-1",
+        "verificacion_hogar_id": "ver-1",
+        "estado": "propuesta",
+    }])
+    verificaciones = make_query(data=[{"id": "ver-1"}])
+    cliente = MagicMock()
+    cliente.table.side_effect = lambda tabla: {
+        "asignaciones_verificacion_hogar": asignaciones,
+        "verificaciones_hogar": verificaciones,
+    }[tabla]
+
+    with patch.object(home_verification_service, "supabase_admin", cliente):
+        resultado = (
+            home_verification_service.responder_propuesta_verificacion_hogar(
+                "asig-1",
+                "vol-verificador",
+                "aceptar",
+            )
+        )
+
+    assert resultado["estado"] == "aceptada"
+    assert resultado["estado_verificacion"] == "visita_aceptada"
+    assert asignaciones.update.call_args.args[0]["estado"] == "aceptada"
+    assert (
+        verificaciones.update.call_args.args[0]["estado"]
+        == "visita_aceptada"
+    )
+
+
+def test_verificador_rechaza_y_caso_regresa_a_asignacion(make_query):
+    asignaciones = make_query(data=[{
+        "id": "asig-1",
+        "verificacion_hogar_id": "ver-1",
+        "estado": "propuesta",
+    }])
+    verificaciones = make_query(data=[{"id": "ver-1"}])
+    cliente = MagicMock()
+    cliente.table.side_effect = lambda tabla: {
+        "asignaciones_verificacion_hogar": asignaciones,
+        "verificaciones_hogar": verificaciones,
+    }[tabla]
+
+    with patch.object(home_verification_service, "supabase_admin", cliente):
+        resultado = (
+            home_verification_service.responder_propuesta_verificacion_hogar(
+                "asig-1",
+                "vol-verificador",
+                "rechazar",
+                "No tengo disponibilidad esta semana.",
+            )
+        )
+
+    assert resultado["estado"] == "rechazada"
+    assert resultado["estado_verificacion"] == "pendiente_asignacion"
+    assert asignaciones.update.call_args.args[0]["motivo_rechazo"]
+    assert (
+        verificaciones.update.call_args.args[0]["estado"]
+        == "pendiente_asignacion"
+    )
