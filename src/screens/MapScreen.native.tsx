@@ -177,7 +177,7 @@ export default function MapScreen() {
   const params = useLocalSearchParams<{ action?: string }>();
   const [reportes, setReportes] = useState<Reporte[]>([]);
   const [asociaciones, setAsociaciones] = useState<AsociacionMapa[]>([]);
-  const [mostrarAsociaciones, setMostrarAsociaciones] = useState(true);
+  const [mostrarAsociaciones, setMostrarAsociaciones] = useState(false);
   const [selectedReport, setSelectedReport] = useState<Reporte | null>(null);
   const [isFormVisible, setIsFormVisible] = useState(false);
   const [isAuthGateVisible, setIsAuthGateVisible] = useState(false);
