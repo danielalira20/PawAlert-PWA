@@ -104,6 +104,15 @@ type VerificationData = {
     respondida_at?: string | null;
     visita_programada_at?: string | null;
     motivo_rechazo?: string | null;
+    horario_propuesto_at?: string | null;
+    horario_propuesto_por?: 'verificador' | 'postulante' | null;
+    horario_estado?:
+      | 'sin_propuesta'
+      | 'pendiente_postulante'
+      | 'pendiente_verificador'
+      | 'confirmado';
+    horario_respondido_at?: string | null;
+    motivo_reagenda?: string | null;
   } | null;
   hogar?: {
     latitud?: number;
@@ -133,6 +142,7 @@ const ESTADOS: Record<string, string> = {
   pendiente_asignacion: 'Buscando verificador',
   visita_propuesta: 'Propuesta enviada',
   visita_aceptada: 'Visita aceptada',
+  coordinando_visita: 'Coordinando visita',
   visita_programada: 'Visita programada',
   revision_remota: 'Revisión remota',
   reagendar: 'Por reagendar',
@@ -261,6 +271,10 @@ function buildApplicationSummary({
       modality = 'Presencial; la propuesta de visita está esperando confirmación.';
     } else if (verification.estado === 'visita_aceptada') {
       modality = 'Presencial; la persona verificadora aceptó y falta coordinar el horario.';
+    } else if (verification.estado === 'coordinando_visita') {
+      modality = 'Presencial; las partes están acordando la fecha y hora.';
+    } else if (verification.estado === 'visita_programada') {
+      modality = 'Presencial; la fecha y hora ya fueron confirmadas.';
     } else {
       modality = 'Presencial.';
     }
@@ -1116,6 +1130,52 @@ export function ExternalVerificationDetail({
                 </Text>
               </View>
             )}
+
+            {['coordinando_visita', 'visita_programada'].includes(verification.estado) &&
+              verification.asignacion_actual && (
+                <View style={{
+                  padding: 16,
+                  borderRadius: 18,
+                  backgroundColor: verification.estado === 'visita_programada' ? '#EAF7F6' : '#FFF7E6',
+                  borderWidth: 1,
+                  borderColor: verification.estado === 'visita_programada' ? '#D0ECE8' : '#F5DCA7',
+                  gap: 7,
+                }}>
+                  <Text style={{
+                    color: verification.estado === 'visita_programada' ? COLORS.accent : COLORS.warning,
+                    fontWeight: '900',
+                  }}>
+                    {verification.estado === 'visita_programada'
+                      ? 'Visita programada'
+                      : 'Coordinando fecha y hora'}
+                  </Text>
+                  {!!verification.asignacion_actual.horario_propuesto_at && (
+                    <Text style={{ color: COLORS.textDark, fontSize: 14, fontWeight: '800' }}>
+                      {new Date(verification.asignacion_actual.horario_propuesto_at)
+                        .toLocaleString('es-MX', {
+                          weekday: 'long',
+                          day: 'numeric',
+                          month: 'long',
+                          hour: 'numeric',
+                          minute: '2-digit',
+                        })}
+                    </Text>
+                  )}
+                  <Text style={{ color: COLORS.textDark, fontSize: 12, lineHeight: 18 }}>
+                    {verification.asignacion_actual.horario_estado === 'pendiente_postulante'
+                      ? `Esperando la respuesta de ${voluntario.nombre}.`
+                      : verification.asignacion_actual.horario_estado === 'pendiente_verificador'
+                        ? `Esperando la respuesta de ${verification.asignacion_actual.verificador_nombre || 'la persona verificadora'}.`
+                        : 'El horario fue confirmado por ambas partes.'}
+                  </Text>
+                  {!!verification.asignacion_actual.motivo_reagenda &&
+                    verification.asignacion_actual.horario_estado !== 'confirmado' && (
+                      <Text style={{ color: COLORS.textLight, fontSize: 11, lineHeight: 17 }}>
+                        Motivo del cambio: {verification.asignacion_actual.motivo_reagenda}
+                      </Text>
+                    )}
+                </View>
+              )}
 
             {verification.estado === 'pendiente_asignacion' &&
               verification.asignacion_actual?.estado === 'rechazada' && (

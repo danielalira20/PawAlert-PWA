@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 
 import { Toast, useToast } from '../components/Toast';
+import SchedulePickerModal from '../components/home-verification/SchedulePickerModal';
 import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
 
@@ -50,6 +51,15 @@ type Propuesta = {
   respondida_at?: string | null;
   visita_programada_at?: string | null;
   motivo_rechazo?: string | null;
+  horario_propuesto_at?: string | null;
+  horario_propuesto_por?: 'verificador' | 'postulante' | null;
+  horario_estado?:
+    | 'sin_propuesta'
+    | 'pendiente_postulante'
+    | 'pendiente_verificador'
+    | 'confirmado';
+  horario_respondido_at?: string | null;
+  motivo_reagenda?: string | null;
   asociacion_nombre: string;
   postulante_nombre: string;
   zona_hogar?: {
@@ -151,6 +161,8 @@ export default function MisVerificacionesScreen({ onClose }: Props) {
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isScheduling, setIsScheduling] = useState(false);
+  const [showSchedulePicker, setShowSchedulePicker] = useState(false);
   const [decision, setDecision] = useState<'aceptar' | 'rechazar' | null>(null);
   const [motivoRechazo, setMotivoRechazo] = useState('');
 
@@ -232,6 +244,67 @@ export default function MisVerificacionesScreen({ onClose }: Props) {
       });
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const recargarDetalle = async () => {
+    if (!detalle) return;
+    await cargar();
+    await abrirDetalle(detalle);
+  };
+
+  const proponerHorario = async (horario: string, motivo: string) => {
+    if (!token || !detalle) return;
+    setIsScheduling(true);
+    try {
+      const { data } = await axios.patch(
+        `${API_URL}/voluntarios/me/verificaciones/${detalle.id}/horario`,
+        { horario, motivo: motivo || undefined },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      showToast({
+        type: 'success',
+        title: detalle.horario_estado === 'confirmado'
+          ? 'Cambio de horario enviado'
+          : 'Horario enviado',
+        message: data.mensaje,
+      });
+      setShowSchedulePicker(false);
+      await recargarDetalle();
+    } catch (error: any) {
+      showToast({
+        type: 'error',
+        title: 'No pudimos enviar el horario',
+        message: error?.response?.data?.detail || 'Intenta nuevamente.',
+      });
+    } finally {
+      setIsScheduling(false);
+    }
+  };
+
+  const confirmarHorario = async () => {
+    if (!token || !detalle) return;
+    setIsScheduling(true);
+    try {
+      const { data } = await axios.patch(
+        `${API_URL}/voluntarios/me/verificaciones/${detalle.id}/horario/confirmar`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      showToast({
+        type: 'success',
+        title: 'Visita programada',
+        message: data.mensaje,
+      });
+      await recargarDetalle();
+    } catch (error: any) {
+      showToast({
+        type: 'error',
+        title: 'No pudimos confirmar el horario',
+        message: error?.response?.data?.detail || 'Intenta nuevamente.',
+      });
+    } finally {
+      setIsScheduling(false);
     }
   };
 
@@ -371,6 +444,107 @@ export default function MisVerificacionesScreen({ onClose }: Props) {
 
           {aceptada && (
             <>
+              <View style={{
+                padding: 17,
+                borderRadius: 18,
+                backgroundColor: detalle.horario_estado === 'confirmado'
+                  ? '#EAF7F6'
+                  : COLORS.white,
+                borderWidth: 1,
+                borderColor: detalle.horario_estado === 'confirmado'
+                  ? '#D0ECE8'
+                  : COLORS.border,
+                gap: 11,
+              }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Ionicons name="calendar-outline" size={20} color={COLORS.primary} />
+                  <Text style={{ color: COLORS.textDark, fontWeight: '900' }}>
+                    Fecha y hora de la visita
+                  </Text>
+                </View>
+
+                {detalle.horario_propuesto_at ? (
+                  <Text style={{ color: COLORS.textDark, fontSize: 15, fontWeight: '800' }}>
+                    {new Date(detalle.horario_propuesto_at).toLocaleString('es-MX', {
+                      weekday: 'long',
+                      day: 'numeric',
+                      month: 'long',
+                      hour: 'numeric',
+                      minute: '2-digit',
+                    })}
+                  </Text>
+                ) : (
+                  <Text style={{ color: COLORS.textLight, fontSize: 12, lineHeight: 18 }}>
+                    Propón una fecha tomando como referencia los horarios que compartió el postulante.
+                  </Text>
+                )}
+
+                {detalle.horario_estado === 'pendiente_postulante' && (
+                  <Text style={{ color: COLORS.textLight, fontSize: 12, lineHeight: 18 }}>
+                    Esperando que {detalle.postulante_nombre} confirme o sugiera otro horario.
+                  </Text>
+                )}
+                {detalle.horario_estado === 'pendiente_verificador' && (
+                  <View style={{ gap: 7 }}>
+                    <Text style={{ color: COLORS.primary, fontSize: 12, fontWeight: '800' }}>
+                      El postulante propuso este nuevo horario.
+                    </Text>
+                    {!!detalle.motivo_reagenda && (
+                      <Text style={{ color: COLORS.textLight, fontSize: 12, lineHeight: 18 }}>
+                        Motivo: {detalle.motivo_reagenda}
+                      </Text>
+                    )}
+                  </View>
+                )}
+                {detalle.horario_estado === 'confirmado' && (
+                  <Text style={{ color: COLORS.accent, fontSize: 12, fontWeight: '800' }}>
+                    Horario confirmado por ambas partes.
+                  </Text>
+                )}
+
+                <View style={{ flexDirection: isMobile ? 'column' : 'row', gap: 9 }}>
+                  {detalle.horario_estado === 'pendiente_verificador' && (
+                    <TouchableOpacity
+                      onPress={confirmarHorario}
+                      disabled={isScheduling}
+                      style={{ flex: 1, paddingVertical: 11, borderRadius: 13, backgroundColor: COLORS.accent, alignItems: 'center', opacity: isScheduling ? 0.65 : 1 }}
+                    >
+                      {isScheduling
+                        ? <ActivityIndicator color={COLORS.white} />
+                        : <Text style={{ color: COLORS.white, fontWeight: '800' }}>Confirmar horario</Text>}
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity
+                    onPress={() => setShowSchedulePicker(true)}
+                    disabled={isScheduling}
+                    style={{
+                      flex: 1,
+                      paddingVertical: 11,
+                      borderRadius: 13,
+                      borderWidth: detalle.horario_estado === 'pendiente_verificador' || detalle.horario_estado === 'confirmado' ? 1 : 0,
+                      borderColor: COLORS.primary,
+                      backgroundColor: detalle.horario_estado === 'pendiente_verificador' || detalle.horario_estado === 'confirmado'
+                        ? COLORS.white
+                        : COLORS.primary,
+                      alignItems: 'center',
+                    }}
+                  >
+                    <Text style={{
+                      color: detalle.horario_estado === 'pendiente_verificador' || detalle.horario_estado === 'confirmado'
+                        ? COLORS.primary
+                        : COLORS.white,
+                      fontWeight: '800',
+                    }}>
+                      {detalle.horario_estado === 'confirmado'
+                        ? 'Necesito reagendar'
+                        : detalle.horario_propuesto_at
+                          ? 'Proponer otro horario'
+                          : 'Proponer fecha y hora'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
               <View style={{ padding: 17, borderRadius: 18, backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.border, gap: 12 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <Ionicons name="folder-open-outline" size={20} color={COLORS.primary} />
@@ -499,6 +673,22 @@ export default function MisVerificacionesScreen({ onClose }: Props) {
             </View>
           </View>
         </Modal>
+
+        <SchedulePickerModal
+          visible={showSchedulePicker}
+          title={detalle.horario_estado === 'confirmado'
+            ? 'Reagendar visita'
+            : 'Proponer fecha y hora'}
+          description="El postulante recibirá tu propuesta y podrá confirmarla o sugerir otro horario."
+          horariosDeclarados={hogar.horarios_visita}
+          requireReason={detalle.horario_estado === 'confirmado'}
+          isSubmitting={isScheduling}
+          submitLabel={detalle.horario_estado === 'confirmado'
+            ? 'Solicitar cambio'
+            : 'Enviar propuesta'}
+          onClose={() => setShowSchedulePicker(false)}
+          onSubmit={proponerHorario}
+        />
       </View>
     );
   }
