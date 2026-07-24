@@ -18,6 +18,7 @@ import { Toast, useToast } from '../Toast';
 import { AppModal } from '../AppModal';
 import { AssocAvatar } from '../admin-dashboard/AssocAvatar';
 import { AssocLocationMap } from '../admin-dashboard/AssocLocationMap';
+import { ExternalVerificationDetail } from './ExternalVerificationDetail';
 
 const COLORS = {
   bg: '#E8CCAD',
@@ -124,6 +125,7 @@ export function PostulacionesPanel({ visible }: Props) {
       setShowRejectModal(false);
       setMotivoRechazo('');
       setPostulacionAccion(null);
+      cerrarDetalles();
       refetch();
     } catch (err: any) {
       const message = err.response?.data?.detail || 'Error al rechazar postulación';
@@ -136,6 +138,11 @@ export function PostulacionesPanel({ visible }: Props) {
   const cerrarDetalles = () => {
     setPostulacionSeleccionada(null);
     setVoluntarioSeleccionado(null);
+  };
+
+  const abrirRechazo = (postulacion: PostulacionItem) => {
+    setPostulacionAccion(postulacion);
+    setShowRejectModal(true);
   };
 
   return (
@@ -225,6 +232,11 @@ export function PostulacionesPanel({ visible }: Props) {
                   <Text style={{ fontSize: 15, fontWeight: '700', color: COLORS.textDark, marginBottom: 4 }}>
                     {postulacion.voluntario?.nombre || 'Voluntario'} {postulacion.voluntario?.apellido_paterno || ''}
                   </Text>
+                  {postulacion.tipo === 'externo' && (
+                    <View style={{ alignSelf: 'flex-start', marginBottom: 8, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 10, backgroundColor: 'rgba(102, 188, 180, 0.15)' }}>
+                      <Text style={{ color: COLORS.accent, fontSize: 10, fontWeight: '800' }}>Casa temporal externa</Text>
+                    </View>
+                  )}
                   <Text style={{ fontSize: 12, color: COLORS.textLight, marginBottom: 2 }}>
                     {postulacion.voluntario?.email}
                   </Text>
@@ -294,7 +306,14 @@ export function PostulacionesPanel({ visible }: Props) {
               {postulacion.estado === 'pendiente' && (
                 <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
                   <TouchableOpacity
-                    onPress={() => handleAceptar(postulacion)}
+                    onPress={() => {
+                      if (postulacion.tipo === 'externo') {
+                        setPostulacionSeleccionada(postulacion);
+                        setVoluntarioSeleccionado(postulacion.voluntario || null);
+                      } else {
+                        handleAceptar(postulacion);
+                      }
+                    }}
                     disabled={isSubmitting}
                     style={{
                       flex: 1,
@@ -305,12 +324,13 @@ export function PostulacionesPanel({ visible }: Props) {
                       opacity: isSubmitting ? 0.7 : 1,
                     }}
                   >
-                    <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 12 }}>Aceptar</Text>
+                    <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 12 }}>
+                      {postulacion.tipo === 'externo' ? 'Revisar expediente' : 'Aceptar'}
+                    </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     onPress={() => {
-                      setPostulacionAccion(postulacion);
-                      setShowRejectModal(true);
+                      abrirRechazo(postulacion);
                     }}
                     disabled={isSubmitting}
                     style={{
@@ -444,7 +464,17 @@ export function PostulacionesPanel({ visible }: Props) {
 
       {/* Modal de Detalle */}
       <AppModal visible={!!postulacionSeleccionada} onClose={cerrarDetalles} maxWidth={900}>
-        {postulacionSeleccionada && voluntarioSeleccionado && (
+        {postulacionSeleccionada?.tipo === 'externo' && voluntarioSeleccionado ? (
+          <ExternalVerificationDetail
+            postulacion={postulacionSeleccionada}
+            voluntario={voluntarioSeleccionado}
+            onClose={cerrarDetalles}
+            onReject={() => {
+              abrirRechazo(postulacionSeleccionada);
+            }}
+            onUpdated={refetch}
+          />
+        ) : postulacionSeleccionada && voluntarioSeleccionado ? (
           <View style={{ flex: 1 }}>
             {/* Header */}
             <View style={{ padding: 24, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#F0E6D6' }}>
@@ -637,7 +667,7 @@ export function PostulacionesPanel({ visible }: Props) {
               </View>
             </ScrollView>
           </View>
-        )}
+        ) : null}
       </AppModal>
     </View>
   );
