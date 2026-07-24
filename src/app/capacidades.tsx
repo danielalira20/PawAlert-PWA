@@ -16,7 +16,7 @@ export default function CapacidadesRoute() {
     <View style={styles.container}>
       <CapacidadesFormScreen 
         esPostulacionNueva={true} 
-        mostrarNotaVerificacionHogar={true}
+        esPostulacionExterna={true}
         onClose={handleClose} 
       />
     </View>

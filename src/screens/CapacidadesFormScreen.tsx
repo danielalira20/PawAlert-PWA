@@ -194,7 +194,7 @@ interface Props {
   onClose?: () => void;
   fromProfile?: boolean;
   esPostulacionNueva?: boolean;
-  mostrarNotaVerificacionHogar?: boolean;
+  esPostulacionExterna?: boolean;
 }
 
 function labels(values: string[], options: Option[]) {
@@ -219,7 +219,7 @@ export default function CapacidadesFormScreen({
   onClose,
   fromProfile = false,
   esPostulacionNueva = false,
-  mostrarNotaVerificacionHogar = false,
+  esPostulacionExterna = false,
 }: Props) {
   const { token } = useAuth();
   const { toast, translateY, showToast } = useToast();
@@ -230,6 +230,7 @@ export default function CapacidadesFormScreen({
   const [paso, setPaso] = useState(1);
   const [mostrarConfirmacion, setMostrarConfirmacion] = useState(false);
   const [postulacionCompletada, setPostulacionCompletada] = useState(false);
+  const [asociacionRevisora, setAsociacionRevisora] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
@@ -545,6 +546,14 @@ export default function CapacidadesFormScreen({
         headers: { Authorization: `Bearer ${token}` },
       });
       if (esPostulacionNueva) {
+        if (esPostulacionExterna) {
+          const { data: finalizacion } = await axios.post(
+            `${API_URL}/voluntarios/externo/finalizar`,
+            {},
+            { headers: { Authorization: `Bearer ${token}` } },
+          );
+          setAsociacionRevisora(finalizacion?.asociacion_nombre || null);
+        }
         setMostrarConfirmacion(false);
         setPostulacionCompletada(true);
         return;
@@ -832,9 +841,13 @@ export default function CapacidadesFormScreen({
             </View>
             <Text style={styles.successTitle}>¡Postulación enviada!</Text>
             <Text style={styles.successText}>
-              Recibimos tu información y tus capacidades. Podrás consultar el avance desde tu perfil.
+              Recibimos tu información y tus capacidades.
+              {asociacionRevisora
+                ? ` ${asociacionRevisora} revisará tu expediente.`
+                : ' Una asociación cercana revisará tu expediente.'}
+              {' '}Podrás consultar el avance desde tu perfil.
             </Text>
-            {mostrarNotaVerificacionHogar && (
+            {esPostulacionExterna && (
               <View style={styles.verificationNote}>
                 <Ionicons name="home-outline" size={22} color={COLORS.bgTeal} />
                 <Text style={styles.verificationNoteText}>

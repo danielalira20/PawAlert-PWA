@@ -11,6 +11,7 @@ from app.services.voluntario_service import (
     obtener_reportes_voluntario,
     crear_perfil_externo,
 )
+from app.services.home_verification_service import finalizar_postulacion_externa
 
 router = APIRouter()
 
@@ -148,3 +149,18 @@ async def postular_voluntario_externo(
     except Exception as e:
         # Esto atrapará errores de Supabase (como intentar postularse dos veces) o de storage
         raise HTTPException(status_code=400, detail=f"Error al guardar postulación: {str(e)}")
+
+
+@router.post("/externo/finalizar", status_code=201)
+async def finalizar_postulacion_voluntario_externo(
+    authorization: str = Header(None),
+):
+    """Finaliza el expediente después de guardar casa y capacidades.
+
+    Asigna la postulación a la asociación activa y verificada más cercana y
+    crea el proceso de verificación de hogar. Repetir la petición no duplica
+    el expediente.
+    """
+    usuario = _obtener_usuario_autenticado(authorization)
+    voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
+    return await finalizar_postulacion_externa(voluntario_id)
