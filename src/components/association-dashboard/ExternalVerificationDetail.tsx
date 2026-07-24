@@ -4,8 +4,10 @@ import { useEffect, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Linking,
+  Modal,
   ScrollView,
   Text,
+  TextInput,
   TouchableOpacity,
   useWindowDimensions,
   View,
@@ -90,6 +92,7 @@ type VerificationData = {
   coordenadas_detalle?: {
     mensaje?: string;
   };
+  motivo_resultado?: string | null;
   hogar?: {
     latitud?: number;
     longitud?: number;
@@ -329,6 +332,8 @@ export function ExternalVerificationDetail({
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRetryingAnalysis, setIsRetryingAnalysis] = useState(false);
+  const [decisionModal, setDecisionModal] = useState<'aprobar' | 'evidencia' | null>(null);
+  const [motivoEvidencia, setMotivoEvidencia] = useState('');
 
   const cargar = async (silencioso = false) => {
     if (!token) return;
@@ -456,6 +461,58 @@ export function ExternalVerificationDetail({
       });
     } finally {
       setIsRetryingAnalysis(false);
+    }
+  };
+
+  const resolverRevisionRemota = async (
+    decision: 'aprobar' | 'solicitar_evidencia',
+  ) => {
+    if (!token || !verification) return;
+    if (decision === 'solicitar_evidencia' && !motivoEvidencia.trim()) {
+      showToast({
+        type: 'error',
+        title: 'Cuéntale qué hace falta',
+        description: 'Escribe una indicación breve para que pueda enviar la evidencia correcta.',
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const { data } = await axios.patch(
+        `${API_URL}/associations/me/verificaciones/${verification.id}/resolver-remota`,
+        {
+          decision,
+          motivo: decision === 'solicitar_evidencia'
+            ? motivoEvidencia.trim()
+            : undefined,
+        },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      setVerification((actual) => actual ? {
+        ...actual,
+        estado: data.estado,
+        motivo_resultado: decision === 'solicitar_evidencia'
+          ? motivoEvidencia.trim()
+          : actual.motivo_resultado,
+      } : actual);
+      setDecisionModal(null);
+      setMotivoEvidencia('');
+      showToast({
+        type: 'success',
+        title: decision === 'aprobar' ? 'Casa temporal aprobada' : 'Solicitud enviada',
+        description: data.mensaje,
+      });
+      await onUpdated();
+      if (decision === 'aprobar') onClose();
+    } catch (error: any) {
+      showToast({
+        type: 'error',
+        title: 'No pudimos guardar la decisión',
+        description: error?.response?.data?.detail || 'Intenta nuevamente.',
+      });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -1003,6 +1060,18 @@ export function ExternalVerificationDetail({
               </View>
             )}
 
+            {verification.estado === 'requiere_cambios' && (
+              <View style={{ padding: 16, borderRadius: 18, backgroundColor: '#FFF7E6', borderWidth: 1, borderColor: '#F5DCA7', gap: 7 }}>
+                <Text style={{ color: COLORS.warning, fontWeight: '900' }}>Esperando un nuevo recorrido</Text>
+                <Text style={{ color: COLORS.textDark, fontSize: 13, lineHeight: 19 }}>
+                  {verification.motivo_resultado || 'La asociación solicitó evidencia adicional al postulante.'}
+                </Text>
+                <Text style={{ color: COLORS.textLight, fontSize: 11, lineHeight: 17 }}>
+                  El resto del expediente permanece guardado. Cuando envíe el video, volverá automáticamente a revisión remota.
+                </Text>
+              </View>
+            )}
+
             {verification.estado === 'visita_propuesta' && (
               <View style={{ padding: 16, borderRadius: 18, backgroundColor: '#EAF7F6', gap: 6 }}>
                 <Text style={{ color: COLORS.accent, fontWeight: '900' }}>Propuesta enviada</Text>
@@ -1042,6 +1111,130 @@ export function ExternalVerificationDetail({
           </TouchableOpacity>
         </View>
       )}
+
+      {verification.estado === 'revision_remota' && (
+        <View style={{
+          padding: isMobile ? 16 : 20,
+          borderTopWidth: 1,
+          borderTopColor: COLORS.border,
+          flexDirection: isMobile ? 'column-reverse' : 'row',
+          justifyContent: 'flex-end',
+          gap: 10,
+          backgroundColor: COLORS.white,
+        }}>
+          <TouchableOpacity
+            onPress={onReject}
+            disabled={isSubmitting}
+            style={{ paddingHorizontal: 18, paddingVertical: 12, borderRadius: 14, borderWidth: 1, borderColor: COLORS.danger, alignItems: 'center' }}
+          >
+            <Text style={{ color: COLORS.danger, fontWeight: '800' }}>No aprobar</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setDecisionModal('evidencia')}
+            disabled={isSubmitting}
+            style={{ paddingHorizontal: 18, paddingVertical: 12, borderRadius: 14, borderWidth: 1, borderColor: COLORS.warning, backgroundColor: '#FFF9EE', alignItems: 'center' }}
+          >
+            <Text style={{ color: COLORS.warning, fontWeight: '800' }}>Solicitar nueva evidencia</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setDecisionModal('aprobar')}
+            disabled={isSubmitting}
+            style={{ minWidth: isMobile ? undefined : 190, paddingHorizontal: 18, paddingVertical: 12, borderRadius: 14, backgroundColor: COLORS.accent, alignItems: 'center', opacity: isSubmitting ? 0.7 : 1 }}
+          >
+            <Text style={{ color: COLORS.white, fontWeight: '800' }}>Aprobar casa temporal</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      <Modal
+        visible={decisionModal !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => !isSubmitting && setDecisionModal(null)}
+      >
+        <View style={{ flex: 1, padding: 20, backgroundColor: 'rgba(38, 29, 22, 0.55)', alignItems: 'center', justifyContent: 'center' }}>
+          <View style={{ width: '100%', maxWidth: 460, padding: isMobile ? 20 : 26, borderRadius: 24, backgroundColor: COLORS.white, gap: 14 }}>
+            <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: decisionModal === 'aprobar' ? '#EAF7F6' : '#FFF7E6', alignItems: 'center', justifyContent: 'center' }}>
+              <Ionicons
+                name={decisionModal === 'aprobar' ? 'checkmark-circle-outline' : 'videocam-outline'}
+                size={27}
+                color={decisionModal === 'aprobar' ? COLORS.accent : COLORS.warning}
+              />
+            </View>
+            <Text style={{ color: COLORS.textDark, fontSize: 20, fontWeight: '900' }}>
+              {decisionModal === 'aprobar'
+                ? '¿Aprobar esta casa temporal?'
+                : 'Solicitar un nuevo recorrido'}
+            </Text>
+            <Text style={{ color: COLORS.textLight, fontSize: 13, lineHeight: 20 }}>
+              {decisionModal === 'aprobar'
+                ? 'La postulación quedará aceptada y la persona podrá participar como voluntario externo con casa temporal.'
+                : 'El formulario y la identificación se conservarán. La persona solo tendrá que reemplazar el video.'}
+            </Text>
+
+            {decisionModal === 'evidencia' && (
+              <>
+                <TextInput
+                  value={motivoEvidencia}
+                  onChangeText={setMotivoEvidencia}
+                  placeholder="Ej. Necesitamos un recorrido donde se vean los accesos, ventanas y el espacio para aislar al animal."
+                  placeholderTextColor={COLORS.textLight}
+                  multiline
+                  maxLength={250}
+                  editable={!isSubmitting}
+                  style={{
+                    minHeight: 110,
+                    padding: 13,
+                    borderRadius: 14,
+                    borderWidth: 1,
+                    borderColor: COLORS.border,
+                    color: COLORS.textDark,
+                    textAlignVertical: 'top',
+                    fontSize: 13,
+                    lineHeight: 19,
+                  }}
+                />
+                <Text style={{ alignSelf: 'flex-end', color: COLORS.textLight, fontSize: 11 }}>
+                  {motivoEvidencia.length}/250
+                </Text>
+              </>
+            )}
+
+            <View style={{ flexDirection: isMobile ? 'column-reverse' : 'row', justifyContent: 'flex-end', gap: 10 }}>
+              <TouchableOpacity
+                onPress={() => {
+                  setDecisionModal(null);
+                  setMotivoEvidencia('');
+                }}
+                disabled={isSubmitting}
+                style={{ paddingHorizontal: 18, paddingVertical: 12, borderRadius: 14, borderWidth: 1, borderColor: COLORS.border, alignItems: 'center' }}
+              >
+                <Text style={{ color: COLORS.textDark, fontWeight: '800' }}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => resolverRevisionRemota(
+                  decisionModal === 'aprobar' ? 'aprobar' : 'solicitar_evidencia',
+                )}
+                disabled={isSubmitting || (decisionModal === 'evidencia' && !motivoEvidencia.trim())}
+                style={{
+                  paddingHorizontal: 18,
+                  paddingVertical: 12,
+                  borderRadius: 14,
+                  backgroundColor: decisionModal === 'aprobar' ? COLORS.accent : COLORS.warning,
+                  alignItems: 'center',
+                  opacity: isSubmitting || (decisionModal === 'evidencia' && !motivoEvidencia.trim()) ? 0.6 : 1,
+                }}
+              >
+                {isSubmitting
+                  ? <ActivityIndicator color={COLORS.white} />
+                  : <Text style={{ color: COLORS.white, fontWeight: '800' }}>
+                      {decisionModal === 'aprobar' ? 'Sí, aprobar' : 'Enviar solicitud'}
+                    </Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
