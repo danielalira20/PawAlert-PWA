@@ -330,9 +330,9 @@ export function ExternalVerificationDetail({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRetryingAnalysis, setIsRetryingAnalysis] = useState(false);
 
-  const cargar = async () => {
+  const cargar = async (silencioso = false) => {
     if (!token) return;
-    setIsLoading(true);
+    if (!silencioso) setIsLoading(true);
     try {
       const { data } = await axios.get(
         `${API_URL}/associations/me/postulaciones/${postulacion.id}/verificacion`,
@@ -340,19 +340,29 @@ export function ExternalVerificationDetail({
       );
       setVerification(data);
     } catch (error: any) {
-      showToast({
-        type: 'error',
-        title: 'No pudimos abrir el expediente',
-        description: error?.response?.data?.detail || 'Intenta nuevamente.',
-      });
+      if (!silencioso) {
+        showToast({
+          type: 'error',
+          title: 'No pudimos abrir el expediente',
+          description: error?.response?.data?.detail || 'Intenta nuevamente.',
+        });
+      }
     } finally {
-      setIsLoading(false);
+      if (!silencioso) setIsLoading(false);
     }
   };
 
   useEffect(() => {
     cargar();
   }, [postulacion.id, token]);
+
+  useEffect(() => {
+    if (verification?.analisis_video_estado !== 'procesando') return;
+    const interval = setInterval(() => {
+      cargar(true);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [verification?.analisis_video_estado, postulacion.id, token]);
 
   const prepararVisita = async () => {
     if (!token) return;
@@ -429,8 +439,8 @@ export function ExternalVerificationDetail({
       );
       setVerification((actual) => actual ? {
         ...actual,
-        analisis_video_estado: 'pendiente',
-        estado_coordenadas: 'pendiente',
+        analisis_video_estado: 'procesando',
+        estado_coordenadas: 'procesando',
         analisis_video_error: null,
       } : actual);
       showToast({
@@ -438,9 +448,6 @@ export function ExternalVerificationDetail({
         title: 'Análisis solicitado',
         description: 'Puedes continuar revisando el expediente mientras se procesa.',
       });
-      setTimeout(() => {
-        cargar();
-      }, 5000);
     } catch (error: any) {
       showToast({
         type: 'error',
