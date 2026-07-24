@@ -399,3 +399,176 @@ async def finalizar_postulacion_externa(voluntario_id: str) -> dict:
         "modalidad": "por_definir",
         "ya_existia": False,
     }
+
+
+def obtener_verificacion_postulacion(
+    postulacion_id: str,
+    asociacion_id: str,
+) -> dict:
+    resultado = supabase_admin.table("verificaciones_hogar").select(
+        "id, postulacion_id, perfil_casa_temporal_id, asociacion_id, "
+        "voluntario_postulante_id, estado, modalidad, "
+        "distancia_asociacion_km, resumen_expediente, analisis_video, "
+        "estado_coordenadas, notas_asociacion, motivo_resultado, "
+        "created_at, updated_at, resuelta_at"
+    ).eq("postulacion_id", postulacion_id).eq(
+        "asociacion_id", asociacion_id
+    ).limit(1).execute()
+
+    if not resultado.data:
+        raise HTTPException(
+            status_code=404,
+            detail="No encontramos la verificación de esta postulación",
+        )
+
+    verificacion = resultado.data[0]
+    perfil = supabase_admin.table("perfil_casa_temporal").select(
+        "latitud, longitud, calle, numero, colonia, municipio, "
+        "estado_ubicacion, referencia, identificacion_url, "
+        "video_recorrido_url, horarios_visita"
+    ).eq("id", verificacion["perfil_casa_temporal_id"]).limit(1).execute()
+    verificacion["hogar"] = perfil.data[0] if perfil.data else None
+    return verificacion
+
+
+def preparar_verificacion_hogar(
+    postulacion_id: str,
+    asociacion_id: str,
+) -> dict:
+    """Busca verificadores elegibles después de que la asociación revisa.
+
+    Si no existe nadie dentro de su propio radio declarado y del máximo
+    absoluto de 30 km, cambia el expediente a revisión remota.
+    """
+    verificacion = obtener_verificacion_postulacion(
+        postulacion_id,
+        asociacion_id,
+    )
+
+    if verificacion["estado"] not in (
+        "pendiente_revision",
+        "pendiente_asignacion",
+        "reagendar",
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="La verificación no puede prepararse en su estado actual",
+        )
+
+    candidatos = supabase_admin.rpc(
+        "candidatos_verificacion_hogar",
+        {"p_verificacion_hogar_id": verificacion["id"]},
+    ).execute().data or []
+
+    if not candidatos:
+        supabase_admin.table("verificaciones_hogar").update({
+            "estado": "revision_remota",
+            "modalidad": "remota",
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("id", verificacion["id"]).execute()
+        return {
+            "verificacion_id": verificacion["id"],
+            "estado": "revision_remota",
+            "modalidad": "remota",
+            "candidatos": [],
+            "mensaje": (
+                "No hay verificadores disponibles dentro de 30 km. "
+                "El expediente continuará con revisión remota."
+            ),
+        }
+
+    supabase_admin.table("verificaciones_hogar").update({
+        "estado": "pendiente_asignacion",
+        "modalidad": "presencial",
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }).eq("id", verificacion["id"]).execute()
+
+    return {
+        "verificacion_id": verificacion["id"],
+        "estado": "pendiente_asignacion",
+        "modalidad": "presencial",
+        "candidatos": candidatos,
+        "mensaje": "Encontramos personas voluntarias cercanas para realizar la visita.",
+    }
+
+
+def asignar_verificador_hogar(
+    verificacion_id: str,
+    verificador_voluntario_id: str,
+    asociacion_id: str,
+) -> dict:
+    verificacion = supabase_admin.table("verificaciones_hogar").select(
+        "id, asociacion_id, estado"
+    ).eq("id", verificacion_id).eq(
+        "asociacion_id", asociacion_id
+    ).limit(1).execute()
+    if not verificacion.data:
+        raise HTTPException(
+            status_code=404,
+            detail="Verificación no encontrada",
+        )
+
+    if verificacion.data[0]["estado"] not in (
+        "pendiente_asignacion",
+        "reagendar",
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="La verificación no está lista para asignarse",
+        )
+
+    candidatos = supabase_admin.rpc(
+        "candidatos_verificacion_hogar",
+        {"p_verificacion_hogar_id": verificacion_id},
+    ).execute().data or []
+    candidato = next(
+        (
+            item
+            for item in candidatos
+            if item["voluntario_id"] == verificador_voluntario_id
+        ),
+        None,
+    )
+    if not candidato:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "La persona seleccionada no está disponible o se encuentra "
+                "fuera de su radio de desplazamiento"
+            ),
+        )
+
+    activa = supabase_admin.table("asignaciones_verificacion_hogar").select(
+        "id"
+    ).eq("verificacion_hogar_id", verificacion_id).in_(
+        "estado", ["propuesta", "aceptada"]
+    ).limit(1).execute()
+    if activa.data:
+        raise HTTPException(
+            status_code=409,
+            detail="Esta verificación ya tiene una propuesta activa",
+        )
+
+    asignacion = supabase_admin.table(
+        "asignaciones_verificacion_hogar"
+    ).insert({
+        "verificacion_hogar_id": verificacion_id,
+        "verificador_voluntario_id": verificador_voluntario_id,
+        "distancia_km": float(candidato["distancia_km"]),
+        "tramo_distancia": candidato["tramo_distancia"],
+        "estado": "propuesta",
+    }).execute()
+
+    supabase_admin.table("verificaciones_hogar").update({
+        "estado": "visita_propuesta",
+        "modalidad": "presencial",
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }).eq("id", verificacion_id).execute()
+
+    return {
+        "asignacion_id": asignacion.data[0]["id"],
+        "verificacion_id": verificacion_id,
+        "estado": "visita_propuesta",
+        "verificador": candidato,
+        "mensaje": "La propuesta de visita fue enviada al voluntario.",
+    }

@@ -25,6 +25,12 @@ class ResolverPostulacionRequest(BaseModel):
     motivo: Optional[str] = None
 
 
+class AsignarVerificadorRequest(BaseModel):
+    """Voluntario interno elegido por la asociación para visitar el hogar."""
+
+    voluntario_id: str
+
+
 class DiaSemanaEnum(str, Enum):
     lun = "lun"
     mar = "mar"

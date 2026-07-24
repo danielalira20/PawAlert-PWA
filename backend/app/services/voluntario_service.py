@@ -273,6 +273,19 @@ async def resolver_postulacion(
     tipo = postulacion["tipo"]
 
     if accion == "aceptar":
+        if tipo == "externo":
+            # Para una casa temporal, aceptar la revisión NO activa todavía
+            # al voluntario. Primero se busca quién pueda verificar el hogar
+            # o se habilita el fallback remoto.
+            from app.services.home_verification_service import (
+                preparar_verificacion_hogar,
+            )
+
+            return preparar_verificacion_hogar(
+                postulacion_id=postulacion_id,
+                asociacion_id=asociacion_id,
+            )
+
         # 1. Voluntario pasa a activo_nivel_1 (se vincula a la asociación que lo aceptó,
         # sea interno o externo)
         supabase.table("voluntarios").update({
@@ -317,6 +330,14 @@ async def resolver_postulacion(
         supabase.table("voluntarios").update({
             "estado": "rechazado",
         }).eq("id", voluntario_id).execute()
+
+        if tipo == "externo":
+            supabase_admin.table("verificaciones_hogar").update({
+                "estado": "rechazada",
+                "motivo_resultado": motivo.strip(),
+                "resuelta_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }).eq("postulacion_id", postulacion_id).execute()
 
         return {"mensaje": "Postulación rechazada", "estado": "rechazado"}
 
