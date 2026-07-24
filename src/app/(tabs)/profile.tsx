@@ -1,6 +1,6 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useCallback, useRef, useEffect, useState } from 'react';
 import { Animated, View, Text, TouchableOpacity, Image, Platform, Dimensions, Modal } from 'react-native';
-import { router } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import AdminDashboardScreen from '../../screens/AdminDashboardScreen';
@@ -21,7 +21,7 @@ const { width } = Dimensions.get('window');
 const isWeb = Platform.OS === 'web';
 
 export default function ProfileScreen() {
-  const { user, isLoggedIn, logout } = useAuth();
+  const { user, isLoggedIn, logout, refreshUser } = useAuth();
   
   const [isAdminVisible, setIsAdminVisible] = useState(false);
   const [isAssociationVisible, setIsAssociationVisible] = useState(false);
@@ -51,6 +51,14 @@ export default function ProfileScreen() {
       Animated.timing(slideAnim, { toValue: 0, duration: 500, useNativeDriver: true }),
     ]).start();
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (isLoggedIn) {
+        void refreshUser();
+      }
+    }, [isLoggedIn, refreshUser]),
+  );
 
   useEffect(() => {
     if (!isLoggedIn) {
