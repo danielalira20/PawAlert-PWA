@@ -12,6 +12,13 @@ interface UltimaPostulacionRaw {
   numero_intento: number;
   asociacion_nombre?: string;
   resuelta_at?: string;
+  verificacion_hogar?: {
+    estado: string;
+    modalidad: string;
+    motivo_resultado?: string;
+    analisis_video_estado?: string;
+    updated_at?: string;
+  };
 }
 
 interface IntentoPrevioRaw {
@@ -49,6 +56,13 @@ export interface VoluntarioStatusResponse {
     numero_intento: number;
     asociacion_nombre?: string;
     resuelta_at?: string;
+    verificacion_hogar?: {
+      estado: string;
+      modalidad: string;
+      motivo_resultado?: string;
+      analisis_video_estado?: string;
+      updated_at?: string;
+    };
   };
   intentos_previos?: Array<{
     id: string;
@@ -103,6 +117,7 @@ export function useVoluntarioStatus() {
               numero_intento: raw.ultima_postulacion.numero_intento,
               asociacion_nombre: raw.ultima_postulacion.asociacion_nombre,
               resuelta_at: raw.ultima_postulacion.resuelta_at,
+              verificacion_hogar: raw.ultima_postulacion.verificacion_hogar,
             }
           : undefined,
         intentos_previos: (raw.intentos_previos || []).map((intento) => ({

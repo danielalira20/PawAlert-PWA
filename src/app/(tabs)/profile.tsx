@@ -11,6 +11,7 @@ import StaffAsignacionScreen from '../../screens/StaffAsignacionScreen';
 // Asegúrate de que las rutas a estas pantallas sean correctas según tu proyecto
 import MiPostulacionScreen from '../../screens/MiPostulacionScreen'; 
 import CapacidadesFormScreen from '../../screens/CapacidadesFormScreen';
+import ExternalVolunteerFormScreen from '../../screens/ExternalVolunteerFormScreen';
 import { AppModal } from '@/components/AppModal';
 import { LoggedOutProfile } from '../../components/profile/LoggedOutProfile';
 import { LoggedInProfile } from '../../components/profile/LoggedInProfile';
@@ -33,6 +34,7 @@ export default function ProfileScreen() {
   // 1. Nuevos estados para los modales del voluntario
   const [isPostulacionVisible, setIsPostulacionVisible] = useState(false);
   const [isCapacidadesVisible, setIsCapacidadesVisible] = useState(false);
+  const [isExternalRetryVisible, setIsExternalRetryVisible] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(24)).current;
@@ -58,6 +60,7 @@ export default function ProfileScreen() {
       // 2. Limpiar estados al cerrar sesión
       setIsPostulacionVisible(false);
       setIsCapacidadesVisible(false);
+      setIsExternalRetryVisible(false);
     }
   }, [isLoggedIn]);
 
@@ -109,8 +112,30 @@ export default function ProfileScreen() {
 
       {/* 4. Modales para las pantallas de Voluntario */}
       <AppModal visible={isPostulacionVisible} onClose={() => setIsPostulacionVisible(false)}>
-        {isPostulacionVisible && <MiPostulacionScreen onClose={() => setIsPostulacionVisible(false)} />}
+        {isPostulacionVisible && (
+          <MiPostulacionScreen
+            onClose={() => setIsPostulacionVisible(false)}
+            onRetryExternal={() => {
+              setIsPostulacionVisible(false);
+              setIsExternalRetryVisible(true);
+            }}
+          />
+        )}
       </AppModal>
+
+      <Modal
+        visible={isExternalRetryVisible}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setIsExternalRetryVisible(false)}
+      >
+        {isExternalRetryVisible && (
+          <ExternalVolunteerFormScreen
+            modoReintento
+            onClose={() => setIsExternalRetryVisible(false)}
+          />
+        )}
+      </Modal>
 
       <AppModal visible={isCapacidadesVisible} onClose={() => setIsCapacidadesVisible(false)}>
         {isCapacidadesVisible && (

@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import axios from 'axios';
+import * as ImagePicker from 'expo-image-picker';
 import {
   View,
   Text,
@@ -14,6 +16,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useVoluntarioStatus, VoluntarioStatusResponse } from '../hooks/useVoluntarioStatus';
 import { Brand } from '../constants/theme';
+import { API_URL } from '../constants/api';
+import { useAuth } from '../context/AuthContext';
 import CapacidadesFormScreen from '../screens/CapacidadesFormScreen';
 
 const COLORS = {
@@ -35,13 +39,21 @@ const DESKTOP_BREAKPOINT = 900;
 
 interface Props {
   onClose?: () => void;
+  onRetryExternal?: () => void;
 }
 
-export default function MiPostulacionScreen({ onClose }: Props) {
+export default function MiPostulacionScreen({ onClose, onRetryExternal }: Props) {
+  const { token } = useAuth();
   const { data, isLoading, error, refetch  } = useVoluntarioStatus();
   const { width: screenWidth } = useWindowDimensions();
   const isDesktop = screenWidth >= DESKTOP_BREAKPOINT;
   const [showCapacidadesForm, setShowCapacidadesForm] = useState(false);
+  const [nuevoVideo, setNuevoVideo] = useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [isUploadingEvidence, setIsUploadingEvidence] = useState(false);
+  const [evidenceFeedback, setEvidenceFeedback] = useState<{
+    type: 'success' | 'error';
+    message: string;
+  } | null>(null);
 
   if (showCapacidadesForm) {
   return (
@@ -65,6 +77,8 @@ export default function MiPostulacionScreen({ onClose }: Props) {
         return COLORS.success;
       case 'pendiente':
       case 'postulacion_pendiente':
+      case 'revision_remota':
+      case 'requiere_cambios':
         return COLORS.warning;
       case 'rechazada':
       case 'rechazado':
@@ -85,6 +99,8 @@ export default function MiPostulacionScreen({ onClose }: Props) {
       pendiente: 'Pendiente de Revisión',
       aceptada: 'Aceptada',
       rechazada: 'Rechazada',
+      revision_remota: 'Revisión remota',
+      requiere_cambios: 'Nueva evidencia solicitada',
     };
     return labels[estado] || estado;
   };
@@ -99,6 +115,10 @@ export default function MiPostulacionScreen({ onClose }: Props) {
         'Eres un voluntario activo con capacidades verificadas. ¡Eres un experto!',
       rechazado:
         'Por el momento, tu solicitud no fue aceptada. Puedes intentar de nuevo.',
+      revision_remota:
+        'La asociación está revisando tu hogar con las evidencias que compartiste.',
+      requiere_cambios:
+        'La asociación necesita un nuevo recorrido para continuar con tu revisión.',
       dado_de_baja: 'Tu cuenta como voluntario ha sido temporalmente desactivada.',
       baja_definitiva: 'Tu cuenta como voluntario ha sido cerrada permanentemente.',
     };
@@ -113,7 +133,10 @@ export default function MiPostulacionScreen({ onClose }: Props) {
         return 'checkmark-circle';
       case 'pendiente':
       case 'postulacion_pendiente':
+      case 'revision_remota':
         return 'time-outline';
+      case 'requiere_cambios':
+        return 'videocam-outline';
       case 'rechazada':
       case 'rechazado':
         return 'close-circle';
@@ -174,6 +197,62 @@ export default function MiPostulacionScreen({ onClose }: Props) {
   const voluntario = data.voluntario;
   const postulacion = data.postulacion_actual;
   const intentosPrevios = data.intentos_previos || [];
+  const verificacionHogar = postulacion?.verificacion_hogar;
+  const estadoPresentado =
+    verificacionHogar?.estado === 'requiere_cambios' ||
+    verificacionHogar?.estado === 'revision_remota'
+      ? verificacionHogar.estado
+      : voluntario.estado;
+
+  const seleccionarNuevoVideo = async () => {
+    setEvidenceFeedback(null);
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+      quality: 0.8,
+    });
+    if (!result.canceled) setNuevoVideo(result.assets[0]);
+  };
+
+  const enviarNuevoVideo = async () => {
+    if (!token || !nuevoVideo) return;
+    setIsUploadingEvidence(true);
+    setEvidenceFeedback(null);
+    try {
+      const formData = new FormData();
+      if (Platform.OS === 'web') {
+        const response = await fetch(nuevoVideo.uri);
+        formData.append(
+          'video',
+          await response.blob(),
+          nuevoVideo.fileName || `recorrido_${Date.now()}.mp4`,
+        );
+      } else {
+        formData.append('video', {
+          uri: nuevoVideo.uri,
+          name: nuevoVideo.fileName || `recorrido_${Date.now()}.mp4`,
+          type: nuevoVideo.mimeType || 'video/mp4',
+        } as any);
+      }
+      await axios.post(
+        `${API_URL}/voluntarios/externo/evidencia-solicitada`,
+        formData,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      setNuevoVideo(null);
+      setEvidenceFeedback({
+        type: 'success',
+        message: 'Recorrido enviado. La asociación podrá revisarlo cuando termine el análisis.',
+      });
+      await refetch();
+    } catch (uploadError: any) {
+      setEvidenceFeedback({
+        type: 'error',
+        message: uploadError?.response?.data?.detail || 'No pudimos enviar el video. Intenta nuevamente.',
+      });
+    } finally {
+      setIsUploadingEvidence(false);
+    }
+  };
 
   const contenido = (
     <>
@@ -183,19 +262,25 @@ export default function MiPostulacionScreen({ onClose }: Props) {
           <View
             style={[
               styles.estadoIconContainer,
-              { backgroundColor: `${getEstadoColor(voluntario.estado)}20` },
+              { backgroundColor: `${getEstadoColor(estadoPresentado)}20` },
             ]}
           >
             <Ionicons
-              name={getIconoEstado(voluntario.estado)}
+              name={getIconoEstado(estadoPresentado)}
               size={32}
-              color={getEstadoColor(voluntario.estado)}
+              color={getEstadoColor(estadoPresentado)}
             />
           </View>
           <View style={styles.estadoTextContainer}>
-            <Text style={styles.estadoLabel}>{getEstadoLabel(voluntario.estado)}</Text>
+            <Text style={styles.estadoLabel}>
+              {estadoPresentado === 'revision_remota'
+                ? 'Revisión remota en curso'
+                : estadoPresentado === 'requiere_cambios'
+                  ? 'Necesitamos otro recorrido'
+                  : getEstadoLabel(estadoPresentado)}
+            </Text>
             <Text style={styles.estadoDescripcion}>
-              {getEstadoDescripcion(voluntario.estado)}
+              {getEstadoDescripcion(estadoPresentado)}
             </Text>
           </View>
         </View>
@@ -251,6 +336,111 @@ export default function MiPostulacionScreen({ onClose }: Props) {
                 <Text style={styles.infoValue}>
                   {new Date(postulacion.resuelta_at).toLocaleDateString('es-MX')}
                 </Text>
+              </View>
+            )}
+
+            {verificacionHogar?.estado === 'revision_remota' && (
+              <View style={{
+                marginTop: 16,
+                padding: 14,
+                borderRadius: 14,
+                backgroundColor: 'rgba(102, 188, 180, 0.12)',
+                borderWidth: 1,
+                borderColor: 'rgba(102, 188, 180, 0.25)',
+              }}>
+                <Text style={{ color: COLORS.bgTeal, fontSize: 14, fontWeight: '800', marginBottom: 5 }}>
+                  Tu hogar está en revisión
+                </Text>
+                <Text style={{ color: COLORS.textDark, fontSize: 12, lineHeight: 18 }}>
+                  No había una persona verificadora cercana, así que la asociación continuará con el video, tu identificación y las respuestas del expediente.
+                </Text>
+              </View>
+            )}
+
+            {verificacionHogar?.estado === 'requiere_cambios' && (
+              <View style={{
+                marginTop: 16,
+                padding: 16,
+                borderRadius: 16,
+                backgroundColor: '#FFF7E6',
+                borderWidth: 1,
+                borderColor: '#F5DCA7',
+                gap: 10,
+              }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
+                  <Ionicons name="videocam-outline" size={22} color={COLORS.warning} />
+                  <Text style={{ flex: 1, color: COLORS.textDark, fontSize: 15, fontWeight: '800' }}>
+                    Comparte un nuevo recorrido
+                  </Text>
+                </View>
+                <Text style={{ color: COLORS.textDark, fontSize: 12, lineHeight: 18 }}>
+                  {verificacionHogar.motivo_resultado || 'La asociación necesita ver mejor algunos espacios de tu hogar.'}
+                </Text>
+                <Text style={{ color: COLORS.textLight, fontSize: 11, lineHeight: 17 }}>
+                  No tendrás que repetir el formulario ni volver a subir tu identificación.
+                </Text>
+
+                {nuevoVideo ? (
+                  <View style={{ padding: 12, borderRadius: 13, backgroundColor: COLORS.bgWhite, gap: 8 }}>
+                    <Text style={{ color: COLORS.textDark, fontSize: 12, fontWeight: '700' }}>
+                      Nuevo recorrido listo
+                    </Text>
+                    <Text numberOfLines={1} style={{ color: COLORS.textLight, fontSize: 11 }}>
+                      {nuevoVideo.fileName || 'video seleccionado'}
+                    </Text>
+                    <TouchableOpacity onPress={seleccionarNuevoVideo} disabled={isUploadingEvidence}>
+                      <Text style={{ color: COLORS.primary, fontSize: 11, fontWeight: '700' }}>
+                        Elegir otro video
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    onPress={seleccionarNuevoVideo}
+                    disabled={isUploadingEvidence}
+                    style={{
+                      paddingVertical: 12,
+                      borderRadius: 13,
+                      borderWidth: 1,
+                      borderColor: COLORS.warning,
+                      backgroundColor: COLORS.bgWhite,
+                      alignItems: 'center',
+                    }}
+                  >
+                    <Text style={{ color: COLORS.warning, fontWeight: '800' }}>
+                      Elegir nuevo video
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                {!!nuevoVideo && (
+                  <TouchableOpacity
+                    onPress={enviarNuevoVideo}
+                    disabled={isUploadingEvidence}
+                    style={{
+                      paddingVertical: 13,
+                      borderRadius: 13,
+                      backgroundColor: COLORS.primary,
+                      alignItems: 'center',
+                      opacity: isUploadingEvidence ? 0.65 : 1,
+                    }}
+                  >
+                    {isUploadingEvidence
+                      ? <ActivityIndicator color={COLORS.bgWhite} />
+                      : <Text style={{ color: COLORS.bgWhite, fontWeight: '800' }}>Enviar recorrido</Text>}
+                  </TouchableOpacity>
+                )}
+
+                {evidenceFeedback && (
+                  <Text style={{
+                    color: evidenceFeedback.type === 'success' ? COLORS.success : COLORS.danger,
+                    fontSize: 11,
+                    lineHeight: 17,
+                    fontWeight: '600',
+                  }}>
+                    {evidenceFeedback.message}
+                  </Text>
+                )}
               </View>
             )}
           </View>
@@ -324,16 +514,48 @@ export default function MiPostulacionScreen({ onClose }: Props) {
 
       {voluntario.estado === 'rechazado' && (
         <View style={styles.actionsSection}>
+          {voluntario.tipo === 'externo' && (
+            <>
+              <Text style={styles.retryTitle}>¿Cómo te gustaría continuar?</Text>
+              <Text style={styles.retryHint}>
+                Conservaremos la información que ya compartiste para que solo revises o corrijas lo necesario.
+              </Text>
+              <TouchableOpacity
+                style={[styles.actionButton, styles.casaTemporalButton]}
+                activeOpacity={0.8}
+                onPress={onRetryExternal}
+              >
+                <Ionicons name="home-outline" size={18} color={COLORS.bgWhite} />
+                <Text style={styles.actionButtonText}>Corregir y reintentar como casa temporal</Text>
+              </TouchableOpacity>
+            </>
+          )}
           <TouchableOpacity
-            style={[styles.actionButton, styles.volverPostularButton]}
+            style={[
+              styles.actionButton,
+              voluntario.tipo === 'externo'
+                ? styles.asociacionOutlineButton
+                : styles.volverPostularButton,
+            ]}
             activeOpacity={0.8}
             onPress={() => {
               if (onClose) onClose();
               router.push('/(tabs)/join-association');
             }}
           >
-            <Ionicons name="refresh-outline" size={18} color={COLORS.bgWhite} />
-            <Text style={styles.actionButtonText}>Volver a Postular</Text>
+            <Ionicons
+              name="people-outline"
+              size={18}
+              color={voluntario.tipo === 'externo' ? COLORS.primary : COLORS.bgWhite}
+            />
+            <Text
+              style={[
+                styles.actionButtonText,
+                voluntario.tipo === 'externo' && styles.asociacionOutlineButtonText,
+              ]}
+            >
+              Postularme como voluntario de asociación
+            </Text>
           </TouchableOpacity>
         </View>
       )}
@@ -626,6 +848,35 @@ const styles = StyleSheet.create({
 
   volverPostularButton: {
     backgroundColor: COLORS.primary,
+  },
+
+  casaTemporalButton: {
+    backgroundColor: COLORS.bgTeal,
+  },
+
+  asociacionOutlineButton: {
+    backgroundColor: COLORS.bgWhite,
+    borderWidth: 1.5,
+    borderColor: COLORS.primary,
+  },
+
+  asociacionOutlineButtonText: {
+    color: COLORS.primary,
+  },
+
+  retryTitle: {
+    color: COLORS.textDark,
+    fontSize: 15,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+
+  retryHint: {
+    color: COLORS.textLight,
+    fontSize: 12,
+    lineHeight: 17,
+    textAlign: 'center',
+    marginBottom: 4,
   },
 
   actionButtonText: {

@@ -31,6 +31,19 @@ class AsignarVerificadorRequest(BaseModel):
     voluntario_id: str
 
 
+class DecisionVerificacionRemotaEnum(str, Enum):
+    aprobar = "aprobar"
+    solicitar_evidencia = "solicitar_evidencia"
+    rechazar = "rechazar"
+
+
+class ResolverVerificacionRemotaRequest(BaseModel):
+    """Decisión humana de la asociación para una revisión remota."""
+
+    decision: DecisionVerificacionRemotaEnum
+    motivo: Optional[str] = Field(default=None, max_length=250)
+
+
 class DiaSemanaEnum(str, Enum):
     lun = "lun"
     mar = "mar"
