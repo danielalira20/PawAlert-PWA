@@ -53,6 +53,18 @@ SUPABASE_KEY=tu-service-role-key
 SUPABASE_BUCKET=pawalert-fotos
 ```
 
+Para generar observaciones automáticas de los recorridos de casas temporales,
+agrega una clave de Gemini únicamente en el entorno del backend:
+
+```
+GEMINI_API_KEY=tu-clave-de-google-ai-studio
+GEMINI_MODEL=gemini-2.5-flash
+```
+
+La clave nunca debe guardarse en el frontend ni subirse al repositorio. Si no
+se configura, el video permanece disponible para revisión manual y la
+validación local de metadatos de ubicación continúa funcionando.
+
 ## Correr el servidor
 
 ```bash

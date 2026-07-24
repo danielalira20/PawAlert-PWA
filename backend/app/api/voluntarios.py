@@ -1,4 +1,12 @@
-from fastapi import APIRouter, HTTPException, Header, UploadFile, File, Form
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    HTTPException,
+    Header,
+    UploadFile,
+    File,
+    Form,
+)
 from app.db.supabase import supabase
 from app.models.voluntario import PostulacionRequest, CapacidadesRequest
 import json
@@ -13,6 +21,7 @@ from app.services.voluntario_service import (
     obtener_perfil_externo,
 )
 from app.services.home_verification_service import finalizar_postulacion_externa
+from app.services.video_evidence_service import procesar_evidencia_verificacion
 
 router = APIRouter()
 
@@ -164,6 +173,7 @@ async def postular_voluntario_externo(
 
 @router.post("/externo/finalizar", status_code=201)
 async def finalizar_postulacion_voluntario_externo(
+    background_tasks: BackgroundTasks,
     authorization: str = Header(None),
 ):
     """Finaliza el expediente después de guardar casa y capacidades.
@@ -174,4 +184,9 @@ async def finalizar_postulacion_voluntario_externo(
     """
     usuario = _obtener_usuario_autenticado(authorization)
     voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
-    return await finalizar_postulacion_externa(voluntario_id)
+    resultado = await finalizar_postulacion_externa(voluntario_id)
+    background_tasks.add_task(
+        procesar_evidencia_verificacion,
+        resultado["verificacion_id"],
+    )
+    return resultado

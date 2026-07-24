@@ -409,7 +409,10 @@ def obtener_verificacion_postulacion(
         "id, postulacion_id, perfil_casa_temporal_id, asociacion_id, "
         "voluntario_postulante_id, estado, modalidad, "
         "distancia_asociacion_km, resumen_expediente, analisis_video, "
-        "estado_coordenadas, notas_asociacion, motivo_resultado, "
+        "analisis_video_estado, analisis_video_modelo, analisis_video_error, "
+        "analisis_video_iniciado_at, analisis_video_procesado_at, "
+        "estado_coordenadas, distancia_coordenadas_m, coordenadas_fuente, "
+        "coordenadas_detalle, notas_asociacion, motivo_resultado, "
         "created_at, updated_at, resuelta_at"
     ).eq("postulacion_id", postulacion_id).eq(
         "asociacion_id", asociacion_id

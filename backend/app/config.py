@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     twilio_from_number: str = ""
     require_phone_verification: bool = False
     frontend_url: str = "https://paw-alert-pwa.vercel.app"
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
+    gemini_file_timeout_seconds: int = 180
 
     class Config:
         env_file = ".env"
