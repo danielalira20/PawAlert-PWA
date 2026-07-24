@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.services.home_verification_service import generar_resumen_expediente
@@ -83,6 +84,45 @@ def test_generar_resumen_expediente_senala_respuestas_a_revisar_sin_decidir():
     }
     assert "recomendacion" not in resumen
     assert "decision" not in resumen
+
+
+def test_obtener_verificacion_recarga_candidatos_pendientes(make_query):
+    verificaciones = make_query(data=[{
+        "id": "ver-1",
+        "perfil_casa_temporal_id": "perfil-1",
+        "estado": "pendiente_asignacion",
+    }])
+    perfiles = make_query(data=[{
+        "id": "perfil-1",
+        "municipio": "Apizaco",
+    }])
+    asignaciones = make_query(data=[])
+    candidatos = make_query(data=[{
+        "voluntario_id": "vol-zenaida",
+        "nombre": "Zenaida Huerta",
+        "distancia_km": 2.41,
+    }])
+    cliente = MagicMock()
+    cliente.table.side_effect = lambda tabla: {
+        "verificaciones_hogar": verificaciones,
+        "perfil_casa_temporal": perfiles,
+        "asignaciones_verificacion_hogar": asignaciones,
+    }[tabla]
+    cliente.rpc.return_value = candidatos
+
+    with patch.object(home_verification_service, "supabase_admin", cliente):
+        resultado = (
+            home_verification_service.obtener_verificacion_postulacion(
+                "post-1",
+                "asoc-1",
+            )
+        )
+
+    assert resultado["candidatos"][0]["voluntario_id"] == "vol-zenaida"
+    cliente.rpc.assert_called_once_with(
+        "candidatos_verificacion_hogar",
+        {"p_verificacion_hogar_id": "ver-1"},
+    )
 
 
 def test_finalizar_postulacion_externa_asigna_asociacion_y_crea_verificacion(
@@ -296,3 +336,261 @@ def test_reemplazar_video_devuelve_expediente_a_revision_remota(make_query):
     assert actualizacion["estado"] == "revision_remota"
     assert actualizacion["analisis_video_estado"] == "pendiente"
     assert actualizacion["analisis_video"] is None
+
+
+def test_verificador_acepta_propuesta_sin_marcar_visita_programada(make_query):
+    asignaciones = make_query(data=[{
+        "id": "asig-1",
+        "verificacion_hogar_id": "ver-1",
+        "estado": "propuesta",
+    }])
+    verificaciones = make_query(data=[{"id": "ver-1"}])
+    cliente = MagicMock()
+    cliente.table.side_effect = lambda tabla: {
+        "asignaciones_verificacion_hogar": asignaciones,
+        "verificaciones_hogar": verificaciones,
+    }[tabla]
+
+    with patch.object(home_verification_service, "supabase_admin", cliente):
+        resultado = (
+            home_verification_service.responder_propuesta_verificacion_hogar(
+                "asig-1",
+                "vol-verificador",
+                "aceptar",
+            )
+        )
+
+    assert resultado["estado"] == "aceptada"
+    assert resultado["estado_verificacion"] == "visita_aceptada"
+    assert asignaciones.update.call_args.args[0]["estado"] == "aceptada"
+    assert (
+        verificaciones.update.call_args.args[0]["estado"]
+        == "visita_aceptada"
+    )
+
+
+def test_verificador_rechaza_y_caso_regresa_a_asignacion(make_query):
+    asignaciones = make_query(data=[{
+        "id": "asig-1",
+        "verificacion_hogar_id": "ver-1",
+        "estado": "propuesta",
+    }])
+    verificaciones = make_query(data=[{"id": "ver-1"}])
+    cliente = MagicMock()
+    cliente.table.side_effect = lambda tabla: {
+        "asignaciones_verificacion_hogar": asignaciones,
+        "verificaciones_hogar": verificaciones,
+    }[tabla]
+
+    with patch.object(home_verification_service, "supabase_admin", cliente):
+        resultado = (
+            home_verification_service.responder_propuesta_verificacion_hogar(
+                "asig-1",
+                "vol-verificador",
+                "rechazar",
+                "No tengo disponibilidad esta semana.",
+            )
+        )
+
+    assert resultado["estado"] == "rechazada"
+    assert resultado["estado_verificacion"] == "pendiente_asignacion"
+    assert asignaciones.update.call_args.args[0]["motivo_rechazo"]
+    assert (
+        verificaciones.update.call_args.args[0]["estado"]
+        == "pendiente_asignacion"
+    )
+
+
+def test_verificador_propone_horario_sin_programar_visita(make_query):
+    asignaciones = make_query(data=[{
+        "id": "asig-1",
+        "verificacion_hogar_id": "ver-1",
+        "estado": "aceptada",
+        "horario_estado": "sin_propuesta",
+    }])
+    verificaciones = make_query(data=[{"id": "ver-1"}])
+    cliente = MagicMock()
+    cliente.table.side_effect = lambda tabla: {
+        "asignaciones_verificacion_hogar": asignaciones,
+        "verificaciones_hogar": verificaciones,
+    }[tabla]
+    horario = datetime.now(timezone.utc) + timedelta(days=2)
+
+    with patch.object(home_verification_service, "supabase_admin", cliente):
+        resultado = (
+            home_verification_service.proponer_horario_verificacion_hogar(
+                "asig-1",
+                "vol-verificador",
+                horario,
+            )
+        )
+
+    cambio = asignaciones.update.call_args.args[0]
+    assert cambio["horario_estado"] == "pendiente_postulante"
+    assert cambio["visita_programada_at"] is None
+    assert resultado["estado_verificacion"] == "coordinando_visita"
+    assert (
+        verificaciones.update.call_args.args[0]["estado"]
+        == "coordinando_visita"
+    )
+
+
+def test_postulante_confirma_y_programa_visita(make_query):
+    asignaciones = make_query(data=[{"id": "asig-1"}])
+    verificaciones = make_query(data=[{"id": "ver-1"}])
+    cliente = MagicMock()
+    cliente.table.side_effect = lambda tabla: {
+        "asignaciones_verificacion_hogar": asignaciones,
+        "verificaciones_hogar": verificaciones,
+    }[tabla]
+    coordinacion = {
+        "id": "asig-1",
+        "verificacion_hogar_id": "ver-1",
+        "horario_estado": "pendiente_postulante",
+        "horario_propuesto_at": "2026-08-10T16:00:00+00:00",
+    }
+
+    with (
+        patch.object(home_verification_service, "supabase_admin", cliente),
+        patch.object(
+            home_verification_service,
+            "obtener_coordinacion_visita_postulante",
+            return_value=coordinacion,
+        ),
+    ):
+        resultado = home_verification_service.responder_horario_como_postulante(
+            "vol-postulante",
+            "confirmar",
+        )
+
+    cambio = asignaciones.update.call_args.args[0]
+    assert cambio["horario_estado"] == "confirmado"
+    assert cambio["visita_programada_at"] == coordinacion["horario_propuesto_at"]
+    assert resultado["estado_verificacion"] == "visita_programada"
+
+
+def test_check_in_inicia_visita_programada(make_query):
+    asignaciones = make_query(data=[{
+        "id": "asig-1",
+        "verificacion_hogar_id": "ver-1",
+        "estado": "aceptada",
+        "horario_estado": "confirmado",
+        "visita_programada_at": "2026-08-10T16:00:00+00:00",
+        "check_in_at": None,
+        "check_out_at": None,
+        "checklist": {},
+        "resultado_visita": None,
+    }])
+    verificaciones = make_query(data=[{
+        "id": "ver-1",
+        "postulacion_id": "post-1",
+        "perfil_casa_temporal_id": "perfil-1",
+        "asociacion_id": "asoc-1",
+        "voluntario_postulante_id": "vol-postulante",
+        "estado": "visita_programada",
+        "modalidad": "presencial",
+    }])
+    cliente = MagicMock()
+    cliente.table.side_effect = lambda tabla: {
+        "asignaciones_verificacion_hogar": asignaciones,
+        "verificaciones_hogar": verificaciones,
+    }[tabla]
+
+    with patch.object(home_verification_service, "supabase_admin", cliente):
+        resultado = home_verification_service.registrar_check_in_visita(
+            "asig-1",
+            "vol-verificador",
+        )
+
+    assert resultado["estado_verificacion"] == "visita_en_curso"
+    assert asignaciones.update.call_args.args[0]["check_in_at"]
+    assert verificaciones.update.call_args.args[0]["estado"] == "visita_en_curso"
+
+
+def test_checklist_completo_permite_registrar_salida(make_query):
+    checklist = {
+        campo: "cumple"
+        for campo in home_verification_service.CHECKLIST_VISITA_CAMPOS
+    }
+    asignaciones = make_query(data=[{
+        "id": "asig-1",
+        "verificacion_hogar_id": "ver-1",
+        "estado": "aceptada",
+        "horario_estado": "confirmado",
+        "visita_programada_at": "2026-08-10T16:00:00+00:00",
+        "check_in_at": "2026-08-10T16:02:00+00:00",
+        "check_out_at": None,
+        "checklist": checklist,
+        "resultado_visita": None,
+    }])
+    verificaciones = make_query(data=[{
+        "id": "ver-1",
+        "postulacion_id": "post-1",
+        "perfil_casa_temporal_id": "perfil-1",
+        "asociacion_id": "asoc-1",
+        "voluntario_postulante_id": "vol-postulante",
+        "estado": "visita_en_curso",
+        "modalidad": "presencial",
+    }])
+    cliente = MagicMock()
+    cliente.table.side_effect = lambda tabla: {
+        "asignaciones_verificacion_hogar": asignaciones,
+        "verificaciones_hogar": verificaciones,
+    }[tabla]
+
+    with patch.object(home_verification_service, "supabase_admin", cliente):
+        resultado = home_verification_service.registrar_check_out_visita(
+            "asig-1",
+            "vol-verificador",
+        )
+
+    assert resultado["estado_verificacion"] == "visita_realizada"
+    assert asignaciones.update.call_args.args[0]["check_out_at"]
+    assert verificaciones.update.call_args.args[0]["estado"] == "visita_realizada"
+
+
+def test_resultado_presencial_puede_solicitar_ajustes(make_query):
+    checklist = {
+        campo: "cumple"
+        for campo in home_verification_service.CHECKLIST_VISITA_CAMPOS
+    }
+    checklist["ventanas_balcones"] = "no_cumple"
+    asignaciones = make_query(data=[{
+        "id": "asig-1",
+        "verificacion_hogar_id": "ver-1",
+        "estado": "aceptada",
+        "horario_estado": "confirmado",
+        "visita_programada_at": "2026-08-10T16:00:00+00:00",
+        "check_in_at": "2026-08-10T16:02:00+00:00",
+        "check_out_at": "2026-08-10T16:40:00+00:00",
+        "checklist": checklist,
+        "resultado_visita": None,
+    }])
+    verificaciones = make_query(data=[{
+        "id": "ver-1",
+        "postulacion_id": "post-1",
+        "perfil_casa_temporal_id": "perfil-1",
+        "asociacion_id": "asoc-1",
+        "voluntario_postulante_id": "vol-postulante",
+        "estado": "visita_realizada",
+        "modalidad": "presencial",
+    }])
+    cliente = MagicMock()
+    cliente.table.side_effect = lambda tabla: {
+        "asignaciones_verificacion_hogar": asignaciones,
+        "verificaciones_hogar": verificaciones,
+    }[tabla]
+
+    with patch.object(home_verification_service, "supabase_admin", cliente):
+        resultado = home_verification_service.resolver_resultado_visita(
+            "asig-1",
+            "vol-verificador",
+            "solicitar_ajustes",
+            "Colocar protección en el balcón.",
+        )
+
+    assert resultado["estado"] == "requiere_cambios"
+    assert asignaciones.update.call_args.args[0]["estado"] == "completada"
+    cambio = verificaciones.update.call_args.args[0]
+    assert cambio["estado"] == "requiere_cambios"
+    assert cambio["modalidad"] == "remota"

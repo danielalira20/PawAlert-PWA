@@ -1,9 +1,17 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
-import { createContext, ReactNode, useContext, useEffect, useRef, useState } from 'react';
+import {
+  createContext,
+  ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { API_URL } from '../constants/api';
 
-interface Usuario {
+export interface Usuario {
   id: string;
   nombre: string;
   apellido_paterno: string;
@@ -58,6 +66,13 @@ export function shouldAttemptTokenRefresh(
   return status === 401 && !alreadyRetried && !isAuthEndpoint;
 }
 
+export async function fetchCurrentUser(accessToken: string): Promise<Usuario> {
+  const res = await axios.get(`${API_URL}/users/me`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return res.data as Usuario;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<Usuario | null>(null);
   const [token, setToken] = useState<string | null>(null);
@@ -78,13 +93,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           AsyncStorage.getItem(STORAGE_KEY_REFRESH),
           AsyncStorage.getItem(STORAGE_KEY_USER),
         ]);
+        if (storedRefresh) {
+          refreshTokenRef.current = storedRefresh;
+        }
         if (storedToken && storedUser) {
           setToken(storedToken);
           setUser(JSON.parse(storedUser));
           tokenRef.current = storedToken;
-        }
-        if (storedRefresh) {
-          refreshTokenRef.current = storedRefresh;
+
+          // El usuario almacenado permite restaurar la interfaz de inmediato,
+          // pero su rol pudo cambiar mientras la sesión estaba cerrada. Se
+          // consulta el perfil vigente y, si la red falla, se conserva la
+          // copia local como respaldo.
+          try {
+            const usuarioActualizado = await fetchCurrentUser(storedToken);
+            setUser(usuarioActualizado);
+            await AsyncStorage.setItem(
+              STORAGE_KEY_USER,
+              JSON.stringify(usuarioActualizado),
+            );
+          } catch {
+            // Conservamos la sesión restaurada con los datos locales.
+          }
         }
       } catch {
         // Si falla la lectura, simplemente no se restaura sesión automática.
@@ -131,14 +161,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // 'voluntario_interno'/'voluntario_externo' en la base de datos, pero
   // el objeto `user` guardado localmente sigue siendo el viejo hasta que
   // se llama a esta función explícitamente.
-  const refreshUser = async (): Promise<Usuario | null> => {
+  const refreshUser = useCallback(async (): Promise<Usuario | null> => {
     const currentToken = tokenRef.current;
     if (!currentToken) return null;
     try {
-      const res = await axios.get(`${API_URL}/users/me`, {
-        headers: { Authorization: `Bearer ${currentToken}` },
-      });
-      const usuarioActualizado = res.data as Usuario;
+      const usuarioActualizado = await fetchCurrentUser(currentToken);
       setUser(usuarioActualizado);
       try {
         await AsyncStorage.setItem(STORAGE_KEY_USER, JSON.stringify(usuarioActualizado));
@@ -149,7 +176,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       return null;
     }
-  };
+  }, []);
 
   const logout = () => {
     setUser(null);

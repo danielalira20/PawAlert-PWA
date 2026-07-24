@@ -52,6 +52,7 @@ type VerificationData = {
   id: string;
   estado: string;
   modalidad: 'por_definir' | 'presencial' | 'remota';
+  candidatos?: Candidato[];
   distancia_asociacion_km?: number | null;
   resumen_expediente?: any;
   analisis_video?: {
@@ -93,6 +94,34 @@ type VerificationData = {
     mensaje?: string;
   };
   motivo_resultado?: string | null;
+  asignacion_actual?: {
+    id: string;
+    verificador_voluntario_id: string;
+    verificador_nombre?: string;
+    distancia_km: number;
+    estado: 'propuesta' | 'aceptada' | 'rechazada' | 'cancelada' | 'completada' | 'expirada';
+    propuesta_at?: string;
+    respondida_at?: string | null;
+    visita_programada_at?: string | null;
+    motivo_rechazo?: string | null;
+    horario_propuesto_at?: string | null;
+    horario_propuesto_por?: 'verificador' | 'postulante' | null;
+    horario_estado?:
+      | 'sin_propuesta'
+      | 'pendiente_postulante'
+      | 'pendiente_verificador'
+      | 'confirmado';
+    horario_respondido_at?: string | null;
+    motivo_reagenda?: string | null;
+    check_in_at?: string | null;
+    check_out_at?: string | null;
+    check_in_distancia_m?: number | null;
+    checklist?: Record<string, string> | null;
+    notas_visita?: string | null;
+    resultado_visita?: 'aprobar' | 'solicitar_ajustes' | 'rechazar' | null;
+    motivo_resultado_visita?: string | null;
+    resultado_at?: string | null;
+  } | null;
   hogar?: {
     latitud?: number;
     longitud?: number;
@@ -120,12 +149,28 @@ const ESTADOS: Record<string, string> = {
   pendiente_revision: 'Por revisar',
   pendiente_asignacion: 'Buscando verificador',
   visita_propuesta: 'Propuesta enviada',
+  visita_aceptada: 'Visita aceptada',
+  coordinando_visita: 'Coordinando visita',
   visita_programada: 'Visita programada',
+  visita_en_curso: 'Visita en curso',
+  visita_realizada: 'Visita realizada',
   revision_remota: 'Revisión remota',
   reagendar: 'Por reagendar',
   requiere_cambios: 'Requiere cambios',
   aprobada: 'Aprobada',
   rechazada: 'Rechazada',
+};
+
+const CHECKLIST_VISITA_LABELS: Record<string, string> = {
+  identidad_coincide: 'La identidad no coincide',
+  espacio_coincide_video: 'El espacio no coincide con el recorrido',
+  accesos_seguros: 'Los accesos necesitan atención',
+  cierres_perimetrales: 'Las bardas, rejas o límites necesitan atención',
+  ventanas_balcones: 'Las ventanas o balcones necesitan protección',
+  espacio_aislamiento: 'No se comprobó un espacio adecuado de aislamiento',
+  higiene_ventilacion: 'La higiene o ventilación necesita atención',
+  convivencia_hogar: 'La convivencia del hogar necesita medidas adicionales',
+  autorizacion_vivienda: 'No se comprobó autorización para recibir animales',
 };
 
 function textList(values?: unknown[]) {
@@ -244,9 +289,17 @@ function buildApplicationSummary({
 
   let modality = 'Aún por definir; primero se buscará una persona verificadora cercana.';
   if (verification.modalidad === 'presencial') {
-    modality = verification.estado === 'visita_propuesta'
-      ? 'Presencial; la propuesta de visita está esperando confirmación.'
-      : 'Presencial.';
+    if (verification.estado === 'visita_propuesta') {
+      modality = 'Presencial; la propuesta de visita está esperando confirmación.';
+    } else if (verification.estado === 'visita_aceptada') {
+      modality = 'Presencial; la persona verificadora aceptó y falta coordinar el horario.';
+    } else if (verification.estado === 'coordinando_visita') {
+      modality = 'Presencial; las partes están acordando la fecha y hora.';
+    } else if (verification.estado === 'visita_programada') {
+      modality = 'Presencial; la fecha y hora ya fueron confirmadas.';
+    } else {
+      modality = 'Presencial.';
+    }
   } else if (verification.modalidad === 'remota') {
     modality = 'Remota; no se encontraron verificadores disponibles dentro de su radio de desplazamiento.';
   }
@@ -344,12 +397,13 @@ export function ExternalVerificationDetail({
         { headers: { Authorization: `Bearer ${token}` } },
       );
       setVerification(data);
+      setCandidatos(data.candidatos || []);
     } catch (error: any) {
       if (!silencioso) {
         showToast({
           type: 'error',
           title: 'No pudimos abrir el expediente',
-          description: error?.response?.data?.detail || 'Intenta nuevamente.',
+          message: error?.response?.data?.detail || 'Intenta nuevamente.',
         });
       }
     } finally {
@@ -387,14 +441,14 @@ export function ExternalVerificationDetail({
       showToast({
         type: 'success',
         title: data.modalidad === 'remota' ? 'Revisión remota lista' : 'Encontramos verificadores',
-        description: data.mensaje,
+        message: data.mensaje,
       });
       onUpdated();
     } catch (error: any) {
       showToast({
         type: 'error',
         title: 'No pudimos continuar',
-        description: error?.response?.data?.detail || 'Intenta nuevamente.',
+        message: error?.response?.data?.detail || 'Intenta nuevamente.',
       });
     } finally {
       setIsSubmitting(false);
@@ -414,19 +468,26 @@ export function ExternalVerificationDetail({
         ...actual,
         estado: data.estado,
         modalidad: 'presencial',
+        asignacion_actual: {
+          id: data.asignacion_id,
+          verificador_voluntario_id: candidato.voluntario_id,
+          verificador_nombre: candidato.nombre,
+          distancia_km: candidato.distancia_km,
+          estado: 'propuesta',
+        },
       } : actual);
       setCandidatos([]);
       showToast({
         type: 'success',
         title: 'Propuesta enviada',
-        description: `Le preguntaremos a ${candidato.nombre} si puede realizar la visita.`,
+        message: `Le preguntaremos a ${candidato.nombre} si puede realizar la visita.`,
       });
       onUpdated();
     } catch (error: any) {
       showToast({
         type: 'error',
         title: 'No pudimos enviar la propuesta',
-        description: error?.response?.data?.detail || 'Intenta con otra persona.',
+        message: error?.response?.data?.detail || 'Intenta con otra persona.',
       });
     } finally {
       setIsSubmitting(false);
@@ -451,13 +512,13 @@ export function ExternalVerificationDetail({
       showToast({
         type: 'success',
         title: 'Análisis solicitado',
-        description: 'Puedes continuar revisando el expediente mientras se procesa.',
+        message: 'Puedes continuar revisando el expediente mientras se procesa.',
       });
     } catch (error: any) {
       showToast({
         type: 'error',
         title: 'No pudimos reintentar',
-        description: error?.response?.data?.detail || 'Intenta nuevamente.',
+        message: error?.response?.data?.detail || 'Intenta nuevamente.',
       });
     } finally {
       setIsRetryingAnalysis(false);
@@ -472,7 +533,7 @@ export function ExternalVerificationDetail({
       showToast({
         type: 'error',
         title: 'Cuéntale qué hace falta',
-        description: 'Escribe una indicación breve para que pueda enviar la evidencia correcta.',
+        message: 'Escribe una indicación breve para que pueda enviar la evidencia correcta.',
       });
       return;
     }
@@ -501,7 +562,7 @@ export function ExternalVerificationDetail({
       showToast({
         type: 'success',
         title: decision === 'aprobar' ? 'Casa temporal aprobada' : 'Solicitud enviada',
-        description: data.mensaje,
+        message: data.mensaje,
       });
       await onUpdated();
       if (decision === 'aprobar') onClose();
@@ -509,7 +570,7 @@ export function ExternalVerificationDetail({
       showToast({
         type: 'error',
         title: 'No pudimos guardar la decisión',
-        description: error?.response?.data?.detail || 'Intenta nuevamente.',
+        message: error?.response?.data?.detail || 'Intenta nuevamente.',
       });
     } finally {
       setIsSubmitting(false);
@@ -1070,10 +1131,173 @@ export function ExternalVerificationDetail({
               <View style={{ padding: 16, borderRadius: 18, backgroundColor: '#EAF7F6', gap: 6 }}>
                 <Text style={{ color: COLORS.accent, fontWeight: '900' }}>Propuesta enviada</Text>
                 <Text style={{ color: COLORS.textDark, fontSize: 13, lineHeight: 19 }}>
-                  Estamos esperando que la persona voluntaria confirme si puede realizar la visita.
+                  {verification.asignacion_actual?.verificador_nombre
+                    ? `Estamos esperando que ${verification.asignacion_actual.verificador_nombre} confirme si puede realizar la visita.`
+                    : 'Estamos esperando que la persona voluntaria confirme si puede realizar la visita.'}
                 </Text>
               </View>
             )}
+
+            {verification.estado === 'visita_aceptada' && (
+              <View style={{ padding: 16, borderRadius: 18, backgroundColor: '#EAF7F6', borderWidth: 1, borderColor: '#D0ECE8', gap: 7 }}>
+                <Text style={{ color: COLORS.accent, fontWeight: '900' }}>La visita fue aceptada</Text>
+                <Text style={{ color: COLORS.textDark, fontSize: 13, lineHeight: 19 }}>
+                  {verification.asignacion_actual?.verificador_nombre || 'La persona verificadora'} aceptó apoyar. El siguiente paso será coordinar fecha y hora con el postulante.
+                </Text>
+              </View>
+            )}
+
+            {['coordinando_visita', 'visita_programada'].includes(verification.estado) &&
+              verification.asignacion_actual && (
+                <View style={{
+                  padding: 16,
+                  borderRadius: 18,
+                  backgroundColor: verification.estado === 'visita_programada' ? '#EAF7F6' : '#FFF7E6',
+                  borderWidth: 1,
+                  borderColor: verification.estado === 'visita_programada' ? '#D0ECE8' : '#F5DCA7',
+                  gap: 7,
+                }}>
+                  <Text style={{
+                    color: verification.estado === 'visita_programada' ? COLORS.accent : COLORS.warning,
+                    fontWeight: '900',
+                  }}>
+                    {verification.estado === 'visita_programada'
+                      ? 'Visita programada'
+                      : 'Coordinando fecha y hora'}
+                  </Text>
+                  {!!verification.asignacion_actual.horario_propuesto_at && (
+                    <Text style={{ color: COLORS.textDark, fontSize: 14, fontWeight: '800' }}>
+                      {new Date(verification.asignacion_actual.horario_propuesto_at)
+                        .toLocaleString('es-MX', {
+                          weekday: 'long',
+                          day: 'numeric',
+                          month: 'long',
+                          hour: 'numeric',
+                          minute: '2-digit',
+                        })}
+                    </Text>
+                  )}
+                  <Text style={{ color: COLORS.textDark, fontSize: 12, lineHeight: 18 }}>
+                    {verification.asignacion_actual.horario_estado === 'pendiente_postulante'
+                      ? `Esperando la respuesta de ${voluntario.nombre}.`
+                      : verification.asignacion_actual.horario_estado === 'pendiente_verificador'
+                        ? `Esperando la respuesta de ${verification.asignacion_actual.verificador_nombre || 'la persona verificadora'}.`
+                        : 'El horario fue confirmado por ambas partes.'}
+                  </Text>
+                  {!!verification.asignacion_actual.motivo_reagenda &&
+                    verification.asignacion_actual.horario_estado !== 'confirmado' && (
+                      <Text style={{ color: COLORS.textLight, fontSize: 11, lineHeight: 17 }}>
+                        Motivo del cambio: {verification.asignacion_actual.motivo_reagenda}
+                      </Text>
+                    )}
+                </View>
+              )}
+
+            {['visita_en_curso', 'visita_realizada', 'aprobada', 'requiere_cambios', 'rechazada'].includes(verification.estado) &&
+              verification.asignacion_actual?.check_in_at && (
+                <View style={{
+                  padding: 16,
+                  borderRadius: 18,
+                  backgroundColor: verification.estado === 'visita_en_curso' ? '#FFF7E6' : '#EAF7F6',
+                  borderWidth: 1,
+                  borderColor: verification.estado === 'visita_en_curso' ? '#F5DCA7' : '#D0ECE8',
+                  gap: 9,
+                }}>
+                  <Text style={{
+                    color: verification.estado === 'visita_en_curso' ? COLORS.warning : COLORS.accent,
+                    fontWeight: '900',
+                  }}>
+                    {verification.estado === 'visita_en_curso'
+                      ? 'La visita está en curso'
+                      : verification.estado === 'visita_realizada'
+                        ? 'La visita terminó'
+                        : 'Resultado de la visita'}
+                  </Text>
+                  <View style={{ flexDirection: isMobile ? 'column' : 'row', gap: 10 }}>
+                    <View style={{ flex: 1, padding: 11, borderRadius: 13, backgroundColor: COLORS.white }}>
+                      <Text style={{ color: COLORS.textLight, fontSize: 10, fontWeight: '800' }}>LLEGADA</Text>
+                      <Text style={{ marginTop: 3, color: COLORS.textDark, fontSize: 12, fontWeight: '800' }}>
+                        {new Date(verification.asignacion_actual.check_in_at).toLocaleString('es-MX')}
+                      </Text>
+                      {verification.asignacion_actual.check_in_distancia_m != null && (
+                        <Text style={{ marginTop: 3, color: COLORS.textLight, fontSize: 10 }}>
+                          Aprox. a {Math.round(verification.asignacion_actual.check_in_distancia_m)} m del hogar
+                        </Text>
+                      )}
+                    </View>
+                    {!!verification.asignacion_actual.check_out_at && (
+                      <View style={{ flex: 1, padding: 11, borderRadius: 13, backgroundColor: COLORS.white }}>
+                        <Text style={{ color: COLORS.textLight, fontSize: 10, fontWeight: '800' }}>SALIDA</Text>
+                        <Text style={{ marginTop: 3, color: COLORS.textDark, fontSize: 12, fontWeight: '800' }}>
+                          {new Date(verification.asignacion_actual.check_out_at).toLocaleString('es-MX')}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                  {!!verification.asignacion_actual.checklist?.completado_at && (
+                    <View style={{ gap: 5 }}>
+                      <Text style={{ color: COLORS.textDark, fontSize: 12, lineHeight: 18 }}>
+                        La persona verificadora completó los nueve puntos de la revisión presencial.
+                      </Text>
+                      {Object.entries(verification.asignacion_actual.checklist)
+                        .filter(([, value]) => value === 'no_cumple')
+                        .map(([key]) => (
+                          <Text key={key} style={{ color: COLORS.danger, fontSize: 11, lineHeight: 17 }}>
+                            • {CHECKLIST_VISITA_LABELS[key] || key}
+                          </Text>
+                        ))}
+                    </View>
+                  )}
+                  {!!verification.asignacion_actual.notas_visita && (
+                    <View style={{ padding: 11, borderRadius: 13, backgroundColor: COLORS.white, gap: 4 }}>
+                      <Text style={{ color: COLORS.textLight, fontSize: 10, fontWeight: '800' }}>NOTAS DE LA VISITA</Text>
+                      <Text style={{ color: COLORS.textDark, fontSize: 11, lineHeight: 17 }}>
+                        {verification.asignacion_actual.notas_visita}
+                      </Text>
+                    </View>
+                  )}
+                  {!!verification.asignacion_actual.resultado_visita && (
+                    <View style={{ padding: 11, borderRadius: 13, backgroundColor: COLORS.white, gap: 4 }}>
+                      <Text style={{ color: COLORS.textLight, fontSize: 10, fontWeight: '800' }}>RESULTADO</Text>
+                      <Text style={{
+                        color: verification.asignacion_actual.resultado_visita === 'aprobar'
+                          ? COLORS.accent
+                          : verification.asignacion_actual.resultado_visita === 'solicitar_ajustes'
+                            ? COLORS.warning
+                            : COLORS.danger,
+                        fontSize: 12,
+                        fontWeight: '900',
+                      }}>
+                        {verification.asignacion_actual.resultado_visita === 'aprobar'
+                          ? 'Hogar aprobado'
+                          : verification.asignacion_actual.resultado_visita === 'solicitar_ajustes'
+                            ? 'Se solicitaron ajustes'
+                            : 'Hogar no aprobado'}
+                      </Text>
+                      {!!verification.asignacion_actual.motivo_resultado_visita && (
+                        <Text style={{ color: COLORS.textDark, fontSize: 11, lineHeight: 17 }}>
+                          {verification.asignacion_actual.motivo_resultado_visita}
+                        </Text>
+                      )}
+                    </View>
+                  )}
+                </View>
+              )}
+
+            {verification.estado === 'pendiente_asignacion' &&
+              verification.asignacion_actual?.estado === 'rechazada' && (
+                <View style={{ padding: 16, borderRadius: 18, backgroundColor: '#FFF7E6', borderWidth: 1, borderColor: '#F5DCA7', gap: 7 }}>
+                  <Text style={{ color: COLORS.warning, fontWeight: '900' }}>Necesitamos buscar a otra persona</Text>
+                  <Text style={{ color: COLORS.textDark, fontSize: 13, lineHeight: 19 }}>
+                    {verification.asignacion_actual.verificador_nombre || 'La persona seleccionada'} no pudo realizar la visita.
+                  </Text>
+                  {!!verification.asignacion_actual.motivo_rechazo && (
+                    <Text style={{ color: COLORS.textLight, fontSize: 12, lineHeight: 18 }}>
+                      Motivo: {verification.asignacion_actual.motivo_rechazo}
+                    </Text>
+                  )}
+                </View>
+              )}
           </View>
         </View>
       </ScrollView>
@@ -1102,6 +1326,27 @@ export function ExternalVerificationDetail({
             {isSubmitting
               ? <ActivityIndicator color={COLORS.white} />
               : <Text style={{ color: COLORS.white, fontWeight: '800' }}>Buscar verificador cercano</Text>}
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {verification.estado === 'pendiente_asignacion' && !candidatos.length && (
+        <View style={{
+          padding: isMobile ? 16 : 20,
+          borderTopWidth: 1,
+          borderTopColor: COLORS.border,
+          flexDirection: 'row',
+          justifyContent: 'flex-end',
+          backgroundColor: COLORS.white,
+        }}>
+          <TouchableOpacity
+            onPress={prepararVisita}
+            disabled={isSubmitting}
+            style={{ minWidth: isMobile ? undefined : 220, flex: isMobile ? 1 : undefined, paddingHorizontal: 18, paddingVertical: 12, borderRadius: 14, backgroundColor: COLORS.primary, alignItems: 'center', opacity: isSubmitting ? 0.7 : 1 }}
+          >
+            {isSubmitting
+              ? <ActivityIndicator color={COLORS.white} />
+              : <Text style={{ color: COLORS.white, fontWeight: '800' }}>Buscar otra persona</Text>}
           </TouchableOpacity>
         </View>
       )}
