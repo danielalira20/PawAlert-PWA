@@ -93,6 +93,131 @@ function textList(values?: unknown[]) {
   return values.filter(Boolean).join(', ');
 }
 
+function lowerText(value: string) {
+  return value.toLocaleLowerCase('es-MX');
+}
+
+function joinNatural(values?: unknown[]) {
+  const items = (values || []).filter(Boolean).map(String);
+  if (!items.length) return '';
+  if (items.length === 1) return items[0];
+  if (items.length === 2) return `${items[0]} y ${items[1]}`;
+  return `${items.slice(0, -1).join(', ')} y ${items.at(-1)}`;
+}
+
+function buildApplicationSummary({
+  nombre,
+  verification,
+  hogar,
+  disponibilidad,
+  movilidad,
+  manejo,
+  casa,
+  evidencias,
+}: {
+  nombre: string;
+  verification: VerificationData;
+  hogar: NonNullable<VerificationData['hogar']>;
+  disponibilidad: any;
+  movilidad: any;
+  manejo: any;
+  casa: any;
+  evidencias: any;
+}) {
+  const paragraphs: string[] = [];
+  const distance = verification.distancia_asociacion_km;
+  const days = joinNatural(disponibilidad.dias);
+  const timeSlots = joinNatural(disponibilidad.franjas);
+  const reaction = disponibilidad.tiempo_reaccion;
+
+  const locationSentence = distance != null
+    ? `${nombre} se encuentra a ${distance} km de la asociación.`
+    : `${nombre} registró la ubicación de su casa temporal.`;
+  const availabilityParts = [
+    days ? `declaró disponibilidad los días ${lowerText(days)}` : '',
+    timeSlots ? `principalmente en horario ${lowerText(timeSlots)}` : '',
+    reaction ? `con ${lowerText(reaction)}` : '',
+  ].filter(Boolean);
+  paragraphs.push(
+    availabilityParts.length
+      ? `${locationSentence} ${availabilityParts.join(', ')}.`
+      : locationSentence,
+  );
+
+  const mobilityParts: string[] = [];
+  if (movilidad.radio_max_km) {
+    mobilityParts.push(`Puede desplazarse hasta ${movilidad.radio_max_km} km`);
+  }
+  const transport = joinNatural(movilidad.medios_transporte);
+  if (transport) {
+    mobilityParts.push(`suele utilizar ${lowerText(transport)}`);
+  }
+  if (movilidad.vehiculo_apto_traslado) {
+    mobilityParts.push('cuenta con una unidad apta para trasladar animales');
+  }
+  if (mobilityParts.length) {
+    paragraphs.push(`${mobilityParts.join(' y ')}.`);
+  }
+
+  const species = joinNatural(manejo.especies);
+  const sizes = joinNatural(manejo.tamanios);
+  const fieldExperience = joinNatural(manejo.experiencias_campo);
+  let experienceText = species
+    ? `Declaró experiencia con ${lowerText(species)}`
+    : '';
+  if (sizes) {
+    experienceText += experienceText
+      ? `, incluidos animales de tamaños ${lowerText(sizes)}`
+      : `Indicó que puede manejar animales de tamaños ${lowerText(sizes)}`;
+  }
+  if (experienceText) {
+    experienceText += '.';
+  }
+  if (fieldExperience) {
+    experienceText += `${experienceText ? ' ' : ''}Su experiencia en campo incluye ${lowerText(fieldExperience)}.`;
+  }
+  if (experienceText) {
+    paragraphs.push(experienceText);
+  }
+
+  const homeParts: string[] = [];
+  if (
+    casa.puede_aislar === 'si'
+    || casa.condiciones_declaradas?.espacio_aislamiento === true
+  ) {
+    homeParts.push('cuenta con un espacio para mantener al animal separado');
+  }
+  if (casa.acepta_visita === 'si') {
+    homeParts.push('acepta una visita de verificación');
+  } else if (casa.acepta_visita === 'no') {
+    homeParts.push('indicó que no acepta una visita de verificación');
+  }
+  if (homeParts.length) {
+    paragraphs.push(`La vivienda ${joinNatural(homeParts)}.`);
+  }
+
+  const evidenceLabels = [
+    evidencias.identificacion_recibida ? 'identificación' : '',
+    evidencias.video_recibido ? 'video del hogar' : '',
+    hogar.latitud != null && hogar.longitud != null ? 'ubicación declarada' : '',
+  ].filter(Boolean);
+
+  let modality = 'Aún por definir; primero se buscará una persona verificadora cercana.';
+  if (verification.modalidad === 'presencial') {
+    modality = verification.estado === 'visita_propuesta'
+      ? 'Presencial; la propuesta de visita está esperando confirmación.'
+      : 'Presencial.';
+  } else if (verification.modalidad === 'remota') {
+    modality = 'Remota; no se encontraron verificadores disponibles dentro de su radio de desplazamiento.';
+  }
+
+  return {
+    paragraphs,
+    evidence: evidenceLabels.length ? joinNatural(evidenceLabels) : 'Ninguna evidencia registrada',
+    modality,
+  };
+}
+
 function InfoRow({ label, value }: { label: string; value: any }) {
   const visible =
     value === true || value === 'si'
@@ -267,6 +392,16 @@ export function ExternalVerificationDetail({
   const casa = resumen.hogar || {};
   const evidencias = resumen.evidencias || {};
   const alertas = resumen.alertas || [];
+  const applicationSummary = buildApplicationSummary({
+    nombre: voluntario.nombre,
+    verification,
+    hogar,
+    disponibilidad,
+    movilidad,
+    manejo,
+    casa,
+    evidencias,
+  });
 
   return (
     <View style={{ flex: 1 }}>
@@ -303,6 +438,69 @@ export function ExternalVerificationDetail({
       </View>
 
       <ScrollView contentContainerStyle={{ padding: isMobile ? 16 : 24, gap: 18 }}>
+        <View
+          style={{
+            padding: isMobile ? 17 : 20,
+            borderRadius: 20,
+            backgroundColor: '#EAF7F6',
+            borderWidth: 1,
+            borderColor: '#D2EEEB',
+            gap: 11,
+          }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
+            <View
+              style={{
+                width: 34,
+                height: 34,
+                borderRadius: 17,
+                backgroundColor: COLORS.white,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Ionicons name="document-text-outline" size={19} color={COLORS.accent} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: COLORS.textDark, fontSize: 15, fontWeight: '900' }}>
+                Resumen de la postulación
+              </Text>
+              <Text style={{ marginTop: 2, color: COLORS.textLight, fontSize: 11 }}>
+                Síntesis de la información declarada
+              </Text>
+            </View>
+          </View>
+
+          <View style={{ gap: 7 }}>
+            {applicationSummary.paragraphs.map((paragraph, index) => (
+              <Text
+                key={`${index}-${paragraph}`}
+                style={{ color: COLORS.textDark, fontSize: 13, lineHeight: 20 }}
+              >
+                {paragraph}
+              </Text>
+            ))}
+          </View>
+
+          <View
+            style={{
+              paddingTop: 10,
+              borderTopWidth: 1,
+              borderTopColor: '#C9E7E3',
+              gap: 5,
+            }}
+          >
+            <Text style={{ color: COLORS.textDark, fontSize: 12, lineHeight: 18 }}>
+              <Text style={{ fontWeight: '800' }}>Evidencias recibidas: </Text>
+              {applicationSummary.evidence}.
+            </Text>
+            <Text style={{ color: COLORS.textDark, fontSize: 12, lineHeight: 18 }}>
+              <Text style={{ fontWeight: '800' }}>Modalidad de verificación: </Text>
+              {applicationSummary.modality}
+            </Text>
+          </View>
+        </View>
+
         <View style={{ flexDirection: isMobile ? 'column' : 'row', gap: 18, alignItems: 'flex-start' }}>
           <View style={{ width: isMobile ? '100%' : 285, gap: 14 }}>
             <SectionCard icon="location-outline" title="Ubicación y distancia">
