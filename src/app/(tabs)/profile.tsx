@@ -1,6 +1,6 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useCallback, useRef, useEffect, useState } from 'react';
 import { Animated, View, Text, TouchableOpacity, Image, Platform, Dimensions, Modal } from 'react-native';
-import { router } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import AdminDashboardScreen from '../../screens/AdminDashboardScreen';
@@ -12,6 +12,7 @@ import StaffAsignacionScreen from '../../screens/StaffAsignacionScreen';
 import MiPostulacionScreen from '../../screens/MiPostulacionScreen'; 
 import CapacidadesFormScreen from '../../screens/CapacidadesFormScreen';
 import ExternalVolunteerFormScreen from '../../screens/ExternalVolunteerFormScreen';
+import MisVerificacionesScreen from '../../screens/MisVerificacionesScreen';
 import { AppModal } from '@/components/AppModal';
 import { LoggedOutProfile } from '../../components/profile/LoggedOutProfile';
 import { LoggedInProfile } from '../../components/profile/LoggedInProfile';
@@ -20,7 +21,7 @@ const { width } = Dimensions.get('window');
 const isWeb = Platform.OS === 'web';
 
 export default function ProfileScreen() {
-  const { user, isLoggedIn, logout } = useAuth();
+  const { user, isLoggedIn, logout, refreshUser } = useAuth();
   
   const [isAdminVisible, setIsAdminVisible] = useState(false);
   const [isAssociationVisible, setIsAssociationVisible] = useState(false);
@@ -35,6 +36,7 @@ export default function ProfileScreen() {
   const [isPostulacionVisible, setIsPostulacionVisible] = useState(false);
   const [isCapacidadesVisible, setIsCapacidadesVisible] = useState(false);
   const [isExternalRetryVisible, setIsExternalRetryVisible] = useState(false);
+  const [isVerificacionesVisible, setIsVerificacionesVisible] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(24)).current;
@@ -50,6 +52,14 @@ export default function ProfileScreen() {
     ]).start();
   }, []);
 
+  useFocusEffect(
+    useCallback(() => {
+      if (isLoggedIn) {
+        void refreshUser();
+      }
+    }, [isLoggedIn, refreshUser]),
+  );
+
   useEffect(() => {
     if (!isLoggedIn) {
       setIsMisReportesVisible(false);
@@ -61,6 +71,7 @@ export default function ProfileScreen() {
       setIsPostulacionVisible(false);
       setIsCapacidadesVisible(false);
       setIsExternalRetryVisible(false);
+      setIsVerificacionesVisible(false);
     }
   }, [isLoggedIn]);
 
@@ -78,6 +89,7 @@ export default function ProfileScreen() {
         onOpenAdminPanel={() => setIsAdminVisible(true)}
         onOpenAssociationPanel={() => setIsAssociationVisible(true)}
         onOpenStaffPanel={() => setIsStaffVisible(true)}
+        onOpenVerificaciones={() => setIsVerificacionesVisible(true)}
         onOpenStaffAsignacion={() => setIsStaffAsignacionVisible(true)}
         // 3. Pasar las funciones de apertura al componente
         onOpenPostulacion={() => setIsPostulacionVisible(true)}
@@ -145,6 +157,18 @@ export default function ProfileScreen() {
               setCapacidadesRefreshKey((k) => k + 1);
             }}
             fromProfile={true} 
+          />
+        )}
+      </AppModal>
+
+      <AppModal
+        visible={isVerificacionesVisible}
+        onClose={() => setIsVerificacionesVisible(false)}
+        maxWidth={1000}
+      >
+        {isVerificacionesVisible && (
+          <MisVerificacionesScreen
+            onClose={() => setIsVerificacionesVisible(false)}
           />
         )}
       </AppModal>

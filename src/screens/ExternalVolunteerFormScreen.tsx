@@ -323,6 +323,7 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
   const validarPaso4 = () => {
     const newErrors: { [key: string]: string } = {};
     if (!identificacionUrl) newErrors.identificacionUrl = 'Debes subir una identificación.';
+    if (!videoUrl) newErrors.videoUrl = 'Debes subir un video recorrido de tu hogar.';
     if (!horario1Dia || !horario1Hora) newErrors.horarios = 'Ingresa al menos la primera opción completa.';
     if (!consentimiento) newErrors.consentimiento = 'Debes aceptar los términos.';
     
@@ -862,7 +863,10 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
 
       <Divider />
 
-      <FormSection title="Recorrido del Hogar (Opcional pero recomendado)" subtitle="Un video corto mostrando los accesos y el lugar donde dormirá el animal agiliza tu aprobación.">
+      <FormSection 
+        title="Recorrido del Hogar *" 
+        subtitle="Un video corto mostrando los accesos y el lugar donde dormirá el animal es obligatorio para tu aprobación."
+      >
         {videoUrl ? (
           <View style={[styles.fotoItem, { backgroundColor: 'rgba(102, 188, 180, 0.1)' }]}>
             <Ionicons name="videocam" size={32} color={COLORS.bgTeal} style={{ marginHorizontal: 16 }} />
@@ -879,10 +883,11 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
             </View>
           </View>
         ) : (
-          <TouchableOpacity onPress={handlePickVideo} style={[styles.addPhotoButton, { width: '100%', borderColor: COLORS.bgTeal }]}>
-            <Text style={{ color: COLORS.bgTeal, fontWeight: '700' }}><Ionicons name="videocam" size={16}/> Subir Video Recorrido</Text>
+          <TouchableOpacity onPress={handlePickVideo} style={[styles.addPhotoButton, { width: '100%', borderColor: errors.videoUrl ? COLORS.danger : COLORS.bgTeal }]}>
+            <Text style={{ color: errors.videoUrl ? COLORS.danger : COLORS.bgTeal, fontWeight: '700' }}><Ionicons name="videocam" size={16}/> Subir Video Recorrido</Text>
           </TouchableOpacity>
         )}
+        {errors.videoUrl && <Text style={styles.errorText}>{errors.videoUrl}</Text>}
       </FormSection>
 
       <Divider />

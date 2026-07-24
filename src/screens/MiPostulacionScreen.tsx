@@ -19,6 +19,7 @@ import { Brand } from '../constants/theme';
 import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
 import CapacidadesFormScreen from '../screens/CapacidadesFormScreen';
+import VisitCoordinationCard from '../components/home-verification/VisitCoordinationCard';
 
 const COLORS = {
   bgTeal: '#66BCB4',
@@ -79,7 +80,13 @@ export default function MiPostulacionScreen({ onClose, onRetryExternal }: Props)
       case 'postulacion_pendiente':
       case 'revision_remota':
       case 'requiere_cambios':
+      case 'visita_aceptada':
+      case 'coordinando_visita':
         return COLORS.warning;
+      case 'visita_programada':
+      case 'visita_en_curso':
+      case 'visita_realizada':
+        return COLORS.bgTeal;
       case 'rechazada':
       case 'rechazado':
         return COLORS.danger;
@@ -101,6 +108,11 @@ export default function MiPostulacionScreen({ onClose, onRetryExternal }: Props)
       rechazada: 'Rechazada',
       revision_remota: 'Revisión remota',
       requiere_cambios: 'Nueva evidencia solicitada',
+      visita_aceptada: 'Visita aceptada',
+      coordinando_visita: 'Coordinando visita',
+      visita_programada: 'Visita programada',
+      visita_en_curso: 'Visita en curso',
+      visita_realizada: 'Visita realizada',
     };
     return labels[estado] || estado;
   };
@@ -119,6 +131,16 @@ export default function MiPostulacionScreen({ onClose, onRetryExternal }: Props)
         'La asociación está revisando tu hogar con las evidencias que compartiste.',
       requiere_cambios:
         'La asociación necesita un nuevo recorrido para continuar con tu revisión.',
+      visita_aceptada:
+        'Una persona verificadora aceptó visitar tu hogar.',
+      coordinando_visita:
+        'Estamos acordando contigo la fecha y hora de la visita.',
+      visita_programada:
+        'La fecha y hora de tu visita ya fueron confirmadas.',
+      visita_en_curso:
+        'La persona verificadora registró su llegada y está revisando el hogar.',
+      visita_realizada:
+        'La visita terminó y se está registrando el resultado.',
       dado_de_baja: 'Tu cuenta como voluntario ha sido temporalmente desactivada.',
       baja_definitiva: 'Tu cuenta como voluntario ha sido cerrada permanentemente.',
     };
@@ -134,7 +156,15 @@ export default function MiPostulacionScreen({ onClose, onRetryExternal }: Props)
       case 'pendiente':
       case 'postulacion_pendiente':
       case 'revision_remota':
+      case 'visita_aceptada':
+      case 'coordinando_visita':
         return 'time-outline';
+      case 'visita_programada':
+        return 'calendar-outline';
+      case 'visita_en_curso':
+        return 'shield-checkmark-outline';
+      case 'visita_realizada':
+        return 'clipboard-outline';
       case 'requiere_cambios':
         return 'videocam-outline';
       case 'rechazada':
@@ -198,9 +228,17 @@ export default function MiPostulacionScreen({ onClose, onRetryExternal }: Props)
   const postulacion = data.postulacion_actual;
   const intentosPrevios = data.intentos_previos || [];
   const verificacionHogar = postulacion?.verificacion_hogar;
-  const estadoPresentado =
-    verificacionHogar?.estado === 'requiere_cambios' ||
-    verificacionHogar?.estado === 'revision_remota'
+  const estadosVisiblesVerificacion = [
+    'requiere_cambios',
+    'revision_remota',
+    'visita_aceptada',
+    'coordinando_visita',
+    'visita_programada',
+    'visita_en_curso',
+    'visita_realizada',
+  ];
+  const estadoPresentado = verificacionHogar?.estado
+    && estadosVisiblesVerificacion.includes(verificacionHogar.estado)
       ? verificacionHogar.estado
       : voluntario.estado;
 
@@ -338,6 +376,18 @@ export default function MiPostulacionScreen({ onClose, onRetryExternal }: Props)
                 </Text>
               </View>
             )}
+
+            {verificacionHogar?.estado &&
+              [
+                'visita_aceptada',
+                'coordinando_visita',
+                'visita_programada',
+                'visita_en_curso',
+                'visita_realizada',
+              ]
+                .includes(verificacionHogar.estado) && (
+                <VisitCoordinationCard onUpdated={refetch} />
+              )}
 
             {verificacionHogar?.estado === 'revision_remota' && (
               <View style={{
