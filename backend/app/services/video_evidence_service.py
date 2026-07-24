@@ -370,7 +370,6 @@ def _analizar_con_gemini(archivo: dict) -> AnalisisVideoHogar:
                 ],
             }],
             "generationConfig": {
-                "temperature": 0.1,
                 "responseMimeType": "application/json",
                 "responseJsonSchema": ANALISIS_SCHEMA,
             },

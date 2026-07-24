@@ -58,7 +58,7 @@ agrega una clave de Gemini únicamente en el entorno del backend:
 
 ```
 GEMINI_API_KEY=tu-clave-de-google-ai-studio
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-3.5-flash-lite
 ```
 
 La clave nunca debe guardarse en el frontend ni subirse al repositorio. Si no
