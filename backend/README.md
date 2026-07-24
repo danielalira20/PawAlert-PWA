@@ -65,6 +65,46 @@ La clave nunca debe guardarse en el frontend ni subirse al repositorio. Si no
 se configura, el video permanece disponible para revisión manual y la
 validación local de metadatos de ubicación continúa funcionando.
 
+### Avisos de WhatsApp con Twilio
+
+Los avisos de horarios y seguridad son secundarios: primero se confirma la
+acción en PawAlert y después se encola el mensaje. Si Twilio está apagado o
+falla, el flujo principal continúa funcionando.
+
+Para probar con Twilio Sandbox:
+
+1. Activa el Sandbox de WhatsApp en Twilio y une cada teléfono de prueba con
+   `join <código del sandbox>`.
+2. Expón el backend con una URL HTTPS pública (por ejemplo, ngrok en local).
+3. Configura:
+
+```env
+WHATSAPP_NOTIFICATIONS_ENABLED=true
+TWILIO_ACCOUNT_SID=AC...
+TWILIO_AUTH_TOKEN=...
+TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
+TWILIO_WEBHOOK_BASE_URL=https://tu-url-publica
+FRONTEND_URL=https://tu-frontend-publico
+```
+
+No guardes las credenciales en Git. El callback público de estado es:
+
+```text
+POST /webhooks/twilio/whatsapp/status
+```
+
+Para generar los recordatorios de seguridad de 50 y 60 minutos y reintentar
+avisos pendientes, ejecuta cada minuto:
+
+```text
+POST /internal/whatsapp/run
+X-Cron-Secret: <CRON_SECRET>
+```
+
+En producción, los mensajes iniciados fuera de la ventana de atención de
+WhatsApp deberán migrarse a templates de utilidad aprobados. El Sandbox se
+usa únicamente para pruebas.
+
 ## Correr el servidor
 
 ```bash

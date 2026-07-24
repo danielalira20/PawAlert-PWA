@@ -11,6 +11,10 @@ from fastapi import APIRouter, Header, HTTPException
 
 from app.config import settings
 from app.services.escalamiento import evaluar_escalamientos
+from app.services.whatsapp_notification_service import (
+    evaluar_recordatorios_seguridad,
+    procesar_pendientes,
+)
 
 router = APIRouter()
 
@@ -20,3 +24,14 @@ def correr_escalamiento(x_cron_secret: Optional[str] = Header(None)):
     if not settings.cron_secret or x_cron_secret != settings.cron_secret:
         raise HTTPException(status_code=401, detail="No autorizado")
     return evaluar_escalamientos()
+
+
+@router.post("/whatsapp/run")
+def correr_notificaciones_whatsapp(
+    x_cron_secret: Optional[str] = Header(None),
+):
+    if not settings.cron_secret or x_cron_secret != settings.cron_secret:
+        raise HTTPException(status_code=401, detail="No autorizado")
+    seguridad = evaluar_recordatorios_seguridad()
+    envios = procesar_pendientes()
+    return {"seguridad": seguridad, "envios": envios}
