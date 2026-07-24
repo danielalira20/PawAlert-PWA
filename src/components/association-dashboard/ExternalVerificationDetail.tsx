@@ -436,6 +436,16 @@ export function ExternalVerificationDetail({
   }, [verification?.analisis_video_estado, postulacion.id, token]);
 
   useEffect(() => {
+    if (!['visita_programada', 'visita_en_curso', 'visita_realizada'].includes(
+      verification?.estado || '',
+    )) return;
+    const interval = setInterval(() => {
+      cargar(true);
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [verification?.estado, postulacion.id, token]);
+
+  useEffect(() => {
     const visit = verification?.asignacion_actual;
     if (!visit?.check_in_at || visit.check_out_at) return;
     setSafetyNow(Date.now());
