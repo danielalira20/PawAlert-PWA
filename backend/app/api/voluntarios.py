@@ -45,6 +45,9 @@ from app.services.home_verification_service import (
     resolver_resultado_visita,
 )
 from app.services.video_evidence_service import procesar_evidencia_verificacion
+from app.services.whatsapp_notification_service import (
+    notificar_evento_asignacion,
+)
 
 router = APIRouter()
 
@@ -133,16 +136,24 @@ async def get_mi_verificacion_hogar(
 async def patch_responder_verificacion_hogar(
     asignacion_id: str,
     body: ResponderPropuestaVerificacionRequest,
+    background_tasks: BackgroundTasks,
     authorization: str = Header(None),
 ):
     usuario = _obtener_usuario_autenticado(authorization)
     voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
-    return responder_propuesta_verificacion_hogar(
+    resultado = responder_propuesta_verificacion_hogar(
         asignacion_id=asignacion_id,
         verificador_voluntario_id=voluntario_id,
         respuesta=body.respuesta.value,
         motivo=body.motivo,
     )
+    if body.respuesta.value == "aceptar":
+        background_tasks.add_task(
+            notificar_evento_asignacion,
+            "verificador_asignado",
+            asignacion_id,
+        )
+    return resultado
 
 
 @router.patch(
@@ -152,16 +163,23 @@ async def patch_responder_verificacion_hogar(
 async def patch_proponer_horario_verificacion(
     asignacion_id: str,
     body: ProponerHorarioVisitaRequest,
+    background_tasks: BackgroundTasks,
     authorization: str = Header(None),
 ):
     usuario = _obtener_usuario_autenticado(authorization)
     voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
-    return proponer_horario_verificacion_hogar(
+    resultado = proponer_horario_verificacion_hogar(
         asignacion_id=asignacion_id,
         verificador_voluntario_id=voluntario_id,
         horario=body.horario,
         motivo=body.motivo,
     )
+    background_tasks.add_task(
+        notificar_evento_asignacion,
+        "horario_propuesto_postulante",
+        asignacion_id,
+    )
+    return resultado
 
 
 @router.patch(
@@ -170,14 +188,21 @@ async def patch_proponer_horario_verificacion(
 )
 async def patch_confirmar_horario_verificacion(
     asignacion_id: str,
+    background_tasks: BackgroundTasks,
     authorization: str = Header(None),
 ):
     usuario = _obtener_usuario_autenticado(authorization)
     voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
-    return confirmar_horario_como_verificador(
+    resultado = confirmar_horario_como_verificador(
         asignacion_id=asignacion_id,
         verificador_voluntario_id=voluntario_id,
     )
+    background_tasks.add_task(
+        notificar_evento_asignacion,
+        "horario_confirmado",
+        asignacion_id,
+    )
+    return resultado
 
 
 @router.patch(
@@ -187,16 +212,23 @@ async def patch_confirmar_horario_verificacion(
 async def patch_check_in_verificacion(
     asignacion_id: str,
     body: CheckInVisitaRequest,
+    background_tasks: BackgroundTasks,
     authorization: str = Header(None),
 ):
     usuario = _obtener_usuario_autenticado(authorization)
     voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
-    return registrar_check_in_visita(
+    resultado = registrar_check_in_visita(
         asignacion_id=asignacion_id,
         verificador_voluntario_id=voluntario_id,
         latitud=body.latitud,
         longitud=body.longitud,
     )
+    background_tasks.add_task(
+        notificar_evento_asignacion,
+        "check_in_asociacion",
+        asignacion_id,
+    )
+    return resultado
 
 
 @router.put(
@@ -223,14 +255,26 @@ async def put_checklist_verificacion(
 )
 async def patch_check_out_verificacion(
     asignacion_id: str,
+    background_tasks: BackgroundTasks,
     authorization: str = Header(None),
 ):
     usuario = _obtener_usuario_autenticado(authorization)
     voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
-    return registrar_check_out_visita(
+    resultado = registrar_check_out_visita(
         asignacion_id=asignacion_id,
         verificador_voluntario_id=voluntario_id,
     )
+    background_tasks.add_task(
+        notificar_evento_asignacion,
+        "check_out_asociacion",
+        asignacion_id,
+    )
+    background_tasks.add_task(
+        notificar_evento_asignacion,
+        "visita_finalizada_postulante",
+        asignacion_id,
+    )
+    return resultado
 
 
 @router.patch(
@@ -240,16 +284,23 @@ async def patch_check_out_verificacion(
 async def patch_resultado_verificacion(
     asignacion_id: str,
     body: ResultadoVisitaRequest,
+    background_tasks: BackgroundTasks,
     authorization: str = Header(None),
 ):
     usuario = _obtener_usuario_autenticado(authorization)
     voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
-    return resolver_resultado_visita(
+    resultado = resolver_resultado_visita(
         asignacion_id=asignacion_id,
         verificador_voluntario_id=voluntario_id,
         resultado=body.resultado.value,
         motivo=body.motivo,
     )
+    background_tasks.add_task(
+        notificar_evento_asignacion,
+        "resultado_actualizado",
+        asignacion_id,
+    )
+    return resultado
 
 
 @router.get("/me/coordinacion-visita", status_code=200)
@@ -264,16 +315,29 @@ async def get_coordinacion_visita_postulante(
 @router.patch("/me/coordinacion-visita/responder", status_code=200)
 async def patch_responder_horario_postulante(
     body: ResponderHorarioPostulanteRequest,
+    background_tasks: BackgroundTasks,
     authorization: str = Header(None),
 ):
     usuario = _obtener_usuario_autenticado(authorization)
     voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
-    return responder_horario_como_postulante(
+    resultado = responder_horario_como_postulante(
         voluntario_postulante_id=voluntario_id,
         respuesta=body.respuesta.value,
         horario=body.horario,
         motivo=body.motivo,
     )
+    asignacion_id = resultado.get("asignacion_id")
+    if asignacion_id:
+        background_tasks.add_task(
+            notificar_evento_asignacion,
+            (
+                "horario_confirmado"
+                if body.respuesta.value == "confirmar"
+                else "horario_propuesto_verificador"
+            ),
+            asignacion_id,
+        )
+    return resultado
 
 
 @router.get("/me/capacidades", status_code=200)

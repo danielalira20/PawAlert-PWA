@@ -1237,6 +1237,7 @@ def responder_horario_como_postulante(
             "updated_at": ahora,
         }).eq("id", coordinacion["verificacion_hogar_id"]).execute()
         return {
+            "asignacion_id": coordinacion["id"],
             "horario_estado": "confirmado",
             "visita_programada_at": horario_confirmado,
             "estado_verificacion": "visita_programada",
@@ -1273,6 +1274,7 @@ def responder_horario_como_postulante(
         "updated_at": ahora,
     }).eq("id", coordinacion["verificacion_hogar_id"]).execute()
     return {
+        "asignacion_id": coordinacion["id"],
         "horario_estado": "pendiente_verificador",
         "horario_propuesto_at": horario_iso,
         "estado_verificacion": "coordinando_visita",
