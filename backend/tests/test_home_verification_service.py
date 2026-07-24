@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.services.home_verification_service import generar_resumen_expediente
@@ -398,3 +399,71 @@ def test_verificador_rechaza_y_caso_regresa_a_asignacion(make_query):
         verificaciones.update.call_args.args[0]["estado"]
         == "pendiente_asignacion"
     )
+
+
+def test_verificador_propone_horario_sin_programar_visita(make_query):
+    asignaciones = make_query(data=[{
+        "id": "asig-1",
+        "verificacion_hogar_id": "ver-1",
+        "estado": "aceptada",
+        "horario_estado": "sin_propuesta",
+    }])
+    verificaciones = make_query(data=[{"id": "ver-1"}])
+    cliente = MagicMock()
+    cliente.table.side_effect = lambda tabla: {
+        "asignaciones_verificacion_hogar": asignaciones,
+        "verificaciones_hogar": verificaciones,
+    }[tabla]
+    horario = datetime.now(timezone.utc) + timedelta(days=2)
+
+    with patch.object(home_verification_service, "supabase_admin", cliente):
+        resultado = (
+            home_verification_service.proponer_horario_verificacion_hogar(
+                "asig-1",
+                "vol-verificador",
+                horario,
+            )
+        )
+
+    cambio = asignaciones.update.call_args.args[0]
+    assert cambio["horario_estado"] == "pendiente_postulante"
+    assert cambio["visita_programada_at"] is None
+    assert resultado["estado_verificacion"] == "coordinando_visita"
+    assert (
+        verificaciones.update.call_args.args[0]["estado"]
+        == "coordinando_visita"
+    )
+
+
+def test_postulante_confirma_y_programa_visita(make_query):
+    asignaciones = make_query(data=[{"id": "asig-1"}])
+    verificaciones = make_query(data=[{"id": "ver-1"}])
+    cliente = MagicMock()
+    cliente.table.side_effect = lambda tabla: {
+        "asignaciones_verificacion_hogar": asignaciones,
+        "verificaciones_hogar": verificaciones,
+    }[tabla]
+    coordinacion = {
+        "id": "asig-1",
+        "verificacion_hogar_id": "ver-1",
+        "horario_estado": "pendiente_postulante",
+        "horario_propuesto_at": "2026-08-10T16:00:00+00:00",
+    }
+
+    with (
+        patch.object(home_verification_service, "supabase_admin", cliente),
+        patch.object(
+            home_verification_service,
+            "obtener_coordinacion_visita_postulante",
+            return_value=coordinacion,
+        ),
+    ):
+        resultado = home_verification_service.responder_horario_como_postulante(
+            "vol-postulante",
+            "confirmar",
+        )
+
+    cambio = asignaciones.update.call_args.args[0]
+    assert cambio["horario_estado"] == "confirmado"
+    assert cambio["visita_programada_at"] == coordinacion["horario_propuesto_at"]
+    assert resultado["estado_verificacion"] == "visita_programada"

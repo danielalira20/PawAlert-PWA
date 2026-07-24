@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field, model_validator
 from typing import Optional
 from enum import Enum
+from datetime import datetime
 
 
 class TipoVoluntarioEnum(str, Enum):
@@ -54,6 +55,35 @@ class ResponderPropuestaVerificacionRequest(BaseModel):
 
     respuesta: RespuestaPropuestaVerificacionEnum
     motivo: Optional[str] = Field(default=None, max_length=250)
+
+
+class ProponerHorarioVisitaRequest(BaseModel):
+    """Fecha y hora sugerida para realizar una visita presencial."""
+
+    horario: datetime
+    motivo: Optional[str] = Field(default=None, max_length=250)
+
+
+class RespuestaHorarioPostulanteEnum(str, Enum):
+    confirmar = "confirmar"
+    proponer_cambio = "proponer_cambio"
+
+
+class ResponderHorarioPostulanteRequest(BaseModel):
+    """Confirmación o contrapropuesta de la persona postulante."""
+
+    respuesta: RespuestaHorarioPostulanteEnum
+    horario: Optional[datetime] = None
+    motivo: Optional[str] = Field(default=None, max_length=250)
+
+    @model_validator(mode="after")
+    def validar_contrapropuesta(self):
+        if self.respuesta == RespuestaHorarioPostulanteEnum.proponer_cambio:
+            if self.horario is None:
+                raise ValueError("Selecciona una nueva fecha y hora")
+            if not (self.motivo or "").strip():
+                raise ValueError("Explica brevemente por qué necesitas cambiarla")
+        return self
 
 
 class DiaSemanaEnum(str, Enum):

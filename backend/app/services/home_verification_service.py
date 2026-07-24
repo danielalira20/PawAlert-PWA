@@ -437,7 +437,9 @@ def obtener_verificacion_postulacion(
         "asignaciones_verificacion_hogar"
     ).select(
         "id, verificador_voluntario_id, distancia_km, estado, propuesta_at, "
-        "respondida_at, visita_programada_at, motivo_rechazo"
+        "respondida_at, visita_programada_at, motivo_rechazo, "
+        "horario_propuesto_at, horario_propuesto_por, horario_estado, "
+        "horario_respondido_at, motivo_reagenda"
     ).eq("verificacion_hogar_id", verificacion["id"]).order(
         "propuesta_at", desc=True
     ).limit(1).execute()
@@ -830,7 +832,9 @@ def listar_propuestas_verificacion_hogar(
         "asignaciones_verificacion_hogar"
     ).select(
         "id, verificacion_hogar_id, distancia_km, tramo_distancia, estado, "
-        "propuesta_at, respondida_at, visita_programada_at, motivo_rechazo"
+        "propuesta_at, respondida_at, visita_programada_at, motivo_rechazo, "
+        "horario_propuesto_at, horario_propuesto_por, horario_estado, "
+        "horario_respondido_at, motivo_reagenda"
     ).eq(
         "verificador_voluntario_id", verificador_voluntario_id
     ).order("propuesta_at", desc=True).execute().data or []
@@ -887,7 +891,8 @@ def obtener_propuesta_verificacion_hogar(
     ).select(
         "id, verificacion_hogar_id, distancia_km, tramo_distancia, estado, "
         "propuesta_at, respondida_at, visita_programada_at, notas_previas, "
-        "motivo_rechazo"
+        "motivo_rechazo, horario_propuesto_at, horario_propuesto_por, "
+        "horario_estado, horario_respondido_at, motivo_reagenda"
     ).eq("id", asignacion_id).eq(
         "verificador_voluntario_id", verificador_voluntario_id
     ).limit(1).execute()
@@ -1012,4 +1017,249 @@ def responder_propuesta_verificacion_hogar(
         "estado": "rechazada",
         "estado_verificacion": "pendiente_asignacion",
         "mensaje": "Rechazaste la visita. La asociación buscará a otra persona.",
+    }
+
+
+def _normalizar_horario_futuro(horario: datetime) -> str:
+    if horario.tzinfo is None:
+        horario = horario.replace(tzinfo=timezone.utc)
+    horario_utc = horario.astimezone(timezone.utc)
+    if horario_utc <= datetime.now(timezone.utc):
+        raise HTTPException(
+            status_code=422,
+            detail="Selecciona una fecha y hora futura",
+        )
+    return horario_utc.isoformat()
+
+
+def proponer_horario_verificacion_hogar(
+    asignacion_id: str,
+    verificador_voluntario_id: str,
+    horario: datetime,
+    motivo: str | None = None,
+) -> dict:
+    asignacion = supabase_admin.table(
+        "asignaciones_verificacion_hogar"
+    ).select(
+        "id, verificacion_hogar_id, estado, horario_estado"
+    ).eq("id", asignacion_id).eq(
+        "verificador_voluntario_id", verificador_voluntario_id
+    ).limit(1).execute()
+    if not asignacion.data:
+        raise HTTPException(status_code=404, detail="Visita no encontrada")
+    visita = asignacion.data[0]
+    if visita["estado"] != "aceptada":
+        raise HTTPException(
+            status_code=409,
+            detail="Primero debes aceptar la propuesta de visita",
+        )
+
+    motivo_limpio = (motivo or "").strip()
+    if visita.get("horario_estado") == "confirmado" and not motivo_limpio:
+        raise HTTPException(
+            status_code=422,
+            detail="Explica brevemente por qué necesitas reagendar",
+        )
+
+    horario_iso = _normalizar_horario_futuro(horario)
+    ahora = datetime.now(timezone.utc).isoformat()
+    supabase_admin.table(
+        "asignaciones_verificacion_hogar"
+    ).update({
+        "horario_propuesto_at": horario_iso,
+        "horario_propuesto_por": "verificador",
+        "horario_estado": "pendiente_postulante",
+        "horario_respondido_at": None,
+        "motivo_reagenda": motivo_limpio or None,
+        "visita_programada_at": None,
+        "updated_at": ahora,
+    }).eq("id", asignacion_id).execute()
+    supabase_admin.table("verificaciones_hogar").update({
+        "estado": "coordinando_visita",
+        "updated_at": ahora,
+    }).eq("id", visita["verificacion_hogar_id"]).execute()
+    return {
+        "horario_estado": "pendiente_postulante",
+        "horario_propuesto_at": horario_iso,
+        "estado_verificacion": "coordinando_visita",
+        "mensaje": "Horario enviado. Esperaremos la confirmación del postulante.",
+    }
+
+
+def confirmar_horario_como_verificador(
+    asignacion_id: str,
+    verificador_voluntario_id: str,
+) -> dict:
+    asignacion = supabase_admin.table(
+        "asignaciones_verificacion_hogar"
+    ).select(
+        "id, verificacion_hogar_id, estado, horario_estado, "
+        "horario_propuesto_at"
+    ).eq("id", asignacion_id).eq(
+        "verificador_voluntario_id", verificador_voluntario_id
+    ).limit(1).execute()
+    if not asignacion.data:
+        raise HTTPException(status_code=404, detail="Visita no encontrada")
+    visita = asignacion.data[0]
+    if (
+        visita["estado"] != "aceptada"
+        or visita.get("horario_estado") != "pendiente_verificador"
+        or not visita.get("horario_propuesto_at")
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="No hay un nuevo horario pendiente de tu confirmación",
+        )
+
+    ahora = datetime.now(timezone.utc).isoformat()
+    horario = visita["horario_propuesto_at"]
+    supabase_admin.table(
+        "asignaciones_verificacion_hogar"
+    ).update({
+        "horario_estado": "confirmado",
+        "horario_respondido_at": ahora,
+        "visita_programada_at": horario,
+        "updated_at": ahora,
+    }).eq("id", asignacion_id).execute()
+    supabase_admin.table("verificaciones_hogar").update({
+        "estado": "visita_programada",
+        "updated_at": ahora,
+    }).eq("id", visita["verificacion_hogar_id"]).execute()
+    return {
+        "horario_estado": "confirmado",
+        "visita_programada_at": horario,
+        "estado_verificacion": "visita_programada",
+        "mensaje": "La visita quedó programada.",
+    }
+
+
+def obtener_coordinacion_visita_postulante(
+    voluntario_postulante_id: str,
+) -> dict:
+    verificacion = supabase_admin.table("verificaciones_hogar").select(
+        "id, asociacion_id, perfil_casa_temporal_id, estado, modalidad"
+    ).eq("voluntario_postulante_id", voluntario_postulante_id).in_(
+        "estado",
+        ["visita_aceptada", "coordinando_visita", "visita_programada"],
+    ).order("created_at", desc=True).limit(1).execute()
+    if not verificacion.data:
+        raise HTTPException(
+            status_code=404,
+            detail="No tienes una visita en coordinación",
+        )
+    proceso = verificacion.data[0]
+    asignacion = supabase_admin.table(
+        "asignaciones_verificacion_hogar"
+    ).select(
+        "id, verificador_voluntario_id, estado, horario_propuesto_at, "
+        "horario_propuesto_por, horario_estado, horario_respondido_at, "
+        "visita_programada_at, motivo_reagenda"
+    ).eq("verificacion_hogar_id", proceso["id"]).eq(
+        "estado", "aceptada"
+    ).order("propuesta_at", desc=True).limit(1).execute()
+    if not asignacion.data:
+        raise HTTPException(
+            status_code=404,
+            detail="No encontramos a la persona verificadora asignada",
+        )
+    visita = asignacion.data[0]
+    asociacion = supabase_admin.table("asociaciones").select(
+        "nombre"
+    ).eq("id", proceso["asociacion_id"]).limit(1).execute()
+    perfil = supabase_admin.table("perfil_casa_temporal").select(
+        "horarios_visita"
+    ).eq("id", proceso["perfil_casa_temporal_id"]).limit(1).execute()
+    return {
+        **visita,
+        "verificacion_hogar_id": proceso["id"],
+        "estado_verificacion": proceso["estado"],
+        "asociacion_nombre": (
+            asociacion.data[0]["nombre"] if asociacion.data else "La asociación"
+        ),
+        "verificador_nombre": _nombre_voluntario(
+            visita["verificador_voluntario_id"]
+        ),
+        "horarios_declarados": (
+            perfil.data[0].get("horarios_visita") or []
+            if perfil.data
+            else []
+        ),
+    }
+
+
+def responder_horario_como_postulante(
+    voluntario_postulante_id: str,
+    respuesta: str,
+    horario: datetime | None = None,
+    motivo: str | None = None,
+) -> dict:
+    coordinacion = obtener_coordinacion_visita_postulante(
+        voluntario_postulante_id
+    )
+    horario_estado = coordinacion.get("horario_estado")
+    ahora = datetime.now(timezone.utc).isoformat()
+
+    if respuesta == "confirmar":
+        if (
+            horario_estado != "pendiente_postulante"
+            or not coordinacion.get("horario_propuesto_at")
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="No hay un horario pendiente de tu confirmación",
+            )
+        horario_confirmado = coordinacion["horario_propuesto_at"]
+        supabase_admin.table(
+            "asignaciones_verificacion_hogar"
+        ).update({
+            "horario_estado": "confirmado",
+            "horario_respondido_at": ahora,
+            "visita_programada_at": horario_confirmado,
+            "updated_at": ahora,
+        }).eq("id", coordinacion["id"]).execute()
+        supabase_admin.table("verificaciones_hogar").update({
+            "estado": "visita_programada",
+            "updated_at": ahora,
+        }).eq("id", coordinacion["verificacion_hogar_id"]).execute()
+        return {
+            "horario_estado": "confirmado",
+            "visita_programada_at": horario_confirmado,
+            "estado_verificacion": "visita_programada",
+            "mensaje": "Confirmaste el horario de la visita.",
+        }
+
+    if respuesta != "proponer_cambio" or horario is None:
+        raise HTTPException(status_code=422, detail="Respuesta no válida")
+    if horario_estado not in ("pendiente_postulante", "confirmado"):
+        raise HTTPException(
+            status_code=409,
+            detail="La visita no está lista para solicitar un cambio",
+        )
+    motivo_limpio = (motivo or "").strip()
+    if not motivo_limpio:
+        raise HTTPException(
+            status_code=422,
+            detail="Explica brevemente por qué necesitas cambiar el horario",
+        )
+    horario_iso = _normalizar_horario_futuro(horario)
+    supabase_admin.table(
+        "asignaciones_verificacion_hogar"
+    ).update({
+        "horario_propuesto_at": horario_iso,
+        "horario_propuesto_por": "postulante",
+        "horario_estado": "pendiente_verificador",
+        "horario_respondido_at": None,
+        "visita_programada_at": None,
+        "motivo_reagenda": motivo_limpio,
+        "updated_at": ahora,
+    }).eq("id", coordinacion["id"]).execute()
+    supabase_admin.table("verificaciones_hogar").update({
+        "estado": "coordinando_visita",
+        "updated_at": ahora,
+    }).eq("id", coordinacion["verificacion_hogar_id"]).execute()
+    return {
+        "horario_estado": "pendiente_verificador",
+        "horario_propuesto_at": horario_iso,
+        "estado_verificacion": "coordinando_visita",
+        "mensaje": "Enviamos tu propuesta de horario a la persona verificadora.",
     }

@@ -11,6 +11,8 @@ from app.db.supabase import supabase
 from app.models.voluntario import (
     CapacidadesRequest,
     PostulacionRequest,
+    ProponerHorarioVisitaRequest,
+    ResponderHorarioPostulanteRequest,
     ResponderPropuestaVerificacionRequest,
 )
 import json
@@ -26,9 +28,13 @@ from app.services.voluntario_service import (
 )
 from app.services.home_verification_service import (
     finalizar_postulacion_externa,
+    confirmar_horario_como_verificador,
     listar_propuestas_verificacion_hogar,
+    obtener_coordinacion_visita_postulante,
     obtener_propuesta_verificacion_hogar,
+    proponer_horario_verificacion_hogar,
     reemplazar_video_solicitado,
+    responder_horario_como_postulante,
     responder_propuesta_verificacion_hogar,
 )
 from app.services.video_evidence_service import procesar_evidencia_verificacion
@@ -128,6 +134,65 @@ async def patch_responder_verificacion_hogar(
         asignacion_id=asignacion_id,
         verificador_voluntario_id=voluntario_id,
         respuesta=body.respuesta.value,
+        motivo=body.motivo,
+    )
+
+
+@router.patch(
+    "/me/verificaciones/{asignacion_id}/horario",
+    status_code=200,
+)
+async def patch_proponer_horario_verificacion(
+    asignacion_id: str,
+    body: ProponerHorarioVisitaRequest,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
+    return proponer_horario_verificacion_hogar(
+        asignacion_id=asignacion_id,
+        verificador_voluntario_id=voluntario_id,
+        horario=body.horario,
+        motivo=body.motivo,
+    )
+
+
+@router.patch(
+    "/me/verificaciones/{asignacion_id}/horario/confirmar",
+    status_code=200,
+)
+async def patch_confirmar_horario_verificacion(
+    asignacion_id: str,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
+    return confirmar_horario_como_verificador(
+        asignacion_id=asignacion_id,
+        verificador_voluntario_id=voluntario_id,
+    )
+
+
+@router.get("/me/coordinacion-visita", status_code=200)
+async def get_coordinacion_visita_postulante(
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
+    return obtener_coordinacion_visita_postulante(voluntario_id)
+
+
+@router.patch("/me/coordinacion-visita/responder", status_code=200)
+async def patch_responder_horario_postulante(
+    body: ResponderHorarioPostulanteRequest,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
+    return responder_horario_como_postulante(
+        voluntario_postulante_id=voluntario_id,
+        respuesta=body.respuesta.value,
+        horario=body.horario,
         motivo=body.motivo,
     )
 
