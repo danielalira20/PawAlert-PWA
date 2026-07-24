@@ -209,6 +209,7 @@ export default function AportacionFormScreen({ onClose }: Props) {
 
   const [paso, setPaso] = useState(1);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
+  const [mostrarPostEnvio, setMostrarPostEnvio] = useState(false);
   const [isLoadingGps, setIsLoadingGps] = useState(false);
 
   const [modo, setModo] = useState<Modo>('reactiva');
@@ -432,6 +433,43 @@ export default function AportacionFormScreen({ onClose }: Props) {
     setErrors({});
   };
 
+  // Tras un envío exitoso: reinicia el wizard al paso 1 pero conserva lo
+  // que tiene sentido reutilizar entre recursos (modo, necesidad, ubicación,
+  // fecha de disponibilidad, forma de entrega) — todo lo específico del
+  // recurso anterior (categoría, subcategoría, condicionales, cantidad,
+  // foto) se limpia para el nuevo.
+  const reiniciarParcial = () => {
+    setPaso(1);
+    setCategoria(null);
+    setSubcategoria(null);
+    setEspeciesAplica([]);
+    setTamanio(null);
+    setDetalleValores({});
+    setDetalleFechas({});
+    setDetalleMulti({});
+    setTipoApoyo([]);
+    setAreaServicio(null);
+    setAreaOtro('');
+    setContactoNombre('');
+    setContactoCargo('');
+    setContactoTelefono('');
+    setContactoCorreo('');
+    setCantidadValor('');
+    setCantidadUnidad('');
+    setVigencia(null);
+    setFrecuencia(null);
+    setFotoUrl(null);
+    setErrors({});
+    setMostrarPostEnvio(false);
+  };
+
+  const terminarFlujo = () => {
+    resetForm();
+    setMostrarPostEnvio(false);
+    if (onClose) onClose();
+    else router.back();
+  };
+
   const handleSubmit = async () => {
     setIsSubmitting(true);
     try {
@@ -475,7 +513,7 @@ export default function AportacionFormScreen({ onClose }: Props) {
         title: modo === 'reactiva' ? 'Aportación registrada' : 'Oferta registrada',
         message: 'Gracias por tu apoyo a la Red de Aliados.',
       });
-      resetForm();
+      setMostrarPostEnvio(true);
     } catch (error: any) {
       showToast({
         type: 'error',
@@ -780,44 +818,77 @@ export default function AportacionFormScreen({ onClose }: Props) {
       <View style={styles.centeredContent}>
         <View style={styles.card}>
           <View style={styles.header}>
-            <TouchableOpacity style={styles.headerButton} onPress={retroceder}>
-              <Ionicons name="chevron-back" size={22} color={COLORS.bgWhite} />
-            </TouchableOpacity>
+            {!mostrarPostEnvio && (
+              <TouchableOpacity style={styles.headerButton} onPress={retroceder}>
+                <Ionicons name="chevron-back" size={22} color={COLORS.bgWhite} />
+              </TouchableOpacity>
+            )}
             <View style={styles.headerText}>
               <Text style={styles.title}>Registrar una aportación</Text>
               <Text style={styles.subtitle}>
-                Paso {paso} de {PASOS.length}: {PASOS[paso - 1]}
+                {mostrarPostEnvio ? '¡Listo! Tu aportación fue registrada' : `Paso ${paso} de ${PASOS.length}: ${PASOS[paso - 1]}`}
               </Text>
             </View>
-            <TouchableOpacity style={styles.headerButton} onPress={() => setShowCloseConfirm(true)}>
-              <Ionicons name="close" size={22} color={COLORS.bgWhite} />
-            </TouchableOpacity>
-            <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { width: `${(paso / PASOS.length) * 100}%` }]} />
-            </View>
+            {!mostrarPostEnvio && (
+              <TouchableOpacity style={styles.headerButton} onPress={() => setShowCloseConfirm(true)}>
+                <Ionicons name="close" size={22} color={COLORS.bgWhite} />
+              </TouchableOpacity>
+            )}
+            {!mostrarPostEnvio && (
+              <View style={styles.progressTrack}>
+                <View style={[styles.progressFill, { width: `${(paso / PASOS.length) * 100}%` }]} />
+              </View>
+            )}
           </View>
 
-          <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-            {renderPaso()}
-          </ScrollView>
-          <View style={styles.fixedFooter}>
-            <TouchableOpacity style={styles.primaryButton} onPress={avanzar} disabled={isSubmitting}>
-              {isSubmitting ? (
-                <ActivityIndicator color={COLORS.bgWhite} />
-              ) : (
-                <>
-                  <Text style={styles.primaryButtonText}>
-                    {paso === PASOS.length
-                      ? modo === 'reactiva'
-                        ? 'Registrar aportación'
-                        : 'Registrar disponibilidad'
-                      : 'Continuar'}
-                  </Text>
-                  {paso !== PASOS.length && <Ionicons name="arrow-forward" size={18} color={COLORS.bgWhite} />}
-                </>
-              )}
-            </TouchableOpacity>
-          </View>
+          {mostrarPostEnvio ? (
+            <>
+              <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+                <FormSection
+                  title="¿Quieres agregar otro recurso?"
+                  subtitle="Puedes registrar otra aportación ahora mismo, o terminar aquí."
+                >
+                  <View style={{ alignItems: 'center', paddingVertical: 12 }}>
+                    <Ionicons name="checkmark-circle" size={56} color={COLORS.bgTeal} />
+                  </View>
+                </FormSection>
+              </ScrollView>
+              <View style={styles.fixedFooter}>
+                <View style={{ flexDirection: 'row', gap: 12 }}>
+                  <TouchableOpacity style={[styles.secondaryButton, { flex: 1 }]} onPress={terminarFlujo}>
+                    <Text style={styles.secondaryButtonText}>No, terminar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.primaryButton, { flex: 1 }]} onPress={reiniciarParcial}>
+                    <Text style={styles.primaryButtonText}>Sí, agregar otro</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </>
+          ) : (
+            <>
+              <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+                {renderPaso()}
+              </ScrollView>
+              <View style={styles.fixedFooter}>
+                <TouchableOpacity style={styles.primaryButton} onPress={avanzar} disabled={isSubmitting}>
+                  {isSubmitting ? (
+                    <ActivityIndicator color={COLORS.bgWhite} />
+                  ) : (
+                    <>
+                      <Text style={styles.primaryButtonText}>
+                        {paso === PASOS.length
+                          ? modo === 'reactiva'
+                            ? 'Registrar aportación'
+                            : 'Registrar disponibilidad'
+                          : 'Continuar'}
+                      </Text>
+                      {paso !== PASOS.length && <Ionicons name="arrow-forward" size={18} color={COLORS.bgWhite} />}
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
         </View>
       </View>
 
