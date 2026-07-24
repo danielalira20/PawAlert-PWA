@@ -36,14 +36,18 @@ const HORAS_DISPONIBLES = [
   '07:00 PM'
 ];
 
-interface Props { onClose?: () => void; }
+interface Props {
+  onClose?: () => void;
+  modoReintento?: boolean;
+}
 
-export default function ExternalVolunteerFormScreen({ onClose }: Props) {
+export default function ExternalVolunteerFormScreen({ onClose, modoReintento = false }: Props) {
   const { setSession, token } = useAuth();
   const { toast, translateY, showToast } = useToast();
 
   const [paso, setPaso] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoadingExisting, setIsLoadingExisting] = useState(modoReintento);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [showSubmitError, setShowSubmitError] = useState(false);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
@@ -108,6 +112,9 @@ export default function ExternalVolunteerFormScreen({ onClose }: Props) {
   // ─── PASO 4: Evidencia y disponibilidad ───
   const [identificacionUrl, setIdentificacionUrl] = useState('');
   const [videoUrl, setVideoUrl] = useState('');
+  const [identificacionOriginalUrl, setIdentificacionOriginalUrl] = useState('');
+  const [videoOriginalUrl, setVideoOriginalUrl] = useState('');
+  const [videoEliminado, setVideoEliminado] = useState(false);
   const [horario1Dia, setHorario1Dia] = useState('');
   const [horario1Hora, setHorario1Hora] = useState('');
   const [horario2Dia, setHorario2Dia] = useState('');
@@ -120,6 +127,110 @@ export default function ExternalVolunteerFormScreen({ onClose }: Props) {
     const hasErrors = Object.values(errors).some(e => e !== '');
     if (!hasErrors) setShowSubmitError(false);
   }, [errors]);
+
+  useEffect(() => {
+    if (!modoReintento || !token) {
+      setIsLoadingExisting(false);
+      return;
+    }
+
+    let cancelado = false;
+    (async () => {
+      try {
+        const { data } = await axios.get(
+          `${API_URL}/voluntarios/externo/perfil`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        const perfil = data?.perfil;
+        if (cancelado || !perfil) return;
+
+        setPinLocation({
+          latitud: Number(perfil.latitud),
+          longitud: Number(perfil.longitud),
+        });
+        setUbicacionConfirmada(true);
+        setCalle(perfil.calle || '');
+        setNumero(perfil.numero || '');
+        setColonia(perfil.colonia || '');
+        setMunicipio(perfil.municipio || '');
+        setEstado(perfil.estado_ubicacion || '');
+        setReferencia(perfil.referencia || '');
+        setDireccionConfirmada(
+          [perfil.calle, perfil.numero, perfil.colonia, perfil.municipio, perfil.estado_ubicacion]
+            .filter(Boolean)
+            .join(', '),
+        );
+        setTipoVivienda(perfil.tipo_vivienda || '');
+        setSubcategoriaVivienda(perfil.subcategoria_vivienda || '');
+        setCustomViviendaInput(perfil.vivienda_otra_desc || '');
+        setAutorizacion(perfil.autorizacion_propietario || '');
+        setUbicacionAnimal(perfil.ubicacion_animal || '');
+        setAceptaVisita(perfil.acepta_visita || '');
+        setNumAdultos(String(perfil.adultos_hogar ?? ''));
+        setHorasSolo(String(perfil.horas_solo ?? ''));
+        setNinosEdades(perfil.ninos_hogar || '');
+        setOtrosAnimales(perfil.otros_animales || '');
+        setVacunados(perfil.animales_vacunados || '');
+        setPuedeSeparar(perfil.puede_aislar || '');
+        setPreferenciaEspecie(perfil.preferencia_especies || []);
+        setSubcategoriaOtroEspecie(perfil.subcategoria_otra_especie || '');
+        setCustomOtroEspecieInput(perfil.especie_otra_desc || '');
+        setPreferenciaTamanio(perfil.preferencia_tamanios || []);
+        setTiempoResguardo(perfil.tiempo_resguardo || '');
+        setTiempoResguardoDias(
+          perfil.tiempo_resguardo_dias != null
+            ? String(perfil.tiempo_resguardo_dias)
+            : '',
+        );
+        setCheckAccesos(!!perfil.chk_accesos_seguros);
+        setCheckBardas(!!perfil.chk_bardas);
+        setCheckBalcones(!!perfil.chk_balcones);
+        setCheckEspacio(!!perfil.chk_espacio);
+        setCheckNingunoSeguridad(
+          !perfil.chk_accesos_seguros
+          && !perfil.chk_bardas
+          && !perfil.chk_balcones
+          && !perfil.chk_espacio,
+        );
+        setCheckAislamiento(!!perfil.chk_aislamiento);
+        setCheckCuarentena(!!perfil.chk_cuarentena);
+        setCheckNoEntregar(!!perfil.chk_no_entregar);
+        setCheckNingunoCompromiso(
+          !perfil.chk_aislamiento
+          && !perfil.chk_cuarentena
+          && !perfil.chk_no_entregar,
+        );
+        setNombreEmergencia(perfil.contacto_emergencia_nombre || '');
+        setTelEmergencia(perfil.contacto_emergencia_telefono || '');
+        setIdentificacionUrl(perfil.identificacion_url || '');
+        setIdentificacionOriginalUrl(perfil.identificacion_url || '');
+        setVideoUrl(perfil.video_recorrido_url || '');
+        setVideoOriginalUrl(perfil.video_recorrido_url || '');
+        const horarios = perfil.horarios_visita || [];
+        setHorario1Dia(horarios[0]?.dia || '');
+        setHorario1Hora(horarios[0]?.hora || '');
+        setHorario2Dia(horarios[1]?.dia || '');
+        setHorario2Hora(horarios[1]?.hora || '');
+        setHorario3Dia(horarios[2]?.dia || '');
+        setHorario3Hora(horarios[2]?.hora || '');
+        setConsentimiento(!!perfil.consentimiento_evidencia);
+      } catch (error: any) {
+        if (!cancelado) {
+          showToast({
+            type: 'error',
+            title: 'No pudimos recuperar tu información',
+            message: error?.response?.data?.detail || 'Intenta nuevamente.',
+          });
+        }
+      } finally {
+        if (!cancelado) setIsLoadingExisting(false);
+      }
+    })();
+
+    return () => {
+      cancelado = true;
+    };
+  }, [modoReintento, token]);
 
   const handleCloseRequest = () => setShowCloseConfirm(true);
 
@@ -212,6 +323,7 @@ export default function ExternalVolunteerFormScreen({ onClose }: Props) {
   const validarPaso4 = () => {
     const newErrors: { [key: string]: string } = {};
     if (!identificacionUrl) newErrors.identificacionUrl = 'Debes subir una identificación.';
+    if (!videoUrl) newErrors.videoUrl = 'Debes subir un video recorrido de tu hogar.';
     if (!horario1Dia || !horario1Hora) newErrors.horarios = 'Ingresa al menos la primera opción completa.';
     if (!consentimiento) newErrors.consentimiento = 'Debes aceptar los términos.';
     
@@ -366,7 +478,10 @@ export default function ExternalVolunteerFormScreen({ onClose }: Props) {
 
   const handlePickVideo = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Videos, quality: 0.8 });
-    if (!result.canceled) setVideoUrl(result.assets[0].uri);
+    if (!result.canceled) {
+      setVideoUrl(result.assets[0].uri);
+      setVideoEliminado(false);
+    }
   };
 
   // ─── ENVÍO ───
@@ -392,6 +507,7 @@ export default function ExternalVolunteerFormScreen({ onClose }: Props) {
         checkAislamiento, checkCuarentena, checkNoEntregar,
         nombreEmergencia, telEmergencia,
         consentimiento,
+        eliminarVideo: videoEliminado,
         // Agrupamos los horarios en un solo JSON bonito
         horariosVisita: [
           { dia: horario1Dia, hora: horario1Hora },
@@ -404,16 +520,23 @@ export default function ExternalVolunteerFormScreen({ onClose }: Props) {
       formData.append('datos', JSON.stringify(datosFormulario));
 
       // 2. Adjuntar los archivos multimedia (adaptado para Expo)
+      const identificacionEsNueva =
+        !!identificacionUrl && identificacionUrl !== identificacionOriginalUrl;
+      const videoEsNuevo = !!videoUrl && videoUrl !== videoOriginalUrl;
       if (Platform.OS === 'web') {
-        const idRes = await fetch(identificacionUrl);
-        formData.append('identificacion', await idRes.blob(), `ine_${Date.now()}.jpg`);
-        if (videoUrl) {
+        if (identificacionEsNueva) {
+          const idRes = await fetch(identificacionUrl);
+          formData.append('identificacion', await idRes.blob(), `ine_${Date.now()}.jpg`);
+        }
+        if (videoEsNuevo) {
           const vidRes = await fetch(videoUrl);
           formData.append('video', await vidRes.blob(), `video_${Date.now()}.mp4`);
         }
       } else {
-        formData.append('identificacion', { uri: identificacionUrl, name: `ine_${Date.now()}.jpg`, type: 'image/jpeg' } as any);
-        if (videoUrl) {
+        if (identificacionEsNueva) {
+          formData.append('identificacion', { uri: identificacionUrl, name: `ine_${Date.now()}.jpg`, type: 'image/jpeg' } as any);
+        }
+        if (videoEsNuevo) {
           formData.append('video', { uri: videoUrl, name: `video_${Date.now()}.mp4`, type: 'video/mp4' } as any);
         }
       }
@@ -453,7 +576,9 @@ export default function ExternalVolunteerFormScreen({ onClose }: Props) {
           <Feather name="chevron-left" size={20} color="#FFFFFF" />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>Postulación Rescatista</Text>
+          <Text style={styles.headerTitle}>
+            {modoReintento ? 'Actualizar casa temporal' : 'Postulación de casa temporal'}
+          </Text>
           <Text style={styles.headerSubtitle}>Paso {paso} de {TOTAL_PASOS}: {PASO_NOMBRES[paso - 1]}</Text>
         </View>
         {onClose && (
@@ -738,20 +863,31 @@ export default function ExternalVolunteerFormScreen({ onClose }: Props) {
 
       <Divider />
 
-      <FormSection title="Recorrido del Hogar (Opcional pero recomendado)" subtitle="Un video corto mostrando los accesos y el lugar donde dormirá el animal agiliza tu aprobación.">
+      <FormSection 
+        title="Recorrido del Hogar *" 
+        subtitle="Un video corto mostrando los accesos y el lugar donde dormirá el animal es obligatorio para tu aprobación."
+      >
         {videoUrl ? (
           <View style={[styles.fotoItem, { backgroundColor: 'rgba(102, 188, 180, 0.1)' }]}>
             <Ionicons name="videocam" size={32} color={COLORS.bgTeal} style={{ marginHorizontal: 16 }} />
             <View style={styles.fotoContent}>
               <Text style={{ fontWeight: '700', color: COLORS.textDark, marginBottom: 4 }}>Video cargado</Text>
-              <TouchableOpacity onPress={() => setVideoUrl('')}><Text style={styles.fotoDelete}>Eliminar video</Text></TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                  setVideoUrl('');
+                  setVideoEliminado(!!videoOriginalUrl);
+                }}
+              >
+                <Text style={styles.fotoDelete}>Eliminar video</Text>
+              </TouchableOpacity>
             </View>
           </View>
         ) : (
-          <TouchableOpacity onPress={handlePickVideo} style={[styles.addPhotoButton, { width: '100%', borderColor: COLORS.bgTeal }]}>
-            <Text style={{ color: COLORS.bgTeal, fontWeight: '700' }}><Ionicons name="videocam" size={16}/> Subir Video Recorrido</Text>
+          <TouchableOpacity onPress={handlePickVideo} style={[styles.addPhotoButton, { width: '100%', borderColor: errors.videoUrl ? COLORS.danger : COLORS.bgTeal }]}>
+            <Text style={{ color: errors.videoUrl ? COLORS.danger : COLORS.bgTeal, fontWeight: '700' }}><Ionicons name="videocam" size={16}/> Subir Video Recorrido</Text>
           </TouchableOpacity>
         )}
+        {errors.videoUrl && <Text style={styles.errorText}>{errors.videoUrl}</Text>}
       </FormSection>
 
       <Divider />
@@ -793,20 +929,37 @@ export default function ExternalVolunteerFormScreen({ onClose }: Props) {
     <View style={[styles.outerContainer, { backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' } as any]}>
       <Toast toast={toast} translateY={translateY} />
 
-      {registroExitoso ? (
+      {isLoadingExisting ? (
+        <View style={[styles.centeredContent, { maxWidth: 500 }]}>
+          <View style={[styles.cardContainer, { padding: 40, alignItems: 'center', justifyContent: 'center' }]}>
+            <ActivityIndicator size="large" color={COLORS.primary} />
+            <Text style={{ marginTop: 16, color: COLORS.textLight, fontWeight: '700' }}>
+              Recuperando tu información…
+            </Text>
+          </View>
+        </View>
+      ) : registroExitoso ? (
          <View style={[styles.centeredContent, { maxWidth: 500 }]}>
            <View style={[styles.cardContainer, { padding: 40, alignItems: 'center' }]}>
              <Ionicons name="checkmark-circle" size={80} color={COLORS.bgTeal} style={{ marginBottom: 20 }} />
-             <Text style={{ fontSize: 24, fontWeight: '900', color: COLORS.textDark, textAlign: 'center', marginBottom: 16 }}>¡Postulación Enviada!</Text>
-             <Text style={{ fontSize: 16, color: COLORS.textLight, textAlign: 'center', lineHeight: 24, marginBottom: 32 }}>Tu información está en revisión segura. Las asociaciones cercanas podrán ver tu perfil anonimizado y se pondrán en contacto para la visita.</Text>
+             <Text style={{ fontSize: 24, fontWeight: '900', color: COLORS.textDark, textAlign: 'center', marginBottom: 16 }}>
+               {modoReintento ? '¡Información actualizada!' : '¡Información guardada!'}
+             </Text>
+             <Text style={{ fontSize: 16, color: COLORS.textLight, textAlign: 'center', lineHeight: 24, marginBottom: 32 }}>
+               {modoReintento
+                 ? 'Revisa tus capacidades para enviar nuevamente tu postulación.'
+                 : 'Para terminar tu postulación, cuéntanos cómo puedes ayudar.'}
+             </Text>
              <TouchableOpacity 
                onPress={() => {
                  if (onClose) onClose(); 
-                 router.push('/capacidades'); 
+                 router.push('/capacidades' as any);
                }} 
                style={[styles.submitButton, { width: '100%' }]}
              >
-               <Text style={styles.submitButtonText}>Formulario de Capacidades</Text>
+               <Text style={styles.submitButtonText}>
+                 {modoReintento ? 'Revisar mis capacidades' : 'Completar mis capacidades'}
+               </Text>
              </TouchableOpacity>
            </View>
          </View>

@@ -1,6 +1,23 @@
-from fastapi import APIRouter, HTTPException, Header, UploadFile, File, Form
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    HTTPException,
+    Header,
+    UploadFile,
+    File,
+    Form,
+)
 from app.db.supabase import supabase
-from app.models.voluntario import PostulacionRequest, CapacidadesRequest
+from app.models.voluntario import (
+    CapacidadesRequest,
+    CheckInVisitaRequest,
+    ChecklistVisitaRequest,
+    PostulacionRequest,
+    ProponerHorarioVisitaRequest,
+    ResponderHorarioPostulanteRequest,
+    ResponderPropuestaVerificacionRequest,
+    ResultadoVisitaRequest,
+)
 import json
 
 from app.services.voluntario_service import (
@@ -10,7 +27,24 @@ from app.services.voluntario_service import (
     guardar_capacidades,
     obtener_reportes_voluntario,
     crear_perfil_externo,
+    obtener_perfil_externo,
 )
+from app.services.home_verification_service import (
+    finalizar_postulacion_externa,
+    confirmar_horario_como_verificador,
+    guardar_checklist_visita,
+    listar_propuestas_verificacion_hogar,
+    obtener_coordinacion_visita_postulante,
+    obtener_propuesta_verificacion_hogar,
+    proponer_horario_verificacion_hogar,
+    registrar_check_in_visita,
+    registrar_check_out_visita,
+    reemplazar_video_solicitado,
+    responder_horario_como_postulante,
+    responder_propuesta_verificacion_hogar,
+    resolver_resultado_visita,
+)
+from app.services.video_evidence_service import procesar_evidencia_verificacion
 
 router = APIRouter()
 
@@ -70,6 +104,178 @@ def _obtener_voluntario_id_propio(usuario_id: str) -> str:
     return resultado.data[0]["id"]
 
 
+@router.get("/me/verificaciones", status_code=200)
+async def get_mis_verificaciones_hogar(
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
+    return listar_propuestas_verificacion_hogar(voluntario_id)
+
+
+@router.get("/me/verificaciones/{asignacion_id}", status_code=200)
+async def get_mi_verificacion_hogar(
+    asignacion_id: str,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
+    return obtener_propuesta_verificacion_hogar(
+        asignacion_id,
+        voluntario_id,
+    )
+
+
+@router.patch(
+    "/me/verificaciones/{asignacion_id}/responder",
+    status_code=200,
+)
+async def patch_responder_verificacion_hogar(
+    asignacion_id: str,
+    body: ResponderPropuestaVerificacionRequest,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
+    return responder_propuesta_verificacion_hogar(
+        asignacion_id=asignacion_id,
+        verificador_voluntario_id=voluntario_id,
+        respuesta=body.respuesta.value,
+        motivo=body.motivo,
+    )
+
+
+@router.patch(
+    "/me/verificaciones/{asignacion_id}/horario",
+    status_code=200,
+)
+async def patch_proponer_horario_verificacion(
+    asignacion_id: str,
+    body: ProponerHorarioVisitaRequest,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
+    return proponer_horario_verificacion_hogar(
+        asignacion_id=asignacion_id,
+        verificador_voluntario_id=voluntario_id,
+        horario=body.horario,
+        motivo=body.motivo,
+    )
+
+
+@router.patch(
+    "/me/verificaciones/{asignacion_id}/horario/confirmar",
+    status_code=200,
+)
+async def patch_confirmar_horario_verificacion(
+    asignacion_id: str,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
+    return confirmar_horario_como_verificador(
+        asignacion_id=asignacion_id,
+        verificador_voluntario_id=voluntario_id,
+    )
+
+
+@router.patch(
+    "/me/verificaciones/{asignacion_id}/check-in",
+    status_code=200,
+)
+async def patch_check_in_verificacion(
+    asignacion_id: str,
+    body: CheckInVisitaRequest,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
+    return registrar_check_in_visita(
+        asignacion_id=asignacion_id,
+        verificador_voluntario_id=voluntario_id,
+        latitud=body.latitud,
+        longitud=body.longitud,
+    )
+
+
+@router.put(
+    "/me/verificaciones/{asignacion_id}/checklist",
+    status_code=200,
+)
+async def put_checklist_verificacion(
+    asignacion_id: str,
+    body: ChecklistVisitaRequest,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
+    return guardar_checklist_visita(
+        asignacion_id=asignacion_id,
+        verificador_voluntario_id=voluntario_id,
+        checklist=body.model_dump(mode="json"),
+    )
+
+
+@router.patch(
+    "/me/verificaciones/{asignacion_id}/check-out",
+    status_code=200,
+)
+async def patch_check_out_verificacion(
+    asignacion_id: str,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
+    return registrar_check_out_visita(
+        asignacion_id=asignacion_id,
+        verificador_voluntario_id=voluntario_id,
+    )
+
+
+@router.patch(
+    "/me/verificaciones/{asignacion_id}/resultado",
+    status_code=200,
+)
+async def patch_resultado_verificacion(
+    asignacion_id: str,
+    body: ResultadoVisitaRequest,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
+    return resolver_resultado_visita(
+        asignacion_id=asignacion_id,
+        verificador_voluntario_id=voluntario_id,
+        resultado=body.resultado.value,
+        motivo=body.motivo,
+    )
+
+
+@router.get("/me/coordinacion-visita", status_code=200)
+async def get_coordinacion_visita_postulante(
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
+    return obtener_coordinacion_visita_postulante(voluntario_id)
+
+
+@router.patch("/me/coordinacion-visita/responder", status_code=200)
+async def patch_responder_horario_postulante(
+    body: ResponderHorarioPostulanteRequest,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
+    return responder_horario_como_postulante(
+        voluntario_postulante_id=voluntario_id,
+        respuesta=body.respuesta.value,
+        horario=body.horario,
+        motivo=body.motivo,
+    )
+
+
 @router.get("/me/capacidades", status_code=200)
 async def get_mis_capacidades(authorization: str = Header(None)):
     usuario = _obtener_usuario_autenticado(authorization)
@@ -81,7 +287,12 @@ async def get_mis_capacidades(authorization: str = Header(None)):
 async def put_mis_capacidades(body: CapacidadesRequest, authorization: str = Header(None)):
     usuario = _obtener_usuario_autenticado(authorization)
     voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
-    return await guardar_capacidades(voluntario_id, body.model_dump())
+    # mode="json" convierte los Enum del contrato v2 a las claves de texto
+    # que se persisten en PostgreSQL.
+    return await guardar_capacidades(
+        voluntario_id,
+        body.model_dump(mode="json", exclude_unset=True),
+    )
 
 
 @router.get("/me/reportes", status_code=200)
@@ -97,16 +308,24 @@ async def get_mis_reportes_voluntario(authorization: str = Header(None)):
 # ---------------------------------------------------------------------------
 # NUEVO ENDPOINT: POSTULACIÓN VOLUNTARIO EXTERNO (CASA TEMPORAL)
 # ---------------------------------------------------------------------------
+@router.get("/externo/perfil", status_code=200)
+async def get_perfil_voluntario_externo(
+    authorization: str = Header(None),
+):
+    """Devuelve el borrador de casa temporal para editar o re-postular."""
+    usuario = _obtener_usuario_autenticado(authorization)
+    voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
+    return await obtener_perfil_externo(voluntario_id)
+
+
 @router.post("/externo/postular", status_code=201)
 async def postular_voluntario_externo(
     datos: str = Form(...),
-    identificacion: UploadFile = File(...),
-    video: UploadFile = File(None),
+    identificacion: UploadFile | None = File(None),
+    video: UploadFile | None = File(None),
     authorization: str = Header(None)
 ):
-    """Recibe el formulario de casa temporal empaquetado (JSON + Archivos).
-    Se encarga de crear el perfil de voluntario si no existe y luego guardar
-    los detalles del hogar temporal."""
+    """Crea o actualiza el formulario de casa temporal y sus evidencias."""
     
     usuario = _obtener_usuario_autenticado(authorization)
 
@@ -140,6 +359,47 @@ async def postular_voluntario_externo(
             "message": "Postulación como casa temporal recibida con éxito", 
             "perfil_id": perfil["id"]
         }
+    except HTTPException:
+        raise
     except Exception as e:
         # Esto atrapará errores de Supabase (como intentar postularse dos veces) o de storage
         raise HTTPException(status_code=400, detail=f"Error al guardar postulación: {str(e)}")
+
+
+@router.post("/externo/finalizar", status_code=201)
+async def finalizar_postulacion_voluntario_externo(
+    background_tasks: BackgroundTasks,
+    authorization: str = Header(None),
+):
+    """Finaliza el expediente después de guardar casa y capacidades.
+
+    Asigna la postulación a la asociación activa y verificada más cercana y
+    crea el proceso de verificación de hogar. Repetir la petición no duplica
+    el expediente.
+    """
+    usuario = _obtener_usuario_autenticado(authorization)
+    voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
+    resultado = await finalizar_postulacion_externa(voluntario_id)
+    background_tasks.add_task(
+        procesar_evidencia_verificacion,
+        resultado["verificacion_id"],
+    )
+    return resultado
+
+
+@router.post("/externo/evidencia-solicitada", status_code=202)
+async def post_evidencia_solicitada_voluntario_externo(
+    background_tasks: BackgroundTasks,
+    video: UploadFile = File(...),
+    authorization: str = Header(None),
+):
+    """Permite reemplazar solo el video cuando la asociación pide evidencia."""
+    usuario = _obtener_usuario_autenticado(authorization)
+    voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
+    resultado = await reemplazar_video_solicitado(voluntario_id, video)
+    background_tasks.add_task(
+        procesar_evidencia_verificacion,
+        resultado["verificacion_id"],
+        True,
+    )
+    return resultado

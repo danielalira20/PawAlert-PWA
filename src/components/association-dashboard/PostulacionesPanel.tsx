@@ -18,6 +18,7 @@ import { Toast, useToast } from '../Toast';
 import { AppModal } from '../AppModal';
 import { AssocAvatar } from '../admin-dashboard/AssocAvatar';
 import { AssocLocationMap } from '../admin-dashboard/AssocLocationMap';
+import { ExternalVerificationDetail } from './ExternalVerificationDetail';
 
 const COLORS = {
   bg: '#E8CCAD',
@@ -48,6 +49,9 @@ export function PostulacionesPanel({ visible }: Props) {
   const isMobile = width < 900;
 
   const [filtro, setFiltro] = useState<FiltroPostulacion>('pendientes');
+  // NUEVO: Estado para el filtro de tipo de voluntario
+  const [filtroTipo, setFiltroTipo] = useState<'todos' | 'interno' | 'externo'>('todos');
+  
   const [postulacionSeleccionada, setPostulacionSeleccionada] = useState<PostulacionItem | null>(null);
   const [voluntarioSeleccionado, setVoluntarioSeleccionado] = useState<VoluntarioData | null>(null);
   const [showRejectModal, setShowRejectModal] = useState(false);
@@ -80,9 +84,17 @@ export function PostulacionesPanel({ visible }: Props) {
   const pendientesCount = data?.pendientes_count || 0;
   const intentosPrevios = data?.intentos_previos || {};
 
+  // ACTUALIZADO: Lógica de doble filtrado
   const postulacionesFiltradas = postulacionesLista.filter((p) => {
-    if (filtro === 'pendientes') return p.estado === 'pendiente';
-    if (filtro === 'resueltas') return ['aceptada', 'rechazada'].includes(p.estado);
+    // 1. Filtro de estado
+    if (filtro === 'pendientes' && p.estado !== 'pendiente') return false;
+    if (filtro === 'resueltas' && !['aceptada', 'rechazada'].includes(p.estado)) return false;
+
+    // 2. Filtro de tipo (internos vs externos)
+    if (filtroTipo === 'externo' && p.tipo !== 'externo') return false;
+    // Si no es externo, lo consideramos interno
+    if (filtroTipo === 'interno' && p.tipo === 'externo') return false;
+
     return true;
   });
 
@@ -124,6 +136,7 @@ export function PostulacionesPanel({ visible }: Props) {
       setShowRejectModal(false);
       setMotivoRechazo('');
       setPostulacionAccion(null);
+      cerrarDetalles();
       refetch();
     } catch (err: any) {
       const message = err.response?.data?.detail || 'Error al rechazar postulación';
@@ -136,6 +149,11 @@ export function PostulacionesPanel({ visible }: Props) {
   const cerrarDetalles = () => {
     setPostulacionSeleccionada(null);
     setVoluntarioSeleccionado(null);
+  };
+
+  const abrirRechazo = (postulacion: PostulacionItem) => {
+    setPostulacionAccion(postulacion);
+    setShowRejectModal(true);
   };
 
   return (
@@ -159,8 +177,8 @@ export function PostulacionesPanel({ visible }: Props) {
         )}
       </View>
 
-      {/* Filtros */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20, paddingHorizontal: 24 }}>
+      {/* Filtros principales de estado */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12, paddingHorizontal: 24 }}>
         <View style={{ flexDirection: 'row', gap: 10 }}>
           {(['pendientes', 'resueltas'] as FiltroPostulacion[]).map((f) => (
             <TouchableOpacity
@@ -183,6 +201,39 @@ export function PostulacionesPanel({ visible }: Props) {
                 }}
               >
                 {f === 'pendientes' ? 'Pendientes' : 'Resueltas'}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </ScrollView>
+
+      {/* Sub-filtros por tipo de voluntario con estilos unificados */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20, paddingHorizontal: 24 }}>
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          {([
+            { key: 'todos', label: 'Todos' },
+            { key: 'interno', label: 'Voluntario de Asociación' },
+            { key: 'externo', label: 'Casa Temporal Externa' },
+          ] as const).map((ft) => (
+            <TouchableOpacity
+              key={ft.key}
+              onPress={() => setFiltroTipo(ft.key)}
+              style={{
+                paddingHorizontal: 16,
+                paddingVertical: 8,
+                borderRadius: 20,
+                backgroundColor: filtroTipo === ft.key ? COLORS.primary : COLORS.cardBg,
+                borderWidth: filtroTipo === ft.key ? 0 : 1,
+                borderColor: 'rgba(0,0,0,0.05)',
+              }}
+            >
+              <Text
+                style={{
+                  color: filtroTipo === ft.key ? COLORS.white : COLORS.textDark,
+                  fontWeight: '700',
+                }}
+              >
+                {ft.label}
               </Text>
             </TouchableOpacity>
           ))}
@@ -225,6 +276,11 @@ export function PostulacionesPanel({ visible }: Props) {
                   <Text style={{ fontSize: 15, fontWeight: '700', color: COLORS.textDark, marginBottom: 4 }}>
                     {postulacion.voluntario?.nombre || 'Voluntario'} {postulacion.voluntario?.apellido_paterno || ''}
                   </Text>
+                  {postulacion.tipo === 'externo' && (
+                    <View style={{ alignSelf: 'flex-start', marginBottom: 8, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 10, backgroundColor: 'rgba(102, 188, 180, 0.15)' }}>
+                      <Text style={{ color: COLORS.accent, fontSize: 10, fontWeight: '800' }}>Casa temporal externa</Text>
+                    </View>
+                  )}
                   <Text style={{ fontSize: 12, color: COLORS.textLight, marginBottom: 2 }}>
                     {postulacion.voluntario?.email}
                   </Text>
@@ -294,7 +350,14 @@ export function PostulacionesPanel({ visible }: Props) {
               {postulacion.estado === 'pendiente' && (
                 <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
                   <TouchableOpacity
-                    onPress={() => handleAceptar(postulacion)}
+                    onPress={() => {
+                      if (postulacion.tipo === 'externo') {
+                        setPostulacionSeleccionada(postulacion);
+                        setVoluntarioSeleccionado(postulacion.voluntario || null);
+                      } else {
+                        handleAceptar(postulacion);
+                      }
+                    }}
                     disabled={isSubmitting}
                     style={{
                       flex: 1,
@@ -305,12 +368,13 @@ export function PostulacionesPanel({ visible }: Props) {
                       opacity: isSubmitting ? 0.7 : 1,
                     }}
                   >
-                    <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 12 }}>Aceptar</Text>
+                    <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 12 }}>
+                      {postulacion.tipo === 'externo' ? 'Revisar expediente' : 'Aceptar'}
+                    </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     onPress={() => {
-                      setPostulacionAccion(postulacion);
-                      setShowRejectModal(true);
+                      abrirRechazo(postulacion);
                     }}
                     disabled={isSubmitting}
                     style={{
@@ -444,7 +508,17 @@ export function PostulacionesPanel({ visible }: Props) {
 
       {/* Modal de Detalle */}
       <AppModal visible={!!postulacionSeleccionada} onClose={cerrarDetalles} maxWidth={900}>
-        {postulacionSeleccionada && voluntarioSeleccionado && (
+        {postulacionSeleccionada?.tipo === 'externo' && voluntarioSeleccionado ? (
+          <ExternalVerificationDetail
+            postulacion={postulacionSeleccionada}
+            voluntario={voluntarioSeleccionado}
+            onClose={cerrarDetalles}
+            onReject={() => {
+              abrirRechazo(postulacionSeleccionada);
+            }}
+            onUpdated={refetch}
+          />
+        ) : postulacionSeleccionada && voluntarioSeleccionado ? (
           <View style={{ flex: 1 }}>
             {/* Header */}
             <View style={{ padding: 24, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#F0E6D6' }}>
@@ -637,7 +711,7 @@ export function PostulacionesPanel({ visible }: Props) {
               </View>
             </ScrollView>
           </View>
-        )}
+        ) : null}
       </AppModal>
     </View>
   );

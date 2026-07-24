@@ -1,12 +1,24 @@
 
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Header
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    UploadFile,
+    File,
+    Form,
+    HTTPException,
+    Header,
+)
 from pydantic import BaseModel
 from typing import Optional, List
 from app.db.supabase import supabase, supabase_admin, get_fresh_client
 from app.services.storage_service import subir_foto
 from app.services.report_service import obtener_id_catalogo
 from app.utils.validators import validar_telefono, validar_email
-from app.models.voluntario import ResolverPostulacionRequest
+from app.models.voluntario import (
+    AsignarVerificadorRequest,
+    ResolverPostulacionRequest,
+    ResolverVerificacionRemotaRequest,
+)
 from app.services.voluntario_service import (
     obtener_postulaciones_asociacion,
     resolver_postulacion,
@@ -14,6 +26,12 @@ from app.services.voluntario_service import (
     reactivar_voluntario,
     listar_voluntarios_asociacion,
 )
+from app.services.home_verification_service import (
+    asignar_verificador_hogar,
+    obtener_verificacion_postulacion,
+    resolver_verificacion_remota,
+)
+from app.services.video_evidence_service import procesar_evidencia_verificacion
 from app.models.association import NuevoRepresentante
 from app.utils.animal_shaping import shape_animal_embed, shape_animal_response, condicion_mas_grave
 import json
@@ -852,6 +870,123 @@ async def patch_resolver_postulacion(
         usuario_staff_id=usuario["id"],
         asociacion_id=usuario["asociacion_id"],
         accion=body.accion.value,
+        motivo=body.motivo,
+    )
+
+
+@router.get(
+    "/me/postulaciones/{postulacion_id}/verificacion",
+    status_code=200,
+)
+async def get_verificacion_postulacion(
+    postulacion_id: str,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion", "staff"))
+    if not usuario.get("asociacion_id"):
+        raise HTTPException(
+            status_code=404,
+            detail="Este usuario no está vinculado a ninguna asociación",
+        )
+    _verificar_asociacion_aprobada(usuario["asociacion_id"])
+    return obtener_verificacion_postulacion(
+        postulacion_id,
+        usuario["asociacion_id"],
+    )
+
+
+@router.post(
+    "/me/verificaciones/{verificacion_id}/reintentar-analisis",
+    status_code=202,
+)
+async def post_reintentar_analisis_verificacion(
+    verificacion_id: str,
+    background_tasks: BackgroundTasks,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion", "staff"))
+    if not usuario.get("asociacion_id"):
+        raise HTTPException(
+            status_code=404,
+            detail="Este usuario no está vinculado a ninguna asociación",
+        )
+    _verificar_asociacion_aprobada(usuario["asociacion_id"])
+
+    verificacion = supabase_admin.table("verificaciones_hogar").select(
+        "id"
+    ).eq("id", verificacion_id).eq(
+        "asociacion_id", usuario["asociacion_id"]
+    ).limit(1).execute()
+    if not verificacion.data:
+        raise HTTPException(
+            status_code=404,
+            detail="Verificación no encontrada",
+        )
+
+    supabase_admin.table("verificaciones_hogar").update({
+        "analisis_video_estado": "pendiente",
+        "estado_coordenadas": "pendiente",
+        "analisis_video_error": None,
+    }).eq("id", verificacion_id).execute()
+    background_tasks.add_task(
+        procesar_evidencia_verificacion,
+        verificacion_id,
+        True,
+    )
+    return {
+        "mensaje": "El análisis se volverá a procesar.",
+        "analisis_video_estado": "pendiente",
+        "estado_coordenadas": "pendiente",
+    }
+
+
+@router.post(
+    "/me/verificaciones/{verificacion_id}/asignar",
+    status_code=201,
+)
+async def post_asignar_verificador(
+    verificacion_id: str,
+    body: AsignarVerificadorRequest,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion", "staff"))
+    if not usuario.get("asociacion_id"):
+        raise HTTPException(
+            status_code=404,
+            detail="Este usuario no está vinculado a ninguna asociación",
+        )
+    _verificar_asociacion_aprobada(usuario["asociacion_id"])
+    return asignar_verificador_hogar(
+        verificacion_id=verificacion_id,
+        verificador_voluntario_id=body.voluntario_id,
+        asociacion_id=usuario["asociacion_id"],
+    )
+
+
+@router.patch(
+    "/me/verificaciones/{verificacion_id}/resolver-remota",
+    status_code=200,
+)
+async def patch_resolver_verificacion_remota(
+    verificacion_id: str,
+    body: ResolverVerificacionRemotaRequest,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion", "staff"))
+    if not usuario.get("asociacion_id"):
+        raise HTTPException(
+            status_code=404,
+            detail="Este usuario no está vinculado a ninguna asociación",
+        )
+    _verificar_asociacion_aprobada(usuario["asociacion_id"])
+    return resolver_verificacion_remota(
+        verificacion_id=verificacion_id,
+        asociacion_id=usuario["asociacion_id"],
+        decision=body.decision.value,
         motivo=body.motivo,
     )
  
