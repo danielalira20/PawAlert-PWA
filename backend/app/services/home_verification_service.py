@@ -4,6 +4,7 @@ from fastapi import HTTPException
 
 from app.db.supabase import supabase_admin
 from app.services import storage_service
+from app.services.video_evidence_service import distancia_metros
 
 
 DIAS = {
@@ -439,7 +440,9 @@ def obtener_verificacion_postulacion(
         "id, verificador_voluntario_id, distancia_km, estado, propuesta_at, "
         "respondida_at, visita_programada_at, motivo_rechazo, "
         "horario_propuesto_at, horario_propuesto_por, horario_estado, "
-        "horario_respondido_at, motivo_reagenda"
+        "horario_respondido_at, motivo_reagenda, check_in_at, check_out_at, "
+        "check_in_distancia_m, checklist, notas_visita, resultado_visita, "
+        "motivo_resultado_visita, resultado_at"
     ).eq("verificacion_hogar_id", verificacion["id"]).order(
         "propuesta_at", desc=True
     ).limit(1).execute()
@@ -834,7 +837,9 @@ def listar_propuestas_verificacion_hogar(
         "id, verificacion_hogar_id, distancia_km, tramo_distancia, estado, "
         "propuesta_at, respondida_at, visita_programada_at, motivo_rechazo, "
         "horario_propuesto_at, horario_propuesto_por, horario_estado, "
-        "horario_respondido_at, motivo_reagenda"
+        "horario_respondido_at, motivo_reagenda, check_in_at, check_out_at, "
+        "check_in_distancia_m, checklist, notas_visita, resultado_visita, "
+        "motivo_resultado_visita, resultado_at"
     ).eq(
         "verificador_voluntario_id", verificador_voluntario_id
     ).order("propuesta_at", desc=True).execute().data or []
@@ -892,7 +897,10 @@ def obtener_propuesta_verificacion_hogar(
         "id, verificacion_hogar_id, distancia_km, tramo_distancia, estado, "
         "propuesta_at, respondida_at, visita_programada_at, notas_previas, "
         "motivo_rechazo, horario_propuesto_at, horario_propuesto_por, "
-        "horario_estado, horario_respondido_at, motivo_reagenda"
+        "horario_estado, horario_respondido_at, motivo_reagenda, "
+        "check_in_at, check_out_at, check_in_latitud, check_in_longitud, "
+        "check_in_distancia_m, checklist, notas_visita, resultado_visita, "
+        "motivo_resultado_visita, resultado_at"
     ).eq("id", asignacion_id).eq(
         "verificador_voluntario_id", verificador_voluntario_id
     ).limit(1).execute()
@@ -913,7 +921,7 @@ def obtener_propuesta_verificacion_hogar(
         "municipio, colonia, estado_ubicacion, tipo_vivienda, "
         "preferencia_especies, preferencia_tamanios, horarios_visita"
     )
-    if detalle["estado"] == "aceptada":
+    if detalle["estado"] in ("aceptada", "completada"):
         perfil_campos += (
             ", latitud, longitud, calle, numero, referencia, "
             "identificacion_url, video_recorrido_url"
@@ -933,13 +941,13 @@ def obtener_propuesta_verificacion_hogar(
         ),
         "postulante_nombre": (
             _nombre_voluntario(hogar["voluntario_postulante_id"])
-            if detalle["estado"] == "aceptada"
+            if detalle["estado"] in ("aceptada", "completada")
             else "Postulante de casa temporal"
         ),
         "hogar": perfil.data[0] if perfil.data else {},
         "resumen_expediente": hogar.get("resumen_expediente") or {},
     }
-    if detalle["estado"] == "aceptada":
+    if detalle["estado"] in ("aceptada", "completada"):
         respuesta.update({
             "analisis_video": hogar.get("analisis_video"),
             "analisis_video_estado": hogar.get("analisis_video_estado"),
@@ -1140,7 +1148,13 @@ def obtener_coordinacion_visita_postulante(
         "id, asociacion_id, perfil_casa_temporal_id, estado, modalidad"
     ).eq("voluntario_postulante_id", voluntario_postulante_id).in_(
         "estado",
-        ["visita_aceptada", "coordinando_visita", "visita_programada"],
+        [
+            "visita_aceptada",
+            "coordinando_visita",
+            "visita_programada",
+            "visita_en_curso",
+            "visita_realizada",
+        ],
     ).order("created_at", desc=True).limit(1).execute()
     if not verificacion.data:
         raise HTTPException(
@@ -1153,7 +1167,7 @@ def obtener_coordinacion_visita_postulante(
     ).select(
         "id, verificador_voluntario_id, estado, horario_propuesto_at, "
         "horario_propuesto_por, horario_estado, horario_respondido_at, "
-        "visita_programada_at, motivo_reagenda"
+        "visita_programada_at, motivo_reagenda, check_in_at, check_out_at"
     ).eq("verificacion_hogar_id", proceso["id"]).eq(
         "estado", "aceptada"
     ).order("propuesta_at", desc=True).limit(1).execute()
@@ -1262,4 +1276,346 @@ def responder_horario_como_postulante(
         "horario_propuesto_at": horario_iso,
         "estado_verificacion": "coordinando_visita",
         "mensaje": "Enviamos tu propuesta de horario a la persona verificadora.",
+    }
+
+
+CHECKLIST_VISITA_CAMPOS = {
+    "identidad_coincide",
+    "espacio_coincide_video",
+    "accesos_seguros",
+    "cierres_perimetrales",
+    "ventanas_balcones",
+    "espacio_aislamiento",
+    "higiene_ventilacion",
+    "convivencia_hogar",
+    "autorizacion_vivienda",
+}
+
+
+def _obtener_visita_asignada(
+    asignacion_id: str,
+    verificador_voluntario_id: str,
+) -> tuple[dict, dict]:
+    asignacion = supabase_admin.table(
+        "asignaciones_verificacion_hogar"
+    ).select(
+        "id, verificacion_hogar_id, estado, horario_estado, "
+        "visita_programada_at, check_in_at, check_out_at, checklist, "
+        "resultado_visita"
+    ).eq("id", asignacion_id).eq(
+        "verificador_voluntario_id", verificador_voluntario_id
+    ).limit(1).execute()
+    if not asignacion.data:
+        raise HTTPException(status_code=404, detail="Visita no encontrada")
+    visita = asignacion.data[0]
+    if visita["estado"] != "aceptada":
+        raise HTTPException(
+            status_code=409,
+            detail="Esta visita ya no se encuentra activa",
+        )
+
+    verificacion = supabase_admin.table("verificaciones_hogar").select(
+        "id, postulacion_id, perfil_casa_temporal_id, asociacion_id, "
+        "voluntario_postulante_id, estado, modalidad"
+    ).eq("id", visita["verificacion_hogar_id"]).limit(1).execute()
+    if not verificacion.data:
+        raise HTTPException(status_code=404, detail="Verificación no encontrada")
+    return visita, verificacion.data[0]
+
+
+def registrar_check_in_visita(
+    asignacion_id: str,
+    verificador_voluntario_id: str,
+    latitud: float | None = None,
+    longitud: float | None = None,
+) -> dict:
+    visita, verificacion = _obtener_visita_asignada(
+        asignacion_id,
+        verificador_voluntario_id,
+    )
+    if (
+        visita.get("horario_estado") != "confirmado"
+        or not visita.get("visita_programada_at")
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="Primero debe confirmarse la fecha y hora de la visita",
+        )
+    if visita.get("check_in_at"):
+        raise HTTPException(
+            status_code=409,
+            detail="La llegada a esta visita ya fue registrada",
+        )
+    if verificacion["estado"] != "visita_programada":
+        raise HTTPException(
+            status_code=409,
+            detail="La visita no está lista para iniciar",
+        )
+
+    distancia = None
+    if latitud is not None and longitud is not None:
+        perfil = supabase_admin.table("perfil_casa_temporal").select(
+            "latitud, longitud"
+        ).eq("id", verificacion["perfil_casa_temporal_id"]).limit(1).execute()
+        hogar = perfil.data[0] if perfil.data else {}
+        if hogar.get("latitud") is not None and hogar.get("longitud") is not None:
+            distancia = round(
+                distancia_metros(
+                    float(latitud),
+                    float(longitud),
+                    float(hogar["latitud"]),
+                    float(hogar["longitud"]),
+                ),
+                1,
+            )
+
+    ahora = datetime.now(timezone.utc).isoformat()
+    supabase_admin.table("asignaciones_verificacion_hogar").update({
+        "check_in_at": ahora,
+        "check_in_latitud": latitud,
+        "check_in_longitud": longitud,
+        "check_in_distancia_m": distancia,
+        "updated_at": ahora,
+    }).eq("id", asignacion_id).execute()
+    supabase_admin.table("verificaciones_hogar").update({
+        "estado": "visita_en_curso",
+        "updated_at": ahora,
+    }).eq("id", verificacion["id"]).execute()
+    return {
+        "check_in_at": ahora,
+        "check_in_distancia_m": distancia,
+        "estado_verificacion": "visita_en_curso",
+        "mensaje": "Llegada registrada. Tu asociación puede ver que estás en la visita.",
+    }
+
+
+def guardar_checklist_visita(
+    asignacion_id: str,
+    verificador_voluntario_id: str,
+    checklist: dict,
+) -> dict:
+    visita, verificacion = _obtener_visita_asignada(
+        asignacion_id,
+        verificador_voluntario_id,
+    )
+    if not visita.get("check_in_at"):
+        raise HTTPException(
+            status_code=409,
+            detail="Registra tu llegada antes de completar la revisión",
+        )
+    if visita.get("check_out_at"):
+        raise HTTPException(
+            status_code=409,
+            detail="La visita ya fue cerrada",
+        )
+    if verificacion["estado"] != "visita_en_curso":
+        raise HTTPException(
+            status_code=409,
+            detail="La visita no está en curso",
+        )
+
+    respuestas = {
+        clave: checklist.get(clave)
+        for clave in CHECKLIST_VISITA_CAMPOS
+    }
+    if any(valor not in {"cumple", "no_cumple", "no_aplica"} for valor in respuestas.values()):
+        raise HTTPException(
+            status_code=422,
+            detail="Responde todos los puntos de la revisión",
+        )
+    notas = (checklist.get("notas") or "").strip()
+    ahora = datetime.now(timezone.utc).isoformat()
+    evidencia = {
+        **respuestas,
+        "completado_at": ahora,
+    }
+    supabase_admin.table("asignaciones_verificacion_hogar").update({
+        "checklist": evidencia,
+        "notas_visita": notas or None,
+        "updated_at": ahora,
+    }).eq("id", asignacion_id).execute()
+    return {
+        "checklist": evidencia,
+        "notas_visita": notas or None,
+        "mensaje": "Revisión guardada.",
+    }
+
+
+def registrar_check_out_visita(
+    asignacion_id: str,
+    verificador_voluntario_id: str,
+) -> dict:
+    visita, verificacion = _obtener_visita_asignada(
+        asignacion_id,
+        verificador_voluntario_id,
+    )
+    if not visita.get("check_in_at"):
+        raise HTTPException(
+            status_code=409,
+            detail="No hay una llegada registrada",
+        )
+    if visita.get("check_out_at"):
+        raise HTTPException(
+            status_code=409,
+            detail="La salida de esta visita ya fue registrada",
+        )
+    checklist = visita.get("checklist") or {}
+    if not CHECKLIST_VISITA_CAMPOS.issubset(checklist.keys()):
+        raise HTTPException(
+            status_code=409,
+            detail="Completa y guarda la revisión antes de registrar tu salida",
+        )
+    if verificacion["estado"] != "visita_en_curso":
+        raise HTTPException(
+            status_code=409,
+            detail="La visita no está en curso",
+        )
+
+    ahora = datetime.now(timezone.utc).isoformat()
+    supabase_admin.table("asignaciones_verificacion_hogar").update({
+        "check_out_at": ahora,
+        "updated_at": ahora,
+    }).eq("id", asignacion_id).execute()
+    supabase_admin.table("verificaciones_hogar").update({
+        "estado": "visita_realizada",
+        "updated_at": ahora,
+    }).eq("id", verificacion["id"]).execute()
+    return {
+        "check_out_at": ahora,
+        "estado_verificacion": "visita_realizada",
+        "mensaje": "Salida registrada. Ya puedes enviar el resultado.",
+    }
+
+
+def resolver_resultado_visita(
+    asignacion_id: str,
+    verificador_voluntario_id: str,
+    resultado: str,
+    motivo: str | None = None,
+) -> dict:
+    visita, verificacion = _obtener_visita_asignada(
+        asignacion_id,
+        verificador_voluntario_id,
+    )
+    if not visita.get("check_out_at") or verificacion["estado"] != "visita_realizada":
+        raise HTTPException(
+            status_code=409,
+            detail="Registra tu salida antes de enviar el resultado",
+        )
+    if visita.get("resultado_visita"):
+        raise HTTPException(
+            status_code=409,
+            detail="El resultado de esta visita ya fue enviado",
+        )
+
+    motivo_limpio = (motivo or "").strip()
+    if resultado in ("solicitar_ajustes", "rechazar") and not motivo_limpio:
+        raise HTTPException(
+            status_code=422,
+            detail="Explica brevemente el resultado para orientar al postulante",
+        )
+    checklist = visita.get("checklist") or {}
+    if resultado == "aprobar" and any(
+        checklist.get(campo) == "no_cumple"
+        for campo in CHECKLIST_VISITA_CAMPOS
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="No puedes aprobar mientras existan puntos marcados como no cumple",
+        )
+    if resultado not in ("aprobar", "solicitar_ajustes", "rechazar"):
+        raise HTTPException(status_code=422, detail="Resultado no válido")
+
+    ahora = datetime.now(timezone.utc).isoformat()
+    cierre_asignacion = {
+        "estado": "completada",
+        "resultado_visita": resultado,
+        "motivo_resultado_visita": motivo_limpio or None,
+        "resultado_at": ahora,
+        "updated_at": ahora,
+    }
+
+    if resultado == "solicitar_ajustes":
+        supabase_admin.table("asignaciones_verificacion_hogar").update(
+            cierre_asignacion
+        ).eq("id", asignacion_id).execute()
+        supabase_admin.table("verificaciones_hogar").update({
+            "estado": "requiere_cambios",
+            "modalidad": "remota",
+            "motivo_resultado": motivo_limpio,
+            "resuelta_at": None,
+            "updated_at": ahora,
+        }).eq("id", verificacion["id"]).execute()
+        return {
+            "estado": "requiere_cambios",
+            "mensaje": "Se solicitaron ajustes y un nuevo recorrido al postulante.",
+        }
+
+    voluntario_id = verificacion["voluntario_postulante_id"]
+    if resultado == "rechazar":
+        supabase_admin.table("asignaciones_verificacion_hogar").update(
+            cierre_asignacion
+        ).eq("id", asignacion_id).execute()
+        supabase_admin.table("postulaciones").update({
+            "estado": "rechazada",
+            "motivo_rechazo": motivo_limpio,
+            "resuelta_at": ahora,
+        }).eq("id", verificacion["postulacion_id"]).execute()
+        supabase_admin.table("voluntarios").update({
+            "estado": "rechazado",
+            "updated_at": ahora,
+        }).eq("id", voluntario_id).execute()
+        supabase_admin.table("verificaciones_hogar").update({
+            "estado": "rechazada",
+            "motivo_resultado": motivo_limpio,
+            "resuelta_at": ahora,
+            "updated_at": ahora,
+        }).eq("id", verificacion["id"]).execute()
+        return {
+            "estado": "rechazada",
+            "mensaje": "La casa temporal no fue aprobada.",
+        }
+
+    voluntario = supabase_admin.table("voluntarios").select(
+        "id, usuario_id"
+    ).eq("id", voluntario_id).limit(1).execute()
+    if not voluntario.data:
+        raise HTTPException(status_code=404, detail="Voluntario no encontrado")
+    rol = supabase_admin.table("roles").select("id").eq(
+        "nombre", "voluntario_externo"
+    ).limit(1).execute()
+    if not rol.data:
+        raise HTTPException(
+            status_code=500,
+            detail="No está configurado el rol de voluntario externo",
+        )
+
+    supabase_admin.table("asignaciones_verificacion_hogar").update(
+        cierre_asignacion
+    ).eq("id", asignacion_id).execute()
+    supabase_admin.table("voluntarios").update({
+        "estado": "activo_nivel_2",
+        "asociacion_id": verificacion["asociacion_id"],
+        "updated_at": ahora,
+    }).eq("id", voluntario_id).execute()
+    supabase_admin.table("usuarios").update({
+        "rol_id": rol.data[0]["id"],
+        "asociacion_id": verificacion["asociacion_id"],
+        "updated_at": ahora,
+    }).eq("id", voluntario.data[0]["usuario_id"]).execute()
+    supabase_admin.table("postulaciones").update({
+        "estado": "aceptada",
+        "motivo_rechazo": None,
+        "resuelta_at": ahora,
+    }).eq("id", verificacion["postulacion_id"]).execute()
+    supabase_admin.table("verificaciones_hogar").update({
+        "estado": "aprobada",
+        "motivo_resultado": motivo_limpio or None,
+        "resuelta_at": ahora,
+        "updated_at": ahora,
+    }).eq("id", verificacion["id"]).execute()
+    return {
+        "estado": "aprobada",
+        "nivel_voluntario": "activo_nivel_2",
+        "mensaje": "La casa temporal fue aprobada.",
     }

@@ -10,10 +10,13 @@ from fastapi import (
 from app.db.supabase import supabase
 from app.models.voluntario import (
     CapacidadesRequest,
+    CheckInVisitaRequest,
+    ChecklistVisitaRequest,
     PostulacionRequest,
     ProponerHorarioVisitaRequest,
     ResponderHorarioPostulanteRequest,
     ResponderPropuestaVerificacionRequest,
+    ResultadoVisitaRequest,
 )
 import json
 
@@ -29,13 +32,17 @@ from app.services.voluntario_service import (
 from app.services.home_verification_service import (
     finalizar_postulacion_externa,
     confirmar_horario_como_verificador,
+    guardar_checklist_visita,
     listar_propuestas_verificacion_hogar,
     obtener_coordinacion_visita_postulante,
     obtener_propuesta_verificacion_hogar,
     proponer_horario_verificacion_hogar,
+    registrar_check_in_visita,
+    registrar_check_out_visita,
     reemplazar_video_solicitado,
     responder_horario_como_postulante,
     responder_propuesta_verificacion_hogar,
+    resolver_resultado_visita,
 )
 from app.services.video_evidence_service import procesar_evidencia_verificacion
 
@@ -170,6 +177,78 @@ async def patch_confirmar_horario_verificacion(
     return confirmar_horario_como_verificador(
         asignacion_id=asignacion_id,
         verificador_voluntario_id=voluntario_id,
+    )
+
+
+@router.patch(
+    "/me/verificaciones/{asignacion_id}/check-in",
+    status_code=200,
+)
+async def patch_check_in_verificacion(
+    asignacion_id: str,
+    body: CheckInVisitaRequest,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
+    return registrar_check_in_visita(
+        asignacion_id=asignacion_id,
+        verificador_voluntario_id=voluntario_id,
+        latitud=body.latitud,
+        longitud=body.longitud,
+    )
+
+
+@router.put(
+    "/me/verificaciones/{asignacion_id}/checklist",
+    status_code=200,
+)
+async def put_checklist_verificacion(
+    asignacion_id: str,
+    body: ChecklistVisitaRequest,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
+    return guardar_checklist_visita(
+        asignacion_id=asignacion_id,
+        verificador_voluntario_id=voluntario_id,
+        checklist=body.model_dump(mode="json"),
+    )
+
+
+@router.patch(
+    "/me/verificaciones/{asignacion_id}/check-out",
+    status_code=200,
+)
+async def patch_check_out_verificacion(
+    asignacion_id: str,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
+    return registrar_check_out_visita(
+        asignacion_id=asignacion_id,
+        verificador_voluntario_id=voluntario_id,
+    )
+
+
+@router.patch(
+    "/me/verificaciones/{asignacion_id}/resultado",
+    status_code=200,
+)
+async def patch_resultado_verificacion(
+    asignacion_id: str,
+    body: ResultadoVisitaRequest,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
+    return resolver_resultado_visita(
+        asignacion_id=asignacion_id,
+        verificador_voluntario_id=voluntario_id,
+        resultado=body.resultado.value,
+        motivo=body.motivo,
     )
 
 
