@@ -66,27 +66,40 @@ export function LoggedInProfile({
   const esVoluntarioExterno = user?.rol === 'voluntario_externo';
   const esVoluntarioActivo = esVoluntarioInterno || esVoluntarioExterno;
 
-
   const [tieneCapacidades, setTieneCapacidades] = useState<boolean | null>(null);
+  const [tienePerfilVoluntario, setTienePerfilVoluntario] = useState<boolean | null>(null);
+  const [estadoVoluntario, setEstadoVoluntario] = useState<string | null>(null);
  
 useFocusEffect(
   useCallback(() => {
-    if (!esVoluntarioActivo || !token) return;
+    if (!token || esAdmin || esAsociacion || esStaff) {
+      setTienePerfilVoluntario(null);
+      setEstadoVoluntario(null);
+      return;
+    }
     let cancelado = false;
     (async () => {
       try {
         const res = await axios.get(`${API_URL}/voluntarios/me`, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        if (!cancelado) setTieneCapacidades(!!res.data?.tiene_capacidades);
+        if (!cancelado) {
+          setTienePerfilVoluntario(!!res.data?.tiene_perfil_voluntario);
+          setEstadoVoluntario(res.data?.estado || null);
+          setTieneCapacidades(!!res.data?.tiene_capacidades);
+        }
       } catch {
-        if (!cancelado) setTieneCapacidades(null);
+        if (!cancelado) {
+          setTienePerfilVoluntario(null);
+          setEstadoVoluntario(null);
+          setTieneCapacidades(null);
+        }
       }
     })();
     return () => {
       cancelado = true;
     };
-  }, [esVoluntarioActivo, token, capacidadesRefreshKey])
+  }, [token, esAdmin, esAsociacion, esStaff, capacidadesRefreshKey])
 );
 
   const { impacto, isLoading: isLoadingReportes } = useRecentReports();
@@ -117,6 +130,14 @@ useFocusEffect(
     <ReporterImpactStats impacto={impacto} isLoading={isLoadingReportes} />
   );
 
+  const puedeVerPostulacion = esVoluntarioActivo || tienePerfilVoluntario === true;
+  const avisoPostulacion =
+    estadoVoluntario === 'rechazado'
+      ? 'Tu postulación ya fue revisada. Consulta el resultado y el motivo indicado por la asociación.'
+      : estadoVoluntario === 'postulacion_pendiente'
+        ? 'Tu postulación está en revisión. Aquí podrás consultar cualquier cambio.'
+        : null;
+
   const rolBadgeElement = esAdmin ? (
   <RoleBadge rol="admin" variant="onWhite" />
 ) : esAsociacion ? (
@@ -138,7 +159,7 @@ useFocusEffect(
         icon="clipboard-outline" 
         label="Mis Reportes" 
         onPress={onOpenMisReportes} 
-        isLast={!esAdmin && !esAsociacion && !esStaff && !esVoluntarioActivo} 
+        isLast={!esAdmin && !esAsociacion && !esStaff && !puedeVerPostulacion}
       />
       {esAdmin && (
         <AccessRow icon="shield-checkmark-outline" label="Panel de administrador" onPress={onOpenAdminPanel} isLast />
@@ -150,14 +171,30 @@ useFocusEffect(
         <AccessRow icon="briefcase-outline" label="Panel de staff" onPress={onOpenStaffAsignacion} isLast />
       )}
       {esVoluntarioActivo && (
+        <AccessRow icon="briefcase-outline" label="Mis casos" onPress={onOpenStaffPanel} />
+      )}
+      {puedeVerPostulacion && (
         <>
-          <AccessRow icon="briefcase-outline" label="Mis casos" onPress={onOpenStaffPanel} />
           <AccessRow
-            icon="document-text-outline"
+            icon={estadoVoluntario === 'rechazado' ? 'alert-circle-outline' : 'document-text-outline'}
             label="Mi postulación"
             onPress={onOpenPostulacion}
-            isLast={tieneCapacidades !== false}
+            isLast={!esVoluntarioActivo || tieneCapacidades !== false}
           />
+          {!!avisoPostulacion && (
+            <Text
+              style={[
+                styles.postulacionBanner,
+                estadoVoluntario === 'rechazado' && styles.postulacionBannerRejected,
+              ]}
+            >
+              {avisoPostulacion}
+            </Text>
+          )}
+        </>
+      )}
+      {esVoluntarioActivo && (
+        <>
           {tieneCapacidades === false && (
             <>
               <AccessRow
@@ -393,6 +430,22 @@ const styles = StyleSheet.create({
     color: Brand.textFaint,
     marginTop: 8,
     lineHeight: 17,
+  },
+  postulacionBanner: {
+    marginTop: 8,
+    marginBottom: 4,
+    paddingHorizontal: 11,
+    paddingVertical: 9,
+    borderRadius: 12,
+    backgroundColor: 'rgba(102,188,180,0.12)',
+    color: Brand.textDark,
+    fontSize: 11,
+    fontWeight: '600',
+    lineHeight: 16,
+  },
+  postulacionBannerRejected: {
+    backgroundColor: 'rgba(217,64,37,0.09)',
+    color: Brand.danger,
   },
   accessTitle: {
     fontSize: 11,
