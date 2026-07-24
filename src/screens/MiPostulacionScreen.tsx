@@ -35,9 +35,10 @@ const DESKTOP_BREAKPOINT = 900;
 
 interface Props {
   onClose?: () => void;
+  onRetryExternal?: () => void;
 }
 
-export default function MiPostulacionScreen({ onClose }: Props) {
+export default function MiPostulacionScreen({ onClose, onRetryExternal }: Props) {
   const { data, isLoading, error, refetch  } = useVoluntarioStatus();
   const { width: screenWidth } = useWindowDimensions();
   const isDesktop = screenWidth >= DESKTOP_BREAKPOINT;
@@ -324,16 +325,48 @@ export default function MiPostulacionScreen({ onClose }: Props) {
 
       {voluntario.estado === 'rechazado' && (
         <View style={styles.actionsSection}>
+          {voluntario.tipo === 'externo' && (
+            <>
+              <Text style={styles.retryTitle}>¿Cómo te gustaría continuar?</Text>
+              <Text style={styles.retryHint}>
+                Conservaremos la información que ya compartiste para que solo revises o corrijas lo necesario.
+              </Text>
+              <TouchableOpacity
+                style={[styles.actionButton, styles.casaTemporalButton]}
+                activeOpacity={0.8}
+                onPress={onRetryExternal}
+              >
+                <Ionicons name="home-outline" size={18} color={COLORS.bgWhite} />
+                <Text style={styles.actionButtonText}>Corregir y reintentar como casa temporal</Text>
+              </TouchableOpacity>
+            </>
+          )}
           <TouchableOpacity
-            style={[styles.actionButton, styles.volverPostularButton]}
+            style={[
+              styles.actionButton,
+              voluntario.tipo === 'externo'
+                ? styles.asociacionOutlineButton
+                : styles.volverPostularButton,
+            ]}
             activeOpacity={0.8}
             onPress={() => {
               if (onClose) onClose();
               router.push('/(tabs)/join-association');
             }}
           >
-            <Ionicons name="refresh-outline" size={18} color={COLORS.bgWhite} />
-            <Text style={styles.actionButtonText}>Volver a Postular</Text>
+            <Ionicons
+              name="people-outline"
+              size={18}
+              color={voluntario.tipo === 'externo' ? COLORS.primary : COLORS.bgWhite}
+            />
+            <Text
+              style={[
+                styles.actionButtonText,
+                voluntario.tipo === 'externo' && styles.asociacionOutlineButtonText,
+              ]}
+            >
+              Postularme como voluntario de asociación
+            </Text>
           </TouchableOpacity>
         </View>
       )}
@@ -626,6 +659,35 @@ const styles = StyleSheet.create({
 
   volverPostularButton: {
     backgroundColor: COLORS.primary,
+  },
+
+  casaTemporalButton: {
+    backgroundColor: COLORS.bgTeal,
+  },
+
+  asociacionOutlineButton: {
+    backgroundColor: COLORS.bgWhite,
+    borderWidth: 1.5,
+    borderColor: COLORS.primary,
+  },
+
+  asociacionOutlineButtonText: {
+    color: COLORS.primary,
+  },
+
+  retryTitle: {
+    color: COLORS.textDark,
+    fontSize: 15,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+
+  retryHint: {
+    color: COLORS.textLight,
+    fontSize: 12,
+    lineHeight: 17,
+    textAlign: 'center',
+    marginBottom: 4,
   },
 
   actionButtonText: {
