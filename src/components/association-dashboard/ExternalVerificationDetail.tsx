@@ -566,6 +566,7 @@ export function ExternalVerificationDetail({
       <Toast toast={toast} translateY={translateY} />
       <View style={{
         paddingHorizontal: isMobile ? 18 : 24,
+        paddingRight: 56,
         paddingVertical: 18,
         borderBottomWidth: 1,
         borderBottomColor: COLORS.border,
@@ -586,13 +587,6 @@ export function ExternalVerificationDetail({
             {ESTADOS[verification.estado] || verification.estado}
           </Text>
         </View>
-        <TouchableOpacity
-          onPress={onClose}
-          accessibilityLabel="Cerrar expediente"
-          style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.cardBg, alignItems: 'center', justifyContent: 'center' }}
-        >
-          <Ionicons name="close" size={21} color={COLORS.textDark} />
-        </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={{ padding: isMobile ? 16 : 24, gap: 18 }}>
