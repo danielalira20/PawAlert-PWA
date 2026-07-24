@@ -35,6 +35,7 @@ import { useAuth } from '../context/AuthContext';
 const AssociationFormScreen = lazy(() => import('./AssociationFormScreen'));
 const ReportGuideScreen = lazy(() => import('./ReportGuideScreen'));
 const ExternalVolunteerFormScreen = lazy(() => import('./ExternalVolunteerFormScreen'));
+const RoleDetailModal = lazy(() => import('./RoleDetailModal'));
 
 const isWeb = Platform.OS === 'web';
 
@@ -165,10 +166,29 @@ const ROLES = [
     id: 'patrocinador',
     title: 'Patrocinador',
     icon: 'star-outline',
-    does: 'Apoya económicamente el sostenimiento de rescates y campañas (función futura).',
-    requirements: 'Próximamente disponible.',
-    ctaLabel: 'Próximamente',
-    ctaRoute: null,
+    subcategories: [
+      {
+        id: 'donante-comunitario',
+        title: 'Donante comunitario',
+        does: 'Cualquier persona ya registrada en PawAlert (reportante o voluntario) que quiere aportar algo puntual.',
+        ctaLabel: 'Próximamente',
+        ctaRoute: null,
+      },
+      {
+        id: 'aliado-local',
+        title: 'Aliado local',
+        does: 'Negocio o profesional con participación recurrente (veterinaria, tienda de mascotas, transportista, profesional independiente).',
+        ctaLabel: 'Próximamente',
+        ctaRoute: null,
+      },
+      {
+        id: 'patrocinador-institucional',
+        title: 'Patrocinador institucional',
+        does: 'Empresa, fundación, organización civil, gobierno, institución educativa.',
+        ctaLabel: 'Próximamente',
+        ctaRoute: null,
+      },
+    ],
   },
 ];
 
@@ -221,28 +241,57 @@ export default function LandingScreen() {
   const [showFullMissionVision, setShowFullMissionVision] = useState(false);
 
   const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
+  const [selectedSubcategoryId, setSelectedSubcategoryId] = useState<string | null>(null);
+  const [roleDetailVisible, setRoleDetailVisible] = useState<{ id: string; title: string; icon: string; color: string } | null>(null);
   const expandOpacity = useRef(new Animated.Value(0)).current;
   const expandTranslateY = useRef(new Animated.Value(20)).current;
+  const expandScale = useRef(new Animated.Value(1)).current;
+  // Ref para saber si la tarjeta ya está visible (para animar salida antes de cambiar)
+  const isCardVisible = useRef(false);
+
+  const animateIn = () => {
+    expandOpacity.setValue(0);
+    expandTranslateY.setValue(12);
+    expandScale.setValue(0.96);
+    Animated.parallel([
+      Animated.timing(expandOpacity, { toValue: 1, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(expandTranslateY, { toValue: 0, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(expandScale, { toValue: 1, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+    ]).start(() => { isCardVisible.current = true; });
+  };
+
+  const animateOut = (onDone: () => void) => {
+    isCardVisible.current = false;
+    Animated.parallel([
+      Animated.timing(expandOpacity, { toValue: 0, duration: 190, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(expandTranslateY, { toValue: -12, duration: 190, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(expandScale, { toValue: 0.97, duration: 190, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+    ]).start(onDone);
+  };
 
   const handleRolePress = (id: string) => {
     if (selectedRoleId === id) {
-      Animated.parallel([
-        Animated.timing(expandOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
-        Animated.timing(expandTranslateY, { toValue: -10, duration: 200, useNativeDriver: true })
-      ]).start(() => setSelectedRoleId(null));
+      // Colapsar tarjeta actual
+      animateOut(() => {
+        setSelectedRoleId(null);
+        setSelectedSubcategoryId(null);
+      });
+    } else if (selectedRoleId !== null && isCardVisible.current) {
+      // Cambio de rol: salida del actual → actualizar → entrada del nuevo
+      animateOut(() => {
+        setSelectedSubcategoryId(null);
+        setSelectedRoleId(id);
+        // animateIn se dispara en el useEffect de abajo
+      });
     } else {
+      setSelectedSubcategoryId(null);
       setSelectedRoleId(id);
     }
   };
 
   useEffect(() => {
     if (selectedRoleId) {
-      expandOpacity.setValue(0);
-      expandTranslateY.setValue(20);
-      Animated.parallel([
-        Animated.timing(expandOpacity, { toValue: 1, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-        Animated.timing(expandTranslateY, { toValue: 0, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true })
-      ]).start();
+      animateIn();
     }
   }, [selectedRoleId]);
 
@@ -651,7 +700,7 @@ export default function LandingScreen() {
                       {isRowActive && (
                         <Animated.View style={{
                           opacity: expandOpacity,
-                          transform: [{ translateY: expandTranslateY }],
+                          transform: [{ translateY: expandTranslateY }, { scale: expandScale }],
                           marginTop: 8,
                           width: '100%',
                         }}>
@@ -661,11 +710,29 @@ export default function LandingScreen() {
                             const activeIndex = ROLES.findIndex(r => r.id === selectedRoleId);
                             const colors = [C.primary, C.secondary, C.accent, C.text, C.danger];
                             const activeColor = colors[activeIndex % colors.length];
+                            const hasSubcategories = !!(activeRole as any).subcategories;
+
+                            // ── Columna derecha: ícono placeholder (común a todos los roles) ──
+                            const RightColumn = (
+                              <View style={{
+                                width: isDesktop ? '38%' : '100%',
+                                minHeight: isDesktop ? 200 : 110,
+                                backgroundColor: `${activeColor}14`,
+                                borderRadius: 20,
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                alignSelf: 'center',
+                                marginBottom: isDesktop ? 0 : 16,
+                              }}>
+                                {/* TODO: reemplazar por ilustración/foto real asociada a este rol */}
+                                <Ionicons name="paw" size={isDesktop ? 88 : 60} color={activeColor} style={{ alignSelf: 'center' }} />
+                              </View>
+                            );
 
                             return (
                               <View style={{
                                 backgroundColor: `${activeColor}12`,
-                                borderRadius: 24, padding: 32,
+                                borderRadius: 24, padding: isDesktop ? 32 : 24,
                                 borderWidth: 1.5, borderColor: `${activeColor}35`,
                                 ...(isWeb ? {
                                   backdropFilter: 'blur(20px)',
@@ -674,46 +741,192 @@ export default function LandingScreen() {
                                   boxShadow: `0 8px 32px ${activeColor}18, inset 0 1px 0 rgba(255,255,255,0.8)`,
                                 } : { elevation: 2 }),
                               } as any}>
-                                <Text style={{ fontSize: 24, fontFamily: F.displayBold, color: C.text, marginBottom: 12 }}>
-                                  {activeRole.title}
-                                </Text>
-                                <Text style={{ fontSize: 15, fontFamily: F.bodyMedium, color: C.text, marginBottom: 12, lineHeight: 24 }}>
-                                  {activeRole.does}
-                                </Text>
-                                <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 24 }}>
-                                  <Ionicons name="information-circle-outline" size={20} color={C.muted} style={{ marginTop: 2 }} />
-                                  <Text style={{ fontSize: 14, fontFamily: F.bodyRegular, color: C.muted, flex: 1, lineHeight: 20 }}>
-                                    {activeRole.requirements}
-                                  </Text>
-                                </View>
 
-                                <AnimatedButton onPress={() => {
-                                  if (activeRole.ctaRoute === '/association-register') {
-                                    setIsAssociationFormVisible(true);
-                                  } else if (activeRole.ctaRoute === '/external-volunteer-register') {
-                                    // NUEVO: Verificamos si tiene cuenta antes de abrir el modal
-                                    if (isLoggedIn) {
-                                      setIsExternalVolunteerFormVisible(true);
-                                    } else {
-                                      router.push('/login'); 
-                                    }
-                                  } else if (activeRole.ctaRoute) {
-                                    router.push(activeRole.ctaRoute);
-                                  }
+                                {/* Layout: columna derecha arriba en mobile, lado en desktop */}
+                                <View style={{
+                                  flexDirection: isDesktop ? 'row' : 'column',
+                                  gap: isDesktop ? 32 : 0,
+                                  alignItems: 'center',
                                 }}>
-                                  <View style={{
-                                    backgroundColor: activeRole.ctaRoute ? activeColor : C.neutralLight,
-                                    paddingVertical: 14, paddingHorizontal: 24,
-                                    borderRadius: 100, alignSelf: 'flex-start',
-                                  }}>
-                                    <Text style={{
-                                      color: activeRole.ctaRoute ? (activeColor === C.accent ? C.text : '#FFF') : C.muted,
-                                      fontSize: 15, fontFamily: F.bodySemiBold
-                                    }}>
-                                      {activeRole.ctaLabel}
+
+                                  {/* En mobile la imagen va arriba */}
+                                  {!isDesktop && RightColumn}
+
+                                  {/* COLUMNA IZQUIERDA — contenido (~60%) */}
+                                  <View style={{ flex: isDesktop ? 1 : undefined, width: isDesktop ? undefined : '100%' }}>
+                                    <Text style={{ fontSize: 24, fontFamily: F.displayBold, color: C.text, marginBottom: 12 }}>
+                                      {activeRole.title}
                                     </Text>
+
+                                    {hasSubcategories ? (
+                                      // ── LAYOUT ESPECIAL PARA PATROCINADOR ──
+                                      (() => {
+                                        const subs = (activeRole as any).subcategories as any[];
+                                        const activeSub = subs.find(s => s.id === selectedSubcategoryId);
+
+                                        if (activeSub) {
+                                          // ── DETALLE DE UNA SUBCATEGORÍA ──
+                                          return (
+                                            <View style={{ gap: 12 }}>
+                                              {/* Botón volver */}
+                                              <AnimatedButton onPress={() => setSelectedSubcategoryId(null)}>
+                                                <View style={{
+                                                  flexDirection: 'row', alignItems: 'center', gap: 6,
+                                                  alignSelf: 'flex-start',
+                                                  paddingVertical: 6, paddingHorizontal: 12,
+                                                  borderRadius: 100,
+                                                  backgroundColor: `${activeColor}15`,
+                                                }}>
+                                                  <Ionicons name="chevron-back" size={14} color={activeColor} />
+                                                  <Text style={{ fontSize: 12, fontFamily: F.bodySemiBold, color: activeColor }}>
+                                                    Tipos de patrocinador
+                                                  </Text>
+                                                </View>
+                                              </AnimatedButton>
+
+                                              {/* Card detalle */}
+                                              <View style={{
+                                                backgroundColor: `${activeColor}10`,
+                                                borderRadius: 16, padding: 18,
+                                                borderWidth: 1, borderColor: `${activeColor}25`,
+                                              }}>
+                                                <Text style={{
+                                                  fontSize: 16, fontFamily: F.bodySemiBold, color: C.text, marginBottom: 8,
+                                                }}>
+                                                  {activeSub.title}
+                                                </Text>
+                                                <Text style={{
+                                                  fontSize: 13, fontFamily: F.bodyRegular, color: C.muted,
+                                                  lineHeight: 20, marginBottom: 14,
+                                                }}>
+                                                  {activeSub.does}
+                                                </Text>
+                                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                                                  <View style={{
+                                                    backgroundColor: C.neutralLight,
+                                                    paddingVertical: 7, paddingHorizontal: 16,
+                                                    borderRadius: 100, alignSelf: 'flex-start',
+                                                  }}>
+                                                    <Text style={{ color: C.muted, fontSize: 12, fontFamily: F.bodySemiBold }}>
+                                                      {activeSub.ctaLabel}
+                                                    </Text>
+                                                  </View>
+
+                                                  <AnimatedButton onPress={() => setRoleDetailVisible({ id: activeSub.id, title: activeSub.title, icon: 'star-outline', color: activeColor })}>
+                                                    <View style={{
+                                                      flexDirection: 'row', alignItems: 'center', gap: 4,
+                                                      paddingVertical: 7, paddingHorizontal: 12,
+                                                      borderRadius: 100, alignSelf: 'flex-start',
+                                                      borderWidth: 1.5, borderColor: `${activeColor}50`,
+                                                    }}>
+                                                      <Text style={{ fontSize: 12, fontFamily: F.bodySemiBold, color: activeColor }}>Leer más</Text>
+                                                      <Ionicons name="arrow-forward-outline" size={12} color={activeColor} />
+                                                    </View>
+                                                  </AnimatedButton>
+                                                </View>
+                                              </View>
+                                            </View>
+                                          );
+                                        }
+
+                                        // ── LISTA DE BOTONES PILL (estado inicial) ──
+                                        return (
+                                          <View style={{ gap: 10 }}>
+                                            {subs.map((sub: any) => (
+                                              <AnimatedButton key={sub.id} onPress={() => setSelectedSubcategoryId(sub.id)}>
+                                                <View style={{
+                                                  flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                                                  paddingVertical: 14, paddingHorizontal: 18,
+                                                  borderRadius: 16,
+                                                  backgroundColor: `${activeColor}10`,
+                                                  borderWidth: 1, borderColor: `${activeColor}30`,
+                                                  ...(isWeb ? { boxShadow: `0 2px 8px ${activeColor}10` } : { elevation: 1 }),
+                                                } as any}>
+                                                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                                                    <View style={{
+                                                      width: 32, height: 32, borderRadius: 16,
+                                                      backgroundColor: `${activeColor}20`,
+                                                      alignItems: 'center', justifyContent: 'center',
+                                                    }}>
+                                                      <Ionicons name="star-outline" size={16} color={activeColor} />
+                                                    </View>
+                                                    <Text style={{
+                                                      fontSize: 14, fontFamily: F.bodySemiBold, color: C.text, flex: 1,
+                                                    }}>
+                                                      {sub.title}
+                                                    </Text>
+                                                  </View>
+                                                  <Ionicons name="chevron-forward" size={16} color={activeColor} />
+                                                </View>
+                                              </AnimatedButton>
+                                            ))}
+                                          </View>
+                                        );
+                                      })()
+                                    ) : (
+                                      // ── LAYOUT NORMAL PARA EL RESTO DE ROLES ──
+                                      <>
+                                        <Text style={{ fontSize: 15, fontFamily: F.bodyMedium, color: C.text, marginBottom: 12, lineHeight: 24 }}>
+                                          {(activeRole as any).does}
+                                        </Text>
+                                        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 24 }}>
+                                          <Ionicons name="information-circle-outline" size={20} color={C.muted} style={{ marginTop: 2 }} />
+                                          <Text style={{ fontSize: 14, fontFamily: F.bodyRegular, color: C.muted, flex: 1, lineHeight: 20 }}>
+                                            {(activeRole as any).requirements}
+                                          </Text>
+                                        </View>
+
+                                        {/* Botones CTA + Leer más */}
+                                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
+                                          <AnimatedButton onPress={() => {
+                                            const ar = activeRole as any;
+                                            if (ar.ctaRoute === '/association-register') {
+                                              setIsAssociationFormVisible(true);
+                                            } else if (ar.ctaRoute === '/external-volunteer-register') {
+                                              if (isLoggedIn) {
+                                                setIsExternalVolunteerFormVisible(true);
+                                              } else {
+                                                router.push('/login');
+                                              }
+                                            } else if (ar.ctaRoute) {
+                                              router.push(ar.ctaRoute);
+                                            }
+                                          }}>
+                                            <View style={{
+                                              backgroundColor: (activeRole as any).ctaRoute ? activeColor : C.neutralLight,
+                                              paddingVertical: 12, paddingHorizontal: 22,
+                                              borderRadius: 100, alignSelf: 'flex-start',
+                                            }}>
+                                              <Text style={{
+                                                color: (activeRole as any).ctaRoute ? (activeColor === C.accent ? C.text : '#FFF') : C.muted,
+                                                fontSize: 14, fontFamily: F.bodySemiBold
+                                              }}>
+                                                {(activeRole as any).ctaLabel}
+                                              </Text>
+                                            </View>
+                                          </AnimatedButton>
+
+                                          {/* Botón Leer más */}
+                                          <AnimatedButton onPress={() => setRoleDetailVisible({ id: activeRole.id, title: activeRole.title, icon: activeRole.icon, color: activeColor })}>
+                                            <View style={{
+                                              flexDirection: 'row', alignItems: 'center', gap: 6,
+                                              paddingVertical: 12, paddingHorizontal: 18,
+                                              borderRadius: 100, alignSelf: 'flex-start',
+                                              borderWidth: 1.5, borderColor: `${activeColor}50`,
+                                              backgroundColor: 'transparent',
+                                            }}>
+                                              <Text style={{ fontSize: 14, fontFamily: F.bodySemiBold, color: activeColor }}>Leer más</Text>
+                                              <Ionicons name="arrow-forward-outline" size={14} color={activeColor} />
+                                            </View>
+                                          </AnimatedButton>
+                                        </View>
+                                      </>
+                                    )}
                                   </View>
-                                </AnimatedButton>
+
+                                  {/* COLUMNA DERECHA (imagen) — solo en desktop va al lado */}
+                                  {isDesktop && RightColumn}
+                                </View>
                               </View>
                             );
                           })()}
@@ -1293,6 +1506,29 @@ export default function LandingScreen() {
             )}
           </View>
         </View>
+      </Modal>
+
+      {/* ── MODAL DETALLE DE ROL ───────────────────────────────────────── */}
+      <Modal
+        visible={roleDetailVisible !== null}
+        animationType="none"
+        transparent={true}
+        onRequestClose={() => setRoleDetailVisible(null)}
+      >
+        {roleDetailVisible && (
+          <Suspense fallback={
+            <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(46,42,38,0.55)' }}>
+              <View style={{ height: 300, backgroundColor: C.bg, borderTopLeftRadius: 28, borderTopRightRadius: 28, justifyContent: 'center', alignItems: 'center' }}>
+                <ActivityIndicator size="large" color={C.primary} />
+              </View>
+            </View>
+          }>
+            <RoleDetailModal
+              role={roleDetailVisible}
+              onClose={() => setRoleDetailVisible(null)}
+            />
+          </Suspense>
+        )}
       </Modal>
 
     </View>
