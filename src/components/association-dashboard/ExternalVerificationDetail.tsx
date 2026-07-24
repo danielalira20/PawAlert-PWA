@@ -52,7 +52,44 @@ type VerificationData = {
   modalidad: 'por_definir' | 'presencial' | 'remota';
   distancia_asociacion_km?: number | null;
   resumen_expediente?: any;
-  estado_coordenadas?: string;
+  analisis_video?: {
+    observabilidad?: 'completa' | 'parcial' | 'insuficiente';
+    resumen_breve?: string;
+    areas_observadas?: string[];
+    caracteristicas_visibles?: string[];
+    condiciones_aparentes?: string[];
+    riesgos_aparentes?: string[];
+    otros_animales_visibles?: string[];
+    espacios_aislamiento_visibles?: string[];
+    puntos_no_observados?: string[];
+    evidencias_temporales?: Array<{
+      momento?: string;
+      observacion?: string;
+    }>;
+    advertencia?: string;
+  } | null;
+  analisis_video_estado?:
+    | 'pendiente'
+    | 'procesando'
+    | 'completado'
+    | 'fallido'
+    | 'sin_video'
+    | 'no_configurado';
+  analisis_video_error?: string | null;
+  estado_coordenadas?:
+    | 'pendiente'
+    | 'procesando'
+    | 'coincide'
+    | 'imprecisa'
+    | 'discrepancia'
+    | 'sin_metadatos'
+    | 'sin_video'
+    | 'fallida';
+  distancia_coordenadas_m?: number | null;
+  coordenadas_fuente?: string | null;
+  coordenadas_detalle?: {
+    mensaje?: string;
+  };
   hogar?: {
     latitud?: number;
     longitud?: number;
@@ -257,6 +294,25 @@ function SectionCard({
   );
 }
 
+function BulletList({ title, values }: { title: string; values?: string[] }) {
+  if (!values?.length) return null;
+  return (
+    <View style={{ gap: 5 }}>
+      <Text style={{ color: COLORS.textDark, fontSize: 12, fontWeight: '800' }}>
+        {title}
+      </Text>
+      {values.map((value, index) => (
+        <Text
+          key={`${index}-${value}`}
+          style={{ color: COLORS.textDark, fontSize: 12, lineHeight: 18 }}
+        >
+          • {value}
+        </Text>
+      ))}
+    </View>
+  );
+}
+
 export function ExternalVerificationDetail({
   postulacion,
   voluntario,
@@ -272,6 +328,7 @@ export function ExternalVerificationDetail({
   const [candidatos, setCandidatos] = useState<Candidato[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isRetryingAnalysis, setIsRetryingAnalysis] = useState(false);
 
   const cargar = async () => {
     if (!token) return;
@@ -361,6 +418,40 @@ export function ExternalVerificationDetail({
     }
   };
 
+  const reintentarAnalisis = async () => {
+    if (!token || !verification) return;
+    setIsRetryingAnalysis(true);
+    try {
+      await axios.post(
+        `${API_URL}/associations/me/verificaciones/${verification.id}/reintentar-analisis`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      setVerification((actual) => actual ? {
+        ...actual,
+        analisis_video_estado: 'pendiente',
+        estado_coordenadas: 'pendiente',
+        analisis_video_error: null,
+      } : actual);
+      showToast({
+        type: 'success',
+        title: 'Análisis solicitado',
+        description: 'Puedes continuar revisando el expediente mientras se procesa.',
+      });
+      setTimeout(() => {
+        cargar();
+      }, 5000);
+    } catch (error: any) {
+      showToast({
+        type: 'error',
+        title: 'No pudimos reintentar',
+        description: error?.response?.data?.detail || 'Intenta nuevamente.',
+      });
+    } finally {
+      setIsRetryingAnalysis(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <View style={{ minHeight: 360, justifyContent: 'center', alignItems: 'center', gap: 12 }}>
@@ -392,6 +483,9 @@ export function ExternalVerificationDetail({
   const casa = resumen.hogar || {};
   const evidencias = resumen.evidencias || {};
   const alertas = resumen.alertas || [];
+  const videoAnalysis = verification.analisis_video;
+  const videoAnalysisState = verification.analisis_video_estado || 'pendiente';
+  const coordinatesState = verification.estado_coordenadas || 'pendiente';
   const applicationSummary = buildApplicationSummary({
     nombre: voluntario.nombre,
     verification,
@@ -497,6 +591,274 @@ export function ExternalVerificationDetail({
             <Text style={{ color: COLORS.textDark, fontSize: 12, lineHeight: 18 }}>
               <Text style={{ fontWeight: '800' }}>Modalidad de verificación: </Text>
               {applicationSummary.modality}
+            </Text>
+          </View>
+        </View>
+
+        <View
+          style={{
+            flexDirection: isMobile ? 'column' : 'row',
+            gap: 18,
+            alignItems: 'stretch',
+          }}
+        >
+          <View
+            style={{
+              flex: 1,
+              padding: isMobile ? 17 : 20,
+              borderRadius: 20,
+              backgroundColor: COLORS.cardBg,
+              borderWidth: 1,
+              borderColor: COLORS.border,
+              gap: 12,
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
+              <View
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: 17,
+                  backgroundColor: '#FFF2E7',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Ionicons name="sparkles-outline" size={18} color={COLORS.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: COLORS.textDark, fontSize: 15, fontWeight: '900' }}>
+                  Observaciones automáticas del recorrido
+                </Text>
+                <Text style={{ marginTop: 2, color: COLORS.textLight, fontSize: 11 }}>
+                  Apoyo previo para la revisión humana
+                </Text>
+              </View>
+              {videoAnalysisState === 'completado' && videoAnalysis?.observabilidad && (
+                <View style={{ paddingHorizontal: 9, paddingVertical: 5, borderRadius: 12, backgroundColor: '#EAF7F6' }}>
+                  <Text style={{ color: COLORS.accent, fontSize: 10, fontWeight: '800', textTransform: 'capitalize' }}>
+                    Vista {videoAnalysis.observabilidad}
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            {videoAnalysisState === 'pendiente' && (
+              <View style={{ gap: 10 }}>
+                <Text style={{ color: COLORS.textLight, fontSize: 12, lineHeight: 18 }}>
+                  El recorrido está listo para generar observaciones. Puedes iniciar el análisis sin detener la revisión del expediente.
+                </Text>
+                <TouchableOpacity
+                  onPress={reintentarAnalisis}
+                  disabled={isRetryingAnalysis}
+                  style={{
+                    alignSelf: 'flex-start',
+                    paddingHorizontal: 13,
+                    paddingVertical: 8,
+                    borderRadius: 12,
+                    backgroundColor: COLORS.white,
+                    borderWidth: 1,
+                    borderColor: COLORS.primary,
+                    opacity: isRetryingAnalysis ? 0.65 : 1,
+                  }}
+                >
+                  <Text style={{ color: COLORS.primary, fontSize: 11, fontWeight: '800' }}>
+                    {isRetryingAnalysis ? 'Iniciando…' : 'Iniciar análisis'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {videoAnalysisState === 'procesando' && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <ActivityIndicator size="small" color={COLORS.primary} />
+                <Text style={{ flex: 1, color: COLORS.textLight, fontSize: 12, lineHeight: 18 }}>
+                  Estamos revisando el recorrido. Puedes continuar con el resto del expediente.
+                </Text>
+              </View>
+            )}
+
+            {videoAnalysisState === 'completado' && videoAnalysis && (
+              <>
+                {!!videoAnalysis.resumen_breve && (
+                  <Text style={{ color: COLORS.textDark, fontSize: 13, lineHeight: 20 }}>
+                    {videoAnalysis.resumen_breve}
+                  </Text>
+                )}
+                <BulletList title="Áreas observadas" values={videoAnalysis.areas_observadas} />
+                <BulletList title="Características visibles" values={videoAnalysis.caracteristicas_visibles} />
+                <BulletList title="Condiciones aparentes" values={videoAnalysis.condiciones_aparentes} />
+                <BulletList title="Riesgos que conviene revisar" values={videoAnalysis.riesgos_aparentes} />
+                <BulletList title="Otros animales visibles" values={videoAnalysis.otros_animales_visibles} />
+                <BulletList title="Espacios de aislamiento visibles" values={videoAnalysis.espacios_aislamiento_visibles} />
+                <BulletList title="Lo que no se alcanzó a observar" values={videoAnalysis.puntos_no_observados} />
+                {!!videoAnalysis.evidencias_temporales?.length && (
+                  <View style={{ gap: 5 }}>
+                    <Text style={{ color: COLORS.textDark, fontSize: 12, fontWeight: '800' }}>
+                      Momentos de referencia
+                    </Text>
+                    {videoAnalysis.evidencias_temporales.map((evidence, index) => (
+                      <Text
+                        key={`${index}-${evidence.momento}`}
+                        style={{ color: COLORS.textDark, fontSize: 12, lineHeight: 18 }}
+                      >
+                        • {evidence.momento || 'Sin tiempo'} — {evidence.observacion}
+                      </Text>
+                    ))}
+                  </View>
+                )}
+              </>
+            )}
+
+            {videoAnalysisState === 'sin_video' && (
+              <Text style={{ color: COLORS.textLight, fontSize: 12, lineHeight: 18 }}>
+                No se recibió un recorrido en video. La asociación puede continuar con las demás evidencias.
+              </Text>
+            )}
+
+            {(videoAnalysisState === 'fallido' || videoAnalysisState === 'no_configurado') && (
+              <View style={{ gap: 10 }}>
+                <Text style={{ color: COLORS.textLight, fontSize: 12, lineHeight: 18 }}>
+                  {videoAnalysisState === 'no_configurado'
+                    ? 'Las observaciones automáticas todavía no están disponibles. El video puede revisarse manualmente.'
+                    : verification.analisis_video_error || 'No fue posible analizar el recorrido automáticamente.'}
+                </Text>
+                <TouchableOpacity
+                  onPress={reintentarAnalisis}
+                  disabled={isRetryingAnalysis}
+                  style={{
+                    alignSelf: 'flex-start',
+                    paddingHorizontal: 13,
+                    paddingVertical: 8,
+                    borderRadius: 12,
+                    backgroundColor: COLORS.white,
+                    borderWidth: 1,
+                    borderColor: COLORS.primary,
+                    opacity: isRetryingAnalysis ? 0.65 : 1,
+                  }}
+                >
+                  <Text style={{ color: COLORS.primary, fontSize: 11, fontWeight: '800' }}>
+                    {isRetryingAnalysis ? 'Solicitando…' : 'Reintentar análisis'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            <View style={{ paddingTop: 9, borderTopWidth: 1, borderTopColor: COLORS.border }}>
+              <Text style={{ color: COLORS.textLight, fontSize: 10, lineHeight: 15 }}>
+                Gemini genera observaciones de apoyo; la asociación o la persona verificadora toma la decisión.
+              </Text>
+            </View>
+          </View>
+
+          <View
+            style={{
+              width: isMobile ? '100%' : 285,
+              padding: 17,
+              borderRadius: 20,
+              backgroundColor: COLORS.cardBg,
+              borderWidth: 1,
+              borderColor: COLORS.border,
+              gap: 11,
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
+              <Ionicons name="navigate-circle-outline" size={23} color={COLORS.primary} />
+              <Text style={{ flex: 1, color: COLORS.textDark, fontSize: 14, fontWeight: '900' }}>
+                Comprobación de ubicación
+              </Text>
+            </View>
+
+            {(coordinatesState === 'pendiente' || coordinatesState === 'procesando') && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
+                <ActivityIndicator size="small" color={COLORS.primary} />
+                <Text style={{ flex: 1, color: COLORS.textLight, fontSize: 12, lineHeight: 18 }}>
+                  Revisando los datos disponibles del video…
+                </Text>
+              </View>
+            )}
+
+            {coordinatesState === 'coincide' && (
+              <>
+                <Text style={{ color: COLORS.accent, fontSize: 13, fontWeight: '900' }}>
+                  Ubicación consistente
+                </Text>
+                <Text style={{ color: COLORS.textDark, fontSize: 12, lineHeight: 18 }}>
+                  Los metadatos del video corresponden con la ubicación declarada
+                  {verification.distancia_coordenadas_m != null
+                    ? `, con una diferencia aproximada de ${Math.round(verification.distancia_coordenadas_m)} m.`
+                    : '.'}
+                </Text>
+              </>
+            )}
+
+            {coordinatesState === 'imprecisa' && (
+              <>
+                <Text style={{ color: COLORS.warning, fontSize: 13, fontWeight: '900' }}>
+                  Coincidencia imprecisa
+                </Text>
+                <Text style={{ color: COLORS.textDark, fontSize: 12, lineHeight: 18 }}>
+                  La diferencia aproximada es de {Math.round(verification.distancia_coordenadas_m || 0)} m. Conviene confirmarla durante la revisión.
+                </Text>
+              </>
+            )}
+
+            {coordinatesState === 'discrepancia' && (
+              <>
+                <Text style={{ color: COLORS.danger, fontSize: 13, fontWeight: '900' }}>
+                  Requiere revisión
+                </Text>
+                <Text style={{ color: COLORS.textDark, fontSize: 12, lineHeight: 18 }}>
+                  Los metadatos difieren aproximadamente {Math.round(verification.distancia_coordenadas_m || 0)} m de la ubicación declarada. Esto es una alerta, no un rechazo automático.
+                </Text>
+              </>
+            )}
+
+            {coordinatesState === 'sin_metadatos' && (
+              <>
+                <Text style={{ color: COLORS.textDark, fontSize: 13, fontWeight: '900' }}>
+                  Sin datos de ubicación
+                </Text>
+                <Text style={{ color: COLORS.textLight, fontSize: 12, lineHeight: 18 }}>
+                  El video no conserva GPS. Es común cuando fue compartido o comprimido y no afecta automáticamente la postulación.
+                </Text>
+              </>
+            )}
+
+            {coordinatesState === 'sin_video' && (
+              <Text style={{ color: COLORS.textLight, fontSize: 12, lineHeight: 18 }}>
+                No hay video disponible para comprobar sus metadatos.
+              </Text>
+            )}
+
+            {coordinatesState === 'fallida' && (
+              <>
+                <Text style={{ color: COLORS.textLight, fontSize: 12, lineHeight: 18 }}>
+                  No fue posible revisar la ubicación del video. La evidencia puede evaluarse manualmente.
+                </Text>
+                <TouchableOpacity
+                  onPress={reintentarAnalisis}
+                  disabled={isRetryingAnalysis}
+                  style={{
+                    alignSelf: 'flex-start',
+                    paddingHorizontal: 13,
+                    paddingVertical: 8,
+                    borderRadius: 12,
+                    backgroundColor: COLORS.white,
+                    borderWidth: 1,
+                    borderColor: COLORS.primary,
+                    opacity: isRetryingAnalysis ? 0.65 : 1,
+                  }}
+                >
+                  <Text style={{ color: COLORS.primary, fontSize: 11, fontWeight: '800' }}>
+                    Reintentar comprobación
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            <Text style={{ color: COLORS.textLight, fontSize: 10, lineHeight: 15 }}>
+              Coincidencia = señal positiva · ausencia = neutral · diferencia = punto para revisar.
             </Text>
           </View>
         </View>
