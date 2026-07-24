@@ -200,6 +200,10 @@ export interface AsociacionMapa {
   latitud: number;
   longitud: number;
   contacto_telefono?: string | null;
+  contacto_email?: string | null;
+  tipos_animales?: string[];
+  horario_atencion?: string | null;
+  radio_km?: number | null;
 }
 
 // ─── Click handler con ref para evitar re-suscripciones ──────────────────────
@@ -219,6 +223,7 @@ interface LeafletMapProps {
   width?: string | number;
   height?: string | number;
   onSelectReport: (reporte: Reporte) => void;
+  onSelectAsociacion?: (asociacion: AsociacionMapa) => void;
   onMapClick: () => void;
 }
 
@@ -226,12 +231,13 @@ interface LeafletMapProps {
 export default function LeafletMap({
   reportes,
   asociaciones = [],
-  getMarkerColor, 
-  selectedReportId, 
-  onSelectReport, 
-  onMapClick, 
-  width, 
-  height 
+  getMarkerColor,
+  selectedReportId,
+  onSelectReport,
+  onSelectAsociacion,
+  onMapClick,
+  width,
+  height
 }: LeafletMapProps) {
   useEffect(() => {
     const linkId = 'leaflet-css';
@@ -371,6 +377,15 @@ export default function LeafletMap({
                       <span style={{ color: ASOC_COLOR, fontWeight: 700, fontSize: 10 }}>▪</span>
                       {asociacion.contacto_telefono}
                     </div>
+                  )}
+                  {onSelectAsociacion && (
+                    <button
+                      className="pp-btn"
+                      style={{ background: ASOC_COLOR, color: '#FFF' }}
+                      onClick={() => onSelectAsociacion(asociacion)}
+                    >
+                      Ver más →
+                    </button>
                   )}
                 </div>
               </Popup>

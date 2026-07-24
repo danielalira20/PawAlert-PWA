@@ -266,7 +266,7 @@ export default function MapScreen() {
         showsUserLocation
         showsMyLocationButton={false}
       >
-        {reportesFiltrados.map(reporte => {
+        {(mostrarAsociaciones ? [] : reportesFiltrados).map(reporte => {
           const animales = getAnimales(reporte);
           const total = totalAnimales(animales);
           const tipo = especieMasGrave(animales) ?? '';

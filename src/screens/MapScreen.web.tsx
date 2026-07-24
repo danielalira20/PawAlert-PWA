@@ -13,6 +13,8 @@ import { Reporte, getAnimales, condicionMasGrave, especieMasGrave, totalAnimales
 import { AnimalCarousel } from '../components/common/AnimalCarousel';
 import ReportFormScreen from './ReportFormScreen';
 import type { AsociacionMapa } from './LeafletMap';
+import { LinearGradient } from 'expo-linear-gradient';
+import { AppModal } from '../components/AppModal';
 
 const LeafletMap = lazy(() => import('./LeafletMap'));
 
@@ -43,7 +45,7 @@ const TAB_BAR_CLEARANCE = 18 + 68 + 12;
 const getCfg = (map: Record<string, any>, key: string) =>
   map[key?.toLowerCase()] ?? { color: '#95A5A6', label: key ?? '', bg: '#F2F3F4' };
 
-type SidebarView = 'list' | 'detail' | 'form';
+type SidebarView = 'list' | 'detail' | 'form' | 'asociacion';
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 export default function MapScreen() {
@@ -55,10 +57,12 @@ export default function MapScreen() {
   const [asociaciones, setAsociaciones] = useState<AsociacionMapa[]>([]);
   const [mostrarAsociaciones, setMostrarAsociaciones] = useState(true);
   const [selectedReport, setSelectedReport] = useState<Reporte | null>(null);
+  const [selectedAsociacion, setSelectedAsociacion] = useState<AsociacionMapa | null>(null);
   const [sidebarView, setSidebarView] = useState<SidebarView>('list');
   const [filtro, setFiltro] = useState('todos');
   const [filtroEspecie, setFiltroEspecie] = useState('todos');
   const [ordenar, setOrdenar] = useState('reciente');
+  const [showFiltersModal, setShowFiltersModal] = useState(false);
   const [isAuthGateVisible, setIsAuthGateVisible] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [, setTick] = useState(0);
@@ -146,6 +150,13 @@ export default function MapScreen() {
       showSheet();
     } else {
       setSidebarView('detail');
+    }
+  }, [isMobile]);
+
+  const handleSelectAsociacion = useCallback((a: AsociacionMapa) => {
+    setSelectedAsociacion(a);
+    if (!isMobile) {
+      setSidebarView('asociacion');
     }
   }, [isMobile]);
 
@@ -347,6 +358,48 @@ export default function MapScreen() {
     );
   };
 
+  // ── Detalle de asociación ────────────────────────────────────────────────────
+  const renderAsociacionDetail = () => {
+    if (!selectedAsociacion) return null;
+    const a = selectedAsociacion;
+    const ASOC_COLOR = '#2E86DE';
+
+    return (
+      <ScrollView contentContainerStyle={{ padding: 16 }}>
+        <View style={{ borderRadius: 14, height: 120, backgroundColor: `${ASOC_COLOR}15`, alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
+          <Ionicons name="home" size={44} color={ASOC_COLOR} />
+        </View>
+
+        <Text style={{ fontSize: 20, fontWeight: '900', color: C.dark, marginBottom: 4 }}>{a.nombre}</Text>
+
+        <View style={{ flexDirection: 'row', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
+          <View style={{ backgroundColor: `${ASOC_COLOR}20`, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 }}>
+            <Text style={{ fontSize: 9, fontWeight: '800', color: ASOC_COLOR, textTransform: 'uppercase', letterSpacing: 0.4 }}>Asociación</Text>
+          </View>
+          {(a.tipos_animales ?? []).map(tipo => (
+            <View key={tipo} style={{ backgroundColor: C.bg, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 }}>
+              <Text style={{ fontSize: 9, fontWeight: '800', color: C.mid, textTransform: 'capitalize' }}>{tipo}</Text>
+            </View>
+          ))}
+        </View>
+
+        {[
+          a.contacto_telefono && { icon: 'call-outline', text: a.contacto_telefono },
+          a.contacto_email && { icon: 'mail-outline', text: a.contacto_email },
+          a.horario_atencion && { icon: 'time-outline', text: a.horario_atencion },
+          a.radio_km != null && { icon: 'navigate-outline', text: `Atiende en un radio de ${a.radio_km} km` },
+        ].filter(Boolean).map((row: any, i) => (
+          <View key={i} style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start', marginBottom: 10 }}>
+            <View style={{ width: 26, height: 26, borderRadius: 7, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Ionicons name={row.icon} size={13} color={C.mid} />
+            </View>
+            <Text style={{ fontSize: 12, color: C.mid, flex: 1, lineHeight: 18, paddingTop: 4 }}>{row.text}</Text>
+          </View>
+        ))}
+      </ScrollView>
+    );
+  };
+
   // ── Sidebar header ───────────────────────────────────────────────────────────
   const renderSidebarHeader = () => (
     <View style={{ backgroundColor: C.orange, paddingTop: 20, paddingBottom: 14, paddingHorizontal: 18 }}>
@@ -360,13 +413,16 @@ export default function MapScreen() {
           </View>
         </View>
         {(sidebarView !== 'list') && (
-          <TouchableOpacity onPress={() => { setSidebarView('list'); setSelectedReport(null); }} style={{ backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 8, padding: 6 }}>
+          <TouchableOpacity onPress={() => { setSidebarView('list'); setSelectedReport(null); setSelectedAsociacion(null); }} style={{ backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 8, padding: 6 }}>
             <Feather name="arrow-left" size={16} color="#FFF" />
           </TouchableOpacity>
         )}
       </View>
       <Text style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', marginTop: 2 }}>
-        {sidebarView === 'list' ? 'Mapa de rescate · Puebla' : sidebarView === 'detail' ? 'Detalle del reporte' : 'Nuevo reporte'}
+        {sidebarView === 'list' ? 'Mapa de rescate · Puebla'
+          : sidebarView === 'detail' ? 'Detalle del reporte'
+          : sidebarView === 'asociacion' ? 'Detalle de la asociación'
+          : 'Nuevo reporte'}
       </Text>
     </View>
   );
@@ -375,67 +431,169 @@ export default function MapScreen() {
   const renderFiltros = () => (
     <View style={{ borderBottomWidth: 1, borderBottomColor: C.border, flexShrink: 0 }}>
       {/* Fila 1: condición */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ flexDirection: 'row', gap: 6, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 6, alignItems: 'center' }}>
-        {['todos', 'estable', 'herido', 'grave'].map(f => {
-          const isActive = filtro === f;
-          const cfg = f !== 'todos' ? getCfg(CONDICION, f) : null;
-          const activeColor = cfg?.color ?? C.orange;
-          return (
-            <TouchableOpacity key={f} onPress={() => setFiltro(f)}
-              style={{ paddingHorizontal: 11, paddingVertical: 4, borderRadius: 20, borderWidth: 1.5,
-                backgroundColor: isActive ? activeColor : 'transparent', borderColor: activeColor,
-                height: 28, alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ fontSize: 10, fontWeight: '700', color: isActive ? '#FFF' : activeColor, lineHeight: 13 }}>
-                {f === 'todos' ? 'Todos' : cfg?.label}
-              </Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <View style={{ flex: 1, position: 'relative' }}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ flexDirection: 'row', gap: 6, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 6, alignItems: 'center' }}>
+            {['todos', 'estable', 'herido', 'grave'].map(f => {
+              const isActive = filtro === f;
+              const cfg = f !== 'todos' ? getCfg(CONDICION, f) : null;
+              const activeColor = cfg?.color ?? C.orange;
+              return (
+                <TouchableOpacity key={f} onPress={() => setFiltro(f)}
+                  style={{ paddingHorizontal: 11, paddingVertical: 4, borderRadius: 20, borderWidth: 1.5,
+                    backgroundColor: isActive ? activeColor : 'transparent', borderColor: activeColor,
+                    height: 28, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: isActive ? '#FFF' : activeColor, lineHeight: 13 }}>
+                    {f === 'todos' ? 'Todos' : cfg?.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+          <LinearGradient
+            colors={['transparent', C.bg]}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+            pointerEvents="none"
+            style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 24 }}
+          />
+        </View>
+      </View>
+      {/* Fila 2: especie + orden + asociaciones */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingRight: 8 }}>
+        <View style={{ flex: 1, position: 'relative' }}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ flexDirection: 'row', gap: 6, paddingHorizontal: 12, paddingBottom: 10, alignItems: 'center' }}>
+            {[
+              { key: 'todos', icon: ICON_PAW,  label: 'Todos'  },
+              { key: 'perro', icon: ICON_DOG,  label: 'Perros' },
+              { key: 'gato',  icon: ICON_CAT,  label: 'Gatos'  },
+            ].map(({ key, icon, label }) => (
+              <TouchableOpacity key={key} onPress={() => setFiltroEspecie(key)}
+                style={{ paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20, borderWidth: 1.5,
+                  borderColor: C.teal, height: 26, alignItems: 'center', justifyContent: 'center',
+                  flexDirection: 'row', gap: 4,
+                  backgroundColor: filtroEspecie === key ? C.teal : 'transparent' }}>
+                <Image source={{ uri: icon }} style={{ width: 13, height: 13, tintColor: filtroEspecie === key ? '#FFF' : C.teal }} />
+                <Text style={{ fontSize: 9, fontWeight: '700', color: filtroEspecie === key ? '#FFF' : C.teal }}>{label}</Text>
+              </TouchableOpacity>
+            ))}
+            <View style={{ width: 1, height: 16, backgroundColor: C.border, marginHorizontal: 2 }} />
+            {[
+              { key: 'reciente', icon: ICON_CLOCK,    label: 'Reciente' },
+              { key: 'urgente',  icon: ICON_WARNING,  label: 'Urgente'  },
+              { key: 'antiguo',  icon: ICON_CALENDAR, label: 'Antiguo'  },
+            ].map(({ key, icon, label }) => (
+              <TouchableOpacity key={key} onPress={() => setOrdenar(key)}
+                style={{ paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20, borderWidth: 1.5,
+                  borderColor: '#B0A090', height: 26, alignItems: 'center', justifyContent: 'center',
+                  flexDirection: 'row', gap: 4,
+                  backgroundColor: ordenar === key ? '#B0A090' : 'transparent' }}>
+                <Image source={{ uri: icon }} style={{ width: 13, height: 13, tintColor: ordenar === key ? '#FFF' : '#B0A090' }} />
+                <Text style={{ fontSize: 9, fontWeight: '700', color: ordenar === key ? '#FFF' : '#B0A090' }}>{label}</Text>
+              </TouchableOpacity>
+            ))}
+            <View style={{ width: 1, height: 16, backgroundColor: C.border, marginHorizontal: 2 }} />
+            <TouchableOpacity onPress={() => setMostrarAsociaciones(v => !v)}
+              style={{ paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20, borderWidth: 1.5,
+                borderColor: '#2E86DE', height: 26, alignItems: 'center', justifyContent: 'center',
+                flexDirection: 'row', gap: 4,
+                backgroundColor: mostrarAsociaciones ? '#2E86DE' : 'transparent' }}>
+              <Ionicons name="home" size={12} color={mostrarAsociaciones ? '#FFF' : '#2E86DE'} />
+              <Text style={{ fontSize: 9, fontWeight: '700', color: mostrarAsociaciones ? '#FFF' : '#2E86DE' }}>Asociaciones</Text>
             </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
-      {/* Fila 2: especie + orden */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ flexDirection: 'row', gap: 6, paddingHorizontal: 12, paddingBottom: 10, alignItems: 'center' }}>
-        {[
-          { key: 'todos', icon: ICON_PAW,  label: 'Todos'  },
-          { key: 'perro', icon: ICON_DOG,  label: 'Perros' },
-          { key: 'gato',  icon: ICON_CAT,  label: 'Gatos'  },
-        ].map(({ key, icon, label }) => (
-          <TouchableOpacity key={key} onPress={() => setFiltroEspecie(key)}
-            style={{ paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20, borderWidth: 1.5,
-              borderColor: C.teal, height: 26, alignItems: 'center', justifyContent: 'center',
-              flexDirection: 'row', gap: 4,
-              backgroundColor: filtroEspecie === key ? C.teal : 'transparent' }}>
-            <Image source={{ uri: icon }} style={{ width: 13, height: 13, tintColor: filtroEspecie === key ? '#FFF' : C.teal }} />
-            <Text style={{ fontSize: 9, fontWeight: '700', color: filtroEspecie === key ? '#FFF' : C.teal }}>{label}</Text>
-          </TouchableOpacity>
-        ))}
-        <View style={{ width: 1, height: 16, backgroundColor: C.border, marginHorizontal: 2 }} />
-        {[
-          { key: 'reciente', icon: ICON_CLOCK,    label: 'Reciente' },
-          { key: 'urgente',  icon: ICON_WARNING,  label: 'Urgente'  },
-          { key: 'antiguo',  icon: ICON_CALENDAR, label: 'Antiguo'  },
-        ].map(({ key, icon, label }) => (
-          <TouchableOpacity key={key} onPress={() => setOrdenar(key)}
-            style={{ paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20, borderWidth: 1.5,
-              borderColor: '#B0A090', height: 26, alignItems: 'center', justifyContent: 'center',
-              flexDirection: 'row', gap: 4,
-              backgroundColor: ordenar === key ? '#B0A090' : 'transparent' }}>
-            <Image source={{ uri: icon }} style={{ width: 13, height: 13, tintColor: ordenar === key ? '#FFF' : '#B0A090' }} />
-            <Text style={{ fontSize: 9, fontWeight: '700', color: ordenar === key ? '#FFF' : '#B0A090' }}>{label}</Text>
-          </TouchableOpacity>
-        ))}
-        <View style={{ width: 1, height: 16, backgroundColor: C.border, marginHorizontal: 2 }} />
-        <TouchableOpacity onPress={() => setMostrarAsociaciones(v => !v)}
-          style={{ paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20, borderWidth: 1.5,
-            borderColor: '#2E86DE', height: 26, alignItems: 'center', justifyContent: 'center',
-            flexDirection: 'row', gap: 4,
-            backgroundColor: mostrarAsociaciones ? '#2E86DE' : 'transparent' }}>
-          <Ionicons name="home" size={12} color={mostrarAsociaciones ? '#FFF' : '#2E86DE'} />
-          <Text style={{ fontSize: 9, fontWeight: '700', color: mostrarAsociaciones ? '#FFF' : '#2E86DE' }}>Asociaciones</Text>
+          </ScrollView>
+          <LinearGradient
+            colors={['transparent', C.bg]}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+            pointerEvents="none"
+            style={{ position: 'absolute', right: 0, top: 0, bottom: 10, width: 24 }}
+          />
+        </View>
+        <TouchableOpacity onPress={() => setShowFiltersModal(true)}
+          style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: C.dark,
+            alignItems: 'center', justifyContent: 'center', marginBottom: 10, marginLeft: 4 }}>
+          <Ionicons name="options-outline" size={14} color="#FFF" />
         </TouchableOpacity>
-      </ScrollView>
+      </View>
     </View>
+  );
+
+  // ── Modal de filtros completos ───────────────────────────────────────────────
+  const renderFiltersModal = () => (
+    <AppModal visible={showFiltersModal} onClose={() => setShowFiltersModal(false)} maxWidth={420}>
+      <View style={{ padding: 24 }}>
+        <Text style={{ fontSize: 18, fontWeight: '900', color: C.dark, marginBottom: 20 }}>Filtros</Text>
+
+        <Text style={{ fontSize: 12, fontWeight: '800', color: C.light, textTransform: 'uppercase', marginBottom: 10 }}>Condición</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 22 }}>
+          {['todos', 'estable', 'herido', 'grave'].map(f => {
+            const isActive = filtro === f;
+            const cfg = f !== 'todos' ? getCfg(CONDICION, f) : null;
+            const activeColor = cfg?.color ?? C.orange;
+            return (
+              <TouchableOpacity key={f} onPress={() => setFiltro(f)}
+                style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1.5,
+                  backgroundColor: isActive ? activeColor : 'transparent', borderColor: activeColor }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: isActive ? '#FFF' : activeColor }}>
+                  {f === 'todos' ? 'Todos' : cfg?.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        <Text style={{ fontSize: 12, fontWeight: '800', color: C.light, textTransform: 'uppercase', marginBottom: 10 }}>Especie</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 22 }}>
+          {[
+            { key: 'todos', icon: ICON_PAW,  label: 'Todos'  },
+            { key: 'perro', icon: ICON_DOG,  label: 'Perros' },
+            { key: 'gato',  icon: ICON_CAT,  label: 'Gatos'  },
+          ].map(({ key, icon, label }) => (
+            <TouchableOpacity key={key} onPress={() => setFiltroEspecie(key)}
+              style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1.5,
+                borderColor: C.teal, flexDirection: 'row', alignItems: 'center', gap: 6,
+                backgroundColor: filtroEspecie === key ? C.teal : 'transparent' }}>
+              <Image source={{ uri: icon }} style={{ width: 15, height: 15, tintColor: filtroEspecie === key ? '#FFF' : C.teal }} />
+              <Text style={{ fontSize: 12, fontWeight: '700', color: filtroEspecie === key ? '#FFF' : C.teal }}>{label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <Text style={{ fontSize: 12, fontWeight: '800', color: C.light, textTransform: 'uppercase', marginBottom: 10 }}>Ordenar por</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 22 }}>
+          {[
+            { key: 'reciente', icon: ICON_CLOCK,    label: 'Reciente' },
+            { key: 'urgente',  icon: ICON_WARNING,  label: 'Urgente'  },
+            { key: 'antiguo',  icon: ICON_CALENDAR, label: 'Antiguo'  },
+          ].map(({ key, icon, label }) => (
+            <TouchableOpacity key={key} onPress={() => setOrdenar(key)}
+              style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1.5,
+                borderColor: '#B0A090', flexDirection: 'row', alignItems: 'center', gap: 6,
+                backgroundColor: ordenar === key ? '#B0A090' : 'transparent' }}>
+              <Image source={{ uri: icon }} style={{ width: 15, height: 15, tintColor: ordenar === key ? '#FFF' : '#B0A090' }} />
+              <Text style={{ fontSize: 12, fontWeight: '700', color: ordenar === key ? '#FFF' : '#B0A090' }}>{label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <Text style={{ fontSize: 12, fontWeight: '800', color: C.light, textTransform: 'uppercase', marginBottom: 10 }}>Capas del mapa</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 24 }}>
+          <TouchableOpacity onPress={() => setMostrarAsociaciones(v => !v)}
+            style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1.5,
+              borderColor: '#2E86DE', flexDirection: 'row', alignItems: 'center', gap: 6,
+              backgroundColor: mostrarAsociaciones ? '#2E86DE' : 'transparent' }}>
+            <Ionicons name="home" size={14} color={mostrarAsociaciones ? '#FFF' : '#2E86DE'} />
+            <Text style={{ fontSize: 12, fontWeight: '700', color: mostrarAsociaciones ? '#FFF' : '#2E86DE' }}>Asociaciones</Text>
+          </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity onPress={() => setShowFiltersModal(false)}
+          style={{ backgroundColor: C.orange, borderRadius: 14, paddingVertical: 14, alignItems: 'center' }}>
+          <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 14 }}>Listo</Text>
+        </TouchableOpacity>
+      </View>
+    </AppModal>
   );
 
   // ── Mapa ─────────────────────────────────────────────────────────────────────
@@ -444,10 +602,11 @@ export default function MapScreen() {
       {isClient ? (
         <Suspense fallback={<View style={{ flex: 1, backgroundColor: '#EAE0D0' }} />}>
           <LeafletMap
-            reportes={reportesFiltrados}
+            reportes={mostrarAsociaciones ? [] : reportesFiltrados}
             asociaciones={mostrarAsociaciones ? asociaciones : []}
             selectedReportId={selectedReport?.id ?? null}
             onSelectReport={handleSelectReport}
+            onSelectAsociacion={handleSelectAsociacion}
             onMapClick={handleMapClick}
           />
         </Suspense>
@@ -792,6 +951,7 @@ export default function MapScreen() {
             </View>
           )}
           {sidebarView === 'detail' && renderDetail()}
+          {sidebarView === 'asociacion' && renderAsociacionDetail()}
           {sidebarView === 'form' && (
             <ReportFormScreen onClose={() => { setSidebarView('list'); setTimeout(fetchReportes, 400); }} />
           )}
@@ -802,6 +962,7 @@ export default function MapScreen() {
       {renderMap()}
 
       {renderImagenAmpliada()}
+      {renderFiltersModal()}
       <AuthGateModal visible={isAuthGateVisible} onClose={() => setIsAuthGateVisible(false)} onGuest={() => setSidebarView('form')} />
 
     </View>
