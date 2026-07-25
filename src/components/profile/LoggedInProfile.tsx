@@ -21,6 +21,7 @@ import { ReporterImpactStats } from './ReporterImpactStats';
 import { AssociationImpactStats } from './AssociationImpactStats';
 import { AdminSupervisionCard } from './AdminSupervisionCard';
 import { StaffImpactStats } from './StaffImpactStats';
+import { OperationalAvailabilityCard } from './OperationalAvailabilityCard';
 
 const DESKTOP_BREAKPOINT = 900;
 
@@ -287,6 +288,9 @@ useFocusEffect(
               </View>
 
               <View style={styles.desktopRight}>
+                {esVoluntarioActivo && token && (
+                  <OperationalAvailabilityCard token={token} />
+                )}
                 {impactStatsElement}
               </View>
             </View>
@@ -329,6 +333,10 @@ useFocusEffect(
         <View style={styles.section}>
           <AccountDataCard telefono={user.telefono} email={user.email} />
         </View>
+
+        {esVoluntarioActivo && token && (
+          <OperationalAvailabilityCard token={token} />
+        )}
 
         <View style={styles.section}>
           <View style={styles.accessCard}>

@@ -32,6 +32,9 @@ from app.services.home_verification_service import (
     resolver_verificacion_remota,
 )
 from app.services.video_evidence_service import procesar_evidencia_verificacion
+from app.services.whatsapp_notification_service import (
+    notificar_evento_verificacion,
+)
 from app.models.association import NuevoRepresentante
 from app.utils.animal_shaping import shape_animal_embed, shape_animal_response, condicion_mas_grave
 import json
@@ -949,6 +952,7 @@ async def post_reintentar_analisis_verificacion(
 async def post_asignar_verificador(
     verificacion_id: str,
     body: AsignarVerificadorRequest,
+    background_tasks: BackgroundTasks,
     authorization: str = Header(None),
 ):
     usuario = _obtener_usuario_autenticado(authorization)
@@ -959,11 +963,18 @@ async def post_asignar_verificador(
             detail="Este usuario no está vinculado a ninguna asociación",
         )
     _verificar_asociacion_aprobada(usuario["asociacion_id"])
-    return asignar_verificador_hogar(
+    resultado = asignar_verificador_hogar(
         verificacion_id=verificacion_id,
         verificador_voluntario_id=body.voluntario_id,
         asociacion_id=usuario["asociacion_id"],
     )
+    background_tasks.add_task(
+        notificar_evento_verificacion,
+        "propuesta_verificador",
+        verificacion_id,
+        resultado["asignacion_id"],
+    )
+    return resultado
 
 
 @router.patch(
