@@ -129,3 +129,34 @@ async def crear_oferta_proactiva(usuario_id: str, body: OfertaProactivaRequest) 
         "activa": fila["activa"],
         "created_at": str(fila["created_at"]),
     }
+
+def crear_necesidad_asociacion(supabase, asociacion_id: str, data):
+    # 1. Mapear la urgencia
+    urgencia_db = None
+    if data.urgencia:
+        mapeo_urgencia = {
+            "Alta": "critico",
+            "Media": "urgente",
+            "Baja": "no_urgente"
+        }
+        urgencia_db = mapeo_urgencia.get(data.urgencia)
+
+    # 2. Preparar el payload con las nuevas columnas
+    necesidad_payload = {
+        "asociacion_id": asociacion_id,
+        "reporte_id": str(data.reporte_id) if data.reporte_id else None,
+        "categoria": data.categoria,
+        "urgencia": urgencia_db,
+        "estado": "activa",
+        "subcategoria_id": str(data.subcategoria_id) if data.subcategoria_id else None,
+        "cantidad_valor": data.cantidad_valor,
+        "cantidad_unidad": data.cantidad_unidad,
+        "detalle": data.detalle if data.detalle else {}
+    }
+
+    # 3. Insertar en Supabase
+    try:
+        response = supabase.table("necesidades").insert(necesidad_payload).execute()
+        return response.data[0]
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error al crear la necesidad: {str(e)}")

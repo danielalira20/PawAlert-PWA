@@ -1,8 +1,8 @@
 from pydantic import BaseModel, Field, model_validator
 from typing import Optional, Any
 from enum import Enum
-
-
+from uuid import UUID
+from typing import Optional, Dict, Any
 # TODO(lotes divisibles): `lotes.contribucion_id` es NOT NULL + UNIQUE en el
 # esquema actual (migrations/0006_red_aliados.sql) — un lote mapea 1:1 a
 # exactamente una contribución. El flujo de lotes divisibles entre varias
@@ -102,3 +102,12 @@ class OfertaProactivaResponse(BaseModel):
     unidad: str
     activa: bool
     created_at: str
+
+class NecesidadCreate(BaseModel):
+    reporte_id: Optional[UUID] = None
+    categoria: str
+    urgencia: Optional[str] = None
+    subcategoria_id: Optional[UUID] = None
+    cantidad_valor: Optional[float] = None
+    cantidad_unidad: Optional[str] = None
+    detalle: Optional[Dict[str, Any]] = None  # Recibirá un objeto JSON

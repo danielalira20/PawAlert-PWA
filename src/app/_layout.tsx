@@ -45,6 +45,7 @@ export default function RootLayout() {
         <Stack.Screen name="forgot-password" options={{ presentation: 'modal' }} />
         <Stack.Screen name="completar-cuenta" options={{ presentation: 'modal' }} />
         <Stack.Screen name="capacidades" options={{ presentation: 'transparentModal', headerShown: false }} />
+        <Stack.Screen name="crear-necesidad" options={{ presentation: 'transparentModal', animation: 'fade' }} />
       </Stack>
     </AuthProvider>
     </GestureHandlerRootView>

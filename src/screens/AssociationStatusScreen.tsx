@@ -1081,6 +1081,31 @@ const confirmarReactivar = async () => {
                 </View>
               </View>
 
+              {/* ─── BOTÓN CREAR NECESIDAD ─── */}
+            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 24 }}>
+              <TouchableOpacity
+                onPress={() => router.push('/crear-necesidad')}
+                style={{
+                  backgroundColor: COLORS.accent,
+                  paddingHorizontal: 20,
+                  paddingVertical: 12,
+                  borderRadius: 20,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.15,
+                  shadowRadius: 10,
+                  elevation: 4,
+                }}
+              >
+                <Ionicons name="add-circle" size={20} color={COLORS.white} style={{ marginRight: 8 }} />
+                <Text style={{ color: COLORS.white, fontWeight: '800', fontSize: 14 }}>
+                  Publicar Necesidad
+                </Text>
+              </TouchableOpacity>
+            </View>
+
               {/* Tabs de navegación */}
               <View style={{ flexDirection: 'row', marginBottom: 20, borderBottomWidth: 1, borderBottomColor: '#E5E7EB' }}>
                 <TouchableOpacity
