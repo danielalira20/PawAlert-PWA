@@ -1,0 +1,173 @@
+{"kind":"deck","id":"pr/iygby9","name":"Deck"}
+{"kind":"layout","layoutId":"b80f559a-5424-4e91-9598-8c43800ff1e2","name":"Master","type":"master"}
+{"kind":"layout","layoutId":"adb78782-2a1b-4ba5-8a4a-2e0cf56dc1c9","name":"Title Slide","type":"title"}
+{"kind":"slide","id":"sl/gi1tdf","slide":1,"title":"PAWALERT","textShapes":8}
+{"kind":"shape","id":"sh/7mpc7ahs","slide":1,"name":"gradient-bg","bbox":[0,0,1280,720]}
+{"kind":"textbox","id":"sh/snyd0fyd","slide":1,"name":"brand","text":"PAWALERT","textPreview":"PAWALERT","textChars":8,"textLines":1,"bbox":[72,56,240,34]}
+{"kind":"textbox","id":"sh/to7u90zy","slide":1,"name":"title","text":"Cómo PawAlert encuentra\nla ayuda adecuada","textPreview":"Cómo PawAlert encuentra | la ayuda adecuada","textChars":41,"textLines":2,"bbox":[72,172,790,190]}
+{"kind":"textbox","id":"sh/ihwvulgb","slide":1,"name":"subtitle","text":"El matching conecta cada rescate con una asociación elegible y hasta tres voluntarios compatibles.","textPreview":"El matching conecta cada rescate con una asociación elegible y hasta tres voluntarios compatibles.","textChars":98,"textLines":1,"bbox":[76,390,720,100]}
+{"kind":"shape","id":"sh/ji5c3qhg","slide":1,"name":"signal","bbox":[943,132,220,430]}
+{"kind":"textbox","id":"sh/kjedwvy1","slide":1,"name":"paw","text":"🐾","textPreview":"🐾","textChars":2,"textLines":1,"bbox":[982,164,142,116]}
+{"kind":"shape","id":"sh/5knu50zm","slide":1,"name":"chip-ASOCIACIÓN","bbox":[963,326,180,34]}
+{"kind":"textbox","id":"sh/2d0v6pgf","slide":1,"name":"chip-text-ASOCIACIÓN","text":"ASOCIACIÓN","textPreview":"ASOCIACIÓN","textChars":10,"textLines":1,"bbox":[973,327,160,31]}
+{"kind":"shape","id":"sh/3e9wfuh0","slide":1,"name":"chip-VOLUNTARIOS","bbox":[963,383,180,34]}
+{"kind":"textbox","id":"sh/3yhgfa1s","slide":1,"name":"chip-text-VOLUNTARIOS","text":"VOLUNTARIOS","textPreview":"VOLUNTARIOS","textChars":11,"textLines":1,"bbox":[973,384,160,31]}
+{"kind":"shape","id":"sh/ix8z65k7","slide":1,"name":"chip-CONFIRMACIÓN","bbox":[963,440,180,34]}
+{"kind":"textbox","id":"sh/50jyhkjy","slide":1,"name":"chip-text-CONFIRMACIÓN","text":"CONFIRMACIÓN","textPreview":"CONFIRMACIÓN","textChars":12,"textLines":1,"bbox":[973,441,160,31]}
+{"kind":"textbox","id":"sh/4zah8fid","slide":1,"name":"footer","text":"Sistema de asignación para rescates de animales","textPreview":"Sistema de asignación para rescates de animales","textChars":47,"textLines":1,"bbox":[72,640,600,30]}
+{"kind":"notes","id":"nt/gi1tdf","slide":1,"text":"Objetivo: explicar el flujo completo de asignación de PawAlert. La idea central es que primero se asegura cobertura institucional, luego se rankean voluntarios compatibles y finalmente se confirma su participación antes de iniciar el rescate."}
+{"kind":"slide","id":"sl/bcirqr","slide":2,"title":"LA LÓGICA COMPLETA","textShapes":15}
+{"kind":"textbox","id":"sh/ja103m58","slide":2,"name":"kicker","text":"LA LÓGICA COMPLETA","textPreview":"LA LÓGICA COMPLETA","textChars":18,"textLines":1,"bbox":[72,42,760,28]}
+{"kind":"textbox","id":"sh/kba1w7md","slide":2,"name":"title","text":"Tres decisiones convierten un reporte en un rescate en camino","textPreview":"Tres decisiones convierten un reporte en un rescate en camino","textChars":61,"textLines":1,"bbox":[72,76,1090,68]}
+{"kind":"textbox","id":"sh/5cji5cny","slide":2,"name":"page","text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[1160,48,48,28]}
+{"kind":"shape","id":"sh/al8jqx4b","slide":2,"name":"accent","bbox":[72,153,96,5]}
+{"kind":"shape","id":"sh/vm10z25w","slide":2,"name":"flow-card-1","bbox":[72,242,328,300]}
+{"kind":"shape","id":"sh/w7a1s7mh","slide":2,"name":"flow-num-1","bbox":[96,266,54,54]}
+{"kind":"textbox","id":"sh/x8ji1cn2","slide":2,"name":"flow-num-text-1","text":"1","textPreview":"1","textChars":1,"textLines":1,"bbox":[96,266,54,54]}
+{"kind":"textbox","id":"sh/mh8jmx4f","slide":2,"name":"flow-title-1","text":"Encontrar asociación","textPreview":"Encontrar asociación","textChars":20,"textLines":1,"bbox":[96,338,280,62]}
+{"kind":"textbox","id":"sh/nih0v250","slide":2,"name":"flow-body-1","text":"La más cercana que cubre todas las especies y opera dentro de su radio.","textPreview":"La más cercana que cubre todas las especies y opera dentro de su radio.","textChars":71,"textLines":1,"bbox":[96,411,280,98]}
+{"kind":"shape","id":"sh/32pc32h4","slide":2,"name":"flow-card-2","bbox":[476,242,328,300]}
+{"kind":"shape","id":"sh/i1gvax0j","slide":2,"name":"flow-num-2","bbox":[500,266,54,54]}
+{"kind":"textbox","id":"sh/5o7u5cza","slide":2,"name":"flow-num-text-2","text":"2","textPreview":"2","textChars":1,"textLines":1,"bbox":[500,266,54,54]}
+{"kind":"textbox","id":"sh/43ydc7ip","slide":2,"name":"flow-title-2","text":"Rankear voluntarios","textPreview":"Rankear voluntarios","textChars":19,"textLines":1,"bbox":[500,338,280,62]}
+{"kind":"textbox","id":"sh/rqpc72hg","slide":2,"name":"flow-body-2","text":"Filtros obligatorios y un score explicable producen un top 3.","textPreview":"Filtros obligatorios y un score explicable producen un top 3.","textChars":61,"textLines":1,"bbox":[500,411,280,98]}
+{"kind":"shape","id":"sh/qpgvex0v","slide":2,"name":"flow-card-3","bbox":[880,242,328,300]}
+{"kind":"shape","id":"sh/ds7u9cz6","slide":2,"name":"flow-num-3","bbox":[904,266,54,54]}
+{"kind":"textbox","id":"sh/srydg7il","slide":2,"name":"flow-num-text-3","text":"3","textPreview":"3","textChars":1,"textLines":1,"bbox":[904,266,54,54]}
+{"kind":"textbox","id":"sh/7u5cvihw","slide":2,"name":"flow-title-3","text":"Confirmar apoyo","textPreview":"Confirmar apoyo","textChars":15,"textLines":1,"bbox":[904,338,280,62]}
+{"kind":"textbox","id":"sh/6tcb2d0b","slide":2,"name":"flow-body-3","text":"La propuesta solo avanza cuando el voluntario acepta el caso.","textPreview":"La propuesta solo avanza cuando el voluntario acepta el caso.","textChars":61,"textLines":1,"bbox":[904,411,280,98]}
+{"kind":"textbox","id":"sh/apkfalkz","slide":2,"name":"arrow1","text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[410,345,48,60]}
+{"kind":"textbox","id":"sh/bqtg3q1k","slide":2,"name":"arrow2","text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[814,345,48,60]}
+{"kind":"textbox","id":"sh/cr2xcvi5","slide":2,"name":"takeaway","text":"La seguridad del matching está en el orden: elegibilidad → ranking → consentimiento.","textPreview":"La seguridad del matching está en el orden: elegibilidad → ranking → consentimiento.","textChars":84,"textLines":1,"bbox":[72,600,1136,44]}
+{"kind":"notes","id":"nt/bcirqr","slide":2,"text":"Esta diapositiva introduce el flujo. La asociación no se elige por puntuación, sino por elegibilidad y distancia. El ranking solo aparece en la etapa de voluntarios. Seleccionar un voluntario no inicia el rescate: primero debe confirmar."}
+{"kind":"slide","id":"sl/c40yb8","slide":3,"title":"PASO 1 · MATCHING DE ASOCIACIÓN","textShapes":16}
+{"kind":"textbox","id":"sh/kfudo3e1","slide":3,"name":"kicker","text":"PASO 1 · MATCHING DE ASOCIACIÓN","textPreview":"PASO 1 · MATCHING DE ASOCIACIÓN","textChars":31,"textLines":1,"bbox":[72,42,760,28]}
+{"kind":"textbox","id":"sh/jelcvyxg","slide":3,"name":"title","text":"La cobertura institucional se decide por reglas obligatorias, no por puntos","textPreview":"La cobertura institucional se decide por reglas obligatorias, no por puntos","textChars":75,"textLines":1,"bbox":[72,76,1090,68]}
+{"kind":"textbox","id":"sh/itcvmtwv","slide":3,"name":"page","text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[1160,48,48,28]}
+{"kind":"shape","id":"sh/tknu18fi","slide":3,"name":"accent","bbox":[72,153,96,5]}
+{"kind":"shape","id":"sh/sjeds3ex","slide":3,"name":"left-panel","bbox":[72,205,520,375]}
+{"kind":"textbox","id":"sh/ri5czyxc","slide":3,"name":"left-title","text":"Debe cumplir todo","textPreview":"Debe cumplir todo","textChars":17,"textLines":1,"bbox":[104,232,420,40]}
+{"kind":"shape","id":"sh/6hwvqtwr","slide":3,"name":"check-0","bbox":[106,300,30,30]}
+{"kind":"textbox","id":"sh/9ojup4fe","slide":3,"name":"check-text-0","text":"✓","textPreview":"✓","textChars":1,"textLines":1,"bbox":[106,297,30,34]}
+{"kind":"textbox","id":"sh/8nadgjet","slide":3,"name":"rule-0","text":"Activa y verificada","textPreview":"Activa y verificada","textChars":19,"textLines":1,"bbox":[153,294,385,42]}
+{"kind":"shape","id":"sh/qhcv6to7","slide":3,"name":"check-1","bbox":[106,359,30,30]}
+{"kind":"textbox","id":"sh/bilcfypc","slide":3,"name":"check-text-1","text":"✓","textPreview":"✓","textChars":1,"textLines":1,"bbox":[106,356,30,34]}
+{"kind":"textbox","id":"sh/cjed836x","slide":3,"name":"rule-1","text":"Atiende todas las especies del caso","textPreview":"Atiende todas las especies del caso","textChars":35,"textLines":1,"bbox":[153,353,385,42]}
+{"kind":"shape","id":"sh/dknuh87i","slide":3,"name":"check-2","bbox":[106,418,30,30]}
+{"kind":"textbox","id":"sh/ylwvado3","slide":3,"name":"check-text-2","text":"✓","textPreview":"✓","textChars":1,"textLines":1,"bbox":[106,415,30,34]}
+{"kind":"textbox","id":"sh/zm5cjipo","slide":3,"name":"rule-2","text":"El reporte cae dentro de su radio","textPreview":"El reporte cae dentro de su radio","textChars":33,"textLines":1,"bbox":[153,412,385,42]}
+{"kind":"shape","id":"sh/0nedc369","slide":3,"name":"check-3","bbox":[106,477,30,30]}
+{"kind":"textbox","id":"sh/lonul87u","slide":3,"name":"check-text-3","text":"✓","textPreview":"✓","textChars":1,"textLines":1,"bbox":[106,474,30,34]}
+{"kind":"textbox","id":"sh/m9wvedoz","slide":3,"name":"rule-3","text":"No rechazó previamente el caso","textPreview":"No rechazó previamente el caso","textChars":30,"textLines":1,"bbox":[153,471,385,42]}
+{"kind":"shape","id":"sh/napcnipk","slide":3,"name":"right-panel","bbox":[640,205,568,375]}
+{"kind":"shape","id":"sh/jepcbils","slide":3,"name":"chip-SIN SCORE","bbox":[672,236,124,34]}
+{"kind":"textbox","id":"sh/idgb2d47","slide":3,"name":"chip-text-SIN SCORE","text":"SIN SCORE","textPreview":"SIN SCORE","textChars":9,"textLines":1,"bbox":[682,237,104,31]}
+{"kind":"textbox","id":"sh/5g7uds3y","slide":3,"name":"right-title","text":"Entre las elegibles, gana la más cercana","textPreview":"Entre las elegibles, gana la más cercana","textChars":40,"textLines":1,"bbox":[672,293,475,75]}
+{"kind":"textbox","id":"sh/kfyt4nmd","slide":3,"name":"right-body","text":"Si existe una asociación, el reporte nace asignado. Si ninguna cumple, permanece pendiente.","textPreview":"Si existe una asociación, el reporte nace asignado. Si ninguna cumple, permanece pendiente.","textChars":91,"textLines":1,"bbox":[672,385,460,92]}
+{"kind":"shape","id":"sh/vqpc7ilw","slide":3,"name":"formula","bbox":[672,502,464,48]}
+{"kind":"textbox","id":"sh/apwbyd4b","slide":3,"name":"formula-text","text":"todas las especies requeridas ⊆ especies atendidas","textPreview":"todas las especies requeridas ⊆ especies atendidas","textChars":50,"textLines":1,"bbox":[688,508,432,34]}
+{"kind":"notes","id":"nt/c40yb8","slide":3,"text":"Al crear el reporte se extraen todas las especies únicas, incluyendo animales individuales y grupos. La función encuentra_asociacion_cercana filtra asociaciones activas, verificadas, capaces de atender todas las especies, dentro de su radio y no excluidas por rechazos. La condición SQL p_tipos_animales <@ a.tipos_animales::text[] significa que todas las especies requeridas deben estar contenidas en las atendidas. Entre las elegibles se ordena por distancia. Si una asociación rechaza, se repite la búsqueda excluyendo rechazos previos; si no queda cobertura, el caso pasa a sin_cobertura y se buscan contactos de emergencia por especie."}
+{"kind":"slide","id":"sl/a86ps2","slide":4,"title":"PASO 2 · FILTROS DUROS","textShapes":17}
+{"kind":"textbox","id":"sh/4vihkji5","slide":4,"name":"kicker","text":"PASO 2 · FILTROS DUROS","textPreview":"PASO 2 · FILTROS DUROS","textChars":22,"textLines":1,"bbox":[72,42,760,28]}
+{"kind":"textbox","id":"sh/ju90re1k","slide":4,"name":"title","text":"Solo los voluntarios realmente viables llegan al ranking","textPreview":"Solo los voluntarios realmente viables llegan al ranking","textChars":56,"textLines":1,"bbox":[72,76,1090,68]}
+{"kind":"textbox","id":"sh/it0zi90z","slide":4,"name":"page","text":"04","textPreview":"04","textChars":2,"textLines":1,"bbox":[1160,48,48,28]}
+{"kind":"shape","id":"sh/xsripoju","slide":4,"name":"accent","bbox":[72,153,96,5]}
+{"kind":"shape","id":"sh/wrihgji9","slide":4,"name":"filter-0","bbox":[72,204,536,148]}
+{"kind":"textbox","id":"sh/vq90ne1o","slide":4,"name":"num-0","text":"01","textPreview":"01","textChars":2,"textLines":1,"bbox":[96,226,58,40]}
+{"kind":"textbox","id":"sh/ap0ze903","slide":4,"name":"ft-0","text":"Estado habilitado","textPreview":"Estado habilitado","textChars":17,"textLines":1,"bbox":[170,222,390,42]}
+{"kind":"textbox","id":"sh/1ovi18zy","slide":4,"name":"fb-0","text":"Activo nivel 1 o 2 y términos aceptados.","textPreview":"Activo nivel 1 o 2 y términos aceptados.","textChars":40,"textLines":1,"bbox":[170,272,385,56]}
+{"kind":"shape","id":"sh/gn21s3id","slide":4,"name":"filter-1","bbox":[640,204,536,148]}
+{"kind":"textbox","id":"sh/ut436983","slide":4,"name":"num-1","text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[664,226,58,40]}
+{"kind":"textbox","id":"sh/fudkze9o","slide":4,"name":"ft-1","text":"Ubicación y vínculo","textPreview":"Ubicación y vínculo","textChars":19,"textLines":1,"bbox":[738,222,390,42]}
+{"kind":"textbox","id":"sh/gvml8jqt","slide":4,"name":"fb-1","text":"A máximo 10 km; interno de la asociación o externo.","textPreview":"A máximo 10 km; interno de la asociación o externo.","textChars":51,"textLines":1,"bbox":[738,272,385,56]}
+{"kind":"shape","id":"sh/hwf21ore","slide":4,"name":"filter-2","bbox":[72,388,536,148]}
+{"kind":"textbox","id":"sh/654j298r","slide":4,"name":"num-2","text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[96,410,58,40]}
+{"kind":"textbox","id":"sh/76dkve9c","slide":4,"name":"ft-2","text":"Compatibilidad total","textPreview":"Compatibilidad total","textChars":20,"textLines":1,"bbox":[170,406,390,42]}
+{"kind":"textbox","id":"sh/s7ml4zqx","slide":4,"name":"fb-2","text":"Acepta todas las especies y no rechazó el caso.","textPreview":"Acepta todas las especies y no rechazó el caso.","textChars":47,"textLines":1,"bbox":[170,456,385,56]}
+{"kind":"shape","id":"sh/tsv2x4ri","slide":4,"name":"filter-3","bbox":[640,388,536,148]}
+{"kind":"textbox","id":"sh/q1o3et8b","slide":4,"name":"num-3","text":"04","textPreview":"04","textChars":2,"textLines":1,"bbox":[664,410,58,40]}
+{"kind":"textbox","id":"sh/r2xk7y9g","slide":4,"name":"ft-3","text":"Capacidad suficiente","textPreview":"Capacidad suficiente","textChars":20,"textLines":1,"bbox":[738,406,390,42]}
+{"kind":"textbox","id":"sh/n690zqp8","slide":4,"name":"fb-3","text":"Espacio libre para la cantidad real de animales.","textPreview":"Espacio libre para la cantidad real de animales.","textChars":48,"textLines":1,"bbox":[738,456,385,56]}
+{"kind":"shape","id":"sh/m50zqlon","slide":4,"name":"chip-REGLA ESPECIAL","bbox":[72,592,170,34]}
+{"kind":"textbox","id":"sh/98ri107y","slide":4,"name":"chip-text-REGLA ESPECIAL","text":"REGLA ESPECIAL","textPreview":"REGLA ESPECIAL","textChars":14,"textLines":1,"bbox":[82,593,150,31]}
+{"kind":"textbox","id":"sh/87ihsv6t","slide":4,"name":"special","text":"Si ofrece casa-hogar, el caso no puede superar dos animales.","textPreview":"Si ofrece casa-hogar, el caso no puede superar dos animales.","textChars":60,"textLines":1,"bbox":[258,591,750,36]}
+{"kind":"notes","id":"nt/a86ps2","slide":4,"text":"La primera capa SQL considera voluntarios activos, con términos aceptados, ubicación registrada, dentro de 10 km y vinculados correctamente. También calcula capacidad total, carga actual por cantidades reales de animales, casa-hogar, especies, tamaños y disponibilidad. Después Python elimina quienes ya rechazaron, no aceptan todas las especies, ofrecen casa-hogar para más de dos animales o no tienen capacidad suficiente. La especie no suma puntos porque es una condición obligatoria."}
+{"kind":"slide","id":"sl/zxxx4b","slide":5,"title":"PASO 2 · PUNTUACIÓN","textShapes":21}
+{"kind":"textbox","id":"sh/q9sjax8j","slide":5,"name":"kicker","text":"PASO 2 · PUNTUACIÓN","textPreview":"PASO 2 · PUNTUACIÓN","textChars":19,"textLines":1,"bbox":[72,42,760,28]}
+{"kind":"textbox","id":"sh/dcjilcru","slide":5,"name":"title","text":"El top 3 combina cercanía, tamaño, disponibilidad y capacidad","textPreview":"El top 3 combina cercanía, tamaño, disponibilidad y capacidad","textChars":61,"textLines":1,"bbox":[72,76,1090,68]}
+{"kind":"textbox","id":"sh/cba1c7q9","slide":5,"name":"page","text":"05","textPreview":"05","textChars":2,"textLines":1,"bbox":[1160,48,48,28]}
+{"kind":"shape","id":"sh/ze10nmp0","slide":5,"name":"accent","bbox":[72,153,96,5]}
+{"kind":"shape","id":"sh/edsjeh8f","slide":5,"name":"score-row-0","bbox":[72,202,1136,72]}
+{"kind":"shape","id":"sh/1g3ipw76","slide":5,"name":"score-badge-0","bbox":[88,212,70,52]}
+{"kind":"textbox","id":"sh/0fa1grql","slide":5,"name":"score-val-0","text":"40","textPreview":"40","textChars":2,"textLines":1,"bbox":[88,212,70,52]}
+{"kind":"textbox","id":"sh/n2l0rmpw","slide":5,"name":"score-name-0","text":"Proximidad","textPreview":"Proximidad","textChars":10,"textLines":1,"bbox":[182,212,240,52]}
+{"kind":"textbox","id":"sh/mhcjih8r","slide":5,"name":"score-desc-0","text":"De 40 puntos a 0 km hasta 0 a 10 km","textPreview":"De 40 puntos a 0 km hasta 0 a 10 km","textChars":35,"textLines":1,"bbox":[430,213,590,50]}
+{"kind":"textbox","id":"sh/g3atszi5","slide":5,"name":"score-pct-0","text":"40%","textPreview":"40%","textChars":3,"textLines":1,"bbox":[1065,212,110,52]}
+{"kind":"shape","id":"sh/h4ja14zq","slide":5,"name":"score-row-1","bbox":[72,293,1136,72]}
+{"kind":"shape","id":"sh/uhsbqp0z","slide":5,"name":"score-badge-1","bbox":[88,303,70,52]}
+{"kind":"textbox","id":"sh/vi1szuhk","slide":5,"name":"score-val-1","text":"25","textPreview":"25","textChars":2,"textLines":1,"bbox":[88,303,70,52]}
+{"kind":"textbox","id":"sh/47atwji1","slide":5,"name":"score-name-1","text":"Tamaño","textPreview":"Tamaño","textChars":6,"textLines":1,"bbox":[182,303,240,52]}
+{"kind":"textbox","id":"sh/58ja5ozm","slide":5,"name":"score-desc-1","text":"Compatible con al menos un tamaño —o sin dato—","textPreview":"Compatible con al menos un tamaño —o sin dato—","textChars":46,"textLines":1,"bbox":[430,304,590,50]}
+{"kind":"textbox","id":"sh/i5sbu90b","slide":5,"name":"score-pct-1","text":"25%","textPreview":"25%","textChars":3,"textLines":1,"bbox":[1065,303,110,52]}
+{"kind":"shape","id":"sh/361s3ehw","slide":5,"name":"score-row-2","bbox":[72,384,1136,72]}
+{"kind":"shape","id":"sh/cbut0jid","slide":5,"name":"score-badge-2","bbox":[88,394,70,52]}
+{"kind":"textbox","id":"sh/dc3a9ozy","slide":5,"name":"score-val-2","text":"20","textPreview":"20","textChars":2,"textLines":1,"bbox":[88,394,70,52]}
+{"kind":"textbox","id":"sh/lszator2","slide":5,"name":"score-name-2","text":"Disponibilidad","textPreview":"Disponibilidad","textChars":14,"textLines":1,"bbox":[182,394,240,52]}
+{"kind":"textbox","id":"sh/0rqtkjah","slide":5,"name":"score-desc-2","text":"Coincide con el día y horario actuales","textPreview":"Coincide con el día y horario actuales","textChars":38,"textLines":1,"bbox":[430,395,590,50]}
+{"kind":"textbox","id":"sh/zqhsre9w","slide":5,"name":"score-pct-2","text":"20%","textPreview":"20%","textChars":3,"textLines":1,"bbox":[1065,394,110,52]}
+{"kind":"shape","id":"sh/yp8bi9sb","slide":5,"name":"score-row-3","bbox":[72,475,1136,72]}
+{"kind":"shape","id":"sh/9wjaxory","slide":5,"name":"score-badge-3","bbox":[88,485,70,52]}
+{"kind":"textbox","id":"sh/8vato3ad","slide":5,"name":"score-val-3","text":"15","textPreview":"15","textChars":2,"textLines":1,"bbox":[88,485,70,52]}
+{"kind":"textbox","id":"sh/nuhsvy98","slide":5,"name":"score-name-3","text":"Capacidad libre","textPreview":"Capacidad libre","textChars":15,"textLines":1,"bbox":[182,485,240,52]}
+{"kind":"textbox","id":"sh/mt8bmtsn","slide":5,"name":"score-desc-3","text":"Proporción disponible sobre capacidad total","textPreview":"Proporción disponible sobre capacidad total","textChars":43,"textLines":1,"bbox":[430,486,590,50]}
+{"kind":"textbox","id":"sh/p0fal4ru","slide":5,"name":"score-pct-3","text":"15%","textPreview":"15%","textChars":3,"textLines":1,"bbox":[1065,485,110,52]}
+{"kind":"textbox","id":"sh/4z69cza9","slide":5,"name":"equation","text":"score total = proximidad + tamaño + disponibilidad + capacidad libre","textPreview":"score total = proximidad + tamaño + disponibilidad + capacidad libre","textChars":68,"textLines":1,"bbox":[72,586,1136,36]}
+{"kind":"shape","id":"sh/utkz614v","slide":5,"name":"chip-TOP 3","bbox":[535,635,110,34]}
+{"kind":"textbox","id":"sh/vutgz6lg","slide":5,"name":"chip-text-TOP 3","text":"TOP 3","textPreview":"TOP 3","textChars":5,"textLines":1,"bbox":[545,636,90,31]}
+{"kind":"notes","id":"nt/zxxx4b","slide":5,"text":"El máximo es 100. Proximidad aporta hasta 40 puntos y cae 10 por kilómetro. Compatibilidad de tamaño aporta 25 si acepta al menos uno de los tamaños presentes o si no hay dato. Disponibilidad aporta 20 si coincide el momento actual. Capacidad libre aporta hasta 15 según la proporción de espacio disponible. Los candidatos se ordenan de mayor a menor y se devuelve un máximo de tres."}
+{"kind":"slide","id":"sl/8o7hvp","slide":6,"title":"PASO 2 · MODALIDAD","textShapes":13}
+{"kind":"textbox","id":"sh/29c36xcn","slide":6,"name":"kicker","text":"PASO 2 · MODALIDAD","textPreview":"PASO 2 · MODALIDAD","textChars":18,"textLines":1,"bbox":[72,42,760,28]}
+{"kind":"textbox","id":"sh/pcnm1cve","slide":6,"name":"title","text":"La asociación decide cuánto control conserva sobre la asignación","textPreview":"La asociación decide cuánto control conserva sobre la asignación","textChars":64,"textLines":1,"bbox":[72,76,1090,68]}
+{"kind":"textbox","id":"sh/obel87ut","slide":6,"name":"page","text":"06","textPreview":"06","textChars":2,"textLines":1,"bbox":[1160,48,48,28]}
+{"kind":"shape","id":"sh/fml4vidc","slide":6,"name":"accent","bbox":[72,153,96,5]}
+{"kind":"shape","id":"sh/elc32xcr","slide":6,"name":"mode-0","bbox":[72,220,346,300]}
+{"kind":"shape","id":"sh/183mxsvi","slide":6,"name":"mode-bar-0","bbox":[72,220,346,14]}
+{"kind":"textbox","id":"sh/gnul4nux","slide":6,"name":"mode-title-0","text":"MANUAL","textPreview":"MANUAL","textChars":6,"textLines":1,"bbox":[96,255,298,45]}
+{"kind":"textbox","id":"sh/zip47mdg","slide":6,"name":"mode-body-0","text":"La asociación elige a cualquiera del top 3.","textPreview":"La asociación elige a cualquiera del top 3.","textChars":43,"textLines":1,"bbox":[100,326,290,105]}
+{"kind":"textbox","id":"sh/yhwnehcv","slide":6,"name":"mode-cap-0","text":"Control directo","textPreview":"Control directo","textChars":15,"textLines":1,"bbox":[100,462,290,34]}
+{"kind":"shape","id":"sh/0juhkrap","slide":6,"name":"mode-1","bbox":[450,220,346,300]}
+{"kind":"shape","id":"sh/lk3ytwra","slide":6,"name":"mode-bar-1","bbox":[450,220,346,14]}
+{"kind":"textbox","id":"sh/yxcfi1sz","slide":6,"name":"mode-title-1","text":"SEMI-AUTOMÁTICO","textPreview":"SEMI-AUTOMÁTICO","textChars":15,"textLines":1,"bbox":[474,255,298,45]}
+{"kind":"textbox","id":"sh/zilgrm9k","slide":6,"name":"mode-body-1","text":"Hay un plazo según la condición más grave; al vencer, gana el primero.","textPreview":"Hay un plazo según la condición más grave; al vencer, gana el primero.","textChars":70,"textLines":1,"bbox":[478,326,290,105]}
+{"kind":"textbox","id":"sh/cvaxgrat","slide":6,"name":"mode-cap-1","text":"Control con respaldo","textPreview":"Control con respaldo","textChars":20,"textLines":1,"bbox":[478,462,290,34]}
+{"kind":"shape","id":"sh/dw3ypwre","slide":6,"name":"mode-2","bbox":[828,220,346,300]}
+{"kind":"shape","id":"sh/qtsfehsn","slide":6,"name":"mode-bar-2","bbox":[828,220,346,14]}
+{"kind":"textbox","id":"sh/bu1gnm98","slide":6,"name":"mode-title-2","text":"AUTOMÁTICO","textPreview":"AUTOMÁTICO","textChars":10,"textLines":1,"bbox":[852,255,298,45]}
+{"kind":"textbox","id":"sh/oraxc7ah","slide":6,"name":"mode-body-2","text":"Timeout cero: el cron ofrece el caso al primer candidato.","textPreview":"Timeout cero: el cron ofrece el caso al primer candidato.","textChars":57,"textLines":1,"bbox":[856,326,290,105]}
+{"kind":"textbox","id":"sh/psjylcr2","slide":6,"name":"mode-cap-2","text":"Respuesta acelerada","textPreview":"Respuesta acelerada","textChars":19,"textLines":1,"bbox":[856,462,290,34]}
+{"kind":"shape","id":"sh/5obe98j6","slide":6,"name":"cron","bbox":[300,568,680,62]}
+{"kind":"textbox","id":"sh/4n2dg32l","slide":6,"name":"cron-text","text":"El cron revisa cada 5 minutos · sin candidatos, el caso sigue con la asociación","textPreview":"El cron revisa cada 5 minutos · sin candidatos, el caso sigue con la asociación","textChars":79,"textLines":1,"bbox":[324,579,632,40]}
+{"kind":"notes","id":"nt/8o7hvp","slide":6,"text":"La modalidad manual deja la selección a la asociación. En semi-automático, el plazo depende de la condición más grave y después el sistema elige al primero. En automático, el timeout es cero y el cron propone el caso al primer candidato en su siguiente ejecución. El cron está diseñado para correr cada cinco minutos. Sin candidatos elegibles, el reporte permanece con la asociación sin voluntario."}
+{"kind":"slide","id":"sl/tyhjym","slide":7,"title":"PASO 3 · CONFIRMACIÓN","textShapes":14}
+{"kind":"textbox","id":"sh/rmdg32dc","slide":7,"name":"kicker","text":"PASO 3 · CONFIRMACIÓN","textPreview":"PASO 3 · CONFIRMACIÓN","textChars":21,"textLines":1,"bbox":[72,42,760,28]}
+{"kind":"textbox","id":"sh/snmxw7ux","slide":7,"name":"title","text":"El rescate comienza solo cuando el voluntario acepta","textPreview":"El rescate comienza solo cuando el voluntario acepta","textChars":52,"textLines":1,"bbox":[72,76,1090,68]}
+{"kind":"textbox","id":"sh/dovy5cvi","slide":7,"name":"page","text":"07","textPreview":"07","textChars":2,"textLines":1,"bbox":[1160,48,48,28]}
+{"kind":"shape","id":"sh/ihkfqxcv","slide":7,"name":"accent","bbox":[72,153,96,5]}
+{"kind":"shape","id":"sh/3itgzid0","slide":7,"name":"proposal","bbox":[72,222,310,250]}
+{"kind":"shape","id":"sh/4j2xsnul","slide":7,"name":"chip-PROPUESTA","bbox":[101,246,132,34]}
+{"kind":"textbox","id":"sh/5kby1sv6","slide":7,"name":"chip-text-PROPUESTA","text":"PROPUESTA","textPreview":"PROPUESTA","textChars":9,"textLines":1,"bbox":[111,247,112,31]}
+{"kind":"textbox","id":"sh/ut0fmdcj","slide":7,"name":"proposal-title","text":"Esperando respuesta","textPreview":"Esperando respuesta","textChars":19,"textLines":1,"bbox":[101,303,250,62]}
+{"kind":"textbox","id":"sh/vutgvid4","slide":7,"name":"proposal-body","text":"El caso sigue asignado, pero aún no está en camino.","textPreview":"El caso sigue asignado, pero aún no está en camino.","textChars":51,"textLines":1,"bbox":[101,383,250,58]}
+{"kind":"textbox","id":"sh/zu9o3a10","slide":7,"name":"branch","text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[404,305,50,56]}
+{"kind":"shape","id":"sh/yt0na50v","slide":7,"name":"accept","bbox":[476,192,732,152]}
+{"kind":"shape","id":"sh/lwr650j6","slide":7,"name":"chip-ACEPTA","bbox":[503,216,104,34]}
+{"kind":"textbox","id":"sh/0vipcvil","slide":7,"name":"chip-text-ACEPTA","text":"ACEPTA","textPreview":"ACEPTA","textChars":6,"textLines":1,"bbox":[513,217,84,31]}
+{"kind":"textbox","id":"sh/ni9o7a1c","slide":7,"name":"accept-title","text":"Confirmado → en camino","textPreview":"Confirmado → en camino","textChars":22,"textLines":1,"bbox":[628,211,520,48]}
+{"kind":"textbox","id":"sh/mx07e50r","slide":7,"name":"accept-body","text":"Se valida al voluntario asignado y se registra voluntario_confirma.","textPreview":"Se valida al voluntario asignado y se registra voluntario_confirma.","textChars":67,"textLines":1,"bbox":[503,277,650,38]}
+{"kind":"shape","id":"sh/9kb69kji","slide":7,"name":"reject","bbox":[476,376,732,186]}
+{"kind":"shape","id":"sh/8j2pgfix","slide":7,"name":"chip-RECHAZA","bbox":[503,400,116,34]}
+{"kind":"textbox","id":"sh/32povq18","slide":7,"name":"chip-text-RECHAZA","text":"RECHAZA","textPreview":"RECHAZA","textChars":7,"textLines":1,"bbox":[513,401,96,31]}
+{"kind":"textbox","id":"sh/21gn2lkn","slide":7,"name":"reject-title","text":"Se libera la propuesta y avanza el siguiente","textPreview":"Se libera la propuesta y avanza el siguiente","textChars":44,"textLines":1,"bbox":[638,395,520,52]}
+{"kind":"textbox","id":"sh/qtozqdo7","slide":7,"name":"reject-body","text":"El voluntario queda excluido de futuros rankings; el frontend detecta el rechazo cada 5 segundos y recarga candidatos.","textPreview":"El voluntario queda excluido de futuros rankings; el frontend detecta el rechazo cada 5 segundos y recarga candidatos.","textChars":118,"textLines":1,"bbox":[503,463,650,70]}
+{"kind":"textbox","id":"sh/rux0zips","slide":7,"name":"closing","text":"PawAlert prioriza cobertura, compatibilidad y consentimiento en cada asignación.","textPreview":"PawAlert prioriza cobertura, compatibilidad y consentimiento en cada asignación.","textChars":80,"textLines":1,"bbox":[72,624,1136,40]}
+{"kind":"notes","id":"nt/tyhjym","slide":7,"text":"Al ofrecer el caso, staff_asignado_id guarda al voluntario, confirmacion_voluntario queda en esperando y el reporte permanece asignado. Si acepta, el backend valida identidad y estado, cambia la confirmación a confirmado, mueve el reporte a en_camino y registra el evento. Si rechaza, se limpia la asignación, se registra el rechazo y queda excluido para ese reporte. El frontend consulta cada cinco segundos, recarga el ranking y muestra el siguiente candidato disponible. Cierre: el valor del sistema está en encadenar cobertura institucional, filtros estrictos, ranking transparente y confirmación humana."}

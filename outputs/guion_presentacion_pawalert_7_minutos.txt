@@ -1,0 +1,64 @@
+GUION DE PRESENTACIÓN - PAWALERT
+Duración aproximada: 7 minutos
+
+DIAPOSITIVA 1 - PORTADA | 0:00 a 0:30
+
+Buenas tardes. Hoy presentamos PawAlert, una plataforma web progresiva para coordinar rescates de animales. El reto no es solamente registrar un caso, sino lograr que llegue a la organización correcta, encuentre a una persona disponible y pueda seguirse hasta el cierre. Por eso, PawAlert combina ubicación, capacidad, reglas de seguridad y confirmación humana.
+
+DIAPOSITIVA 2 - PROCESO DE DESARROLLO | 0:30 a 1:15
+
+PawAlert no surgió de la noche a la mañana. Primero conversamos con asociaciones y rescatistas para entender su trabajo y detectar dónde se pierde información. Antes de programar, modelamos flujos, estados, casos de uso y relaciones de datos. Después trabajamos en sprints, con entregas medibles, control de versiones y pruebas sistemáticas.
+
+Ese proceso produjo funciones concretas: dashboards para asociaciones y voluntarios, visibilidad de cada caso y acceso con verificación. Cada función responde a una necesidad operativa identificada previamente.
+
+DIAPOSITIVA 3 - MATCHING DE ASOCIACIÓN | 1:15 a 2:25
+
+El rescate se divide en tres decisiones: buscar una asociación, rankear voluntarios y confirmar el apoyo. La primera no utiliza puntuación. No intentamos decir que una asociación es “mejor”; verificamos si realmente puede atender el caso.
+
+Para ser elegible, debe estar activa y verificada, atender todas las especies del reporte, encontrarse dentro de su radio y no haber rechazado ese caso. La condición inferior significa que las especies requeridas deben estar contenidas en las especies que atiende la asociación.
+
+En un reporte con perros y gatos, no basta con atender solo perros. Después de filtrar, el sistema ordena por distancia y selecciona la asociación elegible más cercana. Si existe una opción, el reporte queda asignado; si ninguna cumple, permanece pendiente para buscar otra cobertura.
+
+DIAPOSITIVA 4 - FILTROS Y RANKING DE VOLUNTARIOS | 2:25 a 3:40
+
+Después comienza el matching de voluntarios. Aquí sí existe ranking, pero primero hay filtros duros. Solo participan voluntarios habilitados, con términos aceptados, ubicación registrada y a menos de diez kilómetros. Deben aceptar todas las especies, no haber rechazado el caso y tener capacidad libre para la cantidad real de animales. Si ofrecen casa temporal, el caso no puede superar dos animales.
+
+Quienes superan esos requisitos reciben hasta cien puntos: cuarenta por proximidad, veinticinco por tamaño, veinte por disponibilidad actual y quince por capacidad libre. Los componentes se suman, se ordenan de mayor a menor y se muestran como máximo tres candidatos.
+
+La diferencia clave es esta: las especies no dan puntos porque son obligatorias. Un voluntario incompatible no recibe una puntuación baja; simplemente no entra al ranking. Así, la cercanía nunca compensa una incompatibilidad crítica.
+
+DIAPOSITIVA 5 - MODALIDAD Y CONFIRMACIÓN | 3:40 a 4:40
+
+La asociación puede configurar tres modalidades. En modo manual, elige a cualquiera del top tres. En modo semiautomático, tiene un plazo determinado por la condición más grave; al vencer, el sistema elige al primero. En automático, el tiempo es cero y el escalamiento propone el caso al mejor candidato.
+
+Pero seleccionar a una persona no inicia el rescate. Primero recibe una propuesta. Si acepta, el sistema valida su identidad, registra la confirmación y cambia el reporte a “en camino”. Si rechaza, libera la propuesta, excluye a esa persona del caso y avanza al siguiente candidato. PawAlert automatiza la coordinación sin sustituir el consentimiento.
+
+DIAPOSITIVA 6 - PRUEBAS | 4:40 a 5:20
+
+Para comprobar estas reglas ejecutamos sesenta y nueve pruebas automatizadas, todas aprobadas. Cubren el matching y sus pesos, capacidad y rechazos; asignación y escalamiento; autenticación, permisos y privacidad de coordenadas; además de duplicados, cantidades y métricas.
+
+Las pruebas aíslan la lógica con simulaciones controladas de la base de datos. Así verificamos casos normales y límites de forma repetible, sin datos reales ni servicios externos. No solo comprobamos que la aplicación responda, sino que decida correctamente.
+
+DIAPOSITIVA 7 - FLUJO COMPLETO | 5:20 a 6:20
+
+Aquí vemos el flujo completo. Un reporte entra al matching de asociación. Si acepta, continúa; si rechaza, queda excluida y se busca la siguiente más cercana. Cuando se agota la cobertura, se activa la ruta de contactos de emergencia.
+
+Con una asociación asignada, comienza el matching de voluntarios. El score combina proximidad, compatibilidad, disponibilidad y carga. La modalidad decide si la selección es manual o automática. El candidato puede confirmar, rechazar o no responder a tiempo; en los últimos dos casos se intenta con la siguiente opción.
+
+Una vez confirmado, el rescate avanza por hitos: en camino, encuentro, atención y llegada al refugio. La validación GPS comprueba la llegada; si supera doscientos metros, solicita reintentar. Finalmente, el animal queda como rescatado, la asociación cierra el caso y se conserva el historial.
+
+DIAPOSITIVA 8 - ARQUITECTURA Y CIERRE | 6:20 a 7:00
+
+Todo se sostiene sobre una arquitectura por capas. La interfaz es una PWA desplegada en Vercel y utiliza Leaflet. La lógica vive en FastAPI, desplegado en Railway. Supabase aporta Postgres con PostGIS para búsquedas geográficas, autenticación y almacenamiento.
+
+Integramos Nominatim y OpenStreetMap para ubicación, Brevo y Twilio para comunicación, UptimeRobot para monitoreo y un proceso cron para escalamientos.
+
+En conclusión, PawAlert no es solo un formulario. Es un sistema trazable que transforma un aviso en una secuencia coordinada: encontrar cobertura, elegir apoyo compatible, confirmar y acompañar el rescate hasta su cierre. Muchas gracias.
+
+RECOMENDACIONES DE EXPOSICIÓN
+
+- No leer cada elemento de los diagramas; señalar únicamente la ruta que se está explicando.
+- Hacer una pausa breve después de “no entra al ranking” en la diapositiva 4: es la diferencia conceptual más importante.
+- En la diapositiva 6, enfatizar “69 aprobadas” y después explicar qué riesgo reducen.
+- Mantener un ritmo aproximado de 130 a 140 palabras por minuto.
+- Si el tiempo se reduce, acortar la diapositiva 2; no eliminar la explicación del matching ni la confirmación.

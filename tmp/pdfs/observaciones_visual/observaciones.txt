@@ -1,0 +1,309 @@
+=== PAGINA 1 ===
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+          Nota: si da tiempo checar el punto de aliado de plataforma.               
+                                                                                    
+          Caminos de entrada                                                        
+          Notas: para hacer donaciones tiene que tener un perfil creado si o si para mayor
+                                                                                    
+          control.                                                                  
+                                                                                    
+          Camino A — ya soy usuario de PawAlert (reportante o voluntario) y quiero aportar algo
+          puntual:                                                                  
+                                                                                    
+            1. Desde su perfil existente, ve la opción "Quiero ser parte de la Red de Aliados" (o similar)
+            2. Activa un perfil complementario — no reemplaza su rol de reportante/voluntario, se
+               suma                                                                 
+            3. Completa lo mínimo: qué categoría de recurso puede ofrecer, zona, disponibilidad
+            4. Queda como donante comunitario por defecto — sin verificación adicional, porque su
+               aporte es puntual y de bajo riesgo                                   
+                                                                                    
+          Camino B — soy un negocio/organización nueva, nunca he usado PawAlert:    
+                                                                                    
+                                                                                    
+            1. Registro directo eligiendo "Quiero ser un aliado" desde el landing (sin necesidad de
+               pasar primero por reportante o voluntario)                           
+            2. Datos básicos del negocio/organización: nombre, contacto, tipo       
+            3. Completa su perfil: categorías que ofrece (de la taxonomía), zona de cobertura,
+               disponibilidad (disponible / capacidad limitada / no disponible)     
+            4. Si busca ser aliado local o patrocinador institucional (participación recurrente), pasa
+               por una verificación adicional — la primera asociación que trabaje con él le puede
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+
+=== PAGINA 2 ===
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+               otorgar el sello "aliado verificado" (puede ser como las verificaciones de ig) (mismo
+               patrón que ya usan con asociaciones.verificado)                      
+                                                                                    
+          En el camino B la verificación antes de que doné debe hacerlo un admin.   
+                                                                                    
+          Verificaciones:                                                           
+                                                                                    
+          Donante comunitario: Ninguna adicional — aporte puntual, bajo riesgo      
+          Aliado local: Verificación por administrador. La primera asociación que trabaja con él le otorga
+          el sello aliado verificado                                                
+                                                                                    
+          Patrocinador institucional: Verificación por administrador. La primera asociación que trabaja
+          con él le otorga el sello aliado verificado                               
+                                                                                    
+          Tarea: definir los campos del formulario                                  
+                                                                                    
+          Taxonomia:                                                                
+                                                                                    
+          En la landing se pondrá una explicación de que abarcan estos roles (aliado local
+          y patrocinador institucional)                                             
+                                                                                    
+          Tener en cuenta para los campos de los formularios (formulario diferente de acuerdo al animal),
+          tener en cuenta las opciones que se van a mostrar de acuerdo a cada animal
+                                                                                    
+                                                                                    
+          Estos dos campos son para donante comunitario, aliado local y patrocinador
+          institucional:                                                            
+          Alimentos                                                                 
+            -  Croquetas                                                            
+            -  Alimento húmedos (latidas, sobres)                                   
+            -  Fórmula para bebés                                                   
+          Insumos                                                                   
+            -  Arena sanitaria                                                      
+            -  Cobijas                                                              
+                                                                                    
+            -  Camas                                                                
+            -  Material limpieza                                                    
+            -  Transportadoras                                                      
+            -  Correas                                                              
+            -  Collares                                                             
+            -  Bozales                                                              
+            -  Kit médico animal                                                    
+          Los siguiente son exclusivos para aliados e instituciones                 
+                                                                                    
+          Servicios veterinarios                                                    
+            -  Consulta general o de urgencia.                                      
+            -  Diagnóstico y estudios.                                              
+            -  Medicamentos.                                                        
+            -  Curaciones y cirugía.                                                
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+
+=== PAGINA 3 ===
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+            -  Hospitalización.                                                     
+            -  Vacunación y esterilización.                                         
+                                                                                    
+          Estados para los reportes de la asociación respecto a los servicios veterinarios
+                                                                                    
+          🔴 Crítico – atención en minutos:                                          
+                                                                                    
+            ●  Atropellamiento con trauma severo (fractura expuesta, no se puede parar, sangrado
+               interno)                                                             
+            ●  Hemorragia abundante que no se detiene                               
+                                                                                    
+            ●  Dificultad para respirar o no respira                                
+            ●  Convulsiones continuas                                               
+            ●  Envenenamiento (espuma en boca, temblores, muy común en calle)       
+            ●  Golpe de calor severo                                                
+            ●  Torsión gástrica: abdomen hinchado y duro, intenta vomitar sin lograrlo (perros grandes,
+               mortal en horas)                                                     
+            ●  Parto detenido / distocia                                            
+            ●  Signos de shock: encías pálidas o azuladas, muy débil, frío          
+                                                                                    
+          🟡 Urgente – mismo día:                                                    
+                                                                                    
+            ●  Heridas o mordeduras profundas (peleas entre perros)                 
+                                                                                    
+            ●  Fractura cerrada / no apoya la pata                                  
+            ●  Vómito o diarrea con sangre → sospecha de parvovirus en cachorros (altísima en
+               calle)                                                               
+            ●  Deshidratación o desnutrición severa                                 
+            ●  Ojo lastimado o salido                                               
+            ●  Cuerpo extraño (comió algo que obstruye)                             
+                                                                                    
+          🟢 No urgente / estable – se puede agendar:                                
+                                                                                    
+            ●  Sarna, pulgas, garrapatas                                            
+            ●  Desparasitación de rutina                                            
+                                                                                    
+            ●  Heridas superficiales ya cicatrizando                                
+            ●  Desnutrición leve, chequeo general                                   
+                                                                                    
+          Difusión y campañas                                                       
+          Contacto: Administrador - Donante (pendiente)                             
+            ●  Jornadas comunitarias: Vacunas, esterilización y adopción            
+            ●  Espacios para eventos.                                               
+            ●  Publicidad digital o impresa: Campañas, croquetones, etc             
+            ●  Servicios profesionales o tecnológicos: Dejar campo y que dejen su contacto y nos
+               contactamos con ellos                                                
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+
+=== PAGINA 4 ===
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+          Cómo  actúa una vez adentro — los dos modos                               
+                                                                                    
+          Modo reactivo (responde a algo que ya existe):                            
+                                                                                    
+            1. Asociación crea una necesidad (desde un caso específico, o general para su fondo de
+               insumos)                                                             
+            2. Aliados compatibles por categoría+zona reciben notificación; también visible
+               públicamente en "Cómo ayudar" para quien quiera descubrir necesidades sin esperar
+               aviso                                                                
+                                                                                    
+            3. Aliado ofrece cubrir todo o parte (en unidades físicas — "tengo 5kg de croquetas",
+               nunca en pesos)                                                      
+            4. Asociación acepta, rechaza, o ajusta la cantidad ofrecida            
+            5. Se coordina entrega/recolección fuera de la plataforma (solo se registra punto y ventana
+               de tiempo, no hay chat ni logística interna)                         
+            6. Asociación confirma recepción → se registra en historial → impacto del aliado se
+               actualiza                                                            
+                                                                                    
+          Modo proactivo (deja su disponibilidad configurada de antemano): Solo aliado local y
+          patrocinador institucional (desde un panel)                               
+                                                                                    
+            1. Aliado registra una oferta recurrente ("2 consultas de urgencia gratis al mes")
+                                                                                    
+            2. El sistema compara esa oferta contra necesidades abiertas que encajen en
+               categoría/zona                                                       
+            3. Se le sugiere a la asociación como opción — nunca se asigna automáticamente, la
+               asociación siempre decide si la usa                                  
+            4. Si la acepta, se reserva esa capacidad (para no ofrecer las mismas 2 consultas a tres
+               asociaciones a la vez) y sigue el mismo flujo de confirmación de recepción
+            ●  ¿Quién reclama los insumos que no son de servicios médicos?          
+                                                                                    
+          Cuando yo como asociación quiero dar insumos alimenticios u otro (que no sean médicos) y la
+          cantidad es muy grande. Entonces cuando yo como institución registro estos insumos
+                                                                                    
+          proactivos (recurrentes) que me salga una pantalla de asociaciones a las que puedo acudir (por
+          proximidad) a dejar dichas donaciones.                                    
+                                                                                    
+          Tipos  de visibilidad, siempre   separados                                
+                                                                                    
+                                                                                    
+          Este es el punto que protege la credibilidad del proyecto. PawAlert no vende influencia
+          operativa y no vende posición por dinero. Para sostener eso, la visibilidad se divide en dos y
+          nunca se mezclan:                                                         
+                                                                                    
+          Visibilidad de impacto — se gana apoyando necesidades verificadas de animales. Refleja
+          cuánto ayudaste a rescatar, nunca cuánto dinero metiste. Vive en:         
+                                                                                    
+            ●  El mural "Huellas que ayudan" (solo apoyos verificados).             
+            ●  El directorio y mapa de aliados.                                     
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+
+=== PAGINA 5 ===
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+            ●  El carrusel de agradecimiento del dashboard público.                 
+            ●  Retorno de valor: Los participantes reciben confirmación de recepción, actualización
+               del impacto de sus aportaciones, insignias de constancia y visibilidad en carruseles
+               informativos de acuerdo con su nivel de colaboración.                
+                                                                                    
+          Visibilidad:                                                              
+          Donante comunitario: Mural de impacto (opcional, con consentimiento)      
+          Aliado local: Directorio + mapa + mural                                   
+          Patrocinador institucional: Directorio + mapa + campañas + informes de impacto + insignias
+                                                                                    
+          de constancia                                                             
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    

@@ -1,0 +1,1909 @@
+Must Have 1: Crear reportes con ubicación, fotografías y descripción.
+
+1. Localizarlo en el mapa (ubicación)
+
+2. Evaluar su condición visual (fotografía)
+
+3. Comprender el contexto (descripción)
+
+Ubicación: Se obtiene mediante el GPS del dispositivo móvil del reportante. Se
+almacena como coordenadas ‘latitude’ / ‘longitude’ en la base de datos. Si el usuario
+no permite el acceso al GPS puede marcar el punto manualmente en el mapa. Esta
+coordenada es la base de todas las funciones geoespaciales del sistema: visualización
+en mapa, detección de duplicados, cálculo del urgency score y asignación de
+voluntarios.
+
+Fotografía: Se captura directamente desde la cámara o se sube desde la galería. Antes
+de almacenarse, pasa por la Capa 2 del sistema anti-fraude: Gemini Vision analizada
+la imagen para conﬁrmar que contiene un animal real, descartando capturas de
+pantalla, imágenes descargadas de internet o fotos de peluches. Si la imagen no pasa
+esta validación, el sistema solicita una nueva fotografía y el reporte no se publica hasta
+que la validación sea exitosa. Esto signiﬁca que cada foto en el sistema ha sido
+veriﬁcada como real antes de publicarse, no como auditoría posterior.
+
+Adicionalmente, los metadatos EXIF de la fotografía son extraídos automáticamente.
+Si la foto contiene coordenadas GPS embebidas (lo cual ocurre cuando la cámara tiene
+permiso de ubicación), estas se comparan contra la ubicación declarada por el
+usuario. Si la diferencia es mayor a 200 metros el sistema activa un ﬂag de revisión
+(Aquí entra la capa 1 del sistema anti-fraude). Esto PREVIENE (no cancela) reportes
+donde la ubicación declarada no corresponde al lugar real donde fue tomada la foto.
+
+Descripción: el usuario describe la condición del animal mediante texto libre y un
+semáforo de condición:
+
+   -   Verde: Estable, sin lesiones visibles
+   -   Amarillo: Parece herido o desorientado
+   -   Rojo: Herido gravemente, en peligro inmediado.
+
+Esta selección se va al campo de ‘condicion_declarada’ del score de urgencia con un
+valor de 20, 60 0 100 respectivamente, con el peso del 20% de la fórmula total.
+
+ESTE REQUERIMIENTO ES EL PUNTO DE ENTRADA DE TODO EL SISTEMA. Sin un
+reporte estructurado no hay nada que mostrar en el mapa (requisito 2), no hay urgencia
+que calcular (SHOULD HAVE), no hay voluntario que asignar (requisito 4), ni historial
+que mantener (MUST HAVE 7).
+
+
+
+Must Have 2: Visualizar reportes activos en un mapa interactivo
+
+Información fragmentada convertida en inteligencia operativa. Dando un solo vistazo,
+el usuario puede ver:
+
+   -   Cuántos casos activos existen en la zona
+   -   Dónde están concentrados geográﬁcamente
+   -   Qué nivel de urgencia tiene cada uno (representado por el color del marcador)
+   -   Cuáles están siendo atendidos y cuáles no
+
+El mapa se construye sobre Leaﬂlet.js con tiles de OpenStreetMap, cada reporte activo
+se representa como un pin/marcador cuyo color reﬂeja el nivel de urgencia calculado
+por el sistema:
+
+   -   Rojo: Score de urgencia >= 70 (respuesta inmediata requerida)
+   -   Amarillo: score de urgencia entre 40 y 69 (atención próxima)
+   -   Verde: score de urgencia <40 (situación manejable)
+
+El score de urgencia se recalcula automáticamente cada 30 minutos (condicionar
+dependiendo el estado inicial: verde (recalcular en un lapso mayor) para reﬂejar el
+tiempo transcurrido sin atención, esto signiﬁca que un marcador verde puede volverse
+amarillo o rojo con el paso del tiempo, incluso sin que nadie actualice el reporte
+manualmente.
+
+Al hacer clic en un marcador, se despliega una tarjeta con:
+
+   -   Fotografía del animal
+   -   Descripción y condición declarada
+   -   Tiempo transcurrido desde el reporte
+   -   Estado actual del rescate
+   -   Botón de participación para voluntarios. (Revisar si tiene lógica con las
+       notiﬁcaciones y como se manejaría)
+   -   Boton de avistamiento: voluntario registrado que pasa cerca del caso, ve al
+       animal en una ubicación distinta a la reportada originalmente, y puede
+       conﬁrmar su presencia con coordenadas actualizadas y una foto. Es una
+       actualización de inteligencia operativa, no una asignación.
+Al presionar el botón, el sistema presenta al voluntario un formulario mínimo de tres
+campos dentro de la misma tarjeta, sin redirigir a otra pantalla, cabe mencionar que
+estos datos siguen los mismos ﬁltros y lógica que un reporte normal:
+
+          o Foto actual del animal: obligatoria. Pasa por Gemini Vision con el mismo
+            criterio que el reporte original: debe contener un animal real
+          o Ubicación actual: se captura automáticamente vía GPS del dispositivo.
+            Si el voluntario no tiene GPS activo, puede marcar el punto manualmente
+            en el mapa. Esta coordenada reemplaza la coordenada visible del
+            marcador en el mapa solo si diﬁere en más de 50 metros de la última
+            coordenada registrada, evitando actualizaciones redundantes que no
+            aportan información nueva.
+          o Condición observada: el mismo semáforo del reporte original (verde /
+            amarillo / rojo). Este campo es obligatorio porque permite detectar si la
+            condición del animal empeoró desde el reporte inicial.
+
+Aclaración: El sistema integra un modelo híbrido de asignación. Por un lado, utiliza
+notiﬁcaciones tipo push, donde VROOM identiﬁca y alerta simultáneamente a los
+voluntarios cercanos dentro de un radio relevante. Por otro, permite un enfoque pull,
+en el que los voluntarios pueden explorar el mapa y solicitar participar en un caso.
+
+En ambos escenarios, la acción se considera una solicitud y no una asignación
+directa. El sistema valida entonces cuál es el candidato óptimo disponible y, si existe
+una mejor opción, informa al voluntario y le ofrece permanecer en lista de espera. De
+esta manera, ambos mecanismos conviven dentro de un mismo ﬂujo.
+
+   La visualización también permite identiﬁcar clusters con reportes cercanos, lo que
+   activa la lógica de detección de duplicados del Should Have. En cuanto entra un
+   reporte nuevo, el backend ejecuta una consulta geoespacial con PostGIS que
+   busca reportes activos a menos de 150 metros y creados en las últimas 2 horas.
+
+   Si encuentra coincidencias, el sistema no realiza un merge automático. En su lugar,
+   notiﬁca al usuario que está generando el reporte que existe un caso similar y le
+   pregunta si se trata del mismo. Si el usuario conﬁrma, el sistema asocia ambos
+   reportes en un mismo caso; si no, permite crear uno nuevo de forma independiente.
+
+   Solo cuando la conﬁanza esta en zona gris (50-150 metros, menos de 2 horas) el
+   sistema pausa el nuevo reporte y lo presenta al coordinador en su panel con la
+   opción de conﬁrmar duplicado o marcarlos como casos distintos. Si el coordinador
+   no actúa en 15 minutos, el reporte se activa de todas formas para no bloquear un
+caso real, la detección es automática en la mayoría de los casos, la intervención
+humana es la excepción, no la regla.                                                  Comentado [MT1]: podria omitirse
+
+Privacidad de coordenadas --- Ofuscación espacial
+
+El mapa no muestra la ubicación exacta del animal para todos los usuarios. El
+sistema aplica tres niveles de visibilidad según el rol del usuario que consulta el
+mapa:
+
+ Usuario                                   Lo que ve en el mapa
+ Visitante sin sesión                      Solo el mapa de calor por zonas, sin
+                                           marcadores individuales
+ Reportante / patrocinador                 Pin aproximado con radio de
+                                           incertidumbre de 100 metros
+ Voluntario NO asignado                    Pin aproximado con radio de
+                                           incertidumbre de 100 metros
+ Voluntario asignado al caso               Coordenadas exactas + ruta OSRM
+                                           hasta el punto
+Esta restricción protege al animal de ser localizado por personas con malas
+intenciones antes de que el voluntario llegue, y es técnicamente simple: el backend
+devuelve coordenadas redondeadas al segundo decimal (precisión ~1km) para
+todos excepto el voluntario asignado, que recibe las coordenadas completas.
+
+Filtro del mapa según rol:
+
+El mapa no es idéntico para todos los usuarios. Cada rol tiene una vista optimizada
+para su función:
+
+ Rol             Vista del mapa
+
+ Sin sesión      Solo mapa de calor por zonas, sin marcadores individuales
+
+ Reportante      Marcadores activos con pin aproximado + filtro por especie
+
+                 Marcadores activos con urgency score visible + filtro por
+ Voluntario
+                 distancia y nivel de urgencia
+
+                 Vista de recursos disponibles por zona + marcadores de
+ Patrocinador
+                 casos que requieren su tipo de recurso
+
+                 Vista completa sin restricciones + capa de estadísticas
+ Admin
+                 operativas
+   Must Have 3: Registrar usuarios con distintos roles (reportante, voluntario,
+   patrocinador)
+
+   Reportante: Es quien detecta al animal y genera el reporte.
+
+   Crear un reporte no requiere cuenta completa. Cualquier persona que encuentre
+   un animal en riesgo puede reportarlo directamente desde la PWA proporcionando
+   únicamente un número de teléfono o correo electrónico como identiﬁcador. Con
+   ese dato el sistema crea automáticamente una cuenta temporal silenciosa, sin
+   contraseña, sin veriﬁcación, sin ﬂujo de registro:
+
+                    phone/email: el que proporcionó el usuario
+
+                    auth_method: anonymous
+
+                    trust_score: valor neutro inicial
+
+                    rol:     reportante_anónimo
+
+                    created_at: timestamp del primer reporte
+
+El reporte entra al sistema normalmente y pasa por todas las capas de validación
+(Gemini Vision, EXIF, detección de duplicados). El usuario recibe seguimiento del caso
+vía notiﬁcación al número o correo proporcionado sin necesidad de tener sesión
+activa.
+
+Vinculación con WhatsApp: Si el usuario ya creó un reporte vía el agente de WhatsApp
+con el mismo número, el sistema detecta automáticamente la cuenta temporal
+existente y la vincula sin preguntar nada adicional.
+
+Si el usuario decide crear una cuenta después, puede reclamar sus reportes anteriores
+vinculándolos a su perﬁl mediante el número de teléfono.
+
+Veriﬁcación progresiva: Tras 5 reportes exitosos (validados por el sistema y no
+marcados como falsos), el sistema le presenta al usuario anónimo una invitación a
+registrarse con beneﬁcios concretos:
+
+       -   Sus reportes quedan vinculados a su perﬁl permanente
+       -   Comienza a acumular insignias y puntos de rescate
+       -   Puede ver el historial completo de sus casos
+
+ Su responsabilidad termina después de crear el caso (aunque puede seguir aportando
+actualizaciones). No necesita comprometerse a ir al lugar. Cualquier persona con
+smartphone puede ser reportante. Este rol existe porque la red de detección debe ser
+lo más amplia posible: entre más ojos en la calle, más rápido se detectan los casos.
+Ampliar la capacidad de detección sin ampliar la carga de acción es un diseño
+deliberado.
+
+Voluntario: Es quien actúa físicamente. Puede trasladar al animal, llevarlo a atención
+veterinaria o simplemente monitorear el caso mientras llega más ayuda. El voluntario
+tiene acceso a funciones que el reportante no tiene: ver la ruta optimizada al caso
+(calculada por OSRM), ver el estado de otros voluntarios asignados, y actualizar el
+estado del rescate. Este rol requiere registro completo porque la asignación eﬁciente
+de voluntarios (mediante Vroom) depende de conocer su ubicación, disponibilidad y
+historial previo.
+
+Patrocinador: Es quien aporta recursos sin necesariamente estar presente
+físicamente. Su rol existe porque muchos rescates fracasan no por falta de voluntad
+sino por falta de recursos concretos. Al registrar formalmente qué ofrece cada
+patrocinador, el sistema puede asignar recursos al caso correcto en lugar de depender
+de solicitudes improvisadas en comentarios.
+
+   -   Clinicas y veterinarios
+   -   Hogares temporales
+   -   Proveedores de insumos
+   -   Patrocinadores económicos
+
+Cada usuario independientemente de su rol acumula trust score, que afecta como el
+sistema trata sus acciones:
+
+   -   Reporte veriﬁcado y rescate completo: +10 puntos
+   -   Reporte marcado como falso por la comunidad: -25 puntos
+   -   Trust Score < 40: los reportes del usuario entran a cola de revisión antes de
+       publicarse y son excluidos del cálculo de urgency score.
+
+Esto crea un sistema de reputación funcional que desincentiva el abuso sin bloquear
+completamente a los nuevos usuarios. Un usuario nuevo tiene Trust Score neutro y sus
+reportes se publican normalmente; solo después de comportamiento fraudulento
+comprobado entra a revisión.
+
+Must Have 4: Permitir que voluntarios participen en rescates
+
+Cuando un voluntario se asigna a un caso, el sistema registra ese compromiso, lo
+notiﬁca a otros voluntarios para evitar duplicación, y proporciona la ruta óptima para
+llegar al lugar.
+
+La asignación de voluntarios no es manual ni aleatoria. El proceso usa dos
+herramientas complementarias:
+   -   Vroom se encarga de la optimización: dado un conjunto de casos activos y
+       voluntarios disponibles, calcula la asignación óptima considerando distancia,
+       urgencia del caso y carga de trabajo actual del voluntario (cuántos casos ya
+       tiene activos). Vroom no asigna automáticamente sin conﬁrmación del
+       voluntario; genera una recomendación que el voluntario puede aceptar o
+       rechazar.
+   -   OSRM se encarga del ruteo: una vez que el voluntario acepta el caso, OSRM
+       calcula la ruta real por calles (no en línea recta) desde la posición actual del
+       voluntario hasta la ubicación del animal. Esta ruta se muestra en el mapa
+       interactivo con tiempo estimado de llegada.
+           o OSM Overpass: ¿hay una avenida principal aquí?: se usa al crear el
+              reporte para alimentar el urgency score
+           o OSRM: calcula rutas de navegación, se usa cuando el voluntario ya fue
+              asignado y necesita llegar al punto.
+           o Vroom: optimiza qué voluntario va a qué caso, se usa en el proceso de
+              matching antes de cualquier asignación.
+
+
+
+Cuando un voluntario conﬁrma que va en camino, el urgency score del caso se reduce
+automáticamente para reﬂejar que ya tiene atención asignada. Esto no elimina la
+urgencia del caso, el animal sigue necesitando ayuda, pero sí señaliza al sistema que
+ese caso está cubierto, permitiendo que la capacidad de respuesta disponible se
+redistribuya hacia casos que aún no tienen voluntario.
+
+Este mecanismo funciona en conjunto con el cambio de estado: en cuanto el
+voluntario acepta el caso, el estado cambia de ACTIVO a EN ATENCIÓN, lo cual es
+visible en el mapa para todos los usuarios. El score reducido y el estado actualizado
+trabajan juntos para comunicar la misma realidad: este caso ya tiene respuesta.
+
+
+
+
+Must Have 5: Registrar recursos ofrecidos por patrocinadores
+
+Al registrar formalmente los recursos disponibles de cada patrocinador, el sistema
+puede hacer matching proactivo entre lo que necesita un caso y lo que está disponible,
+sin necesidad de hacer solicitudes públicas cada vez.
+Cada patrocinador registra en su perﬁl qué tipo de recurso puede ofrecer, con qué
+disponibilidad y en qué zona geográﬁca:
+
+ Tipo de patrocinador                         Ejemplo de registro
+ Clínica/ Veterinario                         Acepta casos de emergencia, descuento
+                                              del 50%, zona norte
+ Hogar temporal                               Capacidad de 2 animales, solo perros
+                                              medianos, zona sur.
+ Proveedor de insumos                         Vendas y material de curación
+                                              disponibles    en   bodega,     entrega
+                                              inmediata.
+ Patrocinador económico                       Cubre consultas hasta $500 por caso, sin
+                                              límite mensual
+
+(revisar la forma de clasiﬁcar esto, debe ser más respuestas multiples que respuestas
+abiertas)
+
+Cuando se crea un nuevo reporte, el sistema veriﬁca automáticamente qué recursos
+están disponibles en la zona y los muestra al voluntario asignado como "recursos
+disponibles para este rescate". El patrocinador recibe una notiﬁcación si hay un caso
+activo que coincide con el tipo de recurso que ofrece y la zona que cubre.
+
+Dashborad del patrocinador
+
+Cada patrocinador tiene acceso a un panel propio donde gestiona su disponibilidad en
+tiempo real mediante un toggle con dos estados:
+
+El toggle actualiza el estado en Supabase Realtime, de modo que el mapa y los voluntarios
+ven la disponibilidad real sin retraso. Adicionalmente, el patrocinador puede ver un mapa
+de calor de su zona con los recursos más solicitados históricamente, lo que le permite
+anticipar cuándo necesitará aumentar su disponibilidad.
+
+ Estado                       Significado
+
+ 🟢 Disponible                 El recurso puede ser solicitado por voluntarios activos
+
+ 🔴 Lleno / No disponible      El recurso está temporalmente fuera de capacidad
+
+
+El toggle actualiza el estado en Supabase Realtime, de modo que el mapa y los
+voluntarios ven la disponibilidad real sin retraso. Adicionalmente, el patrocinador
+puede ver un mapa de calor de su zona con los recursos más solicitados
+históricamente, lo que le permite anticipar cuándo necesitará aumentar su
+disponibilidad.
+
+Must Have 6: Mostrar el estado de cada rescate
+
+Un ciclo de vida de estados deﬁnido y visible para todos los participantes elimina la
+ambigüedad sobre qué está pasando con cada caso. Nadie tiene que preguntar "¿ya lo
+atendieron?" porque el sistema lo dice explícitamente.
+
+Estados del ciclo de vida de un rescate:
+
+Reportado -> En revisión -> Activo -> En atención -> Rescatado -> Cerrado
+
+           o Duplicado (Si se detecta otro reporte del mismo caso)
+           o Falso positivo (si la validación anti-fraude lo rechaza)
+   -   Reportado: El reporte fue creado y pasó la validación de Gemini Vision. Está en
+       el mapa, pero aún sin voluntario asignado.
+   -   En revisión: El Trust Score del reportante es bajo o el sistema detectó
+       inconsistencias (EXIF vs. ubicación declarada). Un coordinador humano debe
+       revisar antes de que el caso se active públicamente.
+   -   Activo: El reporte es válido y está esperando voluntario. El urgency score está
+       corriendo y actualizándose cada 30 minutos.
+   -   En atención: El voluntario asignado conﬁrmó que va en camino o ya estáb en el
+       lugar. El urgency score se reduce para reﬂejar que el caso tiene respuesta. El
+       caso sigue visible en el mapa pero ya no aparece como prioritario para nuevas
+       asignaciones.
+   -   Rescatado: El animal fue trasladado a atención veterinaria o a un hogar
+       temporal. El caso ya no requiere acción de nuevos participantes.
+   -   Cerrado: El caso concluyó (rescate exitoso, animal en hogar, o caso archivado
+       por circunstancias). Queda en el historial pero ya no aparece en el mapa activo.
+   -   Duplicado: El sistema detectó que este reporte corresponde a un caso ya
+       registrado (dos reportes a menos de 150m con menos de 2 horas de diferencia).
+       Se vincula al caso original y se archiva automáticamente.
+   -   Falso positivo: El reporte no pasó la validación anti-fraude. Se archiva con la
+       razón especíﬁca del rechazo y se descuenta del Trust Score del usuario.
+
+La visibilidad del estado no es solo para los coordinadores: es para la comunidad
+entera. Un reportante que publicó el caso necesita saber que fue atendido; un
+voluntario potencial necesita saber si su ayuda todavía es necesaria; un patrocinador
+necesita saber si el recurso que ofreció fue utilizado. La transparencia de estados es lo
+que construye conﬁanza en el sistema a largo plazo.
+Must Have 7: Mantener historial básico de acciones en cada caso
+
+El historial convierte cada rescate en un expediente trazable. Cada acción relevante
+queda registrada automáticamente con timestamp, usuario responsable y descripción
+de la acción. Esto crea una auditoría completa del ciclo de vida de cada caso sin
+depender de que los usuarios recuerden documentar manualmente.
+
+El historial no requiere intervención manual del usuario para la mayoría de sus
+entradas. El sistema lo genera automáticamente en respuesta a eventos:
+
+
+
+
+(|Avistamiento conﬁrmado| vountario| “avistamiento registrado por X voluntario- nueva
+ubicación, condicion: x color”|)
+
+Más allá del seguimiento individual de casos, el historial agregado de todos los
+rescates es la fuente de datos para las estadísticas del sistema (Should Have). ¿Cuál
+es el tiempo promedio de respuesta? ¿En qué zonas se concentran más casos? ¿Qué
+tipo de recursos se necesitan más frecuentemente? ¿Qué voluntarios tienen mayor
+tasa de rescates completados? Estas preguntas solo pueden responderse si existe un
+historial consistente y estructurado desde el primer día.
+
+
+
+
+Sistema Anti-Fraude de 5 capas:
+
+Orden secuencial -> Si falla en cualquiera de las primeras dos, el reporte no se publica.
+
+Capa 1: Validación EXIF GPS
+Los metadatos de la foto contienen coordenadas GPS si la cámara tiene ese permiso
+activado, el sistema extrae esas coordenadas y las compara contra la ubicación
+declarada por el usuario.
+
+   -   Diferencia < 200m -> pasa
+   -   Diferencia > 200 m -> ﬂag automático, va a revisión del coordinador.
+
+(revisar estas métricas con el equipo, para ver si las cambiamos o nop)
+
+Capa 2: Gemini Vision
+
+Gemini Vision analiza la foto y veriﬁca que contenga un animal real. Rechaza: capturas
+de pantalla, imágenes descargadas de internet, fotos de peluches, imágenes sin
+animal visible.
+
+   -   Animal real detectado -> pasa
+   -   No pasa -> el sistema pide una nueva foto, el reporte no se publica hasta que
+       esta capa sea superada.
+
+Esta capa corre antes de publicar, no como auditoría posterior.
+
+Capa 3: pHash + Distancia Hamming
+
+Se genera un hash perceptual (pHash) de la foto. Se compara contra una base de datos
+de imágenes conocidas de internet y stock
+
+   -   Distancia de Hamming alta (imágenes distintas) -> pasa
+   -   Distancia de haming baja (imagen conocida de internet) -> reporte bloqueado
+
+Capa 4: Trust score del usuario
+
+El historial del reportante afecta cómo se procesa su reporte:
+
+   -   Trust Score >= 40 -> publicación normal
+   -   Trust Score < 40 -> entra a cola de revisión antes de publicarse y se excluyen del
+       cálculo del urgency score.
+
+Capa 5: Validación comunitaria
+
+Una vez publicado, la comunidad puede marcar el reporte como sospechoso.
+
+   -   3 ﬂags de usuarios distintos -> el caso se pausa y va al panel de moderación
+   -   Caso conﬁrmado como falso -> -25 puntos al Trust Score del reportante
+   -   Caso conﬁrmado como real -> +5 puntos al Trust Score del reportante
+Urgency Score
+
+Urgency score = (condición_IA x 0.35) + (condición_declarada x 0.20) + (tiempo x 0.25)
++ (clima x 0.10) + (tráﬁco x 0.10)
+
+Condición estimada por IA (35%):
+
+Gemini Vision analiza la foto y clasiﬁca al animal:
+
+   -   Estable, sin lesiones visibles -> 20pts
+   -   Herido, con lesiones moderadas -> 70pts
+   -   Crítico, herida grave o inconsciente -> 100 pts
+
+
+
+Condición declarada por el usuario (20%):
+
+Semáforo que seleccióno el reportante:
+
+   -   Verde: Estable, sin lesiones visibles
+   -   Amarillo: Parece herido o desorientado
+   -   Rojo: Herido gravemente, en peligro inmediado.
+
+Tiempo sin atención (25%)
+
+Min (100, horas_sin_atencion x 8)
+
+Llega a 100 a las 12.5 horas. El recálculo no ocurre en un intervalo ﬁjo para todos los
+casos, se aplica un intervalo adaptativo según el score actual del caso:
+
+ Score actual                 Color                        Intervalo de recálculo
+ 0 – 39                       Verde                        Cada 60 minutos
+ 40 – 69                      Amarillo                     Cada 30 minutos
+ 70 - 100                     Rojo                         Cada 10 minutos
+
+
+Cada vez que el sistema recalcula, el intervalo siguiente se ajusta al nuevo score
+resultante. Un caso que sube de verde a amarillo automáticamente pasa a recalcularse
+cada 30 minutos en el siguiente ciclo, sin intervención manual.
+
+Si un caso permanece en verde durante más de 6 horas sin ninguna actividad (sin
+voluntario asignado, sin actualización del reportante, sin recursos vinculados), el
+sistema lanza un ﬂag de veriﬁcación al reportante “¿El animal sigue ahí?”. Si no hay
+respuesta en 2 horas adicionales, el caso pasa automáticamente a estado EN
+REVISIÓN para que el coordinador decida si se cierra o se mantiene activo.
+Exposición climática (10%)
+
+OpenWeatherMap evalúa las condiciones actuales en la ubicación del reporte:
+
+   -   Condiciones normales -> 0pts
+   -   Lluvia moderada -> 50pts
+   -   Lluvia intensa / calor > 35°C / frío < 5°C -> 100pts
+
+Proximidad a tráﬁco (10%)
+
+OSM Overpass consulta si hay una vialidad principal (primary, trunk o motorway) a
+menos de 50 metros:
+
+   -   No hay vialidad principal cerca -> 0pts
+   -   Vialidad principal < 50m -> 100pts
+
+Regla de escala automática
+
+Si condición_IA supera condición_declarada por más de 40 puntos, el sistema ignora
+lo que dijo el usuario y usa el valor de la IA. Además notiﬁca al coordinador:
+
+       La IA detectó condición más grave que la declarada
+
+       Usuario reportó: Estable (20 pts)
+
+       Gemini Vision detectó: Crítico (100 pts)
+
+       Score escalado automáticamente
+
+
+
+Funcionamiento del algoritmo de Vroom
+
+Vroom recibe tres inputs y devuelve una asignación optima:
+
+INPUTS:
+
+   -   Lista de casos activos (Jobs) con su ubicación y urgency score
+   -   Lista de voluntarios disponibles (vechicles) con su ubicación actual
+   -   Restricciones y pesos personalizados
+
+OUTPUT:
+
+   -   Asignación optima: voluntario X -> caso Y
+
+
+
+Formula de Matching:
+Matching_score = (proximidad x 0.40) + (urgencia x 0.30) + (experiencia x 0.20) +
+(capacidad x 0.10)
+
+Componente 1: Proximidad (45%)
+
+proximidad = max(0, 100 - (distancia_km × 10))
+
+ Distancia al caso                               Puntos
+
+ 0 – 1 km                                        90 – 100 pts
+
+ 1 – 5 km                                        50 – 90 pts
+
+ 5 – 10 km                                       0 – 50 pts
+
+ > 10 km                                         0 pts (excluido)
+
+
+Un voluntario a más de 10 km queda fuera del pool de candidatos automáticamente.
+No tiene sentido asignar a alguien que tardará 30+ minutos cuando puede haber
+alguien a 2 km.
+
+
+
+Compontente 2: Urgencia del caso (35%)
+
+Este componente no mide al voluntario, mide el caso. Casos más urgentes reciben
+voluntarios con mejor score general porque Vroom los prioriza primero en la
+asignación.
+
+urgencia = urgency_score del caso (0 – 100)
+
+Un caso rojo (score 85) competirá más agresivamente por el mejor voluntario
+disponible que un caso verde (score 25).
+
+Componente 2: Experiencia del voluntario (20%)
+
+experiencia = min(100, (rescates_completados × 5) + (trust_score × 0.5))
+
+ Perfil del voluntario                                              Puntos aprox.
+
+ Nuevo (0 rescates, Trust Score neutro)                             25 pts
+
+ Intermedio (5 rescates, Trust Score 60)                            55 pts
+
+ Experimentado (15 rescates, Trust Score 85)                        100 pts
+Esto evita asignar casos críticos (score rojo) a voluntarios sin experiencia. Un caso con
+urgency score 90 preferirá al voluntario con 15 rescates sobre uno nuevo, aunque el
+nuevo esté 200 metros más cerca.
+
+
+
+
+Should Have
+
+Should Have 1: Detectar reportes duplicados cercanos
+
+La detección no depende de un solo mecanismo porque los duplicados no siempre
+son geográﬁcamente obvios. Dos personas pueden reportar al mismo animal desde
+ángulos distintos, con descripciones distintas y ubicaciones que diﬁeren por una
+cuadra. Por eso el sistema usa dos capas que corren simultáneamente en cuanto entra
+un reporte nuevo.
+
+Capa 1: Geoespacial (PostGIS)
+
+En cuanto llega un reporte el backend ejecuta una consulta geospacial contra todos
+los reportes activos:
+
+   -   Reportes en radio menor a 150 metros
+   -   Creados en las ultimas 2 horas
+
+Si encuentra coincidencias, pasa a clasiﬁcación. Si no encuentra nada, el reporte se
+publica directamente.
+Capa 2: Semantica (CLIP vía Hugging Face + pgvector)
+
+En PARALELO la descripción textual del nuevo reporte se procesa con CLIP vía Hugging
+Face Inference API, que la convierte en un vector numerico. Ese vector se compara
+contra los embeddings almacenados en pgvector (dentro de Supabase) de reportes
+cercanos usando similitud coseno.
+
+“perro negro herido en la pierna trasera” -> vector [0.82, 0-14, …]
+
+“cachorro negro con pata rota en el parque” -> vector [0.79, 0.16, …]
+
+Similitud coseno = 0.94 -> muy probable sean el mismo caso
+
+Esta capa captura duplicados que la distancia sola no detectaría: dos reportes a 200
+metros (fuera del radio geospacial) pero con descripciones casi idénticas igual se
+detectan y se marcan para revisión.
+
+Cuando una o ambas capas detectan una posible coincidencia, el sistema no hace
+merge automatico. En cambio, interrumpe el formulario del nuevo reporte y le muestra
+al usuario la información del caso existente con la pregunta “¿Es el mismo animal?”. El
+usuario que está en campo y tiene contexto real, toma la decisión ﬁnal.
+
+ Condición detectada              Acción
+
+ Posible duplicado (< 150m
+                                  Pregunta al usuario antes de publicar
+ + < 2h)
+
+ Usuario confirma que es el       Merge manual — su foto/descripción se añade al
+ mismo                            caso original como actualización
+
+ Usuario dice que es distinto     Se publica como caso nuevo e independiente
+
+ Similitud coseno > 0.90          Flag suave en panel del admin — no interrumpe
+ pero fuera del radio             al usuario
+
+
+Tecnologias relacionadas: PostGIS, CLIP vía HFI, pgvector, celery + redis
+
+Should Have 2: Priorizar casos según urgencia
+
+La priorización convierte el mapa en una herramienta de toma de decisiones: el color
+de cada marcador comunica de forma inmediata qué casos necesitan respuesta ahora
+y cuáles pueden esperar.
+Urgency score = (condición_IA x 0.35) + (condición_declarada x 0.20) + (tiempo x 0.25)
++ (clima x 0.10) + (tráﬁco x 0.10)
+
+(se mencionan los criterios paso por paso más arriba)
+
+ Score ﬁnal                   Color del marcador           Signiﬁcado operativo
+ 0-39                         Verde                        Situación     manejable,
+                                                           respuesta en el siguiente
+                                                           ciclo
+ 40-69                        Amarillo                     Atención         próxima
+                                                           requerida
+ 70-100                       Rojo                         Respuesta      inmediata
+                                                           necesaria
+
+
+Tecnologias involucradas: Gemini Vision API, OpenWeatheMap, OSM overpass, celery
++ redis, supabase realtime.
+
+Should Have 3: Notiﬁcar a voluntarios cercanos
+
+Un voluntario registrado en la plataforma no va a revisar el mapa cada hora esperando
+que aparezca un caso cercano. Sin notiﬁcaciones, el sistema depende de que el
+voluntario esté activamente buscando, lo cual no ocurre en la realidad. Las
+notiﬁcaciones son el mecanismo que activa la respuesta: convierten al voluntario
+pasivo en actor cuando su ayuda es necesaria.
+
+El sistema no asigna unilateralmente a un voluntario especíﬁco. En cambio, notiﬁca a
+todos los voluntarios disponibles en un radio inicial y deja que sean ellos quienes
+decidan participar. De los que responden aﬁrmativamente, Vroom selecciona al más
+adecuado. Esto respeta la voluntariedad del rol y evita que los voluntarios sientan que
+el sistema los obliga.
+Notiﬁcaciones al reportante: El reportante también recibe notiﬁcaciones sobre el
+progreso de su caso sin necesidad de estar revisando el mapa.
+
+
+
+
+Vroom no elige al voluntario antes de notiﬁcar, elige al mejor candidado del pool de
+quienes voluntariamente respondiero que sí. Sus criterios de selección se
+mencionaron anteriormente (matching_score)
+
+Cuando Vroom selecciona al voluntario óptimo del pool, el sistema no descarta a los
+demás que respondieron aﬁrmativamente. En cambio, les envía automáticamente un
+segundo mensaje vía FCM:
+
+      "El caso ya fue asignado a otro voluntario. ¿Podrías acudir si se presenta una
+      cancelación?"
+
+Los que responden que sí quedan registrados en una lista de espera ordenada por el
+mismo matching_score de Vroom. Si el voluntario asignado activa el Dead Man's
+Switch o cancela manualmente, el sistema notiﬁca al primero de la lista de espera de
+forma inmediata, sin necesidad de reiniciar el ﬂujo completo de notiﬁcaciones.
+
+Una vez que el voluntario conﬁrma que va en camino, Celery inicia un temporizador de
+15 minutos. Si en ese tiempo el voluntario no registra ninguna actualización (mensaje
+en el caso, cambio de estado, o movimiento GPS), el sistema lo interpreta como
+abandono silencioso y ejecuta automáticamente:
+
+   1. El caso regresa a estado ACTIVO
+   2. Se notiﬁca al primer voluntario de la lista de espera (los que respondieron "ya
+      fue asignado, ¿podrías ir si se cancela?")
+   3. Se resta -15 puntos al Trust Score del voluntario que no respondió
+
+
+Índice de fatiga acumulada
+
+Antes de incluir a un voluntario en el pool de notiﬁcaciones, Vroom consulta cuántos
+rescates activos tiene ese voluntario en ese momento. Si tiene 3 o más casos
+simultáneos en estado EN ATENCIÓN, el sistema le envía primero una pregunta de
+conﬁrmación vía FCM:
+
+"Tienes 3 rescates activos. ¿Puedes tomar uno más?"
+Solo si responde aﬁrmativamente entra al pool. Si no responde en 5 minutos, se omite
+de esa ronda.
+
+
+
+El checkbox de vehiculo disponible (campo opcinal en el perﬁl del voluntario) se
+muestra como información contextual al momento de la asignación, pero no forma
+parte de la fórmula de matching en el MVP.
+
+Tecnologías involucradas: FCM, Vroom, OSRM, Celery + Redis
+
+
+
+Should Have 4: Mostrar estadísticas básicas del sistema
+
+Las estadísticas se dividen en dos niveles con audiencias distintas:
+
+Nivel 1: Estadísticas públicas (visibles para todos los usuarios)
+
+Muestran el impacto agregado de la plataforma. Su objetivo es generar conﬁanza en la
+comunidad y motivar la participación:
+
+   1. Total de rescates completados: Contador acumulado desde el inicio de la
+      plataforma
+   2. Casos activos en este momento: Número de reportes estado ACTIVO o EN
+      ATENCIÓN.
+   3. Tiempo promedio de respuesta: Tiempo promedio desde la creación del reporte
+      hasta que un voluntario acepte el caso
+   4. Mapa de calor: Visualización geográﬁca de concentración de casos históricos y
+      activos.
+
+
+
+Nivel 2: Estadísticas internas (solo para el equipo de Admin)
+
+Muestran la salud operativa del sistema. Su objetivo es identiﬁcar fricciones, abusos y
+áreas de mejora durante la beta.
+
+   1. Tasa de duplicados detectados:
+   2. Tasa de fraude bloqueado
+   3. Voluntarios más activos
+   4. Recursos más solicitados
+   5. Casos sin voluntario por zona
+   6. Tiempo primedio por estado
+El mapa de calor es la métrica más poderosa para motivar la participación
+comunitaria. Ver visualmente que "en esta colonia hay alta concentración de casos"
+genera respuesta local: vecinos que no sabían que podían ayudar se enteran de que
+hay una necesidad real cerca de ellos. Es un mecanismo de reclutamiento orgánico de
+voluntarios y patrocinadores.
+
+Tecnologias involucradas: PostgreSQL + PostGIS, Supabase Realtime, Celery + Redis,
+MH7 (historial)
+
+Could Have
+
+Could Have 1: Sistema de reputación de usuarios
+
+Un sistema donde todos los usuarios son anónimos e intercambiables genera dos
+problemas reales. Primero, no hay incentivo para la participación continua: ayudar una
+vez o diez veces tiene exactamente el mismo peso dentro del sistema. Segundo, no hay
+forma de reconocer a quienes más contribuyen, lo que desincentiva el compromiso a
+largo plazo. El sistema de reputación resuelve ambos: hace visible el historial de
+contribución de cada usuario y recompensa la consistencia con reconocimiento.
+
+El sistema de reputación tiene dos capas que operan de forma independiente:
+
+Capa interna: Trust Score (invisible para otros usuarios)
+
+El Trust Score es una métrica operativa que el sistema usa para calibrar cuánta
+conﬁanza depositar en las acciones de cada usuario. No es una puntuación de
+popularidad ni un ranking público — es una señal interna de conﬁabilidad:
+
+ Evento                                         Efecto en Trust Score
+
+ Rescate completado y verificado                +10 puntos
+
+ Reporte validado por la comunidad              +5 puntos
+
+ Recurso efectivamente utilizado en un
+ rescate                                        +8 puntos
+
+ Reporte marcado como falso (2 flags
+ comunitarios)                                  -25 puntos
+
+ Caso aceptado y abandonado sin
+ actualización                                  -15 puntos
+ Evento                                         Efecto en Trust Score
+
+                                                Reportes entran a cola de revisión antes de
+ Trust Score < 40                               publicarse
+
+                                                Reportes excluidos del cálculo del urgency
+ Trust Score < 40                               score
+
+
+
+
+El Trust Score nunca es visible para otros usuarios. Es una herramienta del sistema, no
+una jerarquía social.
+
+
+
+Capa pública: Insignias visibles en el perﬁl
+
+Las insignias son el reconocimiento visible que la comunidad sí puede ver en el perﬁl
+de cada usuario. Se organizan en dos tipos:
+
+Insignias de nivel por rol — reﬂejan la trayectoria acumulada:
+
+ Rol             Nivel 1                    Nivel 2                     Nivel 3
+
+                  Rescatista novel (1–10    Rescatista activo (11–30    Rescatista experto (31+
+ Voluntario      rescates)                  rescates)                   rescates)
+
+                 Observador (1–10           Vigía comunitario (11–      Guardián de zona (31+
+ Reportante      reportes válidos)          30 reportes)                reportes)
+
+                 Colaborador (1–5 casos     Aliado (6–15 casos          Patrocinador estrella
+ Patrocinador    apoyados)                  apoyados)                   (16+ casos)
+
+
+
+Insignias especiales por comportamiento — reconocen acciones especíﬁcas más
+allá del conteo:
+ Insignia            Condición para obtenerla
+
+ Primera
+ respuesta           Primer voluntario en aceptar un caso con urgency score ≥ 70
+
+ Respuesta
+ rápida              Aceptó un caso en menos de 5 minutos en 3 ocasiones o más
+
+                     Completó rescates en condiciones climáticas adversas (componente clima
+ Todo clima          > 50 pts)
+
+ Explorador          Completó rescates en 3 o más zonas geográficas distintas
+
+ Constante           Participación activa durante 3 meses consecutivos
+
+ Apoyo crítico       Patrocinó un caso con urgency score ≥ 80
+
+
+
+Regla fundamental: las insignias no bajan
+
+El Trust Score puede decrecer internamente como señal operativa, pero las insignias
+ganadas son permanentes. Un voluntario que obtuvo la insignia de Rescatista Activo
+no la pierde aunque su actividad disminuya temporalmente. Esto evita que el sistema
+se sienta punitivo públicamente y protege la motivación de participación a largo plazo.
+
+Aplica a los tres roles por igual
+
+El sistema de reputación no distingue entre roles: voluntarios, reportantes y
+patrocinadores todos acumulan Trust Score e insignias. Esto permite identiﬁcar no
+solo quién rescata más, sino quién reporta con mayor precisión y quién patrocina con
+mayor consistencia. Durante la beta, esta información ayuda al equipo PawAlert a
+identiﬁcar a los usuarios más comprometidos como candidatos naturales al rol de
+coordinador en fases posteriores.
+
+
+
+Could Have 2: Visualización del Impacto Comunitario
+
+Una plataforma de rescates puede funcionar perfectamente y aun así sentirse vacía si
+nadie ve el resultado de lo que se está construyendo. El impacto existe, animales
+rescatados, voluntarios respondiendo, patrocinadores aportando, pero si no es visible,
+no genera el sentido de pertenencia que convierte a un usuario ocasional en un
+participante comprometido. La visualización del impacto no es decoración: es el
+mecanismo que hace que la comunidad se reconozca a sí misma como comunidad.
+
+Dos dimensiones de impacto:
+
+Dimensión colectiva: Dashboard público
+
+Visible para cualquier visitante de la plataforma, sin necesidad de registro. Muestra el
+impacto agregado de toda la comunidad:
+
+       🐾 847 animales rescatados en Tlaxcala
+
+       📍 23 zonas atendidas este mes
+
+       ⏱ Tiempo promedio de respuesta: 18 minutos
+
+       🤝 142 voluntarios activos en la plataforma
+
+Adicionalmente una línea del tiempo visual que muestre la evolución mensual del
+impacto:
+
+Enero ████████           47 rescates
+
+Febrero ██████████           63 rescates
+
+Marzo █████████████             89 rescates ↑ récord mensual
+
+
+
+Ver que el impacto crece mes a mes genera sentido de progreso colectivo y motiva la
+incorporación de nuevos participantes. Es también el argumento más poderoso para
+conseguir nuevos patrocinadores: datos reales, no promesas.
+
+Dimensión individual: Perﬁl de usuario
+
+Visible en el perﬁl de cada usuario registrado. Muestra la contribución especíﬁca de
+esa persona:
+
+       Has contribuido a:
+
+       🐕 12 rescates completados como voluntario
+
+       📸 34 reportes creados y validados
+
+       💊 3 casos patrocinados con recursos
+
+       ⚡ Estás entre el 10% de voluntarios más rápidos en responder
+La métrica de percentil ("estás entre el 10% más rápido") es deliberada: no compara
+usuarios directamente entre sí (lo cual generaría competencia tóxica), sino que ubica
+la contribución individual dentro del contexto de la comunidad completa de forma
+positiva.
+
+Historias de rescate: (Escalabilidad)
+
+Una sección opcional dentro del perﬁl del caso cerrado donde el voluntario puede
+subir una foto del animal ya atendido. No es una métrica — es narrativa emocional. Un
+animal fotograﬁado en peligro junto a una foto posterior en un hogar temporal o
+recuperado en una clínica comunica en segundos lo que ningún número puede
+comunicar. Es el contenido que la gente comparte orgánicamente y que atrae a nuevos
+voluntarios y patrocinadores sin necesidad de estrategia de marketing.
+
+
+
+Esta sección es completamente opcional: el voluntario decide si sube la foto posterior
+o no. El sistema no la requiere para cerrar el caso.
+
+
+
+Gamiﬁcación
+
+PawAlert implementa un sistema de gamiﬁcación con tres capas complementarias:
+puntos acumulables, recompensas canjeables con patrocinadores aliados e insignias
+por hitos de participación. Las tres capas operan sobre la misma infraestructura que
+los Must Haves y Should Haves ya establecieron, sin requerir sistemas paralelos.
+
+Capa 1: Puntos de rescate
+
+Tabla de puntos por acción
+
+Los puntos reﬂejan el valor real de cada contribución al ecosistema. Las acciones más
+impactantes tienen mayor peso:
+
+ Accion                                  Puntos
+ Reporte veriﬁcado por el sistema
+ (Gemini Vision + no marcado como falso)
+ Rescate completado y documentado
+ Reporte que derivó en adopción post-
+ rescate
+ Conﬁrmación de avistamiento en
+ búsqueda activa (plan premium)
+ Primer reporte del día
+ Recurso efectivamente utilizado en un
+ rescate
+ Bienvenida – primer reporte completado
+
+
+El primer usuario que llega a la plataforma recibe 50 puntos de bienvenida
+automáticamente al completar su primer reporte veriﬁcado. Esto garantiza que
+cualquier persona nueva puede canjear una recompensa pequeña casi de inmediato,
+lo cual es el momento más crítico para la retención temprana. Sin una recompensa
+accesible en los primeros días, el sistema de puntos se siente inalcanzable y los
+usuarios lo ignoran.
+
+Acumulación y visibilidad
+
+El saldo de puntos es visible en el perﬁl del usuario junto a las insignias. No caduca,
+los puntos acumulados son permanentes. Esta decisión es intencional: los sistemas
+con caducidad de puntos generan ansiedad y frustración, especialmente en usuarios
+que participan de forma intermitente por la naturaleza voluntaria del rescate.
+
+Capa 2: Recompensas canjeables con patrocinadores
+
+El sistema usa tres niveles de recompensa para resolver el problema de accesibilidad
+vs. sostenibilidad: las recompensas pequeñas se consiguen rápido para no frustrar a
+usuarios nuevos, y las grandes requieren compromiso real para que el patrocinador no
+deba entregar valor de golpe.
+
+ Tier                 Puntos necesarios     Ejemplos        de    Límite de canje
+                                            recompensa
+ Pequeña              100-300 pts           10% de descuento      1 vez cada 6 mees
+                                            en consulta           por patrocinador
+                                            Bolsa de croquetas
+                                            muestra
+                                            Antiparasito
+ Mediana              500-800 pts           Vacuna antirrábica    1 vez cada 8 meses
+                                            gratis                por patrocinador
+                                            Baño
+                                            Corte
+                                            Kit de primeros
+                                            auxilios
+ Grande               1500+ pts             Esterilización        1 vez al año por
+                                            subsidiada            patrocinador
+El límite de canje por patrocinador — no por usuario global — evita que un solo usuario
+acapare todas las recompensas disponibles de un patrocinador pequeño, protegiendo
+la sostenibilidad del sistema para negocios con recursos limitados.
+
+Conﬁguración por el patrocinador
+
+Cada patrocinador conﬁgura sus recompensas desde su dashboard en la sección "Mis
+recompensas":
+
+      1. Deﬁne el nombre y descripción de la recompensa
+
+      2. Selecciona el tier (pequeña / mediana / grande) — esto ﬁja automáticamente
+      el rango de puntos requeridos
+
+      3. Deﬁne las unidades disponibles (ej: "tengo 20 bolsas de croquetas
+      disponibles este mes")
+
+      4. Cuando las unidades se agotan, la recompensa se pausa automáticamente
+      hasta que el patrocinador la reactive
+
+Flujo de canje con QR
+
+Cuando un usuario tiene puntos suﬁcientes para una recompensa:
+
+suario selecciona la recompensa en su perfil
+        ↓
+Sistema verifica puntos disponibles y límite de canje
+        ↓
+Genera código QR único con TTL de 48 horas
+        ↓
+Usuario presenta el QR en el negocio del patrocinador
+        ↓
+Patrocinador escanea el QR desde su dashboard
+        ↓
+Sistema descuenta los puntos y registra el canje
+        ↓
+Unidad disponible decrementada en el inventario del patrocinador
+
+
+El QR tiene un tiempo de vida de 48 horas para evitar acumulación de códigos sin usar.
+Si expira sin escanearse, los puntos se devuelven al usuario automáticamente.
+¿Qué recibe el patrocinador a cambio?
+
+El patrocinador entrega descuentos o productos, cuyo costo real es bajo para ellos, y
+recibe a cambio visibilidad activa dentro del ecosistema de PawAlert:
+
+Carrousel de marketing en el dashboard publico:
+
+Los patrocinadores que tienen recompensas activas aparecen en un carrusel rotativo
+en la sección pública de la plataforma:
+
+      💛 Gracias a Veterinaria Perritos por apoyar 47 rescates
+
+        este mes en Tlaxcala
+
+        → Conoce sus servicios → Instagram → WhatsApp
+
+La frecuencia de aparición en el carrusel es proporcional al número de recompensas
+activas que el patrocinador tiene disponibles: más recompensas activas equivalen a
+mayor visibilidad. Esto crea un incentivo directo para que los patrocinadores
+mantengan su catálogo actualizado.
+
+Badge veriﬁcado en el mapa:
+
+Los patrocinadores con recompensas activas aparecen en el mapa interactivo con un
+ícono diferenciado que indica que ofrecen beneﬁcios canjeables. Esto les da
+visibilidad geográﬁca directa para su negocio ante todos los usuarios que consultan el
+mapa en su zona.
+
+Estadísticas de impacto en su dashboard:
+
+Cada patrocinador ve en tiempo real:
+
+- Cuántas veces fueron canjeadas sus recompensas
+
+- Cuántos rescates apoyaron con sus recursos registrados
+
+- En qué zonas tienen mayor actividad
+
+- Qué tier de recompensa tiene mayor demanda
+
+Estos datos son marketing con evidencia real, no estimaciones y representan un
+argumento concreto para que el patrocinador continúe y amplíe su participación en la
+plataforma.
+
+Capa 3: Isnignias por hitos de participación
+Las insignias son el reconocimiento público visible en el perﬁl de cada usuario.
+Complementan los puntos (que son acumulables y canjeables) con hitos que
+reconocen comportamientos especíﬁcos más allá del volumen de participación. Esta
+sección se documenta en detalle en el Could Have 1, Sistema de Reputación, del cual
+la gamiﬁcación es la extensión pública y visible.
+
+La conexión entre puntos e insignias es unidireccional: las acciones que generan
+puntos también pueden desbloquear insignias, pero las insignias no generan puntos
+adicionales. Esto mantiene los dos sistemas semánticamente distintos: los puntos
+son moneda, las insignias son reconocimiento.
+
+
+
+ESCALABILIDAD
+Escalabilidad 1: Sistema de adopción Post-Rescate
+
+Un caso cerrado en PawAlert no signiﬁca necesariamente que el ciclo del animal haya
+terminado. Si el animal fue rescatado y se encuentra en un hogar temporal o clínica,
+existe una oportunidad real de conectarlo con un adoptante dentro del mismo
+ecosistema que ya movilizó a la comunidad para rescatarlo. El módulo de adopción
+convierte el cierre de un caso de rescate en la apertura de un caso de adopción, sin
+salir de la plataforma. PawAlert no gestiona la comunicación entre las partes ni el
+proceso de adopción en sí: su rol es exclusivamente dar visibilidad al animal y exponer
+el medio de contacto del custodio para que los interesados lo busquen directamente.
+
+Activación de Perﬁl
+
+El perﬁl de adopción solo puede ser creado cuando el caso tiene estado CERRADO. Esta
+restricción es intencional: garantiza que el animal ya no está en riesgo en la calle y que
+existe un responsable claro (voluntario o coordinador del caso) que puede responder
+consultas de posibles adoptantes.
+
+Cuando un voluntario o coordinador cierra un caso, el sistema le presenta una
+pregunta adicional antes de conﬁrmar el cierre:
+
+"¿Deseas publicar un perﬁl de adopción para este animal?"
+
+Si responde que sí, se activa el formulario de creación del perﬁl. Si responde que no, el
+caso se cierra normalmente sin perﬁl de adopción, preguntando si el voluntario decidió
+quedarse con el animal y pidiendo una imagen de conﬁrmación.
+Contenido de reporte de adopción
+
+El voluntario completa los siguientes campos al crear el reporte de adopción:
+
+         Campo                                   Descripción
+ nombre_temporal            Nombre que le dio el voluntario al animal
+ especie                    Perro / Gato / Otro
+ tamaño_estimado            Pequeño / Mediano / Grande
+ edad_estimada              Cachorro / Joven / Adulto / Senior
+ temperamento               Descripción del comportamiento observado
+ condicion_salud            Estado actual, vacunas aplicadas, tratamientos en
+                            curso
+ fotos_actualizadas         Fotografías tomadas después del rescate, no las del
+                            reporte original
+ ubicacion_actual           Ciudad/zona general (no dirección exacta por
+                            seguridad)
+ responsable_contacto       Se toma del perﬁl del voluntario/coordinador que
+                            crea el perﬁl
+ Medio_contacto             Telefono o correo, segun lo que el voluntariado
+                            decida compartir
+
+El campo medio_contacto es obligatorio: sin él el perﬁl no puede publicarse. Las
+fotos pasan por Gemini Vision únicamente para conﬁrmar que contienen un animal
+real, exactamente igual que en los reportes normales del sistema.
+
+Sección informativa para el custodio: como elegir al mejor adoptante
+
+Al ﬁnalizar la creación del perﬁl, antes de publicarlo, el sistema presenta al custodio
+una sección informativa con recomendaciones para evaluar a los interesados que lo
+contacten. Esta sección no es un formulario ni un proceso automatizado: es contenido
+orientador que ayuda al custodio a tomar una mejor decisión por su cuenta.
+
+El contenido incluye recomendaciones como:
+
+Preguntas clave que puedes hacerle al interesado:
+
+   •   ¿Tienes experiencia previa con mascotas?
+   •   ¿Tienes espacio adecuado en casa para este animal?
+   •   ¿Hay niños o adultos mayores en el hogar?
+   •   ¿Estás consciente de los gastos veterinarios que implica tener una mascota?
+   •   ¿Cuántas horas al día estaría solo el animal?
+Señales de alerta a considerar:
+
+   •   Interesados que quieren adoptar de inmediato sin hacer preguntas
+   •   Personas que no pueden o no quieren dar información básica sobre su hogar
+   •   Solicitudes inusuales como adoptar varios animales a la vez
+
+Recomendaciones generales:
+
+   •   Si es posible, solicita una foto del espacio donde vivirá el animal
+   •   Confía en tu intuición: tú conoces al animal y sabes qué tipo de hogar necesita
+   •   No tienes obligación de dar al animal al primer interesado
+
+Esta sección aparece una sola vez al crear el perﬁl y queda accesible desde el panel
+del custodio en cualquier momento para consultarla nuevamente.
+
+
+
+Visibilidad y acceso
+
+La galería /adoptar es accesible públicamente sin cuenta. Cualquier persona puede
+explorar los perﬁles activos y ﬁltrar por especie, tamaño y zona. Para ver el medio de
+contacto del custodio el sistema solicita iniciar sesión. Si el usuario no tiene cuenta,
+puede ingresar únicamente su teléfono o correo y el sistema crea automáticamente
+una cuenta silenciosa con rol reportante_anónimo, consistente con el mismo
+mecanismo que usa el resto de la plataforma para usuarios sin registro completo. A
+partir de ese punto el medio de contacto queda visible y la comunicación ocurre
+completamente fuera de PawAlert.
+
+Esto protege el teléfono o correo del voluntario de exposición masiva no controlada,
+sin poner una barrera real de entrada para el adoptante.
+
+A partir de este punto, el perﬁl muestra las fotos actualizadas, la descripción de
+temperamento y salud, la ubicación general y el medio de contacto del voluntario. La
+comunicación ocurre completamente fuera de PawAlert.
+
+¿Quién cierra el caso de adopción?
+
+El perﬁl de adopción tiene un campo custodio_actual que siempre apunta a quien
+tiene físicamente al animal, y solo esa persona puede cerrar el caso. La custodia puede
+estar en tres manos distintas:
+   •    Voluntario: quien rescató al animal y creó el perﬁl de adopción. Es el caso más
+        común, él aprueba al adoptante, se ponen en contacto fuera de PawAlert y
+        cierra el caso.
+    • Refugio registrado: si el voluntario traslada al animal a un refugio registrado en
+        PawAlert, transﬁere la custodia seleccionándolo desde el formulario. Siguiendo
+        el siguiente ﬂujo:
+El voluntario crea el perﬁl de adopción, pero indica en el formulario que el animal fue
+trasladado a un refugio. El sistema le pide seleccionar el refugio de una lista de refugios
+registrados en PawAlert como patrocinadores de tipo "Hogar temporal".
+custodio_actual = refugio seleccionado A partir de ese momento, el refugio recibe una
+notiﬁcación y puede ver el perﬁl de adopción desde su panel. El refugio es quien
+aprueba al adoptante veriﬁcado y cierra el caso.
+
+   •   Coordinador: si ninguno de los anteriores está disponible, un coordinador de
+       PawAlert puede tomar la custodia y gestionar el cierre.
+
+Cada transferencia de custodia queda registrada en el historial del caso con
+timestamp y usuario responsable, garantizando trazabilidad completa en todo
+momento.
+
+Ciclo de vida del perﬁl de adopción
+
+   -   ACTIVO: perﬁl publicado, recibiendo interesados.
+   -   EN_PROCESO: el custodio ya tiene un candidato serio. El perﬁl sigue visible, pero
+       muestra una etiqueta de advertencia para desincentivar contactos adicionales.
+   -   ADOPTADO: el animal encontró hogar. El perﬁl desaparece de la galería y se
+       archiva dentro del historial del caso original, cerrando el ciclo completo:
+       reporte → rescate → adopción.
+   -   ARCHIVADO: el custodio decide retirar el perﬁl por cualquier razón, se pide saber
+       la razón por la que se retira el caso de adopción.
+   -   FALLECIDO: el animal muere o su condición se deteriora al punto de
+       imposibilitar la adopción.
+
+Escalabilidad 2: Agente de IA para creación de reportes vía WhatsApp
+
+La fricción más grande en cualquier sistema de reporte ciudadano es pedirle al usuario
+que descargue una app, se registre y aprenda a usarla en el momento en que acaba de
+encontrar un animal en riesgo. El agente de WhatsApp elimina esa fricción por
+completo: cualquier persona puede crear un reporte estructurado desde el canal de
+mensajería que ya tiene instalado y usa diariamente, sin descargar nada ni crear una
+cuenta previamente. PawAlert se adapta al usuario, no al revés.
+
+Creación automática de cuenta
+
+Cuando un número de WhatsApp desconocido envía su primer mensaje al agente, el
+sistema consulta la tabla users buscando coincidencia con ese número. Si no existe,
+crea automáticamente un nuevo usuario con los siguientes campos:
+
+   •   phone: número de WhatsApp en formato E.164 (ej. +522221234567)
+   •   auth_method: whatsapp
+   •   trust_score: valor neutro inicial (igual que cualquier usuario nuevo)
+   •   rol: reportante por defecto
+   •   created_at: timestamp del primer mensaje
+
+No se solicita nombre, correo ni contraseña en este momento. El perﬁl mínimo es
+suﬁciente para que el reporte quede vinculado a un usuario real y su Trust Score pueda
+evolucionar con el tiempo. Si en el futuro el usuario decide registrarse en la PWA con el
+mismo número, ambos perﬁles se fusionan automáticamente.
+
+Limites del sistema
+
+Para prevenir abusos, el sistema aplica dos restricciones conﬁgurables desde una
+tabla agent_config en Supabase, editable por el admin sin tocar el código:
+
+   •   Máximo 3 reportes activos simultáneos por número
+   •   Máximo 5 reportes por día por número
+
+Si el usuario alcanza cualquiera de estos límites el agente responde:
+
+Agente: "Ya tienes 3 reportes activos. Puedes crear uno nuevo
+        cuando    alguno    de    tus    casos  sea  resuelto.
+        Consulta tus reportes en: pawalert.com"
+
+
+
+Flujo conversacional paso a paso
+
+El agente es un ﬂujo estructurado y lineal. No responde preguntas libres ni mantiene
+conversación abierta: su único propósito es recolectar los datos necesarios para crear
+un reporte válido. Cada mensaje del agente tiene una sola pregunta o instrucción, y el
+sistema espera la respuesta antes de avanzar.
+
+El estado de la conversación se almacena en Redis con la clave
+whatsapp_session:{numero}, de modo que si el usuario interrumpe y retoma la
+conversación horas después, el agente recuerda en qué paso quedó y continúa desde
+ahí en lugar de reiniciar.
+
+Manejo de mensajes inesperados
+
+En cualquier paso del ﬂujo, si el usuario envía un tipo de contenido no esperado (audio,
+sticker, GIF, video, documento) o un texto fuera de las opciones válidas, el agente
+responde siempre con el mismo mensaje y repite la instrucción del paso actual:
+
+Agente:    "Solo puedo ayudarte a reportar                  animales     en    riesgo.
+           [instrucción del paso actual]"
+
+El ﬂujo no avanza ni retrocede. Esta regla aplica en todos los pasos sin excepción.
+
+Cancelación
+
+En cualquier momento del ﬂujo, si el usuario escribe "cancelar", "salir" o "stop", el
+agente responde:
+
+Agente:    "Tu reporte fue cancelado. Si encuentras                     otro    animal
+           en riesgo, escríbenos cuando quieras"
+
+El sistema elimina la sesión de Redis inmediatamente. No es necesario esperar el TTL
+
+   •   Paso 1: Bienvenida y detección de usuario nuevo
+   •   Paso 2: Fotografía
+
+Agente: "Envíame una foto del animal. Asegúrate de que el animal sea visible en la
+imagen."
+
+→ El usuario envía la imagen.
+
+→ El sistema corre Gemini Vision inmediatamente.
+
+       - Si pasa: continúa al paso 3.
+      - Si no pasa: "La imagen no parece mostrar un animal real. Por favor envía una
+nueva foto."
+
+El ﬂujo no avanza hasta que la imagen sea válida.
+
+   •   Paso 3: Ubicación
+
+Agente: "Comparte la ubicación del animal usando el botón de ubicación de
+WhatsApp. Para compartirla: toca el clip o '+' → Ubicación → Compartir ubicación
+actual."
+
+→ El usuario comparte pin GPS de WhatsApp: Twilio entrega latitud/longitud
+directamente en el webhook. El sistema extrae las coordenadas y continúa al paso 4.
+→ El usuario escribe texto en lugar de compartir ubicación: aplica regla global y repite
+instrucción del paso 3.
+
+→ Cualquier otro tipo de mensaje: aplica regla global.
+
+El agente no acepta texto como ubicación bajo ninguna circunstancia. Solo se avanza
+con un pin GPS real, garantizando coordenadas precisas sin necesidad de
+geocodiﬁcación ni tecnología adicional.
+
+   •   Paso 4: Condición del animal
+
+Retomamos el ﬂujo de un reporte normal:
+
+Agente: "¿Cuál es la condición del animal? Responde con el número:
+
+       1 - Verde: Estable, sin lesiones visibles
+
+       2 - Amarillo: Parece herido o desorientado
+
+       3 - Rojo: Herido gravemente, en peligro inmediato"
+
+→ El sistema espera 1, 2 o 3. Cualquier otra respuesta genera: "Por favor responde solo
+con 1, 2 o 3."
+
+   •   Paso 5: Descripción
+
+Agente: "Descríbeme brevemente la situación del animal (raza aproximada, dónde está
+exactamente, algo relevante)."
+→ Texto libre, máximo 200 caracteres. Si supera el límite: "Tu descripción es muy larga,
+por favor resúmela en menos de 200 caracteres."
+
+   •   Paso 6: Conﬁrmación y creación del reporte
+
+Agente: "Esto es lo que voy a reportar:
+
+📍 [dirección aproximada derivada de las coordenadas]
+
+🔴/🟡/🟢 Condición: [condición seleccionada]
+
+📝 [descripción ingresada]
+
+¿Es correcto? Responde SÍ para publicar o NO para corregir."
+
+→ SÍ: el reporte se crea y entra al ﬂujo normal del sistema.
+
+→ NO: el agente presenta un menú de corrección especíﬁco:
+
+Agente: "¿Qué quieres corregir?
+
+       1 - La foto
+
+       2 - La ubicación
+
+       3 - La condición del animal
+
+       4 - La descripción"
+
+El sistema salta directamente al paso correspondiente conservando todo lo demás sin
+reiniciar el ﬂujo completo.
+
+→ Cualquier otra respuesta: aplica regla global.
+
+   •   Paso 7: Cierre
+
+Agente: "Tu reporte fue publicado exitosamente. Gracias por ayudar. Puedes ver el caso
+en: pawalert.mx/reporte/{id}"
+
+Seguimiento de reportes
+
+El agente es exclusivamente un canal de creación de reportes. Si el usuario pregunta
+por el estado de un caso después de haberlo creado, el agente responde:
+Agente:     "Para   ver    el   estado   de   tu    reporte   visita:
+           pawalert.mx/reporte/{id}
+           Ahí puedes ver todas las actualizaciones en tiempo real."
+
+Si el usuario no tiene reportes activos y pregunta por seguimiento:
+
+Agente:    "No encontré reportes activos asociados a                    tu   número.
+           ¿Encontraste       un       animal    en                          riesgo?
+           Escribe SÍ para crear un reporte."
+
+Todo seguimiento detallado ocurre dentro de la PWA, no en el agente de WhatsApp.
+
+
+
+Integración con el ﬂujo normal del sistema
+
+Una vez que el usuario conﬁrma en el paso 6, el agente construye el payload del reporte
+con exactamente los mismos campos que usa la PWA y lo envía al endpoint POST
+/reports del backend de FastAPI. Desde ese momento el reporte es idéntico a
+cualquier otro en el sistema y pasa por el mismo ﬂujo completo:
+
+   •   Gemini Vision (ya corrió en paso 2, corre nuevamente como validación oﬁcial
+       del sistema)
+   •   Trust Score del usuario (el usuario recién creado tiene score neutro, sus
+       reportes se publican normalmente)
+   •   Cálculo del urgency score
+   •   Publicación en el mapa interactivo
+   •   Detección de duplicados con PostGIS + CLIP
+
+El agente no implementa lógica de negocio propia: es exclusivamente una capa de
+recolección de datos que termina llamando al mismo backend que usa la PWA.
+
+Arquitectura del agente
+El webhook de Twilio apunta a un endpoint público del backend en Railway. Twilio envía
+un POST cada vez que el usuario manda un mensaje, el servicio procesa la lógica del
+paso actual y responde con el siguiente mensaje del agente.
+
+Manejo de sesiones abandonadas
+
+Si una sesión lleva más de 2 horas sin actividad, Redis expira la clave automáticamente
+(TTL de 7200 segundos). Si el usuario retoma la conversación después de ese tiempo,
+el agente lo detecta como sesión nueva y reinicia desde el paso 1 con un mensaje de
+contexto:
+
+"Hola de nuevo. Parece que tu reporte anterior quedó incompleto. ¿Quieres empezar
+uno nuevo?"
+
+Escalabilidad 3: Plan premium – Búsqueda activa para mascotas perdidas
+
+Cuando alguien pierde a su mascota, las primeras horas son críticas y la mayor
+limitante es el alcance: publicar en grupos de WhatsApp o Facebook depende de que
+otras personas compartan manualmente. PawAlert resuelve ese problema ofreciendo
+un plan premium que publica el caso de la mascota perdida en el mapa interactivo de
+la plataforma y ﬁnancia difusión pagada en redes sociales durante el período que el
+dueño elija.
+
+PawAlert no promete encontrar a la mascota ni coordina una búsqueda activa. Lo que
+vende es visibilidad coordinada: presencia en el ecosistema de PawAlert y alcance
+geográﬁco en redes sociales. Si alguien avista al animal, contacta directamente al
+dueño usando el medio de contacto publicado en el perﬁl. Cualquier acuerdo posterior
+ocurre completamente fuera de la plataforma.
+
+Politica de serivico – debe leerse antes del pago
+
+Antes de proceder al pago el dueño ve claramente el siguiente texto y debe marcar un
+checkbox de conﬁrmación explícita para continuar:
+
+"PawAlert ofrece visibilidad para tu caso: publicación en nuestro mapa y difusión
+pagada en redes sociales durante el período que elijas. No garantizamos encontrar a
+tu mascota. El pago no es reembolsable una vez que el servicio ha sido activado.
+Dispones de 48 horas desde el pago para cancelar y recibir un reembolso total, siempre
+que la difusión pagada no haya sido ejecutada aún."
+
+Este checkbox no es opcional. Sin conﬁrmarlo el botón de pago permanece
+deshabilitado.
+
+Pasarela de pago
+
+MercadoPago es la opción más adecuada para México por tres razones: acepta tarjetas
+locales sin fricciones, soporta OXXO para usuarios sin tarjeta bancaria, y su proceso
+de aprobación de cuenta es más rápido que Stripe en la región. Técnicamente,
+PawAlert crea una preferencia de pago desde el backend, redirige al usuario al
+checkout de MercadoPago y recibe la conﬁrmación vía webhook para activar la
+búsqueda.
+
+Ese webhook es el que activa la búsqueda en el sistema.
+
+Estructura de precios
+
+El precio no es ﬁjo: varía según los días de difusión pagada que el dueño elija. El
+sistema calcula el total dinámicamente con base en un precio por día almacenado en
+la tabla premium_config, editable por el admin sin tocar el código.
+El selector de días en el formulario muestra el costo total en tiempo real conforme el
+dueño ajusta su elección. Por ejemplo, con un precio base de $50 MXN por día:
+
+ Dias de difusion                             Costo total
+ 3                                            $150 MXN
+ 5                                            $250 MXN
+ 6                                            $350 MXN
+
+Los valores de precio por día y las opciones de días disponibles son conﬁgurables
+desde premium_conﬁg. Ya que los precios de publicidad pueden variar. Sin embargo, a futuro
+se establecerá un costo ﬁjo cuando lleguemos a esta fase del proyecto. }
+
+Plan gratuito y premium
+
+Una distinción fundamental de este plan es que el reporte en el mapa y la difusión pagada
+son dos cosas separadas con comportamientos distintos:
+
+Reporte en el mapa de PawAlert (gratuito) Permanece activo indeﬁnidamente una vez
+publicado. No expira automáticamente. Solo desaparece del mapa cuando el dueño lo marca
+como ENCONTRADO o lo archiva manualmente desde su panel. Esto garantiza que el caso
+siempre tenga visibilidad dentro del ecosistema de PawAlert sin importar si el período de
+difusión pagada ya terminó.
+
+Difusión pagada en redes sociales Dura exactamente los días que el dueño eligió y pagó.
+Cuando el período expira, simplemente se detiene la difusión externa. El reporte en el mapa
+no se ve afectado.
+
+
+
+Registro de la mascota perdida
+
+El ﬂujo de activación del plan comienza con un formulario que el dueño completa
+antes de proceder al pago. Es similar al reporte normal de la PWA pero con campos
+especíﬁcos del contexto de mascota perdida:
+
+         Campo                                      Descripción
+
+ nombre_mascota              Nombre de la mascota
+ especie                     Perro / Gato / Otro
+ raza                        Raza aproximada
+ tamaño                      Pequeño / Mediano / Grande
+ color_pelaje                Descripción del color y patrón
+ señas_particulares       Collar, cicatrices, mancha especíﬁca, etc.
+ foto_mascota             Fotos recientes del animal
+ ultima_ubicacion         Punto en Leaﬂet donde fue visto por última vez
+ fecha_perdida            Cuando se perdió
+ radio_busqueda           3 km / 5 km / 10 km desde la última ubicación
+ nombre_dueno             Nombre del dueño para mostrar en el perﬁl
+ contacto_dueno           Teléfono o correo para que los voluntarios reporten
+                          avistamientos
+ Conﬁrmacion_politica     Conﬁrmación explícita de la política de servicio
+ Dias_difucion            Días de difusión pagada elegidos
+
+
+
+Las fotos de la mascota pasan por Gemini Vision para conﬁrmar que contienen un
+animal real, usando el mismo mecanismo de validación que los reportes normales.
+
+El formulario se completa antes del pago. Los datos se guardan en estado
+PENDIENTE_PAGO en la base de datos. Solo cuando MercadoPago conﬁrma el pago
+mediante el webhook, el estado cambia a ACTIVO y se disparan las notiﬁcaciones a
+voluntarios. Si el pago no se completa en 24 horas, el registro se archiva
+automáticamente.
+
+Transparencia en el uso del pago
+
+Para resolver la tensión ética entre cobrar al dueño y no compensar económicamente
+al voluntario, PawAlert aplica transparencia radical: cada perﬁl de búsqueda activa
+muestra públicamente un desglose claro de a dónde va el pago:
+
+         Destino                                 Descripción
+ Operación de la            Cubre infraestructura, servidores y mantenimiento
+ plataforma                 técnico
+ Difusión pagada            Financia publicaciones patrocinadas en redes sociales
+                            del caso
+
+Este desglose es conﬁgurable por el admin desde la tabla premium_config y es visible
+para cualquier usuario, no solo para el dueño que paga. Esto elimina cualquier
+percepción de que PawAlert se queda con el dinero sin justiﬁcación.
+
+Lo que activa el pago
+
+Una vez que MercadoPago conﬁrma el pago vía webhook, el sistema activa
+automáticamente dos cosas:
+1. Publicación en el mapa de PawAlert El caso aparece en el mapa interactivo con un
+marcador visualmente diferenciado de los reportes de rescate, indicando claramente
+que es una mascota perdida. Es visible para todos los usuarios de la plataforma en la
+zona. El perﬁl muestra las fotos, descripción, última ubicación conocida y el medio de
+contacto directo del dueño. Cualquier persona que aviste al animal contacta al dueño
+directamente, sin intermediación de PawAlert. Sin emabrgo esta funcion, se activa
+tambien en un plan gratuito.
+
+2. Notiﬁcación al admin para difusión pagada Un administrador de PawAlert recibe
+una notiﬁcación interna para ejecutar manualmente la campaña en Meta Ads usando
+los assets generados automáticamente por el sistema (foto de la mascota + datos
+clave del caso). Cuando el admin ejecuta la difusión, el sistema registra
+difusion_ejecutada: true en la base de datos. Este campo es crítico para la
+política de reembolso. La automatización vía API de Meta Ads se plantea como mejora
+futura.
+
+Politica de reembolso
+
+El sistema maneja dos escenarios:
+
+Reembolso total — dentro de las 48 horas y difusión no ejecutada Si el dueño
+cancela dentro de las primeras 48 horas desde el pago Y el campo
+difusion_ejecutada es false, el sistema procesa un reembolso total vía API de
+MercadoPago desde el backend de FastAPI. El reporte se elimina del mapa y el caso
+queda archivado.
+
+Sin reembolso — cualquier otro escenario Si han pasado más de 48 horas desde el
+pago, o si difusion_ejecutada es true, no hay reembolso bajo ninguna
+circunstancia. El dueño fue informado explícitamente de esta política antes de pagar y
+la conﬁrmó con el checkbox.
+
+Reconocimiento simbólico al voluntario
+
+Si un usuario registrado en PawAlert es quien avista o localiza a la mascota y el dueño
+conﬁrma el reencuentro desde su panel, el sistema otorga automáticamente al
+voluntario:
+
+   •   Insignia especial: "Héroe de búsqueda" visible en su perﬁl público,
+       diferenciada de las insignias de rescate normales.
+   •   +15 puntos de gamiﬁcación, superior al rescate normal (+10) para reﬂejar el
+       valor de la acción.
+
+Este reconocimiento es completamente independiente de cualquier compensación
+económica externa que el dueño y el voluntario puedan acordar entre ellos fuera de la
+plataforma. PawAlert no intermedia ni tiene conocimiento de esos acuerdos.
+
+
+
+Escalabilidad 4: Historia de rescate
+
+El historial operativo de un caso registra qué pasó y cuándo. Las historias de rescate
+cuentan algo diferente: muestran el resultado humano y emocional de todo ese
+proceso. Una foto del animal asustado en la calle junto a una foto posterior en un hogar
+o clínica comunica en segundos lo que ninguna bitácora técnica puede transmitir. Es
+el contenido que la comunidad comparte orgánicamente y que atrae a nuevos
+voluntarios y patrocinadores sin necesidad de estrategia de marketing.
+
+¿Quién puede publicar una historia?
+
+Solo el custodio_actual al momento del cierre del caso puede crear la historia de
+rescate. Esto es consistente con el ﬂujo de adopción ya deﬁnido: quien cerró el caso
+es quien estuvo presente en el momento ﬁnal y tiene las fotos y el contexto real para
+contarlo.
+
+El tipo de historia varía naturalmente según quién sea el custodio:
+
+                 Custodio                               Ejemplo de historia
+ Voluntariado                                Foto del animal siendo adoptado junto
+                                             al nuevo dueño
+ Refugio                                     Foto del animal recuperado siendo
+                                             entregado a su adoptante
+ Coordinador                                 Foto del animal ya estable en hogar
+                                             temporal o clínica
+
+Contenido de la historia
+
+El custodio completa un formulario simple y opcional al cerrar el caso o desde el
+historial del caso cerrado en cualquier momento posterior:
+
+ Campo                                       Descripción
+ Foto_posterior                               Fotos del animal ya atendido, adoptado
+                                              o en el lugar seguro
+ Texto_historia                               Descripción breve y opcional de cómo
+                                              resulto el caso
+
+El formulario no es obligatorio para cerrar el caso. El sistema lo presenta como una
+invitación, no como un requisito:
+
+"¿Quieres compartir cómo quedó este rescate? Una foto puede inspirar a más personas
+a ayudar "
+
+Las fotos pasan por Gemini Vision para conﬁrmar que contienen un animal real,
+usando el mismo mecanismo de validación del resto del sistema, de igual forma, el
+texto paso por un ﬁltro básico de contenido antes de publicarse para detectar lenguaje
+inapropiado.
+
+
+
+Visibilidad publica
+
+Las historias publicadas son accesibles desde una galería pública /historias visible
+para cualquier persona sin necesidad de cuenta. Cada historia tiene su propia URL
+/historias/{id_caso} compartible en redes sociales o WhatsApp.
+
+Cada historia muestra:
+
+   •   La foto original del reporte (el "antes")
+   •   Las fotos posteriores subidas por el custodio (el "después")
+   •   La zona general donde ocurrió el rescate
+   •   El tiempo que tardó el sistema en resolver el caso desde el reporte hasta el
+       cierre
+   •   El rol del custodio que lo resolvió (voluntario, refugio o coordinador), sin exponer
+       datos personales
+
+El contraste visual entre el "antes" y el "después" es el núcleo narrativo de la
+funcionalidad. No se necesita texto elaborado: las fotos cuentan la historia solas.
+
+Las URLs /historias/{id_caso} deberían tener Open Graph tags conﬁgurados (og:image,
+og:title, og:description) para que cuando se compartan en WhatsApp o redes sociales
+muestren la foto del "después" como preview. Eso es lo que hace que el contenido se
+comparta orgánicamente.
+Escalabilidad 5: Campañas comunitarias en Zonas criticas
+
+El mapa de calor y las estadísticas internas de PawAlert pueden detectar cuando una
+zona concentra demasiados casos sin resolver, pero esa información por sí sola no
+cambia la situación en el terreno. Esta funcionalidad convierte esa detección en acción
+coordinada: cuando el sistema identiﬁca una zona crítica, alerta al equipo de PawAlert
+para que coordine una campaña de intervención comunitaria con patrocinadores
+registrados u organizaciones externas, atacando el problema desde la raíz en lugar de
+solo atender sus consecuencias caso por caso.
+
+Detección automática de zonas criticas
+
+El sistema evalúa continuamente mediante una tarea de Celery programada las
+siguientes condiciones sobre cada zona geográﬁca deﬁnida por clustering de PostGIS:
+
+ Indicador                                  Umbral critico
+ Reportes activos sin voluntario asignado   más de 5 casos en los últimos 30 días
+ Tasa de resolución                         menos del 40% de casos cerrados en la
+                                            zona
+ Casos recurrentes                          misma zona aparece en el mapa de
+                                            calor por más de 3 semanas
+                                            consecutivas
+
+Los tres valores son conﬁgurables por el admin desde un panel de conﬁguración — no
+están ﬁjos en el código, ya que dependen del tamaño y madurez de la plataforma en
+cada etapa. La lógica de "al menos dos de tres" evita tanto falsos positivos (una zona
+con un solo indicador elevado por razones puntuales) como falsos negativos (una zona
+que necesita atención pero no supera todos los umbrales a la vez).
+
+Para evitar que una zona genere alertas repetidas sin dar tiempo a que una campaña
+tenga efecto, el sistema aplica un cooldown de 35 días después del cierre de cualquier
+campaña: la zona queda excluida de nuevas alertas durante ese período,
+independientemente de sus indicadores. El campo ultima_campana_at en la entidad
+de zona es la referencia para este cálculo.
+
+Cuando una zona supera los umbrales deﬁnidos, el sistema genera automáticamente
+una alerta de zona crítica visible en el panel del coordinador con:
+
+   •   Mapa de la zona afectada con el clustering de casos
+   •   Número de reportes sin resolver y tiempo promedio sin atención
+   •   Historial de alertas previas en esa misma zona
+   •   Fecha de última campaña ejecutada (si aplica)
+
+Flujo de activación de campaña
+
+   1. DETECCIÓN AUTOMÁTICA: Celery detecta zona crítica y genera alerta en el
+      panel del coordinador. Si el coordinador no responde la alerta en 48 horas, el
+      sistema la escala automáticamente enviando una notiﬁcación vía FCM y correo
+      al coordinador responsable de la zona. Si en otras 24 horas no hay respuesta, la
+      alerta se marca como PENDIENTE_REVISIÓN y queda visible para cualquier
+      coordinador con permisos globales.
+   2. REVISIÓN HUMANA El coordinador evalúa la alerta, revisa el mapa y decide si
+      la situación amerita una campaña. Puede marcarla como DESCARTADA con un
+      motivo (ej: "zona ya atendida por municipio") o activar el ﬂujo de campaña.
+   3. SELECCIÓN DEL TIPO DE CAMPAÑA El coordinador selecciona qué tipo de
+      intervención es más adecuada para esa zona (esterilización, alimentación,
+      educación, etc.) basándose en el patrón de casos detectados.
+   4. CONVOCATORIA A PARTICIPANTES El sistema notiﬁca automáticamente vía
+      FCM y correo a todos los patrocinadores registrados cuyo perﬁl incluya
+      disponibilidad para campañas comunitarias y cuya zona de cobertura coincida
+      con la zona crítica detectada
+
+   Para organizaciones externas (ONGs, gobierno), el coordinador gestiona el
+   contacto manualmente fuera de la plataforma. PawAlert registra su participación
+   una vez conﬁrmada.
+
+   5. CONFIRMACIÓN DE PARTICIPANTES Los patrocinadores responden desde su
+      panel si pueden participar y qué recursos aportan. El coordinador registra
+      manualmente la conﬁrmación de organizaciones externas. Si después de 72
+      horas ningún patrocinador conﬁrma participación, el coordinador recibe una
+      alerta adicional para gestionar la convocatoria por canales externos.
+   6. PUBLICACIÓN DE LA CAMPAÑA La campaña se publica como un evento visible
+      públicamente en la plataforma, accesible sin cuenta, con fecha, tipo de apoyo
+      disponible, zona general y cómo acceder a él. La visibilidad pública maximiza la
+      participación ciudadana y ampliﬁca el alcance orgánico vía redes sociales.
+   7. CIERRE Y REGISTRO DE IMPACTO Al concluir la campaña, el coordinador
+      registra los resultados: animales esterilizados, vacunados, familias atendidas,
+      recursos entregados. Estos datos se integran al historial de la zona y alimentan
+      las estadísticas globales de impacto de la plataforma. Celery re-evalúa
+      automáticamente la zona 30 días después del cierre y genera un reporte interno
+             que compara los indicadores actuales contra los umbrales: si los tres
+             indicadores están por debajo del umbral, la zona se marca como RESUELTA en
+             el historial. Si algún indicador persiste, queda documentado como seguimiento
+             pendiente — pero el cooldown de 45 días sigue activo para evitar saturar al
+             coordinador con alertas inmediatas.
+
+      Registro de disponibilidad para campañas en el perﬁl del patrocinador
+
+      Para no asumir que todos los patrocinadores están dispuestos a participar en
+      campañas comunitarias, el formulario de registro de patrocinadores incluye una
+      sección especíﬁca al respecto:
+
+      "¿Estarías dispuesto a participar en campañas comunitarias en zonas de alta
+      necesidad?"
+
+      Si responde que sí, se despliegan campos adicionales:
+
+        Campo                Tipo                             Descripción
+tipo_apoyo_campana     Selección            Esterilización / Vacunación / Alimento /
+                       múltiple             Educación / Refugio / Económico
+zona_cobertura_campana Mapa                 Radio geográﬁco dentro del cual puede
+                       interactivo          desplazarse
+disponibilidad_campana Selección            Eventual / Mensual / Cuando se le notiﬁque
+capacidad_campana      Texto libre          Cuántos animales o personas puede atender
+                                            por jornada
+
+
+
+      Este campo es completamente opcional al momento del registro y puede actualizarse
+      desde el perﬁl del patrocinador en cualquier momento.
+
+      Escalabilidad 6: Soporte oqline para reportes en zonas sin señal
+
+      La cobertura de datos móviles en México es irregular fuera de zonas urbanas. Las
+      colonias periféricas, carreteras y zonas rurales — precisamente donde más animales
+      en riesgo se encuentran sin atención — son también las zonas con peor conectividad.
+      Pedir internet para crear un reporte en esos contextos es una barrera que el sistema no
+      puede ignorar si quiere tener alcance real fuera de las ciudades. El modo o•line
+      permite capturar un reporte completo sin conexión y publicarlo automáticamente en
+      cuanto la señal se restaura, sin intervención del usuario.
+
+      Qué puede hacer el usuario sin conexión
+El ﬂujo de reporte es idéntico al normal. la diferencia es invisible para el usuario:
+
+   -   Tomar o seleccionar la foto del animal (se almacena localmente)
+   -   Capturar ubicación GPS del dispositivo (no requiere internet — usa la API nativa
+       del dispositivo)
+   -   Seleccionar condición del animal (verde / amarillo / rojo)
+   -   Ingresar descripción
+   -   Presionar "Reportar"
+
+Al conﬁrmar sin conexión, el sistema muestra:
+
+       "Tu reporte está guardado. Se publicará automáticamente cuando tengas
+       conexión."
+
+En lugar del mensaje normal de publicación. No hay pantalla de error, no hay ﬂujo
+interrumpido.
+
+Sincronización automática
+
+
+
+
+Las cuatro tecnologías son parte del estándar PWA — no requieren dependencias
+externas ni configuración adicional en el backend.
+
+Los reportes offline no pueden mostrar confirmación de Gemini Vision en tiempo real
+— esa validación ocurre cuando el reporte llega al backend tras la reconexión. Si
+Gemini Vision rechaza el reporte post-sincronización (imagen no válida), el sistema
+notifica al usuario vía FCM indicando el motivo, igual que en el flujo normal. El usuario
+no pierde el borrador: puede corregir la foto y reintentar desde el historial de reportes
+pendientes en su perfil.
+                                                                Nativa de
+Tecnología        Función
+                                                                PWA
+
+Service Worker    Intercepta peticiones fallidas y las encola   ✅
+
+IndexedDB         Almacena el borrador del reporte localmente   ✅
+
+Background Sync
+                  Detecta reconexión y dispara el envío         ✅
+API
+
+                  Cachea los assets de la PWA para que cargue
+Cache API                                                       ✅
+                  sin internet
+

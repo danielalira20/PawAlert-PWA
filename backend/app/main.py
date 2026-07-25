@@ -1,22 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from app.api import (
-    reports,
-    associations,
-    catalogos,
-    auth,
-    users,
-    report_acceptance,
-    admin,
-    staff,
-    stats,
-    asignaciones,
-    voluntarios,
-    internal,
-    red_aliados,
-    webhooks,
-)
+from app.api import ( reports, associations, catalogos, auth, users, report_acceptance, admin, staff, stats, asignaciones, voluntarios, internal, red_aliados, webhooks)
 
 app = FastAPI(
     title="PawAlert API",
