@@ -1,5 +1,8 @@
 import asyncio
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from app.services import voluntario_service
 
@@ -67,3 +70,68 @@ def test_guardar_capacidades_permite_preparar_repostulacion_rechazada(make_query
 
     capacidades.update.assert_called_once()
     assert resultado == {"mensaje": "Capacidades guardadas correctamente"}
+
+
+def test_pausar_disponibilidad_operativa_indefinidamente(make_query):
+    voluntarios = make_query(data=[{"id": "vol-1", "estado": "activo_nivel_1"}])
+    supabase = MagicMock()
+    supabase.table.return_value = voluntarios
+
+    with patch.object(voluntario_service, "supabase", supabase):
+        resultado = asyncio.run(
+            voluntario_service.actualizar_disponibilidad_operativa(
+                voluntario_id="vol-1",
+                disponible=False,
+                pausa_hasta=None,
+            )
+        )
+
+    payload = voluntarios.update.call_args.args[0]
+    assert payload["disponible_operativamente"] is False
+    assert payload["pausa_operativa_hasta"] is None
+    assert resultado["pausa_indefinida"] is True
+
+
+def test_consultar_pausa_vencida_reactiva_voluntario(make_query):
+    vencida = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    voluntarios = make_query(data=[{
+        "id": "vol-1",
+        "estado": "activo_nivel_2",
+        "disponible_operativamente": False,
+        "pausa_operativa_hasta": vencida,
+    }])
+    supabase = MagicMock()
+    supabase.table.return_value = voluntarios
+
+    with patch.object(voluntario_service, "supabase", supabase):
+        resultado = asyncio.run(
+            voluntario_service.obtener_disponibilidad_operativa("vol-1")
+        )
+
+    payload = voluntarios.update.call_args.args[0]
+    assert payload["disponible_operativamente"] is True
+    assert payload["pausa_operativa_hasta"] is None
+    assert resultado["disponible_operativamente"] is True
+
+
+def test_disponibilidad_operativa_rechaza_perfil_no_activo(make_query):
+    voluntarios = make_query(data=[{
+        "id": "vol-1",
+        "estado": "postulacion_pendiente",
+    }])
+    supabase = MagicMock()
+    supabase.table.return_value = voluntarios
+
+    with (
+        patch.object(voluntario_service, "supabase", supabase),
+        pytest.raises(Exception) as error,
+    ):
+        asyncio.run(
+            voluntario_service.actualizar_disponibilidad_operativa(
+                voluntario_id="vol-1",
+                disponible=True,
+                pausa_hasta=None,
+            )
+        )
+
+    assert getattr(error.value, "status_code", None) == 403

@@ -12,6 +12,7 @@ from app.models.voluntario import (
     CapacidadesRequest,
     CheckInVisitaRequest,
     ChecklistVisitaRequest,
+    DisponibilidadOperativaRequest,
     PostulacionRequest,
     ProponerHorarioVisitaRequest,
     ResponderHorarioPostulanteRequest,
@@ -25,6 +26,8 @@ from app.services.voluntario_service import (
     obtener_mi_voluntario,
     obtener_capacidades,
     guardar_capacidades,
+    obtener_disponibilidad_operativa,
+    actualizar_disponibilidad_operativa,
     obtener_reportes_voluntario,
     crear_perfil_externo,
     obtener_perfil_externo,
@@ -356,6 +359,27 @@ async def put_mis_capacidades(body: CapacidadesRequest, authorization: str = Hea
     return await guardar_capacidades(
         voluntario_id,
         body.model_dump(mode="json", exclude_unset=True),
+    )
+
+
+@router.get("/me/disponibilidad-operativa", status_code=200)
+async def get_mi_disponibilidad_operativa(authorization: str = Header(None)):
+    usuario = _obtener_usuario_autenticado(authorization)
+    voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
+    return await obtener_disponibilidad_operativa(voluntario_id)
+
+
+@router.patch("/me/disponibilidad-operativa", status_code=200)
+async def patch_mi_disponibilidad_operativa(
+    body: DisponibilidadOperativaRequest,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
+    return await actualizar_disponibilidad_operativa(
+        voluntario_id=voluntario_id,
+        disponible=body.disponible,
+        pausa_hasta=body.pausa_hasta,
     )
 
 

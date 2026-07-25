@@ -474,7 +474,8 @@ async def listar_voluntarios_asociacion(asociacion_id: str) -> list:
 
 async def obtener_capacidades(voluntario_id: str) -> dict:
     perfil = supabase.table("voluntarios").select(
-        "disponible_operativamente, contacto_emergencia_nombre, "
+        "disponible_operativamente, pausa_operativa_hasta, "
+        "contacto_emergencia_nombre, "
         "contacto_emergencia_telefono"
     ).eq("id", voluntario_id).execute()
     datos_perfil = perfil.data[0] if perfil.data else {}
@@ -563,7 +564,98 @@ async def guardar_capacidades(voluntario_id: str, datos: dict) -> dict:
 
     return {"mensaje": "Capacidades guardadas correctamente"}
 
- 
+
+def _fecha_utc(valor) -> datetime | None:
+    if valor is None:
+        return None
+    if isinstance(valor, datetime):
+        fecha = valor
+    else:
+        fecha = datetime.fromisoformat(str(valor).replace("Z", "+00:00"))
+    if fecha.tzinfo is None:
+        fecha = fecha.replace(tzinfo=timezone.utc)
+    return fecha.astimezone(timezone.utc)
+
+
+async def obtener_disponibilidad_operativa(voluntario_id: str) -> dict:
+    resultado = supabase.table("voluntarios").select(
+        "id, estado, disponible_operativamente, pausa_operativa_hasta"
+    ).eq("id", voluntario_id).execute()
+
+    if not resultado.data:
+        raise HTTPException(status_code=404, detail="Voluntario no encontrado")
+
+    voluntario = resultado.data[0]
+    disponible = bool(voluntario.get("disponible_operativamente"))
+    pausa_hasta = _fecha_utc(voluntario.get("pausa_operativa_hasta"))
+
+    # Una pausa temporal vencida se normaliza al consultar el perfil. La
+    # función SQL de matching también la considera disponible para no depender
+    # de que la persona abra la aplicación.
+    if not disponible and pausa_hasta and pausa_hasta <= datetime.now(timezone.utc):
+        disponible = True
+        pausa_hasta = None
+        supabase.table("voluntarios").update({
+            "disponible_operativamente": True,
+            "pausa_operativa_hasta": None,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("id", voluntario_id).execute()
+
+    return {
+        "disponible_operativamente": disponible,
+        "pausa_operativa_hasta": pausa_hasta.isoformat() if pausa_hasta else None,
+        "pausa_indefinida": not disponible and pausa_hasta is None,
+    }
+
+
+async def actualizar_disponibilidad_operativa(
+    voluntario_id: str,
+    disponible: bool,
+    pausa_hasta: datetime | None,
+) -> dict:
+    resultado = supabase.table("voluntarios").select(
+        "id, estado"
+    ).eq("id", voluntario_id).execute()
+
+    if not resultado.data:
+        raise HTTPException(status_code=404, detail="Voluntario no encontrado")
+
+    if resultado.data[0]["estado"] not in ("activo_nivel_1", "activo_nivel_2"):
+        raise HTTPException(
+            status_code=403,
+            detail="La disponibilidad operativa solo aplica a voluntarios activos",
+        )
+
+    pausa_utc = _fecha_utc(pausa_hasta)
+    if disponible:
+        pausa_utc = None
+    elif pausa_utc and pausa_utc <= datetime.now(timezone.utc):
+        raise HTTPException(
+            status_code=422,
+            detail="La fecha de reactivación debe estar en el futuro",
+        )
+
+    payload = {
+        "disponible_operativamente": disponible,
+        "pausa_operativa_hasta": pausa_utc.isoformat() if pausa_utc else None,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    supabase.table("voluntarios").update(payload).eq(
+        "id", voluntario_id
+    ).execute()
+
+    return {
+        "mensaje": (
+            "Ya puedes recibir nuevas asignaciones"
+            if disponible
+            else "Tu disponibilidad quedó pausada"
+        ),
+        "disponible_operativamente": disponible,
+        "pausa_operativa_hasta": payload["pausa_operativa_hasta"],
+        "pausa_indefinida": not disponible and pausa_utc is None,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Migración staff -> voluntario_interno: reemplaza GET /staff/me/reportes.
 # Misma lógica de 4 buckets que ya existía en staff.py, pero ya no exige
