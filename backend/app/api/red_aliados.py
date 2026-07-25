@@ -2,12 +2,20 @@ from fastapi import APIRouter, UploadFile, File, Header, HTTPException
 from app.db.supabase import supabase
 from app.services.storage_service import subir_foto
 from app.services.report_service import obtener_id_catalogo
-from app.services.red_aliados_service import crear_contribucion, crear_oferta_proactiva
+from app.services.red_aliados_service import (
+    crear_contribucion,
+    crear_oferta_proactiva,
+    buscar_ofertas_compatibles,
+    aceptar_sugerencia_general,
+)
 from app.models.red_aliados import (
     ContribucionRequest,
     ContribucionResponse,
     OfertaProactivaRequest,
     OfertaProactivaResponse,
+    OfertaCompatibleResponse,
+    AceptarOfertaGeneralRequest,
+    AceptarOfertaGeneralResponse,
 )
 
 router = APIRouter()
@@ -85,3 +93,39 @@ async def crear_contribucion_endpoint(body: ContribucionRequest, authorization: 
 async def crear_oferta_proactiva_endpoint(body: OfertaProactivaRequest, authorization: str = Header(None)):
     usuario = _obtener_usuario_autenticado(authorization)
     return await crear_oferta_proactiva(usuario["id"], body)
+
+
+# ─── Motor de sugerencias, Ruta 2 (BACK03) — necesidades generales ───────
+
+@router.get(
+    "/necesidades/{necesidad_id}/ofertas-compatibles",
+    status_code=200,
+    response_model=list[OfertaCompatibleResponse],
+)
+async def get_ofertas_compatibles_endpoint(necesidad_id: str, authorization: str = Header(None)):
+    _obtener_usuario_autenticado(authorization)
+    return buscar_ofertas_compatibles(necesidad_id)
+
+
+@router.post(
+    "/necesidades/{necesidad_id}/aceptar-oferta",
+    status_code=201,
+    response_model=AceptarOfertaGeneralResponse,
+)
+async def aceptar_oferta_general_endpoint(
+    necesidad_id: str, body: AceptarOfertaGeneralRequest, authorization: str = Header(None)
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+
+    necesidad = supabase.table("necesidades").select(
+        "asociacion_id"
+    ).eq("id", necesidad_id).execute()
+    if not necesidad.data:
+        raise HTTPException(status_code=404, detail="Necesidad no encontrada")
+    if necesidad.data[0]["asociacion_id"] != usuario["asociacion_id"]:
+        raise HTTPException(
+            status_code=403,
+            detail="No tienes permiso para aceptar ofertas de esta necesidad"
+        )
+
+    return await aceptar_sugerencia_general(necesidad_id, body.oferta_id, body.cantidad)

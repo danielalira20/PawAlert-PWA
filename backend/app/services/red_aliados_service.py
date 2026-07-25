@@ -267,3 +267,144 @@ async def aceptar_sugerencia_veterinaria(reporte_id: str, oferta_id: str) -> dic
         "estado": fila["estado"],
         "created_at": str(fila["created_at"]),
     }
+
+
+# ─── Motor de sugerencias, Ruta 2 (BACK03) — necesidades generales ───────
+# A diferencia de Ruta 1 (ligada a un hito de un reporte con urgencia
+# médica, match único automático), aquí la asociación consulta bajo
+# demanda contra una necesidad general (sin reporte de por medio) y elige
+# entre una lista de ofertas compatibles, aceptando la cantidad que
+# quiera. Función SQL propia (ofertas_compatibles_necesidad,
+# migrations/0013_ofertas_compatibles_necesidad.sql) — no se reusa la de
+# Ruta 1 porque el ancla geográfica, el filtro de categoría y la
+# cardinalidad del resultado son distintos.
+
+def buscar_ofertas_compatibles(necesidad_id: str) -> list[dict]:
+    resultado = supabase.rpc(
+        "ofertas_compatibles_necesidad",
+        {"p_necesidad_id": necesidad_id},
+    ).execute()
+
+    return [
+        {
+            "oferta_id": fila["oferta_id"],
+            "perfil_apoyo_id": fila["perfil_apoyo_id"],
+            "nombre": fila["nombre"],
+            "distancia_km": fila["distancia_km"],
+            "unidad": fila["unidad"],
+            "capacidad_disponible": fila["capacidad_disponible"],
+        }
+        for fila in (resultado.data or [])
+    ]
+
+
+async def aceptar_sugerencia_general(necesidad_id: str, oferta_id: str, cantidad: float) -> dict:
+    """Acepta una oferta compatible con una necesidad general y reserva la
+    cantidad indicada — a diferencia de Ruta 1 (siempre 1 unidad fija),
+    aquí la cantidad es variable y la elige la asociación.
+
+    Crea la contribución en estado 'comprometida' (mismo criterio que
+    Ruta 1 — la confirmación de uso es un paso futuro que todavía no
+    existe) y regresa, además de la contribución, los datos de contacto
+    de ambas partes para que coordinen la entrega fuera de la plataforma
+    (no hay chat ni logística interna en este alcance)."""
+    capacidad_resultante = reservar_capacidad_oferta(oferta_id, cantidad)
+    if capacidad_resultante is None:
+        # Mensaje distinto al de Ruta 1: ahí la cantidad siempre es 1 fija,
+        # así que un 409 solo puede ser una carrera con otra asociación.
+        # Aquí la cantidad es variable, así que el motivo más probable es
+        # simplemente pedir más de lo disponible, no necesariamente una
+        # carrera.
+        raise HTTPException(
+            status_code=409,
+            detail="La cantidad solicitada supera la capacidad disponible en esta oferta"
+        )
+
+    oferta = supabase.table("ofertas_proactivas").select(
+        "unidad, subcategoria_id, perfil_apoyo(usuario_id)"
+    ).eq("id", oferta_id).execute()
+    if not oferta.data:
+        raise HTTPException(status_code=404, detail="Oferta no encontrada")
+    fila_oferta = oferta.data[0]
+    usuario_aliado_id = (fila_oferta.get("perfil_apoyo") or {}).get("usuario_id")
+
+    necesidad = supabase.table("necesidades").select(
+        "asociacion_id"
+    ).eq("id", necesidad_id).execute()
+    if not necesidad.data:
+        raise HTTPException(status_code=404, detail="Necesidad no encontrada")
+    asociacion_id = necesidad.data[0]["asociacion_id"]
+
+    resultado = supabase.table("contribuciones").insert({
+        "necesidad_id": necesidad_id,
+        "reporte_id": None,
+        "usuario_id": usuario_aliado_id,
+        "cantidad_valor": cantidad,
+        "cantidad_unidad": fila_oferta.get("unidad"),
+        "modo": "proactiva",
+        "oferta_proactiva_id": oferta_id,
+        "subcategoria_id": fila_oferta.get("subcategoria_id"),
+        "estado": "comprometida",
+        "detalle": {"origen": "sugerencia_ruta2"},
+    }).execute()
+    fila = resultado.data[0]
+
+    contribucion = {
+        "id": fila["id"],
+        "necesidad_id": fila.get("necesidad_id"),
+        "reporte_id": fila.get("reporte_id"),
+        "oferta_proactiva_id": fila.get("oferta_proactiva_id"),
+        "estado": fila["estado"],
+        "created_at": str(fila["created_at"]),
+    }
+
+    contacto_aliado = {"nombre": None, "telefono": None, "email": None}
+    if usuario_aliado_id:
+        usuario_aliado = supabase.table("usuarios").select(
+            "nombre, apellido_paterno, telefono, email"
+        ).eq("id", usuario_aliado_id).execute()
+        if usuario_aliado.data:
+            fila_usuario = usuario_aliado.data[0]
+            contacto_aliado = {
+                "nombre": " ".join(
+                    filter(None, [fila_usuario.get("nombre"), fila_usuario.get("apellido_paterno")])
+                ).strip() or None,
+                "telefono": fila_usuario.get("telefono"),
+                "email": fila_usuario.get("email"),
+            }
+
+    contacto_asociacion = {"nombre": None, "telefono": None, "email": None}
+    asociacion = supabase.table("asociaciones").select(
+        "nombre, contacto_telefono, contacto_email"
+    ).eq("id", asociacion_id).execute()
+    if asociacion.data:
+        fila_asociacion = asociacion.data[0]
+        contacto_asociacion = {
+            "nombre": fila_asociacion.get("nombre"),
+            "telefono": fila_asociacion.get("contacto_telefono"),
+            "email": fila_asociacion.get("contacto_email"),
+        }
+
+    # Notificación best-effort al aliado — nunca debe tumbar la aceptación
+    # ya confirmada si falla (por ejemplo, si el esquema de
+    # notificaciones_aliado cambia). tipo='oferta_aceptada' no tiene CHECK
+    # constraint en la tabla, así que no requiere cambio de esquema.
+    try:
+        if usuario_aliado_id:
+            perfil_apoyo = supabase.table("perfil_apoyo").select("id").eq(
+                "usuario_id", usuario_aliado_id
+            ).execute()
+            if perfil_apoyo.data:
+                supabase.table("notificaciones_aliado").insert({
+                    "perfil_apoyo_id": perfil_apoyo.data[0]["id"],
+                    "necesidad_id": necesidad_id,
+                    "tipo": "oferta_aceptada",
+                }).execute()
+    except Exception as error:
+        print(f"[WARN] No se pudo crear notificaciones_aliado para oferta {oferta_id}: {error}")
+
+    return {
+        "contribucion": contribucion,
+        "contacto_aliado": contacto_aliado,
+        "contacto_asociacion": contacto_asociacion,
+    }
