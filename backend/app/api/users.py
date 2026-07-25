@@ -57,5 +57,8 @@ async def get_usuario_actual(authorization: str = Header(None)):
     rol = usuario_data.pop("roles", None)
     usuario_data["es_admin"] = bool(rol and rol.get("nombre") == "admin")
     usuario_data["rol"] = rol.get("nombre") if rol else "reportante"
+
+    perfil_apoyo = supabase.table("perfil_apoyo").select("id").eq("usuario_id", usuario_data["id"]).execute()
+    usuario_data["tiene_perfil_apoyo"] = bool(perfil_apoyo.data)
  
     return usuario_data
