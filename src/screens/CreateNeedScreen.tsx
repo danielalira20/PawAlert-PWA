@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform, Modal, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform, Modal, ActivityIndicator, Image } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from '../components/ui/Button';
@@ -88,7 +88,6 @@ export default function CreateNeedScreen() {
   const [subcategoriaId, setSubcategoriaId] = useState<string | null>(null);
   const [urgencia, setUrgencia] = useState<NivelUrgencia | null>(null);
   
-  // Nuevos campos
   const [cantidadValor, setCantidadValor] = useState('');
   const [cantidadUnidad, setCantidadUnidad] = useState('');
   const [notasAdicionales, setNotasAdicionales] = useState('');
@@ -96,60 +95,52 @@ export default function CreateNeedScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Estados para reportes dinámicos
-  const [reportesActivos, setReportesActivos] = useState<{id: string, titulo: string, ubicacion: string}[]>([]);
+  // Ahora guardamos la foto_url en lugar de la ubicación
+  const [reportesActivos, setReportesActivos] = useState<{id: string, titulo: string, foto_url: string | null}[]>([]);
   const [isLoadingReportes, setIsLoadingReportes] = useState(false);
 
-  // FETCH DE REPORTES REALES
   useEffect(() => {
-    const cargarCasosActivos = async () => {
+    const cargarCasosCerrados = async () => {
       setIsLoadingReportes(true);
       try {
         const res = await axios.get(`${API_URL}/associations/me/reportes`, { 
           headers: { Authorization: `Bearer ${token}` } 
         });
         
-        // Filtramos para mostrar solo casos que están en curso (no rechazados ni completados)
-        const casosEnCurso = res.data.filter((r: any) => 
-          !['rechazada', 'cancelada', 'completada'].includes(r.estado_asignacion_clave)
-        );
+        // Filtramos para mostrar estrictamente los casos que ya fueron cerrados/rescatados
+        const casosCerrados = res.data.filter((r: any) => r.estado_reporte === 'cerrado');
 
-        // Mapeamos los datos para armar la tarjeta visual
-        const casosMapeados = casosEnCurso.map((reporte: any) => {
+        const casosMapeados = casosCerrados.map((reporte: any) => {
           const animales = getAnimales(reporte);
           const grave = animalMasGrave(animales);
           
-          // Armamos un título dinámico
           const tipo = grave?.tipo_animal || 'Animal';
           const tituloCase = tipo.charAt(0).toUpperCase() + tipo.slice(1);
           
-          // Armamos la ubicación
-          const ubicacionStr = [reporte.colonia, reporte.municipio].filter(Boolean).join(', ') || 'Ubicación desconocida';
-
           return {
-            id: reporte.reporte_id, // Este es el UUID de la base de datos
-            titulo: `${tituloCase} en estado ${grave?.condicion || 'desconocido'}`,
-            ubicacion: ubicacionStr
+            id: reporte.reporte_id, 
+            titulo: `${tituloCase} · ${grave?.condicion || 'desconocido'}`,
+            foto_url: reporte.foto_url || null
           };
         });
 
         setReportesActivos(casosMapeados);
       } catch (error) {
-        console.error("Error al cargar los casos activos:", error);
+        console.error("Error al cargar los casos:", error);
       } finally {
         setIsLoadingReportes(false);
       }
     };
 
     if (token) {
-      cargarCasosActivos();
+      cargarCasosCerrados();
     }
   }, [token]);
 
   const handleGuardarNecesidad = async () => {
     const newErrors: Record<string, string> = {};
     if (tipoNecesidad === 'especifica' && !reporteId) {
-      newErrors.reporte = 'Debes seleccionar un caso activo.';
+      newErrors.reporte = 'Debes seleccionar un caso rescatado.';
     }
     if (!categoria) {
       newErrors.categoria = 'Debes seleccionar una categoría.';
@@ -252,21 +243,28 @@ export default function CreateNeedScreen() {
                   {isLoadingReportes ? (
                     <View style={{ padding: 20, alignItems: 'center', backgroundColor: COLORS.white, borderRadius: 16, ...SHADOW_SM }}>
                       <ActivityIndicator color={COLORS.primary} />
-                      <Text style={{ fontSize: 12, color: COLORS.textLight, marginTop: 8 }}>Cargando casos activos...</Text>
+                      <Text style={{ fontSize: 12, color: COLORS.textLight, marginTop: 8 }}>Buscando casos rescatados...</Text>
                     </View>
                   ) : reportesActivos.length === 0 ? (
                     <View style={{ padding: 20, alignItems: 'center', backgroundColor: COLORS.white, borderRadius: 16, ...SHADOW_SM }}>
-                      <Text style={{ fontSize: 13, color: COLORS.textLight }}>No tienes casos activos en este momento.</Text>
+                      <Text style={{ fontSize: 13, color: COLORS.textLight }}>No tienes casos cerrados en este momento.</Text>
                     </View>
                   ) : (
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
                       {reportesActivos.map((reporte) => (
-                        <TouchableOpacity key={reporte.id} onPress={() => setReporteId(reporte.id)} style={{ width: 200, padding: 14, borderRadius: 16, backgroundColor: COLORS.white, borderWidth: 2, borderColor: reporteId === reporte.id ? COLORS.accent : 'transparent', ...SHADOW_SM }}>
-                          <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginBottom: 4 }} numberOfLines={2}>{reporte.titulo}</Text>
-                          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                            <Ionicons name="location-outline" size={13} color={COLORS.primary} />
-                            <Text style={{ fontSize: 11, color: COLORS.textLight, marginLeft: 4 }} numberOfLines={1}>{reporte.ubicacion}</Text>
-                          </View>
+                        <TouchableOpacity 
+                          key={reporte.id} 
+                          onPress={() => setReporteId(reporte.id)} 
+                          style={{ width: 140, padding: 10, borderRadius: 16, backgroundColor: COLORS.white, borderWidth: 2, borderColor: reporteId === reporte.id ? COLORS.accent : 'transparent', ...SHADOW_SM }}
+                        >
+                          {reporte.foto_url ? (
+                            <Image source={{ uri: reporte.foto_url }} style={{ width: '100%', height: 90, borderRadius: 10, backgroundColor: '#2E2A26', marginBottom: 8 }} resizeMode="cover" />
+                          ) : (
+                            <View style={{ width: '100%', height: 90, borderRadius: 10, backgroundColor: 'rgba(236,128,43,0.1)', justifyContent: 'center', alignItems: 'center', marginBottom: 8 }}>
+                              <Ionicons name="paw" size={32} color={COLORS.primary} />
+                            </View>
+                          )}
+                          <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.textDark, textAlign: 'center' }} numberOfLines={2}>{reporte.titulo}</Text>
                         </TouchableOpacity>
                       ))}
                     </ScrollView>
@@ -296,7 +294,7 @@ export default function CreateNeedScreen() {
                 {errors.categoria && <Text style={{ color: COLORS.danger, fontSize: 12, marginTop: 6 }}>{errors.categoria}</Text>}
               </View>
 
-              {/* Subcategoría Opcional (Si la categoría tiene opciones) */}
+              {/* Subcategoría Opcional */}
               {categoria && SUBCATEGORIAS_MOCK[categoria] && (
                 <View style={{ marginBottom: 24, padding: 16, backgroundColor: 'rgba(236,128,43,0.08)', borderRadius: 16 }}>
                   <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.textDark, marginBottom: 10 }}>Específica lo que necesitas (Opcional)</Text>
