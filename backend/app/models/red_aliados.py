@@ -102,3 +102,17 @@ class OfertaProactivaResponse(BaseModel):
     unidad: str
     activa: bool
     created_at: str
+
+
+class SugerenciaAliadoResponse(BaseModel):
+    """Motor de sugerencias Ruta 1 (BACK01) — solo informativo, no reserva
+    nada. Se embebe como campo opcional en la respuesta de
+    POST /reports/{id}/hitos, nunca se persiste (ver flujo-red-aliados-pawalert.md,
+    sección 6, Ruta 1)."""
+    oferta_id: str
+    perfil_apoyo_id: str
+    nombre: str
+    distancia_km: float
+    unidad: str
+    capacidad_disponible: float
+    nivel_urgencia: str

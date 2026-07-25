@@ -129,3 +129,69 @@ async def crear_oferta_proactiva(usuario_id: str, body: OfertaProactivaRequest) 
         "activa": fila["activa"],
         "created_at": str(fila["created_at"]),
     }
+
+
+# ─── Motor de sugerencias, Ruta 1 (BACK01) ───────────────────────────────
+# Se llama desde POST /reports/{id}/hitos (registrar_hito en reports.py)
+# cuando se registra el hito "encontre_animal". Solo lee — nunca reserva
+# capacidad (eso es BACK02) ni persiste nada (la sugerencia se regresa en
+# la respuesta del hito, no se guarda en ninguna tabla).
+
+_CONDICION_A_URGENCIA = {"grave": "critico", "herido": "urgente", "estable": "no_urgente"}
+_ORDEN_URGENCIA = {"no_urgente": 0, "urgente": 1, "critico": 2}
+
+
+def _nivel_urgencia_efectivo(condicion_animal: str | None, condicion_observada: str | None) -> str | None:
+    """Nivel de urgencia para el motor de sugerencias — puramente
+    lógico/temporal para decidir a quién sugerir en este instante. Nunca
+    escribe en animal.condicion_id ni en ninguna otra columna: el reporte
+    se queda exactamente como se creó.
+
+    Base: animal.condicion_id (grave/herido/estable) tal como se declaró al
+    crear el reporte. `condicion_observada` (texto libre de
+    HitoRequest.condicion_observada en el hito 'encontre_animal') solo
+    puede ESCALAR ese nivel hacia arriba, nunca bajarlo:
+    - 'Igual que en el reporte' -> sin cambio
+    - 'Peor de lo esperado' -> sube a mínimo 'urgente'
+    - 'En estado crítico' -> fuerza 'critico'
+    - 'No estaba en el lugar' -> None (no se ejecuta el matching)
+    - None o cualquier otro valor no reconocido -> sin cambio (mismo
+      tratamiento que 'Igual que en el reporte')
+    """
+    nivel = _CONDICION_A_URGENCIA.get(condicion_animal or "", "no_urgente")
+
+    if condicion_observada == "No estaba en el lugar":
+        return None
+    if condicion_observada == "En estado crítico":
+        return "critico"
+    if condicion_observada == "Peor de lo esperado":
+        if _ORDEN_URGENCIA[nivel] < _ORDEN_URGENCIA["urgente"]:
+            return "urgente"
+        return nivel
+    return nivel
+
+
+def sugerir_aliado_veterinario(reporte_id: str, nivel_urgencia: str) -> dict | None:
+    """Busca la oferta proactiva de servicios veterinarios más cercana
+    compatible por categoría + zona + nivel de urgencia, vía la función SQL
+    sugerencia_veterinaria_cercana (migrations/0011_sugerencia_veterinaria.sql)
+    — mismo patrón que assignment_service.asignar_asociacion() con
+    encontrar_asociacion_cercana."""
+    resultado = supabase.rpc(
+        "sugerencia_veterinaria_cercana",
+        {"p_reporte_id": reporte_id, "p_nivel_urgencia": nivel_urgencia},
+    ).execute()
+
+    if not resultado.data:
+        return None
+
+    fila = resultado.data[0]
+    return {
+        "oferta_id": fila["oferta_id"],
+        "perfil_apoyo_id": fila["perfil_apoyo_id"],
+        "nombre": fila["nombre"],
+        "distancia_km": fila["distancia_km"],
+        "unidad": fila["unidad"],
+        "capacidad_disponible": fila["capacidad_disponible"],
+        "nivel_urgencia": nivel_urgencia,
+    }

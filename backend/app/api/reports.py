@@ -400,12 +400,34 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
         }
     )
 
+    # Motor de sugerencias, Ruta 1 (BACK01) — solo para el hito
+    # "encontre_animal". Puramente informativo: no reserva capacidad, no
+    # persiste nada, y si no hay match compatible el flujo sigue exactamente
+    # igual que hoy. Nunca modifica animal.condicion_id ni ninguna otra
+    # columna del reporte.
+    sugerencia_aliado = None
+    if body.tipo_hito == "encontre_animal":
+        from app.services.red_aliados_service import _nivel_urgencia_efectivo, sugerir_aliado_veterinario
+
+        animal_query = supabase.table("reportes").select(
+            "animal(orden, condicion_catalogo(clave))"
+        ).eq("id", reporte_id).execute()
+
+        animal_embed = animal_query.data[0]["animal"] if animal_query.data else None
+        animales, _ = shape_animal_embed(animal_embed)
+        condicion_animal = condicion_mas_grave(animales)
+
+        nivel_urgencia = _nivel_urgencia_efectivo(condicion_animal, body.condicion_observada)
+        if nivel_urgencia:
+            sugerencia_aliado = sugerir_aliado_veterinario(reporte_id, nivel_urgencia)
+
     return {
         "mensaje": f"Hito '{body.tipo_hito}' registrado correctamente.",
-        "estado": nuevo_estado
+        "estado": nuevo_estado,
+        "sugerencia_aliado": sugerencia_aliado,
     }
 
-### FIN endpoind: staff registra avances del rescate 
+### FIN endpoind: staff registra avances del rescate
 
 ### Endpoint: logica post rechazo de reportes 
 @router.patch("/{reporte_id}/rechazar", status_code=200)
