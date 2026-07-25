@@ -2,7 +2,7 @@ from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Header
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 from app.models.report import ReportResponse, AnimalInput, ReportListItem, HitoRequest, RechazarReporteRequest
-from app.models.red_aliados import AceptarSugerenciaRequest, ContribucionResponse
+from app.models.red_aliados import AceptarSugerenciaRequest, AceptarSugerenciaVeterinariaResponse
 from app.services.report_service import crear_reporte, obtener_reportes, cambiar_estado_reporte, obtener_reportes_usuario
 from app.utils.validators import validar_telefono, validar_email
 from app.utils.animal_shaping import shape_animal_embed, condicion_mas_grave
@@ -327,7 +327,7 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
         raise HTTPException(status_code=403, detail="No tienes permiso para registrar hitos en este reporte")
 
     # Validar tipo de hito
-    if body.tipo_hito not in ["encontre_animal", "llegue_refugio"]:
+    if body.tipo_hito not in ["encontre_animal", "llegue_refugio", "llego_veterinaria"]:
         raise HTTPException(status_code=422, detail="Tipo de hito inválido")
 
     # Validar flujo de estados
@@ -335,6 +335,9 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
         raise HTTPException(status_code=400, detail="El reporte debe estar en estado en_camino para registrar este hito")
 
     if body.tipo_hito == "llegue_refugio" and reporte["estado_reporte"] != "en_atencion":
+        raise HTTPException(status_code=400, detail="El reporte debe estar en estado en_atencion para registrar este hito")
+
+    if body.tipo_hito == "llego_veterinaria" and reporte["estado_reporte"] != "en_atencion":
         raise HTTPException(status_code=400, detail="El reporte debe estar en estado en_atencion para registrar este hito")
 
     # Validación GPS obligatoria para llegue_refugio
@@ -372,18 +375,82 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
                 detail=f"Tu ubicación no coincide con el refugio. Estás a {round(distancia_metros)} metros. Debes estar dentro de 200 metros."
             )
 
-    # Determinar nuevo estado
-    nuevo_estado = "en_atencion" if body.tipo_hito == "encontre_animal" else "rescatado"
-    estado_id = supabase.table("reporte_estados").select("id").eq("clave", nuevo_estado).execute()
+    # Validación GPS obligatoria para llego_veterinaria — Ruta 1
+    # (BACK01/BACK02): solo se puede registrar si existe una contribución
+    # con este reporte_id (la sugerencia de aliado ya fue aceptada), y la
+    # ubicación se valida contra la veterinaria de esa contribución, no
+    # contra la asociación.
+    if body.tipo_hito == "llego_veterinaria":
+        contribucion = supabase.table("contribuciones").select(
+            "id, oferta_proactiva_id"
+        ).eq("reporte_id", reporte_id).order("created_at", desc=True).limit(1).execute()
 
-    if not estado_id.data:
-        raise HTTPException(status_code=500, detail=f"Error al resolver estado {nuevo_estado}")
+        if not contribucion.data or not contribucion.data[0].get("oferta_proactiva_id"):
+            raise HTTPException(
+                status_code=400,
+                detail="No hay ninguna sugerencia de aliado veterinario aceptada para este reporte"
+            )
 
-    # Actualizar estado del reporte
-    supabase.table("reportes").update({
-        "estado_reporte": nuevo_estado,
-        "estado_id": estado_id.data[0]["id"],
-    }).eq("id", reporte_id).execute()
+        if not body.latitud or not body.longitud:
+            raise HTTPException(status_code=422, detail="La ubicación GPS es obligatoria para registrar la llegada a la veterinaria")
+
+        if not body.foto_url:
+            raise HTTPException(status_code=422, detail="La foto es obligatoria para registrar la llegada a la veterinaria")
+
+        oferta = supabase.table("ofertas_proactivas").select(
+            "perfil_apoyo_id"
+        ).eq("id", contribucion.data[0]["oferta_proactiva_id"]).execute()
+
+        if not oferta.data:
+            raise HTTPException(status_code=404, detail="Oferta del aliado veterinario no encontrada")
+
+        ubicacion = supabase.rpc(
+            "ubicacion_perfil_apoyo",
+            {"p_perfil_apoyo_id": oferta.data[0]["perfil_apoyo_id"]},
+        ).execute()
+
+        if not ubicacion.data or ubicacion.data[0].get("latitud") is None:
+            raise HTTPException(status_code=500, detail="No se pudo resolver la ubicación del aliado veterinario")
+
+        vet_lat = float(ubicacion.data[0]["latitud"])
+        vet_lon = float(ubicacion.data[0]["longitud"])
+
+        # Calcular distancia en metros usando fórmula de Haversine
+        import math
+        R = 6371000  # radio de la tierra en metros
+        lat1, lon1 = math.radians(body.latitud), math.radians(body.longitud)
+        lat2, lon2 = math.radians(vet_lat), math.radians(vet_lon)
+        dlat = lat2 - lat1
+        dlon = lon2 - lon1
+        a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
+        distancia_metros = R * 2 * math.asin(math.sqrt(a))
+
+        if distancia_metros > 200:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Tu ubicación no coincide con la veterinaria. Estás a {round(distancia_metros)} metros. Debes estar dentro de 200 metros."
+            )
+
+    # Determinar nuevo estado — llego_veterinaria no cambia estado_reporte,
+    # solo queda como un evento más en historial_reporte.
+    if body.tipo_hito == "encontre_animal":
+        nuevo_estado = "en_atencion"
+    elif body.tipo_hito == "llegue_refugio":
+        nuevo_estado = "rescatado"
+    else:
+        nuevo_estado = None
+
+    if nuevo_estado:
+        estado_id = supabase.table("reporte_estados").select("id").eq("clave", nuevo_estado).execute()
+
+        if not estado_id.data:
+            raise HTTPException(status_code=500, detail=f"Error al resolver estado {nuevo_estado}")
+
+        # Actualizar estado del reporte
+        supabase.table("reportes").update({
+            "estado_reporte": nuevo_estado,
+            "estado_id": estado_id.data[0]["id"],
+        }).eq("id", reporte_id).execute()
 
     # Registrar en historial
     from app.services.report_service import registrar_historial
@@ -431,7 +498,7 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
 ### FIN endpoind: staff registra avances del rescate
 
 ### Endpoint: BACK02 — aceptar la sugerencia de Ruta 1 (motor de sugerencias)
-@router.post("/{reporte_id}/hitos/aceptar-sugerencia", status_code=201, response_model=ContribucionResponse)
+@router.post("/{reporte_id}/hitos/aceptar-sugerencia", status_code=201, response_model=AceptarSugerenciaVeterinariaResponse)
 async def aceptar_sugerencia_endpoint(
     reporte_id: str,
     body: AceptarSugerenciaRequest,

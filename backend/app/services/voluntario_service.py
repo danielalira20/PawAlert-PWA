@@ -693,6 +693,29 @@ async def obtener_reportes_voluntario(usuario_id: str) -> dict:
         "animal_fotos(foto_url, orden))"
     ).eq("staff_asignado_id", usuario_id).order("created_at", desc=True).execute()
 
+    # Motor de sugerencias Ruta 1 (BACK01/BACK02): mismo patrón batch que
+    # get_reportes_asignados() en associations.py — si ya existe una
+    # contribución con reporte_id, la sugerencia de aliado veterinario fue
+    # aceptada; si además hay un evento "hito_llego_veterinaria" en el
+    # historial, la llegada ya se registró.
+    reporte_ids_todos = [r["id"] for r in (resultado.data or [])]
+    reportes_con_sugerencia_aceptada = set()
+    reportes_con_llegada_registrada = set()
+    if reporte_ids_todos:
+        contribs = supabase.table("contribuciones").select("reporte_id").in_(
+            "reporte_id", reporte_ids_todos
+        ).execute()
+        reportes_con_sugerencia_aceptada = {
+            c["reporte_id"] for c in (contribs.data or []) if c.get("reporte_id")
+        }
+
+        llegadas = supabase.table("historial_reporte").select("reporte_id").in_(
+            "reporte_id", reporte_ids_todos
+        ).eq("tipo_evento", "hito_llego_veterinaria").execute()
+        reportes_con_llegada_registrada = {
+            e["reporte_id"] for e in (llegadas.data or []) if e.get("reporte_id")
+        }
+
     esperando_confirmacion = []
     pendientes = []
     en_accion = []
@@ -723,6 +746,8 @@ async def obtener_reportes_voluntario(usuario_id: str) -> dict:
                 "telefono": r.get("asociaciones", {}).get("contacto_telefono"),
             },
             "animales": [shape_animal_response(a) for a in animales_crudos],
+            "tiene_sugerencia_aceptada": r["id"] in reportes_con_sugerencia_aceptada,
+            "tiene_llegada_veterinaria_registrada": r["id"] in reportes_con_llegada_registrada,
         }
 
         estado = r.get("estado_reporte")

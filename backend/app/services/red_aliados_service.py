@@ -233,17 +233,19 @@ async def aceptar_sugerencia_veterinaria(reporte_id: str, oferta_id: str) -> dic
         )
 
     oferta = supabase.table("ofertas_proactivas").select(
-        "unidad, subcategoria_id, perfil_apoyo(usuario_id)"
+        "unidad, subcategoria_id, perfil_apoyo(id, usuario_id)"
     ).eq("id", oferta_id).execute()
 
     if not oferta.data:
         raise HTTPException(status_code=404, detail="Oferta no encontrada")
 
     fila_oferta = oferta.data[0]
+    perfil_apoyo = fila_oferta.get("perfil_apoyo") or {}
     # El usuario_id de la contribución es el del aliado dueño de la oferta
     # (quien ofrece, según el esquema documentado en tareas-red-aliados-pawalert.md),
     # no el del staff/voluntario que acepta la sugerencia.
-    usuario_aliado_id = (fila_oferta.get("perfil_apoyo") or {}).get("usuario_id")
+    usuario_aliado_id = perfil_apoyo.get("usuario_id")
+    perfil_apoyo_id = perfil_apoyo.get("id")
 
     resultado = supabase.table("contribuciones").insert({
         "reporte_id": reporte_id,
@@ -259,13 +261,58 @@ async def aceptar_sugerencia_veterinaria(reporte_id: str, oferta_id: str) -> dic
     }).execute()
 
     fila = resultado.data[0]
-    return {
+    contribucion = {
         "id": fila["id"],
         "necesidad_id": fila.get("necesidad_id"),
         "reporte_id": fila.get("reporte_id"),
         "oferta_proactiva_id": fila.get("oferta_proactiva_id"),
         "estado": fila["estado"],
         "created_at": str(fila["created_at"]),
+    }
+
+    # Datos de contacto y ubicación del aliado para que el voluntario/staff
+    # que trae el caso pueda llevar al animal a la veterinaria — mismo
+    # criterio que contacto_aliado/contacto_asociacion de Ruta 2
+    # (aceptar_sugerencia_general), duplicado a propósito en vez de
+    # extraído a un helper compartido.
+    contacto_aliado = {"nombre": None, "telefono": None, "email": None}
+    if usuario_aliado_id:
+        usuario_aliado = supabase.table("usuarios").select(
+            "nombre, apellido_paterno, telefono, email"
+        ).eq("id", usuario_aliado_id).execute()
+        if usuario_aliado.data:
+            fila_usuario = usuario_aliado.data[0]
+            contacto_aliado = {
+                "nombre": " ".join(
+                    filter(None, [fila_usuario.get("nombre"), fila_usuario.get("apellido_paterno")])
+                ).strip() or None,
+                "telefono": fila_usuario.get("telefono"),
+                "email": fila_usuario.get("email"),
+            }
+
+    ubicacion_aliado = {
+        "calle": None, "colonia": None, "municipio": None,
+        "referencia": None, "latitud": None, "longitud": None,
+    }
+    if perfil_apoyo_id:
+        ubicacion = supabase.rpc(
+            "ubicacion_perfil_apoyo", {"p_perfil_apoyo_id": perfil_apoyo_id}
+        ).execute()
+        if ubicacion.data:
+            fila_ubicacion = ubicacion.data[0]
+            ubicacion_aliado = {
+                "calle": fila_ubicacion.get("calle"),
+                "colonia": fila_ubicacion.get("colonia"),
+                "municipio": fila_ubicacion.get("municipio"),
+                "referencia": fila_ubicacion.get("referencia"),
+                "latitud": float(fila_ubicacion["latitud"]) if fila_ubicacion.get("latitud") is not None else None,
+                "longitud": float(fila_ubicacion["longitud"]) if fila_ubicacion.get("longitud") is not None else None,
+            }
+
+    return {
+        "contribucion": contribucion,
+        "contacto_aliado": contacto_aliado,
+        "ubicacion_aliado": ubicacion_aliado,
     }
 
 

@@ -172,3 +172,28 @@ class AceptarOfertaGeneralResponse(BaseModel):
     contacto_aliado: ContactoResponse
     contacto_asociacion: ContactoResponse
 
+
+class UbicacionAliadoResponse(BaseModel):
+    """Dirección + coordenadas del aliado (perfil_apoyo) que acepta una
+    sugerencia Ruta 1 — calle/colonia/municipio/referencia son solo texto;
+    latitud/longitud se extraen de zona_cobertura vía la RPC
+    ubicacion_perfil_apoyo (migrations/0014_...), no hay columnas de
+    coordenadas nuevas."""
+    calle: Optional[str] = None
+    colonia: Optional[str] = None
+    municipio: Optional[str] = None
+    referencia: Optional[str] = None
+    latitud: Optional[float] = None
+    longitud: Optional[float] = None
+
+
+class AceptarSugerenciaVeterinariaResponse(BaseModel):
+    """Respuesta de POST /reports/{reporte_id}/hitos/aceptar-sugerencia
+    (Ruta 1) — mismo criterio que AceptarOfertaGeneralResponse de Ruta 2,
+    pero con ubicacion_aliado en vez de contacto_asociacion (aquí no hay
+    una segunda asociación involucrada, sino la dirección de la
+    veterinaria para el botón 'Cómo llegar')."""
+    contribucion: ContribucionResponse
+    contacto_aliado: ContactoResponse
+    ubicacion_aliado: UbicacionAliadoResponse
+
