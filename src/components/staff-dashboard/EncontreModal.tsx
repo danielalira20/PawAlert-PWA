@@ -12,7 +12,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Brand } from '../../constants/theme';
 import { SugerenciaAliadoCard } from './SugerenciaAliadoCard';
-import type { SugerenciaAliado } from '../../types/reportestaff';
+import { SeguimientoAliadoCard } from './SeguimientoAliadoCard';
+import type { AceptarSugerenciaResponse, SugerenciaAliado } from '../../types/reportestaff';
 
 interface Props {
   visible: boolean;
@@ -30,6 +31,8 @@ interface Props {
   isAceptandoSugerencia: boolean;
   onAceptarSugerencia: () => void;
   onDescartarSugerencia: () => void;
+  seguimientoAliado: AceptarSugerenciaResponse | null;
+  onCerrarSeguimiento: () => void;
 }
 
 export function EncontreModal({
@@ -48,12 +51,20 @@ export function EncontreModal({
   isAceptandoSugerencia,
   onAceptarSugerencia,
   onDescartarSugerencia,
+  seguimientoAliado,
+  onCerrarSeguimiento,
 }: Props) {
   return (
     <Modal visible={visible} transparent animationType="fade">
       <View style={styles.overlay}>
         <View style={styles.sheet}>
-          {sugerenciaAliado ? (
+          {seguimientoAliado ? (
+            <SeguimientoAliadoCard
+              contacto={seguimientoAliado.contacto_aliado}
+              ubicacion={seguimientoAliado.ubicacion_aliado}
+              onEntendido={onCerrarSeguimiento}
+            />
+          ) : sugerenciaAliado ? (
             <SugerenciaAliadoCard
               sugerencia={sugerenciaAliado}
               isSubmitting={isAceptandoSugerencia}

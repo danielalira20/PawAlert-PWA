@@ -350,6 +350,82 @@ const rechazarAsignacionVoluntario = useCallback(
     ],
   );
 
+  // ── Hito: "Llegué a la veterinaria" (Ruta 1, sin select de estado ────
+  // ni cambio de estado_reporte — decisión A: solo notas opcionales,
+  // GPS y foto obligatorios, validados contra la ubicación del aliado.
+  const [notasVeterinaria, setNotasVeterinaria] = useState('');
+  const [fotoVeterinaria, setFotoVeterinaria] = useState<string | null>(null);
+
+  const resetVeterinaria = useCallback(() => {
+    setNotasVeterinaria('');
+    setFotoVeterinaria(null);
+    setUbicacionActual(null);
+    setPermisoDenegado(false);
+  }, []);
+
+  const registrarLlegadaVeterinaria = useCallback(
+    async (reporteId: string): Promise<boolean> => {
+      if (!ubicacionActual) {
+        showToast({
+          type: 'error',
+          title: 'Ubicación requerida',
+          message: 'Debes capturar tu ubicación GPS antes de registrar la llegada a la veterinaria',
+        });
+        return false;
+      }
+      if (!fotoVeterinaria) {
+        showToast({
+          type: 'error',
+          title: 'Foto requerida',
+          message: 'Debes tomar una foto con la cámara para registrar la llegada a la veterinaria',
+        });
+        return false;
+      }
+      setIsSubmitting(true);
+      try {
+        const foto_url = await subirFotoHito(reporteId, fotoVeterinaria);
+        if (!foto_url) {
+          showToast({ type: 'error', title: 'Error', message: 'No pudimos subir la foto. Intenta de nuevo.' });
+          return false;
+        }
+        await axios.post(
+          `${API_URL}/reports/${reporteId}/hitos`,
+          {
+            tipo_hito: 'llego_veterinaria',
+            comentario: notasVeterinaria || null,
+            foto_url,
+            latitud: ubicacionActual.latitude,
+            longitud: ubicacionActual.longitude,
+          },
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        showToast({ type: 'success', title: 'Éxito', message: 'Llegada a la veterinaria registrada correctamente' });
+        resetVeterinaria();
+        await cargarReportesAsignados();
+        return true;
+      } catch (error: any) {
+        showToast({
+          type: 'error',
+          title: 'Error',
+          message: error?.response?.data?.detail || 'Error al registrar la llegada a la veterinaria',
+        });
+        return false;
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    [
+      notasVeterinaria,
+      fotoVeterinaria,
+      ubicacionActual,
+      token,
+      showToast,
+      subirFotoHito,
+      cargarReportesAsignados,
+      resetVeterinaria,
+    ],
+  );
+
   return {
     // reportes
     reportesPendientes,
@@ -394,6 +470,14 @@ const rechazarAsignacionVoluntario = useCallback(
     registrarRefugio,
     resetRefugio,
     OPCIONES_REFUGIO,
+
+    // hito: "llegué a la veterinaria"
+    notasVeterinaria,
+    setNotasVeterinaria,
+    fotoVeterinaria,
+    setFotoVeterinaria,
+    registrarLlegadaVeterinaria,
+    resetVeterinaria,
 
     isSubmitting,
   };

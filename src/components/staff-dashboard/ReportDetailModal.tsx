@@ -25,6 +25,7 @@ interface Props {
   onClose: () => void;
   onEncontre: () => void;
   onRefugio: () => void;
+  onVeterinaria: () => void;
   // Mismo criterio que ReportCard: los hitos de campo (validan llegada
   // contra el refugio de la asociación) solo aplican a voluntario_interno
   // (y staff elevado) por ahora. Default true para no romper el
@@ -38,6 +39,7 @@ export function ReportDetailModal({
   onClose,
   onEncontre,
   onRefugio,
+  onVeterinaria,
   puedeRegistrarHitos = true,
 }: Props) {
   const animales = reporte ? getAnimales(reporte) : [];
@@ -111,6 +113,16 @@ export function ReportDetailModal({
                   <Text style={styles.actionButtonText}>Encontré al animal</Text>
                 </TouchableOpacity>
               )}
+
+              {puedeRegistrarHitos &&
+                reporte.estado_reporte === 'en_atencion' &&
+                reporte.tiene_sugerencia_aceptada &&
+                !reporte.tiene_llegada_veterinaria_registrada && (
+                  <TouchableOpacity style={[styles.actionButton, { backgroundColor: Brand.secondary }]} onPress={onVeterinaria}>
+                    <Ionicons name="medkit-outline" size={18} color="#fff" />
+                    <Text style={styles.actionButtonText}>Registrar llegada a veterinaria</Text>
+                  </TouchableOpacity>
+                )}
 
               {puedeRegistrarHitos && reporte.estado_reporte === 'en_atencion' && (
                 <TouchableOpacity style={[styles.actionButton, { backgroundColor: '#8E44AD' }]} onPress={onRefugio}>
