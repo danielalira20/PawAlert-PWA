@@ -5,7 +5,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { useAuth } from '../context/AuthContext';
 import { API_URL } from '../constants/api';
-import type { ReporteStaff, RespuestaStaffReportes } from '../types/reportestaff';
+import type { ReporteStaff, RespuestaStaffReportes, SugerenciaAliado } from '../types/reportestaff';
 
 type ShowToastFn = (toast: {
   type: 'success' | 'error' | 'warning';
@@ -171,20 +171,20 @@ export function useStaffReports(showToast: ShowToastFn) {
   }, []);
 
   const registrarEncontre = useCallback(
-    async (reporteId: string): Promise<boolean> => {
+    async (reporteId: string): Promise<{ exito: boolean; sugerenciaAliado: SugerenciaAliado | null }> => {
       if (!estadoEncontre) {
         showToast({
           type: 'warning',
           title: 'Faltan datos',
           message: 'Debes seleccionar el estado actual del animal.',
         });
-        return false;
+        return { exito: false, sugerenciaAliado: null };
       }
       setIsSubmitting(true);
       try {
         let foto_url = null;
         if (fotoEncontre) foto_url = await subirFotoHito(reporteId, fotoEncontre);
-        await axios.post(
+        const res = await axios.post(
           `${API_URL}/reports/${reporteId}/hitos`,
           {
             tipo_hito: 'encontre_animal',
@@ -197,14 +197,14 @@ export function useStaffReports(showToast: ShowToastFn) {
         showToast({ type: 'success', title: 'Éxito', message: 'Hito registrado correctamente' });
         resetEncontre();
         await cargarReportesAsignados();
-        return true;
+        return { exito: true, sugerenciaAliado: res.data?.sugerencia_aliado ?? null };
       } catch (error: any) {
         showToast({
           type: 'error',
           title: 'Error',
           message: error?.response?.data?.detail || 'Error al registrar el hito',
         });
-        return false;
+        return { exito: false, sugerenciaAliado: null };
       } finally {
         setIsSubmitting(false);
       }

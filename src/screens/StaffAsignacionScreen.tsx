@@ -116,6 +116,20 @@ interface Candidato {
   score: ScoreCandidato;
 }
 
+// Motor de sugerencias Ruta 1 (BACK01/BACK02) — lo que regresa
+// POST /reports/{id}/hitos en `sugerencia_aliado`. Interfaz local a
+// propósito, duplicada de la de StaffDashboardScreen.tsx: las dos
+// pantallas ya eran independientes antes de esto y no se unifican ahora.
+interface SugerenciaAliado {
+  oferta_id: string;
+  perfil_apoyo_id: string;
+  nombre: string;
+  distancia_km: number;
+  unidad: string;
+  capacidad_disponible: number;
+  nivel_urgencia: string;
+}
+
 interface Props {
   onClose?: () => void;
 }
@@ -162,6 +176,8 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
   const [estadoCierre, setEstadoCierre] = useState('');
   const [notasHito, setNotasHito] = useState('');
   const [fotoHito, setFotoHito] = useState<string | null>(null);
+  const [sugerenciaAliado, setSugerenciaAliado] = useState<SugerenciaAliado | null>(null);
+  const [isAceptandoSugerencia, setIsAceptandoSugerencia] = useState(false);
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('reportes');
 
@@ -205,6 +221,18 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
     'Animal adoptado',
     'No se pudo rescatar',
   ];
+
+  const NIVEL_URGENCIA_LABEL: Record<string, string> = {
+    critico: 'Crítico',
+    urgente: 'Urgente',
+    no_urgente: 'No urgente',
+  };
+
+  const NIVEL_URGENCIA_COLOR: Record<string, string> = {
+    critico: COLORS.danger,
+    urgente: COLORS.secondary,
+    no_urgente: COLORS.accent,
+  };
 
   const cargarEstado = async () => {
     setIsLoadingInfo(true);
@@ -374,6 +402,7 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
   const resetModales = () => {
     setMotivoRechazo(''); setNotasRechazo(''); setEstadoEncontre(''); setEstadoCierre('');
     setNotasHito(''); setFotoHito(null); setReporteAccionId(null);
+    setSugerenciaAliado(null);
     setTabAsignacion('staff');
     setCandidatosList([]);
     setEstadoVoluntarios('cargando');
@@ -500,16 +529,43 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
     }
     setIsSubmittingAccion(true);
     try {
-      await axios.post(`${API_URL}/reports/${reporteAccionId}/hitos`, { tipo_hito: 'encontre_animal', condicion_observada: estadoEncontre, comentario: notasHito.trim() || null }, { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } });
+      const res = await axios.post(`${API_URL}/reports/${reporteAccionId}/hitos`, { tipo_hito: 'encontre_animal', condicion_observada: estadoEncontre, comentario: notasHito.trim() || null }, { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } });
       await cargarReportes();
       showToast({ type: 'success', title: 'Hito registrado', message: 'El avance ha sido guardado exitosamente.' });
+      const sugerencia = res.data?.sugerencia_aliado ?? null;
+      if (sugerencia) {
+        setSugerenciaAliado(sugerencia);
+      } else {
+        setShowEncontreModal(false);
+        resetModales();
+      }
     } catch (error: any) {
       showToast({ type: 'error', title: 'Error al registrar', message: error?.response?.data?.detail || 'No pudimos guardar el hito.' });
-    } finally {
       setShowEncontreModal(false);
       resetModales();
+    } finally {
       setIsSubmittingAccion(false);
     }
+  };
+
+  const aceptarSugerenciaAliado = async () => {
+    if (!reporteAccionId || !sugerenciaAliado) return;
+    setIsAceptandoSugerencia(true);
+    try {
+      await axios.post(`${API_URL}/reports/${reporteAccionId}/hitos/aceptar-sugerencia`, { oferta_id: sugerenciaAliado.oferta_id }, { headers: { Authorization: `Bearer ${token}` } });
+      showToast({ type: 'success', title: '¡Listo!', message: 'Acercamos el caso a la veterinaria sugerida.' });
+    } catch (error: any) {
+      showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'No pudimos acercar el caso a la veterinaria.' });
+    } finally {
+      setIsAceptandoSugerencia(false);
+      setShowEncontreModal(false);
+      resetModales();
+    }
+  };
+
+  const descartarSugerenciaAliado = () => {
+    setShowEncontreModal(false);
+    resetModales();
   };
 
   const registrarCierre = async () => {
@@ -1026,29 +1082,55 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
       <Modal visible={showEncontreModal || showCerrarModal} transparent animationType="fade">
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
           <View style={{ backgroundColor: COLORS.cardBg, borderRadius: 32, padding: 32, width: '100%', maxWidth: 450 }}>
-            <Text style={{ fontSize: 22, fontWeight: '800', color: COLORS.textDark, marginBottom: 20 }}>
-              {showEncontreModal ? '¿Cómo está el animal ahora?' : '¿Cómo concluyó el rescate?'}
-            </Text>
-            {(showEncontreModal ? OPCIONES_ENCONTRE : OPCIONES_CIERRE).map((opcion) => {
-              const seleccionado = showEncontreModal ? estadoEncontre === opcion : estadoCierre === opcion;
-              return (
-                <TouchableOpacity key={opcion} onPress={() => showEncontreModal ? setEstadoEncontre(opcion) : setEstadoCierre(opcion)} style={{ padding: 16, borderWidth: 2, borderColor: seleccionado ? COLORS.accent : 'transparent', borderRadius: 16, marginBottom: 10, backgroundColor: seleccionado ? 'rgba(102, 188, 180, 0.1)' : COLORS.white }}>
-                  <Text style={{ fontSize: 14, color: COLORS.textDark, fontWeight: seleccionado ? '700' : '500' }}>{opcion}</Text>
+            {showEncontreModal && sugerenciaAliado ? (
+              <>
+                <Text style={{ fontSize: 22, fontWeight: '800', color: COLORS.textDark, marginBottom: 20 }}>
+                  Hay una veterinaria cercana disponible
+                </Text>
+                <View style={{ padding: 16, borderWidth: 2, borderColor: COLORS.accent, borderRadius: 16, marginBottom: 10, backgroundColor: 'rgba(102, 188, 180, 0.1)' }}>
+                  <Text style={{ fontSize: 14, color: COLORS.textDark, fontWeight: '700' }}>{sugerenciaAliado.nombre}</Text>
+                  <Text style={{ fontSize: 14, color: COLORS.textDark, fontWeight: '500', marginTop: 10 }}>{sugerenciaAliado.distancia_km} km de distancia</Text>
+                  <Text style={{ fontSize: 14, color: COLORS.textDark, fontWeight: '500', marginTop: 10 }}>{sugerenciaAliado.capacidad_disponible} {sugerenciaAliado.unidad} disponibles</Text>
+                  <Text style={{ fontSize: 14, fontWeight: '700', marginTop: 10, color: NIVEL_URGENCIA_COLOR[sugerenciaAliado.nivel_urgencia] || COLORS.textDark }}>
+                    Urgencia: {NIVEL_URGENCIA_LABEL[sugerenciaAliado.nivel_urgencia] || sugerenciaAliado.nivel_urgencia}
+                  </Text>
+                </View>
+                <View style={{ flexDirection: 'row', gap: 12, marginTop: 24 }}>
+                  <TouchableOpacity onPress={descartarSugerenciaAliado} style={{ flex: 1, paddingVertical: 16, alignItems: 'center', borderRadius: 20, backgroundColor: '#E5E7EB' }}>
+                    <Text style={{ color: COLORS.textLight, fontWeight: 'bold' }}>No, gracias</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={aceptarSugerenciaAliado} disabled={isAceptandoSugerencia} style={{ flex: 1, paddingVertical: 16, alignItems: 'center', borderRadius: 20, backgroundColor: COLORS.accent }}>
+                    {isAceptandoSugerencia ? <ActivityIndicator color={COLORS.white} /> : <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Acercar a esta veterinaria</Text>}
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : (
+              <>
+                <Text style={{ fontSize: 22, fontWeight: '800', color: COLORS.textDark, marginBottom: 20 }}>
+                  {showEncontreModal ? '¿Cómo está el animal ahora?' : '¿Cómo concluyó el rescate?'}
+                </Text>
+                {(showEncontreModal ? OPCIONES_ENCONTRE : OPCIONES_CIERRE).map((opcion) => {
+                  const seleccionado = showEncontreModal ? estadoEncontre === opcion : estadoCierre === opcion;
+                  return (
+                    <TouchableOpacity key={opcion} onPress={() => showEncontreModal ? setEstadoEncontre(opcion) : setEstadoCierre(opcion)} style={{ padding: 16, borderWidth: 2, borderColor: seleccionado ? COLORS.accent : 'transparent', borderRadius: 16, marginBottom: 10, backgroundColor: seleccionado ? 'rgba(102, 188, 180, 0.1)' : COLORS.white }}>
+                      <Text style={{ fontSize: 14, color: COLORS.textDark, fontWeight: seleccionado ? '700' : '500' }}>{opcion}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+                <TextInput style={{ backgroundColor: COLORS.white, borderRadius: 16, padding: 16, fontSize: 14, marginTop: 12, minHeight: 80, textAlignVertical: 'top' }} multiline placeholder="Comentarios (Opcional)" value={notasHito} onChangeText={setNotasHito} />
+                <TouchableOpacity onPress={handlePickFoto} style={{ padding: 16, backgroundColor: COLORS.white, borderRadius: 16, marginTop: 12, alignItems: 'center', borderWidth: 2, borderColor: '#E5E7EB', borderStyle: 'dashed' }}>
+                  <Text style={{ color: COLORS.textLight, fontWeight: 'bold' }}><Ionicons name="camera" size={16} /> {fotoHito ? 'Foto adjuntada ✓' : 'Subir foto (Opcional)'}</Text>
                 </TouchableOpacity>
-              );
-            })}
-            <TextInput style={{ backgroundColor: COLORS.white, borderRadius: 16, padding: 16, fontSize: 14, marginTop: 12, minHeight: 80, textAlignVertical: 'top' }} multiline placeholder="Comentarios (Opcional)" value={notasHito} onChangeText={setNotasHito} />
-            <TouchableOpacity onPress={handlePickFoto} style={{ padding: 16, backgroundColor: COLORS.white, borderRadius: 16, marginTop: 12, alignItems: 'center', borderWidth: 2, borderColor: '#E5E7EB', borderStyle: 'dashed' }}>
-              <Text style={{ color: COLORS.textLight, fontWeight: 'bold' }}><Ionicons name="camera" size={16} /> {fotoHito ? 'Foto adjuntada ✓' : 'Subir foto (Opcional)'}</Text>
-            </TouchableOpacity>
-            <View style={{ flexDirection: 'row', gap: 12, marginTop: 24 }}>
-              <TouchableOpacity onPress={() => showEncontreModal ? setShowEncontreModal(false) : setShowCerrarModal(false)} style={{ flex: 1, paddingVertical: 16, alignItems: 'center', borderRadius: 20, backgroundColor: '#E5E7EB' }}>
-                <Text style={{ color: COLORS.textLight, fontWeight: 'bold' }}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={showEncontreModal ? registrarHitoEncontre : registrarCierre} style={{ flex: 1, paddingVertical: 16, alignItems: 'center', borderRadius: 20, backgroundColor: COLORS.accent }}>
-                {isSubmittingAccion ? <ActivityIndicator color={COLORS.white} /> : <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Confirmar</Text>}
-              </TouchableOpacity>
-            </View>
+                <View style={{ flexDirection: 'row', gap: 12, marginTop: 24 }}>
+                  <TouchableOpacity onPress={() => showEncontreModal ? setShowEncontreModal(false) : setShowCerrarModal(false)} style={{ flex: 1, paddingVertical: 16, alignItems: 'center', borderRadius: 20, backgroundColor: '#E5E7EB' }}>
+                    <Text style={{ color: COLORS.textLight, fontWeight: 'bold' }}>Cancelar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={showEncontreModal ? registrarHitoEncontre : registrarCierre} style={{ flex: 1, paddingVertical: 16, alignItems: 'center', borderRadius: 20, backgroundColor: COLORS.accent }}>
+                    {isSubmittingAccion ? <ActivityIndicator color={COLORS.white} /> : <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Confirmar</Text>}
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
           </View>
         </View>
       </Modal>

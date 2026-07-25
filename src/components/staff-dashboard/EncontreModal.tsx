@@ -11,6 +11,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Brand } from '../../constants/theme';
+import { SugerenciaAliadoCard } from './SugerenciaAliadoCard';
+import type { SugerenciaAliado } from '../../types/reportestaff';
 
 interface Props {
   visible: boolean;
@@ -24,6 +26,10 @@ interface Props {
   isSubmitting: boolean;
   onCancel: () => void;
   onConfirm: () => void;
+  sugerenciaAliado: SugerenciaAliado | null;
+  isAceptandoSugerencia: boolean;
+  onAceptarSugerencia: () => void;
+  onDescartarSugerencia: () => void;
 }
 
 export function EncontreModal({
@@ -38,67 +44,82 @@ export function EncontreModal({
   isSubmitting,
   onCancel,
   onConfirm,
+  sugerenciaAliado,
+  isAceptandoSugerencia,
+  onAceptarSugerencia,
+  onDescartarSugerencia,
 }: Props) {
   return (
     <Modal visible={visible} transparent animationType="fade">
       <View style={styles.overlay}>
         <View style={styles.sheet}>
-          <View style={styles.header}>
-            <Text style={styles.title}>¿Cómo está el animal?</Text>
-            <TouchableOpacity onPress={onCancel} hitSlop={10}>
-              <Ionicons name="close" size={22} color={Brand.textFaint} />
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView showsVerticalScrollIndicator={false} style={styles.opcionesScroll}>
-            {opciones.map((opcion) => {
-              const seleccionada = estado === opcion;
-              return (
-                <TouchableOpacity
-                  key={opcion}
-                  onPress={() => onSelectEstado(opcion)}
-                  style={[styles.opcion, seleccionada && styles.opcionSeleccionada]}
-                >
-                  <Text style={[styles.opcionText, seleccionada && styles.opcionTextSeleccionada]}>
-                    {opcion}
-                  </Text>
+          {sugerenciaAliado ? (
+            <SugerenciaAliadoCard
+              sugerencia={sugerenciaAliado}
+              isSubmitting={isAceptandoSugerencia}
+              onAceptar={onAceptarSugerencia}
+              onDescartar={onDescartarSugerencia}
+            />
+          ) : (
+            <>
+              <View style={styles.header}>
+                <Text style={styles.title}>¿Cómo está el animal?</Text>
+                <TouchableOpacity onPress={onCancel} hitSlop={10}>
+                  <Ionicons name="close" size={22} color={Brand.textFaint} />
                 </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
+              </View>
 
-          <TextInput
-            style={styles.textArea}
-            multiline
-            placeholder="Notas adicionales (opcional)"
-            placeholderTextColor={Brand.textFaint}
-            value={notas}
-            onChangeText={onChangeNotas}
-          />
+              <ScrollView showsVerticalScrollIndicator={false} style={styles.opcionesScroll}>
+                {opciones.map((opcion) => {
+                  const seleccionada = estado === opcion;
+                  return (
+                    <TouchableOpacity
+                      key={opcion}
+                      onPress={() => onSelectEstado(opcion)}
+                      style={[styles.opcion, seleccionada && styles.opcionSeleccionada]}
+                    >
+                      <Text style={[styles.opcionText, seleccionada && styles.opcionTextSeleccionada]}>
+                        {opcion}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
 
-          <TouchableOpacity onPress={onPickFoto} style={styles.fotoButton}>
-            <Ionicons name="image-outline" size={16} color={Brand.textDark} />
-            <Text style={styles.fotoButtonText}>
-              {tieneFoto ? 'Foto adjuntada ✓' : 'Subir foto (opcional)'}
-            </Text>
-          </TouchableOpacity>
+              <TextInput
+                style={styles.textArea}
+                multiline
+                placeholder="Notas adicionales (opcional)"
+                placeholderTextColor={Brand.textFaint}
+                value={notas}
+                onChangeText={onChangeNotas}
+              />
 
-          <View style={styles.actions}>
-            <TouchableOpacity style={styles.cancelButton} onPress={onCancel}>
-              <Text style={styles.cancelText}>Cancelar</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.confirmButton, isSubmitting && styles.confirmButtonDisabled]}
-              onPress={onConfirm}
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.confirmText}>Confirmar</Text>
-              )}
-            </TouchableOpacity>
-          </View>
+              <TouchableOpacity onPress={onPickFoto} style={styles.fotoButton}>
+                <Ionicons name="image-outline" size={16} color={Brand.textDark} />
+                <Text style={styles.fotoButtonText}>
+                  {tieneFoto ? 'Foto adjuntada ✓' : 'Subir foto (opcional)'}
+                </Text>
+              </TouchableOpacity>
+
+              <View style={styles.actions}>
+                <TouchableOpacity style={styles.cancelButton} onPress={onCancel}>
+                  <Text style={styles.cancelText}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.confirmButton, isSubmitting && styles.confirmButtonDisabled]}
+                  onPress={onConfirm}
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.confirmText}>Confirmar</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
         </View>
       </View>
     </Modal>

@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, Linking, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
+import { API_URL } from '../constants/api';
 import { Toast, useToast } from '../components/Toast';
 import { useStaffReports } from '../hooks/useStaffReports';
 import { StaffHeader } from '../components/staff-dashboard/StaffHeader';
@@ -13,7 +15,7 @@ import { ReportDetailModal } from '../components/staff-dashboard/ReportDetailMod
 import { EncontreModal } from '../components/staff-dashboard/EncontreModal';
 import { RefugioModal } from '../components/staff-dashboard/RefugioModal';
 import { Brand } from '../constants/theme';
-import type { ReporteStaff } from '../types/reportestaff';
+import type { ReporteStaff, SugerenciaAliado } from '../types/reportestaff';
 import { getAnimales, animalMasGrave, totalAnimales } from '../types/reporte';
 
 interface Props {
@@ -27,7 +29,7 @@ const DESKTOP_MAX_WIDTH = 1200;
 const MOBILE_MAX_WIDTH = 800;
 
 export default function StaffDashboardScreen({ onClose }: Props) {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const { toast, translateY, showToast } = useToast();
   const { width } = useWindowDimensions();
   const isDesktop = width >= DESKTOP_BREAKPOINT;
@@ -80,6 +82,8 @@ export default function StaffDashboardScreen({ onClose }: Props) {
   const [showDetalles, setShowDetalles] = useState(false);
   const [showEncontreModal, setShowEncontreModal] = useState(false);
   const [showRefugioModal, setShowRefugioModal] = useState(false);
+  const [sugerenciaAliado, setSugerenciaAliado] = useState<SugerenciaAliado | null>(null);
+  const [isAceptandoSugerencia, setIsAceptandoSugerencia] = useState(false);
 
   // ── UI state: confirmar/rechazar una asignación nueva de voluntario ───
   const [reporteAConfirmar, setReporteAConfirmar] = useState<ReporteStaff | null>(null);
@@ -109,15 +113,49 @@ export default function StaffDashboardScreen({ onClose }: Props) {
 
   const confirmarEncontre = async () => {
     if (!reporteSeleccionado) return;
-    const ok = await registrarEncontre(reporteSeleccionado.id);
-    if (ok) {
+    const { exito, sugerenciaAliado: sugerencia } = await registrarEncontre(reporteSeleccionado.id);
+    if (!exito) return;
+    if (sugerencia) {
+      setSugerenciaAliado(sugerencia);
+      return;
+    }
+    setShowEncontreModal(false);
+    setReporteSeleccionado(null);
+  };
+
+  const aceptarSugerenciaAliado = async () => {
+    if (!reporteSeleccionado || !sugerenciaAliado) return;
+    setIsAceptandoSugerencia(true);
+    try {
+      await axios.post(
+        `${API_URL}/reports/${reporteSeleccionado.id}/hitos/aceptar-sugerencia`,
+        { oferta_id: sugerenciaAliado.oferta_id },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      showToast({ type: 'success', title: '¡Listo!', message: 'Acercamos el caso a la veterinaria sugerida.' });
+    } catch (error: any) {
+      showToast({
+        type: 'error',
+        title: 'Error',
+        message: error?.response?.data?.detail || 'No pudimos acercar el caso a la veterinaria.',
+      });
+    } finally {
+      setIsAceptandoSugerencia(false);
+      setSugerenciaAliado(null);
       setShowEncontreModal(false);
       setReporteSeleccionado(null);
     }
   };
 
+  const descartarSugerenciaAliado = () => {
+    setSugerenciaAliado(null);
+    setShowEncontreModal(false);
+    setReporteSeleccionado(null);
+  };
+
   const cancelarEncontre = () => {
     setShowEncontreModal(false);
+    setSugerenciaAliado(null);
     resetEncontre();
     setReporteSeleccionado(null);
   };
@@ -422,6 +460,10 @@ export default function StaffDashboardScreen({ onClose }: Props) {
         isSubmitting={isSubmitting}
         onCancel={cancelarEncontre}
         onConfirm={confirmarEncontre}
+        sugerenciaAliado={sugerenciaAliado}
+        isAceptandoSugerencia={isAceptandoSugerencia}
+        onAceptarSugerencia={aceptarSugerenciaAliado}
+        onDescartarSugerencia={descartarSugerenciaAliado}
       />
 
       <RefugioModal

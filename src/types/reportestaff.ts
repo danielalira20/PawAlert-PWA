@@ -25,3 +25,18 @@ export interface RespuestaStaffReportes {
   en_accion: ReporteStaff[];
   completados: ReporteStaff[];
 }
+
+// Motor de sugerencias Ruta 1 (BACK01/BACK02) — lo que regresa
+// POST /reports/{id}/hitos en el campo `sugerencia_aliado` cuando se
+// registra el hito 'encontre_animal' y hay un match compatible. Solo
+// informativo hasta que se acepta vía
+// POST /reports/{id}/hitos/aceptar-sugerencia.
+export interface SugerenciaAliado {
+  oferta_id: string;
+  perfil_apoyo_id: string;
+  nombre: string;
+  distancia_km: number;
+  unidad: string;
+  capacidad_disponible: number;
+  nivel_urgencia: string;
+}
