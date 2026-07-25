@@ -129,3 +129,39 @@ async def aceptar_oferta_general_endpoint(
         )
 
     return await aceptar_sugerencia_general(necesidad_id, body.oferta_id, body.cantidad)
+
+@router.get("/necesidades/publicas", status_code=200)
+def get_necesidades_publicas():
+    """
+    Endpoint público para la landing page ('Cómo ayudar').
+    No requiere token de autenticación.
+    """
+    # 1. Hacemos la consulta a Supabase
+    resultado = supabase.table("necesidades").select(
+        "id, categoria, urgencia, cantidad_valor, cantidad_unidad, detalle, created_at, "
+        "asociaciones(nombre, latitud, longitud), "
+        "subcategoria_recurso(descripcion)"
+    ).eq("estado", "activa").order("created_at", desc=True).execute()
+
+    # 2. Formateamos la respuesta
+    necesidades = []
+    for row in resultado.data or []:
+        necesidades.append({
+            "id": row["id"],
+            "categoria": row["categoria"],
+            "urgencia": row["urgencia"],
+            "cantidad_valor": row.get("cantidad_valor"),
+            "cantidad_unidad": row.get("cantidad_unidad"),
+            "detalle": row.get("detalle") or {},
+            "created_at": row["created_at"],
+            "asociaciones": {
+                "nombre": row["asociaciones"]["nombre"] if row.get("asociaciones") else "Asociación Desconocida",
+                "latitud": row["asociaciones"]["latitud"] if row.get("asociaciones") else None,
+                "longitud": row["asociaciones"]["longitud"] if row.get("asociaciones") else None
+            },
+            "subcategoria_recurso": {
+                "nombre": row["subcategoria_recurso"]["descripcion"] if row.get("subcategoria_recurso") else None
+            }
+        })
+
+    return necesidades

@@ -399,19 +399,32 @@ export default function LandingScreen() {
             </Text>
           </View>
 
-          {/* CTA pill */}
-          <AnimatedButton onPress={() => router.push({ pathname: '/map', params: { action: 'create' } })}>
-            <View style={{
-              backgroundColor: C.primary,
-              paddingHorizontal: 18, paddingVertical: 9,
-              borderRadius: 100,
-              flexDirection: 'row', alignItems: 'center', gap: 6,
-              ...(isWeb ? { boxShadow: `0 4px 14px ${C.primary}40` } : {}),
-            } as any}>
-              <Ionicons name="add-circle-outline" size={16} color="#FFF" />
-              <Text style={{ color: '#FFF', fontSize: 13, fontFamily: F.bodySemiBold }}>Crear reporte</Text>
-            </View>
-          </AnimatedButton>
+          {/* ─── BOTONES DEL NAVBAR ─── */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+            
+            {/* Nuevo botón: Cómo ayudar */}
+            <AnimatedButton onPress={() => router.push('/como-ayudar')}>
+              <View style={{ paddingHorizontal: 8, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Ionicons name="heart-outline" size={18} color={C.primary} />
+                <Text style={{ color: C.primary, fontSize: 14, fontFamily: F.bodySemiBold }}>Cómo ayudar</Text>
+              </View>
+            </AnimatedButton>
+
+            {/* CTA pill: Crear reporte */}
+            <AnimatedButton onPress={() => router.push({ pathname: '/map', params: { action: 'create' } })}>
+              <View style={{
+                backgroundColor: C.primary,
+                paddingHorizontal: 18, paddingVertical: 9,
+                borderRadius: 100,
+                flexDirection: 'row', alignItems: 'center', gap: 6,
+                ...(isWeb ? { boxShadow: `0 4px 14px ${C.primary}40` } : {}),
+              } as any}>
+                <Ionicons name="add-circle-outline" size={16} color="#FFF" />
+                <Text style={{ color: '#FFF', fontSize: 13, fontFamily: F.bodySemiBold }}>Crear reporte</Text>
+              </View>
+            </AnimatedButton>
+            
+          </View>
         </View>
 
         {/* ══════════════════════════════════════════════════════════════════
