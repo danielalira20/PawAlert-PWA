@@ -7,6 +7,7 @@ from fastapi import (
     Form,
     HTTPException,
     Header,
+    Depends
 )
 from pydantic import BaseModel
 from typing import Optional, List
@@ -39,6 +40,9 @@ from app.models.association import NuevoRepresentante
 from app.utils.animal_shaping import shape_animal_embed, shape_animal_response, condicion_mas_grave
 import json
 from app.services.email_service import email_bienvenida_staff
+from app.models.red_aliados import NecesidadCreate
+from app.services.red_aliados_service import crear_necesidad_asociacion
+
 
 router = APIRouter()
 
@@ -1050,3 +1054,27 @@ async def patch_reactivar_voluntario(voluntario_id: str, authorization: str = He
         voluntario_id=voluntario_id,
         asociacion_id=usuario["asociacion_id"],
     )
+
+@router.post("/me/necesidades", status_code=201)
+def publicar_necesidad(
+    necesidad: NecesidadCreate,
+    authorization: str = Header(None)
+):
+    # 1. Autenticar al usuario usando tu función interna
+    usuario = _obtener_usuario_autenticado(authorization)
+    
+    # 2. Validar que tenga permisos (asociación o staff)
+    _verificar_rol(usuario, ("asociacion", "staff"))
+
+    # 3. Validar que tenga una asociación asignada
+    asociacion_id = usuario.get("asociacion_id")
+    if not asociacion_id:
+        raise HTTPException(status_code=403, detail="El usuario no pertenece a una asociación.")
+        
+    # 4. Validar que la asociación esté aprobada (reutilizando tu función)
+    _verificar_asociacion_aprobada(asociacion_id)
+
+    # 5. Llamamos al servicio usando la variable global `supabase` de tu archivo
+    resultado = crear_necesidad_asociacion(supabase, asociacion_id, necesidad)
+    
+    return {"message": "Necesidad publicada con éxito", "data": resultado}

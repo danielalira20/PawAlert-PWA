@@ -1,8 +1,8 @@
 from pydantic import BaseModel, Field, model_validator
 from typing import Optional, Any
 from enum import Enum
-
-
+from uuid import UUID
+from typing import Optional, Dict, Any
 # TODO(lotes divisibles): `lotes.contribucion_id` es NOT NULL + UNIQUE en el
 # esquema actual (migrations/0006_red_aliados.sql) — un lote mapea 1:1 a
 # exactamente una contribución. El flujo de lotes divisibles entre varias
@@ -113,6 +113,14 @@ class OfertaProactivaResponse(BaseModel):
     activa: bool
     created_at: str
 
+class NecesidadCreate(BaseModel):
+    reporte_id: Optional[UUID] = None
+    categoria: str
+    urgencia: Optional[str] = None
+    subcategoria_id: Optional[UUID] = None
+    cantidad_valor: Optional[float] = None
+    cantidad_unidad: Optional[str] = None
+    detalle: Optional[Dict[str, Any]] = None  # Recibirá un objeto JSON
 
 class SugerenciaAliadoResponse(BaseModel):
     """Motor de sugerencias Ruta 1 (BACK01) — solo informativo, no reserva
@@ -163,3 +171,54 @@ class AceptarOfertaGeneralResponse(BaseModel):
     contribucion: ContribucionResponse
     contacto_aliado: ContactoResponse
     contacto_asociacion: ContactoResponse
+
+class SugerenciaAliadoResponse(BaseModel):
+    """Motor de sugerencias Ruta 1 (BACK01) — solo informativo, no reserva
+    nada. Se embebe como campo opcional en la respuesta de
+    POST /reports/{id}/hitos, nunca se persiste (ver flujo-red-aliados-pawalert.md,
+    sección 6, Ruta 1)."""
+    oferta_id: str
+    perfil_apoyo_id: str
+    nombre: str
+    distancia_km: float
+    unidad: str
+    capacidad_disponible: float
+    nivel_urgencia: str
+
+
+class OfertaCompatibleResponse(BaseModel):
+    """Motor de sugerencias Ruta 2 (BACK03) — un elemento de la lista que
+    regresa GET /red-aliados/necesidades/{id}/ofertas-compatibles. Mismo
+    shape que SugerenciaAliadoResponse salvo por `nivel_urgencia`, que no
+    aplica a Ruta 2 (no hay filtro de urgencia en necesidades generales)
+    — modelo separado a propósito, no se reusa el de Ruta 1 con un campo
+    opcional sin sentido."""
+    oferta_id: str
+    perfil_apoyo_id: str
+    nombre: str
+    distancia_km: float
+    unidad: str
+    capacidad_disponible: float
+
+
+class AceptarOfertaGeneralRequest(BaseModel):
+    """Body de POST /red-aliados/necesidades/{necesidad_id}/aceptar-oferta.
+    A diferencia de Ruta 1 (siempre reserva 1 unidad fija), aquí la
+    cantidad es variable — la asociación decide cuánto acepta."""
+    oferta_id: str
+    cantidad: float = Field(gt=0)
+
+
+class ContactoResponse(BaseModel):
+    """Datos de contacto para coordinar la entrega fuera de la plataforma
+    — sin chat ni logística interna, solo se comparten estos datos."""
+    nombre: Optional[str] = None
+    telefono: Optional[str] = None
+    email: Optional[str] = None
+
+
+class AceptarOfertaGeneralResponse(BaseModel):
+    contribucion: ContribucionResponse
+    contacto_aliado: ContactoResponse
+    contacto_asociacion: ContactoResponse
+
