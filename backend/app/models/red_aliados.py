@@ -89,9 +89,19 @@ class OfertaProactivaRequest(AportacionBase):
 
 class ContribucionResponse(BaseModel):
     id: str
-    necesidad_id: str
+    # necesidad_id ya no es obligatorio en la tabla (migrations/0012_aceptar_sugerencia_aliado.sql)
+    # — una contribución nacida de BACK02 (aceptar sugerencia Ruta 1) trae
+    # reporte_id en vez de necesidad_id.
+    necesidad_id: Optional[str] = None
+    reporte_id: Optional[str] = None
+    oferta_proactiva_id: Optional[str] = None
     estado: str
     created_at: str
+
+
+class AceptarSugerenciaRequest(BaseModel):
+    """Body de POST /reports/{reporte_id}/hitos/aceptar-sugerencia."""
+    oferta_id: str
 
 
 class OfertaProactivaResponse(BaseModel):

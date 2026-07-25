@@ -2,6 +2,7 @@ from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Header
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 from app.models.report import ReportResponse, AnimalInput, ReportListItem, HitoRequest, RechazarReporteRequest
+from app.models.red_aliados import AceptarSugerenciaRequest, ContribucionResponse
 from app.services.report_service import crear_reporte, obtener_reportes, cambiar_estado_reporte, obtener_reportes_usuario
 from app.utils.validators import validar_telefono, validar_email
 from app.utils.animal_shaping import shape_animal_embed, condicion_mas_grave
@@ -429,7 +430,32 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
 
 ### FIN endpoind: staff registra avances del rescate
 
-### Endpoint: logica post rechazo de reportes 
+### Endpoint: BACK02 — aceptar la sugerencia de Ruta 1 (motor de sugerencias)
+@router.post("/{reporte_id}/hitos/aceptar-sugerencia", status_code=201, response_model=ContribucionResponse)
+async def aceptar_sugerencia_endpoint(
+    reporte_id: str,
+    body: AceptarSugerenciaRequest,
+    authorization: str = Header(None),
+):
+    """El staff/voluntario que trae el caso acepta la sugerencia de aliado
+    veterinario que regresó POST /reports/{id}/hitos — reserva capacidad
+    de inmediato (409 si alguien más ya la tomó) y crea la contribución en
+    estado 'comprometida'."""
+    usuario = _obtener_usuario_autenticado(authorization)
+
+    reporte = supabase.table("reportes").select("id, staff_asignado_id").eq("id", reporte_id).execute()
+    if not reporte.data:
+        raise HTTPException(status_code=404, detail="Reporte no encontrado")
+
+    if reporte.data[0]["staff_asignado_id"] != usuario["id"]:
+        raise HTTPException(status_code=403, detail="No tienes permiso para aceptar sugerencias en este reporte")
+
+    from app.services.red_aliados_service import aceptar_sugerencia_veterinaria
+    return await aceptar_sugerencia_veterinaria(reporte_id, body.oferta_id)
+
+### FIN endpoint: aceptar sugerencia Ruta 1
+
+### Endpoint: logica post rechazo de reportes
 @router.patch("/{reporte_id}/rechazar", status_code=200)
 async def rechazar_reporte(reporte_id: str, body: RechazarReporteRequest, authorization: str = Header(None)):
     """El representante rechaza un reporte. El sistema busca automáticamente

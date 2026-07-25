@@ -195,3 +195,75 @@ def sugerir_aliado_veterinario(reporte_id: str, nivel_urgencia: str) -> dict | N
         "capacidad_disponible": fila["capacidad_disponible"],
         "nivel_urgencia": nivel_urgencia,
     }
+
+
+# ─── BACK02 — aceptar la sugerencia y reservar capacidad ─────────────────
+# reservar_capacidad_oferta() es genérica a propósito (ver
+# migrations/0012_aceptar_sugerencia_aliado.sql): cualquier flujo que
+# necesite descontar capacidad de una oferta_proactiva la puede llamar
+# igual, no solo Ruta 1 — por ejemplo BACK06 de Diego más adelante, cuando
+# exista el flujo de aceptar una contribución reactiva normal que también
+# venga de una oferta_proactiva_id.
+
+def reservar_capacidad_oferta(oferta_id: str, cantidad: float) -> float | None:
+    resultado = supabase.rpc(
+        "reservar_capacidad_oferta",
+        {"p_oferta_id": oferta_id, "p_cantidad": cantidad},
+    ).execute()
+    return resultado.data  # número resultante, o None si no alcanzaba/no existe/no está activa
+
+
+async def aceptar_sugerencia_veterinaria(reporte_id: str, oferta_id: str) -> dict:
+    """Acepta la sugerencia que regresó POST /reports/{id}/hitos y reserva
+    de inmediato 1 unidad de la oferta — Ruta 1 siempre reserva una sola
+    unidad (una cita/consulta), no una cantidad variable, porque la
+    urgencia médica pesa más que esperar aprobación (flujo-red-aliados-pawalert.md,
+    sección 6, Ruta 1, paso 5).
+
+    Crea la contribución en estado 'comprometida', NO 'confirmada' — la
+    asociación confirma DESPUÉS que el servicio se usó (mismo doc, paso 6);
+    ese endpoint de confirmación todavía no existe (trabajo futuro,
+    probablemente de Diego), así que aquí solo se deja el estado correcto
+    para cuando exista."""
+    capacidad_resultante = reservar_capacidad_oferta(oferta_id, 1)
+    if capacidad_resultante is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Ya no hay capacidad disponible en esta oferta — alguien más la tomó primero."
+        )
+
+    oferta = supabase.table("ofertas_proactivas").select(
+        "unidad, subcategoria_id, perfil_apoyo(usuario_id)"
+    ).eq("id", oferta_id).execute()
+
+    if not oferta.data:
+        raise HTTPException(status_code=404, detail="Oferta no encontrada")
+
+    fila_oferta = oferta.data[0]
+    # El usuario_id de la contribución es el del aliado dueño de la oferta
+    # (quien ofrece, según el esquema documentado en tareas-red-aliados-pawalert.md),
+    # no el del staff/voluntario que acepta la sugerencia.
+    usuario_aliado_id = (fila_oferta.get("perfil_apoyo") or {}).get("usuario_id")
+
+    resultado = supabase.table("contribuciones").insert({
+        "reporte_id": reporte_id,
+        "necesidad_id": None,
+        "usuario_id": usuario_aliado_id,
+        "cantidad_valor": 1,
+        "cantidad_unidad": fila_oferta.get("unidad"),
+        "modo": "proactiva",
+        "oferta_proactiva_id": oferta_id,
+        "subcategoria_id": fila_oferta.get("subcategoria_id"),
+        "estado": "comprometida",
+        "detalle": {"origen": "sugerencia_ruta1"},
+    }).execute()
+
+    fila = resultado.data[0]
+    return {
+        "id": fila["id"],
+        "necesidad_id": fila.get("necesidad_id"),
+        "reporte_id": fila.get("reporte_id"),
+        "oferta_proactiva_id": fila.get("oferta_proactiva_id"),
+        "estado": fila["estado"],
+        "created_at": str(fila["created_at"]),
+    }
