@@ -209,6 +209,8 @@ def test_reportes_asociacion_conservan_coordenadas_exactas(make_query):
                 "created_at": "2026-07-19T10:00:00+00:00", "animal": [],
             },
         }]),
+        "contribuciones": make_query(data=[]),
+        "historial_reporte": make_query(data=[]),
     }
     supabase = MagicMock()
     supabase.table.side_effect = lambda nombre: tablas[nombre]
@@ -238,6 +240,11 @@ def test_reportes_voluntario_conservan_coordenadas_exactas(make_query):
             "asociaciones": {"nombre": "Patitas", "contacto_telefono": "5512345678"},
             "animal": [],
         }]),
+        # Anticipa las mismas batch-queries que get_reportes_asignados()
+        # (contribuciones/historial_reporte) cuando obtener_reportes_voluntario()
+        # gane los campos tiene_sugerencia_aceptada/tiene_llegada_veterinaria_registrada.
+        "contribuciones": make_query(data=[]),
+        "historial_reporte": make_query(data=[]),
     }
     supabase = MagicMock()
     supabase.table.side_effect = lambda nombre: tablas[nombre]
@@ -248,3 +255,79 @@ def test_reportes_voluntario_conservan_coordenadas_exactas(make_query):
 
     assert resultado["en_accion"][0]["latitud"] == 19.0432167
     assert resultado["en_accion"][0]["longitud"] == -98.1987654
+
+
+def _reporte_embed(reporte_id: str) -> dict:
+    return {
+        "id": reporte_id, "estado_reporte": "en_atencion", "confirmacion_voluntario": "confirmado",
+        "municipio": "Puebla", "colonia": "Centro", "calle": "1 Oriente",
+        "latitud": 19.0, "longitud": -98.0,
+        "created_at": "2026-07-19T10:00:00+00:00", "animal": [],
+    }
+
+
+def test_reportes_asociacion_incluye_flags_sugerencia_veterinaria(make_query):
+    # rep-1 ya tiene una contribución (sugerencia aceptada) Y un hito
+    # "hito_llego_veterinaria" en el historial (llegada ya registrada).
+    # rep-2 no tiene ninguna de las dos — sirve de control negativo.
+    tablas = {
+        "asociaciones": make_query(data=[{"verificado": True}]),
+        "reporte_asignaciones": make_query(data=[
+            {
+                "id": "asig-1", "assigned_at": "2026-07-19T10:00:00+00:00",
+                "accepted_at": None, "closed_at": None, "notas": None,
+                "asignacion_estados": {"clave": "aceptada", "descripcion": "Aceptada"},
+                "reportes": _reporte_embed("rep-1"),
+            },
+            {
+                "id": "asig-2", "assigned_at": "2026-07-19T10:00:00+00:00",
+                "accepted_at": None, "closed_at": None, "notas": None,
+                "asignacion_estados": {"clave": "aceptada", "descripcion": "Aceptada"},
+                "reportes": _reporte_embed("rep-2"),
+            },
+        ]),
+        "contribuciones": make_query(data=[{"reporte_id": "rep-1"}]),
+        "historial_reporte": make_query(data=[{"reporte_id": "rep-1"}]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+
+    with (
+        patch.object(associations, "_obtener_usuario_autenticado", return_value={
+            "id": "user-aso", "rol": "asociacion", "asociacion_id": "aso-1",
+        }),
+        patch.object(associations, "supabase", supabase),
+    ):
+        import asyncio
+        resultado = asyncio.run(associations.get_reportes_asignados("Bearer token"))
+
+    por_reporte = {r["reporte_id"]: r for r in resultado}
+    assert por_reporte["rep-1"]["tiene_sugerencia_aceptada"] is True
+    assert por_reporte["rep-1"]["tiene_llegada_veterinaria_registrada"] is True
+    assert por_reporte["rep-2"]["tiene_sugerencia_aceptada"] is False
+    assert por_reporte["rep-2"]["tiene_llegada_veterinaria_registrada"] is False
+
+
+def test_reportes_voluntario_incluye_flags_sugerencia_veterinaria(make_query):
+    tablas = {
+        "voluntarios": make_query(data=[{"id": "vol-1", "estado": "activo_nivel_1"}]),
+        "capacidades": make_query(data=[{"latitud": 19.0, "longitud": -98.0}]),
+        "reportes": make_query(data=[
+            {**_reporte_embed("rep-1"), "referencia": None, "asociaciones": {"nombre": "Patitas", "contacto_telefono": "5512345678"}},
+            {**_reporte_embed("rep-2"), "referencia": None, "asociaciones": {"nombre": "Patitas", "contacto_telefono": "5512345678"}},
+        ]),
+        "contribuciones": make_query(data=[{"reporte_id": "rep-1"}]),
+        "historial_reporte": make_query(data=[{"reporte_id": "rep-1"}]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+
+    with patch.object(voluntario_service, "supabase", supabase):
+        import asyncio
+        resultado = asyncio.run(voluntario_service.obtener_reportes_voluntario("user-vol-1"))
+
+    por_reporte = {r["id"]: r for r in resultado["en_accion"]}
+    assert por_reporte["rep-1"]["tiene_sugerencia_aceptada"] is True
+    assert por_reporte["rep-1"]["tiene_llegada_veterinaria_registrada"] is True
+    assert por_reporte["rep-2"]["tiene_sugerencia_aceptada"] is False
+    assert por_reporte["rep-2"]["tiene_llegada_veterinaria_registrada"] is False

@@ -92,6 +92,11 @@ def test_asignar_voluntario_deja_confirmacion_esperando(make_query):
         patch.object(asignaciones, "_obtener_usuario_autenticado", return_value={"id": "aso-user"}),
         patch.object(asignaciones, "_reporte_o_404", return_value=reporte),
         patch.object(asignaciones, "_validar_es_asociacion_duena"),
+        patch.object(
+            asignaciones.matching,
+            "obtener_candidatos",
+            return_value={"candidatos": [{"voluntario_id": "vol-1"}]},
+        ),
         patch.object(asignaciones, "supabase", supabase),
     ):
         resultado = asignaciones.asignar_voluntario(
@@ -125,6 +130,41 @@ def test_asignar_rechaza_voluntario_inactivo(make_query):
             "rep-1", asignaciones.AsignarBody(voluntario_id="vol-1"), "Bearer token"
         )
     assert error.value.status_code == 422
+
+
+def test_asignar_rechaza_candidato_que_dejo_de_estar_disponible(make_query):
+    supabase, _ = tablas_mock(make_query, {
+        "voluntarios": {"data": {
+            "id": "vol-1", "usuario_id": "user-vol-1",
+            "estado": "activo_nivel_1",
+            "usuarios": {"nombre": "Ana", "apellido_paterno": "López"},
+        }},
+    })
+    reporte = {
+        "id": "rep-1",
+        "asociacion_asignada_id": "aso-1",
+        "staff_asignado_id": None,
+    }
+
+    with (
+        patch.object(asignaciones, "_obtener_usuario_autenticado", return_value={"id": "aso-user"}),
+        patch.object(asignaciones, "_reporte_o_404", return_value=reporte),
+        patch.object(asignaciones, "_validar_es_asociacion_duena"),
+        patch.object(
+            asignaciones.matching,
+            "obtener_candidatos",
+            return_value={"candidatos": []},
+        ),
+        patch.object(asignaciones, "supabase", supabase),
+        pytest.raises(HTTPException) as error,
+    ):
+        asignaciones.asignar_voluntario(
+            "rep-1",
+            asignaciones.AsignarBody(voluntario_id="vol-1"),
+            "Bearer token",
+        )
+
+    assert error.value.status_code == 409
 
 
 def test_confirmar_asignacion_mueve_reporte_a_en_camino(make_query):

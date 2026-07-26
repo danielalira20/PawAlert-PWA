@@ -21,6 +21,7 @@ import { ReporterImpactStats } from './ReporterImpactStats';
 import { AssociationImpactStats } from './AssociationImpactStats';
 import { AdminSupervisionCard } from './AdminSupervisionCard';
 import { StaffImpactStats } from './StaffImpactStats';
+import { OperationalAvailabilityCard } from './OperationalAvailabilityCard';
 
 const DESKTOP_BREAKPOINT = 900;
 
@@ -36,6 +37,7 @@ interface Props {
   onOpenStaffAsignacion: () => void;
   onOpenPostulacion: () => void; // <-- NUEVA PROP
   onOpenCapacidades: () => void; // <-- NUEVA PROP
+  onOpenAliadoForm: () => void;
   onLogout: () => void;
   capacidadesRefreshKey?: number;
 }
@@ -49,6 +51,7 @@ export function LoggedInProfile({
   onOpenStaffAsignacion,
   onOpenPostulacion, // <-- NUEVA PROP
   onOpenCapacidades, // <-- NUEVA PROP
+  onOpenAliadoForm,
   onLogout,
   capacidadesRefreshKey,
 }: Props) {
@@ -59,6 +62,9 @@ export function LoggedInProfile({
   const esAdmin = !!user?.es_admin;
   const esAsociacion = !!user?.asociacion_id && user?.rol === 'asociacion';
   const esStaff = !!user?.asociacion_id && user?.rol === 'staff';
+  const esAliadoLocal = user?.rol === 'aliado_local';
+  const esPatrocinadorInstitucional = user?.rol === 'patrocinador_institucional';
+  
   // Validamos si es voluntario interno o externo. Ambos pueden ver sus
   // casos asignados en el mismo dashboard (StaffDashboardScreen, migrado a
   // GET /voluntarios/me/reportes) — la pantalla internamente restringe los
@@ -150,6 +156,10 @@ useFocusEffect(
   <RoleBadge rol="voluntario_interno" variant="onWhite" />
 ) : esVoluntarioExterno ? (
   <RoleBadge rol="voluntario_externo" variant="onWhite" />
+) : esAliadoLocal ? (
+  <RoleBadge rol="aliado_local" variant="onWhite" />
+) : esPatrocinadorInstitucional ? (
+  <RoleBadge rol="patrocinador_institucional" variant="onWhite" />
 ) : (
   <RoleBadge rol="reportante" variant="onWhite" />
 );
@@ -161,8 +171,24 @@ useFocusEffect(
         icon="clipboard-outline" 
         label="Mis Reportes" 
         onPress={onOpenMisReportes} 
-        isLast={!esAdmin && !esAsociacion && !esStaff && !puedeVerPostulacion}
+        isLast={!esAdmin && !esAsociacion && !esStaff && !puedeVerPostulacion && (user?.tiene_perfil_apoyo === true)}
       />
+      {user && !user.tiene_perfil_apoyo && (
+        <AccessRow
+          icon="star-outline"
+          label="Quiero ser parte de la Red de Aliados"
+          onPress={onOpenAliadoForm}
+          isLast={!esAdmin && !esAsociacion && !esStaff && !puedeVerPostulacion}
+        />
+      )}
+      {user?.tiene_perfil_apoyo && (
+        <View style={{ backgroundColor: 'rgba(236,128,43,0.1)', paddingVertical: 14, paddingHorizontal: 16, borderRadius: 12, flexDirection: 'row', alignItems: 'center', marginBottom: 8, marginTop: 4 }}>
+          <Ionicons name="star" size={18} color="#EC802B" />
+          <Text style={{ marginLeft: 8, fontSize: 13, color: '#D4691A', fontWeight: '700' }}>
+            ¡Eres parte de la Red de Aliados!
+          </Text>
+        </View>
+      )}
       {esAdmin && (
         <AccessRow icon="shield-checkmark-outline" label="Panel de administrador" onPress={onOpenAdminPanel} isLast />
       )}
@@ -287,6 +313,9 @@ useFocusEffect(
               </View>
 
               <View style={styles.desktopRight}>
+                {esVoluntarioActivo && token && (
+                  <OperationalAvailabilityCard token={token} />
+                )}
                 {impactStatsElement}
               </View>
             </View>
@@ -329,6 +358,10 @@ useFocusEffect(
         <View style={styles.section}>
           <AccountDataCard telefono={user.telefono} email={user.email} />
         </View>
+
+        {esVoluntarioActivo && token && (
+          <OperationalAvailabilityCard token={token} />
+        )}
 
         <View style={styles.section}>
           <View style={styles.accessCard}>

@@ -112,6 +112,18 @@ def asignar_voluntario(
     if not vol or vol["estado"] not in ESTADOS_ACTIVOS_VOLUNTARIO:
         raise HTTPException(status_code=422, detail="El voluntario no existe o no está activo")
 
+    candidatos_vigentes = matching.obtener_candidatos(reporte_id)["candidatos"]
+    if body.voluntario_id not in {
+        candidato["voluntario_id"] for candidato in candidatos_vigentes
+    }:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "La disponibilidad del voluntario cambió. "
+                "Actualiza la lista y elige otro candidato"
+            ),
+        )
+
     habia_asignado = reporte.get("staff_asignado_id") is not None
     supabase.table("reportes").update({
         "staff_asignado_id": vol["usuario_id"],

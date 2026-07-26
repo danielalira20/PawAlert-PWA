@@ -105,6 +105,84 @@ async def crear_postulacion(usuario_id: str, tipo: str, asociacion_id: str) -> d
     }
 
 
+async def asegurar_perfil_voluntario_interno(usuario_id: str) -> dict:
+    """Prepara el perfil de voluntario interno SIN crear la postulación —
+    esa se crea al final del flujo, en finalizar_postulacion_interno(), para
+    no dejar una postulación huérfana si el usuario abandona el formulario de
+    capacidades a medias.
+
+    Necesaria de todas formas porque PUT /voluntarios/me/capacidades exige
+    que ya exista la fila `voluntarios` (_obtener_voluntario_id_propio) con
+    estado 'postulacion_pendiente' (guardar_capacidades la valida)."""
+    existente = supabase.table("voluntarios").select(
+        "id, estado"
+    ).eq("usuario_id", usuario_id).execute()
+
+    if existente.data:
+        voluntario_id = existente.data[0]["id"]
+
+        pendiente = supabase.table("postulaciones").select("id").eq(
+            "voluntario_id", voluntario_id
+        ).eq("estado", "pendiente").execute()
+
+        if pendiente.data:
+            raise HTTPException(
+                status_code=409,
+                detail="Ya tienes una postulación pendiente en revisión"
+            )
+
+        supabase.table("voluntarios").update({
+            "estado": "postulacion_pendiente",
+        }).eq("id", voluntario_id).execute()
+    else:
+        nuevo = supabase.table("voluntarios").insert({
+            "usuario_id": usuario_id,
+            "estado": "postulacion_pendiente",
+        }).execute()
+        voluntario_id = nuevo.data[0]["id"]
+
+    return {"voluntario_id": voluntario_id}
+
+
+async def finalizar_postulacion_interno(usuario_id: str, asociacion_id: str) -> dict:
+    """Crea la postulación de voluntario interno — el paso que de verdad
+    compromete, llamado al terminar (y guardar con éxito) el formulario de
+    capacidades, nunca antes. Mismo criterio que finalizar_postulacion_externa()
+    en home_verification_service.py: valida que las dependencias existan y es
+    idempotente ante reintentos."""
+    voluntario = supabase.table("voluntarios").select("id").eq(
+        "usuario_id", usuario_id
+    ).execute()
+    if not voluntario.data:
+        raise HTTPException(status_code=422, detail="Primero debes iniciar tu postulación")
+    voluntario_id = voluntario.data[0]["id"]
+
+    capacidades = supabase.table("capacidades").select("voluntario_id").eq(
+        "voluntario_id", voluntario_id
+    ).execute()
+    if not capacidades.data:
+        raise HTTPException(
+            status_code=422,
+            detail="Primero debes completar tu formulario de capacidades"
+        )
+
+    # Idempotencia: si un reintento llega después de que el INSERT anterior sí
+    # se completó (pero la respuesta se perdió), regresamos la postulación ya
+    # creada en vez de dejar que crear_postulacion() lance 409.
+    pendiente = supabase.table("postulaciones").select(
+        "id, numero_intento"
+    ).eq("voluntario_id", voluntario_id).eq("estado", "pendiente").execute()
+    if pendiente.data:
+        return {
+            "postulacion_id": pendiente.data[0]["id"],
+            "voluntario_id": voluntario_id,
+            "numero_intento": pendiente.data[0]["numero_intento"],
+            "estado": "pendiente",
+        }
+
+    return await crear_postulacion(usuario_id, "interno", asociacion_id)
+
+
 async def obtener_mi_voluntario(usuario_id: str) -> dict:
     resultado = supabase.table("voluntarios").select(
         "id, estado, asociacion_id, created_at, updated_at"
@@ -130,6 +208,21 @@ async def obtener_mi_voluntario(usuario_id: str) -> dict:
     ).eq("voluntario_id", voluntario["id"]).order(
         "numero_intento", desc=True
     ).limit(1).execute()
+
+    # voluntarios.estado se marca 'postulacion_pendiente' desde el paso 1 de
+    # postular (asegurar_perfil_voluntario_interno), antes de que exista una
+    # fila real en `postulaciones` — esa se crea hasta terminar el formulario
+    # de capacidades (finalizar_postulacion_interno). Si el usuario abandona
+    # el formulario (la primera vez, o al reintentar tras un rechazo), ese
+    # estado queda pegado sin ninguna postulación real detrás. En ese caso
+    # tratamos al usuario como si no tuviera perfil todavía — sin tocar la
+    # fila en `voluntarios`, que guardar_capacidades() sigue necesitando ver
+    # en 'postulacion_pendiente' si decide retomar el formulario.
+    tiene_postulacion_pendiente_real = bool(
+        ultima_postulacion.data and ultima_postulacion.data[0]["estado"] == "pendiente"
+    )
+    if voluntario["estado"] == "postulacion_pendiente" and not tiene_postulacion_pendiente_real:
+        return {"tiene_perfil_voluntario": False}
 
     postulacion_data = None
     intentos_previos = []
@@ -187,13 +280,82 @@ async def obtener_mi_voluntario(usuario_id: str) -> dict:
     }
 
 
+def _valor_con_fallback(valor_v2, valor_legacy):
+    """v2 gana si el formulario actual lo llenó — incluso si el valor es
+    'False' o una lista vacía, porque eso también es información real de v2.
+    Solo cae a legacy cuando la columna v2 nunca se tocó (sigue en NULL)."""
+    return valor_v2 if valor_v2 is not None else valor_legacy
+
+
+def generar_resumen_expediente_interno(capacidades: dict) -> dict:
+    """Fotografía estructurada de las capacidades v2 de un voluntario
+    interno — mismos 5 bloques reutilizables que arma
+    generar_resumen_expediente() para externo (home_verification_service.py),
+    pero escrita de cero aquí: interno no tiene perfil_casa_temporal, así que
+    no aplican los bloques de hogar/evidencias/ubicación de esa función, y no
+    se importa ni se llama nada de ese módulo.
+
+    Regresa los valores del enum tal cual se guardaron, sin traducir a
+    etiquetas legibles (decisión de alcance de esta fase)."""
+    disponibilidad = capacidades.get("disponibilidad") or {}
+    return {
+        "disponibilidad": {
+            "dias": disponibilidad.get("dias", []),
+            "franjas": disponibilidad.get("franjas", []),
+            "tiempo_reaccion": capacidades.get("tiempo_reaccion"),
+            "urgencias": capacidades.get("disponibilidad_urgencias"),
+            "casos_simultaneos": capacidades.get("max_casos_simultaneos"),
+        },
+        "movilidad": {
+            "radio_max_km": capacidades.get("radio_max_km"),
+            "medios_transporte": capacidades.get("medios_transporte") or [],
+            "vehiculo_apto_traslado": capacidades.get("vehiculo_apto_traslado"),
+            "tamanios_traslado": capacidades.get("tamanios_traslado") or [],
+        },
+        "manejo_animal": {
+            "especies": capacidades.get("especies_manejo") or [],
+            "tamanios": capacidades.get("tamanios_manejo") or [],
+            "primeros_auxilios": capacidades.get("primeros_auxilios_nivel"),
+            "experiencias_campo": capacidades.get("experiencias_campo") or [],
+            "tratamientos": capacidades.get("vias_tratamiento") or [],
+            "trayectoria": capacidades.get("trayectoria_tipos") or [],
+            "experiencia_anios": capacidades.get("experiencia_anios"),
+        },
+        "equipo_y_bienestar": {
+            "equipamiento": capacidades.get("equipamiento") or [],
+            "restricciones_fisicas": capacidades.get("restricciones_fisicas") or [],
+        },
+        "contacto_y_compromisos": {
+            "canal_preferido": capacidades.get("canal_contacto"),
+            "proyeccion": capacidades.get("proyeccion_colaboracion"),
+            "motivaciones": capacidades.get("motivaciones") or [],
+            "comentarios": capacidades.get("comentarios_adicionales"),
+        },
+    }
+
+
 async def obtener_postulaciones_asociacion(asociacion_id: str, estado: str | None = None) -> list:
+    # Todas las postulaciones de esta llamada son de la MISMA asociación — una
+    # sola consulta aquí (no un join por fila) alcanza para calcular
+    # distancia_km de cada una más abajo.
+    asociacion_resultado = supabase.table("asociaciones").select(
+        "latitud, longitud"
+    ).eq("id", asociacion_id).execute()
+    asociacion_lat = asociacion_resultado.data[0]["latitud"] if asociacion_resultado.data else None
+    asociacion_lon = asociacion_resultado.data[0]["longitud"] if asociacion_resultado.data else None
+
     query = supabase.table("postulaciones").select(
         "id, voluntario_id, tipo, estado, motivo_rechazo, numero_intento, "
         "created_at, resuelta_at, "
         "voluntarios(usuario_id, usuarios(nombre, apellido_paterno, telefono, email), "
         "capacidades(disponibilidad, ofrece_casa_hogar, capacidad_animales, especies, "
-        "tamanios, tiene_vehiculo, motivo_voluntario, experiencia_previa, latitud, longitud))"
+        "tamanios, tiene_vehiculo, motivo_voluntario, experiencia_previa, latitud, longitud, "
+        "medios_transporte, vehiculo_apto_traslado, radio_max_km, tamanios_traslado, "
+        "especies_manejo, tamanios_manejo, primeros_auxilios_nivel, experiencias_campo, "
+        "vias_tratamiento, trayectoria_tipos, experiencia_anios, equipamiento, "
+        "restricciones_fisicas, canal_contacto, proyeccion_colaboracion, motivaciones, "
+        "comentarios_adicionales, tiempo_reaccion, disponibilidad_urgencias, "
+        "max_casos_simultaneos))"
     ).eq("asociacion_id", asociacion_id).order("created_at", desc=True)
 
     if estado:
@@ -224,6 +386,54 @@ async def obtener_postulaciones_asociacion(asociacion_id: str, estado: str | Non
             ).order("numero_intento").execute()
             historial_previo = previos.data or []
 
+        capacidades_dict = None
+        resumen_interno = None
+        distancia_km = None
+        if capacidades:
+            capacidades_dict = {
+                "disponibilidad": capacidades.get("disponibilidad"),
+                "ofrece_casa_hogar": capacidades.get("ofrece_casa_hogar"),
+                "capacidad_animales": capacidades.get("capacidad_animales"),
+                "especies": capacidades.get("especies"),
+                "tamanios": capacidades.get("tamanios"),
+                "tiene_vehiculo": capacidades.get("tiene_vehiculo"),
+                "motivo_voluntario": capacidades.get("motivo_voluntario"),
+                "experiencia_previa": capacidades.get("experiencia_previa"),
+                "latitud": capacidades.get("latitud"),
+                "longitud": capacidades.get("longitud"),
+            }
+
+            # El expediente enriquecido (v2 + resumen + distancia) es zona de
+            # interno — externo ya tiene su propio expediente más completo
+            # vía finalizar_postulacion_externa()/generar_resumen_expediente().
+            if p.get("tipo") != "externo":
+                capacidades_dict.update({
+                    "medios_transporte": capacidades.get("medios_transporte"),
+                    "vehiculo_apto_traslado": capacidades.get("vehiculo_apto_traslado"),
+                    "radio_max_km": capacidades.get("radio_max_km"),
+                    "experiencias_campo": capacidades.get("experiencias_campo"),
+                    "experiencia_anios": capacidades.get("experiencia_anios"),
+                    "trayectoria_tipos": capacidades.get("trayectoria_tipos"),
+                    "tiempo_reaccion": capacidades.get("tiempo_reaccion"),
+                    "disponibilidad_urgencias": capacidades.get("disponibilidad_urgencias"),
+                    # Resueltas: v2 gana si fue tocado (incluso False/[]); si
+                    # no, cae a la columna legacy correspondiente.
+                    "vehiculo_final": _valor_con_fallback(
+                        capacidades.get("vehiculo_apto_traslado"), capacidades.get("tiene_vehiculo")
+                    ),
+                    "especies_final": _valor_con_fallback(
+                        capacidades.get("especies_manejo"), capacidades.get("especies")
+                    ),
+                    "tamanios_final": _valor_con_fallback(
+                        capacidades.get("tamanios_manejo"), capacidades.get("tamanios")
+                    ),
+                })
+                resumen_interno = generar_resumen_expediente_interno(capacidades)
+                distancia_km = _distancia_km(
+                    capacidades.get("latitud"), capacidades.get("longitud"),
+                    asociacion_lat, asociacion_lon,
+                )
+
         postulaciones.append({
             "postulacion_id": p["id"],
             "voluntario_id": p["voluntario_id"],
@@ -239,18 +449,9 @@ async def obtener_postulaciones_asociacion(asociacion_id: str, estado: str | Non
                 "telefono": usuario.get("telefono"),
                 "email": usuario.get("email"),
             },
-            "capacidades": capacidades and {
-                "disponibilidad": capacidades.get("disponibilidad"),
-                "ofrece_casa_hogar": capacidades.get("ofrece_casa_hogar"),
-                "capacidad_animales": capacidades.get("capacidad_animales"),
-                "especies": capacidades.get("especies"),
-                "tamanios": capacidades.get("tamanios"),
-                "tiene_vehiculo": capacidades.get("tiene_vehiculo"),
-                "motivo_voluntario": capacidades.get("motivo_voluntario"),
-                "experiencia_previa": capacidades.get("experiencia_previa"),
-                "latitud": capacidades.get("latitud"),
-                "longitud": capacidades.get("longitud"),
-            },
+            "capacidades": capacidades_dict,
+            "resumen_interno": resumen_interno,
+            "distancia_km": distancia_km,
             "historial_intentos_previos": historial_previo,
         })
 
@@ -474,7 +675,8 @@ async def listar_voluntarios_asociacion(asociacion_id: str) -> list:
 
 async def obtener_capacidades(voluntario_id: str) -> dict:
     perfil = supabase.table("voluntarios").select(
-        "disponible_operativamente, contacto_emergencia_nombre, "
+        "disponible_operativamente, pausa_operativa_hasta, "
+        "contacto_emergencia_nombre, "
         "contacto_emergencia_telefono"
     ).eq("id", voluntario_id).execute()
     datos_perfil = perfil.data[0] if perfil.data else {}
@@ -563,7 +765,98 @@ async def guardar_capacidades(voluntario_id: str, datos: dict) -> dict:
 
     return {"mensaje": "Capacidades guardadas correctamente"}
 
- 
+
+def _fecha_utc(valor) -> datetime | None:
+    if valor is None:
+        return None
+    if isinstance(valor, datetime):
+        fecha = valor
+    else:
+        fecha = datetime.fromisoformat(str(valor).replace("Z", "+00:00"))
+    if fecha.tzinfo is None:
+        fecha = fecha.replace(tzinfo=timezone.utc)
+    return fecha.astimezone(timezone.utc)
+
+
+async def obtener_disponibilidad_operativa(voluntario_id: str) -> dict:
+    resultado = supabase.table("voluntarios").select(
+        "id, estado, disponible_operativamente, pausa_operativa_hasta"
+    ).eq("id", voluntario_id).execute()
+
+    if not resultado.data:
+        raise HTTPException(status_code=404, detail="Voluntario no encontrado")
+
+    voluntario = resultado.data[0]
+    disponible = bool(voluntario.get("disponible_operativamente"))
+    pausa_hasta = _fecha_utc(voluntario.get("pausa_operativa_hasta"))
+
+    # Una pausa temporal vencida se normaliza al consultar el perfil. La
+    # función SQL de matching también la considera disponible para no depender
+    # de que la persona abra la aplicación.
+    if not disponible and pausa_hasta and pausa_hasta <= datetime.now(timezone.utc):
+        disponible = True
+        pausa_hasta = None
+        supabase.table("voluntarios").update({
+            "disponible_operativamente": True,
+            "pausa_operativa_hasta": None,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("id", voluntario_id).execute()
+
+    return {
+        "disponible_operativamente": disponible,
+        "pausa_operativa_hasta": pausa_hasta.isoformat() if pausa_hasta else None,
+        "pausa_indefinida": not disponible and pausa_hasta is None,
+    }
+
+
+async def actualizar_disponibilidad_operativa(
+    voluntario_id: str,
+    disponible: bool,
+    pausa_hasta: datetime | None,
+) -> dict:
+    resultado = supabase.table("voluntarios").select(
+        "id, estado"
+    ).eq("id", voluntario_id).execute()
+
+    if not resultado.data:
+        raise HTTPException(status_code=404, detail="Voluntario no encontrado")
+
+    if resultado.data[0]["estado"] not in ("activo_nivel_1", "activo_nivel_2"):
+        raise HTTPException(
+            status_code=403,
+            detail="La disponibilidad operativa solo aplica a voluntarios activos",
+        )
+
+    pausa_utc = _fecha_utc(pausa_hasta)
+    if disponible:
+        pausa_utc = None
+    elif pausa_utc and pausa_utc <= datetime.now(timezone.utc):
+        raise HTTPException(
+            status_code=422,
+            detail="La fecha de reactivación debe estar en el futuro",
+        )
+
+    payload = {
+        "disponible_operativamente": disponible,
+        "pausa_operativa_hasta": pausa_utc.isoformat() if pausa_utc else None,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    supabase.table("voluntarios").update(payload).eq(
+        "id", voluntario_id
+    ).execute()
+
+    return {
+        "mensaje": (
+            "Ya puedes recibir nuevas asignaciones"
+            if disponible
+            else "Tu disponibilidad quedó pausada"
+        ),
+        "disponible_operativamente": disponible,
+        "pausa_operativa_hasta": payload["pausa_operativa_hasta"],
+        "pausa_indefinida": not disponible and pausa_utc is None,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Migración staff -> voluntario_interno: reemplaza GET /staff/me/reportes.
 # Misma lógica de 4 buckets que ya existía en staff.py, pero ya no exige
@@ -601,6 +894,29 @@ async def obtener_reportes_voluntario(usuario_id: str) -> dict:
         "animal_fotos(foto_url, orden))"
     ).eq("staff_asignado_id", usuario_id).order("created_at", desc=True).execute()
 
+    # Motor de sugerencias Ruta 1 (BACK01/BACK02): mismo patrón batch que
+    # get_reportes_asignados() en associations.py — si ya existe una
+    # contribución con reporte_id, la sugerencia de aliado veterinario fue
+    # aceptada; si además hay un evento "hito_llego_veterinaria" en el
+    # historial, la llegada ya se registró.
+    reporte_ids_todos = [r["id"] for r in (resultado.data or [])]
+    reportes_con_sugerencia_aceptada = set()
+    reportes_con_llegada_registrada = set()
+    if reporte_ids_todos:
+        contribs = supabase.table("contribuciones").select("reporte_id").in_(
+            "reporte_id", reporte_ids_todos
+        ).execute()
+        reportes_con_sugerencia_aceptada = {
+            c["reporte_id"] for c in (contribs.data or []) if c.get("reporte_id")
+        }
+
+        llegadas = supabase.table("historial_reporte").select("reporte_id").in_(
+            "reporte_id", reporte_ids_todos
+        ).eq("tipo_evento", "hito_llego_veterinaria").execute()
+        reportes_con_llegada_registrada = {
+            e["reporte_id"] for e in (llegadas.data or []) if e.get("reporte_id")
+        }
+
     esperando_confirmacion = []
     pendientes = []
     en_accion = []
@@ -631,6 +947,8 @@ async def obtener_reportes_voluntario(usuario_id: str) -> dict:
                 "telefono": r.get("asociaciones", {}).get("contacto_telefono"),
             },
             "animales": [shape_animal_response(a) for a in animales_crudos],
+            "tiene_sugerencia_aceptada": r["id"] in reportes_con_sugerencia_aceptada,
+            "tiene_llegada_veterinaria_registrada": r["id"] in reportes_con_llegada_registrada,
         }
 
         estado = r.get("estado_reporte")

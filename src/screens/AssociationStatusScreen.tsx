@@ -94,8 +94,9 @@ type EstadoVoluntarios = 'cargando' | 'candidatos' | 'esperando_confirmacion' | 
 interface ScoreCandidato {
   total: number;
   proximidad: number;
-  compatibilidad: number;
   disponibilidad: number;
+  experiencia: number;
+  movilidad: number;
   carga: number;
 }
 
@@ -105,6 +106,13 @@ interface Candidato {
   tipo: string;
   etiqueta?: string;
   distancia_km: number;
+  radio_max_km: number;
+  carga_actual: number;
+  max_casos_simultaneos: number;
+  medios_transporte: string[];
+  coincidencias: string[];
+  alertas: string[];
+  capacidad_resumen: string;
   foto_url?: string | null;
   score: ScoreCandidato;
 }
@@ -1072,6 +1080,56 @@ const confirmarReactivar = async () => {
                   <Text style={{ fontSize: 24, fontWeight: '800', color: COLORS.textDark }}>{reportes.filter(r => r.estado_reporte === 'cerrado').length}</Text>
                   <Text style={{ fontSize: 12, color: COLORS.textLight, fontWeight: '500' }}>Cerrados</Text>
                 </View>
+              </View>
+
+              {/* ─── BOTONES DE ACCIÓN (NECESIDADES Y OFERTAS) ─── */}
+              <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginBottom: 24 }}>
+                
+                {/* NUEVO BOTÓN: VER OFERTAS */}
+                <TouchableOpacity
+                  onPress={() => router.push('/ofertas-asociacion' as any)}
+                  style={{
+                    backgroundColor: COLORS.secondary,
+                    paddingHorizontal: 20,
+                    paddingVertical: 12,
+                    borderRadius: 20,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 4 },
+                    shadowOpacity: 0.15,
+                    shadowRadius: 10,
+                    elevation: 4,
+                  }}
+                >
+                  <Ionicons name="gift-outline" size={20} color={COLORS.textDark} style={{ marginRight: 8 }} />
+                  <Text style={{ color: COLORS.textDark, fontWeight: '800', fontSize: 14 }}>
+                    Ver Ofertas
+                  </Text>
+                </TouchableOpacity>
+
+                {/* BOTÓN : CREAR NECESIDAD */}
+                <TouchableOpacity
+                  onPress={() => router.push('/crear-necesidad')}
+                  style={{
+                    backgroundColor: COLORS.accent,
+                    paddingHorizontal: 20,
+                    paddingVertical: 12,
+                    borderRadius: 20,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 4 },
+                    shadowOpacity: 0.15,
+                    shadowRadius: 10,
+                    elevation: 4,
+                  }}
+                >
+                  <Ionicons name="add-circle" size={20} color={COLORS.white} style={{ marginRight: 8 }} />
+                  <Text style={{ color: COLORS.white, fontWeight: '800', fontSize: 14 }}>
+                    Publicar Necesidad
+                  </Text>
+                </TouchableOpacity>
               </View>
 
               {/* Tabs de navegación */}
@@ -2081,11 +2139,12 @@ const confirmarReactivar = async () => {
 
                     <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
                       {candidatosList.map((candidato) => {
-                        const maxScores = { proximidad: 40, compatibilidad: 25, disponibilidad: 20, carga: 15 };
+                        const maxScores = { proximidad: 30, disponibilidad: 25, experiencia: 20, movilidad: 15, carga: 10 };
                         const barras = [
                           { label: 'Proximidad', valor: candidato.score.proximidad, max: maxScores.proximidad },
-                          { label: 'Compatibilidad', valor: candidato.score.compatibilidad, max: maxScores.compatibilidad },
                           { label: 'Disponibilidad', valor: candidato.score.disponibilidad, max: maxScores.disponibilidad },
+                          { label: 'Experiencia declarada', valor: candidato.score.experiencia, max: maxScores.experiencia },
+                          { label: 'Movilidad y equipo', valor: candidato.score.movilidad, max: maxScores.movilidad },
                           { label: 'Carga', valor: candidato.score.carga, max: maxScores.carga },
                         ];
                         const iniciales = candidato.nombre.split(' ').slice(0, 2).map((p: string) => p[0]).join('').toUpperCase();
@@ -2117,7 +2176,10 @@ const confirmarReactivar = async () => {
                               <View style={{ flex: 1 }}>
                                 <Text style={{ fontSize: 15, fontWeight: '700', color: COLORS.textDark }}>{candidato.nombre}</Text>
                                 <Text style={{ fontSize: 12, color: COLORS.textLight, marginTop: 2 }}>
-                                  📍 a {candidato.distancia_km} km
+                                  📍 a {candidato.distancia_km} km · radio de {candidato.radio_max_km} km
+                                </Text>
+                                <Text style={{ fontSize: 11, color: COLORS.textLight, marginTop: 3 }}>
+                                  {candidato.capacidad_resumen}
                                 </Text>
                                 {candidato.tipo === 'voluntario_externo' && (
                                   <View style={{
@@ -2139,6 +2201,24 @@ const confirmarReactivar = async () => {
                                 <Text style={{ fontSize: 10, color: COLORS.textLight, fontWeight: '600' }}>SCORE</Text>
                               </View>
                             </View>
+
+                            {!!candidato.coincidencias?.length && (
+                              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                                {candidato.coincidencias.map((texto) => (
+                                  <View key={texto} style={{ backgroundColor: 'rgba(102,188,180,0.16)', borderRadius: 10, paddingHorizontal: 9, paddingVertical: 5 }}>
+                                    <Text style={{ color: COLORS.accent, fontSize: 10, fontWeight: '700' }}>{texto}</Text>
+                                  </View>
+                                ))}
+                              </View>
+                            )}
+
+                            {!!candidato.alertas?.length && (
+                              <View style={{ backgroundColor: '#FFF6E8', borderRadius: 12, padding: 9, marginBottom: 10 }}>
+                                {candidato.alertas.map((texto) => (
+                                  <Text key={texto} style={{ color: COLORS.textDark, fontSize: 10, lineHeight: 15 }}>• {texto}</Text>
+                                ))}
+                              </View>
+                            )}
 
                             {/* Mini-barras de score */}
                             {barras.map((barra) => {

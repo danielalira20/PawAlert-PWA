@@ -48,6 +48,10 @@ export default function RootLayout() {
         <Stack.Screen name="forgot-password" options={{ presentation: 'modal' }} />
         <Stack.Screen name="completar-cuenta" options={{ presentation: 'modal' }} />
         <Stack.Screen name="capacidades" options={{ presentation: 'transparentModal', headerShown: false }} />
+        <Stack.Screen name="crear-necesidad" options={{ presentation: 'transparentModal', animation: 'fade' }} />
+        <Stack.Screen name="como-ayudar" options={{ presentation: 'transparentModal', animation: 'fade', headerShown: false }} />
+        <Stack.Screen name="notificaciones-aliado" options={{ presentation: 'transparentModal', animation: 'fade', headerShown: false }} />
+        <Stack.Screen name="ofertas-asociacion" options={{ presentation: 'transparentModal', animation: 'fade', headerShown: false }} />
       </Stack>
     </AuthProvider>
     </GestureHandlerRootView>

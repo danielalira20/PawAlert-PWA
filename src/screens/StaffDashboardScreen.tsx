@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, Linking, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
+import { API_URL } from '../constants/api';
 import { Toast, useToast } from '../components/Toast';
 import { useStaffReports } from '../hooks/useStaffReports';
 import { StaffHeader } from '../components/staff-dashboard/StaffHeader';
@@ -12,8 +14,9 @@ import { ReportCard } from '../components/staff-dashboard/ReportCard';
 import { ReportDetailModal } from '../components/staff-dashboard/ReportDetailModal';
 import { EncontreModal } from '../components/staff-dashboard/EncontreModal';
 import { RefugioModal } from '../components/staff-dashboard/RefugioModal';
+import { VeterinariaModal } from '../components/staff-dashboard/VeterinariaModal';
 import { Brand } from '../constants/theme';
-import type { ReporteStaff } from '../types/reportestaff';
+import type { AceptarSugerenciaResponse, ReporteStaff, SugerenciaAliado } from '../types/reportestaff';
 import { getAnimales, animalMasGrave, totalAnimales } from '../types/reporte';
 
 interface Props {
@@ -27,7 +30,7 @@ const DESKTOP_MAX_WIDTH = 1200;
 const MOBILE_MAX_WIDTH = 800;
 
 export default function StaffDashboardScreen({ onClose }: Props) {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const { toast, translateY, showToast } = useToast();
   const { width } = useWindowDimensions();
   const isDesktop = width >= DESKTOP_BREAKPOINT;
@@ -72,6 +75,12 @@ export default function StaffDashboardScreen({ onClose }: Props) {
     registrarRefugio,
     resetRefugio,
     OPCIONES_REFUGIO,
+    notasVeterinaria,
+    setNotasVeterinaria,
+    fotoVeterinaria,
+    setFotoVeterinaria,
+    registrarLlegadaVeterinaria,
+    resetVeterinaria,
     isSubmitting,
   } = useStaffReports(showToast);
 
@@ -80,6 +89,10 @@ export default function StaffDashboardScreen({ onClose }: Props) {
   const [showDetalles, setShowDetalles] = useState(false);
   const [showEncontreModal, setShowEncontreModal] = useState(false);
   const [showRefugioModal, setShowRefugioModal] = useState(false);
+  const [showVeterinariaModal, setShowVeterinariaModal] = useState(false);
+  const [sugerenciaAliado, setSugerenciaAliado] = useState<SugerenciaAliado | null>(null);
+  const [isAceptandoSugerencia, setIsAceptandoSugerencia] = useState(false);
+  const [seguimientoAliado, setSeguimientoAliado] = useState<AceptarSugerenciaResponse | null>(null);
 
   // ── UI state: confirmar/rechazar una asignación nueva de voluntario ───
   const [reporteAConfirmar, setReporteAConfirmar] = useState<ReporteStaff | null>(null);
@@ -107,17 +120,64 @@ export default function StaffDashboardScreen({ onClose }: Props) {
     setShowRefugioModal(true);
   };
 
+  const abrirVeterinaria = (reporte: ReporteStaff) => {
+    setReporteSeleccionado(reporte);
+    setShowDetalles(false);
+    setShowVeterinariaModal(true);
+  };
+
   const confirmarEncontre = async () => {
     if (!reporteSeleccionado) return;
-    const ok = await registrarEncontre(reporteSeleccionado.id);
-    if (ok) {
-      setShowEncontreModal(false);
-      setReporteSeleccionado(null);
+    const { exito, sugerenciaAliado: sugerencia } = await registrarEncontre(reporteSeleccionado.id);
+    if (!exito) return;
+    if (sugerencia) {
+      setSugerenciaAliado(sugerencia);
+      return;
     }
+    setShowEncontreModal(false);
+    setReporteSeleccionado(null);
+  };
+
+  const aceptarSugerenciaAliado = async () => {
+    if (!reporteSeleccionado || !sugerenciaAliado) return;
+    setIsAceptandoSugerencia(true);
+    try {
+      const res = await axios.post<AceptarSugerenciaResponse>(
+        `${API_URL}/reports/${reporteSeleccionado.id}/hitos/aceptar-sugerencia`,
+        { oferta_id: sugerenciaAliado.oferta_id },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      // No cierra de inmediato: muestra el seguimiento (contacto + ubicación
+      // del aliado) hasta que el staff confirme que ya entendió a dónde llevar el caso.
+      setSugerenciaAliado(null);
+      setSeguimientoAliado(res.data);
+    } catch (error: any) {
+      showToast({
+        type: 'error',
+        title: 'Error',
+        message: error?.response?.data?.detail || 'No pudimos acercar el caso a la veterinaria.',
+      });
+    } finally {
+      setIsAceptandoSugerencia(false);
+    }
+  };
+
+  const cerrarSeguimientoAliado = () => {
+    setSeguimientoAliado(null);
+    setShowEncontreModal(false);
+    setReporteSeleccionado(null);
+  };
+
+  const descartarSugerenciaAliado = () => {
+    setSugerenciaAliado(null);
+    setShowEncontreModal(false);
+    setReporteSeleccionado(null);
   };
 
   const cancelarEncontre = () => {
     setShowEncontreModal(false);
+    setSugerenciaAliado(null);
+    setSeguimientoAliado(null);
     resetEncontre();
     setReporteSeleccionado(null);
   };
@@ -137,6 +197,21 @@ export default function StaffDashboardScreen({ onClose }: Props) {
     setReporteSeleccionado(null);
   };
 
+  const confirmarVeterinaria = async () => {
+    if (!reporteSeleccionado) return;
+    const ok = await registrarLlegadaVeterinaria(reporteSeleccionado.id);
+    if (ok) {
+      setShowVeterinariaModal(false);
+      setReporteSeleccionado(null);
+    }
+  };
+
+  const cancelarVeterinaria = () => {
+    setShowVeterinariaModal(false);
+    resetVeterinaria();
+    setReporteSeleccionado(null);
+  };
+
   const capturarFotoEncontre = async () => {
     const uri = await handlePickFoto();
     if (uri) setFotoEncontre(uri);
@@ -145,6 +220,11 @@ export default function StaffDashboardScreen({ onClose }: Props) {
   const capturarFotoRefugio = async () => {
     const uri = await usarCamara();
     if (uri) setFotoRefugio(uri);
+  };
+
+  const capturarFotoVeterinaria = async () => {
+    const uri = await usarCamara();
+    if (uri) setFotoVeterinaria(uri);
   };
 
   // ── Confirmar/rechazar una asignación nueva ("¿Aceptas este caso?") ──
@@ -407,6 +487,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
         onClose={() => setShowDetalles(false)}
         onEncontre={() => reporteSeleccionado && abrirEncontre(reporteSeleccionado)}
         onRefugio={() => reporteSeleccionado && abrirRefugio(reporteSeleccionado)}
+        onVeterinaria={() => reporteSeleccionado && abrirVeterinaria(reporteSeleccionado)}
         puedeRegistrarHitos={puedeRegistrarHitos}
       />
 
@@ -422,6 +503,12 @@ export default function StaffDashboardScreen({ onClose }: Props) {
         isSubmitting={isSubmitting}
         onCancel={cancelarEncontre}
         onConfirm={confirmarEncontre}
+        sugerenciaAliado={sugerenciaAliado}
+        isAceptandoSugerencia={isAceptandoSugerencia}
+        onAceptarSugerencia={aceptarSugerenciaAliado}
+        onDescartarSugerencia={descartarSugerenciaAliado}
+        seguimientoAliado={seguimientoAliado}
+        onCerrarSeguimiento={cerrarSeguimientoAliado}
       />
 
       <RefugioModal
@@ -439,6 +526,20 @@ export default function StaffDashboardScreen({ onClose }: Props) {
         isSubmitting={isSubmitting}
         onCancel={cancelarRefugio}
         onConfirm={confirmarRefugio}
+      />
+
+      <VeterinariaModal
+        visible={showVeterinariaModal}
+        notas={notasVeterinaria}
+        onChangeNotas={setNotasVeterinaria}
+        ubicacionActual={ubicacionActual}
+        obteniendoGPS={obteniendoGPS}
+        onCapturarUbicacion={obtenerUbicacionGPS}
+        foto={fotoVeterinaria}
+        onCapturarFoto={capturarFotoVeterinaria}
+        isSubmitting={isSubmitting}
+        onCancel={cancelarVeterinaria}
+        onConfirm={confirmarVeterinaria}
       />
 
       {/* ── Modal: aceptar asignación de voluntario (nuevo) ── */}

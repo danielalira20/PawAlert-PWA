@@ -441,7 +441,8 @@ def obtener_verificacion_postulacion(
         "respondida_at, visita_programada_at, motivo_rechazo, "
         "horario_propuesto_at, horario_propuesto_por, horario_estado, "
         "horario_respondido_at, motivo_reagenda, check_in_at, check_out_at, "
-        "check_in_distancia_m, checklist, notas_visita, resultado_visita, "
+        "check_in_latitud, check_in_longitud, check_in_distancia_m, "
+        "checklist, notas_visita, resultado_visita, "
         "motivo_resultado_visita, resultado_at"
     ).eq("verificacion_hogar_id", verificacion["id"]).order(
         "propuesta_at", desc=True
@@ -1236,6 +1237,7 @@ def responder_horario_como_postulante(
             "updated_at": ahora,
         }).eq("id", coordinacion["verificacion_hogar_id"]).execute()
         return {
+            "asignacion_id": coordinacion["id"],
             "horario_estado": "confirmado",
             "visita_programada_at": horario_confirmado,
             "estado_verificacion": "visita_programada",
@@ -1272,6 +1274,7 @@ def responder_horario_como_postulante(
         "updated_at": ahora,
     }).eq("id", coordinacion["verificacion_hogar_id"]).execute()
     return {
+        "asignacion_id": coordinacion["id"],
         "horario_estado": "pendiente_verificador",
         "horario_propuesto_at": horario_iso,
         "estado_verificacion": "coordinando_visita",

@@ -7,6 +7,7 @@ from fastapi import (
     Form,
     HTTPException,
     Header,
+    Depends
 )
 from pydantic import BaseModel
 from typing import Optional, List
@@ -32,10 +33,18 @@ from app.services.home_verification_service import (
     resolver_verificacion_remota,
 )
 from app.services.video_evidence_service import procesar_evidencia_verificacion
+from app.services.whatsapp_notification_service import (
+    notificar_evento_verificacion,
+)
 from app.models.association import NuevoRepresentante
 from app.utils.animal_shaping import shape_animal_embed, shape_animal_response, condicion_mas_grave
 import json
 from app.services.email_service import email_bienvenida_staff
+from app.models.red_aliados import NecesidadCreate
+from app.services.red_aliados_service import crear_necesidad_asociacion
+from enum import Enum
+from datetime import datetime, timezone
+
 
 router = APIRouter()
 
@@ -447,6 +456,31 @@ async def get_reportes_asignados(authorization: str = Header(None)):
                     "creado_at": str(ev["created_at"]),
                 }
 
+    # Motor de sugerencias Ruta 1 (BACK01/BACK02): si ya existe una
+    # contribución con reporte_id, la sugerencia de aliado veterinario fue
+    # aceptada; si además ya hay un evento "hito_llego_veterinaria" en el
+    # historial, el hito de llegada ya se registró (el botón correspondiente
+    # se oculta en el frontend para no permitir un segundo registro).
+    reporte_ids_todos = [
+        r["reportes"]["id"] for r in resultado.data if r.get("reportes")
+    ]
+    reportes_con_sugerencia_aceptada = set()
+    reportes_con_llegada_registrada = set()
+    if reporte_ids_todos:
+        contribs = supabase.table("contribuciones").select("reporte_id").in_(
+            "reporte_id", reporte_ids_todos
+        ).execute()
+        reportes_con_sugerencia_aceptada = {
+            c["reporte_id"] for c in (contribs.data or []) if c.get("reporte_id")
+        }
+
+        llegadas = supabase.table("historial_reporte").select("reporte_id").in_(
+            "reporte_id", reporte_ids_todos
+        ).eq("tipo_evento", "hito_llego_veterinaria").execute()
+        reportes_con_llegada_registrada = {
+            e["reporte_id"] for e in (llegadas.data or []) if e.get("reporte_id")
+        }
+
     reportes = []
     for r in resultado.data:
         rep = r.get("reportes")
@@ -486,6 +520,8 @@ async def get_reportes_asignados(authorization: str = Header(None)):
             "foto_url": foto_url,
             "fotos_urls": fotos_urls,
             "animales": [shape_animal_response(a) for a in animales_crudos],
+            "tiene_sugerencia_aceptada": rep["id"] in reportes_con_sugerencia_aceptada,
+            "tiene_llegada_veterinaria_registrada": rep["id"] in reportes_con_llegada_registrada,
         })
 
     return reportes
@@ -494,10 +530,12 @@ async def get_reportes_asignados(authorization: str = Header(None)):
 # Tipos de evento que la línea de tiempo del panel de asociación necesita
 # mostrar además del evento de creación. Los valores reales que escribe
 # POST /reports/{id}/hitos son "hito_{tipo_hito}" (ver reports.py), es decir
-# "hito_encontre_animal" y "hito_llegue_refugio" — no "hito_encontrado"/
-# "hito_refugio". "caso_cerrado" lo escribe cambiar_estado_reporte()
-# (report_service.py) cuando nuevo_estado == "cerrado".
-TIPOS_HITO_TIMELINE = ["hito_encontre_animal", "hito_llegue_refugio", "caso_cerrado"]
+# "hito_encontre_animal", "hito_llegue_refugio" y "hito_llego_veterinaria"
+# — no "hito_encontrado"/"hito_refugio". "caso_cerrado" lo escribe
+# cambiar_estado_reporte() (report_service.py) cuando nuevo_estado == "cerrado".
+TIPOS_HITO_TIMELINE = [
+    "hito_encontre_animal", "hito_llegue_refugio", "hito_llego_veterinaria", "caso_cerrado",
+]
 
 
 @router.get("/me/reportes/{reporte_id}/historial", status_code=200)
@@ -949,6 +987,7 @@ async def post_reintentar_analisis_verificacion(
 async def post_asignar_verificador(
     verificacion_id: str,
     body: AsignarVerificadorRequest,
+    background_tasks: BackgroundTasks,
     authorization: str = Header(None),
 ):
     usuario = _obtener_usuario_autenticado(authorization)
@@ -959,11 +998,18 @@ async def post_asignar_verificador(
             detail="Este usuario no está vinculado a ninguna asociación",
         )
     _verificar_asociacion_aprobada(usuario["asociacion_id"])
-    return asignar_verificador_hogar(
+    resultado = asignar_verificador_hogar(
         verificacion_id=verificacion_id,
         verificador_voluntario_id=body.voluntario_id,
         asociacion_id=usuario["asociacion_id"],
     )
+    background_tasks.add_task(
+        notificar_evento_verificacion,
+        "propuesta_verificador",
+        verificacion_id,
+        resultado["asignacion_id"],
+    )
+    return resultado
 
 
 @router.patch(
@@ -1039,3 +1085,154 @@ async def patch_reactivar_voluntario(voluntario_id: str, authorization: str = He
         voluntario_id=voluntario_id,
         asociacion_id=usuario["asociacion_id"],
     )
+
+@router.post("/me/necesidades", status_code=201)
+def publicar_necesidad(
+    necesidad: NecesidadCreate,
+    authorization: str = Header(None)
+):
+    # 1. Autenticar al usuario usando tu función interna
+    usuario = _obtener_usuario_autenticado(authorization)
+    
+    # 2. Validar que tenga permisos (asociación o staff)
+    _verificar_rol(usuario, ("asociacion", "staff"))
+
+    # 3. Validar que tenga una asociación asignada
+    asociacion_id = usuario.get("asociacion_id")
+    if not asociacion_id:
+        raise HTTPException(status_code=403, detail="El usuario no pertenece a una asociación.")
+        
+    # 4. Validar que la asociación esté aprobada (reutilizando tu función)
+    _verificar_asociacion_aprobada(asociacion_id)
+
+    # 5. Llamamos al servicio usando la variable global `supabase` de tu archivo
+    resultado = crear_necesidad_asociacion(supabase, asociacion_id, necesidad)
+    
+    return {"message": "Necesidad publicada con éxito", "data": resultado}
+
+
+class AccionOferta(str, Enum):
+    aceptar = "aceptar"
+    rechazar = "rechazar"
+    ajustar = "ajustar"
+
+class ResolverOfertaRequest(BaseModel):
+    accion: AccionOferta
+    cantidad_ajustada: float | None = None
+
+@router.get("/me/ofertas", status_code=200)
+async def get_ofertas_recibidas(tab: str = "pendientes", authorization: str = Header(None)):
+    """
+    FRONT10 / FRONT07: Obtiene la lista de ofertas (contribuciones).
+    - tab=pendientes: ofertas en estado 'comprometida'.
+    - tab=historial: ofertas en estado 'confirmada' o 'parcial'.
+    """
+    usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion", "staff"))
+
+    if not usuario.get("asociacion_id"):
+        raise HTTPException(status_code=404, detail="Este usuario no está vinculado a ninguna asociación")
+
+    query = supabase.table("contribuciones").select(
+        "id, cantidad_valor, cantidad_unidad, estado, created_at, detalle, "
+        "necesidades!inner(id, categoria, asociacion_id, subcategoria_id), "
+        "usuarios(id, nombre, apellido_paterno, telefono, email, perfil_apoyo(id, aliado_verificado_por, tipo))"
+    ).eq("necesidades.asociacion_id", usuario["asociacion_id"])
+    
+    if tab == "historial":
+        query = query.in_("estado", ["confirmada", "parcial"])
+    else:
+        query = query.eq("estado", "comprometida")
+        
+    resultado = query.order("created_at", desc=True).execute()
+
+    return resultado.data
+
+
+@router.patch("/me/ofertas/{contribucion_id}/resolver", status_code=200)
+async def patch_resolver_oferta(
+    contribucion_id: str, 
+    body: ResolverOfertaRequest, 
+    authorization: str = Header(None)
+):
+    """
+    FRONT10: Permite a la asociación aceptar, rechazar o ajustar una oferta.
+    """
+    usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion", "staff"))
+
+    # Validar que la contribución pertenezca a una necesidad de esta asociación
+    contrib_res = supabase.table("contribuciones").select(
+        "id, estado, necesidades!inner(asociacion_id)"
+    ).eq("id", contribucion_id).execute()
+
+    if not contrib_res.data:
+        raise HTTPException(status_code=404, detail="Oferta no encontrada")
+
+    if contrib_res.data[0]["necesidades"]["asociacion_id"] != usuario["asociacion_id"]:
+        raise HTTPException(status_code=403, detail="No tienes permiso para gestionar esta oferta")
+
+    if contrib_res.data[0]["estado"] != "comprometida":
+        raise HTTPException(status_code=400, detail="Esta oferta ya fue resuelta anteriormente")
+
+    update_data = {}
+    
+    if body.accion == AccionOferta.rechazar:
+        update_data["estado"] = "rechazada"
+    elif body.accion == AccionOferta.aceptar:
+        update_data["estado"] = "confirmada"
+        update_data["confirmada_at"] = datetime.now(timezone.utc).isoformat()
+    elif body.accion == AccionOferta.ajustar:
+        if not body.cantidad_ajustada or body.cantidad_ajustada <= 0:
+            raise HTTPException(status_code=422, detail="Debes proporcionar una cantidad ajustada válida")
+        update_data["estado"] = "parcial"
+        update_data["cantidad_valor"] = body.cantidad_ajustada
+        update_data["confirmada_at"] = datetime.now(timezone.utc).isoformat()
+
+    resultado = supabase.table("contribuciones").update(update_data).eq("id", contribucion_id).execute()
+    
+    return {"mensaje": f"Oferta {body.accion.value} exitosamente", "oferta": resultado.data[0]}
+
+
+@router.patch("/me/aliados/usuario/{usuario_id}/verificar", status_code=200)
+async def patch_verificar_aliado(
+    usuario_id: str,
+    authorization: str = Header(None)
+):
+    """
+    FRONT07: Otorga el sello de 'aliado verificado' a un usuario que ya haya
+    donado al menos una vez (oferta confirmada o parcial) a esta asociación.
+    """
+    usuario_auth = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario_auth, ("asociacion", "staff"))
+
+    asoc_id = usuario_auth.get("asociacion_id")
+    if not asoc_id:
+        raise HTTPException(status_code=404, detail="Este usuario no está vinculado a ninguna asociación")
+
+    # 1. Validar que exista al menos una contribución confirmada/parcial de este usuario para esta asociación
+    contrib_res = supabase.table("contribuciones").select(
+        "id, necesidades!inner(asociacion_id)"
+    ).eq("usuario_id", usuario_id).in_("estado", ["confirmada", "parcial"]).eq("necesidades.asociacion_id", asoc_id).limit(1).execute()
+
+    if not contrib_res.data:
+        raise HTTPException(status_code=403, detail="No puedes verificar a un aliado que no tiene donaciones confirmadas contigo.")
+
+    # 2. Actualizar el perfil_apoyo del usuario
+    # Buscamos el perfil_apoyo_id (puede haber múltiples, pero la regla es 1 perfil por usuario)
+    perfil_res = supabase.table("perfil_apoyo").select("id, aliado_verificado_por").eq("usuario_id", usuario_id).execute()
+    
+    if not perfil_res.data:
+        raise HTTPException(status_code=404, detail="El usuario no tiene un perfil de aliado.")
+        
+    perfil = perfil_res.data[0]
+    if perfil.get("aliado_verificado_por"):
+        raise HTTPException(status_code=400, detail="Este aliado ya fue verificado por una asociación.")
+
+    # Otorgar sello
+    update_res = supabase.table("perfil_apoyo").update({
+        "aliado_verificado_por": asoc_id,
+        "aliado_verificado_at": datetime.now(timezone.utc).isoformat()
+    }).eq("id", perfil["id"]).execute()
+
+    return {"mensaje": "Sello de aliado verificado otorgado exitosamente", "perfil": update_res.data[0]}

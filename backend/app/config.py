@@ -11,6 +11,10 @@ class Settings(BaseSettings):
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""
     twilio_from_number: str = ""
+    twilio_whatsapp_from: str = ""
+    whatsapp_notifications_enabled: bool = False
+    twilio_webhook_base_url: str = ""
+    twilio_validate_signatures: bool = True
     require_phone_verification: bool = False
     frontend_url: str = "https://paw-alert-pwa.vercel.app"
     gemini_api_key: str = ""

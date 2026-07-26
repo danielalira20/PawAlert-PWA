@@ -12,6 +12,8 @@ from app.models.voluntario import (
     CapacidadesRequest,
     CheckInVisitaRequest,
     ChecklistVisitaRequest,
+    DisponibilidadOperativaRequest,
+    FinalizarPostulacionInternoRequest,
     PostulacionRequest,
     ProponerHorarioVisitaRequest,
     ResponderHorarioPostulanteRequest,
@@ -21,10 +23,13 @@ from app.models.voluntario import (
 import json
 
 from app.services.voluntario_service import (
-    crear_postulacion,
+    asegurar_perfil_voluntario_interno,
+    finalizar_postulacion_interno,
     obtener_mi_voluntario,
     obtener_capacidades,
     guardar_capacidades,
+    obtener_disponibilidad_operativa,
+    actualizar_disponibilidad_operativa,
     obtener_reportes_voluntario,
     crear_perfil_externo,
     obtener_perfil_externo,
@@ -45,6 +50,9 @@ from app.services.home_verification_service import (
     resolver_resultado_visita,
 )
 from app.services.video_evidence_service import procesar_evidencia_verificacion
+from app.services.whatsapp_notification_service import (
+    notificar_evento_asignacion,
+)
 
 router = APIRouter()
 
@@ -71,15 +79,25 @@ def _obtener_usuario_autenticado(authorization: str | None) -> dict:
 
 @router.post("/postulaciones", status_code=201)
 async def postularse_como_voluntario(body: PostulacionRequest, authorization: str = Header(None)):
-    """El usuario logueado se postula como voluntario interno o externo de
-    una asociación. Si ya existe un perfil de voluntario rechazado, esto
-    cuenta como una re-postulación (numero_intento + 1)."""
+    """Prepara el perfil de voluntario interno (fila `voluntarios` en estado
+    'postulacion_pendiente') para que el usuario pueda llenar su formulario de
+    capacidades. La fila en `postulaciones` todavía NO se crea aquí — se crea
+    al terminar ese formulario, en POST /voluntarios/interno/finalizar, para
+    no dejar una postulación sin capacidades si el usuario abandona a medias."""
     usuario = _obtener_usuario_autenticado(authorization)
-    return await crear_postulacion(
-        usuario_id=usuario["id"],
-        tipo=body.tipo.value,
-        asociacion_id=body.asociacion_id,
-    )
+    resultado = await asegurar_perfil_voluntario_interno(usuario["id"])
+    return {**resultado, "asociacion_id": body.asociacion_id}
+
+
+@router.post("/interno/finalizar", status_code=201)
+async def finalizar_postulacion_voluntario_interno(
+    body: FinalizarPostulacionInternoRequest, authorization: str = Header(None)
+):
+    """Crea la postulación de voluntario interno — el paso que de verdad
+    compromete. Solo se llama al guardar con éxito el formulario de
+    capacidades (ver CapacidadesFormScreen.tsx)."""
+    usuario = _obtener_usuario_autenticado(authorization)
+    return await finalizar_postulacion_interno(usuario["id"], body.asociacion_id)
 
 
 @router.get("/me", status_code=200)
@@ -133,16 +151,24 @@ async def get_mi_verificacion_hogar(
 async def patch_responder_verificacion_hogar(
     asignacion_id: str,
     body: ResponderPropuestaVerificacionRequest,
+    background_tasks: BackgroundTasks,
     authorization: str = Header(None),
 ):
     usuario = _obtener_usuario_autenticado(authorization)
     voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
-    return responder_propuesta_verificacion_hogar(
+    resultado = responder_propuesta_verificacion_hogar(
         asignacion_id=asignacion_id,
         verificador_voluntario_id=voluntario_id,
         respuesta=body.respuesta.value,
         motivo=body.motivo,
     )
+    if body.respuesta.value == "aceptar":
+        background_tasks.add_task(
+            notificar_evento_asignacion,
+            "verificador_asignado",
+            asignacion_id,
+        )
+    return resultado
 
 
 @router.patch(
@@ -152,16 +178,23 @@ async def patch_responder_verificacion_hogar(
 async def patch_proponer_horario_verificacion(
     asignacion_id: str,
     body: ProponerHorarioVisitaRequest,
+    background_tasks: BackgroundTasks,
     authorization: str = Header(None),
 ):
     usuario = _obtener_usuario_autenticado(authorization)
     voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
-    return proponer_horario_verificacion_hogar(
+    resultado = proponer_horario_verificacion_hogar(
         asignacion_id=asignacion_id,
         verificador_voluntario_id=voluntario_id,
         horario=body.horario,
         motivo=body.motivo,
     )
+    background_tasks.add_task(
+        notificar_evento_asignacion,
+        "horario_propuesto_postulante",
+        asignacion_id,
+    )
+    return resultado
 
 
 @router.patch(
@@ -170,14 +203,21 @@ async def patch_proponer_horario_verificacion(
 )
 async def patch_confirmar_horario_verificacion(
     asignacion_id: str,
+    background_tasks: BackgroundTasks,
     authorization: str = Header(None),
 ):
     usuario = _obtener_usuario_autenticado(authorization)
     voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
-    return confirmar_horario_como_verificador(
+    resultado = confirmar_horario_como_verificador(
         asignacion_id=asignacion_id,
         verificador_voluntario_id=voluntario_id,
     )
+    background_tasks.add_task(
+        notificar_evento_asignacion,
+        "horario_confirmado",
+        asignacion_id,
+    )
+    return resultado
 
 
 @router.patch(
@@ -187,16 +227,23 @@ async def patch_confirmar_horario_verificacion(
 async def patch_check_in_verificacion(
     asignacion_id: str,
     body: CheckInVisitaRequest,
+    background_tasks: BackgroundTasks,
     authorization: str = Header(None),
 ):
     usuario = _obtener_usuario_autenticado(authorization)
     voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
-    return registrar_check_in_visita(
+    resultado = registrar_check_in_visita(
         asignacion_id=asignacion_id,
         verificador_voluntario_id=voluntario_id,
         latitud=body.latitud,
         longitud=body.longitud,
     )
+    background_tasks.add_task(
+        notificar_evento_asignacion,
+        "check_in_asociacion",
+        asignacion_id,
+    )
+    return resultado
 
 
 @router.put(
@@ -223,14 +270,26 @@ async def put_checklist_verificacion(
 )
 async def patch_check_out_verificacion(
     asignacion_id: str,
+    background_tasks: BackgroundTasks,
     authorization: str = Header(None),
 ):
     usuario = _obtener_usuario_autenticado(authorization)
     voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
-    return registrar_check_out_visita(
+    resultado = registrar_check_out_visita(
         asignacion_id=asignacion_id,
         verificador_voluntario_id=voluntario_id,
     )
+    background_tasks.add_task(
+        notificar_evento_asignacion,
+        "check_out_asociacion",
+        asignacion_id,
+    )
+    background_tasks.add_task(
+        notificar_evento_asignacion,
+        "visita_finalizada_postulante",
+        asignacion_id,
+    )
+    return resultado
 
 
 @router.patch(
@@ -240,16 +299,23 @@ async def patch_check_out_verificacion(
 async def patch_resultado_verificacion(
     asignacion_id: str,
     body: ResultadoVisitaRequest,
+    background_tasks: BackgroundTasks,
     authorization: str = Header(None),
 ):
     usuario = _obtener_usuario_autenticado(authorization)
     voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
-    return resolver_resultado_visita(
+    resultado = resolver_resultado_visita(
         asignacion_id=asignacion_id,
         verificador_voluntario_id=voluntario_id,
         resultado=body.resultado.value,
         motivo=body.motivo,
     )
+    background_tasks.add_task(
+        notificar_evento_asignacion,
+        "resultado_actualizado",
+        asignacion_id,
+    )
+    return resultado
 
 
 @router.get("/me/coordinacion-visita", status_code=200)
@@ -264,16 +330,29 @@ async def get_coordinacion_visita_postulante(
 @router.patch("/me/coordinacion-visita/responder", status_code=200)
 async def patch_responder_horario_postulante(
     body: ResponderHorarioPostulanteRequest,
+    background_tasks: BackgroundTasks,
     authorization: str = Header(None),
 ):
     usuario = _obtener_usuario_autenticado(authorization)
     voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
-    return responder_horario_como_postulante(
+    resultado = responder_horario_como_postulante(
         voluntario_postulante_id=voluntario_id,
         respuesta=body.respuesta.value,
         horario=body.horario,
         motivo=body.motivo,
     )
+    asignacion_id = resultado.get("asignacion_id")
+    if asignacion_id:
+        background_tasks.add_task(
+            notificar_evento_asignacion,
+            (
+                "horario_confirmado"
+                if body.respuesta.value == "confirmar"
+                else "horario_propuesto_verificador"
+            ),
+            asignacion_id,
+        )
+    return resultado
 
 
 @router.get("/me/capacidades", status_code=200)
@@ -292,6 +371,27 @@ async def put_mis_capacidades(body: CapacidadesRequest, authorization: str = Hea
     return await guardar_capacidades(
         voluntario_id,
         body.model_dump(mode="json", exclude_unset=True),
+    )
+
+
+@router.get("/me/disponibilidad-operativa", status_code=200)
+async def get_mi_disponibilidad_operativa(authorization: str = Header(None)):
+    usuario = _obtener_usuario_autenticado(authorization)
+    voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
+    return await obtener_disponibilidad_operativa(voluntario_id)
+
+
+@router.patch("/me/disponibilidad-operativa", status_code=200)
+async def patch_mi_disponibilidad_operativa(
+    body: DisponibilidadOperativaRequest,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
+    return await actualizar_disponibilidad_operativa(
+        voluntario_id=voluntario_id,
+        disponible=body.disponible,
+        pausa_hasta=body.pausa_hasta,
     )
 
 

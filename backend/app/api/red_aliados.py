@@ -16,6 +16,8 @@ from app.services.red_aliados_service import (
     responder_invitacion,
     obtener_qr_invitacion,
     confirmar_recepcion_qr,
+    buscar_ofertas_compatibles,
+    aceptar_sugerencia_general,
 )
 from app.models.red_aliados import (
     ContribucionRequest,
@@ -27,7 +29,11 @@ from app.models.red_aliados import (
     InvitarAsociacionesRequest,
     ResponderInvitacionRequest,
     ConfirmarQrRequest,
+    OfertaCompatibleResponse,
+    AceptarOfertaGeneralRequest,
+    AceptarOfertaGeneralResponse,
 )
+from datetime import datetime
 
 router = APIRouter()
 
@@ -184,3 +190,145 @@ async def get_directorio_aliados():
 async def get_mural_impacto():
     """FRONT17 — público, sin sesión. Historias de apoyo ya confirmado."""
     return await obtener_mural_impacto()
+
+
+# ─── Motor de sugerencias, Ruta 2 (BACK03) — necesidades generales ───────
+
+@router.get(
+    "/necesidades/{necesidad_id}/ofertas-compatibles",
+    status_code=200,
+    response_model=list[OfertaCompatibleResponse],
+)
+async def get_ofertas_compatibles_endpoint(necesidad_id: str, authorization: str = Header(None)):
+    _obtener_usuario_autenticado(authorization)
+    return buscar_ofertas_compatibles(necesidad_id)
+
+
+@router.post(
+    "/necesidades/{necesidad_id}/aceptar-oferta",
+    status_code=201,
+    response_model=AceptarOfertaGeneralResponse,
+)
+async def aceptar_oferta_general_endpoint(
+    necesidad_id: str, body: AceptarOfertaGeneralRequest, authorization: str = Header(None)
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+
+    necesidad = supabase.table("necesidades").select(
+        "asociacion_id"
+    ).eq("id", necesidad_id).execute()
+    if not necesidad.data:
+        raise HTTPException(status_code=404, detail="Necesidad no encontrada")
+    if necesidad.data[0]["asociacion_id"] != usuario["asociacion_id"]:
+        raise HTTPException(
+            status_code=403,
+            detail="No tienes permiso para aceptar ofertas de esta necesidad"
+        )
+
+    return await aceptar_sugerencia_general(necesidad_id, body.oferta_id, body.cantidad)
+
+@router.get("/necesidades/publicas", status_code=200)
+def get_necesidades_publicas():
+    """
+    Endpoint público para la landing page ('Cómo ayudar').
+    No requiere token de autenticación.
+    """
+    # 1. Hacemos la consulta a Supabase
+    resultado = supabase.table("necesidades").select(
+        "id, categoria, urgencia, cantidad_valor, cantidad_unidad, detalle, created_at, "
+        "asociaciones(nombre, latitud, longitud), "
+        "subcategoria_recurso(descripcion)"
+    ).eq("estado", "activa").order("created_at", desc=True).execute()
+
+    # 2. Formateamos la respuesta
+    necesidades = []
+    for row in resultado.data or []:
+        necesidades.append({
+            "id": row["id"],
+            "categoria": row["categoria"],
+            "urgencia": row["urgencia"],
+            "cantidad_valor": row.get("cantidad_valor"),
+            "cantidad_unidad": row.get("cantidad_unidad"),
+            "detalle": row.get("detalle") or {},
+            "created_at": row["created_at"],
+            "asociaciones": {
+                "nombre": row["asociaciones"]["nombre"] if row.get("asociaciones") else "Asociación Desconocida",
+                "latitud": row["asociaciones"]["latitud"] if row.get("asociaciones") else None,
+                "longitud": row["asociaciones"]["longitud"] if row.get("asociaciones") else None
+            },
+            "subcategoria_recurso": {
+                "nombre": row["subcategoria_recurso"]["descripcion"] if row.get("subcategoria_recurso") else None
+            }
+        })
+
+    return necesidades
+
+@router.get("/me/notificaciones", status_code=200)
+def get_notificaciones_aliado(authorization: str = Header(None)):
+    """
+    FRONT09: Obtiene la lista de notificaciones de match para el aliado logueado.
+    """
+    usuario = _obtener_usuario_autenticado(authorization)
+
+    # 1. Obtenemos el perfil de apoyo del usuario logueado
+    perfil_res = supabase.table("perfil_apoyo").select("id").eq("usuario_id", usuario["id"]).execute()
+    
+    if not perfil_res.data:
+        return [] # Si no es un aliado registrado, devolvemos lista vacía
+
+    perfil_apoyo_id = perfil_res.data[0]["id"]
+
+    # 2. Consultamos usando 'tipo' en lugar de 'mensaje'
+    noti_res = supabase.table("notificaciones_aliado").select(
+        "id, necesidad_id, tipo, leida, created_at, "
+        "necesidades(categoria, asociaciones(nombre))"
+    ).eq("perfil_apoyo_id", perfil_apoyo_id).order("created_at", desc=True).execute()
+
+    # 3. Formateamos la respuesta para la pantalla FRONT09
+    notificaciones = []
+    for row in noti_res.data or []:
+        necesidad = row.get("necesidades") or {}
+        asociacion = necesidad.get("asociaciones") or {}
+
+        fecha_raw = row.get("created_at")
+        fecha_str = fecha_raw[:10] if fecha_raw else "Reciente"
+        
+        # Generamos un mensaje amigable basándonos en el tipo de notificación
+        tipo_notificacion = row.get("tipo", "compatibilidad")
+        mensaje_dinamico = f"¡Match encontrado por {tipo_notificacion}! Tienes una necesidad compatible."
+
+        notificaciones.append({
+            "id": row["id"],
+            "necesidad_id": row["necesidad_id"],
+            "asociacion_nombre": asociacion.get("nombre", "Asociación Desconocida"),
+            "categoria": necesidad.get("categoria", "Recurso solicitado"),
+            "mensaje": mensaje_dinamico,
+            "leida": row.get("leida", False),
+            "fecha": fecha_str
+        })
+
+    return notificaciones
+
+@router.patch("/me/notificaciones/{notificacion_id}/leer", status_code=200)
+def marcar_notificacion_leida(notificacion_id: str, authorization: str = Header(None)):
+    """
+    FRONT12: Marca una notificación específica como leída cuando el aliado la abre.
+    """
+    usuario = _obtener_usuario_autenticado(authorization)
+
+    # 1. Validar que el usuario tiene un perfil de apoyo
+    perfil_res = supabase.table("perfil_apoyo").select("id").eq("usuario_id", usuario["id"]).execute()
+    if not perfil_res.data:
+        raise HTTPException(status_code=403, detail="No eres un aliado registrado")
+    
+    perfil_apoyo_id = perfil_res.data[0]["id"]
+
+    # 2. Actualizar la notificación a leída asegurando que le pertenezca a este aliado
+    res = supabase.table("notificaciones_aliado").update({"leida": True}).eq(
+        "id", notificacion_id
+    ).eq("perfil_apoyo_id", perfil_apoyo_id).execute()
+
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Notificación no encontrada o acceso denegado")
+
+    return {"status": "success", "leida": True}

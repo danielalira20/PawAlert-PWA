@@ -21,6 +21,7 @@ export interface Usuario {
   asociacion_id?: string | null;
   es_admin?: boolean;
   rol?: string;
+  tiene_perfil_apoyo?: boolean;
 }
 
 interface RegisterData {

@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field, model_validator
 from typing import Optional
 from enum import Enum
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class TipoVoluntarioEnum(str, Enum):
@@ -17,6 +17,14 @@ class AccionPostulacionEnum(str, Enum):
 class PostulacionRequest(BaseModel):
     """Body para POST /voluntarios/postulaciones"""
     tipo: TipoVoluntarioEnum
+    asociacion_id: str
+
+
+class FinalizarPostulacionInternoRequest(BaseModel):
+    """Body para POST /voluntarios/interno/finalizar — la fila en `postulaciones`
+    se crea aquí, no en POST /voluntarios/postulaciones (esa solo prepara el
+    perfil de voluntario), para no dejar una postulación sin capacidades si el
+    usuario abandona el formulario a medias."""
     asociacion_id: str
 
 
@@ -412,5 +420,27 @@ class CapacidadesRequest(BaseModel):
             raise ValueError(
                 "Selecciona 'otro' antes de indicar otras especies de manejo"
             )
+
+        return self
+
+
+class DisponibilidadOperativaRequest(BaseModel):
+    """Control mutable del pool, separado del formulario de capacidades."""
+
+    disponible: bool
+    pausa_hasta: Optional[datetime] = None
+
+    @model_validator(mode="after")
+    def validar_pausa(self):
+        if self.disponible and self.pausa_hasta is not None:
+            raise ValueError(
+                "Una persona disponible no puede conservar una fecha de pausa"
+            )
+
+        if not self.disponible and self.pausa_hasta is not None:
+            if self.pausa_hasta.tzinfo is None:
+                raise ValueError("La fecha de pausa debe incluir zona horaria")
+            if self.pausa_hasta.astimezone(timezone.utc) <= datetime.now(timezone.utc):
+                raise ValueError("La fecha de reactivación debe estar en el futuro")
 
         return self

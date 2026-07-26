@@ -6,6 +6,8 @@ import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { ActivityIndicator, Image, Linking, Modal, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
+import * as ImagePicker from 'expo-image-picker';
 import { Toast, useToast } from '../components/Toast';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
@@ -68,6 +70,10 @@ interface ReporteAsignado {
   foto_url: string | null;
   fotos_urls: string[];
   animales: Animal[];
+  // Motor de sugerencias Ruta 1 (BACK01/BACK02) — controlan si se muestra
+  // el botón "Registrar llegada a veterinaria".
+  tiene_sugerencia_aceptada: boolean;
+  tiene_llegada_veterinaria_registrada: boolean;
 }
 
 // ── Tipos para la pestaña "Mis voluntarios" (nueva) ──
@@ -93,8 +99,9 @@ type EstadoVoluntarios = 'cargando' | 'candidatos' | 'esperando_confirmacion' | 
 interface ScoreCandidato {
   total: number;
   proximidad: number;
-  compatibilidad: number;
   disponibilidad: number;
+  experiencia: number;
+  movilidad: number;
   carga: number;
 }
 
@@ -104,8 +111,29 @@ interface Candidato {
   tipo: string;
   etiqueta?: string;
   distancia_km: number;
+  radio_max_km: number;
+  carga_actual: number;
+  max_casos_simultaneos: number;
+  medios_transporte: string[];
+  coincidencias: string[];
+  alertas: string[];
+  capacidad_resumen: string;
   foto_url?: string | null;
   score: ScoreCandidato;
+}
+
+// Motor de sugerencias Ruta 1 (BACK01/BACK02) — lo que regresa
+// POST /reports/{id}/hitos en `sugerencia_aliado`. Interfaz local a
+// propósito, duplicada de la de StaffDashboardScreen.tsx: las dos
+// pantallas ya eran independientes antes de esto y no se unifican ahora.
+interface SugerenciaAliado {
+  oferta_id: string;
+  perfil_apoyo_id: string;
+  nombre: string;
+  distancia_km: number;
+  unidad: string;
+  capacidad_disponible: number;
+  nivel_urgencia: string;
 }
 
 interface Props {
@@ -130,6 +158,16 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
   const [showEncontreModal, setShowEncontreModal] = useState(false);
   const [showCerrarModal, setShowCerrarModal] = useState(false);
   const [showStaffModal, setShowStaffModal] = useState(false);
+  const [showVeterinariaModal, setShowVeterinariaModal] = useState(false);
+
+  // ── Hito: "Llegué a la veterinaria" (Ruta 1) — este archivo no comparte
+  // componentes con StaffDashboardScreen, así que GPS/foto se construyen
+  // desde cero aquí en vez de reusar useStaffReports.
+  const [notasVeterinaria, setNotasVeterinaria] = useState('');
+  const [fotoVeterinaria, setFotoVeterinaria] = useState<string | null>(null);
+  const [ubicacionVeterinaria, setUbicacionVeterinaria] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [obteniendoGPSVeterinaria, setObteniendoGPSVeterinaria] = useState(false);
+  const [isRegistrandoVeterinaria, setIsRegistrandoVeterinaria] = useState(false);
 
   const [reporteAccionId, setReporteAccionId] = useState<string | null>(null);
   const [isSubmittingAccion, setIsSubmittingAccion] = useState(false);
@@ -154,6 +192,8 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
   const [estadoCierre, setEstadoCierre] = useState('');
   const [notasHito, setNotasHito] = useState('');
   const [fotoHito, setFotoHito] = useState<string | null>(null);
+  const [sugerenciaAliado, setSugerenciaAliado] = useState<SugerenciaAliado | null>(null);
+  const [isAceptandoSugerencia, setIsAceptandoSugerencia] = useState(false);
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('reportes');
 
@@ -197,6 +237,18 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
     'Animal adoptado',
     'No se pudo rescatar',
   ];
+
+  const NIVEL_URGENCIA_LABEL: Record<string, string> = {
+    critico: 'Crítico',
+    urgente: 'Urgente',
+    no_urgente: 'No urgente',
+  };
+
+  const NIVEL_URGENCIA_COLOR: Record<string, string> = {
+    critico: COLORS.danger,
+    urgente: COLORS.secondary,
+    no_urgente: COLORS.accent,
+  };
 
   const cargarEstado = async () => {
     setIsLoadingInfo(true);
@@ -363,9 +415,105 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
     // igual que en AssociationStatusScreen.
   };
 
+  const obtenerUbicacionVeterinaria = async () => {
+    setObteniendoGPSVeterinaria(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        showToast({ type: 'error', title: 'Permiso denegado', message: 'Necesitamos acceso a tu ubicación para registrar la llegada' });
+        return;
+      }
+      const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      setUbicacionVeterinaria({ latitude: location.coords.latitude, longitude: location.coords.longitude });
+    } catch (error) {
+      showToast({ type: 'error', title: 'Error', message: 'No pudimos obtener tu ubicación actual' });
+    } finally {
+      setObteniendoGPSVeterinaria(false);
+    }
+  };
+
+  const capturarFotoVeterinaria = async () => {
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        showToast({ type: 'error', title: 'Permiso denegado', message: 'Necesitamos acceso a la cámara' });
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8 });
+      if (!result.canceled) setFotoVeterinaria(result.assets[0].uri);
+    } catch (error) {
+      showToast({ type: 'error', title: 'Error', message: 'Error al usar la cámara' });
+    }
+  };
+
+  const abrirVeterinaria = (reporteId: string) => {
+    setReporteAccionId(reporteId);
+    setShowVeterinariaModal(true);
+  };
+
+  const resetVeterinariaModal = () => {
+    setNotasVeterinaria('');
+    setFotoVeterinaria(null);
+    setUbicacionVeterinaria(null);
+    setReporteAccionId(null);
+  };
+
+  const cancelarVeterinaria = () => {
+    setShowVeterinariaModal(false);
+    resetVeterinariaModal();
+  };
+
+  const confirmarVeterinaria = async () => {
+    if (!reporteAccionId || !ubicacionVeterinaria || !fotoVeterinaria) return;
+    setIsRegistrandoVeterinaria(true);
+    try {
+      const formData = new FormData();
+      if (Platform.OS === 'web') {
+        const res = await fetch(fotoVeterinaria);
+        const blob = await res.blob();
+        const file = new File([blob], `hito_${Date.now()}.jpg`, { type: 'image/jpeg' });
+        formData.append('foto', file);
+      } else {
+        formData.append('foto', {
+          uri: fotoVeterinaria,
+          name: `hito_${Date.now()}.jpg`,
+          type: 'image/jpeg',
+        } as any);
+      }
+      const fotoRes = await axios.post(`${API_URL}/reports/${reporteAccionId}/hitos/foto`, formData, {
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' },
+      });
+
+      await axios.post(
+        `${API_URL}/reports/${reporteAccionId}/hitos`,
+        {
+          tipo_hito: 'llego_veterinaria',
+          comentario: notasVeterinaria.trim() || null,
+          foto_url: fotoRes.data.foto_url,
+          latitud: ubicacionVeterinaria.latitude,
+          longitud: ubicacionVeterinaria.longitude,
+        },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      showToast({ type: 'success', title: 'Éxito', message: 'Llegada a la veterinaria registrada correctamente' });
+      setShowVeterinariaModal(false);
+      resetVeterinariaModal();
+      await cargarReportes();
+    } catch (error: any) {
+      showToast({
+        type: 'error',
+        title: 'Error',
+        message: error?.response?.data?.detail || 'Error al registrar la llegada a la veterinaria',
+      });
+    } finally {
+      setIsRegistrandoVeterinaria(false);
+    }
+  };
+
   const resetModales = () => {
     setMotivoRechazo(''); setNotasRechazo(''); setEstadoEncontre(''); setEstadoCierre('');
     setNotasHito(''); setFotoHito(null); setReporteAccionId(null);
+    setSugerenciaAliado(null);
     setTabAsignacion('staff');
     setCandidatosList([]);
     setEstadoVoluntarios('cargando');
@@ -492,16 +640,43 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
     }
     setIsSubmittingAccion(true);
     try {
-      await axios.post(`${API_URL}/reports/${reporteAccionId}/hitos`, { tipo_hito: 'encontre_animal', condicion_observada: estadoEncontre, comentario: notasHito.trim() || null }, { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } });
+      const res = await axios.post(`${API_URL}/reports/${reporteAccionId}/hitos`, { tipo_hito: 'encontre_animal', condicion_observada: estadoEncontre, comentario: notasHito.trim() || null }, { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } });
       await cargarReportes();
       showToast({ type: 'success', title: 'Hito registrado', message: 'El avance ha sido guardado exitosamente.' });
+      const sugerencia = res.data?.sugerencia_aliado ?? null;
+      if (sugerencia) {
+        setSugerenciaAliado(sugerencia);
+      } else {
+        setShowEncontreModal(false);
+        resetModales();
+      }
     } catch (error: any) {
       showToast({ type: 'error', title: 'Error al registrar', message: error?.response?.data?.detail || 'No pudimos guardar el hito.' });
-    } finally {
       setShowEncontreModal(false);
       resetModales();
+    } finally {
       setIsSubmittingAccion(false);
     }
+  };
+
+  const aceptarSugerenciaAliado = async () => {
+    if (!reporteAccionId || !sugerenciaAliado) return;
+    setIsAceptandoSugerencia(true);
+    try {
+      await axios.post(`${API_URL}/reports/${reporteAccionId}/hitos/aceptar-sugerencia`, { oferta_id: sugerenciaAliado.oferta_id }, { headers: { Authorization: `Bearer ${token}` } });
+      showToast({ type: 'success', title: '¡Listo!', message: 'Acercamos el caso a la veterinaria sugerida.' });
+    } catch (error: any) {
+      showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'No pudimos acercar el caso a la veterinaria.' });
+    } finally {
+      setIsAceptandoSugerencia(false);
+      setShowEncontreModal(false);
+      resetModales();
+    }
+  };
+
+  const descartarSugerenciaAliado = () => {
+    setShowEncontreModal(false);
+    resetModales();
   };
 
   const registrarCierre = async () => {
@@ -761,10 +936,25 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
                               </TouchableOpacity>
                             </View>
                           ) : enProceso ? (
-                            <TouchableOpacity onPress={() => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${reporte.latitud},${reporte.longitud}`)} style={{ backgroundColor: COLORS.primary, paddingVertical: 14, borderRadius: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}>
-                              <Ionicons name="map" size={16} color={COLORS.white} style={{ marginRight: 6 }} />
-                              <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Cómo llegar</Text>
-                            </TouchableOpacity>
+                            reporte.estado_reporte === 'en_atencion' &&
+                            reporte.tiene_sugerencia_aceptada &&
+                            !reporte.tiene_llegada_veterinaria_registrada ? (
+                              <View style={{ gap: 10 }}>
+                                <TouchableOpacity onPress={() => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${reporte.latitud},${reporte.longitud}`)} style={{ backgroundColor: COLORS.primary, paddingVertical: 14, borderRadius: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}>
+                                  <Ionicons name="map" size={16} color={COLORS.white} style={{ marginRight: 6 }} />
+                                  <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Cómo llegar</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity onPress={() => abrirVeterinaria(reporte.reporte_id)} style={{ backgroundColor: COLORS.accent, paddingVertical: 14, borderRadius: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}>
+                                  <Ionicons name="medkit-outline" size={16} color={COLORS.white} style={{ marginRight: 6 }} />
+                                  <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Registrar llegada a veterinaria</Text>
+                                </TouchableOpacity>
+                              </View>
+                            ) : (
+                              <TouchableOpacity onPress={() => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${reporte.latitud},${reporte.longitud}`)} style={{ backgroundColor: COLORS.primary, paddingVertical: 14, borderRadius: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}>
+                                <Ionicons name="map" size={16} color={COLORS.white} style={{ marginRight: 6 }} />
+                                <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Cómo llegar</Text>
+                              </TouchableOpacity>
+                            )
                           ) : (
                             <TouchableOpacity onPress={() => setReporteSeleccionado(reporte)} style={{ backgroundColor: COLORS.accent, paddingVertical: 14, borderRadius: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}>
                               <Ionicons name="eye" size={16} color={COLORS.white} style={{ marginRight: 6 }} />
@@ -1018,29 +1208,137 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
       <Modal visible={showEncontreModal || showCerrarModal} transparent animationType="fade">
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
           <View style={{ backgroundColor: COLORS.cardBg, borderRadius: 32, padding: 32, width: '100%', maxWidth: 450 }}>
-            <Text style={{ fontSize: 22, fontWeight: '800', color: COLORS.textDark, marginBottom: 20 }}>
-              {showEncontreModal ? '¿Cómo está el animal ahora?' : '¿Cómo concluyó el rescate?'}
-            </Text>
-            {(showEncontreModal ? OPCIONES_ENCONTRE : OPCIONES_CIERRE).map((opcion) => {
-              const seleccionado = showEncontreModal ? estadoEncontre === opcion : estadoCierre === opcion;
-              return (
-                <TouchableOpacity key={opcion} onPress={() => showEncontreModal ? setEstadoEncontre(opcion) : setEstadoCierre(opcion)} style={{ padding: 16, borderWidth: 2, borderColor: seleccionado ? COLORS.accent : 'transparent', borderRadius: 16, marginBottom: 10, backgroundColor: seleccionado ? 'rgba(102, 188, 180, 0.1)' : COLORS.white }}>
-                  <Text style={{ fontSize: 14, color: COLORS.textDark, fontWeight: seleccionado ? '700' : '500' }}>{opcion}</Text>
+            {showEncontreModal && sugerenciaAliado ? (
+              <>
+                <Text style={{ fontSize: 22, fontWeight: '800', color: COLORS.textDark, marginBottom: 20 }}>
+                  Hay una veterinaria cercana disponible
+                </Text>
+                <View style={{ padding: 16, borderWidth: 2, borderColor: COLORS.accent, borderRadius: 16, marginBottom: 10, backgroundColor: 'rgba(102, 188, 180, 0.1)' }}>
+                  <Text style={{ fontSize: 14, color: COLORS.textDark, fontWeight: '700' }}>{sugerenciaAliado.nombre}</Text>
+                  <Text style={{ fontSize: 14, color: COLORS.textDark, fontWeight: '500', marginTop: 10 }}>{sugerenciaAliado.distancia_km} km de distancia</Text>
+                  <Text style={{ fontSize: 14, color: COLORS.textDark, fontWeight: '500', marginTop: 10 }}>{sugerenciaAliado.capacidad_disponible} {sugerenciaAliado.unidad} disponibles</Text>
+                  <Text style={{ fontSize: 14, fontWeight: '700', marginTop: 10, color: NIVEL_URGENCIA_COLOR[sugerenciaAliado.nivel_urgencia] || COLORS.textDark }}>
+                    Urgencia: {NIVEL_URGENCIA_LABEL[sugerenciaAliado.nivel_urgencia] || sugerenciaAliado.nivel_urgencia}
+                  </Text>
+                </View>
+                <View style={{ flexDirection: 'row', gap: 12, marginTop: 24 }}>
+                  <TouchableOpacity onPress={descartarSugerenciaAliado} style={{ flex: 1, paddingVertical: 16, alignItems: 'center', borderRadius: 20, backgroundColor: '#E5E7EB' }}>
+                    <Text style={{ color: COLORS.textLight, fontWeight: 'bold' }}>No, gracias</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={aceptarSugerenciaAliado} disabled={isAceptandoSugerencia} style={{ flex: 1, paddingVertical: 16, alignItems: 'center', borderRadius: 20, backgroundColor: COLORS.accent }}>
+                    {isAceptandoSugerencia ? <ActivityIndicator color={COLORS.white} /> : <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Acercar a esta veterinaria</Text>}
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : (
+              <>
+                <Text style={{ fontSize: 22, fontWeight: '800', color: COLORS.textDark, marginBottom: 20 }}>
+                  {showEncontreModal ? '¿Cómo está el animal ahora?' : '¿Cómo concluyó el rescate?'}
+                </Text>
+                {(showEncontreModal ? OPCIONES_ENCONTRE : OPCIONES_CIERRE).map((opcion) => {
+                  const seleccionado = showEncontreModal ? estadoEncontre === opcion : estadoCierre === opcion;
+                  return (
+                    <TouchableOpacity key={opcion} onPress={() => showEncontreModal ? setEstadoEncontre(opcion) : setEstadoCierre(opcion)} style={{ padding: 16, borderWidth: 2, borderColor: seleccionado ? COLORS.accent : 'transparent', borderRadius: 16, marginBottom: 10, backgroundColor: seleccionado ? 'rgba(102, 188, 180, 0.1)' : COLORS.white }}>
+                      <Text style={{ fontSize: 14, color: COLORS.textDark, fontWeight: seleccionado ? '700' : '500' }}>{opcion}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+                <TextInput style={{ backgroundColor: COLORS.white, borderRadius: 16, padding: 16, fontSize: 14, marginTop: 12, minHeight: 80, textAlignVertical: 'top' }} multiline placeholder="Comentarios (Opcional)" value={notasHito} onChangeText={setNotasHito} />
+                <TouchableOpacity onPress={handlePickFoto} style={{ padding: 16, backgroundColor: COLORS.white, borderRadius: 16, marginTop: 12, alignItems: 'center', borderWidth: 2, borderColor: '#E5E7EB', borderStyle: 'dashed' }}>
+                  <Text style={{ color: COLORS.textLight, fontWeight: 'bold' }}><Ionicons name="camera" size={16} /> {fotoHito ? 'Foto adjuntada ✓' : 'Subir foto (Opcional)'}</Text>
                 </TouchableOpacity>
-              );
-            })}
-            <TextInput style={{ backgroundColor: COLORS.white, borderRadius: 16, padding: 16, fontSize: 14, marginTop: 12, minHeight: 80, textAlignVertical: 'top' }} multiline placeholder="Comentarios (Opcional)" value={notasHito} onChangeText={setNotasHito} />
-            <TouchableOpacity onPress={handlePickFoto} style={{ padding: 16, backgroundColor: COLORS.white, borderRadius: 16, marginTop: 12, alignItems: 'center', borderWidth: 2, borderColor: '#E5E7EB', borderStyle: 'dashed' }}>
-              <Text style={{ color: COLORS.textLight, fontWeight: 'bold' }}><Ionicons name="camera" size={16} /> {fotoHito ? 'Foto adjuntada ✓' : 'Subir foto (Opcional)'}</Text>
-            </TouchableOpacity>
-            <View style={{ flexDirection: 'row', gap: 12, marginTop: 24 }}>
-              <TouchableOpacity onPress={() => showEncontreModal ? setShowEncontreModal(false) : setShowCerrarModal(false)} style={{ flex: 1, paddingVertical: 16, alignItems: 'center', borderRadius: 20, backgroundColor: '#E5E7EB' }}>
-                <Text style={{ color: COLORS.textLight, fontWeight: 'bold' }}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={showEncontreModal ? registrarHitoEncontre : registrarCierre} style={{ flex: 1, paddingVertical: 16, alignItems: 'center', borderRadius: 20, backgroundColor: COLORS.accent }}>
-                {isSubmittingAccion ? <ActivityIndicator color={COLORS.white} /> : <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Confirmar</Text>}
-              </TouchableOpacity>
-            </View>
+                <View style={{ flexDirection: 'row', gap: 12, marginTop: 24 }}>
+                  <TouchableOpacity onPress={() => showEncontreModal ? setShowEncontreModal(false) : setShowCerrarModal(false)} style={{ flex: 1, paddingVertical: 16, alignItems: 'center', borderRadius: 20, backgroundColor: '#E5E7EB' }}>
+                    <Text style={{ color: COLORS.textLight, fontWeight: 'bold' }}>Cancelar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={showEncontreModal ? registrarHitoEncontre : registrarCierre} style={{ flex: 1, paddingVertical: 16, alignItems: 'center', borderRadius: 20, backgroundColor: COLORS.accent }}>
+                    {isSubmittingAccion ? <ActivityIndicator color={COLORS.white} /> : <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Confirmar</Text>}
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Modal: llegué a la veterinaria (Ruta 1) — checkpoint de tránsito,
+          sin select de estado (decisión A): solo notas opcionales + GPS y
+          foto obligatorios, validados en backend contra la ubicación del aliado. ── */}
+      <Modal visible={showVeterinariaModal} transparent animationType="fade">
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+          <View style={{ backgroundColor: COLORS.cardBg, borderRadius: 32, padding: 32, width: '100%', maxWidth: 450, maxHeight: '90%' }}>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={{ fontSize: 22, fontWeight: '800', color: COLORS.textDark, marginBottom: 20 }}>
+                Registrar llegada a la veterinaria
+              </Text>
+
+              <TextInput
+                style={{ backgroundColor: COLORS.white, borderRadius: 16, padding: 16, fontSize: 14, marginBottom: 16, minHeight: 80, textAlignVertical: 'top' }}
+                multiline
+                placeholder="Notas adicionales (Opcional)"
+                value={notasVeterinaria}
+                onChangeText={setNotasVeterinaria}
+              />
+
+              <View style={{ borderRadius: 16, padding: 14, marginBottom: 14, backgroundColor: 'rgba(102, 188, 180, 0.1)', borderWidth: 1, borderColor: COLORS.accent }}>
+                {ubicacionVeterinaria ? (
+                  <Text style={{ fontSize: 12, color: '#2E8B57', fontWeight: '700', marginBottom: 8 }}>✓ Ubicación capturada</Text>
+                ) : (
+                  <Text style={{ fontSize: 12, color: COLORS.textLight, marginBottom: 8 }}>Se capturará automáticamente cuando presiones el botón</Text>
+                )}
+                <TouchableOpacity
+                  onPress={obtenerUbicacionVeterinaria}
+                  disabled={obteniendoGPSVeterinaria}
+                  style={{ backgroundColor: COLORS.accent, paddingVertical: 12, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}
+                >
+                  {obteniendoGPSVeterinaria ? (
+                    <ActivityIndicator color={COLORS.white} />
+                  ) : (
+                    <>
+                      <Ionicons name="navigate-circle-outline" size={16} color={COLORS.white} style={{ marginRight: 6 }} />
+                      <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 13 }}>Capturar mi ubicación GPS</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+
+              <View style={{ borderRadius: 16, padding: 14, marginBottom: 20, backgroundColor: 'rgba(236, 128, 43, 0.08)', borderWidth: 1, borderColor: COLORS.primary }}>
+                {fotoVeterinaria ? (
+                  <>
+                    <Image source={{ uri: fotoVeterinaria }} style={{ width: '100%', height: 120, borderRadius: 8, marginBottom: 6 }} resizeMode="cover" />
+                    <Text style={{ fontSize: 12, color: '#2E8B57', fontWeight: '700', marginBottom: 8 }}>✓ Foto capturada</Text>
+                  </>
+                ) : (
+                  <Text style={{ fontSize: 12, color: COLORS.textLight, marginBottom: 8 }}>La foto se capturará con la cámara del dispositivo</Text>
+                )}
+                <TouchableOpacity
+                  onPress={capturarFotoVeterinaria}
+                  style={{ backgroundColor: COLORS.primary, paddingVertical: 12, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}
+                >
+                  <Ionicons name="camera-outline" size={16} color={COLORS.white} style={{ marginRight: 6 }} />
+                  <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 13 }}>{fotoVeterinaria ? 'Cambiar foto' : 'Abrir cámara'}</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={{ flexDirection: 'row', gap: 12 }}>
+                <TouchableOpacity onPress={cancelarVeterinaria} style={{ flex: 1, paddingVertical: 16, alignItems: 'center', borderRadius: 20, backgroundColor: '#E5E7EB' }}>
+                  <Text style={{ color: COLORS.textLight, fontWeight: 'bold' }}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={confirmarVeterinaria}
+                  disabled={!ubicacionVeterinaria || !fotoVeterinaria || isRegistrandoVeterinaria}
+                  style={{ flex: 1, paddingVertical: 16, alignItems: 'center', borderRadius: 20, backgroundColor: COLORS.accent, opacity: !ubicacionVeterinaria || !fotoVeterinaria ? 0.6 : 1 }}
+                >
+                  {isRegistrandoVeterinaria ? (
+                    <ActivityIndicator color={COLORS.white} />
+                  ) : (
+                    <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>
+                      {!ubicacionVeterinaria || !fotoVeterinaria ? 'Faltan datos' : 'Registrar llegada'}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -1192,11 +1490,12 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
 
                     <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
                       {candidatosList.map((candidato) => {
-                        const maxScores = { proximidad: 40, compatibilidad: 25, disponibilidad: 20, carga: 15 };
+                        const maxScores = { proximidad: 30, disponibilidad: 25, experiencia: 20, movilidad: 15, carga: 10 };
                         const barras = [
                           { label: 'Proximidad', valor: candidato.score.proximidad, max: maxScores.proximidad },
-                          { label: 'Compatibilidad', valor: candidato.score.compatibilidad, max: maxScores.compatibilidad },
                           { label: 'Disponibilidad', valor: candidato.score.disponibilidad, max: maxScores.disponibilidad },
+                          { label: 'Experiencia declarada', valor: candidato.score.experiencia, max: maxScores.experiencia },
+                          { label: 'Movilidad y equipo', valor: candidato.score.movilidad, max: maxScores.movilidad },
                           { label: 'Carga', valor: candidato.score.carga, max: maxScores.carga },
                         ];
                         const iniciales = candidato.nombre.split(' ').slice(0, 2).map((p: string) => p[0]).join('').toUpperCase();
@@ -1217,7 +1516,8 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
 
                               <View style={{ flex: 1 }}>
                                 <Text style={{ fontSize: 15, fontWeight: '700', color: COLORS.textDark }}>{candidato.nombre}</Text>
-                                <Text style={{ fontSize: 12, color: COLORS.textLight, marginTop: 2 }}>📍 a {candidato.distancia_km} km</Text>
+                                <Text style={{ fontSize: 12, color: COLORS.textLight, marginTop: 2 }}>📍 a {candidato.distancia_km} km · radio de {candidato.radio_max_km} km</Text>
+                                <Text style={{ fontSize: 11, color: COLORS.textLight, marginTop: 3 }}>{candidato.capacidad_resumen}</Text>
                                 {candidato.tipo === 'voluntario_externo' && (
                                   <View style={{ backgroundColor: '#E8CCAD', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, alignSelf: 'flex-start', marginTop: 5 }}>
                                     <Text style={{ fontSize: 10, fontWeight: '700', color: COLORS.textDark }}>{candidato.etiqueta || 'Voluntario externo verificado'}</Text>
@@ -1230,6 +1530,24 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
                                 <Text style={{ fontSize: 10, color: COLORS.textLight, fontWeight: '600' }}>SCORE</Text>
                               </View>
                             </View>
+
+                            {!!candidato.coincidencias?.length && (
+                              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                                {candidato.coincidencias.map((texto) => (
+                                  <View key={texto} style={{ backgroundColor: 'rgba(102,188,180,0.16)', borderRadius: 10, paddingHorizontal: 9, paddingVertical: 5 }}>
+                                    <Text style={{ color: COLORS.accent, fontSize: 10, fontWeight: '700' }}>{texto}</Text>
+                                  </View>
+                                ))}
+                              </View>
+                            )}
+
+                            {!!candidato.alertas?.length && (
+                              <View style={{ backgroundColor: '#FFF6E8', borderRadius: 12, padding: 9, marginBottom: 10 }}>
+                                {candidato.alertas.map((texto) => (
+                                  <Text key={texto} style={{ color: COLORS.textDark, fontSize: 10, lineHeight: 15 }}>• {texto}</Text>
+                                ))}
+                              </View>
+                            )}
 
                             {barras.map((barra) => {
                               const pct = Math.min(1, barra.valor / barra.max);
@@ -1354,4 +1672,3 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
     </View>
   );
 }
-

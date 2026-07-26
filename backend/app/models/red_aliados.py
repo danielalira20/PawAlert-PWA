@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field, model_validator
-from typing import Optional, Any
+from typing import Optional, Any, Dict
 from enum import Enum
+from uuid import UUID
 
 
 # Lotes divisibles (FRONT13/14/15/16 + BACK07): resuelto en
@@ -85,9 +86,19 @@ class OfertaProactivaRequest(AportacionBase):
 
 class ContribucionResponse(BaseModel):
     id: str
-    necesidad_id: str
+    # necesidad_id ya no es obligatorio en la tabla (migrations/0012_aceptar_sugerencia_aliado.sql)
+    # — una contribución nacida de BACK02 (aceptar sugerencia Ruta 1) trae
+    # reporte_id en vez de necesidad_id.
+    necesidad_id: Optional[str] = None
+    reporte_id: Optional[str] = None
+    oferta_proactiva_id: Optional[str] = None
     estado: str
     created_at: str
+
+
+class AceptarSugerenciaRequest(BaseModel):
+    """Body de POST /reports/{reporte_id}/hitos/aceptar-sugerencia."""
+    oferta_id: str
 
 
 class OfertaProactivaResponse(BaseModel):
@@ -98,7 +109,6 @@ class OfertaProactivaResponse(BaseModel):
     unidad: str
     activa: bool
     created_at: str
-
 
 class DivisibleEnum(str, Enum):
     no = "no"
@@ -159,3 +169,88 @@ class ResponderInvitacionRequest(BaseModel):
 
 class ConfirmarQrRequest(BaseModel):
     token: str
+
+
+class NecesidadCreate(BaseModel):
+    reporte_id: Optional[UUID] = None
+    categoria: str
+    urgencia: Optional[str] = None
+    subcategoria_id: Optional[UUID] = None
+    cantidad_valor: Optional[float] = None
+    cantidad_unidad: Optional[str] = None
+    detalle: Optional[Dict[str, Any]] = None  # Recibirá un objeto JSON
+
+class SugerenciaAliadoResponse(BaseModel):
+    """Motor de sugerencias Ruta 1 (BACK01) — solo informativo, no reserva
+    nada. Se embebe como campo opcional en la respuesta de
+    POST /reports/{id}/hitos, nunca se persiste (ver flujo-red-aliados-pawalert.md,
+    sección 6, Ruta 1)."""
+    oferta_id: str
+    perfil_apoyo_id: str
+    nombre: str
+    distancia_km: float
+    unidad: str
+    capacidad_disponible: float
+    nivel_urgencia: str
+
+
+class OfertaCompatibleResponse(BaseModel):
+    """Motor de sugerencias Ruta 2 (BACK03) — un elemento de la lista que
+    regresa GET /red-aliados/necesidades/{id}/ofertas-compatibles. Mismo
+    shape que SugerenciaAliadoResponse salvo por `nivel_urgencia`, que no
+    aplica a Ruta 2 (no hay filtro de urgencia en necesidades generales)
+    — modelo separado a propósito, no se reusa el de Ruta 1 con un campo
+    opcional sin sentido."""
+    oferta_id: str
+    perfil_apoyo_id: str
+    nombre: str
+    distancia_km: float
+    unidad: str
+    capacidad_disponible: float
+
+
+class AceptarOfertaGeneralRequest(BaseModel):
+    """Body de POST /red-aliados/necesidades/{necesidad_id}/aceptar-oferta.
+    A diferencia de Ruta 1 (siempre reserva 1 unidad fija), aquí la
+    cantidad es variable — la asociación decide cuánto acepta."""
+    oferta_id: str
+    cantidad: float = Field(gt=0)
+
+
+class ContactoResponse(BaseModel):
+    """Datos de contacto para coordinar la entrega fuera de la plataforma
+    — sin chat ni logística interna, solo se comparten estos datos."""
+    nombre: Optional[str] = None
+    telefono: Optional[str] = None
+    email: Optional[str] = None
+
+
+class AceptarOfertaGeneralResponse(BaseModel):
+    contribucion: ContribucionResponse
+    contacto_aliado: ContactoResponse
+    contacto_asociacion: ContactoResponse
+
+
+class UbicacionAliadoResponse(BaseModel):
+    """Dirección + coordenadas del aliado (perfil_apoyo) que acepta una
+    sugerencia Ruta 1 — calle/colonia/municipio/referencia son solo texto;
+    latitud/longitud se extraen de zona_cobertura vía la RPC
+    ubicacion_perfil_apoyo (migrations/0014_...), no hay columnas de
+    coordenadas nuevas."""
+    calle: Optional[str] = None
+    colonia: Optional[str] = None
+    municipio: Optional[str] = None
+    referencia: Optional[str] = None
+    latitud: Optional[float] = None
+    longitud: Optional[float] = None
+
+
+class AceptarSugerenciaVeterinariaResponse(BaseModel):
+    """Respuesta de POST /reports/{reporte_id}/hitos/aceptar-sugerencia
+    (Ruta 1) — mismo criterio que AceptarOfertaGeneralResponse de Ruta 2,
+    pero con ubicacion_aliado en vez de contacto_asociacion (aquí no hay
+    una segunda asociación involucrada, sino la dirección de la
+    veterinaria para el botón 'Cómo llegar')."""
+    contribucion: ContribucionResponse
+    contacto_aliado: ContactoResponse
+    ubicacion_aliado: UbicacionAliadoResponse

@@ -51,3 +51,29 @@ async def get_roles():
         .eq("activo", True)\
         .execute()
     return resultado.data
+
+@router.get("/recursos/categorias", status_code=200)
+async def get_categorias_recurso():
+    resultado = supabase.table("categoria_recurso")\
+        .select("id, clave, descripcion")\
+        .eq("activo", True)\
+        .execute()
+    return resultado.data
+
+@router.get("/recursos/subcategorias", status_code=200)
+async def get_all_subcategorias_recurso():
+    resultado = supabase.table("subcategoria_recurso")\
+        .select("id, clave, descripcion, especies_aplicables, requiere_tamanio, categoria_recurso!inner(clave)")\
+        .eq("activo", True)\
+        .execute()
+    # Flatten the category clave
+    datos = []
+    for row in resultado.data:
+        cat_clave = row.get("categoria_recurso", {}).get("clave")
+        datos.append({
+            "id": row["id"],
+            "clave": row["clave"],
+            "descripcion": row["descripcion"],
+            "categoria_clave": cat_clave
+        })
+    return datos

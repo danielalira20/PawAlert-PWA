@@ -195,6 +195,17 @@ interface Props {
   fromProfile?: boolean;
   esPostulacionNueva?: boolean;
   esPostulacionExterna?: boolean;
+  // Asociación elegida en el paso 1 (JoinAssociationScreen) — necesaria para
+  // crear la postulación de interno al terminar este formulario (ver
+  // handleSubmit). No aplica a esPostulacionExterna (esa asigna la
+  // asociación más cercana automáticamente en /externo/finalizar).
+  asociacionId?: string;
+  // Distinto de onClose: onClose se llama tanto al terminar con éxito como
+  // al abandonar el formulario (botón "Salir"), así que JoinAssociationScreen
+  // no puede usarlo solo para distinguir si debe mostrar el aviso de éxito.
+  // Este callback solo se dispara cuando la postulación de interno
+  // efectivamente se creó.
+  onPostulacionFinalizada?: () => void;
 }
 
 function labels(values: string[], options: Option[]) {
@@ -220,6 +231,8 @@ export default function CapacidadesFormScreen({
   fromProfile = false,
   esPostulacionNueva = false,
   esPostulacionExterna = false,
+  asociacionId,
+  onPostulacionFinalizada,
 }: Props) {
   const { token } = useAuth();
   const { toast, translateY, showToast } = useToast();
@@ -234,6 +247,7 @@ export default function CapacidadesFormScreen({
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
+  const [showCasaHogarModal, setShowCasaHogarModal] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const [dias, setDias] = useState<string[]>([]);
@@ -553,9 +567,14 @@ export default function CapacidadesFormScreen({
             { headers: { Authorization: `Bearer ${token}` } },
           );
           setAsociacionRevisora(finalizacion?.asociacion_nombre || null);
+          setMostrarConfirmacion(false);
+          setPostulacionCompletada(true);
+          return;
         }
-        setMostrarConfirmacion(false);
-        setPostulacionCompletada(true);
+        // Interno: antes de crear la postulación, se ofrece el modal
+        // opcional de casa hogar (ver finalizarPostulacionInterno más abajo,
+        // que es quien de verdad llama a /interno/finalizar).
+        setShowCasaHogarModal(true);
         return;
       }
       showToast({
@@ -579,6 +598,48 @@ export default function CapacidadesFormScreen({
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  // Interno: crea la postulación de verdad — se llama desde cualquiera de
+  // los dos botones del modal de casa hogar (por ahora ambos hacen lo mismo,
+  // ver handleAceptarCasaHogar). La postulación se crea hasta aquí, no antes
+  // — si esta llamada falla, se avisa con el mismo toast de error que ya usa
+  // el resto del formulario y no se marca como completada.
+  const finalizarPostulacionInterno = async () => {
+    setIsSubmitting(true);
+    try {
+      await axios.post(
+        `${API_URL}/voluntarios/interno/finalizar`,
+        { asociacion_id: asociacionId },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      onPostulacionFinalizada?.();
+      setMostrarConfirmacion(false);
+      setPostulacionCompletada(true);
+    } catch (error: any) {
+      showToast({
+        type: 'error',
+        title: 'No pudimos guardar',
+        message:
+          error?.response?.data?.detail ||
+          'Verifica tu conexión e intenta nuevamente.',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleCancelarCasaHogar = () => {
+    setShowCasaHogarModal(false);
+    finalizarPostulacionInterno();
+  };
+
+  const handleAceptarCasaHogar = () => {
+    // TODO(casa hogar): aquí se insertará en el futuro el flujo de registro
+    // de casa hogar, ANTES de llamar a finalizarPostulacionInterno(). Por
+    // ahora este botón es solo interfaz — mismo comportamiento que Cancelar.
+    setShowCasaHogarModal(false);
+    finalizarPostulacionInterno();
   };
 
   const renderPaso = () => {
@@ -969,6 +1030,40 @@ export default function CapacidadesFormScreen({
                 }}
               >
                 <Text style={styles.primaryButtonText}>Salir</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={showCasaHogarModal} transparent animationType="fade">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.confirmCard}>
+            <View style={styles.casaHogarIconWrap}>
+              <Ionicons name="home-outline" size={32} color={COLORS.bgTeal} />
+            </View>
+            <Text style={styles.confirmTitle}>¿Quieres registrar tu casa hogar?</Text>
+            <Text style={styles.confirmText}>
+              Es opcional — podrás hacerlo más adelante desde tu perfil si lo prefieres.
+            </Text>
+            <View style={styles.confirmActions}>
+              <TouchableOpacity
+                style={styles.secondaryButton}
+                onPress={handleCancelarCasaHogar}
+                disabled={isSubmitting}
+              >
+                <Text style={styles.secondaryButtonText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.primaryButton, isSubmitting && { opacity: 0.7 }]}
+                onPress={handleAceptarCasaHogar}
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? (
+                  <ActivityIndicator color={COLORS.bgWhite} />
+                ) : (
+                  <Text style={styles.primaryButtonText}>Aceptar</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -1382,6 +1477,16 @@ const styles = StyleSheet.create({
   confirmTitle: { color: COLORS.textDark, fontSize: 21, fontWeight: '900', textAlign: 'center' },
   confirmText: { color: COLORS.textLight, fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 9 },
   confirmActions: { flexDirection: 'row', gap: 10, marginTop: 24 },
+  casaHogarIconWrap: {
+    alignSelf: 'center',
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(102, 188, 180, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
   loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.bgWhite },
   loadingText: { color: COLORS.textLight, fontSize: 14, fontWeight: '700', marginTop: 12 },
 });
