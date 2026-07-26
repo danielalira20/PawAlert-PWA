@@ -16,11 +16,13 @@ import { useRecentReports } from '../../hooks/useRecentReports';
 import { useAssociationImpact } from '../../hooks/useAssociationImpact';
 import { useAdminSupervision } from '../../hooks/useAdminSupervision';
 import { useStaffImpact } from '../../hooks/useStaffImpact';
+import { useAliadoImpact } from '../../hooks/useAliadoImpact';
 import { GeneralStatsStrip } from './GeneralStatsStrip';
 import { ReporterImpactStats } from './ReporterImpactStats';
 import { AssociationImpactStats } from './AssociationImpactStats';
 import { AdminSupervisionCard } from './AdminSupervisionCard';
 import { StaffImpactStats } from './StaffImpactStats';
+import { AliadoImpactStats } from './AliadoImpactStats';
 import { OperationalAvailabilityCard } from './OperationalAvailabilityCard';
 
 const DESKTOP_BREAKPOINT = 900;
@@ -72,7 +74,45 @@ export function LoggedInProfile({
   const [tieneCapacidades, setTieneCapacidades] = useState<boolean | null>(null);
   const [tienePerfilVoluntario, setTienePerfilVoluntario] = useState<boolean | null>(null);
   const [estadoVoluntario, setEstadoVoluntario] = useState<string | null>(null);
- 
+
+  // FRONT03/BACK04 — perfil_apoyo (donante/aliado/patrocinador) es una
+  // identidad independiente del rol principal, así que este chequeo corre
+  // para todos los roles salvo asociación: sería inconsistente que quien
+  // publica necesidades (porque necesita ayuda) también aparezca como quien
+  // dona — son roles opuestos en el mismo intercambio. `tipo` no se guarda
+  // aparte: AliadoImpactStats ya lo recibe dentro de `impacto` (GET
+  // /red-aliados/me/impacto), no hace falta duplicarlo aquí.
+  const [tienePerfilApoyo, setTienePerfilApoyo] = useState<boolean | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!token || esAsociacion) {
+        setTienePerfilApoyo(null);
+        return;
+      }
+      let cancelado = false;
+      (async () => {
+        try {
+          const res = await axios.get(`${API_URL}/red-aliados/me`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (!cancelado) {
+            setTienePerfilApoyo(!!res.data?.tiene_perfil_apoyo);
+          }
+        } catch {
+          if (!cancelado) {
+            setTienePerfilApoyo(null);
+          }
+        }
+      })();
+      return () => {
+        cancelado = true;
+      };
+    }, [token, esAsociacion])
+  );
+
+  const { impacto: impactoAliado, isLoading: isLoadingAliado } = useAliadoImpact(tienePerfilApoyo === true);
+
 useFocusEffect(
   useCallback(() => {
     if (!token || esAdmin || esAsociacion || esStaff) {
@@ -132,6 +172,12 @@ useFocusEffect(
   ) : (
     <ReporterImpactStats impacto={impacto} isLoading={isLoadingReportes} />
   );
+
+  // Segundo bloque INDEPENDIENTE del ternario de arriba — se muestra
+  // ADEMÁS del bloque del rol principal, nunca en su lugar (FRONT03).
+  const aliadoImpactElement = tienePerfilApoyo ? (
+    <AliadoImpactStats impacto={impactoAliado} isLoading={isLoadingAliado} />
+  ) : null;
 
   const puedeVerPostulacion = esVoluntarioActivo || tienePerfilVoluntario === true;
   const avisoPostulacion =
@@ -292,6 +338,7 @@ useFocusEffect(
                   <OperationalAvailabilityCard token={token} />
                 )}
                 {impactStatsElement}
+                {aliadoImpactElement}
               </View>
             </View>
 
@@ -354,6 +401,7 @@ useFocusEffect(
             no desplazar la estructura móvil que ya funcionaba bien */}
         <View style={{ marginTop: 24 }}>
           {impactStatsElement}
+          {aliadoImpactElement}
         </View>
         <GeneralStatsStrip />
       </View>
