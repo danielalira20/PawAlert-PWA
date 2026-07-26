@@ -17,6 +17,7 @@ from app.models.red_aliados import (
     AceptarOfertaGeneralRequest,
     AceptarOfertaGeneralResponse,
 )
+from datetime import datetime
 
 router = APIRouter()
 
@@ -165,3 +166,49 @@ def get_necesidades_publicas():
         })
 
     return necesidades
+
+@router.get("/me/notificaciones", status_code=200)
+def get_notificaciones_aliado(authorization: str = Header(None)):
+    """
+    FRONT09: Obtiene la lista de notificaciones de match para el aliado logueado.
+    """
+    usuario = _obtener_usuario_autenticado(authorization)
+
+    # 1. Obtenemos el perfil de apoyo del usuario logueado
+    perfil_res = supabase.table("perfil_apoyo").select("id").eq("usuario_id", usuario["id"]).execute()
+    
+    if not perfil_res.data:
+        return [] # Si no es un aliado registrado, devolvemos lista vacía
+
+    perfil_apoyo_id = perfil_res.data[0]["id"]
+
+    # 2. Consultamos usando 'tipo' en lugar de 'mensaje'
+    noti_res = supabase.table("notificaciones_aliado").select(
+        "id, necesidad_id, tipo, leida, created_at, "
+        "necesidades(categoria, asociaciones(nombre))"
+    ).eq("perfil_apoyo_id", perfil_apoyo_id).order("created_at", desc=True).execute()
+
+    # 3. Formateamos la respuesta para la pantalla FRONT09
+    notificaciones = []
+    for row in noti_res.data or []:
+        necesidad = row.get("necesidades") or {}
+        asociacion = necesidad.get("asociaciones") or {}
+
+        fecha_raw = row.get("created_at")
+        fecha_str = fecha_raw[:10] if fecha_raw else "Reciente"
+        
+        # Generamos un mensaje amigable basándonos en el tipo de notificación
+        tipo_notificacion = row.get("tipo", "compatibilidad")
+        mensaje_dinamico = f"¡Match encontrado por {tipo_notificacion}! Tienes una necesidad compatible."
+
+        notificaciones.append({
+            "id": row["id"],
+            "necesidad_id": row["necesidad_id"],
+            "asociacion_nombre": asociacion.get("nombre", "Asociación Desconocida"),
+            "categoria": necesidad.get("categoria", "Recurso solicitado"),
+            "mensaje": mensaje_dinamico,
+            "leida": row.get("leida", False),
+            "fecha": fecha_str
+        })
+
+    return notificaciones
