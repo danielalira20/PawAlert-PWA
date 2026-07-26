@@ -18,6 +18,8 @@ from app.services.red_aliados_service import (
     confirmar_recepcion_qr,
     buscar_ofertas_compatibles,
     aceptar_sugerencia_general,
+    obtener_mi_perfil_apoyo,
+    obtener_impacto_aliado,
 )
 from app.models.red_aliados import (
     ContribucionRequest,
@@ -32,6 +34,8 @@ from app.models.red_aliados import (
     OfertaCompatibleResponse,
     AceptarOfertaGeneralRequest,
     AceptarOfertaGeneralResponse,
+    PerfilApoyoMeResponse,
+    ImpactoAliadoResponse,
 )
 from datetime import datetime
 
@@ -64,6 +68,26 @@ def _obtener_usuario_autenticado(authorization: str | None) -> dict:
         "asociacion_id": fila.get("asociacion_id"),
         "rol": (fila.get("roles") or {}).get("nombre"),
     }
+
+
+@router.get("/me", status_code=200, response_model=PerfilApoyoMeResponse)
+async def get_mi_perfil_apoyo(authorization: str = Header(None)):
+    """FRONT03/BACK04 — chequeo de existencia, mismo patrón que
+    GET /voluntarios/me: le dice a Mi Perfil si debe mostrar el segundo
+    bloque de estadísticas (AliadoImpactStats) y con qué copy por tipo."""
+    usuario = _obtener_usuario_autenticado(authorization)
+    return obtener_mi_perfil_apoyo(usuario["id"])
+
+
+@router.get("/me/impacto", status_code=200, response_model=ImpactoAliadoResponse)
+async def get_mi_impacto_aliado(authorization: str = Header(None)):
+    """Estadísticas de impacto del perfil_apoyo del usuario logueado —
+    separado de GET /me a propósito (igual que /staff/me/reportes está
+    separado de /voluntarios/me): /me es barato y se llama siempre,
+    /me/impacto es la consulta pesada y solo se llama cuando /me dice
+    tiene_perfil_apoyo=true."""
+    usuario = _obtener_usuario_autenticado(authorization)
+    return obtener_impacto_aliado(usuario["id"])
 
 
 @router.get("/categorias", status_code=200)

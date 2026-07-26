@@ -923,3 +923,102 @@ def crear_necesidad_asociacion(supabase, asociacion_id: str, data):
         return necesidad_creada
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error al crear la necesidad: {str(e)}")
+
+
+# ─── FRONT03/BACK04 — perfil de aliado en Mi Perfil ───────────────────────
+# Existencia + estadísticas de impacto de perfil_apoyo, mismo patrón que
+# obtener_mi_voluntario()/obtener_reportes_voluntario() en
+# voluntario_service.py, pero para el dominio de donaciones (no de
+# rescates): no hay "% rescatados" ni especies, hay contribuciones,
+# asociaciones ayudadas y — para aliado_local/patrocinador_institucional —
+# capacidad declarada vs. disponible por oferta proactiva.
+
+def obtener_mi_perfil_apoyo(usuario_id: str) -> dict:
+    resultado = supabase.table("perfil_apoyo").select("tipo").eq(
+        "usuario_id", usuario_id
+    ).execute()
+
+    if not resultado.data:
+        return {"tiene_perfil_apoyo": False, "tipo": None}
+
+    return {"tiene_perfil_apoyo": True, "tipo": resultado.data[0]["tipo"]}
+
+
+def obtener_impacto_aliado(usuario_id: str) -> dict:
+    perfil = supabase.table("perfil_apoyo").select("id, tipo").eq(
+        "usuario_id", usuario_id
+    ).execute()
+
+    if not perfil.data:
+        raise HTTPException(status_code=404, detail="No tienes un perfil de aliado")
+
+    perfil_apoyo_id = perfil.data[0]["id"]
+    tipo = perfil.data[0]["tipo"]
+
+    # Cada contribución del usuario cuelga de una necesidad (Ruta 2 /
+    # reactiva) o de un reporte (Ruta 1) — nunca de ambas (constraint
+    # contribuciones_necesidad_o_reporte_check, migrations/0012). La
+    # asociación ayudada se resuelve por el lado que sí tenga valor.
+    contribs = supabase.table("contribuciones").select(
+        "id, necesidades(asociacion_id), reportes(asociacion_asignada_id)"
+    ).eq("usuario_id", usuario_id).execute()
+
+    contribs_data = contribs.data or []
+    total_contribuciones = len(contribs_data)
+
+    asociaciones_ayudadas = set()
+    for c in contribs_data:
+        aso_id = (c.get("necesidades") or {}).get("asociacion_id") or \
+            (c.get("reportes") or {}).get("asociacion_asignada_id")
+        if aso_id:
+            asociaciones_ayudadas.add(aso_id)
+
+    ofertas_out: list[dict] = []
+    aplicaciones_out: list[dict] = []
+
+    # Solo aliado_local/patrocinador_institucional declaran capacidad
+    # proactiva — donante_comunitario siempre regresa listas vacías aquí,
+    # nunca un shape distinto (el frontend no necesita ramificar por tipo).
+    if tipo in ("aliado_local", "patrocinador_institucional"):
+        ofertas = supabase.table("ofertas_proactivas").select(
+            "id, categoria, capacidad_declarada, capacidad_disponible, unidad, activa, "
+            "subcategoria_recurso(descripcion)"
+        ).eq("perfil_apoyo_id", perfil_apoyo_id).execute()
+
+        for o in (ofertas.data or []):
+            ofertas_out.append({
+                "oferta_id": o["id"],
+                "categoria": o["categoria"],
+                "subcategoria": (o.get("subcategoria_recurso") or {}).get("descripcion"),
+                "capacidad_declarada": o["capacidad_declarada"],
+                "capacidad_disponible": o["capacidad_disponible"],
+                "unidad": o["unidad"],
+                "activa": o["activa"],
+            })
+
+        oferta_ids = [o["oferta_id"] for o in ofertas_out]
+        if oferta_ids:
+            # "Aplicaciones" = contribuciones que consumieron capacidad de
+            # alguna de estas ofertas — no es una tabla nueva, se deriva de
+            # contribuciones.oferta_proactiva_id.
+            aplicaciones = supabase.table("contribuciones").select(
+                "created_at, cantidad_valor, cantidad_unidad, subcategoria_recurso(descripcion)"
+            ).in_("oferta_proactiva_id", oferta_ids).order("created_at", desc=True).execute()
+
+            for a in (aplicaciones.data or []):
+                cantidad = None
+                if a.get("cantidad_valor") is not None:
+                    cantidad = f"{a['cantidad_valor']} {a.get('cantidad_unidad') or ''}".strip()
+                aplicaciones_out.append({
+                    "fecha": str(a["created_at"]),
+                    "cantidad": cantidad,
+                    "nota": (a.get("subcategoria_recurso") or {}).get("descripcion"),
+                })
+
+    return {
+        "tipo": tipo,
+        "total_contribuciones": total_contribuciones,
+        "asociaciones_ayudadas": len(asociaciones_ayudadas),
+        "ofertas": ofertas_out,
+        "aplicaciones": aplicaciones_out,
+    }

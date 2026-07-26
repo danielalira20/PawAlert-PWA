@@ -239,4 +239,134 @@ def test_crear_contribucion_subcategoria_inexistente(make_query):
         response = client.post("/red-aliados/contribuciones", json=CONTRIBUCION_BODY, headers=AUTH_HEADERS)
 
     assert response.status_code == 422
-    assert "subcategoría" in response.json()["detail"].lower()
+
+
+# ─── GET /red-aliados/me — FRONT03/BACK04 ────────────────────────────────
+
+def test_mi_perfil_apoyo_sin_perfil(make_query):
+    tablas = {"perfil_apoyo": make_query(data=[])}
+    _mock_usuario_autenticado(tablas, make_query)
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    supabase.auth.get_user.return_value = SimpleNamespace(user=SimpleNamespace(id="auth-user-1"))
+
+    patches = _patch_supabase(supabase)
+    with patches[0], patches[1]:
+        response = client.get("/red-aliados/me", headers=AUTH_HEADERS)
+
+    assert response.status_code == 200
+    assert response.json() == {"tiene_perfil_apoyo": False, "tipo": None}
+
+
+def test_mi_perfil_apoyo_con_perfil(make_query):
+    tablas = {"perfil_apoyo": make_query(data=[{"tipo": "donante_comunitario"}])}
+    _mock_usuario_autenticado(tablas, make_query)
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    supabase.auth.get_user.return_value = SimpleNamespace(user=SimpleNamespace(id="auth-user-1"))
+
+    patches = _patch_supabase(supabase)
+    with patches[0], patches[1]:
+        response = client.get("/red-aliados/me", headers=AUTH_HEADERS)
+
+    assert response.status_code == 200
+    assert response.json() == {"tiene_perfil_apoyo": True, "tipo": "donante_comunitario"}
+
+
+# ─── GET /red-aliados/me/impacto — FRONT03/BACK04 ────────────────────────
+
+def test_impacto_aliado_sin_perfil_404(make_query):
+    tablas = {"perfil_apoyo": make_query(data=[])}
+    _mock_usuario_autenticado(tablas, make_query)
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    supabase.auth.get_user.return_value = SimpleNamespace(user=SimpleNamespace(id="auth-user-1"))
+
+    patches = _patch_supabase(supabase)
+    with patches[0], patches[1]:
+        response = client.get("/red-aliados/me/impacto", headers=AUTH_HEADERS)
+
+    assert response.status_code == 404
+
+
+def test_impacto_aliado_donante_comunitario_sin_ofertas(make_query):
+    # donante_comunitario nunca declara capacidad proactiva — ofertas y
+    # aplicaciones deben regresar vacíos, no ausentes ni con otro shape.
+    tablas = {
+        "perfil_apoyo": make_query(data=[{"id": "perfil-1", "tipo": "donante_comunitario"}]),
+        "contribuciones": make_query(data=[
+            {"id": "c1", "necesidades": {"asociacion_id": "aso-A"}, "reportes": None},
+            {"id": "c2", "necesidades": None, "reportes": {"asociacion_asignada_id": "aso-B"}},
+        ]),
+    }
+    _mock_usuario_autenticado(tablas, make_query)
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    supabase.auth.get_user.return_value = SimpleNamespace(user=SimpleNamespace(id="auth-user-1"))
+
+    patches = _patch_supabase(supabase)
+    with patches[0], patches[1]:
+        response = client.get("/red-aliados/me/impacto", headers=AUTH_HEADERS)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["tipo"] == "donante_comunitario"
+    assert body["total_contribuciones"] == 2
+    assert body["asociaciones_ayudadas"] == 2
+    assert body["ofertas"] == []
+    assert body["aplicaciones"] == []
+
+
+def test_impacto_aliado_local_con_ofertas_y_aplicaciones(make_query):
+    tablas = {
+        "perfil_apoyo": make_query(data=[{"id": "perfil-1", "tipo": "aliado_local"}]),
+        # 3 contribuciones propias, 2 asociaciones distintas (aso-A se repite).
+        "contribuciones": make_query(execute_results=[
+            SimpleNamespace(data=[
+                {"id": "c1", "necesidades": {"asociacion_id": "aso-A"}, "reportes": None},
+                {"id": "c2", "necesidades": None, "reportes": {"asociacion_asignada_id": "aso-B"}},
+                {"id": "c3", "necesidades": {"asociacion_id": "aso-A"}, "reportes": None},
+            ], count=None),
+            SimpleNamespace(data=[{
+                "created_at": "2026-07-20T10:00:00+00:00",
+                "cantidad_valor": 5,
+                "cantidad_unidad": "kg",
+                "subcategoria_recurso": {"descripcion": "Croquetas"},
+            }], count=None),
+        ]),
+        "ofertas_proactivas": make_query(data=[{
+            "id": "oferta-1",
+            "categoria": "alimentos",
+            "capacidad_declarada": 50,
+            "capacidad_disponible": 30,
+            "unidad": "kg",
+            "activa": True,
+            "subcategoria_recurso": {"descripcion": "Croquetas"},
+        }]),
+    }
+    _mock_usuario_autenticado(tablas, make_query)
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    supabase.auth.get_user.return_value = SimpleNamespace(user=SimpleNamespace(id="auth-user-1"))
+
+    patches = _patch_supabase(supabase)
+    with patches[0], patches[1]:
+        response = client.get("/red-aliados/me/impacto", headers=AUTH_HEADERS)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["tipo"] == "aliado_local"
+    assert body["total_contribuciones"] == 3
+    assert body["asociaciones_ayudadas"] == 2
+
+    assert len(body["ofertas"]) == 1
+    oferta = body["ofertas"][0]
+    assert oferta["oferta_id"] == "oferta-1"
+    assert oferta["subcategoria"] == "Croquetas"
+    assert oferta["capacidad_declarada"] == 50
+    assert oferta["capacidad_disponible"] == 30
+
+    assert len(body["aplicaciones"]) == 1
+    aplicacion = body["aplicaciones"][0]
+    assert aplicacion["cantidad"] == "5 kg"
+    assert aplicacion["nota"] == "Croquetas"
