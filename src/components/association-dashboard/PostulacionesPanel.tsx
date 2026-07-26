@@ -290,22 +290,28 @@ export function PostulacionesPanel({ visible }: Props) {
                     </Text>
                   )}
 
-                  {postulacion.capacidades && (
-                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
-                      {postulacion.capacidades.ofrece_casa_hogar && (
-                        <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, backgroundColor: 'rgba(102, 188, 180, 0.15)' }}>
-                          <Text style={{ fontSize: 10, fontWeight: '700', color: COLORS.accent }}>Mi Casa Temporal</Text>
-                        </View>
-                      )}
-                      {!!postulacion.capacidades.especies?.length && (
-                        <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, backgroundColor: 'rgba(236, 128, 43, 0.1)' }}>
-                          <Text style={{ fontSize: 10, fontWeight: '700', color: COLORS.primary, textTransform: 'capitalize' }}>
-                            {postulacion.capacidades.especies.join(', ')}
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-                  )}
+                  {postulacion.capacidades && (() => {
+                    // especies_final solo existe para interno (v2 con
+                    // fallback a legacy); para externo queda undefined y el
+                    // ?? cae directo a la columna legacy, igual que antes.
+                    const especies = postulacion.capacidades.especies_final ?? postulacion.capacidades.especies;
+                    return (
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                        {postulacion.capacidades.ofrece_casa_hogar && (
+                          <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, backgroundColor: 'rgba(102, 188, 180, 0.15)' }}>
+                            <Text style={{ fontSize: 10, fontWeight: '700', color: COLORS.accent }}>Mi Casa Temporal</Text>
+                          </View>
+                        )}
+                        {!!especies?.length && (
+                          <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, backgroundColor: 'rgba(236, 128, 43, 0.1)' }}>
+                            <Text style={{ fontSize: 10, fontWeight: '700', color: COLORS.primary, textTransform: 'capitalize' }}>
+                              {especies.join(', ')}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    );
+                  })()}
 
                   <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 4 }}>
                     Intento: {postulacion.numero_intento}
@@ -563,10 +569,15 @@ export function PostulacionesPanel({ visible }: Props) {
                   </View>
 
                   {!!postulacionSeleccionada.capacidades?.latitud && !!postulacionSeleccionada.capacidades?.longitud && (
-                    <View>
+                    <View style={{ backgroundColor: COLORS.cardBg, padding: 16, borderRadius: 16 }}>
                       <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.textLight, marginBottom: 8, textTransform: 'uppercase' }}>
-                        Zona de cobertura
+                        Ubicación y distancia
                       </Text>
+                      {postulacionSeleccionada.distancia_km != null && (
+                        <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.textDark, marginBottom: 8 }}>
+                          A {postulacionSeleccionada.distancia_km} km de tu asociación
+                        </Text>
+                      )}
                       <AssocLocationMap
                         latitud={postulacionSeleccionada.capacidades.latitud}
                         longitud={postulacionSeleccionada.capacidades.longitud}
@@ -579,62 +590,186 @@ export function PostulacionesPanel({ visible }: Props) {
 
                 {/* Columna derecha: capacidades + historial */}
                 <View style={{ flex: 1, gap: 20 }}>
-                  {postulacionSeleccionada.capacidades && (
-                    <View style={{ backgroundColor: COLORS.cardBg, padding: 16, borderRadius: 16 }}>
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.textLight, marginBottom: 12, textTransform: 'uppercase' }}>
-                        Capacidades
-                      </Text>
+                  {postulacionSeleccionada.capacidades && (() => {
+                    // v2 gana si el formulario actual lo llenó (incluso
+                    // false/[]); si no, cae a la columna legacy. Ya resuelto
+                    // por el backend (capacidades.*_final), este ?? solo
+                    // cubre postulaciones viejas de antes de que existiera
+                    // *_final en la respuesta.
+                    const cap = postulacionSeleccionada.capacidades!;
+                    const especies = cap.especies_final ?? cap.especies;
+                    const tamanios = cap.tamanios_final ?? cap.tamanios;
+                    const vehiculo = cap.vehiculo_final ?? cap.tiene_vehiculo;
+                    const resumen = postulacionSeleccionada.resumen_interno;
 
-                      <View style={{ gap: 10 }}>
-                        {!!postulacionSeleccionada.capacidades.disponibilidad?.dias?.length && (
-                          <View>
-                            <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Días disponibles</Text>
-                            <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.textDark, textTransform: 'capitalize' }}>
-                              {postulacionSeleccionada.capacidades.disponibilidad.dias.join(', ')}
-                            </Text>
-                          </View>
-                        )}
-                        {!!postulacionSeleccionada.capacidades.especies?.length && (
-                          <View>
-                            <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Especies que atiende</Text>
-                            <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.textDark, textTransform: 'capitalize' }}>
-                              {postulacionSeleccionada.capacidades.especies.join(', ')}
-                            </Text>
-                          </View>
-                        )}
-                        <View style={{ flexDirection: 'row', gap: 24 }}>
-                          <View>
-                            <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Mi Casa Temporal</Text>
-                            <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.textDark }}>
-                              {postulacionSeleccionada.capacidades.ofrece_casa_hogar ? 'Sí ofrece' : 'No ofrece'}
-                            </Text>
-                          </View>
-                          <View>
-                            <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Vehículo</Text>
-                            <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.textDark }}>
-                              {postulacionSeleccionada.capacidades.tiene_vehiculo ? 'Sí' : 'No'}
-                            </Text>
+                    return (
+                      <>
+                        <View style={{ backgroundColor: COLORS.cardBg, padding: 16, borderRadius: 16 }}>
+                          <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.textLight, marginBottom: 12, textTransform: 'uppercase' }}>
+                            Resumen de la postulación
+                          </Text>
+
+                          <View style={{ gap: 10 }}>
+                            {!!cap.disponibilidad?.dias?.length && (
+                              <View>
+                                <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Días disponibles</Text>
+                                <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.textDark, textTransform: 'capitalize' }}>
+                                  {cap.disponibilidad.dias.join(', ')}
+                                </Text>
+                              </View>
+                            )}
+                            {!!especies?.length && (
+                              <View>
+                                <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Especies que atiende</Text>
+                                <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.textDark, textTransform: 'capitalize' }}>
+                                  {especies.join(', ')}
+                                </Text>
+                              </View>
+                            )}
+                            {!!tamanios?.length && (
+                              <View>
+                                <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Tamaños que puede manejar</Text>
+                                <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.textDark, textTransform: 'capitalize' }}>
+                                  {tamanios.join(', ')}
+                                </Text>
+                              </View>
+                            )}
+                            <View style={{ flexDirection: 'row', gap: 24 }}>
+                              <View>
+                                <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Mi Casa Temporal</Text>
+                                <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.textDark }}>
+                                  {cap.ofrece_casa_hogar ? 'Sí ofrece' : 'No ofrece'}
+                                </Text>
+                              </View>
+                              <View>
+                                <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Vehículo</Text>
+                                <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.textDark }}>
+                                  {vehiculo ? 'Sí' : 'No'}
+                                </Text>
+                              </View>
+                            </View>
+                            {!!resumen?.manejo_animal.primeros_auxilios && (
+                              <View>
+                                <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Primeros auxilios</Text>
+                                <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.textDark, textTransform: 'capitalize' }}>
+                                  {resumen.manejo_animal.primeros_auxilios}
+                                </Text>
+                              </View>
+                            )}
+                            {!!resumen?.equipo_y_bienestar.equipamiento.length && (
+                              <View>
+                                <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Equipo disponible</Text>
+                                <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.textDark, textTransform: 'capitalize' }}>
+                                  {resumen.equipo_y_bienestar.equipamiento.join(', ')}
+                                </Text>
+                              </View>
+                            )}
+                            {!!cap.motivo_voluntario && (
+                              <View>
+                                <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Por qué quiere ser voluntario</Text>
+                                <Text style={{ fontSize: 13, color: COLORS.textDark }}>
+                                  {cap.motivo_voluntario}
+                                </Text>
+                              </View>
+                            )}
+                            {!!resumen?.contacto_y_compromisos.motivaciones.length && (
+                              <View>
+                                <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Motivaciones</Text>
+                                <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.textDark, textTransform: 'capitalize' }}>
+                                  {resumen.contacto_y_compromisos.motivaciones.join(', ')}
+                                </Text>
+                              </View>
+                            )}
+                            {!!cap.experiencia_previa && (
+                              <View>
+                                <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Experiencia previa</Text>
+                                <Text style={{ fontSize: 13, color: COLORS.textDark }}>
+                                  {cap.experiencia_previa}
+                                </Text>
+                              </View>
+                            )}
+                            {!!resumen?.contacto_y_compromisos.comentarios && (
+                              <View>
+                                <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Comentarios adicionales</Text>
+                                <Text style={{ fontSize: 13, color: COLORS.textDark }}>
+                                  {resumen.contacto_y_compromisos.comentarios}
+                                </Text>
+                              </View>
+                            )}
                           </View>
                         </View>
-                        {!!postulacionSeleccionada.capacidades.motivo_voluntario && (
-                          <View>
-                            <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Por qué quiere ser voluntario</Text>
-                            <Text style={{ fontSize: 13, color: COLORS.textDark }}>
-                              {postulacionSeleccionada.capacidades.motivo_voluntario}
+
+                        {!!resumen && (resumen.movilidad.radio_max_km != null || !!resumen.movilidad.medios_transporte.length || !!resumen.disponibilidad.tiempo_reaccion || !!resumen.disponibilidad.urgencias) && (
+                          <View style={{ backgroundColor: COLORS.cardBg, padding: 16, borderRadius: 16 }}>
+                            <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.textLight, marginBottom: 12, textTransform: 'uppercase' }}>
+                              Disponibilidad y movilidad
                             </Text>
+                            <View style={{ gap: 10 }}>
+                              {(resumen.movilidad.radio_max_km != null || !!resumen.movilidad.medios_transporte.length) && (
+                                <View>
+                                  <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Radio y transporte</Text>
+                                  <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.textDark, textTransform: 'capitalize' }}>
+                                    {resumen.movilidad.radio_max_km != null ? `${resumen.movilidad.radio_max_km} km` : 'Radio no especificado'}
+                                    {resumen.movilidad.medios_transporte.length ? ` · ${resumen.movilidad.medios_transporte.join(', ')}` : ''}
+                                  </Text>
+                                </View>
+                              )}
+                              {!!resumen.disponibilidad.tiempo_reaccion && (
+                                <View>
+                                  <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Tiempo de respuesta</Text>
+                                  <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.textDark, textTransform: 'capitalize' }}>
+                                    {resumen.disponibilidad.tiempo_reaccion}
+                                  </Text>
+                                </View>
+                              )}
+                              {!!resumen.disponibilidad.urgencias && (
+                                <View>
+                                  <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Disponibilidad en emergencias</Text>
+                                  <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.textDark, textTransform: 'capitalize' }}>
+                                    {resumen.disponibilidad.urgencias}
+                                  </Text>
+                                </View>
+                              )}
+                            </View>
                           </View>
                         )}
-                        {!!postulacionSeleccionada.capacidades.experiencia_previa && (
-                          <View>
-                            <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Experiencia previa</Text>
-                            <Text style={{ fontSize: 13, color: COLORS.textDark }}>
-                              {postulacionSeleccionada.capacidades.experiencia_previa}
+
+                        {!!resumen && (!!resumen.manejo_animal.experiencias_campo.length || !!resumen.manejo_animal.trayectoria.length || !!resumen.manejo_animal.experiencia_anios) && (
+                          <View style={{ backgroundColor: COLORS.cardBg, padding: 16, borderRadius: 16 }}>
+                            <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.textLight, marginBottom: 12, textTransform: 'uppercase' }}>
+                              Experiencia declarada
                             </Text>
+                            <View style={{ gap: 10 }}>
+                              {!!resumen.manejo_animal.experiencias_campo.length && (
+                                <View>
+                                  <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Experiencia en campo</Text>
+                                  <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.textDark, textTransform: 'capitalize' }}>
+                                    {resumen.manejo_animal.experiencias_campo.join(', ')}
+                                  </Text>
+                                </View>
+                              )}
+                              {!!resumen.manejo_animal.trayectoria.length && (
+                                <View>
+                                  <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Dónde ha adquirido experiencia</Text>
+                                  <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.textDark, textTransform: 'capitalize' }}>
+                                    {resumen.manejo_animal.trayectoria.join(', ')}
+                                  </Text>
+                                </View>
+                              )}
+                              {!!resumen.manejo_animal.experiencia_anios && (
+                                <View>
+                                  <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Años de experiencia</Text>
+                                  <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.textDark, textTransform: 'capitalize' }}>
+                                    {resumen.manejo_animal.experiencia_anios}
+                                  </Text>
+                                </View>
+                              )}
+                            </View>
                           </View>
                         )}
-                      </View>
-                    </View>
-                  )}
+                      </>
+                    );
+                  })()}
 
                   {intentosPrevios[postulacionSeleccionada.voluntario_id] && (
                     <View>
