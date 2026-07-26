@@ -125,6 +125,12 @@ export default function JoinAssociationScreen() {
   // "¡Postulación enviada!" hasta que se guarde el formulario.
   const [esNuevaPostulacion, setEsNuevaPostulacion] = useState(false);
   const [nombreAsociacionPostulada, setNombreAsociacionPostulada] = useState('');
+  // Distinto de esNuevaPostulacion: esa solo dice "veníamos de postularnos",
+  // esta dice "la postulación ya se creó de verdad" (POST /interno/finalizar
+  // respondió OK). onClose se dispara tanto al terminar con éxito como al
+  // abandonar el formulario (botón "Salir" del modal de cierre), así que sin
+  // esta bandera no hay forma de distinguir los dos casos aquí.
+  const [postulacionFinalizadaConExito, setPostulacionFinalizadaConExito] = useState(false);
 
   const [asociaciones, setAsociaciones] = useState<Asociacion[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -282,15 +288,15 @@ const fetchStatus = async () => {
         }
       );
 
-      // Nuevo flujo: capacidades se llena ANTES de que la postulación se dé
-      // por enviada de cara al usuario. La fila en el backend ya existe
-      // (necesaria para poder guardar capacidades), pero el aviso de éxito,
-      // el refresco de estado y el cierre de la selección se posponen hasta
-      // que se guarde el formulario — si no, se siente como que ya se mandó
-      // y el formulario es un paso extra suelto, en vez de parte del mismo
-      // envío.
+      // Este POST ya NO crea la postulación — solo prepara el perfil de
+      // voluntario (fila `voluntarios`) para que se pueda guardar el
+      // formulario de capacidades. La postulación en sí se crea hasta que
+      // ese formulario se completa con éxito (POST /voluntarios/interno/finalizar,
+      // ver CapacidadesFormScreen.tsx) — así, si el usuario abandona el
+      // formulario a medias, no queda una postulación sin capacidades.
       setNombreAsociacionPostulada(assocSeleccionada.nombre);
       setEsNuevaPostulacion(true);
+      setPostulacionFinalizadaConExito(false);
       setShowCapacidadesForm(true);
     } catch (error: any) {
       console.error('Error al postular:', error);
@@ -319,11 +325,19 @@ const fetchStatus = async () => {
     }
   };
 
-  // Cierre del modal de capacidades — sin importar si se llega desde el
-  // botón "Guardar" del formulario o desde la X/backdrop del AppModal, el
-  // resultado debe ser el mismo: si veníamos de postularnos, avisar y
-  // refrescar el estado; si solo era editar el perfil ya activo, únicamente
-  // refrescar sin repetir el aviso de "postulación enviada".
+  // Se dispara únicamente cuando POST /voluntarios/interno/finalizar
+  // respondió OK (ver onPostulacionFinalizada en CapacidadesFormScreen) — a
+  // diferencia de onClose, que también se llama al abandonar el formulario.
+  const handlePostulacionFinalizada = () => {
+    setPostulacionFinalizadaConExito(true);
+  };
+
+  // Cierre del modal de capacidades — se llama tanto al terminar con éxito
+  // (botón "Volver al inicio" de la pantalla de éxito) como al abandonar el
+  // formulario a medias (botón "Salir" del modal "¿Salir del formulario?").
+  // Por eso el aviso de éxito depende de postulacionFinalizadaConExito, no
+  // solo de esNuevaPostulacion — si el usuario abandonó, esNuevaPostulacion
+  // sigue en true pero la postulación nunca se creó.
   const handleCerrarCapacidadesForm = async () => {
     // Refrescamos el estado ANTES de cerrar el modal — si cerramos primero,
     // por un instante se ve la pantalla de abajo con el estado viejo (ej.
@@ -333,8 +347,9 @@ const fetchStatus = async () => {
     await fetchStatus();
     setShowCapacidadesForm(false);
 
-    if (esNuevaPostulacion) {
+    if (esNuevaPostulacion && postulacionFinalizadaConExito) {
       setEsNuevaPostulacion(false);
+      setPostulacionFinalizadaConExito(false);
       setAssocSeleccionada(null);
       setIsReapplying(false);
       showToast({
@@ -346,6 +361,13 @@ const fetchStatus = async () => {
       // viendo "Postulación en revisión" aquí — ese estado ya lo puedes
       // consultar después desde "Mi postulación" en el perfil.
       setTimeout(() => router.replace('/'), 600);
+    } else if (esNuevaPostulacion) {
+      // Abandonó el formulario de capacidades a medias — no se creó ninguna
+      // postulación, así que no hay nada que avisar ni a dónde navegar.
+      setEsNuevaPostulacion(false);
+      setPostulacionFinalizadaConExito(false);
+      setAssocSeleccionada(null);
+      setIsReapplying(false);
     }
   };
 
@@ -1159,6 +1181,8 @@ const fetchStatus = async () => {
           <CapacidadesFormScreen
             fromProfile={true}
             esPostulacionNueva={esNuevaPostulacion}
+            asociacionId={assocSeleccionada?.id}
+            onPostulacionFinalizada={handlePostulacionFinalizada}
             onClose={handleCerrarCapacidadesForm}
           />
         )}

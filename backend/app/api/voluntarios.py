@@ -13,6 +13,7 @@ from app.models.voluntario import (
     CheckInVisitaRequest,
     ChecklistVisitaRequest,
     DisponibilidadOperativaRequest,
+    FinalizarPostulacionInternoRequest,
     PostulacionRequest,
     ProponerHorarioVisitaRequest,
     ResponderHorarioPostulanteRequest,
@@ -22,7 +23,8 @@ from app.models.voluntario import (
 import json
 
 from app.services.voluntario_service import (
-    crear_postulacion,
+    asegurar_perfil_voluntario_interno,
+    finalizar_postulacion_interno,
     obtener_mi_voluntario,
     obtener_capacidades,
     guardar_capacidades,
@@ -77,15 +79,25 @@ def _obtener_usuario_autenticado(authorization: str | None) -> dict:
 
 @router.post("/postulaciones", status_code=201)
 async def postularse_como_voluntario(body: PostulacionRequest, authorization: str = Header(None)):
-    """El usuario logueado se postula como voluntario interno o externo de
-    una asociación. Si ya existe un perfil de voluntario rechazado, esto
-    cuenta como una re-postulación (numero_intento + 1)."""
+    """Prepara el perfil de voluntario interno (fila `voluntarios` en estado
+    'postulacion_pendiente') para que el usuario pueda llenar su formulario de
+    capacidades. La fila en `postulaciones` todavía NO se crea aquí — se crea
+    al terminar ese formulario, en POST /voluntarios/interno/finalizar, para
+    no dejar una postulación sin capacidades si el usuario abandona a medias."""
     usuario = _obtener_usuario_autenticado(authorization)
-    return await crear_postulacion(
-        usuario_id=usuario["id"],
-        tipo=body.tipo.value,
-        asociacion_id=body.asociacion_id,
-    )
+    resultado = await asegurar_perfil_voluntario_interno(usuario["id"])
+    return {**resultado, "asociacion_id": body.asociacion_id}
+
+
+@router.post("/interno/finalizar", status_code=201)
+async def finalizar_postulacion_voluntario_interno(
+    body: FinalizarPostulacionInternoRequest, authorization: str = Header(None)
+):
+    """Crea la postulación de voluntario interno — el paso que de verdad
+    compromete. Solo se llama al guardar con éxito el formulario de
+    capacidades (ver CapacidadesFormScreen.tsx)."""
+    usuario = _obtener_usuario_autenticado(authorization)
+    return await finalizar_postulacion_interno(usuario["id"], body.asociacion_id)
 
 
 @router.get("/me", status_code=200)
