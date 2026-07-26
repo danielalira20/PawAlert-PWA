@@ -236,3 +236,46 @@ def marcar_notificacion_leida(notificacion_id: str, authorization: str = Header(
         raise HTTPException(status_code=404, detail="Notificación no encontrada o acceso denegado")
 
     return {"status": "success", "leida": True}
+
+@router.get("/me/impacto", status_code=200)
+def get_impacto_aliado(authorization: str = Header(None)):
+    """
+    BACK06: Devuelve las estadísticas de impacto del aliado basadas en
+    las contribuciones confirmadas.
+    """
+    usuario = _obtener_usuario_autenticado(authorization)
+
+    # 1. Obtener todas las contribuciones confirmadas/parciales de este usuario
+    res = supabase.table("contribuciones").select(
+        "cantidad_valor, cantidad_unidad, estado, confirmada_at, "
+        "necesidades(categoria, asociaciones(nombre))"
+    ).eq("usuario_id", usuario["id"]).in_("estado", ["confirmada", "parcial"]).execute()
+
+    contribuciones = res.data or []
+
+    # 2. Calcular métricas de impacto
+    total_donaciones = len(contribuciones)
+    asociaciones_ayudadas = set()
+    desglose_categorias = {}
+
+    for c in contribuciones:
+        nec = c.get("necesidades") or {}
+        asoc = nec.get("asociaciones") or {}
+        
+        if asoc.get("nombre"):
+            asociaciones_ayudadas.add(asoc["nombre"])
+
+        categoria = nec.get("categoria", "Otros")
+        if categoria not in desglose_categorias:
+            desglose_categorias[categoria] = 0
+        
+        # Sumar la cantidad aportada por categoría
+        valor = c.get("cantidad_valor") or 0
+        desglose_categorias[categoria] += float(valor)
+
+    return {
+        "total_donaciones": total_donaciones,
+        "asociaciones_ayudadas": len(asociaciones_ayudadas),
+        "desglose_categorias": desglose_categorias,
+        "historial": sorted(contribuciones, key=lambda x: x.get("confirmada_at") or "", reverse=True)
+    }
