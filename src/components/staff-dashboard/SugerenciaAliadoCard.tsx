@@ -22,10 +22,19 @@ const NIVEL_URGENCIA_COLOR: Record<string, string> = {
   no_urgente: Brand.secondary,
 };
 
+const NIVEL_URGENCIA_SUBTITULO: Record<string, string> = {
+  critico: 'El caso es crítico — te recomendamos aceptar cuanto antes.',
+  urgente: 'El caso es urgente — considera acercar al animal pronto.',
+  no_urgente: 'No es urgente, pero puedes aprovechar el cupo disponible.',
+};
+
 export function SugerenciaAliadoCard({ sugerencia, isSubmitting, onAceptar, onDescartar }: Props) {
   return (
     <View>
       <Text style={styles.title}>Hay una veterinaria cercana disponible</Text>
+      <Text style={styles.subtitle}>
+        {NIVEL_URGENCIA_SUBTITULO[sugerencia.nivel_urgencia] || 'Puedes acercar el caso a esta veterinaria.'}
+      </Text>
 
       <View style={styles.card}>
         <Text style={styles.nombre}>{sugerencia.nombre}</Text>
@@ -64,7 +73,8 @@ export function SugerenciaAliadoCard({ sugerencia, isSubmitting, onAceptar, onDe
 }
 
 const styles = StyleSheet.create({
-  title: { fontSize: 18, fontWeight: '800', color: Brand.textDark, marginBottom: 16 },
+  title: { fontSize: 18, fontWeight: '800', color: Brand.textDark, marginBottom: 4 },
+  subtitle: { fontSize: 13, fontWeight: '600', color: Brand.textMuted, marginBottom: 16 },
   card: {
     padding: 12,
     borderWidth: 1.5,

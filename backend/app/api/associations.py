@@ -454,6 +454,31 @@ async def get_reportes_asignados(authorization: str = Header(None)):
                     "creado_at": str(ev["created_at"]),
                 }
 
+    # Motor de sugerencias Ruta 1 (BACK01/BACK02): si ya existe una
+    # contribución con reporte_id, la sugerencia de aliado veterinario fue
+    # aceptada; si además ya hay un evento "hito_llego_veterinaria" en el
+    # historial, el hito de llegada ya se registró (el botón correspondiente
+    # se oculta en el frontend para no permitir un segundo registro).
+    reporte_ids_todos = [
+        r["reportes"]["id"] for r in resultado.data if r.get("reportes")
+    ]
+    reportes_con_sugerencia_aceptada = set()
+    reportes_con_llegada_registrada = set()
+    if reporte_ids_todos:
+        contribs = supabase.table("contribuciones").select("reporte_id").in_(
+            "reporte_id", reporte_ids_todos
+        ).execute()
+        reportes_con_sugerencia_aceptada = {
+            c["reporte_id"] for c in (contribs.data or []) if c.get("reporte_id")
+        }
+
+        llegadas = supabase.table("historial_reporte").select("reporte_id").in_(
+            "reporte_id", reporte_ids_todos
+        ).eq("tipo_evento", "hito_llego_veterinaria").execute()
+        reportes_con_llegada_registrada = {
+            e["reporte_id"] for e in (llegadas.data or []) if e.get("reporte_id")
+        }
+
     reportes = []
     for r in resultado.data:
         rep = r.get("reportes")
@@ -493,6 +518,8 @@ async def get_reportes_asignados(authorization: str = Header(None)):
             "foto_url": foto_url,
             "fotos_urls": fotos_urls,
             "animales": [shape_animal_response(a) for a in animales_crudos],
+            "tiene_sugerencia_aceptada": rep["id"] in reportes_con_sugerencia_aceptada,
+            "tiene_llegada_veterinaria_registrada": rep["id"] in reportes_con_llegada_registrada,
         })
 
     return reportes
@@ -501,10 +528,12 @@ async def get_reportes_asignados(authorization: str = Header(None)):
 # Tipos de evento que la línea de tiempo del panel de asociación necesita
 # mostrar además del evento de creación. Los valores reales que escribe
 # POST /reports/{id}/hitos son "hito_{tipo_hito}" (ver reports.py), es decir
-# "hito_encontre_animal" y "hito_llegue_refugio" — no "hito_encontrado"/
-# "hito_refugio". "caso_cerrado" lo escribe cambiar_estado_reporte()
-# (report_service.py) cuando nuevo_estado == "cerrado".
-TIPOS_HITO_TIMELINE = ["hito_encontre_animal", "hito_llegue_refugio", "caso_cerrado"]
+# "hito_encontre_animal", "hito_llegue_refugio" y "hito_llego_veterinaria"
+# — no "hito_encontrado"/"hito_refugio". "caso_cerrado" lo escribe
+# cambiar_estado_reporte() (report_service.py) cuando nuevo_estado == "cerrado".
+TIPOS_HITO_TIMELINE = [
+    "hito_encontre_animal", "hito_llegue_refugio", "hito_llego_veterinaria", "caso_cerrado",
+]
 
 
 @router.get("/me/reportes/{reporte_id}/historial", status_code=200)

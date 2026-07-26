@@ -6,6 +6,8 @@ import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { ActivityIndicator, Image, Linking, Modal, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
+import * as ImagePicker from 'expo-image-picker';
 import { Toast, useToast } from '../components/Toast';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
@@ -68,6 +70,10 @@ interface ReporteAsignado {
   foto_url: string | null;
   fotos_urls: string[];
   animales: Animal[];
+  // Motor de sugerencias Ruta 1 (BACK01/BACK02) — controlan si se muestra
+  // el botón "Registrar llegada a veterinaria".
+  tiene_sugerencia_aceptada: boolean;
+  tiene_llegada_veterinaria_registrada: boolean;
 }
 
 // ── Tipos para la pestaña "Mis voluntarios" (nueva) ──
@@ -152,6 +158,16 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
   const [showEncontreModal, setShowEncontreModal] = useState(false);
   const [showCerrarModal, setShowCerrarModal] = useState(false);
   const [showStaffModal, setShowStaffModal] = useState(false);
+  const [showVeterinariaModal, setShowVeterinariaModal] = useState(false);
+
+  // ── Hito: "Llegué a la veterinaria" (Ruta 1) — este archivo no comparte
+  // componentes con StaffDashboardScreen, así que GPS/foto se construyen
+  // desde cero aquí en vez de reusar useStaffReports.
+  const [notasVeterinaria, setNotasVeterinaria] = useState('');
+  const [fotoVeterinaria, setFotoVeterinaria] = useState<string | null>(null);
+  const [ubicacionVeterinaria, setUbicacionVeterinaria] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [obteniendoGPSVeterinaria, setObteniendoGPSVeterinaria] = useState(false);
+  const [isRegistrandoVeterinaria, setIsRegistrandoVeterinaria] = useState(false);
 
   const [reporteAccionId, setReporteAccionId] = useState<string | null>(null);
   const [isSubmittingAccion, setIsSubmittingAccion] = useState(false);
@@ -397,6 +413,101 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
     // Reservado para adjuntar foto en hitos de encuentro/cierre — se
     // completa cuando se conecte expo-image-picker en este archivo,
     // igual que en AssociationStatusScreen.
+  };
+
+  const obtenerUbicacionVeterinaria = async () => {
+    setObteniendoGPSVeterinaria(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        showToast({ type: 'error', title: 'Permiso denegado', message: 'Necesitamos acceso a tu ubicación para registrar la llegada' });
+        return;
+      }
+      const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      setUbicacionVeterinaria({ latitude: location.coords.latitude, longitude: location.coords.longitude });
+    } catch (error) {
+      showToast({ type: 'error', title: 'Error', message: 'No pudimos obtener tu ubicación actual' });
+    } finally {
+      setObteniendoGPSVeterinaria(false);
+    }
+  };
+
+  const capturarFotoVeterinaria = async () => {
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        showToast({ type: 'error', title: 'Permiso denegado', message: 'Necesitamos acceso a la cámara' });
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8 });
+      if (!result.canceled) setFotoVeterinaria(result.assets[0].uri);
+    } catch (error) {
+      showToast({ type: 'error', title: 'Error', message: 'Error al usar la cámara' });
+    }
+  };
+
+  const abrirVeterinaria = (reporteId: string) => {
+    setReporteAccionId(reporteId);
+    setShowVeterinariaModal(true);
+  };
+
+  const resetVeterinariaModal = () => {
+    setNotasVeterinaria('');
+    setFotoVeterinaria(null);
+    setUbicacionVeterinaria(null);
+    setReporteAccionId(null);
+  };
+
+  const cancelarVeterinaria = () => {
+    setShowVeterinariaModal(false);
+    resetVeterinariaModal();
+  };
+
+  const confirmarVeterinaria = async () => {
+    if (!reporteAccionId || !ubicacionVeterinaria || !fotoVeterinaria) return;
+    setIsRegistrandoVeterinaria(true);
+    try {
+      const formData = new FormData();
+      if (Platform.OS === 'web') {
+        const res = await fetch(fotoVeterinaria);
+        const blob = await res.blob();
+        const file = new File([blob], `hito_${Date.now()}.jpg`, { type: 'image/jpeg' });
+        formData.append('foto', file);
+      } else {
+        formData.append('foto', {
+          uri: fotoVeterinaria,
+          name: `hito_${Date.now()}.jpg`,
+          type: 'image/jpeg',
+        } as any);
+      }
+      const fotoRes = await axios.post(`${API_URL}/reports/${reporteAccionId}/hitos/foto`, formData, {
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' },
+      });
+
+      await axios.post(
+        `${API_URL}/reports/${reporteAccionId}/hitos`,
+        {
+          tipo_hito: 'llego_veterinaria',
+          comentario: notasVeterinaria.trim() || null,
+          foto_url: fotoRes.data.foto_url,
+          latitud: ubicacionVeterinaria.latitude,
+          longitud: ubicacionVeterinaria.longitude,
+        },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      showToast({ type: 'success', title: 'Éxito', message: 'Llegada a la veterinaria registrada correctamente' });
+      setShowVeterinariaModal(false);
+      resetVeterinariaModal();
+      await cargarReportes();
+    } catch (error: any) {
+      showToast({
+        type: 'error',
+        title: 'Error',
+        message: error?.response?.data?.detail || 'Error al registrar la llegada a la veterinaria',
+      });
+    } finally {
+      setIsRegistrandoVeterinaria(false);
+    }
   };
 
   const resetModales = () => {
@@ -825,10 +936,25 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
                               </TouchableOpacity>
                             </View>
                           ) : enProceso ? (
-                            <TouchableOpacity onPress={() => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${reporte.latitud},${reporte.longitud}`)} style={{ backgroundColor: COLORS.primary, paddingVertical: 14, borderRadius: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}>
-                              <Ionicons name="map" size={16} color={COLORS.white} style={{ marginRight: 6 }} />
-                              <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Cómo llegar</Text>
-                            </TouchableOpacity>
+                            reporte.estado_reporte === 'en_atencion' &&
+                            reporte.tiene_sugerencia_aceptada &&
+                            !reporte.tiene_llegada_veterinaria_registrada ? (
+                              <View style={{ gap: 10 }}>
+                                <TouchableOpacity onPress={() => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${reporte.latitud},${reporte.longitud}`)} style={{ backgroundColor: COLORS.primary, paddingVertical: 14, borderRadius: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}>
+                                  <Ionicons name="map" size={16} color={COLORS.white} style={{ marginRight: 6 }} />
+                                  <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Cómo llegar</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity onPress={() => abrirVeterinaria(reporte.reporte_id)} style={{ backgroundColor: COLORS.accent, paddingVertical: 14, borderRadius: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}>
+                                  <Ionicons name="medkit-outline" size={16} color={COLORS.white} style={{ marginRight: 6 }} />
+                                  <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Registrar llegada a veterinaria</Text>
+                                </TouchableOpacity>
+                              </View>
+                            ) : (
+                              <TouchableOpacity onPress={() => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${reporte.latitud},${reporte.longitud}`)} style={{ backgroundColor: COLORS.primary, paddingVertical: 14, borderRadius: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}>
+                                <Ionicons name="map" size={16} color={COLORS.white} style={{ marginRight: 6 }} />
+                                <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Cómo llegar</Text>
+                              </TouchableOpacity>
+                            )
                           ) : (
                             <TouchableOpacity onPress={() => setReporteSeleccionado(reporte)} style={{ backgroundColor: COLORS.accent, paddingVertical: 14, borderRadius: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}>
                               <Ionicons name="eye" size={16} color={COLORS.white} style={{ marginRight: 6 }} />
@@ -1131,6 +1257,88 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
                 </View>
               </>
             )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Modal: llegué a la veterinaria (Ruta 1) — checkpoint de tránsito,
+          sin select de estado (decisión A): solo notas opcionales + GPS y
+          foto obligatorios, validados en backend contra la ubicación del aliado. ── */}
+      <Modal visible={showVeterinariaModal} transparent animationType="fade">
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+          <View style={{ backgroundColor: COLORS.cardBg, borderRadius: 32, padding: 32, width: '100%', maxWidth: 450, maxHeight: '90%' }}>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={{ fontSize: 22, fontWeight: '800', color: COLORS.textDark, marginBottom: 20 }}>
+                Registrar llegada a la veterinaria
+              </Text>
+
+              <TextInput
+                style={{ backgroundColor: COLORS.white, borderRadius: 16, padding: 16, fontSize: 14, marginBottom: 16, minHeight: 80, textAlignVertical: 'top' }}
+                multiline
+                placeholder="Notas adicionales (Opcional)"
+                value={notasVeterinaria}
+                onChangeText={setNotasVeterinaria}
+              />
+
+              <View style={{ borderRadius: 16, padding: 14, marginBottom: 14, backgroundColor: 'rgba(102, 188, 180, 0.1)', borderWidth: 1, borderColor: COLORS.accent }}>
+                {ubicacionVeterinaria ? (
+                  <Text style={{ fontSize: 12, color: '#2E8B57', fontWeight: '700', marginBottom: 8 }}>✓ Ubicación capturada</Text>
+                ) : (
+                  <Text style={{ fontSize: 12, color: COLORS.textLight, marginBottom: 8 }}>Se capturará automáticamente cuando presiones el botón</Text>
+                )}
+                <TouchableOpacity
+                  onPress={obtenerUbicacionVeterinaria}
+                  disabled={obteniendoGPSVeterinaria}
+                  style={{ backgroundColor: COLORS.accent, paddingVertical: 12, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}
+                >
+                  {obteniendoGPSVeterinaria ? (
+                    <ActivityIndicator color={COLORS.white} />
+                  ) : (
+                    <>
+                      <Ionicons name="navigate-circle-outline" size={16} color={COLORS.white} style={{ marginRight: 6 }} />
+                      <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 13 }}>Capturar mi ubicación GPS</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+
+              <View style={{ borderRadius: 16, padding: 14, marginBottom: 20, backgroundColor: 'rgba(236, 128, 43, 0.08)', borderWidth: 1, borderColor: COLORS.primary }}>
+                {fotoVeterinaria ? (
+                  <>
+                    <Image source={{ uri: fotoVeterinaria }} style={{ width: '100%', height: 120, borderRadius: 8, marginBottom: 6 }} resizeMode="cover" />
+                    <Text style={{ fontSize: 12, color: '#2E8B57', fontWeight: '700', marginBottom: 8 }}>✓ Foto capturada</Text>
+                  </>
+                ) : (
+                  <Text style={{ fontSize: 12, color: COLORS.textLight, marginBottom: 8 }}>La foto se capturará con la cámara del dispositivo</Text>
+                )}
+                <TouchableOpacity
+                  onPress={capturarFotoVeterinaria}
+                  style={{ backgroundColor: COLORS.primary, paddingVertical: 12, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}
+                >
+                  <Ionicons name="camera-outline" size={16} color={COLORS.white} style={{ marginRight: 6 }} />
+                  <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 13 }}>{fotoVeterinaria ? 'Cambiar foto' : 'Abrir cámara'}</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={{ flexDirection: 'row', gap: 12 }}>
+                <TouchableOpacity onPress={cancelarVeterinaria} style={{ flex: 1, paddingVertical: 16, alignItems: 'center', borderRadius: 20, backgroundColor: '#E5E7EB' }}>
+                  <Text style={{ color: COLORS.textLight, fontWeight: 'bold' }}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={confirmarVeterinaria}
+                  disabled={!ubicacionVeterinaria || !fotoVeterinaria || isRegistrandoVeterinaria}
+                  style={{ flex: 1, paddingVertical: 16, alignItems: 'center', borderRadius: 20, backgroundColor: COLORS.accent, opacity: !ubicacionVeterinaria || !fotoVeterinaria ? 0.6 : 1 }}
+                >
+                  {isRegistrandoVeterinaria ? (
+                    <ActivityIndicator color={COLORS.white} />
+                  ) : (
+                    <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>
+                      {!ubicacionVeterinaria || !fotoVeterinaria ? 'Faltan datos' : 'Registrar llegada'}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>

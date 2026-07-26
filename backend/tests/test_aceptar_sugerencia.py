@@ -23,6 +23,43 @@ CONTRIBUCION_MOCK = {
     "created_at": "2026-07-25T10:00:00+00:00",
 }
 
+RESPUESTA_ACEPTAR_MOCK = {
+    "contribucion": CONTRIBUCION_MOCK,
+    "contacto_aliado": {"nombre": "Clínica Vet Norte", "telefono": "5512345678", "email": "vet@norte.com"},
+    "ubicacion_aliado": {
+        "calle": "Av. Siempre Viva 123",
+        "colonia": "Centro",
+        "municipio": "Puebla",
+        "referencia": "Frente al parque",
+        "latitud": 19.04,
+        "longitud": -98.19,
+    },
+}
+
+
+def _rpc_side_effect(valores_reservar):
+    """side_effect para supabase.rpc(...) que discrimina por nombre de RPC:
+    reservar_capacidad_oferta consume `valores_reservar` en orden (una
+    entrada por cada llamada a aceptar_sugerencia_veterinaria dentro del
+    test); ubicacion_perfil_apoyo siempre regresa una fila fija."""
+    valores = iter(valores_reservar)
+
+    def rpc(nombre, params=None):
+        if nombre == "reservar_capacidad_oferta":
+            return SimpleNamespace(execute=lambda: SimpleNamespace(data=next(valores)))
+        if nombre == "ubicacion_perfil_apoyo":
+            return SimpleNamespace(execute=lambda: SimpleNamespace(data=[{
+                "latitud": 19.04,
+                "longitud": -98.19,
+                "calle": "Av. Test 123",
+                "colonia": "Centro",
+                "municipio": "Puebla",
+                "referencia": None,
+            }]))
+        raise AssertionError(f"RPC inesperado: {nombre}")
+
+    return rpc
+
 
 # ─── Unit: reservar_capacidad_oferta ─────────────────────────────────────
 
@@ -56,13 +93,16 @@ def test_aceptar_sugerencia_veterinaria_caso_feliz(make_query):
         "ofertas_proactivas": make_query(data=[{
             "unidad": "citas",
             "subcategoria_id": "subcat-1",
-            "perfil_apoyo": {"usuario_id": "user-aliado-1"},
+            "perfil_apoyo": {"id": "perfil-1", "usuario_id": "user-aliado-1"},
         }]),
         "contribuciones": make_query(data=[CONTRIBUCION_MOCK]),
+        "usuarios": make_query(data=[{
+            "nombre": "Ana", "apellido_paterno": "Vet", "telefono": "5512345678", "email": "ana@vet.com",
+        }]),
     }
     supabase = MagicMock()
     supabase.table.side_effect = lambda nombre: tablas[nombre]
-    supabase.rpc.return_value.execute.return_value = SimpleNamespace(data=4)
+    supabase.rpc.side_effect = _rpc_side_effect([4])
 
     with patch.object(red_aliados_service, "supabase", supabase):
         resultado = asyncio.run(red_aliados_service.aceptar_sugerencia_veterinaria("rep-1", "oferta-1"))
@@ -70,10 +110,12 @@ def test_aceptar_sugerencia_veterinaria_caso_feliz(make_query):
     # El punto clave del ajuste del usuario: 'comprometida', no 'confirmada'
     # — la asociación confirma después que el servicio se usó, en un paso
     # que todavía no existe.
-    assert resultado["estado"] == "comprometida"
-    assert resultado["reporte_id"] == "rep-1"
-    assert resultado["oferta_proactiva_id"] == "oferta-1"
-    assert resultado["necesidad_id"] is None
+    assert resultado["contribucion"]["estado"] == "comprometida"
+    assert resultado["contribucion"]["reporte_id"] == "rep-1"
+    assert resultado["contribucion"]["oferta_proactiva_id"] == "oferta-1"
+    assert resultado["contribucion"]["necesidad_id"] is None
+    assert resultado["contacto_aliado"]["nombre"] == "Ana Vet"
+    assert resultado["ubicacion_aliado"]["municipio"] == "Puebla"
 
     insertado = tablas["contribuciones"].insert.call_args[0][0]
     assert insertado["usuario_id"] == "user-aliado-1"  # el aliado, no el staff que acepta
@@ -111,20 +153,23 @@ def test_aceptar_sugerencia_veterinaria_segunda_llamada_falla_limpio(make_query)
         "ofertas_proactivas": make_query(data=[{
             "unidad": "citas",
             "subcategoria_id": "subcat-1",
-            "perfil_apoyo": {"usuario_id": "user-aliado-1"},
+            "perfil_apoyo": {"id": "perfil-1", "usuario_id": "user-aliado-1"},
         }]),
         "contribuciones": make_query(data=[CONTRIBUCION_MOCK]),
+        "usuarios": make_query(data=[{
+            "nombre": "Ana", "apellido_paterno": "Vet", "telefono": "5512345678", "email": "ana@vet.com",
+        }]),
     }
     supabase = MagicMock()
     supabase.table.side_effect = lambda nombre: tablas[nombre]
-    supabase.rpc.return_value.execute.side_effect = [
-        SimpleNamespace(data=0),     # primera llamada: quedaba 1, se consume
-        SimpleNamespace(data=None),  # segunda llamada: ya no alcanza
-    ]
+    # primera llamada a reservar_capacidad_oferta: quedaba 1, se consume (0);
+    # segunda llamada: ya no alcanza (None) — la ubicación del aliado se
+    # consulta solo dentro de la primera, que sí llega a crear la contribución.
+    supabase.rpc.side_effect = _rpc_side_effect([0, None])
 
     with patch.object(red_aliados_service, "supabase", supabase):
         primera = asyncio.run(red_aliados_service.aceptar_sugerencia_veterinaria("rep-1", "oferta-1"))
-        assert primera["estado"] == "comprometida"
+        assert primera["contribucion"]["estado"] == "comprometida"
 
         with pytest.raises(HTTPException) as exc_info:
             asyncio.run(red_aliados_service.aceptar_sugerencia_veterinaria("rep-1", "oferta-1"))
@@ -151,7 +196,7 @@ def test_endpoint_aceptar_sugerencia_caso_feliz(make_query):
         patch.object(reports, "supabase", supabase),
         patch.object(
             red_aliados_service, "aceptar_sugerencia_veterinaria",
-            new_callable=AsyncMock, return_value=CONTRIBUCION_MOCK,
+            new_callable=AsyncMock, return_value=RESPUESTA_ACEPTAR_MOCK,
         ) as aceptar,
     ):
         response = client.post(
@@ -161,7 +206,10 @@ def test_endpoint_aceptar_sugerencia_caso_feliz(make_query):
         )
 
     assert response.status_code == 201
-    assert response.json()["estado"] == "comprometida"
+    body = response.json()
+    assert body["contribucion"]["estado"] == "comprometida"
+    assert body["contacto_aliado"]["nombre"] == "Clínica Vet Norte"
+    assert body["ubicacion_aliado"]["municipio"] == "Puebla"
     aceptar.assert_awaited_once_with("rep-1", "oferta-1")
 
 
