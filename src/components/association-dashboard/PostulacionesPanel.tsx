@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
-import { usePostulacionesAsociacion, PostulacionItem, VoluntarioData } from '../../hooks/usePostulacionesAsociacion';
+import { usePostulacionesAsociacion, PostulacionItem, VoluntarioData, ResumenExpedienteInterno } from '../../hooks/usePostulacionesAsociacion';
 import { API_URL } from '../../constants/api';
 import { useAuth } from '../../context/AuthContext';
 import { Toast, useToast } from '../Toast';
@@ -34,6 +34,162 @@ const COLORS = {
   cardBg: '#FAF3EA',
   pending: '#95A5A6',
 };
+
+const DIAS_SEMANA: Record<string, string> = {
+  lun: 'lunes', mar: 'martes', mie: 'miércoles', jue: 'jueves',
+  vie: 'viernes', sab: 'sábado', dom: 'domingo',
+};
+
+// Corrección mínima de ortografía para valores de enum de `capacidades` que
+// se insertan directo en oraciones — .replace(/_/g, ' ') no agrega acentos,
+// y "entre_1_3"/"uno_tres_meses"/"tres_seis_meses" pierden el conector
+// numérico por completo si no se corrigen aparte. Cubre el catálogo
+// completo de backend/migrations/0003_capacidades_v2.sql.
+const CORRECCIONES_ORTOGRAFICAS: Record<string, string> = {
+  un_dia: 'un día',
+  si: 'sí',
+  automovil: 'automóvil',
+  transporte_publico: 'transporte público',
+  pequeno: 'pequeño',
+  pequenos_mamiferos: 'pequeños mamíferos',
+  sin_formacion: 'sin formación',
+  basico: 'básico',
+  docil_estable: 'dócil estable',
+  lesion_movilidad_reducida: 'lesión movilidad reducida',
+  topica: 'tópica',
+  refugio_asociacion: 'refugio asociación',
+  clinica_veterinaria: 'clínica veterinaria',
+  mas_3: 'más 3',
+  jaula_contencion: 'jaula contención',
+  proteccion_vehiculo: 'protección vehículo',
+  mas_seis_meses: 'más seis meses',
+  apoyar_recuperacion: 'apoyar recuperación',
+  // No son acentos, pero mismo mecanismo — sin esto la frase pierde el
+  // conector numérico por completo ("entre 1 3" en vez de "entre 1 y 3").
+  entre_1_3: 'entre 1 y 3',
+  uno_tres_meses: 'uno a tres meses',
+  tres_seis_meses: 'tres a seis meses',
+};
+
+function normalizarValorEnum(valor: string): string {
+  return CORRECCIONES_ORTOGRAFICAS[valor] ?? valor.replace(/_/g, ' ');
+}
+
+function joinNaturalInterno(values?: string[]) {
+  const items = (values || []).filter(Boolean);
+  if (!items.length) return '';
+  if (items.length === 1) return items[0];
+  if (items.length === 2) return `${items[0]} y ${items[1]}`;
+  return `${items.slice(0, -1).join(', ')} y ${items.at(-1)}`;
+}
+
+function lowerTextInterno(value: string) {
+  return value.toLocaleLowerCase('es-MX');
+}
+
+// Texto en prosa del expediente de interno — inspirada en
+// buildApplicationSummary() de ExternalVerificationDetail.tsx (mismo tono y
+// estructura de párrafos), pero escrita de cero para los 5 bloques de
+// resumen_interno. No importa ni llama nada de ese archivo.
+function buildApplicationSummaryInterno(
+  nombre: string,
+  distanciaKm: number | null | undefined,
+  resumen: ResumenExpedienteInterno,
+): string[] {
+  const paragraphs: string[] = [];
+
+  const dias = joinNaturalInterno(resumen.disponibilidad.dias.map((d) => DIAS_SEMANA[d] ?? d));
+  const franjas = joinNaturalInterno(resumen.disponibilidad.franjas.map(normalizarValorEnum));
+  const reaccion = resumen.disponibilidad.tiempo_reaccion
+    ? normalizarValorEnum(resumen.disponibilidad.tiempo_reaccion)
+    : '';
+  const locationSentence = distanciaKm != null
+    ? `${nombre} se encuentra a ${distanciaKm} km de tu asociación.`
+    : `${nombre} registró su zona de cobertura.`;
+  const availabilityParts = [
+    dias ? `declaró disponibilidad los días ${lowerTextInterno(dias)}` : '',
+    franjas ? `principalmente en horario ${lowerTextInterno(franjas)}` : '',
+    reaccion ? `con respuesta ${lowerTextInterno(reaccion)}` : '',
+  ].filter(Boolean);
+  paragraphs.push(
+    availabilityParts.length
+      ? `${locationSentence} ${availabilityParts.join(', ')}.`
+      : locationSentence,
+  );
+
+  const mobilityParts: string[] = [];
+  if (resumen.movilidad.radio_max_km != null) {
+    mobilityParts.push(`Puede desplazarse hasta ${resumen.movilidad.radio_max_km} km`);
+  }
+  const transporte = joinNaturalInterno(resumen.movilidad.medios_transporte.map(normalizarValorEnum));
+  if (transporte) {
+    mobilityParts.push(`suele utilizar ${lowerTextInterno(transporte)}`);
+  }
+  if (resumen.movilidad.vehiculo_apto_traslado) {
+    mobilityParts.push('cuenta con una unidad apta para trasladar animales');
+  }
+  if (mobilityParts.length) {
+    paragraphs.push(`${mobilityParts.join(' y ')}.`);
+  }
+
+  const especies = joinNaturalInterno(resumen.manejo_animal.especies.map(normalizarValorEnum));
+  const tamanios = joinNaturalInterno(resumen.manejo_animal.tamanios.map(normalizarValorEnum));
+  const experienciaCampo = joinNaturalInterno(resumen.manejo_animal.experiencias_campo.map(normalizarValorEnum));
+  let experienceText = especies ? `Declaró experiencia con ${lowerTextInterno(especies)}` : '';
+  if (tamanios) {
+    experienceText += experienceText
+      ? `, incluidos animales de tamaños ${lowerTextInterno(tamanios)}`
+      : `Indicó que puede manejar animales de tamaños ${lowerTextInterno(tamanios)}`;
+  }
+  if (experienceText) {
+    experienceText += '.';
+  }
+  if (experienciaCampo) {
+    experienceText += `${experienceText ? ' ' : ''}Su experiencia en campo incluye ${lowerTextInterno(experienciaCampo)}.`;
+  }
+  if (experienceText) {
+    paragraphs.push(experienceText);
+  }
+
+  const motivaciones = joinNaturalInterno(resumen.contacto_y_compromisos.motivaciones.map(normalizarValorEnum));
+  const proyeccion = resumen.contacto_y_compromisos.proyeccion
+    ? normalizarValorEnum(resumen.contacto_y_compromisos.proyeccion)
+    : '';
+  const compromisoParts = [
+    motivaciones ? `Su motivación principal es ${lowerTextInterno(motivaciones)}` : '',
+    proyeccion ? `con una colaboración proyectada de tipo ${lowerTextInterno(proyeccion)}` : '',
+  ].filter(Boolean);
+  if (compromisoParts.length) {
+    paragraphs.push(`${compromisoParts.join(', ')}.`);
+  }
+
+  return paragraphs;
+}
+
+// Mismo patrón que SectionCard en ExternalVerificationDetail.tsx (ícono
+// plano junto al título, tarjeta con fondo cardBg) — replicado aquí porque
+// ese componente no está exportado y no se debe tocar ese archivo.
+function SectionCardInterno({
+  icon,
+  title,
+  children,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <View style={{ padding: 16, borderRadius: 18, backgroundColor: COLORS.cardBg, gap: 12 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <Ionicons name={icon} size={18} color={COLORS.primary} />
+        <Text style={{ flex: 1, color: COLORS.textDark, fontSize: 14, fontWeight: '800' }}>
+          {title}
+        </Text>
+      </View>
+      {children}
+    </View>
+  );
+}
 
 type FiltroPostulacion = 'pendientes' | 'resueltas';
 
@@ -569,10 +725,7 @@ export function PostulacionesPanel({ visible }: Props) {
                   </View>
 
                   {!!postulacionSeleccionada.capacidades?.latitud && !!postulacionSeleccionada.capacidades?.longitud && (
-                    <View style={{ backgroundColor: COLORS.cardBg, padding: 16, borderRadius: 16 }}>
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.textLight, marginBottom: 8, textTransform: 'uppercase' }}>
-                        Ubicación y distancia
-                      </Text>
+                    <SectionCardInterno icon="location-outline" title="Ubicación y distancia">
                       {postulacionSeleccionada.distancia_km != null && (
                         <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.textDark, marginBottom: 8 }}>
                           A {postulacionSeleccionada.distancia_km} km de tu asociación
@@ -584,7 +737,7 @@ export function PostulacionesPanel({ visible }: Props) {
                         radioKm={1}
                         height={160}
                       />
-                    </View>
+                    </SectionCardInterno>
                   )}
                 </View>
 
@@ -597,113 +750,57 @@ export function PostulacionesPanel({ visible }: Props) {
                     // cubre postulaciones viejas de antes de que existiera
                     // *_final en la respuesta.
                     const cap = postulacionSeleccionada.capacidades!;
-                    const especies = cap.especies_final ?? cap.especies;
-                    const tamanios = cap.tamanios_final ?? cap.tamanios;
-                    const vehiculo = cap.vehiculo_final ?? cap.tiene_vehiculo;
                     const resumen = postulacionSeleccionada.resumen_interno;
+                    const nombreVoluntario = voluntarioSeleccionado
+                      ? `${voluntarioSeleccionado.nombre} ${voluntarioSeleccionado.apellido_paterno}`
+                      : 'Este voluntario';
+                    const parrafos = resumen
+                      ? buildApplicationSummaryInterno(nombreVoluntario, postulacionSeleccionada.distancia_km, resumen)
+                      : [];
 
                     return (
                       <>
-                        <View style={{ backgroundColor: COLORS.cardBg, padding: 16, borderRadius: 16 }}>
-                          <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.textLight, marginBottom: 12, textTransform: 'uppercase' }}>
-                            Resumen de la postulación
-                          </Text>
-
-                          <View style={{ gap: 10 }}>
-                            {!!cap.disponibilidad?.dias?.length && (
-                              <View>
-                                <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Días disponibles</Text>
-                                <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.textDark, textTransform: 'capitalize' }}>
-                                  {cap.disponibilidad.dias.join(', ')}
-                                </Text>
-                              </View>
-                            )}
-                            {!!especies?.length && (
-                              <View>
-                                <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Especies que atiende</Text>
-                                <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.textDark, textTransform: 'capitalize' }}>
-                                  {especies.join(', ')}
-                                </Text>
-                              </View>
-                            )}
-                            {!!tamanios?.length && (
-                              <View>
-                                <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Tamaños que puede manejar</Text>
-                                <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.textDark, textTransform: 'capitalize' }}>
-                                  {tamanios.join(', ')}
-                                </Text>
-                              </View>
-                            )}
-                            <View style={{ flexDirection: 'row', gap: 24 }}>
-                              <View>
-                                <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Mi Casa Temporal</Text>
-                                <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.textDark }}>
-                                  {cap.ofrece_casa_hogar ? 'Sí ofrece' : 'No ofrece'}
-                                </Text>
-                              </View>
-                              <View>
-                                <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Vehículo</Text>
-                                <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.textDark }}>
-                                  {vehiculo ? 'Sí' : 'No'}
-                                </Text>
-                              </View>
+                        <View style={{ padding: 20, borderRadius: 20, backgroundColor: '#EAF7F6', borderWidth: 1, borderColor: '#D2EEEB', gap: 11 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                            <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: COLORS.white, alignItems: 'center', justifyContent: 'center' }}>
+                              <Ionicons name="document-text-outline" size={19} color={COLORS.accent} />
                             </View>
-                            {!!resumen?.manejo_animal.primeros_auxilios && (
-                              <View>
-                                <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Primeros auxilios</Text>
-                                <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.textDark, textTransform: 'capitalize' }}>
-                                  {resumen.manejo_animal.primeros_auxilios}
-                                </Text>
-                              </View>
-                            )}
-                            {!!resumen?.equipo_y_bienestar.equipamiento.length && (
-                              <View>
-                                <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Equipo disponible</Text>
-                                <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.textDark, textTransform: 'capitalize' }}>
-                                  {resumen.equipo_y_bienestar.equipamiento.join(', ')}
-                                </Text>
-                              </View>
-                            )}
-                            {!!cap.motivo_voluntario && (
-                              <View>
-                                <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Por qué quiere ser voluntario</Text>
-                                <Text style={{ fontSize: 13, color: COLORS.textDark }}>
+                            <View style={{ flex: 1 }}>
+                              <Text style={{ fontSize: 15, fontWeight: '900', color: COLORS.textDark }}>
+                                Resumen de la postulación
+                              </Text>
+                              <Text style={{ fontSize: 11, color: COLORS.textLight }}>
+                                Síntesis de la información declarada
+                              </Text>
+                            </View>
+                          </View>
+
+                          {parrafos.map((parrafo, idx) => (
+                            <Text key={idx} style={{ fontSize: 13, lineHeight: 20, color: COLORS.textDark }}>
+                              {parrafo}
+                            </Text>
+                          ))}
+
+                          {(!!cap.motivo_voluntario || !!cap.experiencia_previa) && (
+                            <View style={{ borderTopWidth: 1, borderTopColor: '#C9E7E3', paddingTop: 11, gap: 6 }}>
+                              {!!cap.motivo_voluntario && (
+                                <Text style={{ fontSize: 13, lineHeight: 20, color: COLORS.textDark }}>
+                                  <Text style={{ fontWeight: '700' }}>Por qué quiere ser voluntario: </Text>
                                   {cap.motivo_voluntario}
                                 </Text>
-                              </View>
-                            )}
-                            {!!resumen?.contacto_y_compromisos.motivaciones.length && (
-                              <View>
-                                <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Motivaciones</Text>
-                                <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.textDark, textTransform: 'capitalize' }}>
-                                  {resumen.contacto_y_compromisos.motivaciones.join(', ')}
-                                </Text>
-                              </View>
-                            )}
-                            {!!cap.experiencia_previa && (
-                              <View>
-                                <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Experiencia previa</Text>
-                                <Text style={{ fontSize: 13, color: COLORS.textDark }}>
+                              )}
+                              {!!cap.experiencia_previa && (
+                                <Text style={{ fontSize: 13, lineHeight: 20, color: COLORS.textDark }}>
+                                  <Text style={{ fontWeight: '700' }}>Experiencia previa: </Text>
                                   {cap.experiencia_previa}
                                 </Text>
-                              </View>
-                            )}
-                            {!!resumen?.contacto_y_compromisos.comentarios && (
-                              <View>
-                                <Text style={{ fontSize: 11, color: COLORS.textLight, marginBottom: 2 }}>Comentarios adicionales</Text>
-                                <Text style={{ fontSize: 13, color: COLORS.textDark }}>
-                                  {resumen.contacto_y_compromisos.comentarios}
-                                </Text>
-                              </View>
-                            )}
-                          </View>
+                              )}
+                            </View>
+                          )}
                         </View>
 
                         {!!resumen && (resumen.movilidad.radio_max_km != null || !!resumen.movilidad.medios_transporte.length || !!resumen.disponibilidad.tiempo_reaccion || !!resumen.disponibilidad.urgencias) && (
-                          <View style={{ backgroundColor: COLORS.cardBg, padding: 16, borderRadius: 16 }}>
-                            <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.textLight, marginBottom: 12, textTransform: 'uppercase' }}>
-                              Disponibilidad y movilidad
-                            </Text>
+                          <SectionCardInterno icon="time-outline" title="Disponibilidad y movilidad">
                             <View style={{ gap: 10 }}>
                               {(resumen.movilidad.radio_max_km != null || !!resumen.movilidad.medios_transporte.length) && (
                                 <View>
@@ -731,14 +828,11 @@ export function PostulacionesPanel({ visible }: Props) {
                                 </View>
                               )}
                             </View>
-                          </View>
+                          </SectionCardInterno>
                         )}
 
                         {!!resumen && (!!resumen.manejo_animal.experiencias_campo.length || !!resumen.manejo_animal.trayectoria.length || !!resumen.manejo_animal.experiencia_anios) && (
-                          <View style={{ backgroundColor: COLORS.cardBg, padding: 16, borderRadius: 16 }}>
-                            <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.textLight, marginBottom: 12, textTransform: 'uppercase' }}>
-                              Experiencia declarada
-                            </Text>
+                          <SectionCardInterno icon="paw-outline" title="Experiencia declarada">
                             <View style={{ gap: 10 }}>
                               {!!resumen.manejo_animal.experiencias_campo.length && (
                                 <View>
@@ -765,7 +859,7 @@ export function PostulacionesPanel({ visible }: Props) {
                                 </View>
                               )}
                             </View>
-                          </View>
+                          </SectionCardInterno>
                         )}
                       </>
                     );
