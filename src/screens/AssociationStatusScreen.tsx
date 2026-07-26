@@ -16,6 +16,7 @@ import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
 import { useWindowDimensions } from 'react-native';
 import { PostulacionesPanel } from '../components/association-dashboard/PostulacionesPanel';
+import { LotesInvitacionesPanel } from '../components/association-dashboard/LotesInvitacionesPanel';
 import { Animated } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Animal, getAnimales, totalAnimales, animalMasGrave } from '../types/reporte';
@@ -85,7 +86,7 @@ interface HistorialEvento {
 }
 
 type FiltroAsignacion = 'todas' | 'pendientes' | 'aceptadas' | 'rechazadas';
-type ActiveTab = 'reportes' | 'postulaciones' | 'voluntarios';
+type ActiveTab = 'reportes' | 'postulaciones' | 'voluntarios' | 'lotes';
 
 type TabAsignacion = 'staff' | 'voluntarios';
 type EstadoVoluntarios = 'cargando' | 'candidatos' | 'esperando_confirmacion' | 'confirmado' | 'rechazado_mostrando_siguiente' | 'sin_candidatos';
@@ -1115,6 +1116,7 @@ const confirmarReactivar = async () => {
                   onPress={() => setActiveTab('voluntarios')}
                   style={{
                     paddingBottom: 12,
+                    marginRight: 24,
                     borderBottomWidth: activeTab === 'voluntarios' ? 3 : 0,
                     borderBottomColor: COLORS.primary
                   }}
@@ -1127,12 +1129,29 @@ const confirmarReactivar = async () => {
                     Mis voluntarios
                   </Text>
                 </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => setActiveTab('lotes')}
+                  style={{
+                    paddingBottom: 12,
+                    borderBottomWidth: activeTab === 'lotes' ? 3 : 0,
+                    borderBottomColor: COLORS.primary
+                  }}
+                >
+                  <Text style={{
+                    fontSize: 16,
+                    fontWeight: activeTab === 'lotes' ? '800' : '600',
+                    color: activeTab === 'lotes' ? COLORS.primary : COLORS.textLight
+                  }}>
+                    Lotes de aliados
+                  </Text>
+                </TouchableOpacity>
               </View>
 
               {/* Título de sección */}
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                 <Text style={{ fontSize: 22, fontWeight: 'bold', color: COLORS.textDark }}>
-                  {activeTab === 'reportes' ? 'Reportes asignados' : activeTab === 'postulaciones' ? 'Postulaciones de voluntarios' : 'Mis voluntarios'}
+                  {activeTab === 'reportes' ? 'Reportes asignados' : activeTab === 'postulaciones' ? 'Postulaciones de voluntarios' : activeTab === 'lotes' ? 'Lotes de aliados' : 'Mis voluntarios'}
                 </Text>
                 {activeTab === 'reportes' && nuevosReportes > 0 && (
                   <View style={{ backgroundColor: COLORS.danger, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
@@ -1350,6 +1369,8 @@ const confirmarReactivar = async () => {
 
                 ) : activeTab === 'postulaciones' ? (
                   <PostulacionesPanel visible={activeTab === 'postulaciones'} />
+                ) : activeTab === 'lotes' ? (
+                  <LotesInvitacionesPanel visible={activeTab === 'lotes'} />
                 ) : (
                   <>
                     <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>

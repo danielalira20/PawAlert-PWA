@@ -2,12 +2,31 @@ from fastapi import APIRouter, UploadFile, File, Header, HTTPException
 from app.db.supabase import supabase
 from app.services.storage_service import subir_foto
 from app.services.report_service import obtener_id_catalogo
-from app.services.red_aliados_service import crear_contribucion, crear_oferta_proactiva
+from app.services.red_aliados_service import (
+    crear_contribucion,
+    crear_oferta_proactiva,
+    obtener_directorio_aliados,
+    obtener_mural_impacto,
+    crear_lote,
+    obtener_mis_lotes,
+    obtener_asociaciones_compatibles,
+    invitar_asociaciones,
+    obtener_invitaciones_asociacion,
+    obtener_invitaciones_lote,
+    responder_invitacion,
+    obtener_qr_invitacion,
+    confirmar_recepcion_qr,
+)
 from app.models.red_aliados import (
     ContribucionRequest,
     ContribucionResponse,
     OfertaProactivaRequest,
     OfertaProactivaResponse,
+    LoteRequest,
+    LoteResponse,
+    InvitarAsociacionesRequest,
+    ResponderInvitacionRequest,
+    ConfirmarQrRequest,
 )
 
 router = APIRouter()
@@ -85,3 +104,83 @@ async def crear_contribucion_endpoint(body: ContribucionRequest, authorization: 
 async def crear_oferta_proactiva_endpoint(body: OfertaProactivaRequest, authorization: str = Header(None)):
     usuario = _obtener_usuario_autenticado(authorization)
     return await crear_oferta_proactiva(usuario["id"], body)
+
+
+@router.post("/lotes", status_code=201, response_model=LoteResponse)
+async def crear_lote_endpoint(body: LoteRequest, authorization: str = Header(None)):
+    """FRONT13 — registrar un lote físico (panel de aliado)."""
+    usuario = _obtener_usuario_autenticado(authorization)
+    return await crear_lote(usuario["id"], body)
+
+
+@router.get("/lotes/mios", status_code=200)
+async def get_mis_lotes_endpoint(authorization: str = Header(None)):
+    usuario = _obtener_usuario_autenticado(authorization)
+    return await obtener_mis_lotes(usuario["id"])
+
+
+@router.get("/lotes/{lote_id}/invitaciones", status_code=200)
+async def get_invitaciones_lote_endpoint(lote_id: str, authorization: str = Header(None)):
+    """Panel de aliado — estado de las invitaciones de un lote propio."""
+    usuario = _obtener_usuario_autenticado(authorization)
+    return await obtener_invitaciones_lote(lote_id, usuario["id"])
+
+
+@router.get("/lotes/{lote_id}/asociaciones-compatibles", status_code=200)
+async def get_asociaciones_compatibles_endpoint(lote_id: str, authorization: str = Header(None)):
+    """FRONT14 — asociaciones cercanas y compatibles para invitar."""
+    usuario = _obtener_usuario_autenticado(authorization)
+    return await obtener_asociaciones_compatibles(lote_id, usuario["id"])
+
+
+@router.post("/lotes/{lote_id}/invitar", status_code=201)
+async def invitar_asociaciones_endpoint(lote_id: str, body: InvitarAsociacionesRequest, authorization: str = Header(None)):
+    """FRONT14 — invitar asociaciones a aceptar su parte del lote."""
+    usuario = _obtener_usuario_autenticado(authorization)
+    return await invitar_asociaciones(lote_id, usuario["id"], body)
+
+
+@router.get("/invitaciones", status_code=200)
+async def get_invitaciones_endpoint(authorization: str = Header(None)):
+    """FRONT15 — invitaciones de lote recibidas por la asociación del
+    usuario en sesión (panel de asociación)."""
+    usuario = _obtener_usuario_autenticado(authorization)
+    if not usuario["asociacion_id"]:
+        raise HTTPException(status_code=403, detail="Tu usuario no pertenece a una asociación")
+    return await obtener_invitaciones_asociacion(usuario["asociacion_id"])
+
+
+@router.post("/invitaciones/{invitacion_id}/responder", status_code=200)
+async def responder_invitacion_endpoint(invitacion_id: str, body: ResponderInvitacionRequest, authorization: str = Header(None)):
+    """FRONT15 — aceptar o rechazar la parte del lote."""
+    usuario = _obtener_usuario_autenticado(authorization)
+    if not usuario["asociacion_id"]:
+        raise HTTPException(status_code=403, detail="Tu usuario no pertenece a una asociación")
+    return await responder_invitacion(invitacion_id, usuario["asociacion_id"], body)
+
+
+@router.get("/invitaciones/{invitacion_id}/qr", status_code=200)
+async def get_qr_invitacion_endpoint(invitacion_id: str, authorization: str = Header(None)):
+    """BACK07 — código QR (token + vigencia) de una invitación aceptada."""
+    usuario = _obtener_usuario_autenticado(authorization)
+    return await obtener_qr_invitacion(invitacion_id, usuario["id"])
+
+
+@router.post("/qr/confirmar", status_code=200)
+async def confirmar_qr_endpoint(body: ConfirmarQrRequest, authorization: str = Header(None)):
+    """FRONT16 — escanear el QR y confirmar recepción."""
+    usuario = _obtener_usuario_autenticado(authorization)
+    return await confirmar_recepcion_qr(body.token, usuario["id"])
+
+
+@router.get("/directorio", status_code=200)
+async def get_directorio_aliados():
+    """FRONT17 — público, sin sesión. Lista/mapa de aliados con sello de
+    verificación (verificado_admin=true)."""
+    return await obtener_directorio_aliados()
+
+
+@router.get("/mural", status_code=200)
+async def get_mural_impacto():
+    """FRONT17 — público, sin sesión. Historias de apoyo ya confirmado."""
+    return await obtener_mural_impacto()

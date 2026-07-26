@@ -44,7 +44,13 @@
           }
         }
       ],
-      "expo-font"
+      "expo-font",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "PawAlert usa la cámara para escanear el código QR de recepción de lotes de la Red de Aliados."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

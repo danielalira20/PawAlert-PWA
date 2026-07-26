@@ -41,6 +41,9 @@ export default function RootLayout() {
         <Stack.Screen name="association" />
         <Stack.Screen name="capacidades-form" options={{ presentation: 'modal' }} />
         <Stack.Screen name="red-aliados" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="aliados-directorio" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="lote-form" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="mis-lotes" options={{ presentation: 'modal' }} />
         <Stack.Screen name="staff-asignacion" />
         <Stack.Screen name="forgot-password" options={{ presentation: 'modal' }} />
         <Stack.Screen name="completar-cuenta" options={{ presentation: 'modal' }} />

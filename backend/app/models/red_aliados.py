@@ -3,15 +3,11 @@ from typing import Optional, Any
 from enum import Enum
 
 
-# TODO(lotes divisibles): `lotes.contribucion_id` es NOT NULL + UNIQUE en el
-# esquema actual (migrations/0006_red_aliados.sql) — un lote mapea 1:1 a
-# exactamente una contribución. El flujo de lotes divisibles entre varias
-# asociaciones (flujo-red-aliados-pawalert.md, sección 7 — "varias
-# asociaciones pueden pedir bolsas completas") necesita que un mismo lote
-# se reparta en más de una contribución (una por asociación que acepta su
-# parte), lo cual este esquema todavía no soporta. No es parte de este
-# módulo (Formulario 3 / FRONT01) — es tarea de quien implemente
-# Formulario 4 / FRONT13 (lotes). No tocar la migración por esto ahora.
+# Lotes divisibles (FRONT13/14/15/16 + BACK07): resuelto en
+# migrations/0011_lotes_multi_asociacion.sql — un lote ahora puede nacer
+# directo de un perfil_apoyo (sin pasar por una contribución 1:1) y
+# repartirse entre varias asociaciones vía la tabla lote_asociaciones,
+# cada una con su propia contribución y su propio QR de recepción.
 
 
 class CategoriaRecursoEnum(str, Enum):
@@ -102,3 +98,64 @@ class OfertaProactivaResponse(BaseModel):
     unidad: str
     activa: bool
     created_at: str
+
+
+class DivisibleEnum(str, Enum):
+    no = "no"
+    solo_empaques_completos = "solo_empaques_completos"
+    aliado_prepara_lotes = "aliado_prepara_lotes"
+
+
+class FormaEntregaEnum(str, Enum):
+    institucion_lleva = "institucion_lleva"
+    asociacion_recoge = "asociacion_recoge"
+    ambas = "ambas"
+    punto_acordado = "punto_acordado"
+
+
+class LoteRequest(BaseModel):
+    """Body de POST /red-aliados/lotes — FRONT13. Un lote nace directo del
+    perfil de aliado (no depende de una contribución previa) y puede
+    repartirse entre varias asociaciones (FRONT14/15)."""
+    categoria: CategoriaRecursoEnum
+    subcategoria_id: str
+    especies_aplica: list[EspecieAplicaEnum] = Field(default_factory=list)
+    cantidad_valor: float = Field(gt=0)
+    cantidad_unidad: str
+    tipo_empaque: str = Field(max_length=120)
+    divisible: DivisibleEnum
+    max_asociaciones: int = Field(ge=1, default=1)
+    forma_entrega: FormaEntregaEnum
+    descripcion: Optional[str] = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def validar_max_asociaciones(self):
+        if self.divisible == DivisibleEnum.no and self.max_asociaciones != 1:
+            raise ValueError("Un lote no divisible solo puede tener 1 asociación destino")
+        return self
+
+
+class LoteResponse(BaseModel):
+    id: str
+    categoria: str
+    subcategoria_id: str
+    cantidad_valor: float
+    cantidad_unidad: str
+    tipo_empaque: str
+    divisible: str
+    max_asociaciones: int
+    forma_entrega: str
+    created_at: str
+
+
+class InvitarAsociacionesRequest(BaseModel):
+    asociacion_ids: list[str] = Field(min_length=1)
+
+
+class ResponderInvitacionRequest(BaseModel):
+    aceptar: bool
+    cantidad_asignada: Optional[float] = Field(default=None, gt=0)
+
+
+class ConfirmarQrRequest(BaseModel):
+    token: str

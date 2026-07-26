@@ -194,6 +194,63 @@ const createAssocPin = (selected = false) => {
   });
 };
 
+// ─── Pin de aliado (corazón verde) ────────────────────────────────────────────
+const ALIADO_COLOR = '#27AE60';
+const ALIADO_DARK = '#1E8449';
+const createAliadoPin = (selected = false) => {
+  const size = selected ? 50 : 42;
+  const shadow = selected
+    ? `0 6px 24px ${ALIADO_COLOR}BB, 0 0 0 3px white, 0 0 0 5px ${ALIADO_DARK}66`
+    : `0 3px 12px ${ALIADO_COLOR}88`;
+
+  const html = `
+    <div style="
+      display:flex; flex-direction:column; align-items:center;
+      transform:scale(${selected ? 1.1 : 1});
+      transform-origin:bottom center;
+      transition:transform 0.2s cubic-bezier(0.34,1.56,0.64,1);
+    ">
+      <div style="
+        width:${size}px; height:${size}px;
+        border-radius:50%;
+        border:3px solid ${ALIADO_DARK};
+        background:${ALIADO_COLOR};
+        box-shadow:${shadow};
+        display:flex; align-items:center; justify-content:center;
+      ">
+        <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='20' height='20'>
+          <path fill='white' d='M12 21s-6.7-4.35-9.5-8.1C.6 10.2 1.2 6.6 4.2 5.1 6.4 4 9 4.6 10.5 6.6L12 8.4l1.5-1.8C15 4.6 17.6 4 19.8 5.1c3 1.5 3.6 5.1 1.7 7.8C18.7 16.65 12 21 12 21z'/>
+        </svg>
+      </div>
+      <div style="
+        width:0; height:0;
+        border-left:6px solid transparent;
+        border-right:6px solid transparent;
+        border-top:9px solid ${ALIADO_DARK};
+        margin-top:-1px;
+        filter:drop-shadow(0 2px 2px ${ALIADO_COLOR}55);
+      "></div>
+      <div style="width:3px;height:3px;border-radius:50%;background:${ALIADO_DARK};opacity:0.8;"></div>
+    </div>`;
+
+  const totalH = size + 14;
+  return L.divIcon({
+    className: 'pawalert-marker',
+    html,
+    iconSize: [size + 8, totalH],
+    iconAnchor: [(size + 8) / 2, totalH],
+  });
+};
+
+export interface AliadoMapa {
+  id: string;
+  nombre: string;
+  tipo: string;
+  latitud: number;
+  longitud: number;
+  sello_verificado?: boolean;
+}
+
 export interface AsociacionMapa {
   id: string;
   nombre: string;
@@ -218,6 +275,7 @@ function MapClickHandler({ onMapClick }: { onMapClick: () => void }) {
 interface LeafletMapProps {
   reportes: Reporte[];
   asociaciones?: AsociacionMapa[];
+  aliados?: AliadoMapa[];
   selectedReportId?: string | null;
   getMarkerColor?: (reporte: Reporte) => string;
   width?: string | number;
@@ -231,6 +289,7 @@ interface LeafletMapProps {
 export default function LeafletMap({
   reportes,
   asociaciones = [],
+  aliados = [],
   getMarkerColor,
   selectedReportId,
   onSelectReport,
@@ -387,6 +446,33 @@ export default function LeafletMap({
                       Ver más →
                     </button>
                   )}
+                </div>
+              </Popup>
+            </Marker>
+          ))}
+        {aliados
+          .filter((a): a is AliadoMapa & { latitud: number; longitud: number } =>
+            a.latitud !== null && a.longitud !== null)
+          .map((aliado) => (
+            <Marker
+              key={`aliado-${aliado.id}`}
+              position={[aliado.latitud, aliado.longitud]}
+              icon={createAliadoPin()}
+            >
+              <Popup closeButton={false} className="pp-wrap" offset={[0, -6]}>
+                <div className="pp-accent" style={{ background: ALIADO_COLOR }} />
+                <div className="pp-body">
+                  <div className="pp-title">{aliado.nombre}</div>
+                  <div className="pp-badges">
+                    <span className="pp-badge" style={{ background: `${ALIADO_COLOR}20`, color: ALIADO_DARK }}>
+                      ● {aliado.tipo === 'aliado_local' ? 'Aliado local' : aliado.tipo === 'patrocinador_institucional' ? 'Patrocinador' : 'Donante'}
+                    </span>
+                    {aliado.sello_verificado && (
+                      <span className="pp-badge" style={{ background: '#EBF5FB', color: '#2E86DE' }}>
+                        ✓ Verificado
+                      </span>
+                    )}
+                  </div>
                 </div>
               </Popup>
             </Marker>
