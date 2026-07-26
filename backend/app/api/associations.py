@@ -42,6 +42,8 @@ import json
 from app.services.email_service import email_bienvenida_staff
 from app.models.red_aliados import NecesidadCreate
 from app.services.red_aliados_service import crear_necesidad_asociacion
+from enum import Enum
+from datetime import datetime, timezone
 
 
 router = APIRouter()
@@ -1107,3 +1109,80 @@ def publicar_necesidad(
     resultado = crear_necesidad_asociacion(supabase, asociacion_id, necesidad)
     
     return {"message": "Necesidad publicada con éxito", "data": resultado}
+
+
+class AccionOferta(str, Enum):
+    aceptar = "aceptar"
+    rechazar = "rechazar"
+    ajustar = "ajustar"
+
+class ResolverOfertaRequest(BaseModel):
+    accion: AccionOferta
+    cantidad_ajustada: float | None = None
+
+@router.get("/me/ofertas", status_code=200)
+async def get_ofertas_recibidas(authorization: str = Header(None)):
+    """
+    FRONT10: Obtiene la lista de ofertas (contribuciones) pendientes 
+    realizadas a las necesidades publicadas por esta asociación.
+    """
+    usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion", "staff"))
+
+    if not usuario.get("asociacion_id"):
+        raise HTTPException(status_code=404, detail="Este usuario no está vinculado a ninguna asociación")
+
+    # Obtenemos contribuciones con estado 'comprometida' haciendo un inner join 
+    # con necesidades para asegurar que pertenezcan a esta asociación.
+    resultado = supabase.table("contribuciones").select(
+        "id, cantidad_valor, cantidad_unidad, estado, created_at, detalle, "
+        "necesidades!inner(id, categoria, asociacion_id, subcategoria_id), "
+        "usuarios(nombre, apellido_paterno, telefono, email)"
+    ).eq("necesidades.asociacion_id", usuario["asociacion_id"]).eq("estado", "comprometida").order("created_at", desc=True).execute()
+
+    return resultado.data
+
+
+@router.patch("/me/ofertas/{contribucion_id}/resolver", status_code=200)
+async def patch_resolver_oferta(
+    contribucion_id: str, 
+    body: ResolverOfertaRequest, 
+    authorization: str = Header(None)
+):
+    """
+    FRONT10: Permite a la asociación aceptar, rechazar o ajustar una oferta.
+    """
+    usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion", "staff"))
+
+    # Validar que la contribución pertenezca a una necesidad de esta asociación
+    contrib_res = supabase.table("contribuciones").select(
+        "id, estado, necesidades!inner(asociacion_id)"
+    ).eq("id", contribucion_id).execute()
+
+    if not contrib_res.data:
+        raise HTTPException(status_code=404, detail="Oferta no encontrada")
+
+    if contrib_res.data[0]["necesidades"]["asociacion_id"] != usuario["asociacion_id"]:
+        raise HTTPException(status_code=403, detail="No tienes permiso para gestionar esta oferta")
+
+    if contrib_res.data[0]["estado"] != "comprometida":
+        raise HTTPException(status_code=400, detail="Esta oferta ya fue resuelta anteriormente")
+
+    update_data = {}
+    
+    if body.accion == AccionOferta.rechazar:
+        update_data["estado"] = "rechazada"
+    elif body.accion == AccionOferta.aceptar:
+        update_data["estado"] = "confirmada"
+        update_data["confirmada_at"] = datetime.now(timezone.utc).isoformat()
+    elif body.accion == AccionOferta.ajustar:
+        if not body.cantidad_ajustada or body.cantidad_ajustada <= 0:
+            raise HTTPException(status_code=422, detail="Debes proporcionar una cantidad ajustada válida")
+        update_data["estado"] = "parcial"
+        update_data["cantidad_valor"] = body.cantidad_ajustada
+        update_data["confirmada_at"] = datetime.now(timezone.utc).isoformat()
+
+    resultado = supabase.table("contribuciones").update(update_data).eq("id", contribucion_id).execute()
+    
+    return {"mensaje": f"Oferta {body.accion.value} exitosamente", "oferta": resultado.data[0]}
