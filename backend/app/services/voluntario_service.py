@@ -280,13 +280,82 @@ async def obtener_mi_voluntario(usuario_id: str) -> dict:
     }
 
 
+def _valor_con_fallback(valor_v2, valor_legacy):
+    """v2 gana si el formulario actual lo llenó — incluso si el valor es
+    'False' o una lista vacía, porque eso también es información real de v2.
+    Solo cae a legacy cuando la columna v2 nunca se tocó (sigue en NULL)."""
+    return valor_v2 if valor_v2 is not None else valor_legacy
+
+
+def generar_resumen_expediente_interno(capacidades: dict) -> dict:
+    """Fotografía estructurada de las capacidades v2 de un voluntario
+    interno — mismos 5 bloques reutilizables que arma
+    generar_resumen_expediente() para externo (home_verification_service.py),
+    pero escrita de cero aquí: interno no tiene perfil_casa_temporal, así que
+    no aplican los bloques de hogar/evidencias/ubicación de esa función, y no
+    se importa ni se llama nada de ese módulo.
+
+    Regresa los valores del enum tal cual se guardaron, sin traducir a
+    etiquetas legibles (decisión de alcance de esta fase)."""
+    disponibilidad = capacidades.get("disponibilidad") or {}
+    return {
+        "disponibilidad": {
+            "dias": disponibilidad.get("dias", []),
+            "franjas": disponibilidad.get("franjas", []),
+            "tiempo_reaccion": capacidades.get("tiempo_reaccion"),
+            "urgencias": capacidades.get("disponibilidad_urgencias"),
+            "casos_simultaneos": capacidades.get("max_casos_simultaneos"),
+        },
+        "movilidad": {
+            "radio_max_km": capacidades.get("radio_max_km"),
+            "medios_transporte": capacidades.get("medios_transporte") or [],
+            "vehiculo_apto_traslado": capacidades.get("vehiculo_apto_traslado"),
+            "tamanios_traslado": capacidades.get("tamanios_traslado") or [],
+        },
+        "manejo_animal": {
+            "especies": capacidades.get("especies_manejo") or [],
+            "tamanios": capacidades.get("tamanios_manejo") or [],
+            "primeros_auxilios": capacidades.get("primeros_auxilios_nivel"),
+            "experiencias_campo": capacidades.get("experiencias_campo") or [],
+            "tratamientos": capacidades.get("vias_tratamiento") or [],
+            "trayectoria": capacidades.get("trayectoria_tipos") or [],
+            "experiencia_anios": capacidades.get("experiencia_anios"),
+        },
+        "equipo_y_bienestar": {
+            "equipamiento": capacidades.get("equipamiento") or [],
+            "restricciones_fisicas": capacidades.get("restricciones_fisicas") or [],
+        },
+        "contacto_y_compromisos": {
+            "canal_preferido": capacidades.get("canal_contacto"),
+            "proyeccion": capacidades.get("proyeccion_colaboracion"),
+            "motivaciones": capacidades.get("motivaciones") or [],
+            "comentarios": capacidades.get("comentarios_adicionales"),
+        },
+    }
+
+
 async def obtener_postulaciones_asociacion(asociacion_id: str, estado: str | None = None) -> list:
+    # Todas las postulaciones de esta llamada son de la MISMA asociación — una
+    # sola consulta aquí (no un join por fila) alcanza para calcular
+    # distancia_km de cada una más abajo.
+    asociacion_resultado = supabase.table("asociaciones").select(
+        "latitud, longitud"
+    ).eq("id", asociacion_id).execute()
+    asociacion_lat = asociacion_resultado.data[0]["latitud"] if asociacion_resultado.data else None
+    asociacion_lon = asociacion_resultado.data[0]["longitud"] if asociacion_resultado.data else None
+
     query = supabase.table("postulaciones").select(
         "id, voluntario_id, tipo, estado, motivo_rechazo, numero_intento, "
         "created_at, resuelta_at, "
         "voluntarios(usuario_id, usuarios(nombre, apellido_paterno, telefono, email), "
         "capacidades(disponibilidad, ofrece_casa_hogar, capacidad_animales, especies, "
-        "tamanios, tiene_vehiculo, motivo_voluntario, experiencia_previa, latitud, longitud))"
+        "tamanios, tiene_vehiculo, motivo_voluntario, experiencia_previa, latitud, longitud, "
+        "medios_transporte, vehiculo_apto_traslado, radio_max_km, tamanios_traslado, "
+        "especies_manejo, tamanios_manejo, primeros_auxilios_nivel, experiencias_campo, "
+        "vias_tratamiento, trayectoria_tipos, experiencia_anios, equipamiento, "
+        "restricciones_fisicas, canal_contacto, proyeccion_colaboracion, motivaciones, "
+        "comentarios_adicionales, tiempo_reaccion, disponibilidad_urgencias, "
+        "max_casos_simultaneos))"
     ).eq("asociacion_id", asociacion_id).order("created_at", desc=True)
 
     if estado:
@@ -317,6 +386,54 @@ async def obtener_postulaciones_asociacion(asociacion_id: str, estado: str | Non
             ).order("numero_intento").execute()
             historial_previo = previos.data or []
 
+        capacidades_dict = None
+        resumen_interno = None
+        distancia_km = None
+        if capacidades:
+            capacidades_dict = {
+                "disponibilidad": capacidades.get("disponibilidad"),
+                "ofrece_casa_hogar": capacidades.get("ofrece_casa_hogar"),
+                "capacidad_animales": capacidades.get("capacidad_animales"),
+                "especies": capacidades.get("especies"),
+                "tamanios": capacidades.get("tamanios"),
+                "tiene_vehiculo": capacidades.get("tiene_vehiculo"),
+                "motivo_voluntario": capacidades.get("motivo_voluntario"),
+                "experiencia_previa": capacidades.get("experiencia_previa"),
+                "latitud": capacidades.get("latitud"),
+                "longitud": capacidades.get("longitud"),
+            }
+
+            # El expediente enriquecido (v2 + resumen + distancia) es zona de
+            # interno — externo ya tiene su propio expediente más completo
+            # vía finalizar_postulacion_externa()/generar_resumen_expediente().
+            if p.get("tipo") != "externo":
+                capacidades_dict.update({
+                    "medios_transporte": capacidades.get("medios_transporte"),
+                    "vehiculo_apto_traslado": capacidades.get("vehiculo_apto_traslado"),
+                    "radio_max_km": capacidades.get("radio_max_km"),
+                    "experiencias_campo": capacidades.get("experiencias_campo"),
+                    "experiencia_anios": capacidades.get("experiencia_anios"),
+                    "trayectoria_tipos": capacidades.get("trayectoria_tipos"),
+                    "tiempo_reaccion": capacidades.get("tiempo_reaccion"),
+                    "disponibilidad_urgencias": capacidades.get("disponibilidad_urgencias"),
+                    # Resueltas: v2 gana si fue tocado (incluso False/[]); si
+                    # no, cae a la columna legacy correspondiente.
+                    "vehiculo_final": _valor_con_fallback(
+                        capacidades.get("vehiculo_apto_traslado"), capacidades.get("tiene_vehiculo")
+                    ),
+                    "especies_final": _valor_con_fallback(
+                        capacidades.get("especies_manejo"), capacidades.get("especies")
+                    ),
+                    "tamanios_final": _valor_con_fallback(
+                        capacidades.get("tamanios_manejo"), capacidades.get("tamanios")
+                    ),
+                })
+                resumen_interno = generar_resumen_expediente_interno(capacidades)
+                distancia_km = _distancia_km(
+                    capacidades.get("latitud"), capacidades.get("longitud"),
+                    asociacion_lat, asociacion_lon,
+                )
+
         postulaciones.append({
             "postulacion_id": p["id"],
             "voluntario_id": p["voluntario_id"],
@@ -332,18 +449,9 @@ async def obtener_postulaciones_asociacion(asociacion_id: str, estado: str | Non
                 "telefono": usuario.get("telefono"),
                 "email": usuario.get("email"),
             },
-            "capacidades": capacidades and {
-                "disponibilidad": capacidades.get("disponibilidad"),
-                "ofrece_casa_hogar": capacidades.get("ofrece_casa_hogar"),
-                "capacidad_animales": capacidades.get("capacidad_animales"),
-                "especies": capacidades.get("especies"),
-                "tamanios": capacidades.get("tamanios"),
-                "tiene_vehiculo": capacidades.get("tiene_vehiculo"),
-                "motivo_voluntario": capacidades.get("motivo_voluntario"),
-                "experiencia_previa": capacidades.get("experiencia_previa"),
-                "latitud": capacidades.get("latitud"),
-                "longitud": capacidades.get("longitud"),
-            },
+            "capacidades": capacidades_dict,
+            "resumen_interno": resumen_interno,
+            "distancia_km": distancia_km,
             "historial_intentos_previos": historial_previo,
         })
 

@@ -203,3 +203,173 @@ def test_obtener_mi_voluntario_reintento_abandonado_regresa_sin_perfil(make_quer
         resultado = asyncio.run(voluntario_service.obtener_mi_voluntario("user-1"))
 
     assert resultado == {"tiene_perfil_voluntario": False}
+
+
+# ─── generar_resumen_expediente_interno() ─────────────────────────────────
+# Función pura (sin supabase) — mismos 5 bloques reutilizables que
+# generar_resumen_expediente() de externo, escrita de cero para interno.
+
+def test_generar_resumen_expediente_interno_arma_los_5_bloques():
+    capacidades = {
+        "disponibilidad": {"dias": ["lun", "mie"], "franjas": ["matutino"]},
+        "tiempo_reaccion": "inmediata",
+        "disponibilidad_urgencias": "si",
+        "max_casos_simultaneos": 2,
+        "radio_max_km": 10,
+        "medios_transporte": ["automovil"],
+        "vehiculo_apto_traslado": True,
+        "tamanios_traslado": ["grande"],
+        "especies_manejo": ["perro", "gato"],
+        "tamanios_manejo": ["pequeno"],
+        "primeros_auxilios_nivel": "basico",
+        "experiencias_campo": ["cachorros_neonatos"],
+        "vias_tratamiento": ["oral"],
+        "trayectoria_tipos": ["mascotas_propias"],
+        "experiencia_anios": "entre_1_3",
+        "equipamiento": ["transportadora_chica"],
+        "restricciones_fisicas": ["ninguna"],
+        "canal_contacto": "whatsapp",
+        "proyeccion_colaboracion": "continua",
+        "motivaciones": ["salvar_animales"],
+        "comentarios_adicionales": "Disponible fines de semana",
+    }
+
+    resumen = voluntario_service.generar_resumen_expediente_interno(capacidades)
+
+    assert resumen == {
+        "disponibilidad": {
+            "dias": ["lun", "mie"],
+            "franjas": ["matutino"],
+            "tiempo_reaccion": "inmediata",
+            "urgencias": "si",
+            "casos_simultaneos": 2,
+        },
+        "movilidad": {
+            "radio_max_km": 10,
+            "medios_transporte": ["automovil"],
+            "vehiculo_apto_traslado": True,
+            "tamanios_traslado": ["grande"],
+        },
+        "manejo_animal": {
+            "especies": ["perro", "gato"],
+            "tamanios": ["pequeno"],
+            "primeros_auxilios": "basico",
+            "experiencias_campo": ["cachorros_neonatos"],
+            "tratamientos": ["oral"],
+            "trayectoria": ["mascotas_propias"],
+            "experiencia_anios": "entre_1_3",
+        },
+        "equipo_y_bienestar": {
+            "equipamiento": ["transportadora_chica"],
+            "restricciones_fisicas": ["ninguna"],
+        },
+        "contacto_y_compromisos": {
+            "canal_preferido": "whatsapp",
+            "proyeccion": "continua",
+            "motivaciones": ["salvar_animales"],
+            "comentarios": "Disponible fines de semana",
+        },
+    }
+
+
+def test_generar_resumen_expediente_interno_capacidades_vacias_no_truena():
+    resumen = voluntario_service.generar_resumen_expediente_interno({})
+
+    assert resumen["disponibilidad"]["dias"] == []
+    assert resumen["movilidad"]["medios_transporte"] == []
+    assert resumen["manejo_animal"]["especies"] == []
+    assert resumen["equipo_y_bienestar"]["equipamiento"] == []
+    assert resumen["contacto_y_compromisos"]["motivaciones"] == []
+
+
+# ─── obtener_postulaciones_asociacion() — fallback legacy→v2 y distancia_km ─
+
+def _fila_postulacion_interno(capacidades: dict) -> dict:
+    """Una fila cruda de postulaciones tal como la regresaría Supabase, con
+    el embed de voluntarios/usuarios/capacidades — mismo shape que usa
+    obtener_postulaciones_asociacion()."""
+    return {
+        "id": "post-1",
+        "voluntario_id": "vol-1",
+        "tipo": "interno",
+        "estado": "pendiente",
+        "motivo_rechazo": None,
+        "numero_intento": 1,
+        "created_at": "2026-07-20T10:00:00+00:00",
+        "resuelta_at": None,
+        "voluntarios": {
+            "usuario_id": "user-1",
+            "usuarios": {
+                "nombre": "Ana", "apellido_paterno": "López",
+                "telefono": "5512345678", "email": "ana@example.com",
+            },
+            "capacidades": capacidades,
+        },
+    }
+
+
+def test_obtener_postulaciones_asociacion_fallback_legacy_v2(make_query):
+    # vehiculo: v2 real (True) debe ganar sobre legacy (False).
+    # especies: v2 nunca se tocó (None) debe caer a legacy.
+    # tamanios: v2 explícitamente vacío ([]) debe respetarse, NO caer a legacy.
+    capacidades = {
+        "disponibilidad": {}, "ofrece_casa_hogar": False, "capacidad_animales": 0,
+        "especies": ["perro"], "tamanios": ["grande"], "tiene_vehiculo": False,
+        "motivo_voluntario": None, "experiencia_previa": None,
+        "latitud": None, "longitud": None,
+        "medios_transporte": [], "vehiculo_apto_traslado": True, "radio_max_km": None,
+        "tamanios_traslado": [], "especies_manejo": None, "tamanios_manejo": [],
+        "primeros_auxilios_nivel": None, "experiencias_campo": [], "vias_tratamiento": [],
+        "trayectoria_tipos": [], "experiencia_anios": None, "equipamiento": [],
+        "restricciones_fisicas": [], "canal_contacto": None,
+        "proyeccion_colaboracion": None, "motivaciones": [], "comentarios_adicionales": None,
+        "tiempo_reaccion": None, "disponibilidad_urgencias": None, "max_casos_simultaneos": 1,
+    }
+    asociaciones = make_query(data=[{"latitud": 19.04, "longitud": -98.19}])
+    postulaciones = make_query(data=[_fila_postulacion_interno(capacidades)])
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda tabla: {
+        "asociaciones": asociaciones,
+        "postulaciones": postulaciones,
+    }[tabla]
+
+    with patch.object(voluntario_service, "supabase", supabase):
+        resultado = asyncio.run(
+            voluntario_service.obtener_postulaciones_asociacion("aso-1")
+        )
+
+    cap = resultado[0]["capacidades"]
+    assert cap["vehiculo_final"] is True  # v2 real gana sobre legacy False
+    assert cap["especies_final"] == ["perro"]  # v2 None -> cae a legacy
+    assert cap["tamanios_final"] == []  # v2 [] explícito -> se respeta, no cae a legacy
+
+
+def test_obtener_postulaciones_asociacion_distancia_none_sin_coordenadas(make_query):
+    capacidades = {
+        "disponibilidad": {}, "ofrece_casa_hogar": False, "capacidad_animales": 0,
+        "especies": [], "tamanios": [], "tiene_vehiculo": False,
+        "motivo_voluntario": None, "experiencia_previa": None,
+        "latitud": 19.04, "longitud": -98.19,  # el voluntario sí tiene coordenadas...
+        "medios_transporte": [], "vehiculo_apto_traslado": False, "radio_max_km": None,
+        "tamanios_traslado": [], "especies_manejo": [], "tamanios_manejo": [],
+        "primeros_auxilios_nivel": None, "experiencias_campo": [], "vias_tratamiento": [],
+        "trayectoria_tipos": [], "experiencia_anios": None, "equipamiento": [],
+        "restricciones_fisicas": [], "canal_contacto": None,
+        "proyeccion_colaboracion": None, "motivaciones": [], "comentarios_adicionales": None,
+        "tiempo_reaccion": None, "disponibilidad_urgencias": None, "max_casos_simultaneos": 1,
+    }
+    asociaciones = make_query(data=[])  # ...pero la asociación no tiene fila/coordenadas
+    postulaciones = make_query(data=[_fila_postulacion_interno(capacidades)])
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda tabla: {
+        "asociaciones": asociaciones,
+        "postulaciones": postulaciones,
+    }[tabla]
+
+    with patch.object(voluntario_service, "supabase", supabase):
+        resultado = asyncio.run(
+            voluntario_service.obtener_postulaciones_asociacion("aso-1")
+        )
+
+    assert resultado[0]["distancia_km"] is None
+    assert resultado[0]["resumen_interno"] is not None  # el resto del expediente sigue funcionando
