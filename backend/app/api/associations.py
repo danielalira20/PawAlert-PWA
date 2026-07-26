@@ -1121,10 +1121,11 @@ class ResolverOfertaRequest(BaseModel):
     cantidad_ajustada: float | None = None
 
 @router.get("/me/ofertas", status_code=200)
-async def get_ofertas_recibidas(authorization: str = Header(None)):
+async def get_ofertas_recibidas(tab: str = "pendientes", authorization: str = Header(None)):
     """
-    FRONT10: Obtiene la lista de ofertas (contribuciones) pendientes 
-    realizadas a las necesidades publicadas por esta asociación.
+    FRONT10 / FRONT07: Obtiene la lista de ofertas (contribuciones).
+    - tab=pendientes: ofertas en estado 'comprometida'.
+    - tab=historial: ofertas en estado 'confirmada' o 'parcial'.
     """
     usuario = _obtener_usuario_autenticado(authorization)
     _verificar_rol(usuario, ("asociacion", "staff"))
@@ -1132,13 +1133,18 @@ async def get_ofertas_recibidas(authorization: str = Header(None)):
     if not usuario.get("asociacion_id"):
         raise HTTPException(status_code=404, detail="Este usuario no está vinculado a ninguna asociación")
 
-    # Obtenemos contribuciones con estado 'comprometida' haciendo un inner join 
-    # con necesidades para asegurar que pertenezcan a esta asociación.
-    resultado = supabase.table("contribuciones").select(
+    query = supabase.table("contribuciones").select(
         "id, cantidad_valor, cantidad_unidad, estado, created_at, detalle, "
         "necesidades!inner(id, categoria, asociacion_id, subcategoria_id), "
-        "usuarios(nombre, apellido_paterno, telefono, email)"
-    ).eq("necesidades.asociacion_id", usuario["asociacion_id"]).eq("estado", "comprometida").order("created_at", desc=True).execute()
+        "usuarios(id, nombre, apellido_paterno, telefono, email, perfil_apoyo(id, aliado_verificado_por, tipo))"
+    ).eq("necesidades.asociacion_id", usuario["asociacion_id"])
+    
+    if tab == "historial":
+        query = query.in_("estado", ["confirmada", "parcial"])
+    else:
+        query = query.eq("estado", "comprometida")
+        
+    resultado = query.order("created_at", desc=True).execute()
 
     return resultado.data
 
@@ -1186,3 +1192,47 @@ async def patch_resolver_oferta(
     resultado = supabase.table("contribuciones").update(update_data).eq("id", contribucion_id).execute()
     
     return {"mensaje": f"Oferta {body.accion.value} exitosamente", "oferta": resultado.data[0]}
+
+
+@router.patch("/me/aliados/usuario/{usuario_id}/verificar", status_code=200)
+async def patch_verificar_aliado(
+    usuario_id: str,
+    authorization: str = Header(None)
+):
+    """
+    FRONT07: Otorga el sello de 'aliado verificado' a un usuario que ya haya
+    donado al menos una vez (oferta confirmada o parcial) a esta asociación.
+    """
+    usuario_auth = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario_auth, ("asociacion", "staff"))
+
+    asoc_id = usuario_auth.get("asociacion_id")
+    if not asoc_id:
+        raise HTTPException(status_code=404, detail="Este usuario no está vinculado a ninguna asociación")
+
+    # 1. Validar que exista al menos una contribución confirmada/parcial de este usuario para esta asociación
+    contrib_res = supabase.table("contribuciones").select(
+        "id, necesidades!inner(asociacion_id)"
+    ).eq("usuario_id", usuario_id).in_("estado", ["confirmada", "parcial"]).eq("necesidades.asociacion_id", asoc_id).limit(1).execute()
+
+    if not contrib_res.data:
+        raise HTTPException(status_code=403, detail="No puedes verificar a un aliado que no tiene donaciones confirmadas contigo.")
+
+    # 2. Actualizar el perfil_apoyo del usuario
+    # Buscamos el perfil_apoyo_id (puede haber múltiples, pero la regla es 1 perfil por usuario)
+    perfil_res = supabase.table("perfil_apoyo").select("id, aliado_verificado_por").eq("usuario_id", usuario_id).execute()
+    
+    if not perfil_res.data:
+        raise HTTPException(status_code=404, detail="El usuario no tiene un perfil de aliado.")
+        
+    perfil = perfil_res.data[0]
+    if perfil.get("aliado_verificado_por"):
+        raise HTTPException(status_code=400, detail="Este aliado ya fue verificado por una asociación.")
+
+    # Otorgar sello
+    update_res = supabase.table("perfil_apoyo").update({
+        "aliado_verificado_por": asoc_id,
+        "aliado_verificado_at": datetime.now(timezone.utc).isoformat()
+    }).eq("id", perfil["id"]).execute()
+
+    return {"mensaje": "Sello de aliado verificado otorgado exitosamente", "perfil": update_res.data[0]}

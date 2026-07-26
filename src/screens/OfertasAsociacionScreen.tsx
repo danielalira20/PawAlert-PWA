@@ -49,10 +49,12 @@ interface Oferta {
     categoria: string;
   };
   usuarios: {
+    id: string;
     nombre: string;
     apellido_paterno: string;
     telefono: string;
     email: string;
+    perfil_apoyo?: any[] | any | null;
   };
 }
 
@@ -63,8 +65,10 @@ export default function OfertasAsociacionScreen() {
   
   const [fontsLoaded] = useFonts({ Fraunces_800ExtraBold, Poppins_400Regular, Poppins_500Medium, Poppins_600SemiBold });
   
+  const [activeTab, setActiveTab] = useState<'pendientes' | 'historial'>('pendientes');
   const [ofertas, setOfertas] = useState<Oferta[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isVerificando, setIsVerificando] = useState<string | null>(null);
   
   // Estados para el Modal de Ajuste
   const [ofertaParaAjustar, setOfertaParaAjustar] = useState<Oferta | null>(null);
@@ -74,7 +78,7 @@ export default function OfertasAsociacionScreen() {
   const fetchOfertas = async () => {
     setIsLoading(true);
     try {
-      const res = await axios.get(`${API_URL}/associations/me/ofertas`, {
+      const res = await axios.get(`${API_URL}/associations/me/ofertas?tab=${activeTab}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setOfertas(res.data);
@@ -88,7 +92,7 @@ export default function OfertasAsociacionScreen() {
 
   useEffect(() => {
     if (token) fetchOfertas();
-  }, [token]);
+  }, [token, activeTab]);
 
   const resolverOferta = async (id: string, accion: 'aceptar' | 'rechazar' | 'ajustar', cantidad_ajustada?: number) => {
     setIsSubmitting(true);
@@ -113,6 +117,25 @@ export default function OfertasAsociacionScreen() {
       showToast({ type: 'error', title: 'Error', message: 'Ocurrió un problema al procesar tu solicitud.' });
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const verificarAliado = async (usuarioId: string) => {
+    setIsVerificando(usuarioId);
+    try {
+      await axios.patch(
+        `${API_URL}/associations/me/aliados/usuario/${usuarioId}/verificar`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      showToast({ type: 'success', title: 'Verificado', message: 'Se ha otorgado el sello de aliado verificado.' });
+      fetchOfertas();
+    } catch (error: any) {
+      console.error("Error al verificar aliado:", error);
+      const msg = error.response?.data?.detail || 'No se pudo otorgar el sello.';
+      showToast({ type: 'error', title: 'Error', message: msg });
+    } finally {
+      setIsVerificando(null);
     }
   };
 
@@ -169,30 +192,68 @@ export default function OfertasAsociacionScreen() {
         </View>
 
         {/* Footer Card: Botones */}
-        <View style={{ flexDirection: 'row', gap: 10, borderTopWidth: 1, borderTopColor: `${C.neutralLight}40`, paddingTop: 16 }}>
-          <TouchableOpacity 
-            onPress={() => resolverOferta(item.id, 'aceptar')}
-            style={{ flex: 1, backgroundColor: C.primary, paddingVertical: 12, borderRadius: 100, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}
-          >
-            <Ionicons name="checkmark-circle-outline" size={16} color="#FFF" />
-            <Text style={{ color: '#FFF', fontFamily: F.bodySemiBold, fontSize: 13 }}>Aceptar</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            onPress={() => setOfertaParaAjustar(item)}
-            style={{ flex: 1, backgroundColor: C.secondary, paddingVertical: 12, borderRadius: 100, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}
-          >
-            <Ionicons name="create-outline" size={16} color="#FFF" />
-            <Text style={{ color: '#FFF', fontFamily: F.bodySemiBold, fontSize: 13 }}>Ajustar</Text>
-          </TouchableOpacity>
+        {activeTab === 'pendientes' ? (
+          <View style={{ flexDirection: 'row', gap: 10, borderTopWidth: 1, borderTopColor: `${C.neutralLight}40`, paddingTop: 16 }}>
+            <TouchableOpacity 
+              onPress={() => resolverOferta(item.id, 'aceptar')}
+              style={{ flex: 1, backgroundColor: C.primary, paddingVertical: 12, borderRadius: 100, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}
+            >
+              <Ionicons name="checkmark-circle-outline" size={16} color="#FFF" />
+              <Text style={{ color: '#FFF', fontFamily: F.bodySemiBold, fontSize: 13 }}>Aceptar</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              onPress={() => setOfertaParaAjustar(item)}
+              style={{ flex: 1, backgroundColor: C.secondary, paddingVertical: 12, borderRadius: 100, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}
+            >
+              <Ionicons name="create-outline" size={16} color="#FFF" />
+              <Text style={{ color: '#FFF', fontFamily: F.bodySemiBold, fontSize: 13 }}>Ajustar</Text>
+            </TouchableOpacity>
 
-          <TouchableOpacity 
-            onPress={() => resolverOferta(item.id, 'rechazar')}
-            style={{ backgroundColor: C.bgSoft, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 100, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: `${C.danger}40` }}
-          >
-            <Ionicons name="close" size={18} color={C.danger} />
-          </TouchableOpacity>
-        </View>
+            <TouchableOpacity 
+              onPress={() => resolverOferta(item.id, 'rechazar')}
+              style={{ backgroundColor: C.bgSoft, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 100, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: `${C.danger}40` }}
+            >
+              <Ionicons name="close" size={18} color={C.danger} />
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={{ borderTopWidth: 1, borderTopColor: `${C.neutralLight}40`, paddingTop: 16, alignItems: 'center' }}>
+            <Text style={{ fontFamily: F.bodyMedium, color: C.muted, marginBottom: 12 }}>
+              Estado: <Text style={{ color: item.estado === 'confirmada' ? C.success : C.primary, fontFamily: F.bodySemiBold }}>{item.estado.toUpperCase()}</Text>
+            </Text>
+            
+            {(() => {
+              const p_array = Array.isArray(item.usuarios?.perfil_apoyo) ? item.usuarios.perfil_apoyo : [];
+              const perfil = p_array.length > 0 ? p_array[0] : item.usuarios?.perfil_apoyo;
+              if (!perfil) return null;
+              
+              if (perfil.aliado_verificado_por) {
+                return (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: `${C.success}20`, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 100 }}>
+                    <Ionicons name="checkmark-circle" size={18} color={C.success} style={{ marginRight: 6 }} />
+                    <Text style={{ color: C.success, fontFamily: F.bodySemiBold, fontSize: 13 }}>Aliado Verificado</Text>
+                  </View>
+                );
+              } else {
+                return (
+                  <TouchableOpacity 
+                    onPress={() => verificarAliado(item.usuarios.id)}
+                    disabled={isVerificando === item.usuarios.id}
+                    style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: C.primary, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 100, opacity: isVerificando === item.usuarios.id ? 0.7 : 1 }}
+                  >
+                    {isVerificando === item.usuarios.id ? (
+                      <ActivityIndicator size="small" color="#FFF" style={{ marginRight: 6 }} />
+                    ) : (
+                      <Ionicons name="star" size={16} color="#FFF" style={{ marginRight: 6 }} />
+                    )}
+                    <Text style={{ color: '#FFF', fontFamily: F.bodySemiBold, fontSize: 13 }}>Otorgar Sello de Verificado</Text>
+                  </TouchableOpacity>
+                );
+              }
+            })()}
+          </View>
+        )}
 
       </View>
     );
@@ -207,7 +268,7 @@ export default function OfertasAsociacionScreen() {
           <Toast toast={toast} translateY={translateY} />
           
           <View style={{ 
-            width: '100%', maxWidth: 1000, maxHeight: '90%', 
+            width: '100%', maxWidth: 1000, maxHeight: '90%', flexShrink: 1,
             backgroundColor: C.bgSoft, borderRadius: 32, overflow: 'hidden',
             ...(isWeb ? { boxShadow: '0 20px 60px rgba(0,0,0,0.25)' } : { elevation: 15 }) as any
           }}>
@@ -242,6 +303,22 @@ export default function OfertasAsociacionScreen() {
                 </Text>
               </View>
 
+              {/* ── TABS ── */}
+              <View style={{ flexDirection: 'row', paddingHorizontal: 32, marginBottom: 16 }}>
+                <TouchableOpacity 
+                  onPress={() => setActiveTab('pendientes')}
+                  style={{ flex: 1, paddingVertical: 12, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: activeTab === 'pendientes' ? C.primary : 'transparent' }}
+                >
+                  <Text style={{ fontFamily: F.bodySemiBold, color: activeTab === 'pendientes' ? C.primary : C.muted }}>Pendientes</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  onPress={() => setActiveTab('historial')}
+                  style={{ flex: 1, paddingVertical: 12, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: activeTab === 'historial' ? C.primary : 'transparent' }}
+                >
+                  <Text style={{ fontFamily: F.bodySemiBold, color: activeTab === 'historial' ? C.primary : C.muted }}>Historial</Text>
+                </TouchableOpacity>
+              </View>
+
               <View style={{ flex: 1, paddingHorizontal: 32 }}>
                 {isLoading ? (
                   <View style={{ paddingVertical: 60, alignItems: 'center' }}>
@@ -250,10 +327,10 @@ export default function OfertasAsociacionScreen() {
                   </View>
                 ) : ofertas.length === 0 ? (
                   <View style={{ paddingVertical: 60, alignItems: 'center' }}>
-                    <Ionicons name="gift-outline" size={48} color={C.neutralLight} style={{ marginBottom: 16 }} />
-                    <Text style={{ fontSize: 16, fontFamily: F.bodySemiBold, color: C.text }}>Sin ofertas pendientes</Text>
+                    <Ionicons name={activeTab === 'pendientes' ? "gift-outline" : "time-outline"} size={48} color={C.neutralLight} style={{ marginBottom: 16 }} />
+                    <Text style={{ fontSize: 16, fontFamily: F.bodySemiBold, color: C.text }}>Sin ofertas {activeTab === 'pendientes' ? 'pendientes' : 'en el historial'}</Text>
                     <Text style={{ fontSize: 14, fontFamily: F.bodyRegular, color: C.muted, textAlign: 'center', marginTop: 8 }}>
-                      Las nuevas contribuciones aparecerán aquí.
+                      {activeTab === 'pendientes' ? 'Las nuevas contribuciones aparecerán aquí.' : 'Aquí aparecerán las contribuciones que hayas aceptado.'}
                     </Text>
                   </View>
                 ) : (
