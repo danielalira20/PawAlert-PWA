@@ -25,6 +25,7 @@ class RegisterRequest(BaseModel):
     apellido_paterno: str
     apellido_materno: str | None = None
     telefono: str
+    rol_esperado: str | None = None
 
 
 class LoginRequest(BaseModel):
@@ -114,9 +115,16 @@ async def register(body: RegisterRequest):
 
     auth_user_id = auth_response.user.id
 
-    # obtener rol de reportante
-    rol_reportante = supabase.table("roles").select("id").eq("nombre", "reportante").execute()
-    rol_reportante_id = rol_reportante.data[0]["id"] if rol_reportante.data else None
+    # obtener rol de reportante o el rol esperado
+    rol_id_asignar = None
+    if body.rol_esperado in ["aliado_local", "patrocinador_institucional"]:
+        rol_query = supabase.table("roles").select("id").eq("nombre", body.rol_esperado).execute()
+        if rol_query.data:
+            rol_id_asignar = rol_query.data[0]["id"]
+            
+    if not rol_id_asignar:
+        rol_reportante = supabase.table("roles").select("id").eq("nombre", "reportante").execute()
+        rol_id_asignar = rol_reportante.data[0]["id"] if rol_reportante.data else None
 
     try:
         if usuario_invitado_id:
@@ -133,9 +141,9 @@ async def register(body: RegisterRequest):
                 "email": body.email,
             }
 
-            # Solo asignar rol_reportante si no tiene rol previo
+            # Solo asignar rol si no tiene rol previo
             if not tiene_rol:
-                update_data["rol_id"] = rol_reportante_id
+                update_data["rol_id"] = rol_id_asignar
 
             usuario = supabase.table("usuarios").update(update_data).eq("id", usuario_invitado_id).execute()
         else:
@@ -146,7 +154,7 @@ async def register(body: RegisterRequest):
                 "apellido_materno": body.apellido_materno,
                 "email": body.email,
                 "telefono": telefono_limpio,
-                "rol_id": rol_reportante_id,
+                "rol_id": rol_id_asignar,
             }).execute()
     except Exception as e:
         supabase_admin.auth.admin.delete_user(auth_user_id)

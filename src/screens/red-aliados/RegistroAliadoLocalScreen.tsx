@@ -36,7 +36,7 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-
+  const [paso, setPaso] = useState(1);
   const [tipoAliado, setTipoAliado] = useState(initialTipoAliado || 'aliado_local');
   const [nombreNegocio, setNombreNegocio] = useState('');
   const [nombreContacto, setNombreContacto] = useState('');
@@ -91,7 +91,7 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
   const [radio, setRadio] = useState<number>(5);
   const [disponibilidad, setDisponibilidad] = useState('disponible');
   const [visibilidad, setVisibilidad] = useState('mostrar mi nombre');
-  
+
   const [checkMural, setCheckMural] = useState(false);
   const [checkReglas, setCheckReglas] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -218,11 +218,86 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
 
   const handleCloseRequest = () => setShowCloseConfirm(true);
 
-  const handleGuardar = async () => {
+  // ─── LÓGICA WIZARD (MULTI-PASO) ───
+  const validarPaso1 = () => {
+    const newErrors: any = {};
+    if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) newErrors.email = 'Obligatorio. Correo válido.';
+    if (!password.trim() || password.length < 6) newErrors.password = 'Mínimo 6 caracteres.';
+    if (!telefono.trim() || telefono.length !== 10) newErrors.telefono = 'Debe tener 10 dígitos.';
+    if (!nombreContacto.trim()) newErrors.nombreContacto = 'Obligatorio.';
+    if (!nombreNegocio.trim()) newErrors.nombreNegocio = 'Obligatorio.';
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      return false;
+    }
+    return true;
+  };
+
+  const validarPaso2 = () => {
+    const newErrors: any = {};
+    if (tipoAliado === 'aliado_local') {
+      if (!tipoEstablecimiento) newErrors.tipoEstablecimiento = 'Selecciona un tipo.';
+      if (tipoEstablecimiento === 'Otro' && !otroEstablecimiento) newErrors.otroEstablecimiento = 'Especifica el establecimiento.';
+
+      if (tipoEstablecimiento === 'Veterinaria') {
+        if (!medicoResponsable) newErrors.medicoResponsable = 'Obligatorio.';
+        if (!cedulaProfesional) newErrors.cedulaProfesional = 'Obligatorio.';
+      }
+    } else {
+      if (!razonSocial) newErrors.razonSocial = 'Obligatorio.';
+      if (!tipoInstitucion) newErrors.tipoInstitucion = 'Selecciona una institución.';
+      if (tipoInstitucion === 'Otro' && !otroInstitucion) newErrors.otroInstitucion = 'Especifica la institución.';
+      if (!nombreRepresentante) newErrors.nombreRepresentante = 'Obligatorio.';
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      return false;
+    }
+    return true;
+  };
+
+  const validarPaso3 = () => {
     let newErrors: any = {};
     if (categorias.length === 0) {
       newErrors.categorias = 'Selecciona al menos una categoría.';
     }
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      return false;
+    }
+    return true;
+  };
+
+  const handleSiguiente = () => {
+    let valido = false;
+    if (paso === 1) valido = validarPaso1();
+    else if (paso === 2) valido = validarPaso2();
+    else if (paso === 3) valido = validarPaso3();
+    else if (paso === 4) valido = true; // Paso 4 no require validación estricta por ahora
+
+    if (valido) {
+      setErrors({});
+      setShowSubmitError(false);
+      setPaso(paso + 1);
+    } else {
+      setShowSubmitError(true);
+    }
+  };
+
+  const handleAnterior = () => {
+    setErrors({});
+    setShowSubmitError(false);
+    if (paso === 1) {
+      handleCloseRequest();
+    } else {
+      setPaso(paso - 1);
+    }
+  };
+
+  const handleGuardar = async () => {
+    let newErrors: any = {};
     if (!checkReglas) {
       newErrors.reglas = 'Debes aceptar las reglas de entrega.';
     }
@@ -251,7 +326,8 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
           nombre: nombre || nombreNegocio,
           apellido_paterno: apellido_paterno || '-',
           apellido_materno,
-          telefono
+          telefono,
+          rol_esperado: tipoAliado,
         });
       } catch (err: any) {
         if (err.response?.status !== 409) {
@@ -266,7 +342,7 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
         password
       });
       const newToken = loginRes.data.access_token;
-      
+
       // Update AuthContext seamlessly if login method allows, or just use the token directly
       await login(email, password);
 
@@ -280,7 +356,7 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
         radio_km: radio,
         disponibilidad: 'disponible',
         preferencia_visibilidad: visibilidad,
-        
+
         // Base
         nombre_negocio: nombreNegocio,
         forma_colaboracion: formaColaboracion,
@@ -289,7 +365,7 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
         logo_url: logoUrl,
         descripcion,
         acepta_terminos: checkReglas,
-        
+
         // Veterinaria
         medico_responsable: medicoResponsable,
         cedula_profesional: cedulaProfesional,
@@ -297,15 +373,15 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
         requiere_cita: requiereCita,
         niveles_urgencia_atendida: nivelesUrgencia,
         especies_atendidas: especiesAtendidas,
-        
+
         // Difusion
         tipo_apoyo_difusion: tipoApoyoDifusion,
         area_servicio_profesional: areaServicio === 'Otro' ? areaServicioOtro : areaServicio,
         contacto_responsable_campana: contactoCampana,
-        
+
         // Aliado Local
         tipo_establecimiento: tipoEstablecimiento === 'Otro' ? otroEstablecimiento : tipoEstablecimiento,
-        
+
         // Institucional
         razon_social: razonSocial,
         tipo_institucion: tipoInstitucion === 'Otro' ? otroInstitucion : tipoInstitucion,
@@ -347,201 +423,199 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
               <Ionicons name="close" size={24} color={COLORS.bgWhite} />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Red de Aliados</Text>
-            <Text style={styles.headerSubtitle}>Perfil de Donante Comunitario</Text>
           </View>
 
           <View style={styles.bodySection}>
+            <View style={{ height: 6, backgroundColor: COLORS.grayLight, width: '100%', marginBottom: 16, borderRadius: 3, overflow: 'hidden' }}>
+              <View style={{ height: '100%', backgroundColor: COLORS.primary, width: `${(paso / 5) * 100}%`, borderRadius: 3 }} />
+            </View>
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
 
-              <FormSection title={tipoAliado === 'aliado_local' ? 'Datos de la Cuenta (Aliado Local)' : 'Datos de la Cuenta (Patrocinador Institucional)'}>
-                <View style={{ marginBottom: 12 }}>
-                  <Input
-                    label="Correo Electrónico *"
-                    placeholder="email@ejemplo.com"
-                    value={email}
-                    onChangeText={setEmail}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                  />
-                </View>
-                <View style={{ marginBottom: 12 }}>
-                  <Input
-                    label="Contraseña *"
-                    placeholder="Mínimo 6 caracteres"
-                    value={password}
-                    onChangeText={setPassword}
-                    secureTextEntry
-                  />
-                </View>
-                <View style={{ marginBottom: 12 }}>
-                  <Input
-                    label="Teléfono de contacto *"
-                    placeholder="10 dígitos"
-                    value={telefono}
-                    onChangeText={setTelefono}
-                    keyboardType="phone-pad"
-                  />
-                </View>
-                <View style={{ marginBottom: 12 }}>
-                  <Input
-                    label="Nombre de contacto *"
-                    placeholder="Tu nombre completo"
-                    value={nombreContacto}
-                    onChangeText={setNombreContacto}
-                  />
-                </View>
-                <View style={{ marginBottom: 12 }}>
-                  <Input
-                    label={tipoAliado === 'aliado_local' ? 'Nombre del negocio/clínica *' : 'Nombre de la institución *'}
-                    placeholder="Nombre público"
-                    value={nombreNegocio}
-                    onChangeText={setNombreNegocio}
-                  />
-                </View>
-              </FormSection>
-
-              <Divider />
-
-              <FormSection title="¿Qué puedes donar?" subtitle="Selecciona lo que podrías aportar (no es un compromiso fijo).">
-                <View style={styles.animalChips}>
-                  {[
-                    { label: 'Alimentos', clave: 'alimentos' },
-                    { label: 'Insumos', clave: 'insumos' },
-                    { label: 'Servicios veterinarios', clave: 'servicios_veterinarios' },
-                    { label: 'Difusión', clave: 'difusion' }
-                  ].map((cat) => {
-                    const isSelected = categorias.includes(cat.label);
-                    return (
-                      <TouchableOpacity
-                        key={cat.clave}
-                        style={[styles.animalChip, { backgroundColor: isSelected ? COLORS.secondary : COLORS.grayLight }]}
-                        onPress={() => toggleArray(cat.label, categorias, setCategorias, 'categorias')}
-                      >
-                        <Text style={{ fontWeight: '700', fontSize: 14, color: isSelected ? COLORS.textDark : COLORS.textLight }}>{cat.label}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-                {errors.categorias && <Text style={styles.errorText}>{errors.categorias}</Text>}
-
-                {/* Subcategorías dinámicas */}
-                {categorias.map(catLabel => {
-                  const labelToClave: Record<string, string> = {
-                    'Alimentos': 'alimentos',
-                    'Insumos': 'insumos',
-                    'Servicios veterinarios': 'servicios_veterinarios',
-                    'Difusión': 'difusion_campanas'
-                  };
-                  const clave = labelToClave[catLabel];
-                  const subs = subcategoriasData.filter(s => s.categoria_clave === clave);
-                  if (subs.length === 0) return null;
-                  
-                  return (
-                    <View key={`subs-${clave}`} style={{ marginTop: 8, marginBottom: 12, backgroundColor: COLORS.grayLight, padding: 14, borderRadius: 16 }}>
-                      <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginBottom: 10 }}>
-                        Especifíca qué tipo de {catLabel.toLowerCase()} (Opcional):
-                      </Text>
-                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                        {subs.map(sub => {
-                          const isSubSelected = subcategorias.includes(sub.clave);
-                          return (
-                            <TouchableOpacity
-                              key={sub.clave}
-                              style={{
-                                paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16,
-                                backgroundColor: isSubSelected ? COLORS.primary : COLORS.bgWhite,
-                                borderWidth: 1, borderColor: isSubSelected ? COLORS.primary : COLORS.border
-                              }}
-                              onPress={() => toggleArray(sub.clave, subcategorias, setSubcategorias, 'subcategorias')}
-                            >
-                              <Text style={{ fontSize: 12, fontWeight: '700', color: isSubSelected ? COLORS.bgWhite : COLORS.textDark }}>
-                                {sub.descripcion}
-                              </Text>
-                            </TouchableOpacity>
-                          );
-                        })}
-                      </View>
-                    </View>
-                  );
-                })}
-              </FormSection>
-
-              <Divider />
-
-              {/* === CAMPOS INSTITUCIONALES === */}
-              {tipoAliado === 'patrocinador_institucional' && (
+              {/* ====== PASO 1 ====== */}
+              {paso === 1 && (
                 <>
-                  <FormSection title="Datos de la Institución">
+                  <FormSection title={tipoAliado === 'aliado_local' ? 'Datos de la Cuenta (Aliado Local)' : 'Datos de la Cuenta (Patrocinador Institucional)'}>
                     <View style={{ marginBottom: 12 }}>
-                      <Input label="Razón Social *" placeholder="Ej. Empresa S.A. de C.V." value={razonSocial} onChangeText={setRazonSocial} />
+                      <Input label="Correo Electrónico *" placeholder="email@ejemplo.com" value={email} onChangeText={(v) => { setEmail(v); setErrors(p => ({ ...p, email: '' })) }} keyboardType="email-address" autoCapitalize="none" />
+                      {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
                     </View>
                     <View style={{ marginBottom: 12 }}>
-                      <Input label="RFC *" placeholder="R.F.C." value={rfc} onChangeText={setRfc} />
+                      <Input label="Contraseña *" placeholder="Mínimo 6 caracteres" value={password} onChangeText={(v) => { setPassword(v); setErrors(p => ({ ...p, password: '' })) }} secureTextEntry />
+                      {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
                     </View>
-
-                    <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginTop: 12, marginBottom: 8 }}>Tipo de institución:</Text>
-                    <View style={styles.animalChips}>
-                      {['Empresa', 'Fundación', 'Organización civil', 'Gobierno', 'Institución educativa', 'Otro'].map(tipo => (
-                        <TouchableOpacity key={tipo} style={[styles.animalChip, { backgroundColor: tipoInstitucion === tipo ? COLORS.secondary : COLORS.grayLight }]} onPress={() => setTipoInstitucion(tipo)}>
-                          <Text style={{ fontSize: 13, fontWeight: '700', color: tipoInstitucion === tipo ? COLORS.textDark : COLORS.textLight }}>{tipo}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                    {tipoInstitucion === 'Otro' && (
-                      <View style={{ marginTop: 12 }}>
-                        <Input label="Especificar otra institución" placeholder="Ej. Cooperativa" value={otroInstitucion} onChangeText={setOtroInstitucion} />
-                      </View>
-                    )}
-
-                    <View style={{ marginBottom: 12, marginTop: 12 }}>
-                      <Input label="Nombre y cargo del representante *" placeholder="Ej. Juan Pérez - Director General" value={nombreRepresentante} onChangeText={setNombreRepresentante} />
-                    </View>
-
                     <View style={{ marginBottom: 12 }}>
-                      <Input label="Documento de existencia/identificación URL (Opcional)" placeholder="Enlace al acta o poder" value={documentoUrl} onChangeText={setDocumentoUrl} autoCapitalize="none" />
+                      <Input label="Teléfono de contacto *" placeholder="10 dígitos" value={telefono} onChangeText={(v) => { setTelefono(v); setErrors(p => ({ ...p, telefono: '' })) }} keyboardType="phone-pad" />
+                      {errors.telefono && <Text style={styles.errorText}>{errors.telefono}</Text>}
+                    </View>
+                    <View style={{ marginBottom: 12 }}>
+                      <Input label="Nombre de contacto *" placeholder="Tu nombre completo" value={nombreContacto} onChangeText={(v) => { setNombreContacto(v); setErrors(p => ({ ...p, nombreContacto: '' })) }} />
+                      {errors.nombreContacto && <Text style={styles.errorText}>{errors.nombreContacto}</Text>}
+                    </View>
+                    <View style={{ marginBottom: 12 }}>
+                      <Input label={tipoAliado === 'aliado_local' ? 'Nombre del negocio/clínica *' : 'Nombre de la institución *'} placeholder="Nombre público" value={nombreNegocio} onChangeText={(v) => { setNombreNegocio(v); setErrors(p => ({ ...p, nombreNegocio: '' })) }} />
+                      {errors.nombreNegocio && <Text style={styles.errorText}>{errors.nombreNegocio}</Text>}
                     </View>
                   </FormSection>
-                  <Divider />
                 </>
               )}
 
-              {/* === CAMPOS ALIADO LOCAL === */}
-              {tipoAliado === 'aliado_local' && (
+              {/* ====== PASO 2 ====== */}
+              {paso === 2 && (
                 <>
-                  <FormSection title="Tipo de establecimiento">
-                    <View style={styles.animalChips}>
-                      {['Veterinaria', 'Tienda de mascotas', 'Transporte', 'Otro'].map(tipo => (
-                        <TouchableOpacity key={tipo} style={[styles.animalChip, { backgroundColor: tipoEstablecimiento === tipo ? COLORS.secondary : COLORS.grayLight }]} onPress={() => setTipoEstablecimiento(tipo)}>
-                          <Text style={{ fontSize: 13, fontWeight: '700', color: tipoEstablecimiento === tipo ? COLORS.textDark : COLORS.textLight }}>{tipo}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                    {tipoEstablecimiento === 'Otro' && (
-                      <View style={{ marginTop: 12 }}>
-                        <Input label="Especificar otro establecimiento" placeholder="Ej. Estética canina" value={otroEstablecimiento} onChangeText={setOtroEstablecimiento} />
+                  {/* === CAMPOS INSTITUCIONALES === */}
+                  {tipoAliado === 'patrocinador_institucional' && (
+                    <FormSection title="Datos de la Institución">
+                      <View style={{ marginBottom: 12 }}>
+                        <Input label="Razón Social *" placeholder="Ej. Empresa S.A. de C.V." value={razonSocial} onChangeText={(v) => { setRazonSocial(v); setErrors(p => ({ ...p, razonSocial: '' })) }} />
+                        {errors.razonSocial && <Text style={styles.errorText}>{errors.razonSocial}</Text>}
                       </View>
-                    )}
-                  </FormSection>
-                  <Divider />
+                      <View style={{ marginBottom: 12 }}>
+                        <Input label="RFC" placeholder="R.F.C. (Opcional)" value={rfc} onChangeText={setRfc} />
+                      </View>
+
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginTop: 12, marginBottom: 8 }}>Tipo de institución: *</Text>
+                      <View style={styles.animalChips}>
+                        {['Empresa', 'Fundación', 'Organización civil', 'Gobierno', 'Institución educativa', 'Otro'].map(tipo => (
+                          <TouchableOpacity key={tipo} style={[styles.animalChip, { backgroundColor: tipoInstitucion === tipo ? COLORS.secondary : COLORS.grayLight }]} onPress={() => { setTipoInstitucion(tipo); setErrors(p => ({ ...p, tipoInstitucion: '' })) }}>
+                            <Text style={{ fontSize: 13, fontWeight: '700', color: tipoInstitucion === tipo ? COLORS.textDark : COLORS.textLight }}>{tipo}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                      {errors.tipoInstitucion && <Text style={styles.errorText}>{errors.tipoInstitucion}</Text>}
+
+                      {tipoInstitucion === 'Otro' && (
+                        <View style={{ marginTop: 12 }}>
+                          <Input label="Especificar otra institución *" placeholder="Ej. Cooperativa" value={otroInstitucion} onChangeText={(v) => { setOtroInstitucion(v); setErrors(p => ({ ...p, otroInstitucion: '' })) }} />
+                          {errors.otroInstitucion && <Text style={styles.errorText}>{errors.otroInstitucion}</Text>}
+                        </View>
+                      )}
+
+                      <View style={{ marginBottom: 12, marginTop: 12 }}>
+                        <Input label="Nombre y cargo del representante *" placeholder="Ej. Juan Pérez - Director General" value={nombreRepresentante} onChangeText={(v) => { setNombreRepresentante(v); setErrors(p => ({ ...p, nombreRepresentante: '' })) }} />
+                        {errors.nombreRepresentante && <Text style={styles.errorText}>{errors.nombreRepresentante}</Text>}
+                      </View>
+
+                      <View style={{ marginBottom: 12 }}>
+                        <Input label="Documento de existencia/identificación URL (Opcional)" placeholder="Enlace al acta o poder" value={documentoUrl} onChangeText={setDocumentoUrl} autoCapitalize="none" />
+                      </View>
+                    </FormSection>
+                  )}
+
+                  {/* === CAMPOS ALIADO LOCAL === */}
+                  {tipoAliado === 'aliado_local' && (
+                    <FormSection title="Tipo de establecimiento">
+                      <View style={styles.animalChips}>
+                        {['Veterinaria', 'Tienda de mascotas', 'Transporte', 'Otro'].map(tipo => (
+                          <TouchableOpacity key={tipo} style={[styles.animalChip, { backgroundColor: tipoEstablecimiento === tipo ? COLORS.secondary : COLORS.grayLight }]} onPress={() => { setTipoEstablecimiento(tipo); setErrors(p => ({ ...p, tipoEstablecimiento: '' })) }}>
+                            <Text style={{ fontSize: 13, fontWeight: '700', color: tipoEstablecimiento === tipo ? COLORS.textDark : COLORS.textLight }}>{tipo}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                      {errors.tipoEstablecimiento && <Text style={styles.errorText}>{errors.tipoEstablecimiento}</Text>}
+
+                      {tipoEstablecimiento === 'Otro' && (
+                        <View style={{ marginTop: 12 }}>
+                          <Input label="Especificar otro establecimiento *" placeholder="Ej. Estética canina" value={otroEstablecimiento} onChangeText={(v) => { setOtroEstablecimiento(v); setErrors(p => ({ ...p, otroEstablecimiento: '' })) }} />
+                          {errors.otroEstablecimiento && <Text style={styles.errorText}>{errors.otroEstablecimiento}</Text>}
+                        </View>
+                      )}
+                    </FormSection>
+                  )}
+
+                  {/* === CAMPOS VETERINARIA === */}
+                  {tipoAliado === 'aliado_local' && tipoEstablecimiento === 'Veterinaria' && (
+                    <FormSection title="Servicios Veterinarios" subtitle="Detalles de tu práctica profesional">
+                      <View style={{ marginBottom: 12 }}>
+                        <Input label="Médico Responsable *" placeholder="Nombre del Médico" value={medicoResponsable} onChangeText={(v) => { setMedicoResponsable(v); setErrors(p => ({ ...p, medicoResponsable: '' })) }} />
+                        {errors.medicoResponsable && <Text style={styles.errorText}>{errors.medicoResponsable}</Text>}
+                      </View>
+                      <View style={{ marginBottom: 12 }}>
+                        <Input label="Cédula Profesional *" placeholder="Núm. de Cédula" value={cedulaProfesional} onChangeText={(v) => { setCedulaProfesional(v); setErrors(p => ({ ...p, cedulaProfesional: '' })) }} />
+                        {errors.cedulaProfesional && <Text style={styles.errorText}>{errors.cedulaProfesional}</Text>}
+                      </View>
+                      <View style={{ marginBottom: 12 }}>
+                        <Input label="Documento de verificación URL (Opcional)" placeholder="Enlace a la foto de tu cédula" value={documentoUrl} onChangeText={setDocumentoUrl} autoCapitalize="none" />
+                      </View>
+                      {renderCheckbox('¿Requiere cita previa?', requiereCita, setRequiereCita)}
+                    </FormSection>
+                  )}
                 </>
               )}
 
-              {/* === CAMPOS VETERINARIA === */}
-              {tipoAliado === 'aliado_local' && tipoEstablecimiento === 'Veterinaria' && (
+              {/* ====== PASO 3 ====== */}
+              {paso === 3 && (
                 <>
-                  <FormSection title="Servicios Veterinarios" subtitle="Detalles de tu práctica profesional">
-                    <View style={{ marginBottom: 12 }}>
-                      <Input label="Médico Responsable *" placeholder="Nombre del Médico" value={medicoResponsable} onChangeText={setMedicoResponsable} />
+                  <FormSection title="¿Qué puedes donar?" subtitle="Selecciona lo que podrías aportar (no es un compromiso fijo).">
+                    <View style={styles.animalChips}>
+                      {[
+                        { label: 'Alimentos', clave: 'alimentos' },
+                        { label: 'Insumos', clave: 'insumos' },
+                        { label: 'Servicios veterinarios', clave: 'servicios_veterinarios' },
+                        { label: 'Difusión', clave: 'difusion' }
+                      ].map((cat) => {
+                        const isSelected = categorias.includes(cat.label);
+                        return (
+                          <TouchableOpacity
+                            key={cat.clave}
+                            style={[styles.animalChip, { backgroundColor: isSelected ? COLORS.secondary : COLORS.grayLight }]}
+                            onPress={() => toggleArray(cat.label, categorias, setCategorias, 'categorias')}
+                          >
+                            <Text style={{ fontWeight: '700', fontSize: 14, color: isSelected ? COLORS.textDark : COLORS.textLight }}>{cat.label}</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
                     </View>
-                    <View style={{ marginBottom: 12 }}>
-                      <Input label="Cédula Profesional *" placeholder="Núm. de Cédula" value={cedulaProfesional} onChangeText={setCedulaProfesional} />
-                    </View>
-                    <View style={{ marginBottom: 12 }}>
-                      <Input label="Documento de verificación URL (Opcional)" placeholder="Enlace a la foto de tu cédula" value={documentoUrl} onChangeText={setDocumentoUrl} autoCapitalize="none" />
-                    </View>
-                    {renderCheckbox('¿Requiere cita previa?', requiereCita, setRequiereCita)}
-                    
-                    <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginTop: 12, marginBottom: 8 }}>Especies Atendidas:</Text>
+                    {errors.categorias && <Text style={styles.errorText}>{errors.categorias}</Text>}
+
+                    {/* Subcategorías dinámicas */}
+                    {categorias.map(catLabel => {
+                      const labelToClave: Record<string, string> = {
+                        'Alimentos': 'alimentos',
+                        'Insumos': 'insumos',
+                        'Servicios veterinarios': 'servicios_veterinarios',
+                        'Difusión': 'difusion_campanas'
+                      };
+                      const clave = labelToClave[catLabel];
+                      const subs = subcategoriasData.filter(s => s.categoria_clave === clave);
+                      if (subs.length === 0) return null;
+
+                      return (
+                        <View key={`subs-${clave}`} style={{ marginTop: 8, marginBottom: 12, backgroundColor: COLORS.grayLight, padding: 14, borderRadius: 16 }}>
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginBottom: 10 }}>
+                            Especifíca qué tipo de {catLabel.toLowerCase()} (Opcional):
+                          </Text>
+                          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                            {subs.map(sub => {
+                              const isSubSelected = subcategorias.includes(sub.clave);
+                              return (
+                                <TouchableOpacity
+                                  key={sub.clave}
+                                  style={{
+                                    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16,
+                                    backgroundColor: isSubSelected ? COLORS.primary : COLORS.bgWhite,
+                                    borderWidth: 1, borderColor: isSubSelected ? COLORS.primary : COLORS.border
+                                  }}
+                                  onPress={() => toggleArray(sub.clave, subcategorias, setSubcategorias, 'subcategorias')}
+                                >
+                                  <Text style={{ fontSize: 12, fontWeight: '700', color: isSubSelected ? COLORS.bgWhite : COLORS.textDark }}>
+                                    {sub.descripcion}
+                                  </Text>
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </FormSection>
+                </>
+              )}
+
+              {/* === CAMPOS SERVICIOS VETERINARIOS === */}
+              {paso === 3 && categorias.includes('Servicios veterinarios') && (
+                <>
+                  <FormSection title="Detalles de Servicios Veterinarios">
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginBottom: 8 }}>Especies Atendidas:</Text>
                     <View style={styles.animalChips}>
                       {['Perros', 'Gatos', 'Exóticos', 'Aves', 'Fauna Silvestre'].map(esp => (
                         <TouchableOpacity key={esp} style={[styles.animalChip, { backgroundColor: especiesAtendidas.includes(esp) ? COLORS.secondary : COLORS.grayLight }]} onPress={() => toggleArray(esp, especiesAtendidas, setEspeciesAtendidas, 'especies')}>
@@ -564,7 +638,7 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
               )}
 
               {/* === CAMPOS DIFUSIÓN === */}
-              {categorias.includes('Difusión') && (
+              {paso === 3 && categorias.includes('Difusión') && (
                 <>
                   <FormSection title="Apoyo de Difusión">
                     <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginBottom: 8 }}>Tipo de apoyo:</Text>
@@ -602,173 +676,187 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
                 </>
               )}
 
-              <FormSection title="Zona de donación / operación" subtitle="Ubicación donde realizas operaciones (Opcional).">
-                <Input placeholder="Buscar dirección, ej. Avenida Reforma, Puebla" value={searchQuery} onChangeText={setSearchQuery} />
-                {isSearching && <Text style={{ fontSize: 12, color: COLORS.textLight, marginTop: 4 }}>Buscando...</Text>}
+              {/* ====== PASO 4 ====== */}
+              {paso === 4 && (
+                <>
+                  <FormSection title="Zona de donación / operación" subtitle="Ubicación donde realizas operaciones (Opcional).">
+                    <Input placeholder="Buscar dirección, ej. Avenida Reforma, Puebla" value={searchQuery} onChangeText={setSearchQuery} />
+                    {isSearching && <Text style={{ fontSize: 12, color: COLORS.textLight, marginTop: 4 }}>Buscando...</Text>}
 
-                {searchResults.length > 0 && (
-                  <View style={{ backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, marginTop: 4, marginBottom: 4 }}>
-                    {searchResults.map((result, idx) => (
-                      <TouchableOpacity key={idx} onPress={() => handleSelectSearchResult(result)} style={{ padding: 12, borderBottomWidth: idx === searchResults.length - 1 ? 0 : 1, borderBottomColor: '#ECF0F1' }}>
-                        <Text style={{ fontSize: 13, color: COLORS.textDark }}>{result.display_name}</Text>
+                    {searchResults.length > 0 && (
+                      <View style={{ backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, marginTop: 4, marginBottom: 4 }}>
+                        {searchResults.map((result, idx) => (
+                          <TouchableOpacity key={idx} onPress={() => handleSelectSearchResult(result)} style={{ padding: 12, borderBottomWidth: idx === searchResults.length - 1 ? 0 : 1, borderBottomColor: '#ECF0F1' }}>
+                            <Text style={{ fontSize: 13, color: COLORS.textDark }}>{result.display_name}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    )}
+
+                    <TouchableOpacity onPress={handleGetLocation} style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, marginBottom: 12 }}>
+                      <Feather name="map-pin" size={14} color={COLORS.bgTeal} style={{ marginRight: 6 }} />
+                      <Text style={{ fontSize: 13, color: COLORS.bgTeal, fontWeight: '600' }}>
+                        {isLoadingGps ? 'Obteniendo tu ubicación...' : 'Usar mi ubicación actual'}
+                      </Text>
+                    </TouchableOpacity>
+
+                    <Text style={{ fontSize: 12, color: COLORS.textLight, marginBottom: 8 }}>O ajusta directamente arrastrando el pin en el mapa:</Text>
+                    <View style={styles.mapContainer}>
+                      <LocationPickerMap
+                        selectedPosition={latitud && longitud ? { latitud, longitud } : undefined}
+                        onLocationSelect={handlePinLocationSelect}
+                      />
+                    </View>
+
+                    {direccionConfirmada !== '' && (
+                      <View style={{ flexDirection: 'row', alignItems: 'flex-start', backgroundColor: '#EAF6FF', padding: 10, borderRadius: 8, marginTop: 8 }}>
+                        <Feather name="map-pin" size={14} color={COLORS.textDark} style={{ marginRight: 6, marginTop: 2 }} />
+                        <Text style={{ fontSize: 12, color: COLORS.textDark, flex: 1 }}>
+                          Ubicación seleccionada: <Text style={{ fontWeight: '600' }}>{direccionConfirmada}</Text>
+                        </Text>
+                      </View>
+                    )}
+
+                    <View style={{ marginTop: 16 }}>
+                      <View style={{ flexDirection: 'row', gap: 8 }}>
+                        <View style={{ flex: 2 }}>
+                          <Input label="Calle" placeholder="Ej. Francisco I. Madero" value={calleNombre} onChangeText={setCalleNombre} maxLength={100} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Input label="Número" placeholder="Ej. 2912" value={numero} onChangeText={setNumero} keyboardType="numeric" maxLength={10} />
+                        </View>
+                      </View>
+                      <Input label="Colonia" placeholder="Ej. Viveros" value={colonia} onChangeText={setColonia} maxLength={50} />
+                      <Input label="Municipio" placeholder="Ej. Puebla" value={municipio} onChangeText={setMunicipio} maxLength={50} />
+                      <Input label="Estado" placeholder="Ej. Puebla" value={estadoUbicacion} onChangeText={setEstadoUbicacion} maxLength={50} />
+                      <TouchableOpacity onPress={handleGeocodeManualFields} style={{ flexDirection: 'row', alignItems: 'center', marginTop: -8, marginBottom: 8 }}>
+                        <Feather name="refresh-cw" size={13} color={COLORS.bgTeal} style={{ marginRight: 6 }} />
+                        <Text style={{ fontSize: 12, color: COLORS.bgTeal, fontWeight: '600' }}>Mover el pin a esta dirección</Text>
                       </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
+                      <View>
+                        <Input label="Referencia (Opcional)" placeholder="Ej. Frente a la tienda de abarrotes..." value={referencia} onChangeText={setReferencia} maxLength={150} />
+                        <Text style={{ textAlign: 'right', color: COLORS.textLight, fontSize: 12, marginTop: -12, marginBottom: 8 }}>{referencia.length}/150</Text>
+                      </View>
+                    </View>
+                  </FormSection>
 
-                <TouchableOpacity onPress={handleGetLocation} style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, marginBottom: 12 }}>
-                  <Feather name="map-pin" size={14} color={COLORS.bgTeal} style={{ marginRight: 6 }} />
-                  <Text style={{ fontSize: 13, color: COLORS.bgTeal, fontWeight: '600' }}>
-                    {isLoadingGps ? 'Obteniendo tu ubicación...' : 'Usar mi ubicación actual'}
+                  <Divider />
+
+                  <FormSection title="Forma de colaboración" subtitle="Define si estás abierto a donar en este momento o prefieres pausar.">
+                    <View style={styles.animalChips}>
+                      {[
+                        { id: 'Donaciones ocasionales', label: 'Ocasionales' },
+                        { id: 'Capacidad recurrente', label: 'Recurrente' },
+                        { id: 'Ambas', label: 'Ambas' }
+                      ].map((opt) => {
+                        const isSelected = formaColaboracion === opt.id;
+                        return (
+                          <TouchableOpacity
+                            key={opt.id}
+                            style={[styles.animalChip, { backgroundColor: isSelected ? COLORS.secondary : COLORS.grayLight }]}
+                            onPress={() => setFormaColaboracion(opt.id)}
+                          >
+                            <Text style={{ fontWeight: '700', fontSize: 14, color: isSelected ? COLORS.textDark : COLORS.textLight }}>
+                              {opt.label}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </FormSection>
+
+                  <Divider />
+
+                  <FormSection title="Logística general" subtitle="¿Cómo realizas o recibes las donaciones?">
+                    <View style={styles.animalChips}>
+                      {[
+                        { id: 'Puedo entregar', label: 'Puedo entregar' },
+                        { id: 'Requiere recolección', label: 'Requieren recolectar' },
+                        { id: 'Ambas', label: 'Ambas' }
+                      ].map((opt) => {
+                        const isSelected = logistica === opt.id;
+                        return (
+                          <TouchableOpacity
+                            key={opt.id}
+                            style={[styles.animalChip, { backgroundColor: isSelected ? COLORS.secondary : COLORS.grayLight }]}
+                            onPress={() => setLogistica(opt.id)}
+                          >
+                            <Text style={{ fontWeight: '700', fontSize: 14, color: isSelected ? COLORS.textDark : COLORS.textLight }}>
+                              {opt.label}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </FormSection>
+                </>
+              )}
+
+              {/* ====== PASO 5 ====== */}
+              {paso === 5 && (
+                <>
+                  <FormSection title="Detalles del Perfil Público">
+                    <View style={{ marginBottom: 12 }}>
+                      <Input label="Horario de contacto" placeholder="Ej. Lunes a Viernes de 9am a 6pm" value={horarioContacto} onChangeText={setHorarioContacto} />
+                    </View>
+                    <View style={{ marginBottom: 12 }}>
+                      <Input label="Descripción pública (Opcional)" placeholder="Cuéntanos un poco sobre ti o tu negocio" value={descripcion} onChangeText={setDescripcion} />
+                    </View>
+                    <View style={{ marginBottom: 12 }}>
+                      <Input label="URL de tu Logo (Opcional)" placeholder="https://..." value={logoUrl} onChangeText={setLogoUrl} autoCapitalize="none" />
+                    </View>
+                  </FormSection>
+
+                  <Divider />
+
+                  <FormSection title="Preferencia de visibilidad" subtitle="Elige cómo quieres que tu nombre aparezca públicamente.">
+                    <View style={styles.animalChips}>
+                      {[
+                        { id: 'mostrar mi nombre', label: 'Mostrar mi nombre' },
+                        { id: 'mostrar solo mi nombre de usuario', label: 'Solo mi alias' },
+                        { id: 'donar anónimamente', label: 'Donar anónimamente' }
+                      ].map((opt) => {
+                        const isSelected = visibilidad === opt.id;
+                        return (
+                          <TouchableOpacity
+                            key={opt.id}
+                            style={[styles.animalChip, { backgroundColor: isSelected ? COLORS.secondary : COLORS.grayLight }]}
+                            onPress={() => setVisibilidad(opt.id)}
+                          >
+                            <Text style={{ fontWeight: '700', fontSize: 14, color: isSelected ? COLORS.textDark : COLORS.textLight }}>
+                              {opt.label}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                    {visibilidad !== 'donar anónimamente' && (
+                      <View style={{ marginTop: 8 }}>
+                        {renderCheckbox('Doy mi consentimiento para aparecer en el mural de impacto (reconocimiento público).', checkMural, setCheckMural)}
+                      </View>
+                    )}
+                  </FormSection>
+
+                  <Divider />
+                  <FormSection title="Reglas y Condiciones">
+                    {renderCheckbox('Acepto las reglas de entrega por mi seguridad y la del rescatista.', checkReglas, (v) => { setCheckReglas(v); setErrors(prev => ({ ...prev, reglas: '' })) })}
+                    {errors.reglas && <Text style={styles.errorText}>{errors.reglas}</Text>}
+                  </FormSection>
+                </>
+              )}
+
+              {showSubmitError && <Text style={styles.submitError}>Revisa los campos en rojo arriba para continuar.</Text>}
+
+              <View style={styles.stepNavigationRow}>
+                <TouchableOpacity onPress={handleAnterior} style={[styles.navBtn, styles.navBtnSec]}>
+                  <Text style={styles.navBtnSecText}>{paso === 1 ? 'Cancelar' : 'Atrás'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={paso === 5 ? handleGuardar : handleSiguiente} style={[styles.navBtn, styles.navBtnPri]}>
+                  <Text style={styles.navBtnPriText}>
+                    {paso === 5 ? (isSubmitting ? 'Guardando...' : 'Activar perfil') : 'Siguiente'}
                   </Text>
                 </TouchableOpacity>
-
-                <Text style={{ fontSize: 12, color: COLORS.textLight, marginBottom: 8 }}>O ajusta directamente arrastrando el pin en el mapa:</Text>
-                <View style={styles.mapContainer}>
-                  <LocationPickerMap
-                    selectedPosition={latitud && longitud ? { latitud, longitud } : undefined}
-                    onLocationSelect={handlePinLocationSelect}
-                  />
-                </View>
-
-                {direccionConfirmada !== '' && (
-                  <View style={{ flexDirection: 'row', alignItems: 'flex-start', backgroundColor: '#EAF6FF', padding: 10, borderRadius: 8, marginTop: 8 }}>
-                    <Feather name="map-pin" size={14} color={COLORS.textDark} style={{ marginRight: 6, marginTop: 2 }} />
-                    <Text style={{ fontSize: 12, color: COLORS.textDark, flex: 1 }}>
-                      Ubicación seleccionada: <Text style={{ fontWeight: '600' }}>{direccionConfirmada}</Text>
-                    </Text>
-                  </View>
-                )}
-
-                <View style={{ marginTop: 16 }}>
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
-                    <View style={{ flex: 2 }}>
-                      <Input label="Calle" placeholder="Ej. Francisco I. Madero" value={calleNombre} onChangeText={setCalleNombre} maxLength={100} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Input label="Número" placeholder="Ej. 2912" value={numero} onChangeText={setNumero} keyboardType="numeric" maxLength={10} />
-                    </View>
-                  </View>
-                  <Input label="Colonia" placeholder="Ej. Viveros" value={colonia} onChangeText={setColonia} maxLength={50} />
-                  <Input label="Municipio" placeholder="Ej. Puebla" value={municipio} onChangeText={setMunicipio} maxLength={50} />
-                  <Input label="Estado" placeholder="Ej. Puebla" value={estadoUbicacion} onChangeText={setEstadoUbicacion} maxLength={50} />
-                  <TouchableOpacity onPress={handleGeocodeManualFields} style={{ flexDirection: 'row', alignItems: 'center', marginTop: -8, marginBottom: 8 }}>
-                    <Feather name="refresh-cw" size={13} color={COLORS.bgTeal} style={{ marginRight: 6 }} />
-                    <Text style={{ fontSize: 12, color: COLORS.bgTeal, fontWeight: '600' }}>Mover el pin a esta dirección</Text>
-                  </TouchableOpacity>
-                  <View>
-                    <Input label="Referencia (Opcional)" placeholder="Ej. Frente a la tienda de abarrotes..." value={referencia} onChangeText={setReferencia} maxLength={150} />
-                    <Text style={{ textAlign: 'right', color: COLORS.textLight, fontSize: 12, marginTop: -12, marginBottom: 8 }}>{referencia.length}/150</Text>
-                  </View>
-                </View>
-              </FormSection>
-
-              <Divider />
-
-              <FormSection title="Forma de colaboración" subtitle="Define si estás abierto a donar en este momento o prefieres pausar.">
-                <View style={styles.animalChips}>
-                  {[
-                    { id: 'Donaciones ocasionales', label: 'Ocasionales' },
-                    { id: 'Capacidad recurrente', label: 'Recurrente' },
-                    { id: 'Ambas', label: 'Ambas' }
-                  ].map((opt) => {
-                    const isSelected = formaColaboracion === opt.id;
-                    return (
-                      <TouchableOpacity
-                        key={opt.id}
-                        style={[styles.animalChip, { backgroundColor: isSelected ? COLORS.secondary : COLORS.grayLight }]}
-                        onPress={() => setFormaColaboracion(opt.id)}
-                      >
-                        <Text style={{ fontWeight: '700', fontSize: 14, color: isSelected ? COLORS.textDark : COLORS.textLight }}>
-                          {opt.label}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </FormSection>
-
-              <Divider />
-
-              <FormSection title="Logística general" subtitle="¿Cómo realizas o recibes las donaciones?">
-                <View style={styles.animalChips}>
-                  {[
-                    { id: 'Puedo entregar', label: 'Puedo entregar' },
-                    { id: 'Requiere recolección', label: 'Requieren recolectar' },
-                    { id: 'Ambas', label: 'Ambas' }
-                  ].map((opt) => {
-                    const isSelected = logistica === opt.id;
-                    return (
-                      <TouchableOpacity
-                        key={opt.id}
-                        style={[styles.animalChip, { backgroundColor: isSelected ? COLORS.secondary : COLORS.grayLight }]}
-                        onPress={() => setLogistica(opt.id)}
-                      >
-                        <Text style={{ fontWeight: '700', fontSize: 14, color: isSelected ? COLORS.textDark : COLORS.textLight }}>
-                          {opt.label}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </FormSection>
-
-              <Divider />
-
-              <FormSection title="Detalles del Perfil Público">
-                <View style={{ marginBottom: 12 }}>
-                  <Input label="Horario de contacto" placeholder="Ej. Lunes a Viernes de 9am a 6pm" value={horarioContacto} onChangeText={setHorarioContacto} />
-                </View>
-                <View style={{ marginBottom: 12 }}>
-                  <Input label="Descripción pública (Opcional)" placeholder="Cuéntanos un poco sobre ti o tu negocio" value={descripcion} onChangeText={setDescripcion} />
-                </View>
-                <View style={{ marginBottom: 12 }}>
-                  <Input label="URL de tu Logo (Opcional)" placeholder="https://..." value={logoUrl} onChangeText={setLogoUrl} autoCapitalize="none" />
-                </View>
-              </FormSection>
-
-              <Divider />
-
-              <FormSection title="Preferencia de visibilidad" subtitle="Elige cómo quieres que tu nombre aparezca públicamente.">
-                <View style={styles.animalChips}>
-                  {[
-                    { id: 'mostrar mi nombre', label: 'Mostrar mi nombre' },
-                    { id: 'mostrar solo mi nombre de usuario', label: 'Solo mi alias' },
-                    { id: 'donar anónimamente', label: 'Donar anónimamente' }
-                  ].map((opt) => {
-                    const isSelected = visibilidad === opt.id;
-                    return (
-                      <TouchableOpacity
-                        key={opt.id}
-                        style={[styles.animalChip, { backgroundColor: isSelected ? COLORS.secondary : COLORS.grayLight }]}
-                        onPress={() => setVisibilidad(opt.id)}
-                      >
-                        <Text style={{ fontWeight: '700', fontSize: 14, color: isSelected ? COLORS.textDark : COLORS.textLight }}>
-                          {opt.label}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-                {visibilidad !== 'donar anónimamente' && (
-                  <View style={{ marginTop: 8 }}>
-                    {renderCheckbox('Doy mi consentimiento para aparecer en el mural de impacto (reconocimiento público).', checkMural, setCheckMural)}
-                  </View>
-                )}
-              </FormSection>
-
-              <Divider />
-
-              <FormSection title="Reglas y Condiciones">
-                {renderCheckbox('Acepto las reglas de entrega por mi seguridad y la del rescatista.', checkReglas, (v) => { setCheckReglas(v); setErrors(prev => ({ ...prev, reglas: '' })) })}
-                {errors.reglas && <Text style={styles.errorText}>{errors.reglas}</Text>}
-              </FormSection>
-
-              {showSubmitError && <Text style={styles.submitError}>Revisa los campos en rojo arriba.</Text>}
-
-              <TouchableOpacity onPress={handleGuardar} style={styles.submitButton}>
-                <Text style={styles.submitButtonText}>{isSubmitting ? 'Guardando...' : 'Activar perfil'}</Text>
-              </TouchableOpacity>
+              </View>
 
             </ScrollView>
           </View>
@@ -844,4 +932,10 @@ const styles = StyleSheet.create({
   confirmButtonCancelText: { color: COLORS.textDark, fontWeight: '700' },
   confirmButtonExit: { flex: 1, paddingVertical: 16, borderRadius: 20, backgroundColor: COLORS.danger, alignItems: 'center' },
   confirmButtonExitText: { color: COLORS.bgWhite, fontWeight: '700' },
+  stepNavigationRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 12, marginTop: 16 },
+  navBtn: { flex: 1, paddingVertical: 16, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
+  navBtnSec: { backgroundColor: COLORS.grayLight },
+  navBtnSecText: { color: COLORS.textDark, fontWeight: '800', fontSize: 16 },
+  navBtnPri: { backgroundColor: COLORS.primary },
+  navBtnPriText: { color: COLORS.bgWhite, fontWeight: '900', fontSize: 16 },
 });

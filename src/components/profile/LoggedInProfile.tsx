@@ -62,6 +62,9 @@ export function LoggedInProfile({
   const esAdmin = !!user?.es_admin;
   const esAsociacion = !!user?.asociacion_id && user?.rol === 'asociacion';
   const esStaff = !!user?.asociacion_id && user?.rol === 'staff';
+  const esAliadoLocal = user?.rol === 'aliado_local';
+  const esPatrocinadorInstitucional = user?.rol === 'patrocinador_institucional';
+  
   // Validamos si es voluntario interno o externo. Ambos pueden ver sus
   // casos asignados en el mismo dashboard (StaffDashboardScreen, migrado a
   // GET /voluntarios/me/reportes) — la pantalla internamente restringe los
@@ -153,6 +156,10 @@ useFocusEffect(
   <RoleBadge rol="voluntario_interno" variant="onWhite" />
 ) : esVoluntarioExterno ? (
   <RoleBadge rol="voluntario_externo" variant="onWhite" />
+) : esAliadoLocal ? (
+  <RoleBadge rol="aliado_local" variant="onWhite" />
+) : esPatrocinadorInstitucional ? (
+  <RoleBadge rol="patrocinador_institucional" variant="onWhite" />
 ) : (
   <RoleBadge rol="reportante" variant="onWhite" />
 );
