@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, StyleProp, ViewStyle } from 'react-native';
 import { Brand } from '../../constants/theme';
 
-type Rol = 'admin' | 'staff' | 'asociacion' | 'voluntario_interno' | 'voluntario_externo' | 'reportante';
+type Rol = 'admin' | 'staff' | 'asociacion' | 'voluntario_interno' | 'voluntario_externo' | 'reportante' | 'aliado_local' | 'patrocinador_institucional';
 
 interface Props {
   rol: Rol;
@@ -21,6 +21,8 @@ const CONFIG: Record<Rol, { label: string; solid: string; textOnColor: string }>
   // Tono neutro/discreto: es el rol base, no necesita destacar tanto como
   // los demás — cualquiera puede reportar, no requiere aprobación.
   reportante: { label: 'Reportante', solid: '#9B8B7A', textOnColor: '#6B5D4F' },
+  aliado_local: { label: 'Aliado Local', solid: Brand.accent, textOnColor: '#D4691A' },
+  patrocinador_institucional: { label: 'Patrocinador Institucional', solid: '#8E44AD', textOnColor: '#5B2C6F' },
 };
 
 export function RoleBadge({ rol, variant = 'onColor', style }: Props) {

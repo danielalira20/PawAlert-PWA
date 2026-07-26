@@ -14,7 +14,7 @@ import {
 import axios from 'axios';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { API_URL } from '../../constants/api';
 import { useAuth } from '../../context/AuthContext';
@@ -27,8 +27,7 @@ import {
 import { DatePickerChip } from '../../components/red-aliados/DatePickerChip';
 import LocationPickerMap from '../LocationPickerMap';
 
-// Misma paleta que CapacidadesFormScreen.tsx — copiada tal cual, no se
-// inventa una paleta nueva para este formulario.
+// Misma paleta que CapacidadesFormScreen.tsx
 const COLORS = {
   bgTeal: '#66BCB4',
   bgTealLight: '#EDF8F7',
@@ -206,6 +205,9 @@ interface Props {
 export default function AportacionFormScreen({ onClose }: Props) {
   const { token } = useAuth();
   const { toast, translateY, showToast } = useToast();
+  
+  // ─── AQUÍ ATRAPAMOS EL PARÁMETRO QUE MANDASTE ───
+  const { necesidad_id } = useLocalSearchParams<{ necesidad_id?: string }>();
 
   const [paso, setPaso] = useState(1);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
@@ -213,7 +215,8 @@ export default function AportacionFormScreen({ onClose }: Props) {
   const [isLoadingGps, setIsLoadingGps] = useState(false);
 
   const [modo, setModo] = useState<Modo>('reactiva');
-  const [necesidadId, setNecesidadId] = useState('');
+  // ─── AQUÍ LO INYECTAMOS EN EL ESTADO ───
+  const [necesidadId, setNecesidadId] = useState(necesidad_id || '');
 
   const [categoria, setCategoria] = useState<CatalogoItem | null>(null);
   const [subcategoria, setSubcategoria] = useState<CatalogoItem | null>(null);
@@ -407,7 +410,7 @@ export default function AportacionFormScreen({ onClose }: Props) {
 
   const resetForm = () => {
     setPaso(1);
-    setNecesidadId('');
+    setNecesidadId(necesidad_id || '');
     setCategoria(null);
     setSubcategoria(null);
     setEspeciesAplica([]);
@@ -919,7 +922,7 @@ export default function AportacionFormScreen({ onClose }: Props) {
   );
 }
 
-// ─── Helpers locales — mismo patrón que CapacidadesFormScreen.tsx ─────────
+// ─── Helpers locales ─────────
 
 function FormSection({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   return (

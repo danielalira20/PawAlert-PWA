@@ -1081,30 +1081,55 @@ const confirmarReactivar = async () => {
                 </View>
               </View>
 
-              {/* ─── BOTÓN CREAR NECESIDAD ─── */}
-            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 24 }}>
-              <TouchableOpacity
-                onPress={() => router.push('/crear-necesidad')}
-                style={{
-                  backgroundColor: COLORS.accent,
-                  paddingHorizontal: 20,
-                  paddingVertical: 12,
-                  borderRadius: 20,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  shadowColor: '#000',
-                  shadowOffset: { width: 0, height: 4 },
-                  shadowOpacity: 0.15,
-                  shadowRadius: 10,
-                  elevation: 4,
-                }}
-              >
-                <Ionicons name="add-circle" size={20} color={COLORS.white} style={{ marginRight: 8 }} />
-                <Text style={{ color: COLORS.white, fontWeight: '800', fontSize: 14 }}>
-                  Publicar Necesidad
-                </Text>
-              </TouchableOpacity>
-            </View>
+              {/* ─── BOTONES DE ACCIÓN (NECESIDADES Y OFERTAS) ─── */}
+              <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginBottom: 24 }}>
+                
+                {/* NUEVO BOTÓN: VER OFERTAS */}
+                <TouchableOpacity
+                  onPress={() => router.push('/ofertas-asociacion' as any)}
+                  style={{
+                    backgroundColor: COLORS.secondary,
+                    paddingHorizontal: 20,
+                    paddingVertical: 12,
+                    borderRadius: 20,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 4 },
+                    shadowOpacity: 0.15,
+                    shadowRadius: 10,
+                    elevation: 4,
+                  }}
+                >
+                  <Ionicons name="gift-outline" size={20} color={COLORS.textDark} style={{ marginRight: 8 }} />
+                  <Text style={{ color: COLORS.textDark, fontWeight: '800', fontSize: 14 }}>
+                    Ver Ofertas
+                  </Text>
+                </TouchableOpacity>
+
+                {/* BOTÓN : CREAR NECESIDAD */}
+                <TouchableOpacity
+                  onPress={() => router.push('/crear-necesidad')}
+                  style={{
+                    backgroundColor: COLORS.accent,
+                    paddingHorizontal: 20,
+                    paddingVertical: 12,
+                    borderRadius: 20,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 4 },
+                    shadowOpacity: 0.15,
+                    shadowRadius: 10,
+                    elevation: 4,
+                  }}
+                >
+                  <Ionicons name="add-circle" size={20} color={COLORS.white} style={{ marginRight: 8 }} />
+                  <Text style={{ color: COLORS.white, fontWeight: '800', fontSize: 14 }}>
+                    Publicar Necesidad
+                  </Text>
+                </TouchableOpacity>
+              </View>
 
               {/* Tabs de navegación */}
               <View style={{ flexDirection: 'row', marginBottom: 20, borderBottomWidth: 1, borderBottomColor: '#E5E7EB' }}>

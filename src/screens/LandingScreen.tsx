@@ -178,15 +178,15 @@ const ROLES = [
         id: 'aliado-local',
         title: 'Aliado local',
         does: 'Negocio o profesional con participación recurrente (veterinaria, tienda de mascotas, transportista, profesional independiente).',
-        ctaLabel: 'Próximamente',
-        ctaRoute: null,
+        ctaLabel: 'Registrar',
+        ctaRoute: '/registro-aliado?tipo=aliado_local',
       },
       {
         id: 'patrocinador-institucional',
         title: 'Patrocinador institucional',
         does: 'Empresa, fundación, organización civil, gobierno, institución educativa.',
-        ctaLabel: 'Próximamente',
-        ctaRoute: null,
+        ctaLabel: 'Registrar',
+        ctaRoute: '/registro-aliado?tipo=patrocinador_institucional',
       },
     ],
   },
@@ -401,7 +401,7 @@ export default function LandingScreen() {
 
           {/* ─── BOTONES DEL NAVBAR ─── */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
-            
+
             {/* Nuevo botón: Cómo ayudar */}
             <AnimatedButton onPress={() => router.push('/como-ayudar')}>
               <View style={{ paddingHorizontal: 8, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -423,7 +423,7 @@ export default function LandingScreen() {
                 <Text style={{ color: '#FFF', fontSize: 13, fontFamily: F.bodySemiBold }}>Crear reporte</Text>
               </View>
             </AnimatedButton>
-            
+
           </View>
         </View>
 
@@ -815,15 +815,29 @@ export default function LandingScreen() {
                                                   {activeSub.does}
                                                 </Text>
                                                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                                                  <View style={{
-                                                    backgroundColor: C.neutralLight,
-                                                    paddingVertical: 7, paddingHorizontal: 16,
-                                                    borderRadius: 100, alignSelf: 'flex-start',
-                                                  }}>
-                                                    <Text style={{ color: C.muted, fontSize: 12, fontFamily: F.bodySemiBold }}>
-                                                      {activeSub.ctaLabel}
-                                                    </Text>
-                                                  </View>
+                                                  {activeSub.ctaRoute ? (
+                                                    <AnimatedButton onPress={() => router.push(activeSub.ctaRoute as any)}>
+                                                      <View style={{
+                                                        backgroundColor: activeColor,
+                                                        paddingVertical: 7, paddingHorizontal: 16,
+                                                        borderRadius: 100, alignSelf: 'flex-start',
+                                                      }}>
+                                                        <Text style={{ color: '#FFF', fontSize: 12, fontFamily: F.bodySemiBold }}>
+                                                          {activeSub.ctaLabel}
+                                                        </Text>
+                                                      </View>
+                                                    </AnimatedButton>
+                                                  ) : (
+                                                    <View style={{
+                                                      backgroundColor: C.neutralLight,
+                                                      paddingVertical: 7, paddingHorizontal: 16,
+                                                      borderRadius: 100, alignSelf: 'flex-start',
+                                                    }}>
+                                                      <Text style={{ color: C.muted, fontSize: 12, fontFamily: F.bodySemiBold }}>
+                                                        {activeSub.ctaLabel}
+                                                      </Text>
+                                                    </View>
+                                                  )}
 
                                                   <AnimatedButton onPress={() => setRoleDetailVisible({ id: activeSub.id, title: activeSub.title, icon: 'star-outline', color: activeColor })}>
                                                     <View style={{

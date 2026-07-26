@@ -483,6 +483,17 @@ def crear_necesidad_asociacion(supabase, asociacion_id: str, data):
     # 3. Insertar en Supabase
     try:
         response = supabase.table("necesidades").insert(necesidad_payload).execute()
-        return response.data[0]
+        necesidad_creada = response.data[0]
+        
+        # BACK05: Notificar a aliados compatibles (Best-Effort)
+        try:
+            supabase.rpc(
+                "notificar_aliados_cercanos", 
+                {"p_necesidad_id": necesidad_creada["id"]}
+            ).execute()
+        except Exception as notify_err:
+            print(f"[WARN] Error al generar notificaciones para necesidad {necesidad_creada['id']}: {notify_err}")
+
+        return necesidad_creada
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error al crear la necesidad: {str(e)}")
