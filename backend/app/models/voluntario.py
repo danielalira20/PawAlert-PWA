@@ -20,6 +20,14 @@ class PostulacionRequest(BaseModel):
     asociacion_id: str
 
 
+class FinalizarPostulacionInternoRequest(BaseModel):
+    """Body para POST /voluntarios/interno/finalizar — la fila en `postulaciones`
+    se crea aquí, no en POST /voluntarios/postulaciones (esa solo prepara el
+    perfil de voluntario), para no dejar una postulación sin capacidades si el
+    usuario abandona el formulario a medias."""
+    asociacion_id: str
+
+
 class ResolverPostulacionRequest(BaseModel):
     """Body para PATCH /asociaciones/me/postulaciones/{id}"""
     accion: AccionPostulacionEnum

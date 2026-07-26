@@ -105,6 +105,84 @@ async def crear_postulacion(usuario_id: str, tipo: str, asociacion_id: str) -> d
     }
 
 
+async def asegurar_perfil_voluntario_interno(usuario_id: str) -> dict:
+    """Prepara el perfil de voluntario interno SIN crear la postulación —
+    esa se crea al final del flujo, en finalizar_postulacion_interno(), para
+    no dejar una postulación huérfana si el usuario abandona el formulario de
+    capacidades a medias.
+
+    Necesaria de todas formas porque PUT /voluntarios/me/capacidades exige
+    que ya exista la fila `voluntarios` (_obtener_voluntario_id_propio) con
+    estado 'postulacion_pendiente' (guardar_capacidades la valida)."""
+    existente = supabase.table("voluntarios").select(
+        "id, estado"
+    ).eq("usuario_id", usuario_id).execute()
+
+    if existente.data:
+        voluntario_id = existente.data[0]["id"]
+
+        pendiente = supabase.table("postulaciones").select("id").eq(
+            "voluntario_id", voluntario_id
+        ).eq("estado", "pendiente").execute()
+
+        if pendiente.data:
+            raise HTTPException(
+                status_code=409,
+                detail="Ya tienes una postulación pendiente en revisión"
+            )
+
+        supabase.table("voluntarios").update({
+            "estado": "postulacion_pendiente",
+        }).eq("id", voluntario_id).execute()
+    else:
+        nuevo = supabase.table("voluntarios").insert({
+            "usuario_id": usuario_id,
+            "estado": "postulacion_pendiente",
+        }).execute()
+        voluntario_id = nuevo.data[0]["id"]
+
+    return {"voluntario_id": voluntario_id}
+
+
+async def finalizar_postulacion_interno(usuario_id: str, asociacion_id: str) -> dict:
+    """Crea la postulación de voluntario interno — el paso que de verdad
+    compromete, llamado al terminar (y guardar con éxito) el formulario de
+    capacidades, nunca antes. Mismo criterio que finalizar_postulacion_externa()
+    en home_verification_service.py: valida que las dependencias existan y es
+    idempotente ante reintentos."""
+    voluntario = supabase.table("voluntarios").select("id").eq(
+        "usuario_id", usuario_id
+    ).execute()
+    if not voluntario.data:
+        raise HTTPException(status_code=422, detail="Primero debes iniciar tu postulación")
+    voluntario_id = voluntario.data[0]["id"]
+
+    capacidades = supabase.table("capacidades").select("voluntario_id").eq(
+        "voluntario_id", voluntario_id
+    ).execute()
+    if not capacidades.data:
+        raise HTTPException(
+            status_code=422,
+            detail="Primero debes completar tu formulario de capacidades"
+        )
+
+    # Idempotencia: si un reintento llega después de que el INSERT anterior sí
+    # se completó (pero la respuesta se perdió), regresamos la postulación ya
+    # creada en vez de dejar que crear_postulacion() lance 409.
+    pendiente = supabase.table("postulaciones").select(
+        "id, numero_intento"
+    ).eq("voluntario_id", voluntario_id).eq("estado", "pendiente").execute()
+    if pendiente.data:
+        return {
+            "postulacion_id": pendiente.data[0]["id"],
+            "voluntario_id": voluntario_id,
+            "numero_intento": pendiente.data[0]["numero_intento"],
+            "estado": "pendiente",
+        }
+
+    return await crear_postulacion(usuario_id, "interno", asociacion_id)
+
+
 async def obtener_mi_voluntario(usuario_id: str) -> dict:
     resultado = supabase.table("voluntarios").select(
         "id, estado, asociacion_id, created_at, updated_at"
@@ -130,6 +208,21 @@ async def obtener_mi_voluntario(usuario_id: str) -> dict:
     ).eq("voluntario_id", voluntario["id"]).order(
         "numero_intento", desc=True
     ).limit(1).execute()
+
+    # voluntarios.estado se marca 'postulacion_pendiente' desde el paso 1 de
+    # postular (asegurar_perfil_voluntario_interno), antes de que exista una
+    # fila real en `postulaciones` — esa se crea hasta terminar el formulario
+    # de capacidades (finalizar_postulacion_interno). Si el usuario abandona
+    # el formulario (la primera vez, o al reintentar tras un rechazo), ese
+    # estado queda pegado sin ninguna postulación real detrás. En ese caso
+    # tratamos al usuario como si no tuviera perfil todavía — sin tocar la
+    # fila en `voluntarios`, que guardar_capacidades() sigue necesitando ver
+    # en 'postulacion_pendiente' si decide retomar el formulario.
+    tiene_postulacion_pendiente_real = bool(
+        ultima_postulacion.data and ultima_postulacion.data[0]["estado"] == "pendiente"
+    )
+    if voluntario["estado"] == "postulacion_pendiente" and not tiene_postulacion_pendiente_real:
+        return {"tiene_perfil_voluntario": False}
 
     postulacion_data = None
     intentos_previos = []
