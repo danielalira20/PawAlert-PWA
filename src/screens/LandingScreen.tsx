@@ -30,6 +30,7 @@ import {
   Poppins_600SemiBold,
 } from '@expo-google-fonts/poppins';
 import { useAuth } from '../context/AuthContext';
+import NotificationBell from '../components/red-aliados/NotificationBell';
 
 // IMPORTANTE: Importamos el formulario de forma "perezosa" (Lazy Load)
 const AssociationFormScreen = lazy(() => import('./AssociationFormScreen'));
@@ -438,6 +439,14 @@ export default function LandingScreen() {
           alignItems: 'center',
           position: 'relative',
         }}>
+
+          {/* ── Campana de Notificaciones (Posición Absoluta) ── */}
+          {isLoggedIn && (
+            <View style={{ position: 'absolute', top: 16, right: 24, zIndex: 50 }}>
+              <NotificationBell />
+            </View>
+          )}
+
           {/* Hero content: 2 columnas en desktop */}
           <View style={{
             flexDirection: isDesktop ? 'row' : 'column',

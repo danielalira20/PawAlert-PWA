@@ -64,14 +64,28 @@ export default function NotificacionesAliadoScreen() {
     }
   }, [token]);
 
+  const handlePressNotificacion = async (item: NotificacionAliado) => {
+    // 1. Si no está leída, avisamos al backend
+    if (!item.leida) {
+      try {
+        await axios.patch(`${API_URL}/red-aliados/me/notificaciones/${item.id}/leer`, {}, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+      } catch (error) {
+        console.error("Error al marcar como leída:", error);
+      }
+    }
+    
+    // 2. Navegamos al match
+    router.replace({
+      pathname: '/red-aliados',
+      params: { necesidad_id: item.necesidad_id }
+    });
+  };
+
   const renderNotificacion = ({ item }: { item: NotificacionAliado }) => (
     <TouchableOpacity
-      onPress={() => {
-        router.replace({
-          pathname: '/red-aliados',
-          params: { necesidad_id: item.necesidad_id }
-        });
-      }}
+      onPress={() => handlePressNotificacion(item)}
       style={{
         backgroundColor: item.leida ? C.bg : '#FFF5EB',
         borderRadius: 20,

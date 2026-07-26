@@ -212,3 +212,27 @@ def get_notificaciones_aliado(authorization: str = Header(None)):
         })
 
     return notificaciones
+
+@router.patch("/me/notificaciones/{notificacion_id}/leer", status_code=200)
+def marcar_notificacion_leida(notificacion_id: str, authorization: str = Header(None)):
+    """
+    FRONT12: Marca una notificación específica como leída cuando el aliado la abre.
+    """
+    usuario = _obtener_usuario_autenticado(authorization)
+
+    # 1. Validar que el usuario tiene un perfil de apoyo
+    perfil_res = supabase.table("perfil_apoyo").select("id").eq("usuario_id", usuario["id"]).execute()
+    if not perfil_res.data:
+        raise HTTPException(status_code=403, detail="No eres un aliado registrado")
+    
+    perfil_apoyo_id = perfil_res.data[0]["id"]
+
+    # 2. Actualizar la notificación a leída asegurando que le pertenezca a este aliado
+    res = supabase.table("notificaciones_aliado").update({"leida": True}).eq(
+        "id", notificacion_id
+    ).eq("perfil_apoyo_id", perfil_apoyo_id).execute()
+
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Notificación no encontrada o acceso denegado")
+
+    return {"status": "success", "leida": True}
