@@ -87,6 +87,14 @@ const FORMA_ENTREGA_OPCIONES: Option[] = [
   { value: 'punto_acordado', label: 'Punto acordado' },
 ];
 
+// FRONT13 — un lote es la variante "donación grande" de alimentos/insumos
+// que se puede repartir entre varias asociaciones (FRONT14/15/16 + BACK07).
+const DIVISIBLE_OPCIONES: Option[] = [
+  { value: 'no', label: 'No se reparte', description: 'Va completo a una sola asociación.' },
+  { value: 'solo_empaques_completos', label: 'Solo empaques completos', description: 'Se puede repartir, pero sin abrir empaques.' },
+  { value: 'aliado_prepara_lotes', label: 'Yo preparo los lotes', description: 'Tú divides el total en partes para cada asociación.' },
+];
+
 const FRECUENCIA_OPCIONES: Option[] = [
   { value: 'semana', label: 'Por semana' },
   { value: 'mes', label: 'Por mes' },
@@ -248,6 +256,22 @@ export default function AportacionFormScreen({ onClose }: Props) {
   const [fotoUrl, setFotoUrl] = useState<string | null>(null);
   const [isUploadingFoto, setIsUploadingFoto] = useState(false);
 
+  // FRONT13 — "es un lote grande": extiende este mismo formulario con los
+  // campos de logística (empaque/divisible/entrega) en vez de una pantalla
+  // aparte, y al enviar pasa a invitar asociaciones (FRONT14) en lugar del
+  // post-envío normal.
+  const [esLote, setEsLote] = useState(false);
+  const [tipoEmpaque, setTipoEmpaque] = useState('');
+  const [divisible, setDivisible] = useState<string | null>(null);
+  const [maxAsociaciones, setMaxAsociaciones] = useState('1');
+  const [loteId, setLoteId] = useState<string | null>(null);
+  const [mostrarInvitar, setMostrarInvitar] = useState(false);
+  const [asociacionesCompatibles, setAsociacionesCompatibles] = useState<{ id: string; nombre: string; distancia_km: number }[]>([]);
+  const [asociacionesSeleccionadas, setAsociacionesSeleccionadas] = useState<string[]>([]);
+  const [isLoadingAsociaciones, setIsLoadingAsociaciones] = useState(false);
+  const [isInvitando, setIsInvitando] = useState(false);
+  const [invitacionesEnviadas, setInvitacionesEnviadas] = useState(false);
+
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -255,6 +279,7 @@ export default function AportacionFormScreen({ onClose }: Props) {
     (subcategoria?.especies_aplicables as Especie[] | undefined) || ['perro', 'gato'];
   const camposCondicionales = categoria ? CAMPOS_CONDICIONALES[categoria.clave] || [] : [];
   const esDifusion = categoria?.clave === 'difusion_campanas';
+  const esLoteAplicable = categoria?.clave === 'alimentos' || categoria?.clave === 'insumos';
 
   const toggleEspecie = (value: string) => {
     const especie = value as Especie;
@@ -369,7 +394,7 @@ export default function AportacionFormScreen({ onClose }: Props) {
     const nuevos: Record<string, string> = {};
 
     if (numero === 1) {
-      if (modo === 'reactiva' && !necesidadId.trim()) nuevos.necesidadId = 'Indica a qué necesidad respondes.';
+      if (!esLote && modo === 'reactiva' && !necesidadId.trim()) nuevos.necesidadId = 'Indica a qué necesidad respondes.';
       if (!categoria) nuevos.categoria = 'Selecciona una categoría.';
       if (!subcategoria) nuevos.subcategoria = 'Selecciona una subcategoría.';
     }
@@ -398,6 +423,15 @@ export default function AportacionFormScreen({ onClose }: Props) {
         nuevos.cantidadValor = 'Ingresa una cantidad válida.';
       }
       if (!cantidadUnidad.trim()) nuevos.cantidadUnidad = 'Indica la unidad (kg, piezas, citas...).';
+
+      if (esLote) {
+        if (!tipoEmpaque.trim()) nuevos.tipoEmpaque = 'Describe cómo viene empacado.';
+        if (!divisible) nuevos.divisible = 'Selecciona una opción.';
+        if (divisible && divisible !== 'no' && (!maxAsociaciones.trim() || Number(maxAsociaciones) < 1)) {
+          nuevos.maxAsociaciones = 'Indica a cuántas asociaciones se puede repartir.';
+        }
+        if (!formaEntrega) nuevos.formaEntrega = 'Selecciona una forma de entrega.';
+      }
     }
 
     setErrors(nuevos);
@@ -433,6 +467,15 @@ export default function AportacionFormScreen({ onClose }: Props) {
     setVigencia(null);
     setFrecuencia(null);
     setFotoUrl(null);
+    setEsLote(false);
+    setTipoEmpaque('');
+    setDivisible(null);
+    setMaxAsociaciones('1');
+    setLoteId(null);
+    setMostrarInvitar(false);
+    setAsociacionesCompatibles([]);
+    setAsociacionesSeleccionadas([]);
+    setInvitacionesEnviadas(false);
     setErrors({});
   };
 
@@ -462,8 +505,17 @@ export default function AportacionFormScreen({ onClose }: Props) {
     setVigencia(null);
     setFrecuencia(null);
     setFotoUrl(null);
+    setEsLote(false);
+    setTipoEmpaque('');
+    setDivisible(null);
+    setMaxAsociaciones('1');
+    setLoteId(null);
+    setAsociacionesCompatibles([]);
+    setAsociacionesSeleccionadas([]);
     setErrors({});
     setMostrarPostEnvio(false);
+    setMostrarInvitar(false);
+    setInvitacionesEnviadas(false);
   };
 
   const terminarFlujo = () => {
@@ -473,9 +525,72 @@ export default function AportacionFormScreen({ onClose }: Props) {
     else router.back();
   };
 
+  const cargarAsociacionesCompatibles = async (id: string) => {
+    setIsLoadingAsociaciones(true);
+    try {
+      const res = await axios.get(`${API_URL}/red-aliados/lotes/${id}/asociaciones-compatibles`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setAsociacionesCompatibles(res.data);
+    } catch {
+      showToast({ type: 'error', title: 'Error', message: 'No pudimos cargar asociaciones cercanas.' });
+    } finally {
+      setIsLoadingAsociaciones(false);
+    }
+  };
+
+  const toggleAsociacionSeleccionada = (id: string) => {
+    setAsociacionesSeleccionadas((prev) => (prev.includes(id) ? prev.filter((v) => v !== id) : [...prev, id]));
+  };
+
+  const handleInvitar = async () => {
+    if (!loteId || !asociacionesSeleccionadas.length) return;
+    setIsInvitando(true);
+    try {
+      await axios.post(
+        `${API_URL}/red-aliados/lotes/${loteId}/invitar`,
+        { asociacion_ids: asociacionesSeleccionadas },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setInvitacionesEnviadas(true);
+      showToast({ type: 'success', title: 'Invitaciones enviadas', message: 'Las asociaciones ya pueden responder.' });
+    } catch (error: any) {
+      showToast({
+        type: 'error',
+        title: 'Error',
+        message: error?.response?.data?.detail || 'No pudimos enviar las invitaciones.',
+      });
+    } finally {
+      setIsInvitando(false);
+    }
+  };
+
   const handleSubmit = async () => {
     setIsSubmitting(true);
     try {
+      if (esLote) {
+        const res = await axios.post(
+          `${API_URL}/red-aliados/lotes`,
+          {
+            categoria: categoria!.clave,
+            subcategoria_id: subcategoria!.id,
+            especies_aplica: especiesAplica,
+            cantidad_valor: Number(cantidadValor),
+            cantidad_unidad: cantidadUnidad.trim(),
+            tipo_empaque: tipoEmpaque.trim(),
+            divisible,
+            max_asociaciones: divisible === 'no' ? 1 : Number(maxAsociaciones),
+            forma_entrega: formaEntrega,
+          },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        setLoteId(res.data.id);
+        showToast({ type: 'success', title: 'Lote registrado', message: 'Ahora invita a las asociaciones que quieras.' });
+        cargarAsociacionesCompatibles(res.data.id);
+        setMostrarInvitar(true);
+        return;
+      }
+
       const basePayload = {
         categoria: categoria!.clave,
         subcategoria_id: subcategoria!.id,
@@ -621,24 +736,6 @@ export default function AportacionFormScreen({ onClose }: Props) {
     if (paso === 1) {
       return (
         <>
-          <FormSection title="¿Cómo quieres aportar?">
-            <SingleOptions
-              options={[
-                { value: 'reactiva', label: 'Responder a una necesidad', description: 'Una asociación ya pidió algo y tú lo cubres.' },
-                { value: 'proactiva', label: 'Dejar disponibilidad', description: 'Configuras de antemano lo que puedes ofrecer.' },
-              ]}
-              selected={modo}
-              onSelect={(v) => setModo(v as Modo)}
-            />
-          </FormSection>
-
-          {modo === 'reactiva' && (
-            <FormSection title="¿A qué necesidad respondes?">
-              <TextInputField value={necesidadId} onChangeText={setNecesidadId} placeholder="UUID de la necesidad" />
-              {errors.necesidadId && <ErrorText text={errors.necesidadId} />}
-            </FormSection>
-          )}
-
           <FormSection title="Categoría y subcategoría" subtitle="Elige qué tipo de recurso vas a aportar.">
             <CategoriaSubcategoriaSelector
               categoria={categoria}
@@ -657,6 +754,7 @@ export default function AportacionFormScreen({ onClose }: Props) {
                 setContactoCargo('');
                 setContactoTelefono('');
                 setContactoCorreo('');
+                setEsLote(false);
               }}
               onChangeSubcategoria={(s) => {
                 setSubcategoria(s);
@@ -667,6 +765,39 @@ export default function AportacionFormScreen({ onClose }: Props) {
               errorSubcategoria={errors.subcategoria}
             />
           </FormSection>
+
+          {esLoteAplicable && (
+            <FormSection title="¿Es una donación grande?" subtitle="Por ejemplo, 50kg de croquetas que se puedan repartir entre varias asociaciones.">
+              <SingleOptions
+                options={[
+                  { value: 'no', label: 'No, es una aportación normal' },
+                  { value: 'si', label: 'Sí, es un lote grande', description: 'Vas a poder definir empaque, si se puede dividir, y luego invitar a las asociaciones que quieras.' },
+                ]}
+                selected={esLote ? 'si' : 'no'}
+                onSelect={(v) => setEsLote(v === 'si')}
+              />
+            </FormSection>
+          )}
+
+          {!esLote && (
+            <FormSection title="¿Cómo quieres aportar?">
+              <SingleOptions
+                options={[
+                  { value: 'reactiva', label: 'Responder a una necesidad', description: 'Una asociación ya pidió algo y tú lo cubres.' },
+                  { value: 'proactiva', label: 'Dejar disponibilidad', description: 'Configuras de antemano lo que puedes ofrecer.' },
+                ]}
+                selected={modo}
+                onSelect={(v) => setModo(v as Modo)}
+              />
+            </FormSection>
+          )}
+
+          {!esLote && modo === 'reactiva' && (
+            <FormSection title="¿A qué necesidad respondes?">
+              <TextInputField value={necesidadId} onChangeText={setNecesidadId} placeholder="UUID de la necesidad" />
+              {errors.necesidadId && <ErrorText text={errors.necesidadId} />}
+            </FormSection>
+          )}
         </>
       );
     }
@@ -762,58 +893,118 @@ export default function AportacionFormScreen({ onClose }: Props) {
           {errors.cantidadUnidad && <ErrorText text={errors.cantidadUnidad} />}
         </FormSection>
 
-        <FormSection title="Fecha de disponibilidad">
-          <DatePickerChip label="" value={fechaDisponibilidad} onChange={setFechaDisponibilidad} />
-        </FormSection>
+        {esLote && (
+          <>
+            <FormSection title="¿Cómo viene empacado?" subtitle="Por ejemplo: 'Costales de 25kg' o 'Cajas de 12 piezas'.">
+              <TextInputField value={tipoEmpaque} onChangeText={setTipoEmpaque} placeholder="Describe el empaque" />
+              {errors.tipoEmpaque && <ErrorText text={errors.tipoEmpaque} />}
+            </FormSection>
 
-        <FormSection title="¿Dónde se entrega o recolecta?" subtitle="Solo compartimos una zona aproximada.">
-          <TouchableOpacity style={styles.locationButton} onPress={handleGetLocation} disabled={isLoadingGps}>
-            <Ionicons name="locate" size={18} color={COLORS.bgTeal} />
-            <Text style={styles.locationButtonText}>
-              {isLoadingGps ? 'Obteniendo ubicación…' : 'Usar mi ubicación actual'}
-            </Text>
-          </TouchableOpacity>
-          <View style={styles.mapContainer}>
-            <LocationPickerMap
-              selectedPosition={ubicacion}
-              instructionText="Toca el mapa para marcar el punto de entrega o recolección"
-              helperText="Puedes mover el pin para ajustar el punto"
-              onLocationSelect={(latitud, longitud) => setUbicacion({ latitud, longitud })}
-            />
-          </View>
-        </FormSection>
+            <FormSection title="¿Se puede repartir entre varias asociaciones?">
+              <SingleOptions options={DIVISIBLE_OPCIONES} selected={divisible || ''} onSelect={setDivisible} error={errors.divisible} />
+            </FormSection>
+
+            {divisible && divisible !== 'no' && (
+              <FormSection title="¿Entre cuántas asociaciones como máximo?">
+                <TextInputField
+                  value={maxAsociaciones}
+                  onChangeText={(v) => setMaxAsociaciones(v.replace(/[^0-9]/g, ''))}
+                  placeholder="3"
+                  keyboardType="numeric"
+                />
+                {errors.maxAsociaciones && <ErrorText text={errors.maxAsociaciones} />}
+              </FormSection>
+            )}
+          </>
+        )}
+
+        {!esLote && (
+          <FormSection title="Fecha de disponibilidad">
+            <DatePickerChip label="" value={fechaDisponibilidad} onChange={setFechaDisponibilidad} />
+          </FormSection>
+        )}
+
+        {!esLote && (
+          <FormSection title="¿Dónde se entrega o recolecta?" subtitle="Solo compartimos una zona aproximada.">
+            <TouchableOpacity style={styles.locationButton} onPress={handleGetLocation} disabled={isLoadingGps}>
+              <Ionicons name="locate" size={18} color={COLORS.bgTeal} />
+              <Text style={styles.locationButtonText}>
+                {isLoadingGps ? 'Obteniendo ubicación…' : 'Usar mi ubicación actual'}
+              </Text>
+            </TouchableOpacity>
+            <View style={styles.mapContainer}>
+              <LocationPickerMap
+                selectedPosition={ubicacion}
+                instructionText="Toca el mapa para marcar el punto de entrega o recolección"
+                helperText="Puedes mover el pin para ajustar el punto"
+                onLocationSelect={(latitud, longitud) => setUbicacion({ latitud, longitud })}
+              />
+            </View>
+          </FormSection>
+        )}
 
         <FormSection title="Forma de entrega">
-          <SingleOptions options={FORMA_ENTREGA_OPCIONES} selected={formaEntrega || ''} onSelect={setFormaEntrega} />
+          <SingleOptions options={FORMA_ENTREGA_OPCIONES} selected={formaEntrega || ''} onSelect={setFormaEntrega} error={esLote ? errors.formaEntrega : undefined} />
         </FormSection>
 
-        {modo === 'proactiva' && (
+        {!esLote && modo === 'proactiva' && (
           <FormSection title="Frecuencia">
             <SingleOptions options={FRECUENCIA_OPCIONES} selected={frecuencia || ''} onSelect={setFrecuencia} />
           </FormSection>
         )}
 
-        <FormSection title="Vigencia de la oferta">
-          <DatePickerChip label="" value={vigencia} onChange={setVigencia} />
-        </FormSection>
+        {!esLote && (
+          <FormSection title="Vigencia de la oferta">
+            <DatePickerChip label="" value={vigencia} onChange={setVigencia} />
+          </FormSection>
+        )}
 
-        <FormSection title="Evidencia fotográfica" subtitle="Opcional.">
-          <TouchableOpacity onPress={handlePickFoto} style={styles.fotoBoton} disabled={isUploadingFoto}>
-            {isUploadingFoto ? (
-              <ActivityIndicator color={COLORS.primary} />
-            ) : fotoUrl ? (
-              <Image source={{ uri: fotoUrl }} style={styles.fotoPreview} resizeMode="cover" />
-            ) : (
-              <>
-                <Ionicons name="camera-outline" size={20} color={COLORS.bgTeal} />
-                <Text style={styles.locationButtonText}>Subir foto</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        </FormSection>
+        {!esLote && (
+          <FormSection title="Evidencia fotográfica" subtitle="Opcional.">
+            <TouchableOpacity onPress={handlePickFoto} style={styles.fotoBoton} disabled={isUploadingFoto}>
+              {isUploadingFoto ? (
+                <ActivityIndicator color={COLORS.primary} />
+              ) : fotoUrl ? (
+                <Image source={{ uri: fotoUrl }} style={styles.fotoPreview} resizeMode="cover" />
+              ) : (
+                <>
+                  <Ionicons name="camera-outline" size={20} color={COLORS.bgTeal} />
+                  <Text style={styles.locationButtonText}>Subir foto</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </FormSection>
+        )}
       </>
     );
   };
+
+  const renderInvitar = () => (
+    <FormSection title="Asociaciones cercanas compatibles" subtitle="Ordenadas por cercanía a tu zona de cobertura.">
+      {isLoadingAsociaciones ? (
+        <ActivityIndicator color={COLORS.primary} style={{ marginVertical: 20 }} />
+      ) : asociacionesCompatibles.length === 0 ? (
+        <Text style={styles.sectionSubtitle}>No encontramos asociaciones verificadas cerca de tu zona por ahora.</Text>
+      ) : (
+        <View style={{ gap: 10 }}>
+          {asociacionesCompatibles.map((a) => {
+            const active = asociacionesSeleccionadas.includes(a.id);
+            return (
+              <TouchableOpacity key={a.id} onPress={() => toggleAsociacionSeleccionada(a.id)} style={[styles.asocRow, active && styles.asocRowActive]}>
+                <Ionicons name={active ? 'checkmark-circle' : 'ellipse-outline'} size={20} color={active ? COLORS.bgTeal : COLORS.textLight} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.asocNombre}>{a.nombre}</Text>
+                  <Text style={styles.asocDistancia}>{a.distancia_km.toFixed(1)} km de distancia</Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
+    </FormSection>
+  );
+
+  const estadoPantalla: 'invitar' | 'postEnvio' | 'paso' = mostrarInvitar ? 'invitar' : mostrarPostEnvio ? 'postEnvio' : 'paso';
 
   return (
     <View style={styles.outerContainer}>
@@ -821,30 +1012,35 @@ export default function AportacionFormScreen({ onClose }: Props) {
       <View style={styles.centeredContent}>
         <View style={styles.card}>
           <View style={styles.header}>
-            {!mostrarPostEnvio && (
+            {estadoPantalla === 'paso' && (
               <TouchableOpacity style={styles.headerButton} onPress={retroceder}>
                 <Ionicons name="chevron-back" size={22} color={COLORS.bgWhite} />
               </TouchableOpacity>
             )}
             <View style={styles.headerText}>
-              <Text style={styles.title}>Registrar una aportación</Text>
+              <Text style={styles.title}>{esLote ? 'Registrar un lote' : 'Registrar una aportación'}</Text>
               <Text style={styles.subtitle}>
-                {mostrarPostEnvio ? '¡Listo! Tu aportación fue registrada' : `Paso ${paso} de ${PASOS.length}: ${PASOS[paso - 1]}`}
+                {estadoPantalla === 'invitar'
+                  ? '¿A quién quieres invitar?'
+                  : estadoPantalla === 'postEnvio'
+                  ? '¡Listo! Tu aportación fue registrada'
+                  : `Paso ${paso} de ${PASOS.length}: ${PASOS[paso - 1]}`}
               </Text>
             </View>
-            {!mostrarPostEnvio && (
-              <TouchableOpacity style={styles.headerButton} onPress={() => setShowCloseConfirm(true)}>
-                <Ionicons name="close" size={22} color={COLORS.bgWhite} />
-              </TouchableOpacity>
-            )}
-            {!mostrarPostEnvio && (
+            <TouchableOpacity
+              style={styles.headerButton}
+              onPress={() => (estadoPantalla === 'paso' ? setShowCloseConfirm(true) : terminarFlujo())}
+            >
+              <Ionicons name="close" size={22} color={COLORS.bgWhite} />
+            </TouchableOpacity>
+            {estadoPantalla === 'paso' && (
               <View style={styles.progressTrack}>
                 <View style={[styles.progressFill, { width: `${(paso / PASOS.length) * 100}%` }]} />
               </View>
             )}
           </View>
 
-          {mostrarPostEnvio ? (
+          {estadoPantalla === 'postEnvio' ? (
             <>
               <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
                 <FormSection
@@ -867,6 +1063,50 @@ export default function AportacionFormScreen({ onClose }: Props) {
                 </View>
               </View>
             </>
+          ) : estadoPantalla === 'invitar' ? (
+            invitacionesEnviadas ? (
+              <>
+                <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+                  <FormSection title="¡Listo!">
+                    <View style={{ alignItems: 'center', paddingVertical: 12 }}>
+                      <Ionicons name="checkmark-circle" size={56} color={COLORS.bgTeal} />
+                      <Text style={[styles.sectionSubtitle, { textAlign: 'center', marginTop: 12 }]}>
+                        Invitamos a {asociacionesSeleccionadas.length} asociación(es). Te avisamos cuando respondan.
+                      </Text>
+                    </View>
+                  </FormSection>
+                </ScrollView>
+                <View style={styles.fixedFooter}>
+                  <TouchableOpacity style={styles.primaryButton} onPress={terminarFlujo}>
+                    <Text style={styles.primaryButtonText}>Terminar</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : (
+              <>
+                <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+                  {renderInvitar()}
+                </ScrollView>
+                <View style={styles.fixedFooter}>
+                  <View style={{ flexDirection: 'row', gap: 12 }}>
+                    <TouchableOpacity style={[styles.secondaryButton, { flex: 1 }]} onPress={terminarFlujo}>
+                      <Text style={styles.secondaryButtonText}>Invitar después</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.primaryButton, { flex: 1, opacity: asociacionesSeleccionadas.length ? 1 : 0.5 }]}
+                      onPress={handleInvitar}
+                      disabled={!asociacionesSeleccionadas.length || isInvitando}
+                    >
+                      {isInvitando ? (
+                        <ActivityIndicator color={COLORS.bgWhite} />
+                      ) : (
+                        <Text style={styles.primaryButtonText}>Invitar ({asociacionesSeleccionadas.length})</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </>
+            )
           ) : (
             <>
               <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -880,7 +1120,9 @@ export default function AportacionFormScreen({ onClose }: Props) {
                     <>
                       <Text style={styles.primaryButtonText}>
                         {paso === PASOS.length
-                          ? modo === 'reactiva'
+                          ? esLote
+                            ? 'Registrar lote'
+                            : modo === 'reactiva'
                             ? 'Registrar aportación'
                             : 'Registrar disponibilidad'
                           : 'Continuar'}
@@ -1196,4 +1438,8 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.grayLight,
   },
   fotoPreview: { width: '100%', height: '100%' },
+  asocRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 14, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.grayLight },
+  asocRowActive: { borderColor: COLORS.bgTeal, backgroundColor: `${COLORS.bgTeal}12` },
+  asocNombre: { color: COLORS.textDark, fontSize: 14, fontWeight: '800' },
+  asocDistancia: { color: COLORS.textLight, fontSize: 12, marginTop: 2 },
 });

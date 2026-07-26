@@ -20,6 +20,13 @@ interface Props {
   onChangeSubcategoria: (subcategoria: CatalogoItem) => void;
   errorCategoria?: string;
   errorSubcategoria?: string;
+  // Opcional — restringe qué categorías se muestran (por clave), sin tocar
+  // el catálogo del backend. Por ejemplo el modo "lote" de AportacionFormScreen
+  // (FRONT13) solo permite
+  // 'alimentos'/'insumos': un lote físico con empaques no tiene sentido
+  // para servicios veterinarios o difusión. Sin este prop se muestran
+  // las 4 (comportamiento original, usado por AportacionFormScreen).
+  categoriasPermitidas?: string[];
 }
 
 // Selector reusable de categoría/subcategoría de recurso — consume
@@ -34,6 +41,7 @@ export function CategoriaSubcategoriaSelector({
   onChangeSubcategoria,
   errorCategoria,
   errorSubcategoria,
+  categoriasPermitidas,
 }: Props) {
   const [categorias, setCategorias] = useState<CatalogoItem[]>([]);
   const [subcategorias, setSubcategorias] = useState<CatalogoItem[]>([]);
@@ -45,7 +53,10 @@ export function CategoriaSubcategoriaSelector({
     (async () => {
       try {
         const res = await axios.get<CatalogoItem[]>(`${API_URL}/red-aliados/categorias`);
-        if (vigente) setCategorias(res.data);
+        const datos = categoriasPermitidas
+          ? res.data.filter((c) => categoriasPermitidas.includes(c.clave))
+          : res.data;
+        if (vigente) setCategorias(datos);
       } catch {
         if (vigente) setCategorias([]);
       } finally {

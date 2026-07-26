@@ -893,7 +893,7 @@ export default function LandingScreen() {
                                                 <Ionicons name="chevron-forward" size={16} color="#FFF" />
                                               </View>
                                             </AnimatedButton>
-                                            <AnimatedButton onPress={() => router.push(isLoggedIn ? ('/lote-form' as any) : '/login')}>
+                                            <AnimatedButton onPress={() => router.push(isLoggedIn ? ('/red-aliados' as any) : '/login')}>
                                               <View style={{
                                                 flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                                                 paddingVertical: 14, paddingHorizontal: 18,
@@ -913,7 +913,7 @@ export default function LandingScreen() {
                                                   <Text style={{
                                                     fontSize: 14, fontFamily: F.bodySemiBold, color: activeColor, flex: 1,
                                                   }}>
-                                                    Registrar un lote para donar
+                                                    Registrar una aportación o lote
                                                   </Text>
                                                 </View>
                                                 <Ionicons name="chevron-forward" size={16} color={activeColor} />

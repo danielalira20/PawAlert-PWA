@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import {
   addMonths,
@@ -54,10 +54,9 @@ export function DatePickerChip({ label, value, onChange, required, error }: Prop
       </TouchableOpacity>
       {error && <Text style={styles.errorText}>{error}</Text>}
 
-      {open && (
-        <>
-          <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setOpen(false)} />
-          <View style={styles.popover}>
+      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+        <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setOpen(false)}>
+          <TouchableOpacity activeOpacity={1} onPress={() => {}} style={styles.popover}>
             <View style={styles.popoverHeader}>
               <TouchableOpacity onPress={() => setMes((m) => subMonths(m, 1))} style={styles.navBtn}>
                 <Feather name="chevron-left" size={16} color={Brand.textDark} />
@@ -114,9 +113,9 @@ export function DatePickerChip({ label, value, onChange, required, error }: Prop
                 <Text style={styles.limpiarText}>Quitar fecha</Text>
               </TouchableOpacity>
             )}
-          </View>
-        </>
-      )}
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -141,11 +140,8 @@ const styles = StyleSheet.create({
   triggerText: { fontSize: 13, fontWeight: '600', color: Brand.textMuted },
   triggerTextActive: { color: '#fff' },
   errorText: { color: Brand.danger, fontSize: 12, marginTop: 6 },
-  backdrop: { position: 'absolute', top: -1000, left: -1000, right: -1000, bottom: -1000, zIndex: 40 },
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
   popover: {
-    position: 'absolute',
-    top: 76,
-    left: 0,
     width: 260,
     backgroundColor: '#fff',
     borderRadius: 16,
@@ -155,7 +151,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.18,
     shadowRadius: 24,
     elevation: 14,
-    zIndex: 50,
     borderWidth: 1,
     borderColor: '#F0EBE3',
   },

@@ -181,8 +181,22 @@ def _obtener_perfil_apoyo_o_falla(usuario_id: str) -> dict:
     return perfil.data[0]
 
 
+CATEGORIAS_LOTE_VALIDAS = {"alimentos", "insumos"}
+
+
 async def crear_lote(usuario_id: str, body: LoteRequest) -> dict:
     perfil = _obtener_perfil_apoyo_o_falla(usuario_id)
+
+    # Un lote es un envío físico con empaques (tipo_empaque, divisible,
+    # cantidad en kg/piezas) — no tiene sentido para servicios_veterinarios
+    # ni difusion_campanas, que no se "empacan". Esos siguen su propio
+    # camino por crear_oferta_proactiva/crear_contribucion.
+    if body.categoria.value not in CATEGORIAS_LOTE_VALIDAS:
+        raise HTTPException(
+            status_code=422,
+            detail="Los lotes físicos solo aplican a alimentos e insumos"
+        )
+
     _validar_subcategoria(body.subcategoria_id, body.categoria.value)
 
     resultado = supabase.table("lotes").insert({
