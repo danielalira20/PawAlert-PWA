@@ -7,6 +7,8 @@ import { useAuth } from '../../context/AuthContext';
 import { Toast, useToast } from '../Toast';
 import { QrDisplayModal } from '../red-aliados/QrDisplayModal';
 import { EscanearQrModal } from '../red-aliados/EscanearQrModal';
+import { AppModal } from '../AppModal';
+import { AssocAvatar } from '../admin-dashboard/AssocAvatar';
 
 // Misma paleta que PostulacionesPanel.tsx.
 const COLORS = {
@@ -77,6 +79,7 @@ export function LotesInvitacionesPanel({ visible }: Props) {
   const [cantidadAsignada, setCantidadAsignada] = useState('');
   const [qrInvitacionId, setQrInvitacionId] = useState<string | null>(null);
   const [showScanModal, setShowScanModal] = useState(false);
+  const [invitacionDetalle, setInvitacionDetalle] = useState<InvitacionLote | null>(null);
 
   const cargarInvitaciones = async () => {
     if (!token) return;
@@ -123,6 +126,7 @@ export function LotesInvitacionesPanel({ visible }: Props) {
       showToast({ title: '¡Listo!', message: 'Aceptaste tu parte del lote', type: 'success' });
       setShowAceptarModal(false);
       setInvitacionAccion(null);
+      setInvitacionDetalle(null);
       cargarInvitaciones();
     } catch (err: any) {
       showToast({ title: 'Error', message: err?.response?.data?.detail || 'No pudimos aceptar la invitación', type: 'error' });
@@ -141,6 +145,7 @@ export function LotesInvitacionesPanel({ visible }: Props) {
         { headers: { Authorization: `Bearer ${token}` } }
       );
       showToast({ title: 'Invitación rechazada', message: '', type: 'success' });
+      setInvitacionDetalle(null);
       cargarInvitaciones();
     } catch (err: any) {
       showToast({ title: 'Error', message: err?.response?.data?.detail || 'No pudimos rechazar la invitación', type: 'error' });
@@ -203,8 +208,10 @@ export function LotesInvitacionesPanel({ visible }: Props) {
           </View>
         ) : (
           filtradas.map((inv) => (
-            <View
+            <TouchableOpacity
               key={inv.id}
+              onPress={() => setInvitacionDetalle(inv)}
+              activeOpacity={0.7}
               style={{
                 backgroundColor: COLORS.white, borderRadius: 16, padding: 16, marginBottom: 12,
                 borderLeftWidth: 4, borderLeftColor: ESTADO_COLOR[inv.estado],
@@ -218,67 +225,126 @@ export function LotesInvitacionesPanel({ visible }: Props) {
                   <Text style={{ fontSize: 13, color: COLORS.textDark, marginBottom: 6 }}>
                     {inv.lote.subcategoria_descripcion || inv.lote.categoria} — {inv.cantidad_asignada || inv.lote.cantidad_valor} {inv.lote.cantidad_unidad}
                   </Text>
-                  <Text style={{ fontSize: 12, color: COLORS.textLight, marginBottom: 2 }}>
-                    Empaque: {inv.lote.tipo_empaque}
-                  </Text>
                   <Text style={{ fontSize: 12, color: COLORS.textLight }}>
                     {FORMA_ENTREGA_LABEL[inv.lote.forma_entrega] || inv.lote.forma_entrega}
                   </Text>
-                  {!!inv.lote.descripcion && (
-                    <Text style={{ fontSize: 12, color: COLORS.textLight, marginTop: 6, fontStyle: 'italic' }}>
-                      "{inv.lote.descripcion}"
-                    </Text>
-                  )}
                 </View>
-                <View style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, backgroundColor: `${ESTADO_COLOR[inv.estado]}18` }}>
-                  <Text style={{ fontSize: 11, fontWeight: '700', color: ESTADO_COLOR[inv.estado] }}>{ESTADO_LABEL[inv.estado]}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <View style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, backgroundColor: `${ESTADO_COLOR[inv.estado]}18` }}>
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: ESTADO_COLOR[inv.estado] }}>{ESTADO_LABEL[inv.estado]}</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color={COLORS.textLight} />
                 </View>
               </View>
-
-              {inv.estado === 'invitada' && (
-                <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
-                  <TouchableOpacity
-                    onPress={() => abrirAceptar(inv)}
-                    disabled={isSubmitting}
-                    style={{ flex: 1, backgroundColor: COLORS.success, paddingVertical: 10, borderRadius: 12, alignItems: 'center', opacity: isSubmitting ? 0.7 : 1 }}
-                  >
-                    <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 12 }}>Aceptar</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => rechazar(inv)}
-                    disabled={isSubmitting}
-                    style={{ flex: 1, backgroundColor: 'transparent', borderWidth: 1, borderColor: COLORS.danger, paddingVertical: 10, borderRadius: 12, alignItems: 'center', opacity: isSubmitting ? 0.7 : 1 }}
-                  >
-                    <Text style={{ color: COLORS.danger, fontWeight: '700', fontSize: 12 }}>Rechazar</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              {inv.estado === 'aceptada' && (
-                <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
-                  <TouchableOpacity
-                    onPress={() => setQrInvitacionId(inv.id)}
-                    style={{ flex: 1, flexDirection: 'row', gap: 6, backgroundColor: COLORS.cardBg, paddingVertical: 10, borderRadius: 12, alignItems: 'center', justifyContent: 'center' }}
-                  >
-                    <Ionicons name="qr-code-outline" size={16} color={COLORS.primary} />
-                    <Text style={{ color: COLORS.primary, fontWeight: '700', fontSize: 12 }}>Ver mi código</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => setShowScanModal(true)}
-                    style={{ flex: 1, flexDirection: 'row', gap: 6, backgroundColor: COLORS.success, paddingVertical: 10, borderRadius: 12, alignItems: 'center', justifyContent: 'center' }}
-                  >
-                    <Ionicons name="camera-outline" size={16} color={COLORS.white} />
-                    <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 12 }}>Escanear</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </View>
+            </TouchableOpacity>
           ))
         )}
       </View>
 
       <QrDisplayModal visible={!!qrInvitacionId} invitacionId={qrInvitacionId} onClose={() => setQrInvitacionId(null)} />
-      <EscanearQrModal visible={showScanModal} onClose={() => setShowScanModal(false)} onConfirmado={cargarInvitaciones} />
+      <EscanearQrModal
+        visible={showScanModal}
+        onClose={() => setShowScanModal(false)}
+        onConfirmado={() => {
+          cargarInvitaciones();
+          setInvitacionDetalle(null);
+        }}
+      />
+
+      <AppModal visible={!!invitacionDetalle} onClose={() => setInvitacionDetalle(null)} maxWidth={560}>
+        {invitacionDetalle && (
+          <View style={{ padding: 24 }}>
+            <View style={{ alignItems: 'center', marginBottom: 20 }}>
+              <AssocAvatar nombre={invitacionDetalle.lote.aliado_nombre} logoUrl={null} size="lg" />
+              <Text style={{ fontSize: 19, fontWeight: '800', color: COLORS.textDark, marginTop: 12, textAlign: 'center' }}>
+                {invitacionDetalle.lote.aliado_nombre}
+              </Text>
+              <View style={{ marginTop: 8, paddingHorizontal: 14, paddingVertical: 6, borderRadius: 14, backgroundColor: `${ESTADO_COLOR[invitacionDetalle.estado]}18` }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: ESTADO_COLOR[invitacionDetalle.estado] }}>
+                  {ESTADO_LABEL[invitacionDetalle.estado]}
+                </Text>
+              </View>
+            </View>
+
+            <View style={{ backgroundColor: COLORS.cardBg, borderRadius: 16, padding: 16, gap: 12 }}>
+              <View>
+                <Text style={{ fontSize: 11, color: COLORS.textLight, textTransform: 'uppercase', fontWeight: '700', marginBottom: 2 }}>Recurso</Text>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.textDark }}>
+                  {invitacionDetalle.lote.subcategoria_descripcion || invitacionDetalle.lote.categoria}
+                </Text>
+              </View>
+              <View>
+                <Text style={{ fontSize: 11, color: COLORS.textLight, textTransform: 'uppercase', fontWeight: '700', marginBottom: 2 }}>Cantidad</Text>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.textDark }}>
+                  {invitacionDetalle.cantidad_asignada || invitacionDetalle.lote.cantidad_valor} {invitacionDetalle.lote.cantidad_unidad}
+                </Text>
+              </View>
+              <View>
+                <Text style={{ fontSize: 11, color: COLORS.textLight, textTransform: 'uppercase', fontWeight: '700', marginBottom: 2 }}>Empaque</Text>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: COLORS.textDark }}>{invitacionDetalle.lote.tipo_empaque}</Text>
+              </View>
+              <View>
+                <Text style={{ fontSize: 11, color: COLORS.textLight, textTransform: 'uppercase', fontWeight: '700', marginBottom: 2 }}>Forma de entrega</Text>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: COLORS.textDark }}>
+                  {FORMA_ENTREGA_LABEL[invitacionDetalle.lote.forma_entrega] || invitacionDetalle.lote.forma_entrega}
+                </Text>
+              </View>
+              {!!invitacionDetalle.lote.descripcion && (
+                <View>
+                  <Text style={{ fontSize: 11, color: COLORS.textLight, textTransform: 'uppercase', fontWeight: '700', marginBottom: 2 }}>Descripción</Text>
+                  <Text style={{ fontSize: 14, color: COLORS.textDark, fontStyle: 'italic', lineHeight: 20 }}>
+                    "{invitacionDetalle.lote.descripcion}"
+                  </Text>
+                </View>
+              )}
+              <View>
+                <Text style={{ fontSize: 11, color: COLORS.textLight, textTransform: 'uppercase', fontWeight: '700', marginBottom: 2 }}>Recibido el</Text>
+                <Text style={{ fontSize: 13, color: COLORS.textDark }}>
+                  {new Date(invitacionDetalle.created_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })}
+                </Text>
+              </View>
+            </View>
+
+            {invitacionDetalle.estado === 'invitada' && (
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
+                <TouchableOpacity
+                  onPress={() => abrirAceptar(invitacionDetalle)}
+                  disabled={isSubmitting}
+                  style={{ flex: 1, backgroundColor: COLORS.success, paddingVertical: 13, borderRadius: 14, alignItems: 'center', opacity: isSubmitting ? 0.7 : 1 }}
+                >
+                  <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 14 }}>Aceptar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => rechazar(invitacionDetalle)}
+                  disabled={isSubmitting}
+                  style={{ flex: 1, backgroundColor: 'transparent', borderWidth: 1, borderColor: COLORS.danger, paddingVertical: 13, borderRadius: 14, alignItems: 'center', opacity: isSubmitting ? 0.7 : 1 }}
+                >
+                  <Text style={{ color: COLORS.danger, fontWeight: '700', fontSize: 14 }}>Rechazar</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {invitacionDetalle.estado === 'aceptada' && (
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
+                <TouchableOpacity
+                  onPress={() => setQrInvitacionId(invitacionDetalle.id)}
+                  style={{ flex: 1, flexDirection: 'row', gap: 6, backgroundColor: COLORS.cardBg, paddingVertical: 13, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <Ionicons name="qr-code-outline" size={17} color={COLORS.primary} />
+                  <Text style={{ color: COLORS.primary, fontWeight: '700', fontSize: 13 }}>Ver mi código</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => setShowScanModal(true)}
+                  style={{ flex: 1, flexDirection: 'row', gap: 6, backgroundColor: COLORS.success, paddingVertical: 13, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <Ionicons name="camera-outline" size={17} color={COLORS.white} />
+                  <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 13 }}>Escanear</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        )}
+      </AppModal>
 
       <Modal visible={showAceptarModal} transparent animationType="fade">
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
