@@ -202,3 +202,52 @@ async def obtener_detalle_asociacion(asociacion_id: str, authorization: str = He
     asociacion.pop("asociacion_fotos", None)
 
     return asociacion
+
+
+class ResolverPerfilApoyoBody(BaseModel):
+    decision: str
+    razon_rechazo: str | None = None
+
+@router.get("/perfiles-aliados-pendientes", status_code=200)
+async def listar_perfiles_aliados_pendientes(authorization: str = Header(None)):
+    _verificar_admin(authorization)
+
+    # Buscar perfiles donde razon_rechazo es nulo y el tipo es aliado_local o patrocinador_institucional
+    resultado = supabase.table("perfil_apoyo").select(
+        "id, tipo, categorias, zona_cobertura, disponibilidad, niveles_urgencia_atendida, especies_atendidas, datos_extra, verificado_admin, created_at, usuario_id, usuarios(nombre, email, telefono)"
+    ).in_("tipo", ["aliado_local", "patrocinador_institucional"]).is_("razon_rechazo", "null").execute()
+
+    # Filtrar en python para estar 100% seguros de que verificado_admin no sea True
+    pendientes = [p for p in resultado.data if p.get("verificado_admin") is not True]
+    
+    return pendientes
+
+
+@router.patch("/perfiles-aliados/{perfil_id}/resolver", status_code=200)
+async def resolver_perfil_aliado(perfil_id: str, body: ResolverPerfilApoyoBody, authorization: str = Header(None)):
+    _verificar_admin(authorization)
+
+    if body.decision not in ["aprobar", "rechazar"]:
+        raise HTTPException(status_code=400, detail="Decisión inválida")
+
+    if body.decision == "aprobar":
+        from datetime import datetime, timezone
+        
+        update_data = {
+            "verificado_admin": True,
+            "verificado_admin_at": datetime.now(timezone.utc).isoformat(),
+            "razon_rechazo": None
+        }
+    else:
+        if not body.razon_rechazo or not body.razon_rechazo.strip():
+            raise HTTPException(status_code=400, detail="Debe proveer una razón de rechazo")
+        update_data = {
+            "verificado_admin": False,
+            "razon_rechazo": body.razon_rechazo.strip()
+        }
+
+    resultado = supabase.table("perfil_apoyo").update(update_data).eq("id", perfil_id).execute()
+    if not resultado.data:
+        raise HTTPException(status_code=404, detail="Perfil no encontrado")
+
+    return {"message": f"Perfil {body.decision}d exitosamente", "data": resultado.data[0]}

@@ -18,6 +18,7 @@ import { Toast, useToast } from '../components/Toast';
 import { useAuth } from '../context/AuthContext';
 import { API_URL } from '../constants/api';
 import { useAdminAssociations } from '../hooks/useAdminAssociations';
+import { useAdminAliados, type PerfilAliadoAdmin } from '../hooks/useAdminAliados';
 import { AssocListCard } from '../components/admin-dashboard/AssocListCard';
 import { AssocAvatar } from '../components/admin-dashboard/AssocAvatar';
 import { PendingBadge } from '../components/admin-dashboard/PendingBadge';
@@ -37,7 +38,7 @@ interface Props {
   onClose?: () => void;
 }
 
-type Tab = 'solicitudes' | 'apelaciones';
+type Tab = 'solicitudes' | 'apelaciones' | 'aliados';
 type DetailScreenState = 'list' | 'detail';
 
 const DESKTOP_BREAKPOINT = 900;
@@ -205,6 +206,37 @@ export default function AdminDashboardScreen({ onClose }: Props) {
     }
   };
 
+  // ── Aliados (FRONT06): lista ↔ detalle ──────
+  const { pendientes: aliadosPendientes, isLoading: isLoadingAliados, cargarPendientes: cargarAliados, resolverPerfil } = useAdminAliados(showToast);
+  const [aliadosScreen, setAliadosScreen] = useState<DetailScreenState>('list');
+  const [aliadoSeleccionado, setAliadoSeleccionado] = useState<PerfilAliadoAdmin | null>(null);
+  const [razonRechazoAliado, setRazonRechazoAliado] = useState('');
+  const [isResolviendoAliado, setIsResolviendoAliado] = useState(false);
+
+  useEffect(() => {
+    if (tab === 'aliados') cargarAliados();
+  }, [tab, cargarAliados]);
+
+  const abrirAliado = (a: PerfilAliadoAdmin) => {
+    setAliadoSeleccionado(a);
+    setAliadosScreen('detail');
+    setRazonRechazoAliado('');
+  };
+
+  const volverAAliados = () => {
+    setAliadosScreen('list');
+    setAliadoSeleccionado(null);
+    setRazonRechazoAliado('');
+  };
+
+  const handleResolverAliado = async (decision: 'aprobar' | 'rechazar') => {
+    if (!aliadoSeleccionado) return;
+    setIsResolviendoAliado(true);
+    const ok = await resolverPerfil(aliadoSeleccionado.id, decision, razonRechazoAliado);
+    setIsResolviendoAliado(false);
+    if (ok) volverAAliados();
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -246,6 +278,23 @@ export default function AdminDashboardScreen({ onClose }: Props) {
             </View>
           )}
         </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={() => {
+            setTab('aliados');
+            setAliadosScreen('list');
+          }}
+          style={[styles.tab, tab === 'aliados' && styles.tabActiva]}
+        >
+          <Text style={[styles.tabText, tab === 'aliados' && styles.tabTextActiva]}>
+            Nuevos Aliados
+          </Text>
+          {aliadosPendientes.length > 0 && (
+            <View style={styles.tabBadge}>
+              <Text style={styles.tabBadgeText}>{aliadosPendientes.length}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
       </View>
 
       {tab === 'solicitudes' ? (
@@ -269,34 +318,50 @@ export default function AdminDashboardScreen({ onClose }: Props) {
             <ActionBar onAprobar={handleAprobar} onRechazar={handleRechazar} isSubmitting={isSubmitting} />
           </DetailShell>
         )
-      ) : apelacionScreen === 'list' ? (
-        <ApelacionesListScreen apelaciones={apelaciones} onSelect={abrirApelacion} />
+      ) : tab === 'apelaciones' ? (
+        apelacionScreen === 'list' ? (
+          <ApelacionesListScreen apelaciones={apelaciones} onSelect={abrirApelacion} />
+        ) : (
+          <DetailShell
+            titulo="Apelaciones"
+            detalle={detalle}
+            isLoading={isLoadingDetalle}
+            isDesktop={isDesktop}
+            onBack={volverAApelaciones}
+          >
+            {(bodyProps) => {
+              const contexto = apelacionSeleccionada && (
+                <ApelacionContextBlock apelacion={apelacionSeleccionada} showToast={showToast} />
+              );
+              return isDesktop ? (
+                <DetailDesktopBody {...bodyProps} extraTop={contexto} />
+              ) : (
+                <DetailMobileBody {...bodyProps} extraTop={contexto} />
+              );
+            }}
+            <ApelacionResolverBar
+              respuesta={respuestaApelacion}
+              onChangeRespuesta={setRespuestaApelacion}
+              onAprobar={() => resolverApelacion('aprobar')}
+              onRechazar={() => resolverApelacion('rechazar')}
+              isResolviendo={isResolviendo}
+            />
+          </DetailShell>
+        )
       ) : (
-        <DetailShell
-          titulo="Apelaciones"
-          detalle={detalle}
-          isLoading={isLoadingDetalle}
-          isDesktop={isDesktop}
-          onBack={volverAApelaciones}
-        >
-          {(bodyProps) => {
-            const contexto = apelacionSeleccionada && (
-              <ApelacionContextBlock apelacion={apelacionSeleccionada} showToast={showToast} />
-            );
-            return isDesktop ? (
-              <DetailDesktopBody {...bodyProps} extraTop={contexto} />
-            ) : (
-              <DetailMobileBody {...bodyProps} extraTop={contexto} />
-            );
-          }}
-          <ApelacionResolverBar
-            respuesta={respuestaApelacion}
-            onChangeRespuesta={setRespuestaApelacion}
-            onAprobar={() => resolverApelacion('aprobar')}
-            onRechazar={() => resolverApelacion('rechazar')}
-            isResolviendo={isResolviendo}
+        aliadosScreen === 'list' ? (
+          <AliadosListScreen aliados={aliadosPendientes} isLoading={isLoadingAliados} onSelect={abrirAliado} />
+        ) : (
+          <AliadoDetailScreen
+            aliado={aliadoSeleccionado!}
+            onBack={volverAAliados}
+            respuesta={razonRechazoAliado}
+            onChangeRespuesta={setRazonRechazoAliado}
+            onAprobar={() => handleResolverAliado('aprobar')}
+            onRechazar={() => handleResolverAliado('rechazar')}
+            isResolviendo={isResolviendoAliado}
           />
-        </DetailShell>
+        )
       )}
 
       <Toast toast={toast} translateY={translateY} />
@@ -889,4 +954,336 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   buttonsRow: { flexDirection: 'row', gap: 12 },
+
+  // Estilos añadidos para AliadoDetailScreen
+  cardsGrid: {
+    marginTop: 24,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 16,
+  },
+  infoCard: {
+    flex: 1,
+    minWidth: 280,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(60,35,16,0.06)',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  infoCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    backgroundColor: '#FCF7F0',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(60,35,16,0.06)',
+  },
+  infoCardTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: Brand.textDark,
+  },
+  infoCardBody: {
+    padding: 16,
+    gap: 16,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 16,
+  },
+  infoBlock: {
+    gap: 8,
+  },
+  infoLabel: {
+    fontSize: 12,
+    color: Brand.textMuted,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  infoValue: {
+    fontSize: 14,
+    color: Brand.textDark,
+    fontWeight: '500',
+    flexShrink: 1,
+    textAlign: 'right',
+  },
+  chipContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  chip: {
+    backgroundColor: Brand.secondary + '20', // 20% opacity
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Brand.secondary + '40',
+  },
+  chipText: {
+    fontSize: 12,
+    color: Brand.secondary,
+    fontWeight: '700',
+  },
+  chipUrgencia: {
+    backgroundColor: Brand.danger + '15',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Brand.danger + '30',
+  },
+  chipTextUrgencia: {
+    fontSize: 12,
+    color: Brand.danger,
+    fontWeight: '700',
+  },
 });
+
+// ─── Pantalla: lista de Aliados Pendientes ────────────────────────────────
+function AliadosListScreen({
+  aliados,
+  isLoading,
+  onSelect,
+}: {
+  aliados: PerfilAliadoAdmin[];
+  isLoading: boolean;
+  onSelect: (a: PerfilAliadoAdmin) => void;
+}) {
+  if (isLoading) {
+    return (
+      <View style={{ padding: 40, alignItems: 'center' }}>
+        <ActivityIndicator size="large" color={Brand.primary} />
+      </View>
+    );
+  }
+
+  if (aliados.length === 0) {
+    return (
+      <View style={{ padding: 40, alignItems: 'center' }}>
+        <Text style={styles.emptyText}>No hay nuevos perfiles de aliados pendientes de revisión.</Text>
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView contentContainerStyle={styles.listScrollContent}>
+      <View style={styles.listCentered}>
+        {aliados.map((a) => (
+          <View key={a.id} style={styles.apelacionCard}>
+            <Text style={styles.apelacionNombre}>{a.usuarios?.nombre} ({a.tipo.replace('_', ' ')})</Text>
+            <Text style={styles.apelacionMeta}>Correo: {a.usuarios?.email} | Tel: {a.usuarios?.telefono || 'N/A'}</Text>
+            <Text style={styles.apelacionMotivo} numberOfLines={1}>Categorías: {a.categorias?.join(', ')}</Text>
+
+            <TouchableOpacity onPress={() => onSelect(a)} style={styles.apelacionRevisarButton}>
+              <Text style={styles.apelacionRevisarText}>Revisar perfil completo</Text>
+            </TouchableOpacity>
+          </View>
+        ))}
+      </View>
+    </ScrollView>
+  );
+}
+
+
+// ─── Pantalla: Detalle del Aliado ────────────────────────────────
+function AliadoDetailScreen({
+  aliado,
+  onBack,
+  respuesta,
+  onChangeRespuesta,
+  onAprobar,
+  onRechazar,
+  isResolviendo
+}: {
+  aliado: PerfilAliadoAdmin;
+  onBack: () => void;
+  respuesta: string;
+  onChangeRespuesta: (text: string) => void;
+  onAprobar: () => void;
+  onRechazar: () => void;
+  isResolviendo: boolean;
+}) {
+  const datosExtra = aliado.datos_extra || {};
+
+  return (
+    <View style={{ flex: 1, backgroundColor: Brand.backgroundWarm }}>
+      <View style={{ paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#E4D3B8', backgroundColor: Brand.cardWarm }}>
+        <TouchableOpacity onPress={onBack} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={20} color={Brand.textMuted} />
+          <Text style={styles.backText}>Volver a Aliados</Text>
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 18, maxWidth: 800, alignSelf: 'center', width: '100%' }}>
+        <View style={styles.detailHeaderBlock}>
+          <View style={[styles.detailHeaderBlockDesktop, { width: '100%' }]}>
+            <View style={{ width: 60, height: 60, borderRadius: 30, backgroundColor: Brand.primary, alignItems: 'center', justifyContent: 'center' }}>
+              <Ionicons name="person" size={32} color="#FFF" />
+            </View>
+            <View style={styles.detailHeaderTextCol}>
+              <Text style={styles.detailNombreDesktop}>{aliado.usuarios?.nombre}</Text>
+              <Text style={styles.detailResponsable}>{aliado.tipo.replace('_', ' ').toUpperCase()}</Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.cardsGrid}>
+          {/* Card de Contacto */}
+          <View style={styles.infoCard}>
+            <View style={styles.infoCardHeader}>
+              <Ionicons name="mail" size={20} color={Brand.primary} />
+              <Text style={styles.infoCardTitle}>Contacto</Text>
+            </View>
+            <View style={styles.infoCardBody}>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Correo Electrónico</Text>
+                <Text style={styles.infoValue}>{aliado.usuarios?.email}</Text>
+              </View>
+              {aliado.usuarios?.telefono && (
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Teléfono</Text>
+                  <Text style={styles.infoValue}>{aliado.usuarios?.telefono}</Text>
+                </View>
+              )}
+            </View>
+          </View>
+
+          {/* Card de Cobertura y Servicios */}
+          <View style={styles.infoCard}>
+            <View style={styles.infoCardHeader}>
+              <Ionicons name="paw" size={20} color={Brand.primary} />
+              <Text style={styles.infoCardTitle}>Servicios y Cobertura</Text>
+            </View>
+            <View style={styles.infoCardBody}>
+              <View style={styles.infoBlock}>
+                <Text style={styles.infoLabel}>Categorías que ofrece</Text>
+                <View style={styles.chipContainer}>
+                  {aliado.categorias?.map((cat, idx) => (
+                    <View key={idx} style={styles.chip}>
+                      <Text style={styles.chipText}>{cat}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+              
+              {aliado.especies_atendidas && aliado.especies_atendidas.length > 0 && (
+                <View style={styles.infoBlock}>
+                  <Text style={styles.infoLabel}>Especies atendidas</Text>
+                  <View style={styles.chipContainer}>
+                    {aliado.especies_atendidas.map((esp, idx) => (
+                      <View key={idx} style={styles.chip}>
+                        <Text style={styles.chipText}>{esp}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
+              
+              {aliado.niveles_urgencia_atendida && aliado.niveles_urgencia_atendida.length > 0 && (
+                <View style={styles.infoBlock}>
+                  <Text style={styles.infoLabel}>Niveles de Urgencia</Text>
+                  <View style={styles.chipContainer}>
+                    {aliado.niveles_urgencia_atendida.map((urg, idx) => (
+                      <View key={idx} style={styles.chipUrgencia}>
+                        <Text style={styles.chipTextUrgencia}>{urg}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
+            </View>
+          </View>
+
+          {/* Card de Datos Legales / Profesionales */}
+          {(datosExtra.razon_social || datosExtra.rfc || datosExtra.medico_responsable || datosExtra.cedula_profesional || datosExtra.documento_verificacion_url) && (
+            <View style={styles.infoCard}>
+              <View style={styles.infoCardHeader}>
+                <Ionicons name="business" size={20} color={Brand.primary} />
+                <Text style={styles.infoCardTitle}>Datos Legales y Profesionales</Text>
+              </View>
+              <View style={styles.infoCardBody}>
+                {datosExtra.razon_social && (
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Razón Social</Text>
+                    <Text style={styles.infoValue}>{datosExtra.razon_social}</Text>
+                  </View>
+                )}
+                {datosExtra.rfc && (
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>RFC</Text>
+                    <Text style={styles.infoValue}>{datosExtra.rfc}</Text>
+                  </View>
+                )}
+                {datosExtra.medico_responsable && (
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Médico Responsable</Text>
+                    <Text style={styles.infoValue}>{datosExtra.medico_responsable}</Text>
+                  </View>
+                )}
+                {datosExtra.cedula_profesional && (
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Cédula Profesional</Text>
+                    <Text style={styles.infoValue}>{datosExtra.cedula_profesional}</Text>
+                  </View>
+                )}
+
+                {datosExtra.documento_verificacion_url && (
+                  <View style={{ marginTop: 12 }}>
+                    <Text style={[styles.infoLabel, { marginBottom: 8 }]}>Documento de verificación adjunto</Text>
+                    <TouchableOpacity
+                      onPress={() => Linking.openURL(datosExtra.documento_verificacion_url)}
+                      style={styles.apelacionDocRow}
+                    >
+                      <Ionicons name="document-text" size={20} color={Brand.primary} />
+                      <Text style={styles.apelacionDocText}>Ver documento de verificación</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            </View>
+          )}
+        </View>
+      </ScrollView>
+
+      <View style={styles.resolverBarContainer}>
+        <Text style={styles.resolverBarLabel}>Resolución del administrador</Text>
+        <TextInput
+          style={styles.resolverBarInput}
+          placeholder="Motivo de rechazo (obligatorio si vas a rechazar)..."
+          placeholderTextColor={Brand.textFaint}
+          value={respuesta}
+          onChangeText={onChangeRespuesta}
+          multiline
+        />
+        <View style={styles.buttonsRow}>
+          <AdminActionButton
+            label="Rechazar"
+            variant="rechazar"
+            icon="close-circle"
+            onPress={onRechazar}
+            disabled={isResolviendo || !respuesta.trim()}
+          />
+          <AdminActionButton
+            label="Aprobar Aliado"
+            variant="aprobar"
+            icon="checkmark-circle"
+            onPress={onAprobar}
+            disabled={isResolviendo}
+          />
+        </View>
+      </View>
+    </View>
+  );
+}
