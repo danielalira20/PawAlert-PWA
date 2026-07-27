@@ -66,6 +66,20 @@ export default function AliadoDashboardScreen({ onClose }: Props) {
             <AliadoImpactStats impacto={impacto} isLoading={isLoading} />
           </View>
 
+          {/* Punto de entrada a AportacionFormScreen en modo manual (sin
+              necesidad_id) — dejó de existir cuando se quitaron los botones
+              de LandingScreen al reorganizar la UI. Visible siempre, no
+              dentro de una pestaña, porque no es exclusivo de lotes. */}
+          <View style={{ paddingHorizontal: 24, marginBottom: 20 }}>
+            <TouchableOpacity
+              onPress={() => { if (onClose) onClose(); router.push('/red-aliados'); }}
+              style={{ backgroundColor: COLORS.primary, paddingVertical: 14, borderRadius: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}
+            >
+              <Ionicons name="add-circle-outline" size={18} color={COLORS.white} style={{ marginRight: 8 }} />
+              <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 14 }}>Nueva aportación o lote</Text>
+            </TouchableOpacity>
+          </View>
+
           {/* Tabs de navegación — mismo patrón/tokens que StaffAsignacionScreen.tsx */}
           <View style={{ flexDirection: 'row', marginHorizontal: 24, marginBottom: 20, borderBottomWidth: 1, borderBottomColor: '#E5E7EB' }}>
             {([
