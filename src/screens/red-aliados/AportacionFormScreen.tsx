@@ -475,7 +475,6 @@ export default function AportacionFormScreen({ onClose }: Props) {
     const nuevos: Record<string, string> = {};
 
     if (numero === 1) {
-      if (!esLote && modo === 'reactiva' && !necesidadId.trim()) nuevos.necesidadId = 'Indica a qué necesidad respondes.';
       if (!categoria) nuevos.categoria = 'Selecciona una categoría.';
       if (!subcategoria) nuevos.subcategoria = 'Selecciona una subcategoría.';
     }
@@ -851,6 +850,8 @@ export default function AportacionFormScreen({ onClose }: Props) {
                 setContactoTelefono('');
                 setContactoCorreo('');
                 setEsLote(false);
+                setModo('proactiva');
+                setNecesidadId('');
                 setCantidadUnidad('');
                 setUnidadEsOtra(false);
                 setContenidoPorUnidad('');
@@ -869,39 +870,14 @@ export default function AportacionFormScreen({ onClose }: Props) {
             <FormSection title="¿Es una donación grande?" subtitle="Por ejemplo, 50kg de croquetas que se puedan repartir entre varias asociaciones.">
               <SingleOptions
                 options={[
-                  { value: 'no', label: 'No, es una aportación normal' },
                   { value: 'si', label: 'Sí, es un lote grande', description: 'Vas a poder definir empaque, si se puede dividir, y luego invitar a las asociaciones que quieras.' },
                 ]}
-                selected={esLote ? 'si' : 'no'}
-                onSelect={(v) => setEsLote(v === 'si')}
-              />
-              {!esLote && (
-                <Text style={styles.helperText}>
-                  En aportación normal no eliges asociación aquí; la selección de asociaciones aparece solo después de registrar un lote.
-                </Text>
-              )}
-            </FormSection>
-          )}
-
-          {!esLote && (
-            <FormSection title="¿Cómo quieres aportar?">
-              <SingleOptions
-                options={[
-                  { value: 'reactiva', label: 'Responder a una necesidad', description: 'Una asociación ya pidió algo y tú lo cubres.' },
-                  { value: 'proactiva', label: 'Dejar disponibilidad', description: 'Configuras de antemano lo que puedes ofrecer.' },
-                ]}
-                selected={modo}
-                onSelect={(v) => setModo(v as Modo)}
+                selected={esLote ? 'si' : ''}
+                onSelect={() => setEsLote(true)}
               />
             </FormSection>
           )}
 
-          {!esLote && modo === 'reactiva' && (
-            <FormSection title="¿A qué necesidad respondes?">
-              <TextInputField value={necesidadId} onChangeText={setNecesidadId} placeholder="UUID de la necesidad" />
-              {errors.necesidadId && <ErrorText text={errors.necesidadId} />}
-            </FormSection>
-          )}
         </>
       );
     }
