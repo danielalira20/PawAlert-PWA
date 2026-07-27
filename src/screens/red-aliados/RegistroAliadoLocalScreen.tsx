@@ -71,6 +71,7 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
   const [categorias, setCategorias] = useState<string[]>([]);
   const [subcategorias, setSubcategorias] = useState<string[]>([]);
   const [subcategoriasData, setSubcategoriasData] = useState<any[]>([]);
+  const [categoriasData, setCategoriasData] = useState<{ id: string; clave: string; descripcion: string }[]>([]);
 
   // Location states
   const [latitud, setLatitud] = useState<number | null>(null);
@@ -99,8 +100,18 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
-  // ─── Obtener subcategorías ───
+  // ─── Obtener categorías y subcategorías ───
   useEffect(() => {
+    const fetchCategorias = async () => {
+      try {
+        const res = await axios.get(`${API_URL}/red-aliados/categorias`);
+        setCategoriasData(res.data);
+      } catch (err) {
+        console.warn('Error fetching categorias:', err);
+      }
+    };
+    fetchCategorias();
+
     const fetchSubcategorias = async () => {
       try {
         const res = await axios.get(`${API_URL}/catalogos/recursos/subcategorias`);
@@ -547,20 +558,15 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
                 <>
                   <FormSection title="¿Qué puedes donar?" subtitle="Selecciona lo que podrías aportar (no es un compromiso fijo).">
                     <View style={styles.animalChips}>
-                      {[
-                        { label: 'Alimentos', clave: 'alimentos' },
-                        { label: 'Insumos', clave: 'insumos' },
-                        { label: 'Servicios veterinarios', clave: 'servicios_veterinarios' },
-                        { label: 'Difusión', clave: 'difusion' }
-                      ].map((cat) => {
-                        const isSelected = categorias.includes(cat.label);
+                      {categoriasData.map((cat) => {
+                        const isSelected = categorias.includes(cat.clave);
                         return (
                           <TouchableOpacity
                             key={cat.clave}
                             style={[styles.animalChip, { backgroundColor: isSelected ? COLORS.secondary : COLORS.grayLight }]}
-                            onPress={() => toggleArray(cat.label, categorias, setCategorias, 'categorias')}
+                            onPress={() => toggleArray(cat.clave, categorias, setCategorias, 'categorias')}
                           >
-                            <Text style={{ fontWeight: '700', fontSize: 14, color: isSelected ? COLORS.textDark : COLORS.textLight }}>{cat.label}</Text>
+                            <Text style={{ fontWeight: '700', fontSize: 14, color: isSelected ? COLORS.textDark : COLORS.textLight }}>{cat.descripcion}</Text>
                           </TouchableOpacity>
                         );
                       })}
@@ -568,16 +574,11 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
                     {errors.categorias && <Text style={styles.errorText}>{errors.categorias}</Text>}
 
                     {/* Subcategorías dinámicas */}
-                    {categorias.map(catLabel => {
-                      const labelToClave: Record<string, string> = {
-                        'Alimentos': 'alimentos',
-                        'Insumos': 'insumos',
-                        'Servicios veterinarios': 'servicios_veterinarios',
-                        'Difusión': 'difusion_campanas'
-                      };
-                      const clave = labelToClave[catLabel];
+                    {categorias.map(clave => {
                       const subs = subcategoriasData.filter(s => s.categoria_clave === clave);
                       if (subs.length === 0) return null;
+
+                      const catLabel = categoriasData.find(c => c.clave === clave)?.descripcion || clave;
 
                       return (
                         <View key={`subs-${clave}`} style={{ marginTop: 8, marginBottom: 12, backgroundColor: COLORS.grayLight, padding: 14, borderRadius: 16 }}>
@@ -612,7 +613,7 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
               )}
 
               {/* === CAMPOS SERVICIOS VETERINARIOS === */}
-              {paso === 3 && categorias.includes('Servicios veterinarios') && (
+              {paso === 3 && categorias.includes('servicios_veterinarios') && (
                 <>
                   <FormSection title="Detalles de Servicios Veterinarios">
                     <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginBottom: 8 }}>Especies Atendidas:</Text>
@@ -626,9 +627,13 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
 
                     <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginTop: 12, marginBottom: 8 }}>Niveles de Urgencia Atendida:</Text>
                     <View style={styles.animalChips}>
-                      {['Rojo (Emergencia)', 'Amarillo (Urgencia)', 'Verde (Consulta)'].map(urg => (
-                        <TouchableOpacity key={urg} style={[styles.animalChip, { backgroundColor: nivelesUrgencia.includes(urg) ? '#E74C3C' : COLORS.grayLight }]} onPress={() => toggleArray(urg, nivelesUrgencia, setNivelesUrgencia, 'urgencia')}>
-                          <Text style={{ fontSize: 13, fontWeight: '700', color: nivelesUrgencia.includes(urg) ? '#FFF' : COLORS.textLight }}>{urg}</Text>
+                      {[
+                        { label: 'Rojo (Emergencia)', clave: 'critico' },
+                        { label: 'Amarillo (Urgencia)', clave: 'urgente' },
+                        { label: 'Verde (Consulta)', clave: 'no_urgente' },
+                      ].map(urg => (
+                        <TouchableOpacity key={urg.clave} style={[styles.animalChip, { backgroundColor: nivelesUrgencia.includes(urg.clave) ? '#E74C3C' : COLORS.grayLight }]} onPress={() => toggleArray(urg.clave, nivelesUrgencia, setNivelesUrgencia, 'urgencia')}>
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: nivelesUrgencia.includes(urg.clave) ? '#FFF' : COLORS.textLight }}>{urg.label}</Text>
                         </TouchableOpacity>
                       ))}
                     </View>
@@ -638,7 +643,7 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
               )}
 
               {/* === CAMPOS DIFUSIÓN === */}
-              {paso === 3 && categorias.includes('Difusión') && (
+              {paso === 3 && categorias.includes('difusion_campanas') && (
                 <>
                   <FormSection title="Apoyo de Difusión">
                     <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginBottom: 8 }}>Tipo de apoyo:</Text>
