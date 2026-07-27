@@ -338,7 +338,7 @@ async def obtener_invitaciones_asociacion(asociacion_id: str) -> list:
         "id, estado, cantidad_asignada, created_at, respondida_at, confirmada_at, "
         "lotes(id, categoria, cantidad_valor, cantidad_unidad, tipo_empaque, "
         "forma_entrega, descripcion, subcategoria_recurso(descripcion), "
-        "perfil_apoyo(datos_extra, preferencia_visibilidad, usuarios(nombre, apellido_paterno)))"
+        "perfil_apoyo(id, datos_extra, preferencia_visibilidad, usuarios(nombre, apellido_paterno)))"
     ).eq("asociacion_id", asociacion_id).order("created_at", desc=True).execute()
 
     invitaciones = []
@@ -346,6 +346,29 @@ async def obtener_invitaciones_asociacion(asociacion_id: str) -> list:
         lote = i.get("lotes") or {}
         perfil = lote.get("perfil_apoyo") or {}
         usuario = perfil.get("usuarios") or {}
+        datos_extra = perfil.get("datos_extra") or {}
+        ubicacion_aliado = {
+            "calle": None,
+            "colonia": None,
+            "municipio": None,
+            "referencia": None,
+            "latitud": None,
+            "longitud": None,
+        }
+        if perfil.get("id"):
+            ubicacion = supabase.rpc(
+                "ubicacion_perfil_apoyo", {"p_perfil_apoyo_id": perfil.get("id")}
+            ).execute()
+            if ubicacion.data:
+                fila_ubicacion = ubicacion.data[0]
+                ubicacion_aliado = {
+                    "calle": fila_ubicacion.get("calle"),
+                    "colonia": fila_ubicacion.get("colonia"),
+                    "municipio": fila_ubicacion.get("municipio"),
+                    "referencia": fila_ubicacion.get("referencia"),
+                    "latitud": float(fila_ubicacion["latitud"]) if fila_ubicacion.get("latitud") is not None else None,
+                    "longitud": float(fila_ubicacion["longitud"]) if fila_ubicacion.get("longitud") is not None else None,
+                }
         invitaciones.append({
             "id": i["id"],
             "estado": i["estado"],
@@ -360,10 +383,12 @@ async def obtener_invitaciones_asociacion(asociacion_id: str) -> list:
                 "tipo_empaque": lote.get("tipo_empaque"),
                 "forma_entrega": lote.get("forma_entrega"),
                 "descripcion": lote.get("descripcion"),
+                "aliado_logo_url": datos_extra.get("logo_url"),
                 "aliado_nombre": _nombre_publico(
                     usuario.get("nombre"), usuario.get("apellido_paterno"),
                     perfil.get("datos_extra"), perfil.get("preferencia_visibilidad"),
                 ),
+                "ubicacion_aliado": ubicacion_aliado,
             },
         })
     return invitaciones
