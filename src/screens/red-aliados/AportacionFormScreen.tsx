@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -319,10 +319,6 @@ export default function AportacionFormScreen({ onClose }: Props) {
   const [isInvitando, setIsInvitando] = useState(false);
   const [invitacionesEnviadas, setInvitacionesEnviadas] = useState(false);
 
-  const [asociacionesDestino, setAsociacionesDestino] = useState<{ id: string; nombre: string }[]>([]);
-  const [isLoadingAsociacionesDestino, setIsLoadingAsociacionesDestino] = useState(false);
-  const [asociacionDestinoId, setAsociacionDestinoId] = useState('');
-
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -341,21 +337,6 @@ export default function AportacionFormScreen({ onClose }: Props) {
   // sentido preguntarles zona de entrega/recolección ni forma de entrega,
   // eso es logística de un objeto que se transporta.
   const esServicio = categoria?.clave === 'servicios_veterinarios' || categoria?.clave === 'difusion_campanas';
-
-  useEffect(() => {
-    const cargarAsociacionesDestino = async () => {
-      setIsLoadingAsociacionesDestino(true);
-      try {
-        const res = await axios.get(`${API_URL}/associations`);
-        setAsociacionesDestino((res.data || []).map((a: any) => ({ id: a.id, nombre: a.nombre })));
-      } catch {
-        setAsociacionesDestino([]);
-      } finally {
-        setIsLoadingAsociacionesDestino(false);
-      }
-    };
-    cargarAsociacionesDestino();
-  }, []);
 
   const toggleEspecie = (value: string) => {
     const especie = value as Especie;
@@ -482,11 +463,6 @@ export default function AportacionFormScreen({ onClose }: Props) {
     }
     if (tamanio) detalle.tamanio = tamanio;
     if (fotoUrl) detalle.foto_url = fotoUrl;
-    if (!esLote && asociacionDestinoId) {
-      detalle.asociacion_destino_id = asociacionDestinoId;
-      const asociacion = asociacionesDestino.find((a) => a.id === asociacionDestinoId);
-      if (asociacion?.nombre) detalle.asociacion_destino_nombre = asociacion.nombre;
-    }
     if (UNIDADES_CONTENEDOR.has(cantidadUnidad) && contenidoPorUnidad.trim()) {
       detalle.contenido_por_unidad = contenidoPorUnidad.trim();
     }
@@ -528,7 +504,6 @@ export default function AportacionFormScreen({ onClose }: Props) {
         nuevos.cantidadValor = 'Ingresa una cantidad válida.';
       }
       if (!cantidadUnidad.trim()) nuevos.cantidadUnidad = 'Indica la unidad (kg, piezas, citas...).';
-      if (!esLote && !asociacionDestinoId) nuevos.asociacionDestino = 'Selecciona la asociación destino.';
       if (!esLote && UNIDADES_CONTENEDOR.has(cantidadUnidad) && !contenidoPorUnidad.trim()) {
         nuevos.contenidoPorUnidad = 'Indica de cuánto es cada unidad.';
       }
@@ -585,7 +560,6 @@ export default function AportacionFormScreen({ onClose }: Props) {
     setMaxAsociaciones('1');
     setLoteId(null);
     setMostrarInvitar(false);
-    setAsociacionDestinoId('');
     setAsociacionesCompatibles([]);
     setAsociacionesSeleccionadas([]);
     setInvitacionesEnviadas(false);
@@ -628,7 +602,6 @@ export default function AportacionFormScreen({ onClose }: Props) {
     setLoteId(null);
     setAsociacionesCompatibles([]);
     setAsociacionesSeleccionadas([]);
-    setAsociacionDestinoId('');
     setErrors({});
     setMostrarPostEnvio(false);
     setMostrarInvitar(false);
@@ -1011,23 +984,6 @@ export default function AportacionFormScreen({ onClose }: Props) {
 
     return (
       <>
-        {!esLote && (
-          <FormSection title="¿A qué asociación quieres enviarla?" subtitle="Esto define la asociación destino de esta aportación.">
-            {isLoadingAsociacionesDestino ? (
-              <ActivityIndicator color={COLORS.primary} style={{ marginVertical: 8 }} />
-            ) : asociacionesDestino.length === 0 ? (
-              <Text style={styles.sectionSubtitle}>No pudimos cargar asociaciones por ahora. Intenta nuevamente en unos segundos.</Text>
-            ) : (
-              <SingleOptions
-                options={asociacionesDestino.map((a) => ({ value: a.id, label: a.nombre }))}
-                selected={asociacionDestinoId}
-                onSelect={setAsociacionDestinoId}
-                error={errors.asociacionDestino}
-              />
-            )}
-          </FormSection>
-        )}
-
         <FormSection title={esLote ? 'Cantidad total del lote' : modo === 'reactiva' ? 'Cantidad' : 'Capacidad declarada'}>
           <TextInputField
             value={cantidadValor}
