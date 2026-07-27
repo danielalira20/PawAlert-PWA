@@ -45,9 +45,14 @@ interface Oferta {
   estado: string;
   created_at: string;
   detalle: any;
-  necesidades: {
+  necesidades?: {
     categoria: string;
-  };
+  } | null;
+  subcategoria_recurso?: {
+    clave: string;
+    descripcion: string;
+    categoria_recurso?: { clave: string; descripcion: string } | null;
+  } | null;
   usuarios: {
     id: string;
     nombre: string;
@@ -176,7 +181,7 @@ export default function OfertasAsociacionScreen() {
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
             <Ionicons name="gift-outline" size={18} color={C.text} style={{ marginRight: 8 }} />
             <Text style={{ fontSize: 16, fontFamily: F.displayBold, color: C.text }}>
-              {item.necesidades?.categoria || 'Recurso'}
+              {item.subcategoria_recurso?.categoria_recurso?.descripcion || item.necesidades?.categoria || 'Recurso'}
             </Text>
           </View>
           

@@ -1120,6 +1120,25 @@ class ResolverOfertaRequest(BaseModel):
     accion: AccionOferta
     cantidad_ajustada: float | None = None
 
+
+def _asociacion_id_contribucion(fila: dict) -> str | None:
+    """Una contribución cuelga de una necesidad, un reporte (Ruta 1) o un
+    lote — nunca de más de uno a la vez (contribuciones_origen_check).
+    Resuelve la asociación de origen por el lado que sí tenga valor, mismo
+    criterio que ya usa obtener_impacto_aliado() en red_aliados_service.py.
+    Se resuelve en Python (no con necesidades!inner) porque un !inner en
+    PostgREST excluye la fila completa cuando ese embed no aplica — que es
+    justo lo que rompía estos 3 endpoints para contribuciones de Ruta 1/lotes."""
+    necesidad = fila.get("necesidades") or {}
+    reporte = fila.get("reportes") or {}
+    lote_asociacion = fila.get("lote_asociaciones") or {}
+    return (
+        necesidad.get("asociacion_id")
+        or reporte.get("asociacion_asignada_id")
+        or lote_asociacion.get("asociacion_id")
+    )
+
+
 @router.get("/me/ofertas", status_code=200)
 async def get_ofertas_recibidas(tab: str = "pendientes", authorization: str = Header(None)):
     """
@@ -1135,18 +1154,24 @@ async def get_ofertas_recibidas(tab: str = "pendientes", authorization: str = He
 
     query = supabase.table("contribuciones").select(
         "id, cantidad_valor, cantidad_unidad, estado, created_at, detalle, "
-        "necesidades!inner(id, categoria, asociacion_id, subcategoria_id), "
+        "necesidades(id, categoria, asociacion_id, subcategoria_id), "
+        "reportes(id, asociacion_asignada_id), "
+        "lote_asociaciones(id, asociacion_id), "
+        "subcategoria_recurso(clave, descripcion, categoria_recurso(clave, descripcion)), "
         "usuarios(id, nombre, apellido_paterno, telefono, email, perfil_apoyo(id, aliado_verificado_por, tipo))"
-    ).eq("necesidades.asociacion_id", usuario["asociacion_id"])
-    
+    )
+
     if tab == "historial":
         query = query.in_("estado", ["confirmada", "parcial"])
     else:
         query = query.eq("estado", "comprometida")
-        
+
     resultado = query.order("created_at", desc=True).execute()
 
-    return resultado.data
+    return [
+        fila for fila in (resultado.data or [])
+        if _asociacion_id_contribucion(fila) == usuario["asociacion_id"]
+    ]
 
 
 @router.patch("/me/ofertas/{contribucion_id}/resolver", status_code=200)
@@ -1161,15 +1186,17 @@ async def patch_resolver_oferta(
     usuario = _obtener_usuario_autenticado(authorization)
     _verificar_rol(usuario, ("asociacion", "staff"))
 
-    # Validar que la contribución pertenezca a una necesidad de esta asociación
+    # Validar que la contribución pertenezca a esta asociación — puede venir
+    # de una necesidad, de un reporte (Ruta 1) o de un lote, nunca asumir
+    # que siempre trae necesidad_id (ver _asociacion_id_contribucion).
     contrib_res = supabase.table("contribuciones").select(
-        "id, estado, necesidades!inner(asociacion_id)"
+        "id, estado, necesidades(asociacion_id), reportes(asociacion_asignada_id), lote_asociaciones(asociacion_id)"
     ).eq("id", contribucion_id).execute()
 
     if not contrib_res.data:
         raise HTTPException(status_code=404, detail="Oferta no encontrada")
 
-    if contrib_res.data[0]["necesidades"]["asociacion_id"] != usuario["asociacion_id"]:
+    if _asociacion_id_contribucion(contrib_res.data[0]) != usuario["asociacion_id"]:
         raise HTTPException(status_code=403, detail="No tienes permiso para gestionar esta oferta")
 
     if contrib_res.data[0]["estado"] != "comprometida":
@@ -1210,12 +1237,17 @@ async def patch_verificar_aliado(
     if not asoc_id:
         raise HTTPException(status_code=404, detail="Este usuario no está vinculado a ninguna asociación")
 
-    # 1. Validar que exista al menos una contribución confirmada/parcial de este usuario para esta asociación
+    # 1. Validar que exista al menos una contribución confirmada/parcial de
+    # este usuario para esta asociación — puede venir de una necesidad, un
+    # reporte (Ruta 1) o un lote (ver _asociacion_id_contribucion).
     contrib_res = supabase.table("contribuciones").select(
-        "id, necesidades!inner(asociacion_id)"
-    ).eq("usuario_id", usuario_id).in_("estado", ["confirmada", "parcial"]).eq("necesidades.asociacion_id", asoc_id).limit(1).execute()
+        "id, necesidades(asociacion_id), reportes(asociacion_asignada_id), lote_asociaciones(asociacion_id)"
+    ).eq("usuario_id", usuario_id).in_("estado", ["confirmada", "parcial"]).execute()
 
-    if not contrib_res.data:
+    tiene_contribucion_confirmada = any(
+        _asociacion_id_contribucion(fila) == asoc_id for fila in (contrib_res.data or [])
+    )
+    if not tiene_contribucion_confirmada:
         raise HTTPException(status_code=403, detail="No puedes verificar a un aliado que no tiene donaciones confirmadas contigo.")
 
     # 2. Actualizar el perfil_apoyo del usuario
