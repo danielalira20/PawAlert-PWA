@@ -1,0 +1,22 @@
+-- Nota de documentación — este archivo no modifica nada, no hay ALTER
+-- TABLE que ejecutar. `lotes.contribucion_id` se queda tal cual está en
+-- producción.
+--
+-- lotes.contribucion_id (uuid, FK a contribuciones.id) se definió en
+-- 0006_red_aliados.sql como NOT NULL + UNIQUE, para el flujo original
+-- donde un lote nacía 1:1 de una contribución ya existente. Cuando
+-- 0011_lotes_multi_asociacion.sql pivoteó el flujo (un lote ahora nace
+-- directo de un perfil_apoyo y se reparte entre varias asociaciones vía
+-- lote_asociaciones), se relajó a nullable y se le quitó el UNIQUE — pero
+-- la columna en sí se conservó "para no romper el flujo 1:1 original"
+-- (comentario textual de esa migración).
+--
+-- Confirmado en esta rama que ese flujo 1:1 nunca se implementó encima:
+-- ningún código de backend ni frontend lee o escribe lotes.contribucion_id.
+-- (`grep contribucion_id` en backend/app solo encuentra el path param de
+-- PATCH /me/ofertas/{contribucion_id}/resolver, que es contribuciones.id,
+-- una tabla distinta — no esta FK; cero coincidencias en src/).
+--
+-- No es deuda técnica activa a resolver — es una columna huérfana del
+-- flujo viejo que el pivote a lote_asociaciones dejó atrás. Se documenta
+-- aquí para quien la encuentre después y se pregunte si todavía hace falta.
