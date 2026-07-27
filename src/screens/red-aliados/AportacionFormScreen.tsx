@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -25,6 +25,8 @@ import {
   CatalogoItem,
 } from '../../components/red-aliados/CategoriaSubcategoriaSelector';
 import { DatePickerChip } from '../../components/red-aliados/DatePickerChip';
+import { DateRangePickerChip } from '../../components/red-aliados/DateRangePickerChip';
+import { AssocAvatar } from '../../components/admin-dashboard/AssocAvatar';
 import LocationPickerMap from '../LocationPickerMap';
 
 // Misma paleta que CapacidadesFormScreen.tsx
@@ -101,6 +103,46 @@ const FRECUENCIA_OPCIONES: Option[] = [
   { value: 'campana', label: 'Por campaña' },
 ];
 
+const UNIDAD_OTRA = '__otra__';
+
+// Unidades "contenedor" — no dicen por sí solas cuánto traen, por eso
+// piden un campo extra ("¿de cuánto es cada uno?": 25kg, 5 litros...).
+// kg/gramos/litros/piezas ya son una medida directa, no lo necesitan.
+const UNIDADES_CONTENEDOR = new Set(['costales', 'cajas', 'kits']);
+
+// Unidades típicas por categoría — evita texto libre para que el dato
+// quede consistente (no "Kg", "kilos", "KG" mezclados). "Otra" abre un
+// campo de texto para casos que no calzan en la lista.
+const UNIDADES_POR_CATEGORIA: Record<string, Option[]> = {
+  alimentos: [
+    { value: 'kg', label: 'kg' },
+    { value: 'gramos', label: 'Gramos' },
+    { value: 'piezas', label: 'Piezas' },
+    { value: 'costales', label: 'Costales' },
+    { value: 'cajas', label: 'Cajas' },
+    { value: 'litros', label: 'Litros' },
+  ],
+  insumos: [
+    { value: 'kg', label: 'kg' },
+    { value: 'gramos', label: 'Gramos' },
+    { value: 'piezas', label: 'Piezas' },
+    { value: 'kits', label: 'Kits' },
+    { value: 'costales', label: 'Costales' },
+    { value: 'cajas', label: 'Cajas' },
+    { value: 'litros', label: 'Litros' },
+  ],
+  servicios_veterinarios: [
+    { value: 'consultas', label: 'Consultas' },
+    { value: 'citas', label: 'Citas' },
+    { value: 'atenciones', label: 'Atenciones' },
+  ],
+  difusion_campanas: [
+    { value: 'eventos', label: 'Eventos' },
+    { value: 'publicaciones', label: 'Publicaciones' },
+    { value: 'piezas', label: 'Piezas' },
+  ],
+};
+
 const TIPO_APOYO_OPCIONES: Option[] = [
   { value: 'vacunacion', label: 'Jornada de vacunación' },
   { value: 'esterilizacion', label: 'Jornada de esterilización' },
@@ -168,7 +210,7 @@ const CAMPOS_CONDICIONALES: Record<string, CampoCondicional[]> = {
       ],
     },
     { key: 'descripcion_contenido', label: 'Descripción del contenido (solo kits)', tipo: 'texto' },
-    { key: 'fecha_caducidad', label: 'Fecha de caducidad, si corresponde', tipo: 'fecha' },
+    { key: 'fecha_caducidad', label: 'Fecha de caducidad del producto, si corresponde', tipo: 'fecha' },
   ],
   servicios_veterinarios: [
     {
@@ -191,8 +233,10 @@ const CAMPOS_CONDICIONALES: Record<string, CampoCondicional[]> = {
         { value: 'campana', label: 'Por campaña' },
       ],
     },
+    // 'numero_atenciones' se quitó por redundante: el paso 3 ya pregunta
+    // la cantidad ("Capacidad declarada"/"Cantidad") para cualquier
+    // categoría, no hace falta preguntarla dos veces solo para este caso.
     { key: 'requiere_cita', label: '¿Requiere cita?', tipo: 'boolean' },
-    { key: 'numero_atenciones', label: 'Número de atenciones disponibles', tipo: 'texto', numerico: true },
     { key: 'dias', label: 'Días disponibles', tipo: 'multi', opciones: DIAS_SEMANA },
     { key: 'horario', label: 'Horario', tipo: 'multi', opciones: FRANJAS_HORARIO },
     { key: 'restricciones', label: 'Restricciones', tipo: 'texto' },
@@ -201,9 +245,9 @@ const CAMPOS_CONDICIONALES: Record<string, CampoCondicional[]> = {
   // anidada + contacto responsable con 4 campos propios) — ver bloques
   // dedicados en el paso 2. `ubicacion_alcance` se quitó por redundante:
   // el paso 3 ya captura ubicación con mapa para toda la aportación.
-  difusion_campanas: [
-    { key: 'capacidad_aproximada', label: 'Capacidad aproximada', tipo: 'texto', numerico: true },
-  ],
+  // 'capacidad_aproximada' también se quitó por lo mismo: duplicaba la
+  // cantidad que ya se pregunta en el paso 3.
+  difusion_campanas: [],
 };
 
 interface Props {
@@ -247,6 +291,8 @@ export default function AportacionFormScreen({ onClose }: Props) {
 
   const [cantidadValor, setCantidadValor] = useState('');
   const [cantidadUnidad, setCantidadUnidad] = useState('');
+  const [unidadEsOtra, setUnidadEsOtra] = useState(false);
+  const [contenidoPorUnidad, setContenidoPorUnidad] = useState('');
   const [fechaDisponibilidad, setFechaDisponibilidad] = useState<Date | null>(null);
   const [ubicacion, setUbicacion] = useState<{ latitud: number; longitud: number } | null>(null);
   const [formaEntrega, setFormaEntrega] = useState<string | null>(null);
@@ -254,6 +300,7 @@ export default function AportacionFormScreen({ onClose }: Props) {
   const [frecuencia, setFrecuencia] = useState<string | null>(null);
 
   const [fotoUrl, setFotoUrl] = useState<string | null>(null);
+  const [fotoAspectRatio, setFotoAspectRatio] = useState<number | null>(null);
   const [isUploadingFoto, setIsUploadingFoto] = useState(false);
 
   // FRONT13 — "es un lote grande": extiende este mismo formulario con los
@@ -272,14 +319,43 @@ export default function AportacionFormScreen({ onClose }: Props) {
   const [isInvitando, setIsInvitando] = useState(false);
   const [invitacionesEnviadas, setInvitacionesEnviadas] = useState(false);
 
+  const [asociacionesDestino, setAsociacionesDestino] = useState<{ id: string; nombre: string }[]>([]);
+  const [isLoadingAsociacionesDestino, setIsLoadingAsociacionesDestino] = useState(false);
+  const [asociacionDestinoId, setAsociacionDestinoId] = useState('');
+
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const especiesDisponibles: Especie[] =
     (subcategoria?.especies_aplicables as Especie[] | undefined) || ['perro', 'gato'];
-  const camposCondicionales = categoria ? CAMPOS_CONDICIONALES[categoria.clave] || [] : [];
+  const camposCondicionalesBase = categoria ? CAMPOS_CONDICIONALES[categoria.clave] || [] : [];
+  // Para un lote, "peso por empaque" y "número de empaques" ya quedan
+  // cubiertos por "¿Cómo viene empacado?" + la cantidad total del paso 3
+  // — no tiene caso preguntarlos dos veces con otras palabras.
+  const camposCondicionales = esLote
+    ? camposCondicionalesBase.filter((c) => c.key !== 'peso_por_empaque' && c.key !== 'numero_empaques')
+    : camposCondicionalesBase;
   const esDifusion = categoria?.clave === 'difusion_campanas';
   const esLoteAplicable = categoria?.clave === 'alimentos' || categoria?.clave === 'insumos';
+  // Servicios (veterinarios/difusión) no son un bien físico — no tiene
+  // sentido preguntarles zona de entrega/recolección ni forma de entrega,
+  // eso es logística de un objeto que se transporta.
+  const esServicio = categoria?.clave === 'servicios_veterinarios' || categoria?.clave === 'difusion_campanas';
+
+  useEffect(() => {
+    const cargarAsociacionesDestino = async () => {
+      setIsLoadingAsociacionesDestino(true);
+      try {
+        const res = await axios.get(`${API_URL}/associations`);
+        setAsociacionesDestino((res.data || []).map((a: any) => ({ id: a.id, nombre: a.nombre })));
+      } catch {
+        setAsociacionesDestino([]);
+      } finally {
+        setIsLoadingAsociacionesDestino(false);
+      }
+    };
+    cargarAsociacionesDestino();
+  }, []);
 
   const toggleEspecie = (value: string) => {
     const especie = value as Especie;
@@ -313,13 +389,27 @@ export default function AportacionFormScreen({ onClose }: Props) {
     try {
       const permission = await Location.requestForegroundPermissionsAsync();
       if (permission.status !== 'granted') {
-        showToast({ type: 'error', title: 'Permiso denegado', message: 'No pudimos acceder a tu ubicación.' });
+        showToast({
+          type: 'error',
+          title: 'Permiso de ubicación bloqueado',
+          message:
+            Platform.OS === 'web'
+              ? 'Tu navegador bloqueó la ubicación. Habilítala desde el candado del sitio o ajusta el pin manualmente.'
+              : 'No pudimos acceder a tu ubicación. Ajusta el pin manualmente en el mapa.',
+        });
         return;
       }
       const current = await Location.getCurrentPositionAsync({});
       setUbicacion({ latitud: current.coords.latitude, longitud: current.coords.longitude });
     } catch {
-      showToast({ type: 'error', title: 'Ubicación no disponible', message: 'Ajusta manualmente el marcador en el mapa.' });
+      showToast({
+        type: 'error',
+        title: 'Ubicación no disponible',
+        message:
+          Platform.OS === 'web'
+            ? 'No fue posible leer tu GPS en el navegador. Ajusta el pin manualmente en el mapa.'
+            : 'Ajusta manualmente el marcador en el mapa.',
+      });
     } finally {
       setIsLoadingGps(false);
     }
@@ -353,8 +443,15 @@ export default function AportacionFormScreen({ onClose }: Props) {
     const resultado = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7 });
     if (resultado.canceled) return;
 
+    const asset = resultado.assets[0];
+    if (asset?.width && asset?.height) {
+      setFotoAspectRatio(asset.width / asset.height);
+    } else {
+      setFotoAspectRatio(null);
+    }
+
     setIsUploadingFoto(true);
-    const url = await subirFoto(resultado.assets[0].uri);
+    const url = await subirFoto(asset.uri);
     setIsUploadingFoto(false);
 
     if (url) setFotoUrl(url);
@@ -385,6 +482,14 @@ export default function AportacionFormScreen({ onClose }: Props) {
     }
     if (tamanio) detalle.tamanio = tamanio;
     if (fotoUrl) detalle.foto_url = fotoUrl;
+    if (!esLote && asociacionDestinoId) {
+      detalle.asociacion_destino_id = asociacionDestinoId;
+      const asociacion = asociacionesDestino.find((a) => a.id === asociacionDestinoId);
+      if (asociacion?.nombre) detalle.asociacion_destino_nombre = asociacion.nombre;
+    }
+    if (UNIDADES_CONTENEDOR.has(cantidadUnidad) && contenidoPorUnidad.trim()) {
+      detalle.contenido_por_unidad = contenidoPorUnidad.trim();
+    }
     return detalle;
   };
 
@@ -423,6 +528,10 @@ export default function AportacionFormScreen({ onClose }: Props) {
         nuevos.cantidadValor = 'Ingresa una cantidad válida.';
       }
       if (!cantidadUnidad.trim()) nuevos.cantidadUnidad = 'Indica la unidad (kg, piezas, citas...).';
+      if (!esLote && !asociacionDestinoId) nuevos.asociacionDestino = 'Selecciona la asociación destino.';
+      if (!esLote && UNIDADES_CONTENEDOR.has(cantidadUnidad) && !contenidoPorUnidad.trim()) {
+        nuevos.contenidoPorUnidad = 'Indica de cuánto es cada unidad.';
+      }
 
       if (esLote) {
         if (!tipoEmpaque.trim()) nuevos.tipoEmpaque = 'Describe cómo viene empacado.';
@@ -461,18 +570,22 @@ export default function AportacionFormScreen({ onClose }: Props) {
     setContactoCorreo('');
     setCantidadValor('');
     setCantidadUnidad('');
+    setUnidadEsOtra(false);
+    setContenidoPorUnidad('');
     setFechaDisponibilidad(null);
     setUbicacion(null);
     setFormaEntrega(null);
     setVigencia(null);
     setFrecuencia(null);
     setFotoUrl(null);
+    setFotoAspectRatio(null);
     setEsLote(false);
     setTipoEmpaque('');
     setDivisible(null);
     setMaxAsociaciones('1');
     setLoteId(null);
     setMostrarInvitar(false);
+    setAsociacionDestinoId('');
     setAsociacionesCompatibles([]);
     setAsociacionesSeleccionadas([]);
     setInvitacionesEnviadas(false);
@@ -502,9 +615,12 @@ export default function AportacionFormScreen({ onClose }: Props) {
     setContactoCorreo('');
     setCantidadValor('');
     setCantidadUnidad('');
+    setUnidadEsOtra(false);
+    setContenidoPorUnidad('');
     setVigencia(null);
     setFrecuencia(null);
     setFotoUrl(null);
+    setFotoAspectRatio(null);
     setEsLote(false);
     setTipoEmpaque('');
     setDivisible(null);
@@ -512,6 +628,7 @@ export default function AportacionFormScreen({ onClose }: Props) {
     setLoteId(null);
     setAsociacionesCompatibles([]);
     setAsociacionesSeleccionadas([]);
+    setAsociacionDestinoId('');
     setErrors({});
     setMostrarPostEnvio(false);
     setMostrarInvitar(false);
@@ -540,16 +657,22 @@ export default function AportacionFormScreen({ onClose }: Props) {
   };
 
   const toggleAsociacionSeleccionada = (id: string) => {
-    setAsociacionesSeleccionadas((prev) => (prev.includes(id) ? prev.filter((v) => v !== id) : [...prev, id]));
+    setAsociacionesSeleccionadas((prev) => {
+      if (divisible === 'no') {
+        return prev.includes(id) ? [] : [id];
+      }
+      return prev.includes(id) ? prev.filter((v) => v !== id) : [...prev, id];
+    });
   };
 
   const handleInvitar = async () => {
     if (!loteId || !asociacionesSeleccionadas.length) return;
+    const asociacionIds = divisible === 'no' ? asociacionesSeleccionadas.slice(0, 1) : asociacionesSeleccionadas;
     setIsInvitando(true);
     try {
       await axios.post(
         `${API_URL}/red-aliados/lotes/${loteId}/invitar`,
-        { asociacion_ids: asociacionesSeleccionadas },
+        { asociacion_ids: asociacionIds },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setInvitacionesEnviadas(true);
@@ -755,6 +878,9 @@ export default function AportacionFormScreen({ onClose }: Props) {
                 setContactoTelefono('');
                 setContactoCorreo('');
                 setEsLote(false);
+                setCantidadUnidad('');
+                setUnidadEsOtra(false);
+                setContenidoPorUnidad('');
               }}
               onChangeSubcategoria={(s) => {
                 setSubcategoria(s);
@@ -776,6 +902,11 @@ export default function AportacionFormScreen({ onClose }: Props) {
                 selected={esLote ? 'si' : 'no'}
                 onSelect={(v) => setEsLote(v === 'si')}
               />
+              {!esLote && (
+                <Text style={styles.helperText}>
+                  En aportación normal no eliges asociación aquí; la selección de asociaciones aparece solo después de registrar un lote.
+                </Text>
+              )}
             </FormSection>
           )}
 
@@ -880,7 +1011,24 @@ export default function AportacionFormScreen({ onClose }: Props) {
 
     return (
       <>
-        <FormSection title={modo === 'reactiva' ? 'Cantidad' : 'Capacidad declarada'}>
+        {!esLote && (
+          <FormSection title="¿A qué asociación quieres enviarla?" subtitle="Esto define la asociación destino de esta aportación.">
+            {isLoadingAsociacionesDestino ? (
+              <ActivityIndicator color={COLORS.primary} style={{ marginVertical: 8 }} />
+            ) : asociacionesDestino.length === 0 ? (
+              <Text style={styles.sectionSubtitle}>No pudimos cargar asociaciones por ahora. Intenta nuevamente en unos segundos.</Text>
+            ) : (
+              <SingleOptions
+                options={asociacionesDestino.map((a) => ({ value: a.id, label: a.nombre }))}
+                selected={asociacionDestinoId}
+                onSelect={setAsociacionDestinoId}
+                error={errors.asociacionDestino}
+              />
+            )}
+          </FormSection>
+        )}
+
+        <FormSection title={esLote ? 'Cantidad total del lote' : modo === 'reactiva' ? 'Cantidad' : 'Capacidad declarada'}>
           <TextInputField
             value={cantidadValor}
             onChangeText={(v) => setCantidadValor(v.replace(/[^0-9.]/g, ''))}
@@ -889,8 +1037,38 @@ export default function AportacionFormScreen({ onClose }: Props) {
           />
           {errors.cantidadValor && <ErrorText text={errors.cantidadValor} />}
           <Text style={[styles.sectionSubtitle, { marginTop: 12 }]}>Unidad</Text>
-          <TextInputField value={cantidadUnidad} onChangeText={setCantidadUnidad} placeholder="kg, piezas, citas..." />
+          <SingleOptions
+            options={[
+              ...(UNIDADES_POR_CATEGORIA[categoria?.clave || ''] || []),
+              { value: UNIDAD_OTRA, label: 'Otra' },
+            ]}
+            selected={unidadEsOtra ? UNIDAD_OTRA : cantidadUnidad}
+            onSelect={(v) => {
+              if (v === UNIDAD_OTRA) {
+                setUnidadEsOtra(true);
+                setCantidadUnidad('');
+                setContenidoPorUnidad('');
+              } else {
+                setUnidadEsOtra(false);
+                setCantidadUnidad(v);
+                if (!UNIDADES_CONTENEDOR.has(v)) setContenidoPorUnidad('');
+              }
+            }}
+          />
+          {unidadEsOtra && (
+            <View style={{ marginTop: 10 }}>
+              <TextInputField value={cantidadUnidad} onChangeText={setCantidadUnidad} placeholder="Escribe la unidad" />
+            </View>
+          )}
           {errors.cantidadUnidad && <ErrorText text={errors.cantidadUnidad} />}
+
+          {!esLote && UNIDADES_CONTENEDOR.has(cantidadUnidad) && (
+            <View style={{ marginTop: 12 }}>
+              <Text style={styles.sectionSubtitle}>¿De cuánto es cada {cantidadUnidad === 'kits' ? 'kit' : cantidadUnidad.slice(0, -1)}?</Text>
+              <TextInputField value={contenidoPorUnidad} onChangeText={setContenidoPorUnidad} placeholder="Ej. 25kg, 12 piezas, 5 litros" />
+              {errors.contenidoPorUnidad && <ErrorText text={errors.contenidoPorUnidad} />}
+            </View>
+          )}
         </FormSection>
 
         {esLote && (
@@ -919,12 +1097,20 @@ export default function AportacionFormScreen({ onClose }: Props) {
         )}
 
         {!esLote && (
-          <FormSection title="Fecha de disponibilidad">
-            <DatePickerChip label="" value={fechaDisponibilidad} onChange={setFechaDisponibilidad} />
+          <FormSection title="¿Desde cuándo y hasta cuándo está disponible?" subtitle="Toca el día de inicio y luego el día final.">
+            <DateRangePickerChip
+              label=""
+              startDate={fechaDisponibilidad}
+              endDate={vigencia}
+              onChange={(start, end) => {
+                setFechaDisponibilidad(start);
+                setVigencia(end);
+              }}
+            />
           </FormSection>
         )}
 
-        {!esLote && (
+        {!esLote && !esServicio && (
           <FormSection title="¿Dónde se entrega o recolecta?" subtitle="Solo compartimos una zona aproximada.">
             <TouchableOpacity style={styles.locationButton} onPress={handleGetLocation} disabled={isLoadingGps}>
               <Ionicons name="locate" size={18} color={COLORS.bgTeal} />
@@ -943,19 +1129,15 @@ export default function AportacionFormScreen({ onClose }: Props) {
           </FormSection>
         )}
 
-        <FormSection title="Forma de entrega">
-          <SingleOptions options={FORMA_ENTREGA_OPCIONES} selected={formaEntrega || ''} onSelect={setFormaEntrega} error={esLote ? errors.formaEntrega : undefined} />
-        </FormSection>
+        {!esServicio && (
+          <FormSection title="Forma de entrega">
+            <SingleOptions options={FORMA_ENTREGA_OPCIONES} selected={formaEntrega || ''} onSelect={setFormaEntrega} error={esLote ? errors.formaEntrega : undefined} />
+          </FormSection>
+        )}
 
         {!esLote && modo === 'proactiva' && (
           <FormSection title="Frecuencia">
             <SingleOptions options={FRECUENCIA_OPCIONES} selected={frecuencia || ''} onSelect={setFrecuencia} />
-          </FormSection>
-        )}
-
-        {!esLote && (
-          <FormSection title="Vigencia de la oferta">
-            <DatePickerChip label="" value={vigencia} onChange={setVigencia} />
           </FormSection>
         )}
 
@@ -965,7 +1147,11 @@ export default function AportacionFormScreen({ onClose }: Props) {
               {isUploadingFoto ? (
                 <ActivityIndicator color={COLORS.primary} />
               ) : fotoUrl ? (
-                <Image source={{ uri: fotoUrl }} style={styles.fotoPreview} resizeMode="cover" />
+                <Image
+                  source={{ uri: fotoUrl }}
+                  style={[styles.fotoPreview, fotoAspectRatio ? { aspectRatio: fotoAspectRatio } : null]}
+                  resizeMode="contain"
+                />
               ) : (
                 <>
                   <Ionicons name="camera-outline" size={20} color={COLORS.bgTeal} />
@@ -980,21 +1166,44 @@ export default function AportacionFormScreen({ onClose }: Props) {
   };
 
   const renderInvitar = () => (
-    <FormSection title="Asociaciones cercanas compatibles" subtitle="Ordenadas por cercanía a tu zona de cobertura.">
+    <FormSection
+      title="Asociaciones cercanas compatibles"
+      subtitle={
+        divisible === 'no'
+          ? 'Este lote no se reparte: elige solo una asociación destino.'
+          : 'Ordenadas por cercanía a tu zona de cobertura. Toca las que quieras invitar.'
+      }
+    >
       {isLoadingAsociaciones ? (
         <ActivityIndicator color={COLORS.primary} style={{ marginVertical: 20 }} />
       ) : asociacionesCompatibles.length === 0 ? (
-        <Text style={styles.sectionSubtitle}>No encontramos asociaciones verificadas cerca de tu zona por ahora.</Text>
+        <View style={{ alignItems: 'center', paddingVertical: 24 }}>
+          <Ionicons name="location-outline" size={32} color={COLORS.textLight} style={{ marginBottom: 8 }} />
+          <Text style={[styles.sectionSubtitle, { textAlign: 'center', marginBottom: 0 }]}>
+            No encontramos asociaciones verificadas cerca de tu zona por ahora.
+          </Text>
+        </View>
       ) : (
         <View style={{ gap: 10 }}>
           {asociacionesCompatibles.map((a) => {
             const active = asociacionesSeleccionadas.includes(a.id);
             return (
-              <TouchableOpacity key={a.id} onPress={() => toggleAsociacionSeleccionada(a.id)} style={[styles.asocRow, active && styles.asocRowActive]}>
-                <Ionicons name={active ? 'checkmark-circle' : 'ellipse-outline'} size={20} color={active ? COLORS.bgTeal : COLORS.textLight} />
+              <TouchableOpacity
+                key={a.id}
+                onPress={() => toggleAsociacionSeleccionada(a.id)}
+                activeOpacity={0.7}
+                style={[styles.asocRow, active && styles.asocRowActive]}
+              >
+                <AssocAvatar nombre={a.nombre} logoUrl={null} size="sm" colors={[COLORS.bgTeal, COLORS.primary, COLORS.secondary]} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.asocNombre}>{a.nombre}</Text>
-                  <Text style={styles.asocDistancia}>{a.distancia_km.toFixed(1)} km de distancia</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                    <Ionicons name="location-outline" size={11} color={COLORS.textLight} />
+                    <Text style={styles.asocDistancia}>{a.distancia_km.toFixed(1)} km de distancia</Text>
+                  </View>
+                </View>
+                <View style={[styles.asocCheck, active && styles.asocCheckActive]}>
+                  {active && <Ionicons name="checkmark" size={14} color={COLORS.bgWhite} />}
                 </View>
               </TouchableOpacity>
             );
@@ -1121,7 +1330,7 @@ export default function AportacionFormScreen({ onClose }: Props) {
                       <Text style={styles.primaryButtonText}>
                         {paso === PASOS.length
                           ? esLote
-                            ? 'Registrar lote'
+                            ? 'Registrar lote y elegir asociaciones'
                             : modo === 'reactiva'
                             ? 'Registrar aportación'
                             : 'Registrar disponibilidad'
@@ -1392,6 +1601,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.grayLight,
   },
   errorText: { color: COLORS.danger, fontSize: 12, fontWeight: '700', marginTop: 8 },
+  helperText: { color: COLORS.textLight, fontSize: 12, lineHeight: 18, marginTop: 10 },
   fixedFooter: {
     paddingHorizontal: 28,
     paddingVertical: 18,
@@ -1425,7 +1635,7 @@ const styles = StyleSheet.create({
   confirmText: { color: COLORS.textLight, fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 9 },
   confirmActions: { flexDirection: 'row', gap: 10, marginTop: 24 },
   fotoBoton: {
-    height: 96,
+    minHeight: 96,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: COLORS.bgTeal,
@@ -1436,10 +1646,21 @@ const styles = StyleSheet.create({
     gap: 8,
     overflow: 'hidden',
     backgroundColor: COLORS.grayLight,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
   },
-  fotoPreview: { width: '100%', height: '100%' },
-  asocRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 14, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.grayLight },
-  asocRowActive: { borderColor: COLORS.bgTeal, backgroundColor: `${COLORS.bgTeal}12` },
+  fotoPreview: { width: '100%', maxHeight: 260, alignSelf: 'center' },
+  asocRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 16,
+    borderWidth: 1.5, borderColor: COLORS.border, backgroundColor: COLORS.bgWhite,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 1,
+  },
+  asocRowActive: { borderColor: COLORS.bgTeal, backgroundColor: `${COLORS.bgTeal}0D` },
   asocNombre: { color: COLORS.textDark, fontSize: 14, fontWeight: '800' },
-  asocDistancia: { color: COLORS.textLight, fontSize: 12, marginTop: 2 },
+  asocDistancia: { color: COLORS.textLight, fontSize: 12 },
+  asocCheck: {
+    width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: COLORS.border,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.bgWhite,
+  },
+  asocCheckActive: { backgroundColor: COLORS.bgTeal, borderColor: COLORS.bgTeal },
 });
