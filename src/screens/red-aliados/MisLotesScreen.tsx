@@ -59,9 +59,13 @@ interface InvitacionLote {
 
 interface Props {
   onClose?: () => void;
+  // Modo embebido (dentro de AliadoDashboardScreen, como tab) — oculta el
+  // banner de header propio, que ahí sería redundante. La ruta standalone
+  // /mis-lotes no pasa este prop, así que se queda exactamente igual.
+  embedded?: boolean;
 }
 
-export default function MisLotesScreen({ onClose }: Props) {
+export default function MisLotesScreen({ onClose, embedded }: Props) {
   const { token } = useAuth();
   const [lotes, setLotes] = useState<Lote[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -109,21 +113,23 @@ export default function MisLotesScreen({ onClose }: Props) {
 
   return (
     <View style={{ flex: 1, backgroundColor: COLORS.bgWhite }}>
-      <View style={{
-        backgroundColor: COLORS.bgTeal, paddingHorizontal: 24, paddingTop: 28, paddingBottom: 22,
-        borderBottomLeftRadius: 28, borderBottomRightRadius: 28,
-        flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-      }}>
-        <View>
-          <Text style={{ fontSize: 22, fontWeight: '900', color: '#FFF' }}>Mis lotes</Text>
-          <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.85)', marginTop: 2 }}>Lotes que has registrado</Text>
+      {!embedded && (
+        <View style={{
+          backgroundColor: COLORS.bgTeal, paddingHorizontal: 24, paddingTop: 28, paddingBottom: 22,
+          borderBottomLeftRadius: 28, borderBottomRightRadius: 28,
+          flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+        }}>
+          <View>
+            <Text style={{ fontSize: 22, fontWeight: '900', color: '#FFF' }}>Mis lotes</Text>
+            <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.85)', marginTop: 2 }}>Lotes que has registrado</Text>
+          </View>
+          {onClose && (
+            <TouchableOpacity onPress={onClose} style={{ backgroundColor: 'rgba(255,255,255,0.22)', borderRadius: 18, padding: 7 }}>
+              <Ionicons name="close" size={18} color="#FFF" />
+            </TouchableOpacity>
+          )}
         </View>
-        {onClose && (
-          <TouchableOpacity onPress={onClose} style={{ backgroundColor: 'rgba(255,255,255,0.22)', borderRadius: 18, padding: 7 }}>
-            <Ionicons name="close" size={18} color="#FFF" />
-          </TouchableOpacity>
-        )}
-      </View>
+      )}
 
       {isLoading ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>

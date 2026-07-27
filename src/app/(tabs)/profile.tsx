@@ -14,6 +14,7 @@ import CapacidadesFormScreen from '../../screens/CapacidadesFormScreen';
 import ExternalVolunteerFormScreen from '../../screens/ExternalVolunteerFormScreen';
 import MisVerificacionesScreen from '../../screens/MisVerificacionesScreen';
 import DonanteComunitarioFormScreen from '../../screens/red-aliados/DonanteComunitarioFormScreen';
+import AliadoDashboardScreen from '../../screens/AliadoDashboardScreen';
 import { AppModal } from '@/components/AppModal';
 import { LoggedOutProfile } from '../../components/profile/LoggedOutProfile';
 import { LoggedInProfile } from '../../components/profile/LoggedInProfile';
@@ -40,6 +41,7 @@ export default function ProfileScreen() {
   const [isExternalRetryVisible, setIsExternalRetryVisible] = useState(false);
   const [isVerificacionesVisible, setIsVerificacionesVisible] = useState(false);
   const [isAliadoFormVisible, setIsAliadoFormVisible] = useState(false);
+  const [isAliadoDashboardVisible, setIsAliadoDashboardVisible] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(24)).current;
@@ -109,6 +111,7 @@ export default function ProfileScreen() {
         onOpenPostulacion={() => setIsPostulacionVisible(true)}
         onOpenCapacidades={() => setIsCapacidadesVisible(true)}
         onOpenAliadoForm={() => setIsAliadoFormVisible(true)}
+        onOpenAliadoDashboard={() => setIsAliadoDashboardVisible(true)}
         onLogout={logout}
         capacidadesRefreshKey={capacidadesRefreshKey}
       />
@@ -200,6 +203,16 @@ export default function ProfileScreen() {
           />
         )}
       </Modal>
+
+      <AppModal
+        visible={isAliadoDashboardVisible}
+        onClose={() => setIsAliadoDashboardVisible(false)}
+        maxWidth={1000}
+      >
+        {isAliadoDashboardVisible && (
+          <AliadoDashboardScreen onClose={() => setIsAliadoDashboardVisible(false)} />
+        )}
+      </AppModal>
     </>
   );
 }

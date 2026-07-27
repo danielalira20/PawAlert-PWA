@@ -9,6 +9,10 @@ import type { ImpactoAliado } from '../../hooks/useAliadoImpact';
 interface Props {
   impacto: ImpactoAliado;
   isLoading: boolean;
+  // Versión resumida para el cuerpo de Mi Perfil (solo los 2 números
+  // principales) — el desglose completo de ofertas/aplicaciones vive en
+  // AliadoDashboardScreen, que usa este mismo componente sin este prop.
+  resumen?: boolean;
 }
 
 const TIPO_SUBTITULO: Record<string, string> = {
@@ -17,7 +21,7 @@ const TIPO_SUBTITULO: Record<string, string> = {
   patrocinador_institucional: 'Patrocinador institucional en PawAlert',
 };
 
-export function AliadoImpactStats({ impacto, isLoading }: Props) {
+export function AliadoImpactStats({ impacto, isLoading, resumen }: Props) {
   const { tipo, total_contribuciones, asociaciones_ayudadas, ofertas, aplicaciones } = impacto;
   const sinDatos = total_contribuciones === 0 && ofertas.length === 0;
 
@@ -64,7 +68,7 @@ export function AliadoImpactStats({ impacto, isLoading }: Props) {
               </View>
             </View>
 
-            {ofertas.length > 0 && (
+            {!resumen && ofertas.length > 0 && (
               <>
                 <View style={styles.sectionDivider} />
                 <Text style={styles.sectionLabel}>Tu capacidad ofrecida</Text>
@@ -94,7 +98,7 @@ export function AliadoImpactStats({ impacto, isLoading }: Props) {
               </>
             )}
 
-            {aplicaciones.length > 0 && (
+            {!resumen && aplicaciones.length > 0 && (
               <>
                 <View style={styles.sectionDivider} />
                 <Text style={styles.sectionLabel}>Historial de aplicaciones</Text>

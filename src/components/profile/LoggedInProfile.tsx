@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { router, useFocusEffect } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -40,6 +40,7 @@ interface Props {
   onOpenPostulacion: () => void; // <-- NUEVA PROP
   onOpenCapacidades: () => void; // <-- NUEVA PROP
   onOpenAliadoForm: () => void;
+  onOpenAliadoDashboard: () => void;
   onLogout: () => void;
   capacidadesRefreshKey?: number;
 }
@@ -54,6 +55,7 @@ export function LoggedInProfile({
   onOpenPostulacion, // <-- NUEVA PROP
   onOpenCapacidades, // <-- NUEVA PROP
   onOpenAliadoForm,
+  onOpenAliadoDashboard,
   onLogout,
   capacidadesRefreshKey,
 }: Props) {
@@ -201,7 +203,7 @@ useFocusEffect(
   // los sitios de render (desktop/móvil) deciden mostrar solo este bloque,
   // en vez de impactStatsElement + este. El elemento en sí no cambia.
   const aliadoImpactElement = tienePerfilApoyo ? (
-    <AliadoImpactStats impacto={impactoAliado} isLoading={isLoadingAliado} />
+    <AliadoImpactStats impacto={impactoAliado} isLoading={isLoadingAliado} resumen />
   ) : null;
 
   const puedeVerPostulacion = esVoluntarioActivo || tienePerfilVoluntario === true;
@@ -250,29 +252,12 @@ useFocusEffect(
         />
       )}
       {tienePerfilApoyo === true && (
-        <>
-          <AccessRow
-            icon="cube-outline"
-            label="Registrar una aportación o lote"
-            onPress={() => router.push('/red-aliados' as any)}
-          />
-          <AccessRow
-            icon="list-outline"
-            label="Mis lotes registrados"
-            onPress={() => router.push('/mis-lotes' as any)}
-          />
-          <AccessRow
-            icon="notifications-outline"
-            label="Notificaciones"
-            onPress={() => router.push('/notificaciones-aliado' as any)}
-          />
-          <AccessRow
-            icon="people-outline"
-            label="Directorio de aliados"
-            onPress={() => router.push('/aliados-directorio' as any)}
-            isLast={!esAdmin && !esAsociacion && !esStaff && !puedeVerPostulacion}
-          />
-        </>
+        <AccessRow
+          icon="grid-outline"
+          label="Ir a mi panel de aliado"
+          onPress={onOpenAliadoDashboard}
+          isLast={!esAdmin && !esAsociacion && !esStaff && !puedeVerPostulacion}
+        />
       )}
       {esAdmin && (
         <AccessRow icon="shield-checkmark-outline" label="Panel de administrador" onPress={onOpenAdminPanel} isLast />

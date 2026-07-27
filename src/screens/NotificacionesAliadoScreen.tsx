@@ -36,7 +36,14 @@ interface NotificacionAliado {
   leida: boolean;
 }
 
-export default function NotificacionesAliadoScreen() {
+interface Props {
+  // Modo embebido (dentro de AliadoDashboardScreen, como tab) — reemplaza el
+  // backdrop+card de pantalla completa por un contenido plano. La ruta
+  // standalone /notificaciones-aliado no pasa este prop, se queda igual.
+  embedded?: boolean;
+}
+
+export default function NotificacionesAliadoScreen({ embedded }: Props) {
   const router = useRouter();
   const { token } = useAuth();
   
@@ -132,16 +139,49 @@ export default function NotificacionesAliadoScreen() {
     </TouchableOpacity>
   );
 
+  const lista = isLoading ? (
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+      <ActivityIndicator size="large" color={C.primary} />
+      <Text style={{ marginTop: 12, fontFamily: F.bodySemiBold, color: C.muted }}>Buscando matches de ayuda...</Text>
+    </View>
+  ) : notificaciones.length === 0 ? (
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingBottom: 40 }}>
+      <Ionicons name="heart-dislike-outline" size={60} color={C.neutralLight} style={{ marginBottom: 16 }} />
+      <Text style={{ fontSize: 18, fontFamily: F.displayBold, color: C.text, textAlign: 'center' }}>
+        Aún no tienes notificaciones
+      </Text>
+      <Text style={{ fontSize: 14, fontFamily: F.bodyRegular, color: C.muted, textAlign: 'center', marginTop: 8, paddingHorizontal: 20 }}>
+        Te avisaremos en cuanto una asociación necesite apoyo compatible con tu perfil.
+      </Text>
+    </View>
+  ) : (
+    <FlatList
+      data={notificaciones}
+      keyExtractor={(item) => item.id}
+      renderItem={renderNotificacion}
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={{ paddingBottom: 40 }}
+      // Embebida en AliadoDashboardScreen, el ScrollView exterior es el
+      // único que debe controlar el scroll — un FlatList vertical anidado
+      // dentro de un ScrollView vertical rompe su virtualización.
+      scrollEnabled={!embedded}
+    />
+  );
+
+  if (embedded) {
+    return <View style={{ flex: 1, paddingTop: 4 }}>{lista}</View>;
+  }
+
   // CORRECCIÓN: Renderizado con Modal transparente
   return (
       <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
-        
-        <View style={{ 
-          width: '100%', maxWidth: 700, maxHeight: '85%', 
+
+        <View style={{
+          width: '100%', maxWidth: 700, maxHeight: '85%',
           backgroundColor: C.bgSoft, borderRadius: 32, overflow: 'hidden',
           ...(isWeb ? { boxShadow: '0 20px 60px rgba(0,0,0,0.25)' } : { elevation: 15 }) as any
         }}>
-          
+
           {/* HEADER MODAL */}
           <View style={{
             backgroundColor: C.bg, paddingHorizontal: 24, paddingVertical: 20,
@@ -149,8 +189,8 @@ export default function NotificacionesAliadoScreen() {
             borderBottomWidth: 1, borderBottomColor: `${C.neutralLight}40`,
             zIndex: 10
           }}>
-            <TouchableOpacity 
-              onPress={() => router.back()} 
+            <TouchableOpacity
+              onPress={() => router.back()}
               hitSlop={10}
               style={{ position: 'absolute', right: 24, width: 40, height: 40, borderRadius: 20, backgroundColor: C.bgSoft, alignItems: 'center', justifyContent: 'center' }}
             >
@@ -163,30 +203,7 @@ export default function NotificacionesAliadoScreen() {
 
           {/* LISTA */}
           <View style={{ flex: 1, paddingHorizontal: 24, paddingTop: 24 }}>
-            {isLoading ? (
-              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-                <ActivityIndicator size="large" color={C.primary} />
-                <Text style={{ marginTop: 12, fontFamily: F.bodySemiBold, color: C.muted }}>Buscando matches de ayuda...</Text>
-              </View>
-            ) : notificaciones.length === 0 ? (
-              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingBottom: 40 }}>
-                <Ionicons name="heart-dislike-outline" size={60} color={C.neutralLight} style={{ marginBottom: 16 }} />
-                <Text style={{ fontSize: 18, fontFamily: F.displayBold, color: C.text, textAlign: 'center' }}>
-                  Aún no tienes notificaciones
-                </Text>
-                <Text style={{ fontSize: 14, fontFamily: F.bodyRegular, color: C.muted, textAlign: 'center', marginTop: 8, paddingHorizontal: 20 }}>
-                  Te avisaremos en cuanto una asociación necesite apoyo compatible con tu perfil.
-                </Text>
-              </View>
-            ) : (
-              <FlatList
-                data={notificaciones}
-                keyExtractor={(item) => item.id}
-                renderItem={renderNotificacion}
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={{ paddingBottom: 40 }}
-              />
-            )}
+            {lista}
           </View>
 
         </View>

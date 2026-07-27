@@ -84,6 +84,10 @@ type Tab = 'directorio' | 'mapa' | 'mural';
 
 interface Props {
   onClose?: () => void;
+  // Modo embebido (dentro de AliadoDashboardScreen, como tab) — oculta el
+  // banner de header propio. La ruta standalone /aliados-directorio no pasa
+  // este prop, se queda exactamente igual.
+  embedded?: boolean;
 }
 
 function EstadoVacio({ icon, title, desc }: { icon: keyof typeof Ionicons.glyphMap; title: string; desc?: string }) {
@@ -105,7 +109,7 @@ function EstadoVacio({ icon, title, desc }: { icon: keyof typeof Ionicons.glyphM
   );
 }
 
-export default function DirectorioAliadosScreen({ onClose }: Props) {
+export default function DirectorioAliadosScreen({ onClose, embedded }: Props) {
   const [tab, setTab] = useState<Tab>('directorio');
   const [aliados, setAliados] = useState<Aliado[]>([]);
   const [historias, setHistorias] = useState<Historia[]>([]);
@@ -136,31 +140,33 @@ export default function DirectorioAliadosScreen({ onClose }: Props) {
   return (
     <View style={{ flex: 1, backgroundColor: COLORS.bgWhite }}>
       {/* Header */}
-      <View style={{
-        backgroundColor: COLORS.bgTeal, paddingHorizontal: 24, paddingTop: 28, paddingBottom: 28,
-        borderBottomLeftRadius: 28, borderBottomRightRadius: 28,
-        flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
-      }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          <View style={{
-            width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.22)',
-            alignItems: 'center', justifyContent: 'center',
-          }}>
-            <Ionicons name="heart" size={22} color="#FFF" />
+      {!embedded && (
+        <View style={{
+          backgroundColor: COLORS.bgTeal, paddingHorizontal: 24, paddingTop: 28, paddingBottom: 28,
+          borderBottomLeftRadius: 28, borderBottomRightRadius: 28,
+          flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
+        }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <View style={{
+              width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.22)',
+              alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Ionicons name="heart" size={22} color="#FFF" />
+            </View>
+            <View>
+              <Text style={{ fontSize: 22, fontWeight: '900', color: '#FFF', letterSpacing: -0.3 }}>Red de Aliados</Text>
+              <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>
+                Negocios y personas que ya están ayudando
+              </Text>
+            </View>
           </View>
-          <View>
-            <Text style={{ fontSize: 22, fontWeight: '900', color: '#FFF', letterSpacing: -0.3 }}>Red de Aliados</Text>
-            <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>
-              Negocios y personas que ya están ayudando
-            </Text>
-          </View>
+          {onClose && (
+            <TouchableOpacity onPress={onClose} style={{ backgroundColor: 'rgba(255,255,255,0.22)', borderRadius: 18, padding: 7 }}>
+              <Ionicons name="close" size={18} color="#FFF" />
+            </TouchableOpacity>
+          )}
         </View>
-        {onClose && (
-          <TouchableOpacity onPress={onClose} style={{ backgroundColor: 'rgba(255,255,255,0.22)', borderRadius: 18, padding: 7 }}>
-            <Ionicons name="close" size={18} color="#FFF" />
-          </TouchableOpacity>
-        )}
-      </View>
+      )}
 
       {/* Tabs */}
       <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: COLORS.border, paddingHorizontal: 20, marginTop: 4 }}>
@@ -239,7 +245,15 @@ export default function DirectorioAliadosScreen({ onClose }: Props) {
           )}
 
           {tab === 'mapa' && (
-            <View style={{ flex: 1 }}>
+            // Embebido dentro del ScrollView de AliadoDashboardScreen, flex:1
+            // no tiene un padre con alto acotado contra el cual resolver (a
+            // diferencia de la ruta standalone, que sí vive en un viewport
+            // real) — sin altura explícita en píxeles, el mapa mide 0 y no
+            // se ve. Mismo criterio que MapCard.tsx (height fijo en vez de
+            // flex:1 dentro de un dashboard con scroll), ajustado más grande
+            // porque aquí el mapa es todo el contenido del tab, no una
+            // tarjeta secundaria.
+            <View style={embedded ? { height: 400 } : { flex: 1 }}>
               {Platform.OS === 'web' && LeafletMap ? (
                 <Suspense fallback={<View style={{ flex: 1, backgroundColor: COLORS.grayLight }} />}>
                   <LeafletMap
