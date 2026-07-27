@@ -45,13 +45,18 @@ const F = {
 const isWeb = Platform.OS === 'web';
 
 // ─── TIPOS ──────────────────────────────────────────────────────────
-type CategoriaRecurso = 'Todas' | 'Alimentos' | 'Insumos Médicos' | 'Servicios Veterinarios' | 'Difusión' | 'Transporte' | 'Hogar Temporal';
 type FiltroZona = 'Cualquiera' | 'Menos de 5 km' | 'Menos de 10 km' | 'Menos de 20 km';
+
+interface CategoriaRecursoApi {
+  id: string;
+  clave: string;
+  descripcion: string;
+}
 
 interface NecesidadPublica {
   id: string;
   asociacion_nombre: string;
-  categoria: CategoriaRecurso;
+  categoria: string;
   subcategoria_nombre?: string;
   urgencia?: 'Baja' | 'Media' | 'Alta';
   cantidad?: string;
@@ -60,15 +65,16 @@ interface NecesidadPublica {
   creado_hace: string;
 }
 
-const CATEGORIAS: { id: CategoriaRecurso; icono: keyof typeof Ionicons.glyphMap }[] = [
-  { id: 'Todas', icono: 'apps-outline' },
-  { id: 'Alimentos', icono: 'nutrition-outline' },
-  { id: 'Insumos Médicos', icono: 'medkit-outline' },
-  { id: 'Servicios Veterinarios', icono: 'pulse-outline' },
-  { id: 'Hogar Temporal', icono: 'home-outline' },
-  { id: 'Transporte', icono: 'car-outline' },
-  { id: 'Difusión', icono: 'megaphone-outline' },
-];
+// Ícono por clave real de categoria_recurso — mismo criterio que
+// CreateNeedScreen.tsx, fallback genérico si el catálogo llega a tener una
+// categoría sin ícono asignado aquí.
+const ICONO_POR_CLAVE: Record<string, keyof typeof Ionicons.glyphMap> = {
+  alimentos: 'nutrition-outline',
+  insumos: 'medkit-outline',
+  servicios_veterinarios: 'pulse-outline',
+  difusion_campanas: 'megaphone-outline',
+};
+const ICONO_DEFAULT: keyof typeof Ionicons.glyphMap = 'cube-outline';
 
 const ZONAS: FiltroZona[] = ['Cualquiera', 'Menos de 5 km', 'Menos de 10 km', 'Menos de 20 km'];
 
@@ -103,9 +109,15 @@ export default function HowToHelpScreen() {
   // ─── ESTADOS ───
   const [necesidades, setNecesidades] = useState<NecesidadPublica[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [categoriaActiva, setCategoriaActiva] = useState<CategoriaRecurso>('Todas');
+  const [categoriaActiva, setCategoriaActiva] = useState<string>('Todas');
   const [zonaActiva, setZonaActiva] = useState<FiltroZona>('Cualquiera');
-  
+  const [categoriasData, setCategoriasData] = useState<CategoriaRecursoApi[]>([]);
+
+  // categoria ahora es una clave real (ej. 'alimentos') — esto la traduce a
+  // su descripción legible para mostrarla cuando no hay subcategoria_nombre.
+  const descripcionCategoria = (clave: string) =>
+    categoriasData.find((c) => c.clave === clave)?.descripcion || clave;
+
   // Nuevo estado para guardar la necesidad que el usuario seleccionó
   const [selectedNecesidad, setSelectedNecesidad] = useState<NecesidadPublica | null>(null);
 
@@ -121,6 +133,19 @@ export default function HowToHelpScreen() {
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return parseFloat((R * c).toFixed(1));
   };
+
+  // ─── CATEGORÍAS REALES DEL CATÁLOGO ───
+  useEffect(() => {
+    const cargarCategorias = async () => {
+      try {
+        const res = await axios.get(`${API_URL}/red-aliados/categorias`);
+        setCategoriasData(res.data);
+      } catch (error) {
+        console.error("Error al cargar categorías:", error);
+      }
+    };
+    cargarCategorias();
+  }, []);
 
   // ─── FETCH A BD REAL CON GPS ───
   useEffect(() => {
@@ -292,20 +317,20 @@ export default function HowToHelpScreen() {
                 Tipo de ayuda
               </Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingHorizontal: 32 }}>
-                {CATEGORIAS.map((cat) => (
+                {[{ clave: 'Todas', descripcion: 'Todas' }, ...categoriasData].map((cat) => (
                   <TouchableOpacity
-                    key={cat.id}
-                    onPress={() => setCategoriaActiva(cat.id)}
+                    key={cat.clave}
+                    onPress={() => setCategoriaActiva(cat.clave)}
                     style={{
                       flexDirection: 'row', alignItems: 'center', gap: 6,
                       paddingHorizontal: 16, paddingVertical: 10, borderRadius: 16,
-                      backgroundColor: categoriaActiva === cat.id ? `${C.primary}15` : C.bg,
-                      borderWidth: 1, borderColor: categoriaActiva === cat.id ? C.primary : C.neutralLight,
+                      backgroundColor: categoriaActiva === cat.clave ? `${C.primary}15` : C.bg,
+                      borderWidth: 1, borderColor: categoriaActiva === cat.clave ? C.primary : C.neutralLight,
                     }}
                   >
-                    <Ionicons name={cat.icono} size={16} color={categoriaActiva === cat.id ? C.primary : C.muted} />
-                    <Text style={{ fontSize: 13, fontFamily: F.bodySemiBold, color: categoriaActiva === cat.id ? C.primary : C.muted }}>
-                      {cat.id}
+                    <Ionicons name={ICONO_POR_CLAVE[cat.clave] || 'apps-outline'} size={16} color={categoriaActiva === cat.clave ? C.primary : C.muted} />
+                    <Text style={{ fontSize: 13, fontFamily: F.bodySemiBold, color: categoriaActiva === cat.clave ? C.primary : C.muted }}>
+                      {cat.descripcion}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -330,7 +355,7 @@ export default function HowToHelpScreen() {
               ) : (
                 <View style={{ gap: 16 }}>
                   {necesidadesFiltradas.map((item) => {
-                    const iconoCat = CATEGORIAS.find(c => c.id === item.categoria)?.icono || 'apps-outline';
+                    const iconoCat = ICONO_POR_CLAVE[item.categoria] || ICONO_DEFAULT;
                     
                     return (
                       <View key={item.id} style={{
@@ -365,7 +390,7 @@ export default function HowToHelpScreen() {
                           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
                             <Ionicons name={iconoCat} size={18} color={C.text} style={{ marginRight: 8 }} />
                             <Text style={{ fontSize: 16, fontFamily: F.displayBold, color: C.text }}>
-                              {item.subcategoria_nombre || item.categoria}
+                              {item.subcategoria_nombre || descripcionCategoria(item.categoria)}
                             </Text>
                           </View>
                           
@@ -439,7 +464,7 @@ export default function HowToHelpScreen() {
                   Estás apoyando a: <Text style={{ color: C.text }}>{selectedNecesidad.asociacion_nombre}</Text>
                 </Text>
                 <Text style={{ fontSize: 18, fontFamily: F.displayBold, color: C.primary, marginBottom: 12 }}>
-                  {selectedNecesidad.subcategoria_nombre || selectedNecesidad.categoria}
+                  {selectedNecesidad.subcategoria_nombre || descripcionCategoria(selectedNecesidad.categoria)}
                 </Text>
                 
                 {selectedNecesidad.cantidad && (

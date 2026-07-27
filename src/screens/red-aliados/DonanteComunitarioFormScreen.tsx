@@ -35,6 +35,7 @@ export default function DonanteComunitarioFormScreen({ onClose }: Props) {
   const [categorias, setCategorias] = useState<string[]>([]);
   const [subcategorias, setSubcategorias] = useState<string[]>([]);
   const [subcategoriasData, setSubcategoriasData] = useState<any[]>([]);
+  const [categoriasData, setCategoriasData] = useState<{ id: string; clave: string; descripcion: string }[]>([]);
 
   // Location states
   const [latitud, setLatitud] = useState<number | null>(null);
@@ -63,8 +64,22 @@ export default function DonanteComunitarioFormScreen({ onClose }: Props) {
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
-  // ─── Obtener subcategorías ───
+  // ─── Obtener categorías y subcategorías ───
   useEffect(() => {
+    const fetchCategorias = async () => {
+      try {
+        const res = await axios.get(`${API_URL}/red-aliados/categorias`);
+        // Este formulario solo ofrece donación de bienes (alimentos/insumos)
+        // — nunca servicios veterinarios ni difusión, a diferencia de
+        // RegistroAliadoLocalScreen. Mismo alcance que ya tenía, ahora con
+        // claves reales en vez del array hardcodeado.
+        setCategoriasData(res.data.filter((c: any) => c.clave === 'alimentos' || c.clave === 'insumos'));
+      } catch (err) {
+        console.warn('Error fetching categorias:', err);
+      }
+    };
+    fetchCategorias();
+
     const fetchSubcategorias = async () => {
       try {
         const res = await axios.get(`${API_URL}/catalogos/recursos/subcategorias`);
@@ -279,18 +294,15 @@ export default function DonanteComunitarioFormScreen({ onClose }: Props) {
 
               <FormSection title="¿Qué puedes donar?" subtitle="Selecciona lo que podrías aportar (no es un compromiso fijo).">
                 <View style={styles.animalChips}>
-                  {[
-                    { label: 'Alimentos', clave: 'alimentos' },
-                    { label: 'Insumos', clave: 'insumos' }
-                  ].map((cat) => {
-                    const isSelected = categorias.includes(cat.label);
+                  {categoriasData.map((cat) => {
+                    const isSelected = categorias.includes(cat.clave);
                     return (
                       <TouchableOpacity
                         key={cat.clave}
                         style={[styles.animalChip, { backgroundColor: isSelected ? COLORS.secondary : COLORS.grayLight }]}
-                        onPress={() => toggleArray(cat.label, categorias, setCategorias, 'categorias')}
+                        onPress={() => toggleArray(cat.clave, categorias, setCategorias, 'categorias')}
                       >
-                        <Text style={{ fontWeight: '700', fontSize: 14, color: isSelected ? COLORS.textDark : COLORS.textLight }}>{cat.label}</Text>
+                        <Text style={{ fontWeight: '700', fontSize: 14, color: isSelected ? COLORS.textDark : COLORS.textLight }}>{cat.descripcion}</Text>
                       </TouchableOpacity>
                     );
                   })}
@@ -298,11 +310,12 @@ export default function DonanteComunitarioFormScreen({ onClose }: Props) {
                 {errors.categorias && <Text style={styles.errorText}>{errors.categorias}</Text>}
 
                 {/* Subcategorías dinámicas */}
-                {categorias.map(catLabel => {
-                  const clave = catLabel.toLowerCase();
+                {categorias.map(clave => {
                   const subs = subcategoriasData.filter(s => s.categoria_clave === clave);
                   if (subs.length === 0) return null;
-                  
+
+                  const catLabel = categoriasData.find(c => c.clave === clave)?.descripcion || clave;
+
                   return (
                     <View key={`subs-${clave}`} style={{ marginTop: 8, marginBottom: 12, backgroundColor: COLORS.grayLight, padding: 14, borderRadius: 16 }}>
                       <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginBottom: 10 }}>
