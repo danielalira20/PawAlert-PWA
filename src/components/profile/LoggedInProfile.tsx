@@ -88,11 +88,15 @@ export function LoggedInProfile({
   // aparte: AliadoImpactStats ya lo recibe dentro de `impacto` (GET
   // /red-aliados/me/impacto), no hace falta duplicarlo aquí.
   const [tienePerfilApoyo, setTienePerfilApoyo] = useState<boolean | null>(null);
+  // Tipo real de perfil_apoyo (donante_comunitario/aliado_local/patrocinador_institucional)
+  // — necesario para el badge principal de una cuenta sin rol_id (ver esAliadoPuro).
+  const [tipoPerfilApoyo, setTipoPerfilApoyo] = useState<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
       if (!token || esAsociacion) {
         setTienePerfilApoyo(null);
+        setTipoPerfilApoyo(null);
         return;
       }
       let cancelado = false;
@@ -103,10 +107,12 @@ export function LoggedInProfile({
           });
           if (!cancelado) {
             setTienePerfilApoyo(!!res.data?.tiene_perfil_apoyo);
+            setTipoPerfilApoyo(res.data?.tipo ?? null);
           }
         } catch {
           if (!cancelado) {
             setTienePerfilApoyo(null);
+            setTipoPerfilApoyo(null);
           }
         }
       })();
@@ -159,6 +165,18 @@ useFocusEffect(
 
   const nombreCompleto = `${user.nombre ?? ''} ${user.apellido_paterno ?? ''}`.trim();
 
+  // Camino B: cuenta sin ningún rol de rescate (rol_id NULL de verdad — ver
+  // auth.py/users.py) cuyo perfil_apoyo es su única identidad. Excluye
+  // explícitamente donante_comunitario: por diseño esa cuenta SIEMPRE nace
+  // sobre un rol_id existente (Camino A), así que nunca debería tener
+  // user.rol vacío — pero si por algún motivo llegara a pasar, un
+  // donante_comunitario conserva su badge de rol original, nunca lo
+  // reemplaza (safeguard explícito, no una suposición).
+  const esAliadoPuro =
+    !esAdmin && !esAsociacion && !esStaff && !esVoluntarioActivo &&
+    !user?.rol && tienePerfilApoyo === true &&
+    (tipoPerfilApoyo === 'aliado_local' || tipoPerfilApoyo === 'patrocinador_institucional');
+
   // Los 4 roles ya tienen su propia versión.
   // NOTA: esVoluntarioActivo aún no tiene su propia tarjeta de impacto —
   // por ahora cae al default (ReporterImpactStats). Pendiente crear una
@@ -178,8 +196,10 @@ useFocusEffect(
     <ReporterImpactStats impacto={impacto} isLoading={isLoadingReportes} />
   );
 
-  // Segundo bloque INDEPENDIENTE del ternario de arriba — se muestra
-  // ADEMÁS del bloque del rol principal, nunca en su lugar (FRONT03).
+  // Segundo bloque INDEPENDIENTE del ternario de arriba — se muestra ADEMÁS
+  // del bloque del rol principal (FRONT03), excepto para esAliadoPuro: ahí
+  // los sitios de render (desktop/móvil) deciden mostrar solo este bloque,
+  // en vez de impactStatsElement + este. El elemento en sí no cambia.
   const aliadoImpactElement = tienePerfilApoyo ? (
     <AliadoImpactStats impacto={impactoAliado} isLoading={isLoadingAliado} />
   ) : null;
@@ -206,6 +226,8 @@ useFocusEffect(
   <RoleBadge rol="aliado_local" variant="onWhite" />
 ) : esPatrocinadorInstitucional ? (
   <RoleBadge rol="patrocinador_institucional" variant="onWhite" />
+) : esAliadoPuro ? (
+  <RoleBadge rol={tipoPerfilApoyo as 'aliado_local' | 'patrocinador_institucional'} variant="onWhite" />
 ) : (
   <RoleBadge rol="reportante" variant="onWhite" />
 );
@@ -362,8 +384,12 @@ useFocusEffect(
                 {esVoluntarioActivo && token && (
                   <OperationalAvailabilityCard token={token} />
                 )}
-                {impactStatsElement}
-                {aliadoImpactElement}
+                {esAliadoPuro ? aliadoImpactElement : (
+                  <>
+                    {impactStatsElement}
+                    {aliadoImpactElement}
+                  </>
+                )}
               </View>
             </View>
 
@@ -396,9 +422,12 @@ useFocusEffect(
         {esStaff && <RoleBadge rol="staff" variant="onColor" />}
         {esVoluntarioInterno && <RoleBadge rol="voluntario_interno" variant="onColor" />}
         {esVoluntarioExterno && <RoleBadge rol="voluntario_externo" variant="onColor" />}
-        {!esAdmin && !esAsociacion && !esStaff && !esVoluntarioInterno && !esVoluntarioExterno && (
+        {esAliadoPuro && (
+          <RoleBadge rol={tipoPerfilApoyo as 'aliado_local' | 'patrocinador_institucional'} variant="onColor" />
+        )}
+        {!esAdmin && !esAsociacion && !esStaff && !esVoluntarioInterno && !esVoluntarioExterno && !esAliadoPuro && (
           <RoleBadge rol="reportante" variant="onColor" />
-        )} 
+        )}
       </LinearGradient>
 
       <View style={styles.mobileCentered}>
@@ -425,8 +454,12 @@ useFocusEffect(
         {/* Estadísticas — a propósito AL FINAL, debajo de Cerrar sesión, para
             no desplazar la estructura móvil que ya funcionaba bien */}
         <View style={{ marginTop: 24 }}>
-          {impactStatsElement}
-          {aliadoImpactElement}
+          {esAliadoPuro ? aliadoImpactElement : (
+            <>
+              {impactStatsElement}
+              {aliadoImpactElement}
+            </>
+          )}
         </View>
         <GeneralStatsStrip />
       </View>

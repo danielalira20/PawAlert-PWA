@@ -56,7 +56,9 @@ async def get_usuario_actual(authorization: str = Header(None)):
     usuario_data = resultado.data[0]
     rol = usuario_data.pop("roles", None)
     usuario_data["es_admin"] = bool(rol and rol.get("nombre") == "admin")
-    usuario_data["rol"] = rol.get("nombre") if rol else "reportante"
+    # None cuando rol_id es NULL de verdad (ver mismo comentario en auth.py) —
+    # distingue una cuenta sin rol de una que sí tiene 'reportante' asignado.
+    usuario_data["rol"] = rol.get("nombre") if rol else None
 
     perfil_apoyo = supabase.table("perfil_apoyo").select("id").eq("usuario_id", usuario_data["id"]).execute()
     usuario_data["tiene_perfil_apoyo"] = bool(perfil_apoyo.data)

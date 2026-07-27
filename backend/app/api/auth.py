@@ -116,13 +116,11 @@ async def register(body: RegisterRequest):
     auth_user_id = auth_response.user.id
 
     # obtener rol de reportante o el rol esperado
-    rol_id_asignar = None
     if body.rol_esperado in ["aliado_local", "patrocinador_institucional"]:
-        rol_query = supabase.table("roles").select("id").eq("nombre", body.rol_esperado).execute()
-        if rol_query.data:
-            rol_id_asignar = rol_query.data[0]["id"]
-            
-    if not rol_id_asignar:
+        # perfil_apoyo.tipo es la fuente de verdad para estos dos tipos —
+        # rol_id se queda NULL siempre, no debe duplicar ese dato.
+        rol_id_asignar = None
+    else:
         rol_reportante = supabase.table("roles").select("id").eq("nombre", "reportante").execute()
         rol_id_asignar = rol_reportante.data[0]["id"] if rol_reportante.data else None
 
@@ -182,10 +180,13 @@ async def register(body: RegisterRequest):
     rol_result = supabase.table("usuarios").select(
         "roles(nombre)"
     ).eq("id", nuevo_usuario_id).execute()
-    rol_nombre = "reportante"
+    # None (no "reportante") cuando rol_id es NULL de verdad — evita que el
+    # frontend confunda una cuenta sin rol (aliado_local/patrocinador_institucional)
+    # con una cuenta que sí tiene la fila 'reportante' asignada.
+    rol_nombre = None
     if rol_result.data and rol_result.data[0].get("roles"):
         rol_nombre = rol_result.data[0]["roles"]["nombre"]
-        
+
 
     return {
         "access_token": login_response.session.access_token,
@@ -223,7 +224,8 @@ async def login(body: LoginRequest):
     usuario_data = resultado.data[0]
     rol = usuario_data.pop("roles", None)
     usuario_data["es_admin"] = bool(rol and rol.get("nombre") == "admin")
-    usuario_data["rol"] = rol.get("nombre") if rol else "reportante"
+    # None cuando rol_id es NULL de verdad (ver mismo comentario en /register).
+    usuario_data["rol"] = rol.get("nombre") if rol else None
 
     return {
         "access_token": response.session.access_token,
