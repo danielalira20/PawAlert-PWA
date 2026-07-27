@@ -7,7 +7,8 @@ import {
   Platform,
   ActivityIndicator,
   Animated,
-  Modal
+  Modal,
+  StyleSheet
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,6 +19,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { API_URL } from '../constants/api';
 import * as Location from 'expo-location';
+import { useAuth } from '../context/AuthContext';
 
 // ─── DESIGN TOKENS ──────────────────────────────────
 const C = {
@@ -90,7 +92,13 @@ function AnimatedButton({ onPress, style, children }: { onPress: () => void; sty
 // ─── PANTALLA PRINCIPAL ─────────────────────────────────────────────────────
 export default function HowToHelpScreen() {
   const router = useRouter();
+  const { isLoggedIn } = useAuth();
   const [fontsLoaded] = useFonts({ Fraunces_800ExtraBold, Poppins_400Regular, Poppins_500Medium, Poppins_600SemiBold });
+
+  // Camino "Aliado comunitario" sin sesión — en vez de mandarlo a /login sin
+  // explicación, se le avisa que necesita cuenta primero y que puede
+  // completar su perfil de donante después desde Mi Perfil.
+  const [avisoDonanteSinSesion, setAvisoDonanteSinSesion] = useState(false);
 
   // ─── ESTADOS ───
   const [necesidades, setNecesidades] = useState<NecesidadPublica[]>([]);
@@ -202,25 +210,35 @@ export default function HowToHelpScreen() {
   if (!fontsLoaded) return null;
 
   return (
-    <Modal visible={true} transparent animationType="fade">
-      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
-        
-        {/* ── CONTENEDOR TIPO MODAL ── */}
-        <View style={{ 
-          width: '100%', maxWidth: 1000, maxHeight: '90%', 
-          backgroundColor: C.bgSoft, borderRadius: 32, overflow: 'hidden',
+    <View style={{
+      ...StyleSheet.absoluteFillObject,
+      zIndex: 9999,
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: 24,
+      backgroundColor: 'rgba(0,0,0,0.6)',
+    }}>
+      <View style={{ width: '100%', maxWidth: 1000, maxHeight: '90%' }}>
+        <View style={{
+          flex: 1,
+          overflow: 'hidden',
+          backgroundColor: C.bgSoft,
+          borderRadius: 32,
           ...(isWeb ? { boxShadow: '0 20px 60px rgba(0,0,0,0.25)' } : { elevation: 15 }) as any
         }}>
 
-          {/* ── HEADER MODAL ── */}
+          {/* ── HEADER ── */}
           <View style={{
             backgroundColor: C.bg, paddingHorizontal: 24, paddingVertical: 20,
             flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
             borderBottomWidth: 1, borderBottomColor: `${C.neutralLight}40`,
             zIndex: 10
           }}>
-            <TouchableOpacity 
-              onPress={() => router.back()} 
+            <TouchableOpacity
+              onPress={() => {
+                if (router.canGoBack()) router.back();
+                else router.replace('/');
+              }}
               hitSlop={10}
               style={{ position: 'absolute', left: 24, width: 40, height: 40, borderRadius: 20, backgroundColor: C.bgSoft, alignItems: 'center', justifyContent: 'center' }}
             >
@@ -395,7 +413,6 @@ export default function HowToHelpScreen() {
           </ScrollView>
 
         </View>
-
       </View>
 
       {/* ── MODAL DE AUTORIZACIÓN (Muestra los detalles de la necesidad seleccionada) ── */}
@@ -452,8 +469,9 @@ export default function HowToHelpScreen() {
             {/* BOTONES DE COLABORACIÓN */}
             <View style={{ width: '100%', gap: 12 }}>
               
-              {/* Botón: Aliado institucional */}
-              <AnimatedButton onPress={() => { setSelectedNecesidad(null); router.push('/login'); }}>
+              {/* Botón: Aliado institucional/local — siempre crea cuenta nueva
+                  independiente en /registro-aliado, sin importar la sesión */}
+              <AnimatedButton onPress={() => { setSelectedNecesidad(null); router.push('/registro-aliado?tipo=aliado_local' as any); }}>
                 <View style={{ backgroundColor: C.primary, paddingVertical: 14, paddingHorizontal: 20, borderRadius: 16, flexDirection: 'row', alignItems: 'center', gap: 14 }}>
                   <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center' }}>
                     <Ionicons name="business" size={18} color="#FFF" />
@@ -465,9 +483,18 @@ export default function HowToHelpScreen() {
                   <Ionicons name="chevron-forward" size={18} color="#FFF" />
                 </View>
               </AnimatedButton>
-              
-              {/* Botón: Aliado comunitario */}
-              <AnimatedButton onPress={() => { setSelectedNecesidad(null); router.push('/login'); }}>
+
+              {/* Botón: Aliado comunitario — con sesión abre el formulario de
+                  donante directo en Mi Perfil; sin sesión explica que necesita
+                  cuenta primero, en vez de mandarlo a /login sin contexto */}
+              <AnimatedButton onPress={() => {
+                setSelectedNecesidad(null);
+                if (isLoggedIn) {
+                  router.push('/profile?abrirFormularioAliado=true' as any);
+                } else {
+                  setAvisoDonanteSinSesion(true);
+                }
+              }}>
                 <View style={{ backgroundColor: C.secondary, paddingVertical: 14, paddingHorizontal: 20, borderRadius: 16, flexDirection: 'row', alignItems: 'center', gap: 14 }}>
                   <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.3)', alignItems: 'center', justifyContent: 'center' }}>
                     <Ionicons name="person" size={18} color="#FFF" />
@@ -486,6 +513,39 @@ export default function HowToHelpScreen() {
         </View>
       </Modal>
 
-    </Modal>
+      {/* ── AVISO: Aliado comunitario sin sesión — explica que necesita
+          cuenta primero, en vez de mandarlo a /login sin contexto ── */}
+      <Modal visible={avisoDonanteSinSesion} transparent animationType="fade" onRequestClose={() => setAvisoDonanteSinSesion(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+          <View style={{ backgroundColor: C.bg, borderRadius: 32, padding: 32, width: '100%', maxWidth: 500, ...(isWeb ? { boxShadow: '0 20px 60px rgba(0,0,0,0.2)' } : { elevation: 10 }) as any }}>
+
+            <TouchableOpacity
+              onPress={() => setAvisoDonanteSinSesion(false)}
+              style={{ position: 'absolute', top: 16, right: 16, padding: 8, zIndex: 10 }}
+            >
+              <Ionicons name="close" size={24} color={C.text} />
+            </TouchableOpacity>
+
+            <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: `${C.secondary}20`, alignItems: 'center', justifyContent: 'center', marginBottom: 20, alignSelf: 'center' }}>
+              <Ionicons name="person" size={28} color={C.secondary} />
+            </View>
+
+            <Text style={{ fontSize: 20, fontFamily: F.displayBold, color: C.text, textAlign: 'center', marginBottom: 8 }}>
+              Necesitas una cuenta primero
+            </Text>
+            <Text style={{ fontSize: 14, fontFamily: F.bodyRegular, color: C.muted, textAlign: 'center', marginBottom: 28, lineHeight: 22 }}>
+              Para donar como aliado comunitario primero crea tu cuenta o inicia sesión. Una vez dentro, podrás completar tu perfil de donante cuando quieras desde Mi Perfil.
+            </Text>
+
+            <AnimatedButton onPress={() => { setAvisoDonanteSinSesion(false); router.push('/login'); }}>
+              <View style={{ backgroundColor: C.secondary, paddingVertical: 14, borderRadius: 100, alignItems: 'center' }}>
+                <Text style={{ color: '#FFF', fontSize: 14, fontFamily: F.bodySemiBold }}>Crear cuenta o iniciar sesión</Text>
+              </View>
+            </AnimatedButton>
+          </View>
+        </View>
+      </Modal>
+
+    </View>
   );
 }

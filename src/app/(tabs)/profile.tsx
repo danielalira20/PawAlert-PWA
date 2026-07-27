@@ -1,6 +1,6 @@
 import React, { useCallback, useRef, useEffect, useState } from 'react';
 import { Animated, View, Text, TouchableOpacity, Image, Platform, Dimensions, Modal } from 'react-native';
-import { useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import AdminDashboardScreen from '../../screens/AdminDashboardScreen';
@@ -23,7 +23,8 @@ const isWeb = Platform.OS === 'web';
 
 export default function ProfileScreen() {
   const { user, isLoggedIn, logout, refreshUser } = useAuth();
-  
+  const params = useLocalSearchParams<{ abrirFormularioAliado?: string }>();
+
   const [isAdminVisible, setIsAdminVisible] = useState(false);
   const [isAssociationVisible, setIsAssociationVisible] = useState(false);
   const [isMisReportesVisible, setIsMisReportesVisible] = useState(false);
@@ -61,6 +62,17 @@ export default function ProfileScreen() {
       }
     }, [isLoggedIn, refreshUser]),
   );
+
+  // Mismo patrón que MapScreen para action=create: AyudaScreen manda acá
+  // con ?abrirFormularioAliado=true cuando el usuario con sesión elige
+  // "Aliado comunitario" — se abre el modal y se limpia el param para no
+  // reabrirlo en cada re-render/back.
+  useEffect(() => {
+    if (isLoggedIn && params.abrirFormularioAliado === 'true') {
+      setIsAliadoFormVisible(true);
+      router.setParams({ abrirFormularioAliado: undefined });
+    }
+  }, [isLoggedIn, params.abrirFormularioAliado]);
 
   useEffect(() => {
     if (!isLoggedIn) {
