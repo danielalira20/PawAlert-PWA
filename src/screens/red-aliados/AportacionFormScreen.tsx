@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -260,6 +260,14 @@ export default function AportacionFormScreen({ onClose }: Props) {
   
   // ─── AQUÍ ATRAPAMOS EL PARÁMETRO QUE MANDASTE ───
   const { necesidad_id } = useLocalSearchParams<{ necesidad_id?: string }>();
+  // Fijado UNA SOLA VEZ con el valor del primer render — no un const derivado
+  // directo de useLocalSearchParams(), porque el useEffect de abajo limpia
+  // el param de la URL con router.setParams(), lo que dispara un re-render
+  // donde necesidad_id ya viene undefined. Si esto fuera un const recalculado
+  // en cada render, vieneDeNecesidad pasaría de true a false apenas se monta
+  // el componente, ANTES de que el usuario toque la categoría — anulando el
+  // guard de onChangeCategoria de abajo.
+  const [vieneDeNecesidad] = useState(() => Boolean(necesidad_id));
 
   const [paso, setPaso] = useState(1);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
@@ -269,6 +277,16 @@ export default function AportacionFormScreen({ onClose }: Props) {
   const [modo, setModo] = useState<Modo>('reactiva');
   // ─── AQUÍ LO INYECTAMOS EN EL ESTADO ───
   const [necesidadId, setNecesidadId] = useState(necesidad_id || '');
+
+  // Mismo patrón que (tabs)/profile.tsx con abrirFormularioAliado — limpia
+  // el param de la URL una vez leído, para que no se quede visible
+  // indefinidamente. El estado necesidadId ya quedó capturado arriba, así
+  // que esto es solo higiene de la barra de direcciones.
+  useEffect(() => {
+    if (necesidad_id) {
+      router.setParams({ necesidad_id: undefined });
+    }
+  }, []);
 
   const [categoria, setCategoria] = useState<CatalogoItem | null>(null);
   const [subcategoria, setSubcategoria] = useState<CatalogoItem | null>(null);
@@ -850,8 +868,10 @@ export default function AportacionFormScreen({ onClose }: Props) {
                 setContactoTelefono('');
                 setContactoCorreo('');
                 setEsLote(false);
-                setModo('proactiva');
-                setNecesidadId('');
+                if (!vieneDeNecesidad) {
+                  setModo('proactiva');
+                  setNecesidadId('');
+                }
                 setCantidadUnidad('');
                 setUnidadEsOtra(false);
                 setContenidoPorUnidad('');

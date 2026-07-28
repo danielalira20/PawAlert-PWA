@@ -1,6 +1,6 @@
 import React, { useCallback, useRef, useEffect, useState } from 'react';
 import { Animated, View, Text, TouchableOpacity, Image, Platform, Dimensions, Modal } from 'react-native';
-import { useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import AdminDashboardScreen from '../../screens/AdminDashboardScreen';
@@ -14,6 +14,7 @@ import CapacidadesFormScreen from '../../screens/CapacidadesFormScreen';
 import ExternalVolunteerFormScreen from '../../screens/ExternalVolunteerFormScreen';
 import MisVerificacionesScreen from '../../screens/MisVerificacionesScreen';
 import DonanteComunitarioFormScreen from '../../screens/red-aliados/DonanteComunitarioFormScreen';
+import AliadoDashboardScreen from '../../screens/AliadoDashboardScreen';
 import { AppModal } from '@/components/AppModal';
 import { LoggedOutProfile } from '../../components/profile/LoggedOutProfile';
 import { LoggedInProfile } from '../../components/profile/LoggedInProfile';
@@ -23,7 +24,8 @@ const isWeb = Platform.OS === 'web';
 
 export default function ProfileScreen() {
   const { user, isLoggedIn, logout, refreshUser } = useAuth();
-  
+  const params = useLocalSearchParams<{ abrirFormularioAliado?: string }>();
+
   const [isAdminVisible, setIsAdminVisible] = useState(false);
   const [isAssociationVisible, setIsAssociationVisible] = useState(false);
   const [isMisReportesVisible, setIsMisReportesVisible] = useState(false);
@@ -39,6 +41,7 @@ export default function ProfileScreen() {
   const [isExternalRetryVisible, setIsExternalRetryVisible] = useState(false);
   const [isVerificacionesVisible, setIsVerificacionesVisible] = useState(false);
   const [isAliadoFormVisible, setIsAliadoFormVisible] = useState(false);
+  const [isAliadoDashboardVisible, setIsAliadoDashboardVisible] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(24)).current;
@@ -61,6 +64,17 @@ export default function ProfileScreen() {
       }
     }, [isLoggedIn, refreshUser]),
   );
+
+  // Mismo patrón que MapScreen para action=create: AyudaScreen manda acá
+  // con ?abrirFormularioAliado=true cuando el usuario con sesión elige
+  // "Aliado comunitario" — se abre el modal y se limpia el param para no
+  // reabrirlo en cada re-render/back.
+  useEffect(() => {
+    if (isLoggedIn && params.abrirFormularioAliado === 'true') {
+      setIsAliadoFormVisible(true);
+      router.setParams({ abrirFormularioAliado: undefined });
+    }
+  }, [isLoggedIn, params.abrirFormularioAliado]);
 
   useEffect(() => {
     if (!isLoggedIn) {
@@ -97,6 +111,7 @@ export default function ProfileScreen() {
         onOpenPostulacion={() => setIsPostulacionVisible(true)}
         onOpenCapacidades={() => setIsCapacidadesVisible(true)}
         onOpenAliadoForm={() => setIsAliadoFormVisible(true)}
+        onOpenAliadoDashboard={() => setIsAliadoDashboardVisible(true)}
         onLogout={logout}
         capacidadesRefreshKey={capacidadesRefreshKey}
       />
@@ -188,6 +203,16 @@ export default function ProfileScreen() {
           />
         )}
       </Modal>
+
+      <AppModal
+        visible={isAliadoDashboardVisible}
+        onClose={() => setIsAliadoDashboardVisible(false)}
+        maxWidth={1000}
+      >
+        {isAliadoDashboardVisible && (
+          <AliadoDashboardScreen onClose={() => setIsAliadoDashboardVisible(false)} />
+        )}
+      </AppModal>
     </>
   );
 }

@@ -228,3 +228,124 @@ def test_historial_reporte_sin_hitos(make_query):
     assert body["eventos"][0]["nota"] is None
     assert body["eventos"][0]["foto_url"] is None
     assert body["eventos"][0]["reportante_nombre"] == "anónimo"
+
+
+# ─── Regresión: contribuciones.necesidad_id es nullable desde hace varias
+# migraciones — una contribución también puede venir de un reporte (Ruta 1)
+# o de un lote. necesidades!inner las excluía silenciosamente de estos 3
+# endpoints; ahora se resuelven con _asociacion_id_contribucion en Python. ──
+
+def test_get_ofertas_incluye_contribuciones_de_reporte_y_lote(make_query):
+    tablas = {
+        "contribuciones": make_query(data=[
+            {
+                "id": "contrib-reporte",
+                "cantidad_valor": 1,
+                "cantidad_unidad": "consulta",
+                "estado": "comprometida",
+                "created_at": "2026-07-24T10:00:00+00:00",
+                "detalle": {"origen": "sugerencia_ruta1"},
+                "necesidades": None,
+                "reportes": {"id": "reporte-1", "asociacion_asignada_id": "aso-1"},
+                "lote_asociaciones": None,
+                "subcategoria_recurso": {"clave": "consulta", "descripcion": "Consulta", "categoria_recurso": {"clave": "servicios_veterinarios", "descripcion": "Servicios veterinarios"}},
+                "usuarios": {"id": "aliado-1", "nombre": "Vet", "apellido_paterno": "Cercano", "telefono": "555", "email": "vet@x.com", "perfil_apoyo": None},
+            },
+            {
+                "id": "contrib-lote",
+                "cantidad_valor": 20,
+                "cantidad_unidad": "kg",
+                "estado": "comprometida",
+                "created_at": "2026-07-24T09:00:00+00:00",
+                "detalle": None,
+                "necesidades": None,
+                "reportes": None,
+                "lote_asociaciones": {"id": "la-1", "asociacion_id": "aso-1"},
+                "subcategoria_recurso": {"clave": "croquetas", "descripcion": "Croquetas", "categoria_recurso": {"clave": "alimentos", "descripcion": "Alimentos"}},
+                "usuarios": {"id": "aliado-2", "nombre": "Aliado", "apellido_paterno": "Lote", "telefono": "555", "email": "a@x.com", "perfil_apoyo": None},
+            },
+            {
+                "id": "contrib-otra-asociacion",
+                "cantidad_valor": 5,
+                "cantidad_unidad": "kg",
+                "estado": "comprometida",
+                "created_at": "2026-07-24T08:00:00+00:00",
+                "detalle": None,
+                "necesidades": {"id": "necesidad-2", "categoria": "alimentos", "asociacion_id": "aso-2", "subcategoria_id": "subcat-9"},
+                "reportes": None,
+                "lote_asociaciones": None,
+                "subcategoria_recurso": None,
+                "usuarios": {"id": "aliado-3", "nombre": "Otro", "apellido_paterno": "Aliado", "telefono": "555", "email": "o@x.com", "perfil_apoyo": None},
+            },
+        ]),
+    }
+    _mock_usuario_autenticado(tablas, make_query)
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    supabase.auth.get_user.return_value = SimpleNamespace(user=SimpleNamespace(id="auth-user-1"))
+
+    with patch("app.api.associations.supabase", supabase):
+        response = client.get("/associations/me/ofertas?tab=pendientes", headers={"Authorization": "Bearer token-valido"})
+
+    assert response.status_code == 200
+    ids = [fila["id"] for fila in response.json()]
+    assert "contrib-reporte" in ids
+    assert "contrib-lote" in ids
+    assert "contrib-otra-asociacion" not in ids  # sigue filtrando por asociación correctamente
+
+
+def test_resolver_oferta_de_reporte_sin_necesidad_no_da_404(make_query):
+    tablas = {
+        "contribuciones": make_query(execute_results=[
+            [{
+                "id": "contrib-reporte",
+                "estado": "comprometida",
+                "necesidades": None,
+                "reportes": {"asociacion_asignada_id": "aso-1"},
+                "lote_asociaciones": None,
+            }],
+            [{"id": "contrib-reporte", "estado": "confirmada"}],
+        ]),
+    }
+    _mock_usuario_autenticado(tablas, make_query)
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    supabase.auth.get_user.return_value = SimpleNamespace(user=SimpleNamespace(id="auth-user-1"))
+
+    with patch("app.api.associations.supabase", supabase):
+        response = client.patch(
+            "/associations/me/ofertas/contrib-reporte/resolver",
+            json={"accion": "aceptar"},
+            headers={"Authorization": "Bearer token-valido"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["oferta"]["estado"] == "confirmada"
+
+
+def test_verificar_aliado_con_solo_contribucion_de_lote_confirmada(make_query):
+    tablas = {
+        "contribuciones": make_query(data=[{
+            "id": "contrib-lote",
+            "necesidades": None,
+            "reportes": None,
+            "lote_asociaciones": {"asociacion_id": "aso-1"},
+        }]),
+        "perfil_apoyo": make_query(execute_results=[
+            [{"id": "perfil-1", "aliado_verificado_por": None}],
+            [{"id": "perfil-1", "aliado_verificado_por": "aso-1"}],
+        ]),
+    }
+    _mock_usuario_autenticado(tablas, make_query)
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    supabase.auth.get_user.return_value = SimpleNamespace(user=SimpleNamespace(id="auth-user-1"))
+
+    with patch("app.api.associations.supabase", supabase):
+        response = client.patch(
+            "/associations/me/aliados/usuario/aliado-lote/verificar",
+            headers={"Authorization": "Bearer token-valido"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["perfil"]["aliado_verificado_por"] == "aso-1"

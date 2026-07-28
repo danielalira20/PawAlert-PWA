@@ -1087,7 +1087,7 @@ const confirmarReactivar = async () => {
                 
                 {/* NUEVO BOTÓN: VER OFERTAS */}
                 <TouchableOpacity
-                  onPress={() => router.push('/ofertas-asociacion' as any)}
+                  onPress={() => { if (onClose) onClose(); router.push('/ofertas-asociacion' as any); }}
                   style={{
                     backgroundColor: COLORS.secondary,
                     paddingHorizontal: 20,
@@ -1110,7 +1110,7 @@ const confirmarReactivar = async () => {
 
                 {/* BOTÓN : CREAR NECESIDAD */}
                 <TouchableOpacity
-                  onPress={() => router.push('/crear-necesidad')}
+                  onPress={() => { if (onClose) onClose(); router.push('/crear-necesidad'); }}
                   style={{
                     backgroundColor: COLORS.accent,
                     paddingHorizontal: 20,

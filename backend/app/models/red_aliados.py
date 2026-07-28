@@ -254,3 +254,46 @@ class AceptarSugerenciaVeterinariaResponse(BaseModel):
     contribucion: ContribucionResponse
     contacto_aliado: ContactoResponse
     ubicacion_aliado: UbicacionAliadoResponse
+
+
+class PerfilApoyoMeResponse(BaseModel):
+    """Respuesta de GET /red-aliados/me — mismo patrón de existencia que
+    GET /voluntarios/me (tiene_perfil_voluntario), pero deliberadamente
+    minimal: solo lo que Mi Perfil necesita para decidir si muestra el
+    segundo bloque de estadísticas (FRONT03) y con qué copy por tipo."""
+    tiene_perfil_apoyo: bool
+    tipo: Optional[str] = None
+
+
+class OfertaImpactoResponse(BaseModel):
+    """Una oferta_proactiva del aliado, para el desglose de capacidad
+    declarada vs. disponible en AliadoImpactStats (aliado_local /
+    patrocinador_institucional únicamente)."""
+    oferta_id: str
+    categoria: str
+    subcategoria: Optional[str] = None
+    capacidad_declarada: float
+    capacidad_disponible: float
+    unidad: str
+    activa: bool
+
+
+class AplicacionImpactoResponse(BaseModel):
+    """Una fila del historial de 'aplicaciones' — cada vez que una
+    contribución consumió capacidad de alguna oferta_proactiva de este
+    aliado. No es una tabla nueva, se deriva de contribuciones."""
+    fecha: str
+    cantidad: Optional[str] = None
+    nota: Optional[str] = None
+
+
+class ImpactoAliadoResponse(BaseModel):
+    """Respuesta de GET /red-aliados/me/impacto — mismo shape para los 3
+    tipos de perfil_apoyo; `ofertas`/`aplicaciones` vienen vacíos para
+    donante_comunitario (no declara capacidad proactiva)."""
+    tipo: str
+    total_contribuciones: int
+    asociaciones_ayudadas: int
+    ofertas: list[OfertaImpactoResponse] = Field(default_factory=list)
+    aplicaciones: list[AplicacionImpactoResponse] = Field(default_factory=list)
+

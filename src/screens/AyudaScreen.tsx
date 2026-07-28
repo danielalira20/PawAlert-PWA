@@ -7,7 +7,8 @@ import {
   Platform,
   ActivityIndicator,
   Animated,
-  Modal
+  Modal,
+  StyleSheet
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,6 +19,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { API_URL } from '../constants/api';
 import * as Location from 'expo-location';
+import { useAuth } from '../context/AuthContext';
 
 // ─── DESIGN TOKENS ──────────────────────────────────
 const C = {
@@ -43,13 +45,18 @@ const F = {
 const isWeb = Platform.OS === 'web';
 
 // ─── TIPOS ──────────────────────────────────────────────────────────
-type CategoriaRecurso = 'Todas' | 'Alimentos' | 'Insumos Médicos' | 'Servicios Veterinarios' | 'Difusión' | 'Transporte' | 'Hogar Temporal';
 type FiltroZona = 'Cualquiera' | 'Menos de 5 km' | 'Menos de 10 km' | 'Menos de 20 km';
+
+interface CategoriaRecursoApi {
+  id: string;
+  clave: string;
+  descripcion: string;
+}
 
 interface NecesidadPublica {
   id: string;
   asociacion_nombre: string;
-  categoria: CategoriaRecurso;
+  categoria: string;
   subcategoria_nombre?: string;
   urgencia?: 'Baja' | 'Media' | 'Alta';
   cantidad?: string;
@@ -58,15 +65,16 @@ interface NecesidadPublica {
   creado_hace: string;
 }
 
-const CATEGORIAS: { id: CategoriaRecurso; icono: keyof typeof Ionicons.glyphMap }[] = [
-  { id: 'Todas', icono: 'apps-outline' },
-  { id: 'Alimentos', icono: 'nutrition-outline' },
-  { id: 'Insumos Médicos', icono: 'medkit-outline' },
-  { id: 'Servicios Veterinarios', icono: 'pulse-outline' },
-  { id: 'Hogar Temporal', icono: 'home-outline' },
-  { id: 'Transporte', icono: 'car-outline' },
-  { id: 'Difusión', icono: 'megaphone-outline' },
-];
+// Ícono por clave real de categoria_recurso — mismo criterio que
+// CreateNeedScreen.tsx, fallback genérico si el catálogo llega a tener una
+// categoría sin ícono asignado aquí.
+const ICONO_POR_CLAVE: Record<string, keyof typeof Ionicons.glyphMap> = {
+  alimentos: 'nutrition-outline',
+  insumos: 'medkit-outline',
+  servicios_veterinarios: 'pulse-outline',
+  difusion_campanas: 'megaphone-outline',
+};
+const ICONO_DEFAULT: keyof typeof Ionicons.glyphMap = 'cube-outline';
 
 const ZONAS: FiltroZona[] = ['Cualquiera', 'Menos de 5 km', 'Menos de 10 km', 'Menos de 20 km'];
 
@@ -90,14 +98,26 @@ function AnimatedButton({ onPress, style, children }: { onPress: () => void; sty
 // ─── PANTALLA PRINCIPAL ─────────────────────────────────────────────────────
 export default function HowToHelpScreen() {
   const router = useRouter();
+  const { isLoggedIn } = useAuth();
   const [fontsLoaded] = useFonts({ Fraunces_800ExtraBold, Poppins_400Regular, Poppins_500Medium, Poppins_600SemiBold });
+
+  // Camino "Aliado comunitario" sin sesión — en vez de mandarlo a /login sin
+  // explicación, se le avisa que necesita cuenta primero y que puede
+  // completar su perfil de donante después desde Mi Perfil.
+  const [avisoDonanteSinSesion, setAvisoDonanteSinSesion] = useState(false);
 
   // ─── ESTADOS ───
   const [necesidades, setNecesidades] = useState<NecesidadPublica[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [categoriaActiva, setCategoriaActiva] = useState<CategoriaRecurso>('Todas');
+  const [categoriaActiva, setCategoriaActiva] = useState<string>('Todas');
   const [zonaActiva, setZonaActiva] = useState<FiltroZona>('Cualquiera');
-  
+  const [categoriasData, setCategoriasData] = useState<CategoriaRecursoApi[]>([]);
+
+  // categoria ahora es una clave real (ej. 'alimentos') — esto la traduce a
+  // su descripción legible para mostrarla cuando no hay subcategoria_nombre.
+  const descripcionCategoria = (clave: string) =>
+    categoriasData.find((c) => c.clave === clave)?.descripcion || clave;
+
   // Nuevo estado para guardar la necesidad que el usuario seleccionó
   const [selectedNecesidad, setSelectedNecesidad] = useState<NecesidadPublica | null>(null);
 
@@ -113,6 +133,19 @@ export default function HowToHelpScreen() {
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return parseFloat((R * c).toFixed(1));
   };
+
+  // ─── CATEGORÍAS REALES DEL CATÁLOGO ───
+  useEffect(() => {
+    const cargarCategorias = async () => {
+      try {
+        const res = await axios.get(`${API_URL}/red-aliados/categorias`);
+        setCategoriasData(res.data);
+      } catch (error) {
+        console.error("Error al cargar categorías:", error);
+      }
+    };
+    cargarCategorias();
+  }, []);
 
   // ─── FETCH A BD REAL CON GPS ───
   useEffect(() => {
@@ -202,25 +235,35 @@ export default function HowToHelpScreen() {
   if (!fontsLoaded) return null;
 
   return (
-    <Modal visible={true} transparent animationType="fade">
-      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
-        
-        {/* ── CONTENEDOR TIPO MODAL ── */}
-        <View style={{ 
-          width: '100%', maxWidth: 1000, maxHeight: '90%', 
-          backgroundColor: C.bgSoft, borderRadius: 32, overflow: 'hidden',
+    <View style={{
+      ...StyleSheet.absoluteFillObject,
+      zIndex: 9999,
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: 24,
+      backgroundColor: 'rgba(0,0,0,0.6)',
+    }}>
+      <View style={{ width: '100%', maxWidth: 1000, maxHeight: '90%' }}>
+        <View style={{
+          flex: 1,
+          overflow: 'hidden',
+          backgroundColor: C.bgSoft,
+          borderRadius: 32,
           ...(isWeb ? { boxShadow: '0 20px 60px rgba(0,0,0,0.25)' } : { elevation: 15 }) as any
         }}>
 
-          {/* ── HEADER MODAL ── */}
+          {/* ── HEADER ── */}
           <View style={{
             backgroundColor: C.bg, paddingHorizontal: 24, paddingVertical: 20,
             flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
             borderBottomWidth: 1, borderBottomColor: `${C.neutralLight}40`,
             zIndex: 10
           }}>
-            <TouchableOpacity 
-              onPress={() => router.back()} 
+            <TouchableOpacity
+              onPress={() => {
+                if (router.canGoBack()) router.back();
+                else router.replace('/');
+              }}
               hitSlop={10}
               style={{ position: 'absolute', left: 24, width: 40, height: 40, borderRadius: 20, backgroundColor: C.bgSoft, alignItems: 'center', justifyContent: 'center' }}
             >
@@ -274,20 +317,20 @@ export default function HowToHelpScreen() {
                 Tipo de ayuda
               </Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingHorizontal: 32 }}>
-                {CATEGORIAS.map((cat) => (
+                {[{ clave: 'Todas', descripcion: 'Todas' }, ...categoriasData].map((cat) => (
                   <TouchableOpacity
-                    key={cat.id}
-                    onPress={() => setCategoriaActiva(cat.id)}
+                    key={cat.clave}
+                    onPress={() => setCategoriaActiva(cat.clave)}
                     style={{
                       flexDirection: 'row', alignItems: 'center', gap: 6,
                       paddingHorizontal: 16, paddingVertical: 10, borderRadius: 16,
-                      backgroundColor: categoriaActiva === cat.id ? `${C.primary}15` : C.bg,
-                      borderWidth: 1, borderColor: categoriaActiva === cat.id ? C.primary : C.neutralLight,
+                      backgroundColor: categoriaActiva === cat.clave ? `${C.primary}15` : C.bg,
+                      borderWidth: 1, borderColor: categoriaActiva === cat.clave ? C.primary : C.neutralLight,
                     }}
                   >
-                    <Ionicons name={cat.icono} size={16} color={categoriaActiva === cat.id ? C.primary : C.muted} />
-                    <Text style={{ fontSize: 13, fontFamily: F.bodySemiBold, color: categoriaActiva === cat.id ? C.primary : C.muted }}>
-                      {cat.id}
+                    <Ionicons name={ICONO_POR_CLAVE[cat.clave] || 'apps-outline'} size={16} color={categoriaActiva === cat.clave ? C.primary : C.muted} />
+                    <Text style={{ fontSize: 13, fontFamily: F.bodySemiBold, color: categoriaActiva === cat.clave ? C.primary : C.muted }}>
+                      {cat.descripcion}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -312,7 +355,7 @@ export default function HowToHelpScreen() {
               ) : (
                 <View style={{ gap: 16 }}>
                   {necesidadesFiltradas.map((item) => {
-                    const iconoCat = CATEGORIAS.find(c => c.id === item.categoria)?.icono || 'apps-outline';
+                    const iconoCat = ICONO_POR_CLAVE[item.categoria] || ICONO_DEFAULT;
                     
                     return (
                       <View key={item.id} style={{
@@ -347,7 +390,7 @@ export default function HowToHelpScreen() {
                           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
                             <Ionicons name={iconoCat} size={18} color={C.text} style={{ marginRight: 8 }} />
                             <Text style={{ fontSize: 16, fontFamily: F.displayBold, color: C.text }}>
-                              {item.subcategoria_nombre || item.categoria}
+                              {item.subcategoria_nombre || descripcionCategoria(item.categoria)}
                             </Text>
                           </View>
                           
@@ -395,7 +438,6 @@ export default function HowToHelpScreen() {
           </ScrollView>
 
         </View>
-
       </View>
 
       {/* ── MODAL DE AUTORIZACIÓN (Muestra los detalles de la necesidad seleccionada) ── */}
@@ -422,7 +464,7 @@ export default function HowToHelpScreen() {
                   Estás apoyando a: <Text style={{ color: C.text }}>{selectedNecesidad.asociacion_nombre}</Text>
                 </Text>
                 <Text style={{ fontSize: 18, fontFamily: F.displayBold, color: C.primary, marginBottom: 12 }}>
-                  {selectedNecesidad.subcategoria_nombre || selectedNecesidad.categoria}
+                  {selectedNecesidad.subcategoria_nombre || descripcionCategoria(selectedNecesidad.categoria)}
                 </Text>
                 
                 {selectedNecesidad.cantidad && (
@@ -452,8 +494,9 @@ export default function HowToHelpScreen() {
             {/* BOTONES DE COLABORACIÓN */}
             <View style={{ width: '100%', gap: 12 }}>
               
-              {/* Botón: Aliado institucional */}
-              <AnimatedButton onPress={() => { setSelectedNecesidad(null); router.push('/login'); }}>
+              {/* Botón: Aliado institucional/local — siempre crea cuenta nueva
+                  independiente en /registro-aliado, sin importar la sesión */}
+              <AnimatedButton onPress={() => { setSelectedNecesidad(null); router.push('/registro-aliado?tipo=aliado_local' as any); }}>
                 <View style={{ backgroundColor: C.primary, paddingVertical: 14, paddingHorizontal: 20, borderRadius: 16, flexDirection: 'row', alignItems: 'center', gap: 14 }}>
                   <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center' }}>
                     <Ionicons name="business" size={18} color="#FFF" />
@@ -465,9 +508,18 @@ export default function HowToHelpScreen() {
                   <Ionicons name="chevron-forward" size={18} color="#FFF" />
                 </View>
               </AnimatedButton>
-              
-              {/* Botón: Aliado comunitario */}
-              <AnimatedButton onPress={() => { setSelectedNecesidad(null); router.push('/login'); }}>
+
+              {/* Botón: Aliado comunitario — con sesión abre el formulario de
+                  donante directo en Mi Perfil; sin sesión explica que necesita
+                  cuenta primero, en vez de mandarlo a /login sin contexto */}
+              <AnimatedButton onPress={() => {
+                setSelectedNecesidad(null);
+                if (isLoggedIn) {
+                  router.push('/profile?abrirFormularioAliado=true' as any);
+                } else {
+                  setAvisoDonanteSinSesion(true);
+                }
+              }}>
                 <View style={{ backgroundColor: C.secondary, paddingVertical: 14, paddingHorizontal: 20, borderRadius: 16, flexDirection: 'row', alignItems: 'center', gap: 14 }}>
                   <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.3)', alignItems: 'center', justifyContent: 'center' }}>
                     <Ionicons name="person" size={18} color="#FFF" />
@@ -486,6 +538,39 @@ export default function HowToHelpScreen() {
         </View>
       </Modal>
 
-    </Modal>
+      {/* ── AVISO: Aliado comunitario sin sesión — explica que necesita
+          cuenta primero, en vez de mandarlo a /login sin contexto ── */}
+      <Modal visible={avisoDonanteSinSesion} transparent animationType="fade" onRequestClose={() => setAvisoDonanteSinSesion(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+          <View style={{ backgroundColor: C.bg, borderRadius: 32, padding: 32, width: '100%', maxWidth: 500, ...(isWeb ? { boxShadow: '0 20px 60px rgba(0,0,0,0.2)' } : { elevation: 10 }) as any }}>
+
+            <TouchableOpacity
+              onPress={() => setAvisoDonanteSinSesion(false)}
+              style={{ position: 'absolute', top: 16, right: 16, padding: 8, zIndex: 10 }}
+            >
+              <Ionicons name="close" size={24} color={C.text} />
+            </TouchableOpacity>
+
+            <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: `${C.secondary}20`, alignItems: 'center', justifyContent: 'center', marginBottom: 20, alignSelf: 'center' }}>
+              <Ionicons name="person" size={28} color={C.secondary} />
+            </View>
+
+            <Text style={{ fontSize: 20, fontFamily: F.displayBold, color: C.text, textAlign: 'center', marginBottom: 8 }}>
+              Necesitas una cuenta primero
+            </Text>
+            <Text style={{ fontSize: 14, fontFamily: F.bodyRegular, color: C.muted, textAlign: 'center', marginBottom: 28, lineHeight: 22 }}>
+              Para donar como aliado comunitario primero crea tu cuenta o inicia sesión. Una vez dentro, podrás completar tu perfil de donante cuando quieras desde Mi Perfil.
+            </Text>
+
+            <AnimatedButton onPress={() => { setAvisoDonanteSinSesion(false); router.push('/login'); }}>
+              <View style={{ backgroundColor: C.secondary, paddingVertical: 14, borderRadius: 100, alignItems: 'center' }}>
+                <Text style={{ color: '#FFF', fontSize: 14, fontFamily: F.bodySemiBold }}>Crear cuenta o iniciar sesión</Text>
+              </View>
+            </AnimatedButton>
+          </View>
+        </View>
+      </Modal>
+
+    </View>
   );
 }

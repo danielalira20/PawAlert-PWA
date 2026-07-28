@@ -1,0 +1,38 @@
+-- Documenta dos piezas que ya existen en producción pero nunca quedaron
+-- registradas en ningún archivo de migración.
+
+-- 1. perfil_apoyo.razon_rechazo — confirmado contra el schema real
+-- (OpenAPI de PostgREST): text, nullable. La usa el flujo de verificación
+-- de admin (backend/app/api/admin.py: listar_perfiles_aliados_pendientes /
+-- resolver_perfil_aliado) para guardar el motivo cuando se rechaza un
+-- perfil_apoyo de aliado_local/patrocinador_institucional.
+ALTER TABLE perfil_apoyo ADD COLUMN IF NOT EXISTS razon_rechazo text;
+
+-- 2. notificar_aliados_cercanos — función RPC confirmada como existente en
+-- producción (/rpc/notificar_aliados_cercanos responde en el schema de
+-- PostgREST), pero SIN ningún archivo de migración que la haya creado.
+--
+-- Esta nota NO incluye un CREATE OR REPLACE FUNCTION con el cuerpo SQL:
+-- no se pudo recuperar la implementación real por esta vía de
+-- introspección (solo REST/OpenAPI, sin acceso a psql/pg_proc). Escribir
+-- un cuerpo adivinado sería peligroso — un CREATE OR REPLACE con lógica
+-- inventada reemplazaría silenciosamente la función real si alguien
+-- llegara a correr este archivo contra producción.
+--
+-- Lo que sí se confirmó:
+--   - Firma de entrada: notificar_aliados_cercanos(p_necesidad_id uuid)
+--     (único parámetro, requerido — confirmado en el schema OpenAPI).
+--   - Quién la llama: crear_necesidad_asociacion() en
+--     backend/app/services/red_aliados_service.py, como paso best-effort
+--     (try/except) justo después de insertar en `necesidades` — si falla,
+--     solo se imprime un [WARN], nunca tumba la creación de la necesidad.
+--   - Qué genera: filas reales en `notificaciones_aliado` con
+--     tipo = 'proximidad' (confirmado observando una fila real ya
+--     insertada en producción con ese tipo, distinto de 'oferta_aceptada'
+--     que sí está documentado en red_aliados_service.py).
+--
+-- Pendiente para quien tenga acceso directo a psql: correr
+-- \df+ notificar_aliados_cercanos (o consultar pg_proc) para recuperar
+-- el cuerpo real y completar esta migración con un CREATE OR REPLACE
+-- FUNCTION fiel, si alguna vez hace falta reconstruir el esquema desde
+-- cero en un entorno nuevo.

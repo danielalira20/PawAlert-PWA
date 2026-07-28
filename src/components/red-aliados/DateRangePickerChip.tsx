@@ -32,7 +32,8 @@ interface Props {
 // Mismo patrón de calendario-popover que DatePickerChip, pero de rango
 // (estilo Airbnb: tocas el día de inicio, luego el final, y se ilumina
 // todo lo de en medio) — reemplaza tener dos DatePickerChip separados
-// ("desde" y "hasta") por un solo selector.
+// ("desde" y "hasta") por un solo selector. Si el segundo toque cae antes
+// del inicio, se invierten solos (nunca deja el rango a medias).
 export function DateRangePickerChip({ label, startDate, endDate, onChange, required, error, minDate = new Date() }: Props) {
   const [open, setOpen] = useState(false);
   const [mes, setMes] = useState(startDate || new Date());
@@ -49,20 +50,20 @@ export function DateRangePickerChip({ label, startDate, endDate, onChange, requi
       return;
     }
 
-    // Ya hay inicio, falta el final.
+    // Ya hay inicio, falta el final — si el toque cae antes, se invierten.
     if (isBefore(dia, startDate)) {
-      onChange(dia, null);
+      onChange(dia, startDate);
     } else {
       onChange(startDate, dia);
-      setOpen(false);
     }
+    setOpen(false);
   };
 
   const triggerTexto = () => {
     if (startDate && endDate) {
       return `${format(startDate, 'd MMM', { locale: es })} – ${format(endDate, 'd MMM yyyy', { locale: es })}`;
     }
-    if (startDate) return `Desde ${format(startDate, "d 'de' MMMM", { locale: es })}`;
+    if (startDate) return `${format(startDate, "d 'de' MMM", { locale: es })} → elige la fecha final`;
     return 'Elegir fechas';
   };
 
@@ -113,10 +114,10 @@ export function DateRangePickerChip({ label, startDate, endDate, onChange, requi
                 const enEsteMes = isSameMonth(dia, mes);
                 const esInicio = startDate ? isSameDay(dia, startDate) : false;
                 const esFin = endDate ? isSameDay(dia, endDate) : false;
-                const enRango =
-                  startDate && endDate
-                    ? isWithinInterval(dia, { start: startDate, end: endDate })
-                    : false;
+                const esExtremo = esInicio || esFin;
+                const esEnRango = startDate && endDate
+                  ? isWithinInterval(dia, { start: startDate, end: endDate })
+                  : false;
                 const esHoy = isSameDay(dia, new Date());
                 const deshabilitado = esDeshabilitado(dia);
 
@@ -125,25 +126,27 @@ export function DateRangePickerChip({ label, startDate, endDate, onChange, requi
                     key={i}
                     onPress={() => handlePickDay(dia)}
                     disabled={deshabilitado}
-                    style={[styles.diaCell, enRango && styles.diaCellEnRango]}
+                    style={styles.diaCell}
                   >
-                    <View
-                      style={[
-                        styles.diaCirculo,
-                        (esInicio || esFin) && styles.diaCirculoSeleccionado,
-                        esHoy && !esInicio && !esFin && styles.diaCirculoHoy,
-                      ]}
-                    >
-                      <Text
+                    <View style={[styles.diaCeldaFondo, esEnRango && styles.diaCeldaFondoRango]}>
+                      <View
                         style={[
-                          styles.diaTexto,
-                          !enEsteMes && styles.diaTextoFuera,
-                          (esInicio || esFin) && styles.diaTextoSeleccionado,
-                          deshabilitado && styles.diaTextoDeshabilitado,
+                          styles.diaCirculo,
+                          esExtremo && styles.diaCirculoSeleccionado,
+                          esHoy && !esExtremo && styles.diaCirculoHoy,
                         ]}
                       >
-                        {format(dia, 'd')}
-                      </Text>
+                        <Text
+                          style={[
+                            styles.diaTexto,
+                            !enEsteMes && styles.diaTextoFuera,
+                            esExtremo && styles.diaTextoSeleccionado,
+                            deshabilitado && styles.diaTextoDeshabilitado,
+                          ]}
+                        >
+                          {format(dia, 'd')}
+                        </Text>
+                      </View>
                     </View>
                   </TouchableOpacity>
                 );
@@ -205,7 +208,10 @@ const styles = StyleSheet.create({
   diaSemanaText: { fontSize: 10, color: Brand.textMuted, fontWeight: '700' },
   grid: { flexDirection: 'row', flexWrap: 'wrap' },
   diaCell: { width: `${100 / 7}%`, alignItems: 'center', paddingVertical: 3 },
-  diaCellEnRango: { backgroundColor: `${Brand.secondary}30` },
+  // Franja de fondo del rango — mismo criterio de opacidad-por-sufijo que ya
+  // usa limpiarBtn (`${Brand.primary}22`) en DatePickerChip.tsx.
+  diaCeldaFondo: { width: '100%', alignItems: 'center', borderRadius: 14 },
+  diaCeldaFondoRango: { backgroundColor: `${Brand.secondary}22` },
   diaCirculo: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   diaCirculoSeleccionado: { backgroundColor: Brand.secondary },
   diaCirculoHoy: { borderWidth: 1.5, borderColor: Brand.secondary },

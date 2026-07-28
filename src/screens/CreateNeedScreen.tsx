@@ -31,52 +31,29 @@ const SHADOW_SM = {
   elevation: 2,
 };
 
-type CategoriaRecurso = 'Alimentos' | 'Insumos Médicos' | 'Servicios Veterinarios' | 'Difusión' | 'Transporte' | 'Hogar Temporal';
 type NivelUrgencia = 'Baja' | 'Media' | 'Alta';
 
-const CATEGORIAS: { id: CategoriaRecurso; icono: keyof typeof Ionicons.glyphMap }[] = [
-  { id: 'Alimentos', icono: 'nutrition-outline' },
-  { id: 'Insumos Médicos', icono: 'medkit-outline' },
-  { id: 'Servicios Veterinarios', icono: 'pulse-outline' },
-  { id: 'Difusión', icono: 'megaphone-outline' },
-  { id: 'Transporte', icono: 'car-outline' },
-  { id: 'Hogar Temporal', icono: 'home-outline' },
-];
+interface CategoriaRecursoApi {
+  id: string;
+  clave: string;
+  descripcion: string;
+}
 
-// MOCK: Tabla 'subcategoria_recurso' basada en datos reales
-const SUBCATEGORIAS_MOCK: Record<string, { id: string, nombre: string }[]> = {
-  'Alimentos': [
-    { id: 'a64f9bce-3ed4-4a82-b6bd-a70b00e14a92', nombre: 'Croquetas' },
-    { id: '065ef372-efe2-4238-8b32-1f03ed8039ec', nombre: 'Alimento húmedo (latas, sobres)' },
-    { id: 'c7d3642a-79fb-4560-b95d-f52a1c011df1', nombre: 'Fórmula para crías' }
-  ],
-  'Insumos Médicos': [
-    { id: 'fc521ed7-1659-404b-be06-6a4b3cc47409', nombre: 'Material de curación' },
-    { id: '49fc255f-26a9-4f93-abe2-00f9dfcf61c1', nombre: 'Kit médico animal' },
-    { id: '686113c0-0a26-4153-9d80-518d07544d90', nombre: 'Arena sanitaria' },
-    { id: '2b6ea89a-e7b8-4e5d-9a22-0464d0deb91f', nombre: 'Material de limpieza' },
-    { id: '72ef61e0-5431-437e-918a-b6d826664302', nombre: 'Correas' },
-    { id: '83da04a3-600d-42a2-b221-3ecb89de29f1', nombre: 'Bozales' },
-    { id: 'b8b16048-0f56-438b-99e0-9b058309f2cd', nombre: 'Transportadoras' },
-    { id: 'befdfe9f-0873-4537-9400-360d7cb8df66', nombre: 'Cobijas' },
-    { id: 'dbe913a0-9fe5-4929-8917-03b963e254ef', nombre: 'Camas' },
-    { id: 'e2262f0a-4a2a-4e7c-8e73-d342ccd89aa8', nombre: 'Collares' }
-  ],
-  'Servicios Veterinarios': [
-    { id: '7f177586-aa6f-45b3-83a4-8df1f6c7188c', nombre: 'Consulta general o de urgencia' },
-    { id: 'cd543257-db83-45ea-b53f-017d62e11256', nombre: 'Medicamentos' },
-    { id: '3171a143-2ac2-4365-8ab4-3da40bd634e9', nombre: 'Hospitalización' },
-    { id: '608d3116-7514-452f-96b9-ca45d6cfb8b6', nombre: 'Vacunación y esterilización' },
-    { id: 'bfeb7215-e2f6-442e-b4ab-bb32fc685b70', nombre: 'Curaciones y cirugía' },
-    { id: 'cb4824b7-733f-453c-bb0e-8df3bbff4c34', nombre: 'Diagnóstico y estudios' }
-  ],
-  'Difusión': [
-    { id: '0b65642a-64f7-4520-b224-76094dc047f0', nombre: 'Servicios profesionales o tecnológicos' },
-    { id: '54ba0656-24b5-4e62-8b34-50e474bba7d2', nombre: 'Espacios para eventos' },
-    { id: '6bba0617-1584-4538-9e56-a7ffc02ddd39', nombre: 'Publicidad digital o impresa' },
-    { id: 'ffe24da7-2686-454e-a23a-5d9a170b6f1f', nombre: 'Jornadas comunitarias' }
-  ]
+interface SubcategoriaRecursoApi {
+  id: string;
+  clave: string;
+  descripcion: string;
+}
+
+// Ícono por clave real de categoria_recurso — fallback genérico si el
+// catálogo llega a tener una categoría sin ícono asignado aquí.
+const ICONO_POR_CLAVE: Record<string, keyof typeof Ionicons.glyphMap> = {
+  alimentos: 'nutrition-outline',
+  insumos: 'medkit-outline',
+  servicios_veterinarios: 'pulse-outline',
+  difusion_campanas: 'megaphone-outline',
 };
+const ICONO_DEFAULT: keyof typeof Ionicons.glyphMap = 'cube-outline';
 
 export default function CreateNeedScreen() {
   const { token } = useAuth();
@@ -84,20 +61,58 @@ export default function CreateNeedScreen() {
 
   const [tipoNecesidad, setTipoNecesidad] = useState<'general' | 'especifica'>('general');
   const [reporteId, setReporteId] = useState<string | null>(null);
-  const [categoria, setCategoria] = useState<CategoriaRecurso | null>(null);
+  const [categoria, setCategoria] = useState<string | null>(null);
   const [subcategoriaId, setSubcategoriaId] = useState<string | null>(null);
   const [urgencia, setUrgencia] = useState<NivelUrgencia | null>(null);
-  
+
   const [cantidadValor, setCantidadValor] = useState('');
   const [cantidadUnidad, setCantidadUnidad] = useState('');
   const [notasAdicionales, setNotasAdicionales] = useState('');
-  
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   // Ahora guardamos la foto_url en lugar de la ubicación
   const [reportesActivos, setReportesActivos] = useState<{id: string, titulo: string, foto_url: string | null}[]>([]);
   const [isLoadingReportes, setIsLoadingReportes] = useState(false);
+
+  const [categoriasData, setCategoriasData] = useState<CategoriaRecursoApi[]>([]);
+  const [subcategoriasData, setSubcategoriasData] = useState<SubcategoriaRecursoApi[]>([]);
+  const [isLoadingSubcategorias, setIsLoadingSubcategorias] = useState(false);
+
+  useEffect(() => {
+    const cargarCategorias = async () => {
+      try {
+        const res = await axios.get(`${API_URL}/red-aliados/categorias`);
+        setCategoriasData(res.data);
+      } catch (error) {
+        console.error("Error al cargar categorías:", error);
+      }
+    };
+    cargarCategorias();
+  }, []);
+
+  useEffect(() => {
+    if (!categoria) {
+      setSubcategoriasData([]);
+      return;
+    }
+    let vigente = true;
+    const cargarSubcategorias = async () => {
+      setIsLoadingSubcategorias(true);
+      try {
+        const res = await axios.get(`${API_URL}/red-aliados/subcategorias/${categoria}`);
+        if (vigente) setSubcategoriasData(res.data);
+      } catch (error) {
+        console.error("Error al cargar subcategorías:", error);
+        if (vigente) setSubcategoriasData([]);
+      } finally {
+        if (vigente) setIsLoadingSubcategorias(false);
+      }
+    };
+    cargarSubcategorias();
+    return () => { vigente = false; };
+  }, [categoria]);
 
   useEffect(() => {
     const cargarCasosCerrados = async () => {
@@ -145,7 +160,7 @@ export default function CreateNeedScreen() {
     if (!categoria) {
       newErrors.categoria = 'Debes seleccionar una categoría.';
     }
-    if (categoria === 'Servicios Veterinarios' && !urgencia) {
+    if (categoria === 'servicios_veterinarios' && !urgencia) {
       newErrors.urgencia = 'Indica la urgencia médica.';
     }
     if (cantidadValor && !cantidadUnidad) {
@@ -277,16 +292,16 @@ export default function CreateNeedScreen() {
               <View style={{ marginBottom: 24 }}>
                 <Text style={{ fontSize: 15, fontWeight: '700', color: COLORS.textDark, marginBottom: 12 }}>Categoría del recurso</Text>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-                  {CATEGORIAS.map((cat) => {
-                    const isSelected = categoria === cat.id;
+                  {categoriasData.map((cat) => {
+                    const isSelected = categoria === cat.clave;
                     return (
                       <TouchableOpacity
-                        key={cat.id}
-                        onPress={() => { setCategoria(cat.id); setSubcategoriaId(null); setUrgencia(null); }}
+                        key={cat.clave}
+                        onPress={() => { setCategoria(cat.clave); setSubcategoriaId(null); setUrgencia(null); }}
                         style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20, backgroundColor: isSelected ? COLORS.secondary : COLORS.white, borderWidth: 1, borderColor: isSelected ? COLORS.secondary : 'rgba(0,0,0,0.05)', ...SHADOW_SM }}
                       >
-                        <Ionicons name={cat.icono} size={16} color={isSelected ? COLORS.textDark : COLORS.textLight} style={{ marginRight: 6 }} />
-                        <Text style={{ fontWeight: '700', fontSize: 13, color: isSelected ? COLORS.textDark : COLORS.textLight }}>{cat.id}</Text>
+                        <Ionicons name={ICONO_POR_CLAVE[cat.clave] || ICONO_DEFAULT} size={16} color={isSelected ? COLORS.textDark : COLORS.textLight} style={{ marginRight: 6 }} />
+                        <Text style={{ fontWeight: '700', fontSize: 13, color: isSelected ? COLORS.textDark : COLORS.textLight }}>{cat.descripcion}</Text>
                       </TouchableOpacity>
                     )
                   })}
@@ -295,25 +310,29 @@ export default function CreateNeedScreen() {
               </View>
 
               {/* Subcategoría Opcional */}
-              {categoria && SUBCATEGORIAS_MOCK[categoria] && (
+              {categoria && (isLoadingSubcategorias || subcategoriasData.length > 0) && (
                 <View style={{ marginBottom: 24, padding: 16, backgroundColor: 'rgba(236,128,43,0.08)', borderRadius: 16 }}>
                   <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.textDark, marginBottom: 10 }}>Específica lo que necesitas (Opcional)</Text>
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                    {SUBCATEGORIAS_MOCK[categoria].map((sub) => (
-                      <TouchableOpacity
-                        key={sub.id}
-                        onPress={() => setSubcategoriaId(sub.id === subcategoriaId ? null : sub.id)}
-                        style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: subcategoriaId === sub.id ? COLORS.primary : COLORS.white, borderWidth: 1, borderColor: subcategoriaId === sub.id ? COLORS.primary : '#E5E7EB' }}
-                      >
-                        <Text style={{ fontSize: 12, fontWeight: '600', color: subcategoriaId === sub.id ? COLORS.white : COLORS.textDark }}>{sub.nombre}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
+                  {isLoadingSubcategorias ? (
+                    <ActivityIndicator color={COLORS.primary} />
+                  ) : (
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                      {subcategoriasData.map((sub) => (
+                        <TouchableOpacity
+                          key={sub.id}
+                          onPress={() => setSubcategoriaId(sub.id === subcategoriaId ? null : sub.id)}
+                          style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: subcategoriaId === sub.id ? COLORS.primary : COLORS.white, borderWidth: 1, borderColor: subcategoriaId === sub.id ? COLORS.primary : '#E5E7EB' }}
+                        >
+                          <Text style={{ fontSize: 12, fontWeight: '600', color: subcategoriaId === sub.id ? COLORS.white : COLORS.textDark }}>{sub.descripcion}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
                 </View>
               )}
 
               {/* ── URGENCIA VETERINARIA ── */}
-              {categoria === 'Servicios Veterinarios' && (
+              {categoria === 'servicios_veterinarios' && (
                 <View style={{ marginBottom: 24 }}>
                   <Text style={{ fontSize: 15, fontWeight: '700', color: COLORS.textDark, marginBottom: 12 }}>Nivel de Urgencia</Text>
                   <View style={{ flexDirection: 'row', gap: 10 }}>
@@ -362,7 +381,7 @@ export default function CreateNeedScreen() {
               <View style={{ marginBottom: 28 }}>
                 <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.textDark, marginBottom: 8 }}>Detalles o Especificaciones (Opcional)</Text>
                 <Input 
-                  placeholder={categoria === 'Alimentos' ? "Ej. Para cachorro etapa 1, marca recomendada..." : "Añade notas para los aliados..."}
+                  placeholder={categoria === 'alimentos' ? "Ej. Para cachorro etapa 1, marca recomendada..." : "Añade notas para los aliados..."}
                   value={notasAdicionales} 
                   onChangeText={setNotasAdicionales} 
                 />

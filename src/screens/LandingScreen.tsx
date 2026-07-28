@@ -866,85 +866,12 @@ export default function LandingScreen() {
                                         }
 
                                         // ── LISTA DE BOTONES PILL (estado inicial) ──
+                                        // Los 3 botones de acceso rápido (directorio/aportación/mis
+                                        // lotes) que vivían aquí se movieron al dashboard de Mi Perfil
+                                        // — landing solo se queda con las tarjetas de rol para gente
+                                        // nueva (subs.map de abajo).
                                         return (
                                           <View style={{ gap: 10 }}>
-                                            <AnimatedButton onPress={() => router.push('/aliados-directorio' as any)}>
-                                              <View style={{
-                                                flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                                                paddingVertical: 14, paddingHorizontal: 18,
-                                                borderRadius: 16,
-                                                backgroundColor: activeColor,
-                                                ...(isWeb ? { boxShadow: `0 2px 8px ${activeColor}30` } : { elevation: 1 }),
-                                              } as any}>
-                                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
-                                                  <View style={{
-                                                    width: 32, height: 32, borderRadius: 16,
-                                                    backgroundColor: 'rgba(255,255,255,0.25)',
-                                                    alignItems: 'center', justifyContent: 'center',
-                                                  }}>
-                                                    <Ionicons name="people-outline" size={16} color="#FFF" />
-                                                  </View>
-                                                  <Text style={{
-                                                    fontSize: 14, fontFamily: F.bodySemiBold, color: '#FFF', flex: 1,
-                                                  }}>
-                                                    Ver quién ya está ayudando
-                                                  </Text>
-                                                </View>
-                                                <Ionicons name="chevron-forward" size={16} color="#FFF" />
-                                              </View>
-                                            </AnimatedButton>
-                                            <AnimatedButton onPress={() => router.push(isLoggedIn ? ('/red-aliados' as any) : '/login')}>
-                                              <View style={{
-                                                flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                                                paddingVertical: 14, paddingHorizontal: 18,
-                                                borderRadius: 16,
-                                                backgroundColor: `${activeColor}10`,
-                                                borderWidth: 1, borderColor: `${activeColor}30`,
-                                                ...(isWeb ? { boxShadow: `0 2px 8px ${activeColor}10` } : { elevation: 1 }),
-                                              } as any}>
-                                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
-                                                  <View style={{
-                                                    width: 32, height: 32, borderRadius: 16,
-                                                    backgroundColor: `${activeColor}20`,
-                                                    alignItems: 'center', justifyContent: 'center',
-                                                  }}>
-                                                    <Ionicons name="cube-outline" size={16} color={activeColor} />
-                                                  </View>
-                                                  <Text style={{
-                                                    fontSize: 14, fontFamily: F.bodySemiBold, color: activeColor, flex: 1,
-                                                  }}>
-                                                    Registrar una aportación o lote
-                                                  </Text>
-                                                </View>
-                                                <Ionicons name="chevron-forward" size={16} color={activeColor} />
-                                              </View>
-                                            </AnimatedButton>
-                                            <AnimatedButton onPress={() => router.push(isLoggedIn ? ('/mis-lotes' as any) : '/login')}>
-                                              <View style={{
-                                                flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                                                paddingVertical: 14, paddingHorizontal: 18,
-                                                borderRadius: 16,
-                                                backgroundColor: `${activeColor}10`,
-                                                borderWidth: 1, borderColor: `${activeColor}30`,
-                                                ...(isWeb ? { boxShadow: `0 2px 8px ${activeColor}10` } : { elevation: 1 }),
-                                              } as any}>
-                                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
-                                                  <View style={{
-                                                    width: 32, height: 32, borderRadius: 16,
-                                                    backgroundColor: `${activeColor}20`,
-                                                    alignItems: 'center', justifyContent: 'center',
-                                                  }}>
-                                                    <Ionicons name="list-outline" size={16} color={activeColor} />
-                                                  </View>
-                                                  <Text style={{
-                                                    fontSize: 14, fontFamily: F.bodySemiBold, color: activeColor, flex: 1,
-                                                  }}>
-                                                    Mis lotes registrados
-                                                  </Text>
-                                                </View>
-                                                <Ionicons name="chevron-forward" size={16} color={activeColor} />
-                                              </View>
-                                            </AnimatedButton>
                                             {subs.map((sub: any) => (
                                               <AnimatedButton key={sub.id} onPress={() => setSelectedSubcategoryId(sub.id)}>
                                                 <View style={{
