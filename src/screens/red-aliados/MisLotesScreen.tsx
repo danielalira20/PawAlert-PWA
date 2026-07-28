@@ -153,7 +153,7 @@ export default function MisLotesScreen({ onClose }: Props) {
               <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
                 <View style={{ backgroundColor: `${COLORS.primary}15`, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 }}>
                   <Text style={{ fontSize: 11, fontWeight: '700', color: COLORS.primary }}>
-                    {l.asociaciones_invitadas} invitada{l.asociaciones_invitadas !== 1 ? 's' : ''}
+                    {l.asociaciones_invitadas} invitada{l.asociaciones_invitadas !== 1 ? 's' : ''} en total
                   </Text>
                 </View>
                 <View style={{ backgroundColor: `${COLORS.success}15`, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 }}>
