@@ -13,7 +13,7 @@ from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
 from app.services import coverage_service, matching
-from app.db.supabase import supabase
+from app.db.supabase import supabase, supabase_admin
 from app.utils.animal_shaping import shape_animal_embed, condicion_mas_grave
 
 router = APIRouter()
@@ -108,14 +108,20 @@ def asignar_voluntario(
     reporte = _reporte_o_404(reporte_id)
     _validar_es_asociacion_duena(usuario, reporte)
 
-    vol = (
-        supabase.table("voluntarios")
-        .select(
-            "id, usuario_id, estado, "
-            "usuarios(nombre, apellido_paterno, roles(nombre))"
+    try:
+        vol = (
+            supabase_admin.table("voluntarios")
+            .select(
+                "id, usuario_id, estado, "
+                "usuarios(nombre, apellido_paterno, roles(nombre))"
+            )
+            .eq("id", body.voluntario_id).single().execute().data
         )
-        .eq("id", body.voluntario_id).single().execute().data
-    )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="No pudimos consultar el perfil del voluntario seleccionado",
+        ) from exc
     if not vol or vol["estado"] not in ESTADOS_ACTIVOS_VOLUNTARIO:
         raise HTTPException(status_code=422, detail="El voluntario no existe o no está activo")
 

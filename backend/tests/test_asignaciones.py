@@ -108,6 +108,7 @@ def test_asignar_voluntario_deja_confirmacion_esperando(make_query):
             "reservar_cobertura",
         ) as reservar,
         patch.object(asignaciones, "supabase", supabase),
+        patch.object(asignaciones, "supabase_admin", supabase),
     ):
         resultado = asignaciones.asignar_voluntario(
             "rep-1", asignaciones.AsignarBody(voluntario_id="vol-1"), "Bearer token"
@@ -136,6 +137,7 @@ def test_asignar_rechaza_voluntario_inactivo(make_query):
         patch.object(asignaciones, "_reporte_o_404", return_value={"staff_asignado_id": None}),
         patch.object(asignaciones, "_validar_es_asociacion_duena"),
         patch.object(asignaciones, "supabase", supabase),
+        patch.object(asignaciones, "supabase_admin", supabase),
         pytest.raises(HTTPException) as error,
     ):
         asignaciones.asignar_voluntario(
@@ -168,6 +170,7 @@ def test_asignar_rechaza_candidato_que_dejo_de_estar_disponible(make_query):
             return_value={"candidatos": []},
         ),
         patch.object(asignaciones, "supabase", supabase),
+        patch.object(asignaciones, "supabase_admin", supabase),
         pytest.raises(HTTPException) as error,
     ):
         asignaciones.asignar_voluntario(
@@ -177,6 +180,68 @@ def test_asignar_rechaza_candidato_que_dejo_de_estar_disponible(make_query):
         )
 
     assert error.value.status_code == 409
+
+
+def test_asignar_externo_usa_perfil_administrativo_y_ofrecimiento_vigente(make_query):
+    supabase_admin, _ = tablas_mock(make_query, {
+        "voluntarios": {"data": {
+            "id": "vol-externo",
+            "usuario_id": "user-externo",
+            "estado": "activo_nivel_2",
+            "usuarios": {
+                "nombre": "Rafael",
+                "apellido_paterno": "Jude",
+                "roles": {"nombre": "voluntario_externo"},
+            },
+        }},
+    })
+    supabase_publico = MagicMock()
+    reporte = {
+        "id": "rep-1",
+        "asociacion_asignada_id": "aso-1",
+        "staff_asignado_id": None,
+    }
+
+    with (
+        patch.object(
+            asignaciones,
+            "_obtener_usuario_autenticado",
+            return_value={"id": "aso-user"},
+        ),
+        patch.object(asignaciones, "_reporte_o_404", return_value=reporte),
+        patch.object(asignaciones, "_validar_es_asociacion_duena"),
+        patch.object(
+            asignaciones.coverage_service,
+            "obtener_ofrecimientos_reporte",
+            return_value=[{"voluntario_id": "vol-externo"}],
+        ),
+        patch.object(
+            asignaciones.coverage_service,
+            "reservar_cobertura",
+        ) as reservar,
+        patch.object(asignaciones, "supabase", supabase_publico),
+        patch.object(asignaciones, "supabase_admin", supabase_admin),
+    ):
+        resultado = asignaciones.asignar_voluntario(
+            "rep-1",
+            asignaciones.AsignarBody(voluntario_id="vol-externo"),
+            "Bearer token",
+        )
+
+    reservar.assert_called_once_with(
+        reporte_id="rep-1",
+        usuario_asignado_id="user-externo",
+        voluntario_id="vol-externo",
+        asociacion_id="aso-1",
+        actor_id="aso-user",
+        origen="ofrecimiento_externo",
+    )
+    assert resultado == {
+        "ok": True,
+        "voluntario_asignado": "Rafael Jude",
+        "confirmacion": "esperando",
+    }
+    supabase_publico.table.assert_not_called()
 
 
 def test_confirmar_asignacion_mueve_reporte_a_en_camino(make_query):
