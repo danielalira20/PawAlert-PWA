@@ -115,9 +115,16 @@ const SUGERENCIA_ETAPA_POR_EDAD: Record<string, string> = {
 // Mismos valores reales que TIPOS_HITO_TIMELINE en associations.py.
 const HITO_LABELS: Record<string, string> = {
   reporte_creado: 'Reporte creado',
+  llegada_zona_reporte: 'Voluntario en la zona',
+  hito_llegada_zona_reporte: 'Voluntario en la zona',
+  animal_encontrado: 'Encontraron al animal',
   hito_encontre_animal: 'Encontraron al animal',
+  animal_no_localizado: 'Búsqueda sin localizar al animal',
+  hito_animal_no_localizado: 'Búsqueda sin localizar al animal',
+  llegada_veterinaria: 'Llegó a la veterinaria',
   hito_llegue_refugio: 'Llegó al refugio',
   hito_llego_veterinaria: 'Llegó a la veterinaria',
+  llegada_hogar_temporal: 'Animal bajo resguardo',
   caso_cerrado: 'Caso cerrado',
   necesidad_cubierta: 'Necesidad cubierta',
 };

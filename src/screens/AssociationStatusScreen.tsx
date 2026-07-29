@@ -263,7 +263,15 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
 
   const TIMELINE_LABELS: Record<string, { label: string; icon: keyof typeof Ionicons.glyphMap }> = {
     reporte_creado: { label: 'Reporte creado', icon: 'flag-outline' },
+    llegada_zona_reporte: { label: 'Llegó a la zona del reporte', icon: 'location-outline' },
+    hito_llegada_zona_reporte: { label: 'Llegó a la zona del reporte', icon: 'location-outline' },
+    animal_encontrado: { label: 'Animal encontrado', icon: 'paw-outline' },
     hito_encontre_animal: { label: 'Animal encontrado', icon: 'paw-outline' },
+    animal_no_localizado: { label: 'Animal no localizado', icon: 'search-outline' },
+    hito_animal_no_localizado: { label: 'Animal no localizado', icon: 'search-outline' },
+    llegada_veterinaria: { label: 'Llegada a la veterinaria', icon: 'medkit-outline' },
+    hito_llego_veterinaria: { label: 'Llegada a la veterinaria', icon: 'medkit-outline' },
+    llegada_hogar_temporal: { label: 'Llegada al hogar temporal', icon: 'home-outline' },
     hito_llegue_refugio: { label: 'Llegada al refugio', icon: 'home-outline' },
     caso_cerrado: { label: 'Caso cerrado', icon: 'checkmark-done-circle-outline' },
   };

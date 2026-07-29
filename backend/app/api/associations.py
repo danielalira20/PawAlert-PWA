@@ -459,9 +459,10 @@ async def get_reportes_asignados(authorization: str = Header(None)):
 
     # Motor de sugerencias Ruta 1 (BACK01/BACK02): si ya existe una
     # contribución con reporte_id, la sugerencia de aliado veterinario fue
-    # aceptada; si además ya hay un evento "hito_llego_veterinaria" en el
+    # aceptada; si además ya hay un evento de llegada a veterinaria en el
     # historial, el hito de llegada ya se registró (el botón correspondiente
-    # se oculta en el frontend para no permitir un segundo registro).
+    # se oculta en el frontend). Se aceptan el nombre canónico y el alias
+    # histórico.
     reporte_ids_todos = [
         r["reportes"]["id"] for r in resultado.data if r.get("reportes")
     ]
@@ -475,9 +476,16 @@ async def get_reportes_asignados(authorization: str = Header(None)):
             c["reporte_id"] for c in (contribs.data or []) if c.get("reporte_id")
         }
 
-        llegadas = supabase.table("historial_reporte").select("reporte_id").in_(
-            "reporte_id", reporte_ids_todos
-        ).eq("tipo_evento", "hito_llego_veterinaria").execute()
+        llegadas = (
+            supabase.table("historial_reporte")
+            .select("reporte_id")
+            .in_("reporte_id", reporte_ids_todos)
+            .in_(
+                "tipo_evento",
+                ["llegada_veterinaria", "hito_llego_veterinaria"],
+            )
+            .execute()
+        )
         reportes_con_llegada_registrada = {
             e["reporte_id"] for e in (llegadas.data or []) if e.get("reporte_id")
         }
@@ -550,13 +558,20 @@ async def get_reportes_con_necesidad_activa(authorization: str = Header(None)):
 
 
 # Tipos de evento que la línea de tiempo del panel de asociación necesita
-# mostrar además del evento de creación. Los valores reales que escribe
-# POST /reports/{id}/hitos son "hito_{tipo_hito}" (ver reports.py), es decir
-# "hito_encontre_animal", "hito_llegue_refugio" y "hito_llego_veterinaria"
-# — no "hito_encontrado"/"hito_refugio". "caso_cerrado" lo escribe
-# cambiar_estado_reporte() (report_service.py) cuando nuevo_estado == "cerrado".
+# mostrar además del evento de creación. Incluye los hitos canónicos
+# aprobados para externos y los alias históricos para casos anteriores.
 TIPOS_HITO_TIMELINE = [
-    "hito_encontre_animal", "hito_llegue_refugio", "hito_llego_veterinaria", "caso_cerrado",
+    "llegada_zona_reporte",
+    "animal_encontrado",
+    "animal_no_localizado",
+    "llegada_veterinaria",
+    "llegada_hogar_temporal",
+    "hito_llegada_zona_reporte",
+    "hito_encontre_animal",
+    "hito_animal_no_localizado",
+    "hito_llegue_refugio",
+    "hito_llego_veterinaria",
+    "caso_cerrado",
     "necesidad_cubierta",
 ]
 
@@ -643,6 +658,16 @@ async def get_historial_reporte(reporte_id: str, authorization: str = Header(Non
             nota_partes = [p for p in (datos_extra.get("conclusion"), datos_extra.get("notas")) if p]
         elif hito["tipo_evento"] == "necesidad_cubierta":
             nota_partes = [p for p in (datos_extra.get("nombre_aliado"), datos_extra.get("subcategoria") or datos_extra.get("categoria")) if p]
+        elif hito["tipo_evento"] in ("animal_no_localizado", "hito_animal_no_localizado"):
+            tiempo = datos_extra.get("tiempo_busqueda_minutos")
+            nota_partes = [
+                p
+                for p in (
+                    f"{tiempo} min de búsqueda" if tiempo else None,
+                    datos_extra.get("comentario"),
+                )
+                if p
+            ]
         else:
             nota_partes = [p for p in (datos_extra.get("condicion_observada"), datos_extra.get("comentario")) if p]
         nota_hito = " — ".join(nota_partes) if nota_partes else None
@@ -1325,4 +1350,4 @@ async def patch_verificar_aliado(
         "aliado_verificado_at": datetime.now(timezone.utc).isoformat()
     }).eq("id", perfil["id"]).execute()
 
-    return {"mensaje": "Sello de aliado verificado otorgado exitosamente", "perfil": update_res.data[0]}
+    return {"mensaje": "Sello de aliado verificado otorgado exitosamente", "perfil": update_res.data[0]}
