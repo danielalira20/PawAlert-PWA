@@ -1472,7 +1472,7 @@ export default function AportacionFormScreen({ onClose }: Props) {
           )
         )}
 
-        {!esLote && !esServicio &&(
+        {!esServicio &&(
           vieneDeNecesidad ? (
             <FormSection
               title="¿Dónde entregas?"
