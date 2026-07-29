@@ -1425,97 +1425,115 @@ export default function AportacionFormScreen({ onClose }: Props) {
           <View style={esLote && mostrarPresentacionEnColumnas ? styles.presentationColumns : undefined}>
             <View style={esLote && mostrarPresentacionEnColumnas ? styles.presentationColumn : undefined}>
               {esLote && <Text style={styles.presentationColumnTitle}>Cantidad total</Text>}
-              <TextInputField
-                value={cantidadValor}
-                onChangeText={(v) => setCantidadValor(v.replace(/[^0-9.]/g, ''))}
-                placeholder="Ej. 10"
-                placeholderTextColor="rgba(140, 122, 107, 0.55)"
-                keyboardType="numeric"
-              />
+              {vieneDeNecesidad ? (
+                <View style={styles.stepperRow}>
+                  <TouchableOpacity onPress={() => stepCantidadValor(-1)} style={styles.stepperBtn}>
+                    <Ionicons name="remove" size={18} color={COLORS.bgWhite} />
+                  </TouchableOpacity>
+                  <Text style={styles.stepperValue}>{cantidadValor || '0'}</Text>
+                  <TouchableOpacity onPress={() => stepCantidadValor(1)} style={styles.stepperBtn}>
+                    <Ionicons name="add" size={18} color={COLORS.bgWhite} />
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TextInputField
+                  value={cantidadValor}
+                  onChangeText={(v) => setCantidadValor(v.replace(/[^0-9.]/g, ''))}
+                  placeholder="Ej. 10"
+                  placeholderTextColor="rgba(140, 122, 107, 0.55)"
+                  keyboardType="numeric"
+                />
+              )}
               {errors.cantidadValor && <ErrorText text={errors.cantidadValor} />}
               <Text style={[styles.sectionSubtitle, { marginTop: 12 }]}>Unidad</Text>
-              <View style={styles.unitSelectContainer}>
-                <TouchableOpacity
-                  style={[
-                    styles.unitSelectTrigger,
-                    unidadMenuAbierto && styles.unitSelectTriggerOpen,
-                    errors.cantidadUnidad && styles.unitSelectTriggerError,
-                  ]}
-                  onPress={() => setUnidadMenuAbierto((abierto) => !abierto)}
-                  activeOpacity={0.8}
-                >
-                  <Text
-                    style={[
-                      styles.unitSelectValue,
-                      !cantidadUnidad && !unidadEsOtra && styles.unitSelectPlaceholder,
-                    ]}
-                  >
-                    {unidadEsOtra
-                      ? 'Otra'
-                      : (UNIDADES_POR_CATEGORIA[categoria?.clave || ''] || []).find(
-                          (unidad) => unidad.value === cantidadUnidad,
-                        )?.label || 'Selecciona una unidad'}
-                  </Text>
-                  <Ionicons
-                    name={unidadMenuAbierto ? 'chevron-up' : 'chevron-down'}
-                    size={18}
-                    color={COLORS.textLight}
-                  />
-                </TouchableOpacity>
+              {vieneDeNecesidad ? (
+                <Text style={styles.necesidadNombre}>{cantidadUnidad}</Text>
+              ) : (
+                <>
+                  <View style={styles.unitSelectContainer}>
+                    <TouchableOpacity
+                      style={[
+                        styles.unitSelectTrigger,
+                        unidadMenuAbierto && styles.unitSelectTriggerOpen,
+                        errors.cantidadUnidad && styles.unitSelectTriggerError,
+                      ]}
+                      onPress={() => setUnidadMenuAbierto((abierto) => !abierto)}
+                      activeOpacity={0.8}
+                    >
+                      <Text
+                        style={[
+                          styles.unitSelectValue,
+                          !cantidadUnidad && !unidadEsOtra && styles.unitSelectPlaceholder,
+                        ]}
+                      >
+                        {unidadEsOtra
+                          ? 'Otra'
+                          : (UNIDADES_POR_CATEGORIA[categoria?.clave || ''] || []).find(
+                              (unidad) => unidad.value === cantidadUnidad,
+                            )?.label || 'Selecciona una unidad'}
+                      </Text>
+                      <Ionicons
+                        name={unidadMenuAbierto ? 'chevron-up' : 'chevron-down'}
+                        size={18}
+                        color={COLORS.textLight}
+                      />
+                    </TouchableOpacity>
 
-                {unidadMenuAbierto && (
-                  <View style={styles.unitSelectMenu}>
-                    {[
-                      ...(UNIDADES_POR_CATEGORIA[categoria?.clave || ''] || []),
-                      { value: UNIDAD_OTRA, label: 'Otra' },
-                    ].map((unidad, index, opciones) => {
-                      const seleccionada = unidadEsOtra
-                        ? unidad.value === UNIDAD_OTRA
-                        : unidad.value === cantidadUnidad;
-                      return (
-                        <TouchableOpacity
-                          key={unidad.value}
-                          style={[
-                            styles.unitSelectOption,
-                            index < opciones.length - 1 && styles.unitSelectOptionDivider,
-                            seleccionada && styles.unitSelectOptionSelected,
-                          ]}
-                          onPress={() => {
-                            if (unidad.value === UNIDAD_OTRA) {
-                              setUnidadEsOtra(true);
-                              setCantidadUnidad('');
-                              setContenidoPorUnidad('');
-                            } else {
-                              setUnidadEsOtra(false);
-                              setCantidadUnidad(unidad.value);
-                              if (!UNIDADES_CONTENEDOR.has(unidad.value)) {
-                                setContenidoPorUnidad('');
-                              }
-                            }
-                            setUnidadMenuAbierto(false);
-                          }}
-                        >
-                          <Text
-                            style={[
-                              styles.unitSelectOptionText,
-                              seleccionada && styles.unitSelectOptionTextSelected,
-                            ]}
-                          >
-                            {unidad.label}
-                          </Text>
-                          {seleccionada && (
-                            <Ionicons name="checkmark" size={18} color={COLORS.primary} />
-                          )}
-                        </TouchableOpacity>
-                      );
-                    })}
+                    {unidadMenuAbierto && (
+                      <View style={styles.unitSelectMenu}>
+                        {[
+                          ...(UNIDADES_POR_CATEGORIA[categoria?.clave || ''] || []),
+                          { value: UNIDAD_OTRA, label: 'Otra' },
+                        ].map((unidad, index, opciones) => {
+                          const seleccionada = unidadEsOtra
+                            ? unidad.value === UNIDAD_OTRA
+                            : unidad.value === cantidadUnidad;
+                          return (
+                            <TouchableOpacity
+                              key={unidad.value}
+                              style={[
+                                styles.unitSelectOption,
+                                index < opciones.length - 1 && styles.unitSelectOptionDivider,
+                                seleccionada && styles.unitSelectOptionSelected,
+                              ]}
+                              onPress={() => {
+                                if (unidad.value === UNIDAD_OTRA) {
+                                  setUnidadEsOtra(true);
+                                  setCantidadUnidad('');
+                                  setContenidoPorUnidad('');
+                                } else {
+                                  setUnidadEsOtra(false);
+                                  setCantidadUnidad(unidad.value);
+                                  if (!UNIDADES_CONTENEDOR.has(unidad.value)) {
+                                    setContenidoPorUnidad('');
+                                  }
+                                }
+                                setUnidadMenuAbierto(false);
+                              }}
+                            >
+                              <Text
+                                style={[
+                                  styles.unitSelectOptionText,
+                                  seleccionada && styles.unitSelectOptionTextSelected,
+                                ]}
+                              >
+                                {unidad.label}
+                              </Text>
+                              {seleccionada && (
+                                <Ionicons name="checkmark" size={18} color={COLORS.primary} />
+                              )}
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    )}
                   </View>
-                )}
-              </View>
-              {unidadEsOtra && (
-                <View style={{ marginTop: 10 }}>
-                  <TextInputField value={cantidadUnidad} onChangeText={setCantidadUnidad} placeholder="Escribe la unidad" />
-                </View>
+                  {unidadEsOtra && (
+                    <View style={{ marginTop: 10 }}>
+                      <TextInputField value={cantidadUnidad} onChangeText={setCantidadUnidad} placeholder="Escribe la unidad" />
+                    </View>
+                  )}
+                </>
               )}
               {errors.cantidadUnidad && <ErrorText text={errors.cantidadUnidad} />}
 

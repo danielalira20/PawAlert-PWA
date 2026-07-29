@@ -158,9 +158,9 @@ export function DatePickerChip({
                       <Text
                         style={[
                           styles.diaTexto,
-                          (!enEsteMes || esDeshabilitado) && styles.diaTextoFuera,
+                          !enEsteMes && styles.diaTextoFuera,
+                          esDeshabilitado && styles.diaTextoDeshabilitado,
                           esSeleccionado && styles.diaTextoSeleccionado,
-                         
                         ]}
                       >
                         {format(dia, 'd')}
