@@ -71,7 +71,8 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="nearby-cases"
         options={{
-          title: 'Casos',
+          title: 'Ayuda cerca',
+          tabBarAccessibilityLabel: 'Casos cerca de mí',
           href: user?.rol === 'voluntario_externo' ? undefined : null,
           tabBarIcon: ({ color, focused }) => (
             <Ionicons

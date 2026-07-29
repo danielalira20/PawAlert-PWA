@@ -1085,7 +1085,13 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
                 <ActivityIndicator color={COLORS.primary} style={{ marginTop: 40 }} />
               ) : voluntariosFiltrados.length === 0 ? (
                 <View style={{ alignItems: 'center', paddingVertical: 40 }}>
-                  <Text style={{ fontSize: 40, marginBottom: 12 }}>🐾</Text>
+                  <View style={{
+                    width: 62, height: 62, borderRadius: 21,
+                    backgroundColor: 'rgba(236,128,43,0.12)',
+                    alignItems: 'center', justifyContent: 'center', marginBottom: 14,
+                  }}>
+                    <Ionicons name="paw-outline" size={30} color={COLORS.primary} />
+                  </View>
                   <Text style={{ fontSize: 15, color: COLORS.textLight, textAlign: 'center' }}>
                     {filtroVoluntarios === 'activos' ? 'No tienes voluntarios activos todavía.' : 'No hay voluntarios dados de baja.'}
                   </Text>
@@ -1562,7 +1568,12 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
 
                               <View style={{ flex: 1 }}>
                                 <Text style={{ fontSize: 15, fontWeight: '700', color: COLORS.textDark }}>{candidato.nombre}</Text>
-                                <Text style={{ fontSize: 12, color: COLORS.textLight, marginTop: 2 }}>📍 a {candidato.distancia_km} km · radio de {candidato.radio_max_km} km</Text>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                                  <Ionicons name="location-outline" size={13} color={COLORS.textLight} />
+                                  <Text style={{ fontSize: 12, color: COLORS.textLight }}>
+                                    A {candidato.distancia_km} km · radio de {candidato.radio_max_km} km
+                                  </Text>
+                                </View>
                                 <Text style={{ fontSize: 11, color: COLORS.textLight, marginTop: 3 }}>{candidato.capacidad_resumen}</Text>
                               </View>
 
