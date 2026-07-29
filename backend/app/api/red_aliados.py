@@ -9,6 +9,7 @@ from app.services.red_aliados_service import (
     obtener_mural_impacto,
     crear_lote,
     obtener_mis_lotes,
+    cambiar_estado_lote,
     obtener_asociaciones_compatibles,
     invitar_asociaciones,
     obtener_invitaciones_asociacion,
@@ -32,6 +33,7 @@ from app.models.red_aliados import (
     LoteRequest,
     LoteResponse,
     InvitarAsociacionesRequest,
+    EstadoLoteRequest,
     ResponderInvitacionRequest,
     ConfirmarQrRequest,
     OfertaCompatibleResponse,
@@ -157,6 +159,17 @@ async def get_invitaciones_lote_endpoint(lote_id: str, authorization: str = Head
     """Panel de aliado — estado de las invitaciones de un lote propio."""
     usuario = _obtener_usuario_autenticado(authorization)
     return await obtener_invitaciones_lote(lote_id, usuario["id"])
+
+
+@router.patch("/lotes/{lote_id}/estado", status_code=200)
+async def cambiar_estado_lote_endpoint(
+    lote_id: str,
+    body: EstadoLoteRequest,
+    authorization: str = Header(None),
+):
+    """El aliado retira o reactiva un lote sin eliminar su historial."""
+    usuario = _obtener_usuario_autenticado(authorization)
+    return await cambiar_estado_lote(lote_id, usuario["id"], body.activo)
 
 
 @router.get("/lotes/{lote_id}/asociaciones-compatibles", status_code=200)

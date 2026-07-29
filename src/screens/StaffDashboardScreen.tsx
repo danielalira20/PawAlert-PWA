@@ -13,6 +13,9 @@ import { StatusPanel } from '../components/staff-dashboard/StatusPanel';
 import { ReportCard } from '../components/staff-dashboard/ReportCard';
 import { ReportDetailModal } from '../components/staff-dashboard/ReportDetailModal';
 import { EncontreModal } from '../components/staff-dashboard/EncontreModal';
+import { LlegadaZonaModal } from '../components/staff-dashboard/LlegadaZonaModal';
+import { NoLocalizadoModal } from '../components/staff-dashboard/NoLocalizadoModal';
+import { ResguardoModal } from '../components/staff-dashboard/ResguardoModal';
 import { RefugioModal } from '../components/staff-dashboard/RefugioModal';
 import { VeterinariaModal } from '../components/staff-dashboard/VeterinariaModal';
 import { Brand } from '../constants/theme';
@@ -65,12 +68,33 @@ export default function StaffDashboardScreen({ onClose }: Props) {
     registrarEncontre,
     resetEncontre,
     OPCIONES_ENCONTRE,
+    OPCIONES_ENCONTRE_EXTERNO,
+    registrarLlegadaZona,
+    resetLlegadaZona,
+    minutosBusqueda,
+    setMinutosBusqueda,
+    notasNoLocalizado,
+    setNotasNoLocalizado,
+    registrarNoLocalizado,
+    resetNoLocalizado,
+    condicionResguardo,
+    setCondicionResguardo,
+    destinoResguardo,
+    setDestinoResguardo,
+    notasResguardo,
+    setNotasResguardo,
+    fotoResguardo,
+    setFotoResguardo,
+    registrarAnimalBajoResguardo,
+    resetResguardo,
     estadoRefugio,
     setEstadoRefugio,
     notasRefugio,
     setNotasRefugio,
     fotoRefugio,
     setFotoRefugio,
+    fotoEntornoRefugio,
+    setFotoEntornoRefugio,
     registrarRefugio,
     resetRefugio,
     OPCIONES_REFUGIO,
@@ -87,6 +111,9 @@ export default function StaffDashboardScreen({ onClose }: Props) {
   const [reporteSeleccionado, setReporteSeleccionado] = useState<ReporteStaff | null>(null);
   const [showDetalles, setShowDetalles] = useState(false);
   const [showEncontreModal, setShowEncontreModal] = useState(false);
+  const [showLlegadaZonaModal, setShowLlegadaZonaModal] = useState(false);
+  const [showNoLocalizadoModal, setShowNoLocalizadoModal] = useState(false);
+  const [showResguardoModal, setShowResguardoModal] = useState(false);
   const [showRefugioModal, setShowRefugioModal] = useState(false);
   const [showVeterinariaModal, setShowVeterinariaModal] = useState(false);
   const [sugerenciaAliado, setSugerenciaAliado] = useState<SugerenciaAliado | null>(null);
@@ -111,6 +138,24 @@ export default function StaffDashboardScreen({ onClose }: Props) {
     setReporteSeleccionado(reporte);
     setShowDetalles(false);
     setShowEncontreModal(true);
+  };
+
+  const abrirLlegadaZona = (reporte: ReporteStaff) => {
+    setReporteSeleccionado(reporte);
+    setShowDetalles(false);
+    setShowLlegadaZonaModal(true);
+  };
+
+  const abrirNoLocalizado = (reporte: ReporteStaff) => {
+    setReporteSeleccionado(reporte);
+    setShowDetalles(false);
+    setShowNoLocalizadoModal(true);
+  };
+
+  const abrirResguardo = (reporte: ReporteStaff) => {
+    setReporteSeleccionado(reporte);
+    setShowDetalles(false);
+    setShowResguardoModal(true);
   };
 
   const abrirRefugio = (reporte: ReporteStaff) => {
@@ -181,6 +226,51 @@ export default function StaffDashboardScreen({ onClose }: Props) {
     setReporteSeleccionado(null);
   };
 
+  const confirmarLlegadaZona = async () => {
+    if (!reporteSeleccionado) return;
+    const ok = await registrarLlegadaZona(reporteSeleccionado.id);
+    if (ok) {
+      setShowLlegadaZonaModal(false);
+      setReporteSeleccionado(null);
+    }
+  };
+
+  const cancelarLlegadaZona = () => {
+    setShowLlegadaZonaModal(false);
+    resetLlegadaZona();
+    setReporteSeleccionado(null);
+  };
+
+  const confirmarNoLocalizado = async () => {
+    if (!reporteSeleccionado) return;
+    const ok = await registrarNoLocalizado(reporteSeleccionado.id);
+    if (ok) {
+      setShowNoLocalizadoModal(false);
+      setReporteSeleccionado(null);
+    }
+  };
+
+  const cancelarNoLocalizado = () => {
+    setShowNoLocalizadoModal(false);
+    resetNoLocalizado();
+    setReporteSeleccionado(null);
+  };
+
+  const confirmarResguardo = async () => {
+    if (!reporteSeleccionado) return;
+    const ok = await registrarAnimalBajoResguardo(reporteSeleccionado.id);
+    if (ok) {
+      setShowResguardoModal(false);
+      setReporteSeleccionado(null);
+    }
+  };
+
+  const cancelarResguardo = () => {
+    setShowResguardoModal(false);
+    resetResguardo();
+    setReporteSeleccionado(null);
+  };
+
   const confirmarRefugio = async () => {
     if (!reporteSeleccionado) return;
     const ok = await registrarRefugio(reporteSeleccionado.id);
@@ -219,6 +309,16 @@ export default function StaffDashboardScreen({ onClose }: Props) {
   const capturarFotoRefugio = async () => {
     const uri = await usarCamara();
     if (uri) setFotoRefugio(uri);
+  };
+
+  const capturarFotoResguardo = async () => {
+    const uri = await usarCamara();
+    if (uri) setFotoResguardo(uri);
+  };
+
+  const capturarFotoEntorno = async () => {
+    const uri = await usarCamara();
+    if (uri) setFotoEntornoRefugio(uri);
   };
 
   const capturarFotoVeterinaria = async () => {
@@ -404,6 +504,8 @@ export default function StaffDashboardScreen({ onClose }: Props) {
                   color={Brand.accent}
                   reportes={reportesPendientes}
                   onOpenDetail={abrirDetalle}
+                  onQuickLlegadaZona={abrirLlegadaZona}
+                  onQuickResguardo={abrirResguardo}
                   onQuickEncontre={abrirEncontre}
                   onQuickRefugio={abrirRefugio}
                   layout="grid"
@@ -411,10 +513,12 @@ export default function StaffDashboardScreen({ onClose }: Props) {
                   esHogarTemporal={esHogarTemporal}
                 />
                 <ReportesGroup
-                  titulo="En antención"
+                  titulo="En atención"
                   color={Brand.secondary}
                   reportes={reportesEnAccion}
                   onOpenDetail={abrirDetalle}
+                  onQuickLlegadaZona={abrirLlegadaZona}
+                  onQuickResguardo={abrirResguardo}
                   onQuickEncontre={abrirEncontre}
                   onQuickRefugio={abrirRefugio}
                   layout="grid"
@@ -426,6 +530,8 @@ export default function StaffDashboardScreen({ onClose }: Props) {
                   color={Brand.textFaint}
                   reportes={reportesCompletados}
                   onOpenDetail={abrirDetalle}
+                  onQuickLlegadaZona={abrirLlegadaZona}
+                  onQuickResguardo={abrirResguardo}
                   onQuickEncontre={abrirEncontre}
                   onQuickRefugio={abrirRefugio}
                   layout="grid"
@@ -453,6 +559,8 @@ export default function StaffDashboardScreen({ onClose }: Props) {
               color={Brand.accent}
               reportes={reportesPendientes}
               onOpenDetail={abrirDetalle}
+              onQuickLlegadaZona={abrirLlegadaZona}
+              onQuickResguardo={abrirResguardo}
               onQuickEncontre={abrirEncontre}
               onQuickRefugio={abrirRefugio}
               layout="stack"
@@ -464,6 +572,8 @@ export default function StaffDashboardScreen({ onClose }: Props) {
               color={Brand.secondary}
               reportes={reportesEnAccion}
               onOpenDetail={abrirDetalle}
+              onQuickLlegadaZona={abrirLlegadaZona}
+              onQuickResguardo={abrirResguardo}
               onQuickEncontre={abrirEncontre}
               onQuickRefugio={abrirRefugio}
               layout="stack"
@@ -475,6 +585,8 @@ export default function StaffDashboardScreen({ onClose }: Props) {
               color={Brand.textFaint}
               reportes={reportesCompletados}
               onOpenDetail={abrirDetalle}
+              onQuickLlegadaZona={abrirLlegadaZona}
+              onQuickResguardo={abrirResguardo}
               onQuickEncontre={abrirEncontre}
               onQuickRefugio={abrirRefugio}
               layout="stack"
@@ -490,7 +602,10 @@ export default function StaffDashboardScreen({ onClose }: Props) {
         visible={showDetalles}
         reporte={reporteSeleccionado}
         onClose={() => setShowDetalles(false)}
+        onLlegadaZona={() => reporteSeleccionado && abrirLlegadaZona(reporteSeleccionado)}
         onEncontre={() => reporteSeleccionado && abrirEncontre(reporteSeleccionado)}
+        onNoLocalizado={() => reporteSeleccionado && abrirNoLocalizado(reporteSeleccionado)}
+        onBajoResguardo={() => reporteSeleccionado && abrirResguardo(reporteSeleccionado)}
         onRefugio={() => reporteSeleccionado && abrirRefugio(reporteSeleccionado)}
         onVeterinaria={() => reporteSeleccionado && abrirVeterinaria(reporteSeleccionado)}
         puedeRegistrarHitos={puedeRegistrarHitos}
@@ -499,12 +614,13 @@ export default function StaffDashboardScreen({ onClose }: Props) {
 
       <EncontreModal
         visible={showEncontreModal}
-        opciones={OPCIONES_ENCONTRE}
+        opciones={esHogarTemporal ? OPCIONES_ENCONTRE_EXTERNO : OPCIONES_ENCONTRE}
         estado={estadoEncontre}
         onSelectEstado={setEstadoEncontre}
         notas={notasEncontre}
         onChangeNotas={setNotasEncontre}
         tieneFoto={!!fotoEncontre}
+        fotoObligatoria={esHogarTemporal}
         onPickFoto={capturarFotoEncontre}
         isSubmitting={isSubmitting}
         onCancel={cancelarEncontre}
@@ -515,6 +631,48 @@ export default function StaffDashboardScreen({ onClose }: Props) {
         onDescartarSugerencia={descartarSugerenciaAliado}
         seguimientoAliado={seguimientoAliado}
         onCerrarSeguimiento={cerrarSeguimientoAliado}
+      />
+
+      <LlegadaZonaModal
+        visible={showLlegadaZonaModal}
+        ubicacionActual={ubicacionActual}
+        obteniendoGPS={obteniendoGPS}
+        isSubmitting={isSubmitting}
+        onCapturarUbicacion={obtenerUbicacionGPS}
+        onCancel={cancelarLlegadaZona}
+        onConfirm={confirmarLlegadaZona}
+      />
+
+      <NoLocalizadoModal
+        visible={showNoLocalizadoModal}
+        minutos={minutosBusqueda}
+        notas={notasNoLocalizado}
+        ubicacionActual={ubicacionActual}
+        obteniendoGPS={obteniendoGPS}
+        isSubmitting={isSubmitting}
+        onChangeMinutos={setMinutosBusqueda}
+        onChangeNotas={setNotasNoLocalizado}
+        onCapturarUbicacion={obtenerUbicacionGPS}
+        onCancel={cancelarNoLocalizado}
+        onConfirm={confirmarNoLocalizado}
+      />
+
+      <ResguardoModal
+        visible={showResguardoModal}
+        condicion={condicionResguardo}
+        destino={destinoResguardo}
+        notas={notasResguardo}
+        foto={fotoResguardo}
+        ubicacionLista={!!ubicacionActual}
+        obteniendoGPS={obteniendoGPS}
+        isSubmitting={isSubmitting}
+        onChangeCondicion={setCondicionResguardo}
+        onChangeDestino={setDestinoResguardo}
+        onChangeNotas={setNotasResguardo}
+        onCapturarFoto={capturarFotoResguardo}
+        onCapturarUbicacion={obtenerUbicacionGPS}
+        onCancel={cancelarResguardo}
+        onConfirm={confirmarResguardo}
       />
 
       <RefugioModal
@@ -533,6 +691,8 @@ export default function StaffDashboardScreen({ onClose }: Props) {
         onCapturarUbicacion={obtenerUbicacionGPS}
         foto={fotoRefugio}
         onCapturarFoto={capturarFotoRefugio}
+        fotoEntorno={fotoEntornoRefugio}
+        onCapturarFotoEntorno={capturarFotoEntorno}
         isSubmitting={isSubmitting}
         onCancel={cancelarRefugio}
         onConfirm={confirmarRefugio}
@@ -560,8 +720,9 @@ export default function StaffDashboardScreen({ onClose }: Props) {
             <Ionicons name="paw" size={36} color={Brand.primary} style={{ marginBottom: 12 }} />
             <Text style={confirmStyles.modalTitle}>¿Aceptas este caso?</Text>
             <Text style={confirmStyles.modalText}>
-              Al aceptar, se te marcará como en camino y deberás registrar los hitos de "encontré al
-              animal" y "llegué al refugio".
+              {esHogarTemporal
+                ? 'Al aceptar verás la ubicación exacta. Registra tu llegada a la zona y después el resultado de la búsqueda.'
+                : 'Al aceptar, se te marcará como en camino y podrás registrar los avances del rescate.'}
             </Text>
             <View style={confirmStyles.modalActions}>
               <TouchableOpacity
@@ -629,6 +790,8 @@ function ReportesGroup({
   color,
   reportes,
   onOpenDetail,
+  onQuickLlegadaZona,
+  onQuickResguardo,
   onQuickEncontre,
   onQuickRefugio,
   layout,
@@ -640,6 +803,8 @@ function ReportesGroup({
   color: string;
   reportes: ReporteStaff[];
   onOpenDetail: (r: ReporteStaff) => void;
+  onQuickLlegadaZona: (r: ReporteStaff) => void;
+  onQuickResguardo: (r: ReporteStaff) => void;
   onQuickEncontre: (r: ReporteStaff) => void;
   onQuickRefugio: (r: ReporteStaff) => void;
   layout: 'stack' | 'grid';
@@ -666,6 +831,8 @@ function ReportesGroup({
               reporte={reporte}
               index={index}
               onOpenDetail={onOpenDetail}
+              onQuickLlegadaZona={onQuickLlegadaZona}
+              onQuickResguardo={onQuickResguardo}
               onQuickEncontre={onQuickEncontre}
               onQuickRefugio={onQuickRefugio}
               puedeRegistrarHitos={puedeRegistrarHitos}

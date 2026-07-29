@@ -22,6 +22,9 @@ export interface ReporteStaff {
   // aceptó una sugerencia y esa llegada todavía no se registró.
   tiene_sugerencia_aceptada: boolean;
   tiene_llegada_veterinaria_registrada: boolean;
+  llegada_zona_registrada: boolean;
+  animal_no_localizado_registrado: boolean;
+  animal_bajo_resguardo_registrado: boolean;
 }
 
 export interface RespuestaStaffReportes {
@@ -33,7 +36,7 @@ export interface RespuestaStaffReportes {
 
 // Motor de sugerencias Ruta 1 (BACK01/BACK02) — lo que regresa
 // POST /reports/{id}/hitos en el campo `sugerencia_aliado` cuando se
-// registra el hito 'encontre_animal' y hay un match compatible. Solo
+// registra el hito 'animal_encontrado' y hay un match compatible. Solo
 // informativo hasta que se acepta vía
 // POST /reports/{id}/hitos/aceptar-sugerencia.
 export interface SugerenciaAliado {

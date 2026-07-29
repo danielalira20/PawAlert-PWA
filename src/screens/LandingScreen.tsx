@@ -37,6 +37,7 @@ const AssociationFormScreen = lazy(() => import('./AssociationFormScreen'));
 const ReportGuideScreen = lazy(() => import('./ReportGuideScreen'));
 const ExternalVolunteerFormScreen = lazy(() => import('./ExternalVolunteerFormScreen'));
 const RoleDetailModal = lazy(() => import('./RoleDetailModal'));
+const RegistroAliadoLocalScreen = lazy(() => import('./red-aliados/RegistroAliadoLocalScreen'));
 
 const isWeb = Platform.OS === 'web';
 
@@ -172,22 +173,22 @@ const ROLES = [
         id: 'donante-comunitario',
         title: 'Donante comunitario',
         does: 'Cualquier persona ya registrada en PawAlert (reportante o voluntario) que quiere aportar algo puntual.',
-        ctaLabel: 'Próximamente',
-        ctaRoute: null,
+        ctaLabel: 'Registrarse',
+        ctaRoute: 'custom_donante_comunitario',
       },
       {
         id: 'aliado-local',
         title: 'Aliado local',
         does: 'Negocio o profesional con participación recurrente (veterinaria, tienda de mascotas, transportista, profesional independiente).',
-        ctaLabel: 'Registrar',
-        ctaRoute: '/registro-aliado?tipo=aliado_local',
+        ctaLabel: 'Registrarse',
+        ctaRoute: 'custom_registro_aliado_local',
       },
       {
         id: 'patrocinador-institucional',
         title: 'Patrocinador institucional',
         does: 'Empresa, fundación, organización civil, gobierno, institución educativa.',
-        ctaLabel: 'Registrar',
-        ctaRoute: '/registro-aliado?tipo=patrocinador_institucional',
+        ctaLabel: 'Registrarse',
+        ctaRoute: 'custom_registro_patrocinador',
       },
     ],
   },
@@ -234,13 +235,18 @@ export default function LandingScreen() {
   const isDesktop = width > 768;
 
   const router = useRouter();
-  const { isLoggedIn } = useAuth(); // Obtener si está logueado
+  const { isLoggedIn, user } = useAuth(); // Obtener si está logueado y datos del usuario
   const [isAssociationFormVisible, setIsAssociationFormVisible] = useState(false);
   const [isReportGuideVisible, setIsReportGuideVisible] = useState(false);
   const [isExternalVolunteerFormVisible, setIsExternalVolunteerFormVisible] = useState(false);
   const [isMuralVisible, setIsMuralVisible] = useState(false);
   const [recentPhotos, setRecentPhotos] = useState<string[]>([]);
   const [showFullMissionVision, setShowFullMissionVision] = useState(false);
+
+  const [isAuthRequiredModalVisible, setIsAuthRequiredModalVisible] = useState(false);
+  const [isRegistroAliadoModalVisible, setIsRegistroAliadoModalVisible] = useState(false);
+  const [isAssociationConflictModalVisible, setIsAssociationConflictModalVisible] = useState(false);
+  const [selectedAliadoTipo, setSelectedAliadoTipo] = useState<'aliado_local' | 'patrocinador_institucional'>('aliado_local');
 
   const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
   const [selectedSubcategoryId, setSelectedSubcategoryId] = useState<string | null>(null);
@@ -288,6 +294,53 @@ export default function LandingScreen() {
     } else {
       setSelectedSubcategoryId(null);
       setSelectedRoleId(id);
+    }
+  };
+
+  const handleCustomRouting = (route: string) => {
+    if (['custom_donante_comunitario', 'custom_registro_aliado_local', 'custom_registro_patrocinador'].includes(route)) {
+      if (isLoggedIn && user?.rol === 'asociacion') {
+        setIsAssociationConflictModalVisible(true);
+        return;
+      }
+    }
+
+    if (route === 'custom_donante_comunitario') {
+      if (isLoggedIn) {
+        if (user?.tiene_perfil_apoyo) {
+          router.push({ pathname: '/profile', params: { abrirPanelAliado: 'true' } } as any);
+        } else {
+          router.push({ pathname: '/profile', params: { abrirFormularioAliado: 'true' } } as any);
+        }
+      } else {
+        setIsAuthRequiredModalVisible(true);
+      }
+    } else if (route === 'custom_registro_aliado_local') {
+      if (isLoggedIn) {
+        if (user?.tiene_perfil_apoyo) {
+          router.push({ pathname: '/profile', params: { abrirPanelAliado: 'true' } } as any);
+        } else {
+          setSelectedAliadoTipo('aliado_local');
+          setIsRegistroAliadoModalVisible(true);
+        }
+      } else {
+        setSelectedAliadoTipo('aliado_local');
+        setIsRegistroAliadoModalVisible(true);
+      }
+    } else if (route === 'custom_registro_patrocinador') {
+      if (isLoggedIn) {
+        if (user?.tiene_perfil_apoyo) {
+          router.push({ pathname: '/profile', params: { abrirPanelAliado: 'true' } } as any);
+        } else {
+          setSelectedAliadoTipo('patrocinador_institucional');
+          setIsRegistroAliadoModalVisible(true);
+        }
+      } else {
+        setSelectedAliadoTipo('patrocinador_institucional');
+        setIsRegistroAliadoModalVisible(true);
+      }
+    } else {
+      router.push(route as any);
     }
   };
 
@@ -840,7 +893,7 @@ export default function LandingScreen() {
                                                 </Text>
                                                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                                                   {activeSub.ctaRoute ? (
-                                                    <AnimatedButton onPress={() => router.push(activeSub.ctaRoute as any)}>
+                                                    <AnimatedButton onPress={() => handleCustomRouting(activeSub.ctaRoute as string)}>
                                                       <View style={{
                                                         backgroundColor: activeColor,
                                                         paddingVertical: 7, paddingHorizontal: 16,
@@ -944,7 +997,7 @@ export default function LandingScreen() {
                                                 router.push('/login');
                                               }
                                             } else if (ar.ctaRoute) {
-                                              router.push(ar.ctaRoute);
+                                              handleCustomRouting(ar.ctaRoute);
                                             }
                                           }}>
                                             <View style={{
@@ -1585,7 +1638,7 @@ export default function LandingScreen() {
           </Suspense>
         )}
       </Modal>
-        {/* ── MODAL MURAL (Huellas que ayudan) ────────────────────────────── */}
+      {/* ── MODAL MURAL (Huellas que ayudan) ────────────────────────────── */}
       <Modal
         visible={isMuralVisible}
         animationType="slide"
@@ -1594,6 +1647,72 @@ export default function LandingScreen() {
       >
         <MuralModalContent onClose={() => setIsMuralVisible(false)} />
       </Modal>
+
+      {/* ── MODAL INICIO DE SESIÓN REQUERIDO (DONANTE COMUNITARIO) ── */}
+      <Modal
+        visible={isAuthRequiredModalVisible}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setIsAuthRequiredModalVisible(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 16 }}>
+          <View style={{ backgroundColor: C.bg, borderRadius: 32, padding: 32, width: '100%', maxWidth: 400 }}>
+            <Text style={{ fontSize: 22, fontFamily: F.displayBold, color: C.text, textAlign: 'center', marginBottom: 12 }}>
+              Inicio de sesión requerido
+            </Text>
+            <Text style={{ fontSize: 15, fontFamily: F.bodyMedium, color: C.muted, textAlign: 'center', marginBottom: 24, lineHeight: 22 }}>
+              Para poder ser aliado comunitario debes tener una cuenta en PawAlert.
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <TouchableOpacity onPress={() => setIsAuthRequiredModalVisible(false)} style={{ flex: 1, paddingVertical: 16, borderRadius: 20, backgroundColor: C.neutralLight, alignItems: 'center' }}>
+                <Text style={{ color: C.text, fontFamily: F.bodySemiBold }}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => { setIsAuthRequiredModalVisible(false); router.push('/profile'); }} style={{ flex: 1, paddingVertical: 16, borderRadius: 20, backgroundColor: C.primary, alignItems: 'center' }}>
+                <Text style={{ color: '#FFF', fontFamily: F.bodySemiBold }}>Ir a Login</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── MODAL CONFLICTO DE ASOCIACIÓN ── */}
+      <Modal
+        visible={isAssociationConflictModalVisible}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setIsAssociationConflictModalVisible(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 16 }}>
+          <View style={{ backgroundColor: C.bg, borderRadius: 32, padding: 32, width: '100%', maxWidth: 400 }}>
+            <Text style={{ fontSize: 22, fontFamily: F.displayBold, color: C.text, textAlign: 'center', marginBottom: 12 }}>
+              Acción no permitida
+            </Text>
+            <Text style={{ fontSize: 15, fontFamily: F.bodyMedium, color: C.muted, textAlign: 'center', marginBottom: 24, lineHeight: 22 }}>
+              Actualmente estás registrado como asociación, por lo que no puedes formar parte de la red de aliados con esta cuenta. Si deseas apoyar, crea una cuenta desde cero según el rol de aliado que más se adapte a ti.
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <TouchableOpacity onPress={() => setIsAssociationConflictModalVisible(false)} style={{ flex: 1, paddingVertical: 16, borderRadius: 20, backgroundColor: C.primary, alignItems: 'center' }}>
+                <Text style={{ color: '#FFF', fontFamily: F.bodySemiBold }}>Entendido</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── MODAL REGISTRO ALIADO (LOCAL E INSTITUCIONAL) ── */}
+      {isRegistroAliadoModalVisible && (
+        <Suspense fallback={
+          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 9999 }}>
+            <ActivityIndicator size="large" color={C.primary} />
+            <Text style={{ marginTop: 12, color: '#FFF', fontFamily: F.bodyMedium }}>Cargando formulario...</Text>
+          </View>
+        }>
+          <RegistroAliadoLocalScreen
+            initialTipoAliado={selectedAliadoTipo}
+            onClose={() => setIsRegistroAliadoModalVisible(false)}
+          />
+        </Suspense>
+      )}
 
     </View>
   );
@@ -1620,7 +1739,7 @@ function MuralModalContent({ onClose }: { onClose: () => void }) {
   return (
     <View style={{ flex: 1, backgroundColor: 'rgba(46,42,38,0.55)', justifyContent: 'center', alignItems: 'center', padding: 16, paddingTop: 60, paddingBottom: 40 }}>
       <View style={{ flex: 1, width: '100%', maxWidth: 700, backgroundColor: C.bgSoft, borderRadius: 24, overflow: 'hidden', padding: 24 }}>
-        
+
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
           <View style={{ flex: 1, paddingRight: 16 }}>
             <Text style={{ fontSize: 28, fontFamily: F.displayBold, color: C.text, letterSpacing: -0.5 }}>
@@ -1649,8 +1768,8 @@ function MuralModalContent({ onClose }: { onClose: () => void }) {
             {historias.map(h => {
               const isExpanded = expandedId === h.id;
               return (
-                <TouchableOpacity 
-                  key={h.id} 
+                <TouchableOpacity
+                  key={h.id}
                   activeOpacity={0.8}
                   onPress={() => setExpandedId(isExpanded ? null : h.id)}
                   style={{
@@ -1674,7 +1793,7 @@ function MuralModalContent({ onClose }: { onClose: () => void }) {
 
                   {/* ── SECCIÓN EXPANDIDA DE DETALLES ── */}
                   {isExpanded && (
-                    <View style={{ 
+                    <View style={{
                       marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: `${C.neutralLight}40`,
                       backgroundColor: `${C.secondary}10`, padding: 16, borderRadius: 12
                     }}>

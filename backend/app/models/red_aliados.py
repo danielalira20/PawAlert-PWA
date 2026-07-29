@@ -134,7 +134,7 @@ class LoteRequest(BaseModel):
     cantidad_unidad: str
     tipo_empaque: str = Field(max_length=120)
     divisible: DivisibleEnum
-    max_asociaciones: int = Field(ge=1, default=1)
+    max_asociaciones: int = Field(ge=1, le=10, default=1)
     forma_entrega: FormaEntregaEnum
     descripcion: Optional[str] = Field(default=None, max_length=500)
     fecha_disponibilidad: Optional[str] = None
@@ -182,6 +182,16 @@ class LoteResponse(BaseModel):
 
 class InvitarAsociacionesRequest(BaseModel):
     asociacion_ids: list[str] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validar_asociaciones_sin_duplicados(self):
+        if len(self.asociacion_ids) != len(set(self.asociacion_ids)):
+            raise ValueError("No puedes invitar dos veces a la misma asociación")
+        return self
+
+
+class EstadoLoteRequest(BaseModel):
+    activo: bool
 
 
 class ResponderInvitacionRequest(BaseModel):

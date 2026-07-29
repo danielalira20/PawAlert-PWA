@@ -5,7 +5,6 @@ import axios from 'axios';
 import { API_URL } from '../../constants/api';
 import { useAuth } from '../../context/AuthContext';
 import { Toast, useToast } from '../Toast';
-import { QrDisplayModal } from '../red-aliados/QrDisplayModal';
 import { EscanearQrModal } from '../red-aliados/EscanearQrModal';
 import { AppModal } from '../AppModal';
 import { AssocAvatar } from '../admin-dashboard/AssocAvatar';
@@ -26,6 +25,8 @@ interface InvitacionLote {
   id: string;
   estado: 'invitada' | 'aceptada' | 'rechazada' | 'confirmada';
   cantidad_asignada: number | null;
+  cantidad_disponible: number;
+  cantidad_sugerida: number;
   created_at: string;
   lote: {
     id: string;
@@ -34,6 +35,7 @@ interface InvitacionLote {
     cantidad_valor: number;
     cantidad_unidad: string;
     tipo_empaque: string;
+    divisible: 'no' | 'solo_empaques_completos' | 'aliado_prepara_lotes';
     forma_entrega: string;
     descripcion: string | null;
     fecha_disponibilidad: string | null;
@@ -92,9 +94,9 @@ export function LotesInvitacionesPanel({ visible }: Props) {
   const [invitacionAccion, setInvitacionAccion] = useState<InvitacionLote | null>(null);
   const [showAceptarModal, setShowAceptarModal] = useState(false);
   const [cantidadAsignada, setCantidadAsignada] = useState('');
-  const [qrInvitacionId, setQrInvitacionId] = useState<string | null>(null);
   const [showScanModal, setShowScanModal] = useState(false);
   const [invitacionDetalle, setInvitacionDetalle] = useState<InvitacionLote | null>(null);
+  const [confirmarRechazo, setConfirmarRechazo] = useState(false);
 
   const cargarInvitaciones = async () => {
     if (!token) return;
@@ -125,17 +127,29 @@ export function LotesInvitacionesPanel({ visible }: Props) {
 
   const abrirAceptar = (invitacion: InvitacionLote) => {
     setInvitacionAccion(invitacion);
-    setCantidadAsignada(String(invitacion.lote.cantidad_valor));
+    setCantidadAsignada(String(invitacion.cantidad_sugerida || invitacion.cantidad_disponible));
     setShowAceptarModal(true);
   };
 
-  const confirmarAceptar = async () => {
-    if (!token || !invitacionAccion) return;
+  const enviarAceptacion = async (invitacion: InvitacionLote, cantidad: number) => {
+    if (!token) return;
+    if (!Number.isFinite(cantidad) || cantidad <= 0) {
+      showToast({ title: 'Cantidad inválida', message: 'Escribe una cantidad mayor a cero.', type: 'error' });
+      return;
+    }
+    if (cantidad > invitacion.cantidad_disponible) {
+      showToast({
+        title: 'Cantidad no disponible',
+        message: `Solo quedan ${invitacion.cantidad_disponible} ${invitacion.lote.cantidad_unidad}.`,
+        type: 'error',
+      });
+      return;
+    }
     setIsSubmitting(true);
     try {
       await axios.post(
-        `${API_URL}/red-aliados/invitaciones/${invitacionAccion.id}/responder`,
-        { aceptar: true, cantidad_asignada: Number(cantidadAsignada) || undefined },
+        `${API_URL}/red-aliados/invitaciones/${invitacion.id}/responder`,
+        { aceptar: true, cantidad_asignada: cantidad },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       showToast({ title: '¡Listo!', message: 'Aceptaste tu parte del lote', type: 'success' });
@@ -150,6 +164,15 @@ export function LotesInvitacionesPanel({ visible }: Props) {
     }
   };
 
+  const confirmarAceptar = async () => {
+    if (!invitacionAccion) return;
+    await enviarAceptacion(invitacionAccion, Number(cantidadAsignada));
+  };
+
+  const aceptarLoteCompleto = async (invitacion: InvitacionLote) => {
+    await enviarAceptacion(invitacion, invitacion.lote.cantidad_valor);
+  };
+
   const rechazar = async (invitacion: InvitacionLote) => {
     if (!token) return;
     setIsSubmitting(true);
@@ -160,6 +183,7 @@ export function LotesInvitacionesPanel({ visible }: Props) {
         { headers: { Authorization: `Bearer ${token}` } }
       );
       showToast({ title: 'Invitación rechazada', message: '', type: 'success' });
+      setConfirmarRechazo(false);
       setInvitacionDetalle(null);
       cargarInvitaciones();
     } catch (err: any) {
@@ -167,6 +191,11 @@ export function LotesInvitacionesPanel({ visible }: Props) {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const abrirEscaner = () => {
+    setInvitacionDetalle(null);
+    setTimeout(() => setShowScanModal(true), 120);
   };
 
   if (isLoading) {
@@ -225,7 +254,10 @@ export function LotesInvitacionesPanel({ visible }: Props) {
           filtradas.map((inv) => (
             <TouchableOpacity
               key={inv.id}
-              onPress={() => setInvitacionDetalle(inv)}
+              onPress={() => {
+                setConfirmarRechazo(false);
+                setInvitacionDetalle(inv);
+              }}
               activeOpacity={0.7}
               style={{
                 backgroundColor: COLORS.white, borderRadius: 16, padding: 16, marginBottom: 12,
@@ -238,7 +270,9 @@ export function LotesInvitacionesPanel({ visible }: Props) {
                     {inv.lote.aliado_nombre}
                   </Text>
                   <Text style={{ fontSize: 13, color: COLORS.textDark, marginBottom: 6 }}>
-                    {inv.lote.subcategoria_descripcion || inv.lote.categoria} — {inv.cantidad_asignada || inv.lote.cantidad_valor} {inv.lote.cantidad_unidad}
+                    {inv.lote.subcategoria_descripcion || inv.lote.categoria} —{' '}
+                    {inv.cantidad_asignada || inv.cantidad_sugerida || inv.lote.cantidad_valor}{' '}
+                    {inv.lote.cantidad_unidad}
                   </Text>
                   <Text style={{ fontSize: 12, color: COLORS.textLight }}>
                     {FORMA_ENTREGA_LABEL[inv.lote.forma_entrega] || inv.lote.forma_entrega}
@@ -256,7 +290,6 @@ export function LotesInvitacionesPanel({ visible }: Props) {
         )}
       </View>
 
-      <QrDisplayModal visible={!!qrInvitacionId} invitacionId={qrInvitacionId} onClose={() => setQrInvitacionId(null)} />
       <EscanearQrModal
         visible={showScanModal}
         onClose={() => setShowScanModal(false)}
@@ -296,8 +329,18 @@ export function LotesInvitacionesPanel({ visible }: Props) {
                   {invitacionDetalle.lote.subcategoria_descripcion || invitacionDetalle.lote.categoria}
                 </Text>
                 <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginTop: 10 }}>
-                  {invitacionDetalle.cantidad_asignada || invitacionDetalle.lote.cantidad_valor} {invitacionDetalle.lote.cantidad_unidad}
+                  {invitacionDetalle.cantidad_asignada
+                    || invitacionDetalle.cantidad_sugerida
+                    || invitacionDetalle.lote.cantidad_valor}{' '}
+                  {invitacionDetalle.lote.cantidad_unidad}
                 </Text>
+                {invitacionDetalle.estado === 'invitada' && (
+                  <Text style={{ fontSize: 12, color: COLORS.textLight, marginTop: 5 }}>
+                    {invitacionDetalle.lote.divisible === 'no'
+                      ? 'Este lote se entrega completo.'
+                      : `Disponible: ${invitacionDetalle.cantidad_disponible} ${invitacionDetalle.lote.cantidad_unidad}`}
+                  </Text>
+                )}
               </View>
 
               <View style={{ backgroundColor: COLORS.cardBg, borderRadius: 16, padding: 14 }}>
@@ -352,39 +395,70 @@ export function LotesInvitacionesPanel({ visible }: Props) {
             </View>
 
             {invitacionDetalle.estado === 'invitada' && (
-              <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
-                <TouchableOpacity
-                  onPress={() => abrirAceptar(invitacionDetalle)}
-                  disabled={isSubmitting}
-                  style={{ flex: 1, backgroundColor: COLORS.success, paddingVertical: 13, borderRadius: 14, alignItems: 'center', opacity: isSubmitting ? 0.7 : 1 }}
-                >
-                  <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 14 }}>Aceptar</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => rechazar(invitacionDetalle)}
-                  disabled={isSubmitting}
-                  style={{ flex: 1, backgroundColor: 'transparent', borderWidth: 1, borderColor: COLORS.danger, paddingVertical: 13, borderRadius: 14, alignItems: 'center', opacity: isSubmitting ? 0.7 : 1 }}
-                >
-                  <Text style={{ color: COLORS.danger, fontWeight: '700', fontSize: 14 }}>Rechazar</Text>
-                </TouchableOpacity>
-              </View>
+              confirmarRechazo ? (
+                <View style={{ marginTop: 20, padding: 14, borderRadius: 14, backgroundColor: `${COLORS.danger}0D` }}>
+                  <Text style={{ color: COLORS.textDark, fontSize: 13, fontWeight: '700', textAlign: 'center' }}>
+                    ¿Seguro que quieres rechazar este lote?
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+                    <TouchableOpacity
+                      onPress={() => setConfirmarRechazo(false)}
+                      disabled={isSubmitting}
+                      style={{ flex: 1, backgroundColor: COLORS.white, paddingVertical: 12, borderRadius: 12, alignItems: 'center' }}
+                    >
+                      <Text style={{ color: COLORS.textDark, fontWeight: '700' }}>Cancelar</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => rechazar(invitacionDetalle)}
+                      disabled={isSubmitting}
+                      style={{ flex: 1, backgroundColor: COLORS.danger, paddingVertical: 12, borderRadius: 12, alignItems: 'center' }}
+                    >
+                      {isSubmitting
+                        ? <ActivityIndicator color={COLORS.white} />
+                        : <Text style={{ color: COLORS.white, fontWeight: '700' }}>Sí, rechazar</Text>}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : (
+                <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
+                  <TouchableOpacity
+                    onPress={() => (
+                      invitacionDetalle.lote.divisible === 'no'
+                        ? aceptarLoteCompleto(invitacionDetalle)
+                        : abrirAceptar(invitacionDetalle)
+                    )}
+                    disabled={isSubmitting || invitacionDetalle.cantidad_disponible <= 0}
+                    style={{ flex: 1, backgroundColor: COLORS.success, paddingVertical: 13, borderRadius: 14, alignItems: 'center', opacity: isSubmitting || invitacionDetalle.cantidad_disponible <= 0 ? 0.5 : 1 }}
+                  >
+                    <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 14 }}>
+                      {invitacionDetalle.cantidad_disponible <= 0
+                        ? 'Lote asignado'
+                        : invitacionDetalle.lote.divisible === 'no'
+                          ? 'Aceptar lote completo'
+                          : 'Aceptar una parte'}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => setConfirmarRechazo(true)}
+                    disabled={isSubmitting}
+                    style={{ flex: 1, backgroundColor: 'transparent', borderWidth: 1, borderColor: COLORS.danger, paddingVertical: 13, borderRadius: 14, alignItems: 'center', opacity: isSubmitting ? 0.7 : 1 }}
+                  >
+                    <Text style={{ color: COLORS.danger, fontWeight: '700', fontSize: 14 }}>Rechazar</Text>
+                  </TouchableOpacity>
+                </View>
+              )
             )}
 
             {invitacionDetalle.estado === 'aceptada' && (
-              <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
+              <View style={{ marginTop: 20 }}>
                 <TouchableOpacity
-                  onPress={() => setQrInvitacionId(invitacionDetalle.id)}
-                  style={{ flex: 1, flexDirection: 'row', gap: 6, backgroundColor: COLORS.cardBg, paddingVertical: 13, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }}
-                >
-                  <Ionicons name="qr-code-outline" size={17} color={COLORS.primary} />
-                  <Text style={{ color: COLORS.primary, fontWeight: '700', fontSize: 13 }}>Ver mi código</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => setShowScanModal(true)}
-                  style={{ flex: 1, flexDirection: 'row', gap: 6, backgroundColor: COLORS.success, paddingVertical: 13, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }}
+                  onPress={abrirEscaner}
+                  style={{ flexDirection: 'row', gap: 6, backgroundColor: COLORS.success, paddingVertical: 13, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }}
                 >
                   <Ionicons name="camera-outline" size={17} color={COLORS.white} />
-                  <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 13 }}>Escanear</Text>
+                  <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 13 }}>
+                    Escanear código del aliado
+                  </Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -399,7 +473,8 @@ export function LotesInvitacionesPanel({ visible }: Props) {
               Aceptar parte del lote
             </Text>
             <Text style={{ fontSize: 13, color: COLORS.textLight, marginBottom: 16, lineHeight: 18 }}>
-              ¿Cuánto de este lote pueden recibir? Puedes ajustar la cantidad si no es el total.
+              ¿Cuánto de este lote pueden recibir? Hay {invitacionAccion?.cantidad_disponible || 0}{' '}
+              {invitacionAccion?.lote.cantidad_unidad} disponibles.
             </Text>
             <TextInput
               style={{ borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, padding: 12, fontSize: 14, color: COLORS.textDark, marginBottom: 16 }}
@@ -409,6 +484,11 @@ export function LotesInvitacionesPanel({ visible }: Props) {
               placeholder="Cantidad"
               placeholderTextColor={COLORS.textLight}
             />
+            {!!invitacionAccion && (
+              <Text style={{ color: COLORS.textLight, fontSize: 11, marginTop: -10, marginBottom: 16 }}>
+                Sugerencia: {invitacionAccion.cantidad_sugerida} {invitacionAccion.lote.cantidad_unidad}
+              </Text>
+            )}
             <View style={{ flexDirection: 'row', gap: 10 }}>
               <TouchableOpacity
                 onPress={() => { setShowAceptarModal(false); setInvitacionAccion(null); }}

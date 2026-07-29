@@ -20,6 +20,12 @@ export const OPCIONES_ENCONTRE = [
   'No estaba en el lugar',
 ];
 
+export const OPCIONES_ENCONTRE_EXTERNO = [
+  'Igual que en el reporte',
+  'Peor de lo esperado',
+  'En estado crítico',
+];
+
 export const OPCIONES_REFUGIO = [
   'Animal rescatado y estable',
   'Animal en tratamiento veterinario',
@@ -86,7 +92,7 @@ export function useStaffReports(showToast: ShowToastFn) {
         showToast({
           type: 'error',
           title: 'Permiso denegado',
-          message: 'Necesitamos acceso a tu ubicación para registrar la llegada al refugio',
+          message: 'Necesitamos acceso a tu ubicación para registrar este avance',
         });
         return;
       }
@@ -164,6 +170,226 @@ export function useStaffReports(showToast: ShowToastFn) {
   const [fotoEncontre, setFotoEncontre] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // ── Hito: llegada a la zona del reporte ─────────────────────────────
+  const resetLlegadaZona = useCallback(() => {
+    setUbicacionActual(null);
+    setPermisoDenegado(false);
+  }, []);
+
+  const registrarLlegadaZona = useCallback(
+    async (reporteId: string): Promise<boolean> => {
+      if (!ubicacionActual) {
+        showToast({
+          type: 'error',
+          title: 'Ubicación requerida',
+          message: 'Captura tu GPS cuando ya estés en la zona del reporte.',
+        });
+        return false;
+      }
+      setIsSubmitting(true);
+      try {
+        await axios.post(
+          `${API_URL}/reports/${reporteId}/hitos`,
+          {
+            tipo_hito: 'llegada_zona_reporte',
+            latitud: ubicacionActual.latitude,
+            longitud: ubicacionActual.longitude,
+          },
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        showToast({
+          type: 'success',
+          title: 'Llegada registrada',
+          message: 'Ya puedes reportar el resultado de la búsqueda.',
+        });
+        resetLlegadaZona();
+        await cargarReportesAsignados();
+        return true;
+      } catch (error: any) {
+        showToast({
+          type: 'error',
+          title: 'No pudimos validar tu llegada',
+          message:
+            error?.response?.data?.detail ||
+            'Revisa tu ubicación e inténtalo nuevamente.',
+        });
+        return false;
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    [
+      ubicacionActual,
+      token,
+      showToast,
+      resetLlegadaZona,
+      cargarReportesAsignados,
+    ],
+  );
+
+  // ── Hito: búsqueda sin localizar al animal ──────────────────────────
+  const [minutosBusqueda, setMinutosBusqueda] = useState('');
+  const [notasNoLocalizado, setNotasNoLocalizado] = useState('');
+
+  const resetNoLocalizado = useCallback(() => {
+    setMinutosBusqueda('');
+    setNotasNoLocalizado('');
+    setUbicacionActual(null);
+    setPermisoDenegado(false);
+  }, []);
+
+  const registrarNoLocalizado = useCallback(
+    async (reporteId: string): Promise<boolean> => {
+      const minutos = Number.parseInt(minutosBusqueda, 10);
+      if (!Number.isInteger(minutos) || minutos < 1) {
+        showToast({
+          type: 'warning',
+          title: 'Falta el tiempo de búsqueda',
+          message: 'Indica cuántos minutos buscaste al animal.',
+        });
+        return false;
+      }
+      if (!notasNoLocalizado.trim()) {
+        showToast({
+          type: 'warning',
+          title: 'Falta una observación',
+          message: 'Cuéntale a la asociación dónde y cómo realizaste la búsqueda.',
+        });
+        return false;
+      }
+      if (!ubicacionActual) {
+        showToast({
+          type: 'error',
+          title: 'Ubicación requerida',
+          message: 'Captura tu ubicación al terminar la búsqueda.',
+        });
+        return false;
+      }
+      setIsSubmitting(true);
+      try {
+        await axios.post(
+          `${API_URL}/reports/${reporteId}/hitos`,
+          {
+            tipo_hito: 'animal_no_localizado',
+            comentario: notasNoLocalizado.trim(),
+            tiempo_busqueda_minutos: minutos,
+            latitud: ubicacionActual.latitude,
+            longitud: ubicacionActual.longitude,
+          },
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        showToast({
+          type: 'success',
+          title: 'Búsqueda registrada',
+          message: 'La asociación ya puede revisar tu actualización.',
+        });
+        resetNoLocalizado();
+        await cargarReportesAsignados();
+        return true;
+      } catch (error: any) {
+        showToast({
+          type: 'error',
+          title: 'No pudimos registrar la búsqueda',
+          message: error?.response?.data?.detail || 'Inténtalo nuevamente.',
+        });
+        return false;
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    [
+      minutosBusqueda,
+      notasNoLocalizado,
+      ubicacionActual,
+      token,
+      showToast,
+      resetNoLocalizado,
+      cargarReportesAsignados,
+    ],
+  );
+
+  // ── Hito: animal bajo resguardo ─────────────────────────────────────
+  const [condicionResguardo, setCondicionResguardo] = useState('');
+  const [destinoResguardo, setDestinoResguardo] = useState('');
+  const [notasResguardo, setNotasResguardo] = useState('');
+  const [fotoResguardo, setFotoResguardo] = useState<string | null>(null);
+
+  const resetResguardo = useCallback(() => {
+    setCondicionResguardo('');
+    setDestinoResguardo('');
+    setNotasResguardo('');
+    setFotoResguardo(null);
+    setUbicacionActual(null);
+    setPermisoDenegado(false);
+  }, []);
+
+  const registrarAnimalBajoResguardo = useCallback(
+    async (reporteId: string): Promise<boolean> => {
+      if (!condicionResguardo || !destinoResguardo.trim() || !fotoResguardo || !ubicacionActual) {
+        showToast({
+          type: 'warning',
+          title: 'Falta evidencia',
+          message: 'Completa la condición, el destino, la foto y la ubicación.',
+        });
+        return false;
+      }
+      setIsSubmitting(true);
+      try {
+        const foto_url = await subirFotoHito(reporteId, fotoResguardo);
+        if (!foto_url) {
+          showToast({
+            type: 'error',
+            title: 'No pudimos subir la foto',
+            message: 'Verifica tu conexión e inténtalo nuevamente.',
+          });
+          return false;
+        }
+        await axios.post(
+          `${API_URL}/reports/${reporteId}/hitos`,
+          {
+            tipo_hito: 'animal_bajo_resguardo',
+            condicion_observada: condicionResguardo,
+            destino: destinoResguardo.trim(),
+            comentario: notasResguardo.trim() || null,
+            foto_url,
+            latitud: ubicacionActual.latitude,
+            longitud: ubicacionActual.longitude,
+          },
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        showToast({
+          type: 'success',
+          title: 'Animal bajo resguardo',
+          message: 'La asociación ya conoce su condición y destino.',
+        });
+        resetResguardo();
+        await cargarReportesAsignados();
+        return true;
+      } catch (error: any) {
+        showToast({
+          type: 'error',
+          title: 'No pudimos registrar el resguardo',
+          message: error?.response?.data?.detail || 'Inténtalo nuevamente.',
+        });
+        return false;
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    [
+      condicionResguardo,
+      destinoResguardo,
+      notasResguardo,
+      fotoResguardo,
+      ubicacionActual,
+      token,
+      showToast,
+      subirFotoHito,
+      resetResguardo,
+      cargarReportesAsignados,
+    ],
+  );
+
   const resetEncontre = useCallback(() => {
     setEstadoEncontre('');
     setNotasEncontre('');
@@ -180,10 +406,28 @@ export function useStaffReports(showToast: ShowToastFn) {
         });
         return { exito: false, sugerenciaAliado: null };
       }
+      if (user?.rol === 'voluntario_externo' && !fotoEncontre) {
+        showToast({
+          type: 'warning',
+          title: 'Foto requerida',
+          message: 'Toma una foto del animal desde la cámara para continuar.',
+        });
+        return { exito: false, sugerenciaAliado: null };
+      }
       setIsSubmitting(true);
       try {
         let foto_url = null;
-        if (fotoEncontre) foto_url = await subirFotoHito(reporteId, fotoEncontre);
+        if (fotoEncontre) {
+          foto_url = await subirFotoHito(reporteId, fotoEncontre);
+          if (!foto_url) {
+            showToast({
+              type: 'error',
+              title: 'No pudimos subir la foto',
+              message: 'Verifica tu conexión e inténtalo nuevamente.',
+            });
+            return { exito: false, sugerenciaAliado: null };
+          }
+        }
         let ubicacion_hito = null;
         if (user?.rol === 'voluntario_externo') {
           const permiso = await Location.requestForegroundPermissionsAsync();
@@ -206,7 +450,7 @@ export function useStaffReports(showToast: ShowToastFn) {
         const res = await axios.post(
           `${API_URL}/reports/${reporteId}/hitos`,
           {
-            tipo_hito: 'encontre_animal',
+            tipo_hito: 'animal_encontrado',
             condicion_observada: estadoEncontre,
             comentario: notasEncontre || null,
             foto_url: foto_url || null,
@@ -288,11 +532,13 @@ const rechazarAsignacionVoluntario = useCallback(
   const [estadoRefugio, setEstadoRefugio] = useState('');
   const [notasRefugio, setNotasRefugio] = useState('');
   const [fotoRefugio, setFotoRefugio] = useState<string | null>(null);
+  const [fotoEntornoRefugio, setFotoEntornoRefugio] = useState<string | null>(null);
 
   const resetRefugio = useCallback(() => {
     setEstadoRefugio('');
     setNotasRefugio('');
     setFotoRefugio(null);
+    setFotoEntornoRefugio(null);
     setUbicacionActual(null);
     setPermisoDenegado(false);
   }, []);
@@ -323,11 +569,31 @@ const rechazarAsignacionVoluntario = useCallback(
         });
         return false;
       }
+      if (user?.rol === 'voluntario_externo' && !fotoEntornoRefugio) {
+        showToast({
+          type: 'error',
+          title: 'Foto del entorno requerida',
+          message: 'Toma una foto del espacio donde permanecerá el animal.',
+        });
+        return false;
+      }
       setIsSubmitting(true);
       try {
         const foto_url = await subirFotoHito(reporteId, fotoRefugio);
         if (!foto_url) {
           showToast({ type: 'error', title: 'Error', message: 'No pudimos subir la foto. Intenta de nuevo.' });
+          return false;
+        }
+        const foto_entorno_url =
+          user?.rol === 'voluntario_externo' && fotoEntornoRefugio
+            ? await subirFotoHito(reporteId, fotoEntornoRefugio)
+            : null;
+        if (user?.rol === 'voluntario_externo' && !foto_entorno_url) {
+          showToast({
+            type: 'error',
+            title: 'No pudimos subir la foto del entorno',
+            message: 'Verifica tu conexión e inténtalo nuevamente.',
+          });
           return false;
         }
         await axios.post(
@@ -340,6 +606,7 @@ const rechazarAsignacionVoluntario = useCallback(
             condicion_observada: estadoRefugio,
             comentario: notasRefugio || null,
             foto_url,
+            foto_entorno_url,
             latitud: ubicacionActual.latitude,
             longitud: ubicacionActual.longitude,
           },
@@ -371,6 +638,7 @@ const rechazarAsignacionVoluntario = useCallback(
       estadoRefugio,
       notasRefugio,
       fotoRefugio,
+      fotoEntornoRefugio,
       ubicacionActual,
       token,
       showToast,
@@ -422,7 +690,7 @@ const rechazarAsignacionVoluntario = useCallback(
         await axios.post(
           `${API_URL}/reports/${reporteId}/hitos`,
           {
-            tipo_hito: 'llego_veterinaria',
+            tipo_hito: 'llegada_veterinaria',
             comentario: notasVeterinaria || null,
             foto_url,
             latitud: ubicacionActual.latitude,
@@ -490,6 +758,31 @@ const rechazarAsignacionVoluntario = useCallback(
     registrarEncontre,
     resetEncontre,
     OPCIONES_ENCONTRE,
+    OPCIONES_ENCONTRE_EXTERNO,
+
+    // hito: llegada a la zona
+    registrarLlegadaZona,
+    resetLlegadaZona,
+
+    // hito: animal no localizado
+    minutosBusqueda,
+    setMinutosBusqueda,
+    notasNoLocalizado,
+    setNotasNoLocalizado,
+    registrarNoLocalizado,
+    resetNoLocalizado,
+
+    // hito: animal bajo resguardo
+    condicionResguardo,
+    setCondicionResguardo,
+    destinoResguardo,
+    setDestinoResguardo,
+    notasResguardo,
+    setNotasResguardo,
+    fotoResguardo,
+    setFotoResguardo,
+    registrarAnimalBajoResguardo,
+    resetResguardo,
 
     // hito: "llegué al refugio"
     estadoRefugio,
@@ -498,6 +791,8 @@ const rechazarAsignacionVoluntario = useCallback(
     setNotasRefugio,
     fotoRefugio,
     setFotoRefugio,
+    fotoEntornoRefugio,
+    setFotoEntornoRefugio,
     registrarRefugio,
     resetRefugio,
     OPCIONES_REFUGIO,

@@ -5,6 +5,7 @@ interface Props {
   selectedPosition?: { latitud: number; longitud: number } | null
   instructionText?: string
   helperText?: string
+  readOnly?: boolean
 }
 
 const DEFAULT_CENTER: [number, number] = [19.0414, -98.2063]
@@ -34,6 +35,7 @@ export default function LocationPickerMap({
   selectedPosition,
   instructionText = 'Toca el mapa para marcar la ubicación del animal',
   helperText = 'También puedes arrastrar el pin para ajustar la posición exacta',
+  readOnly = false,
 }: Props) {
   const mapRef = useRef<HTMLDivElement>(null)
   const mapInstanceRef = useRef<any>(null)
@@ -90,18 +92,20 @@ export default function LocationPickerMap({
         iconAnchor: [19, 52],
       })
 
-      const marker = L.marker(startCenter, { draggable: true, icon: pinIcon }).addTo(map)
+      const marker = L.marker(startCenter, { draggable: !readOnly, icon: pinIcon }).addTo(map)
       markerInstanceRef.current = marker
 
-      marker.on('dragend', () => {
-        const pos = marker.getLatLng()
-        onLocationSelect(pos.lat, pos.lng)
-      })
+      if (!readOnly) {
+        marker.on('dragend', () => {
+          const pos = marker.getLatLng()
+          onLocationSelect(pos.lat, pos.lng)
+        })
 
-      map.on('click', (e) => {
-        marker.setLatLng(e.latlng)
-        onLocationSelect(e.latlng.lat, e.latlng.lng)
-      })
+        map.on('click', (e) => {
+          marker.setLatLng(e.latlng)
+          onLocationSelect(e.latlng.lat, e.latlng.lng)
+        })
+      }
     })
 
     return () => {
@@ -109,7 +113,7 @@ export default function LocationPickerMap({
       document.head.removeChild(style)
       mapInstanceRef.current?.remove()
     }
-  }, [isClient])
+  }, [isClient, readOnly])
 
   useEffect(() => {
     if (!selectedPosition || !mapInstanceRef.current || !markerInstanceRef.current) return
@@ -135,7 +139,7 @@ export default function LocationPickerMap({
   return (
     <div>
       {/* Instrucción */}
-      <div style={{
+      {!readOnly && <div style={{
         display: 'flex', alignItems: 'center', gap: '8px',
         backgroundColor: '#FFF5EE', borderRadius: '10px',
         padding: '8px 12px', marginBottom: '8px',
@@ -144,13 +148,13 @@ export default function LocationPickerMap({
         <span style={{ fontSize: '12px', color: '#D4691A', fontWeight: 600 }}>
           {instructionText}
         </span>
-      </div>
+      </div>}
 
       {/* Mapa */}
       <div
         ref={mapRef}
         style={{
-          width: '100%', height: '280px',
+          width: '100%', height: readOnly ? '180px' : '280px',
           borderRadius: '14px',
           border: '1.5px solid #F0E8DC',
           overflow: 'hidden',
@@ -159,9 +163,9 @@ export default function LocationPickerMap({
       />
 
       {/* Instrucción inferior */}
-      <p style={{ fontSize: '11px', color: '#9B8B7A', textAlign: 'center', margin: '6px 0 0' }}>
+      {!readOnly && <p style={{ fontSize: '11px', color: '#9B8B7A', textAlign: 'center', margin: '6px 0 0' }}>
         {helperText}
-      </p>
+      </p>}
     </div>
   )
 }

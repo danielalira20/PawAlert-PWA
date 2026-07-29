@@ -112,13 +112,19 @@ class HitoRequest(BaseModel):
     tipo_hito: str
     condicion_observada: Optional[str] = None
     comentario: Optional[str] = None
+    destino: Optional[str] = Field(default=None, max_length=200)
     foto_url: Optional[str] = None
     foto_entorno_url: Optional[str] = None
     latitud: Optional[float] = None
     longitud: Optional[float] = None
+    tiempo_busqueda_minutos: Optional[int] = Field(default=None, ge=1, le=1440)
 
 
 ## Cuando el encargado de asociacion RECHACE reporte
 class RechazarReporteRequest(BaseModel):
     motivo: str
     comentario: Optional[str] = None
+
+
+class CancelarReporteRequest(BaseModel):
+    motivo: Optional[str] = Field(default=None, max_length=500)

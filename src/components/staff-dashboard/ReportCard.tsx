@@ -19,7 +19,7 @@ import { getAnimales, animalMasGrave, totalAnimales } from '../../types/reporte'
 const TRAY_WIDTH = 92;
 const SWIPE_OPEN_THRESHOLD = -44;
 
-type QuickActionType = 'encontre' | 'refugio' | 'detalle';
+type QuickActionType = 'llegada_zona' | 'encontre' | 'resguardo' | 'refugio' | 'detalle';
 
 interface QuickActionConfig {
   label: string;
@@ -30,18 +30,34 @@ interface QuickActionConfig {
 
 // La "acción rápida" del swipe abre el MISMO modal que ya tenías dentro del
 // detalle (no lo salta) — solo evita el paso extra de tocar la card y luego
-// buscar el botón. Se basa en tus mismos estados reales: `en_camino` ->
-// "Encontré al animal", `en_atencion` -> "Llegué al refugio".
-function getQuickAction(estadoReporte: string, esHogarTemporal = false): QuickActionConfig {
-  switch (estadoReporte) {
+// buscar el botón. Para externos, el primer gesto en campo es validar la
+// llegada; solo después se habilita "Encontré al animal".
+function getQuickAction(reporte: ReporteStaff, esHogarTemporal = false): QuickActionConfig {
+  switch (reporte.estado_reporte) {
     case 'en_camino':
+      if (esHogarTemporal && !reporte.llegada_zona_registrada) {
+        return {
+          label: 'Llegué a la zona',
+          icon: 'location-outline',
+          color: Brand.secondary,
+          type: 'llegada_zona',
+        };
+      }
       return {
         label: 'Encontré al animal',
-        icon: 'checkmark-circle-outline',
+        icon: 'paw-outline',
         color: Brand.primary,
         type: 'encontre',
       };
     case 'en_atencion':
+      if (esHogarTemporal && !reporte.animal_bajo_resguardo_registrado) {
+        return {
+          label: 'Bajo resguardo',
+          icon: 'shield-checkmark-outline',
+          color: Brand.secondary,
+          type: 'resguardo',
+        };
+      }
       return {
         label: esHogarTemporal ? 'Llegué a mi hogar' : 'Llegué al refugio',
         icon: 'home-outline',
@@ -59,14 +75,12 @@ interface Props {
   reporte: ReporteStaff;
   index?: number;
   onOpenDetail: (reporte: ReporteStaff) => void;
+  onQuickLlegadaZona: (reporte: ReporteStaff) => void;
+  onQuickResguardo: (reporte: ReporteStaff) => void;
   onQuickEncontre: (reporte: ReporteStaff) => void;
   onQuickRefugio: (reporte: ReporteStaff) => void;
-  // Los hitos ("encontré al animal" / "llegué al refugio") validan la
-  // llegada contra las coordenadas del refugio de la asociación — solo
-  // tiene sentido para voluntario_interno. Un voluntario_externo puede
-  // ver sus casos, pero no registrar estos hitos (aún no tiene un flujo
-  // equivalente para casa hogar). Default true para no romper el
-  // comportamiento existente donde no se pase este prop explícitamente.
+  // Permiso explícito: otros roles pueden consultar la tarjeta sin recibir
+  // acciones rápidas de campo.
   puedeRegistrarHitos?: boolean;
   esHogarTemporal?: boolean;
 }
@@ -75,6 +89,8 @@ export function ReportCard({
   reporte,
   index = 0,
   onOpenDetail,
+  onQuickLlegadaZona,
+  onQuickResguardo,
   onQuickEncontre,
   onQuickRefugio,
   puedeRegistrarHitos = true,
@@ -82,8 +98,8 @@ export function ReportCard({
 }: Props) {
   const translateX = useSharedValue(0);
   const action = useMemo(
-    () => getQuickAction(reporte.estado_reporte, esHogarTemporal),
-    [esHogarTemporal, reporte.estado_reporte],
+    () => getQuickAction(reporte, esHogarTemporal),
+    [esHogarTemporal, reporte],
   );
   const animales = useMemo(() => getAnimales(reporte), [reporte]);
   const grave = animalMasGrave(animales);
@@ -98,13 +114,15 @@ export function ReportCard({
 
   const handleQuickAction = () => {
     translateX.value = withSpring(0, { damping: 30, stiffness: 400 });
-    if (action.type === 'encontre') onQuickEncontre(reporte);
+    if (action.type === 'llegada_zona') onQuickLlegadaZona(reporte);
+    else if (action.type === 'resguardo') onQuickResguardo(reporte);
+    else if (action.type === 'encontre') onQuickEncontre(reporte);
     else if (action.type === 'refugio') onQuickRefugio(reporte);
     else onOpenDetail(reporte);
   };
 
-  // No permitimos swipe en casos cerrados, ni si el voluntario no puede
-  // registrar hitos (externo) — no hay acción rápida que ofrecerle todavía.
+  // No permitimos swipe en casos cerrados ni cuando el rol no puede
+  // registrar hitos.
   const swipeHabilitado = !esCerrado && puedeRegistrarHitos;
 
   const pan = Gesture.Pan()
@@ -172,8 +190,14 @@ export function ReportCard({
 
               {reporte.estado_reporte === 'en_camino' && (
                 <View style={styles.ribbon}>
-                  <Ionicons name="car-outline" size={12} color="#fff" />
-                  <Text style={styles.ribbonText}>Rescatista en camino</Text>
+                  <Ionicons
+                    name={reporte.llegada_zona_registrada ? 'location-outline' : 'car-outline'}
+                    size={12}
+                    color="#fff"
+                  />
+                  <Text style={styles.ribbonText}>
+                    {reporte.llegada_zona_registrada ? 'En zona del reporte' : 'Rescatista en camino'}
+                  </Text>
                 </View>
               )}
 
