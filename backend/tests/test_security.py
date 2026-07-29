@@ -287,7 +287,9 @@ def test_reportes_asociacion_incluye_flags_sugerencia_veterinaria(make_query):
             },
         ]),
         "contribuciones": make_query(data=[{"reporte_id": "rep-1"}]),
-        "historial_reporte": make_query(data=[{"reporte_id": "rep-1"}]),
+        "historial_reporte": make_query(data=[
+            {"reporte_id": "rep-1", "tipo_evento": "llegada_veterinaria"},
+        ]),
     }
     supabase = MagicMock()
     supabase.table.side_effect = lambda nombre: tablas[nombre]
@@ -317,7 +319,11 @@ def test_reportes_voluntario_incluye_flags_sugerencia_veterinaria(make_query):
             {**_reporte_embed("rep-2"), "referencia": None, "asociaciones": {"nombre": "Patitas", "contacto_telefono": "5512345678"}},
         ]),
         "contribuciones": make_query(data=[{"reporte_id": "rep-1"}]),
-        "historial_reporte": make_query(data=[{"reporte_id": "rep-1"}]),
+        "historial_reporte": make_query(data=[
+            {"reporte_id": "rep-1", "tipo_evento": "llegada_veterinaria"},
+            {"reporte_id": "rep-1", "tipo_evento": "llegada_zona_reporte"},
+            {"reporte_id": "rep-1", "tipo_evento": "animal_no_localizado"},
+        ]),
     }
     supabase = MagicMock()
     supabase.table.side_effect = lambda nombre: tablas[nombre]
@@ -329,5 +335,9 @@ def test_reportes_voluntario_incluye_flags_sugerencia_veterinaria(make_query):
     por_reporte = {r["id"]: r for r in resultado["en_accion"]}
     assert por_reporte["rep-1"]["tiene_sugerencia_aceptada"] is True
     assert por_reporte["rep-1"]["tiene_llegada_veterinaria_registrada"] is True
+    assert por_reporte["rep-1"]["llegada_zona_registrada"] is True
+    assert por_reporte["rep-1"]["animal_no_localizado_registrado"] is True
     assert por_reporte["rep-2"]["tiene_sugerencia_aceptada"] is False
     assert por_reporte["rep-2"]["tiene_llegada_veterinaria_registrada"] is False
+    assert por_reporte["rep-2"]["llegada_zona_registrada"] is False
+    assert por_reporte["rep-2"]["animal_no_localizado_registrado"] is False

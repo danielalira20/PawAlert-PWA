@@ -23,6 +23,7 @@ interface Props {
   notas: string;
   onChangeNotas: (valor: string) => void;
   tieneFoto: boolean;
+  fotoObligatoria?: boolean;
   onPickFoto: () => void;
   isSubmitting: boolean;
   onCancel: () => void;
@@ -43,6 +44,7 @@ export function EncontreModal({
   notas,
   onChangeNotas,
   tieneFoto,
+  fotoObligatoria = false,
   onPickFoto,
   isSubmitting,
   onCancel,
@@ -54,6 +56,9 @@ export function EncontreModal({
   seguimientoAliado,
   onCerrarSeguimiento,
 }: Props) {
+  const puedeConfirmar =
+    !!estado && (!fotoObligatoria || tieneFoto) && !isSubmitting;
+
   return (
     <Modal visible={visible} transparent animationType="fade">
       <View style={styles.overlay}>
@@ -107,9 +112,17 @@ export function EncontreModal({
               />
 
               <TouchableOpacity onPress={onPickFoto} style={styles.fotoButton}>
-                <Ionicons name="image-outline" size={16} color={Brand.textDark} />
+                <Ionicons
+                  name={fotoObligatoria ? 'camera-outline' : 'image-outline'}
+                  size={16}
+                  color={Brand.textDark}
+                />
                 <Text style={styles.fotoButtonText}>
-                  {tieneFoto ? 'Foto adjuntada ✓' : 'Subir foto (opcional)'}
+                  {tieneFoto
+                    ? 'Foto capturada ✓'
+                    : fotoObligatoria
+                      ? 'Tomar foto (obligatoria)'
+                      : 'Subir foto (opcional)'}
                 </Text>
               </TouchableOpacity>
 
@@ -118,9 +131,9 @@ export function EncontreModal({
                   <Text style={styles.cancelText}>Cancelar</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.confirmButton, isSubmitting && styles.confirmButtonDisabled]}
+                  style={[styles.confirmButton, !puedeConfirmar && styles.confirmButtonDisabled]}
                   onPress={onConfirm}
-                  disabled={isSubmitting}
+                  disabled={!puedeConfirmar}
                 >
                   {isSubmitting ? (
                     <ActivityIndicator color="#fff" />

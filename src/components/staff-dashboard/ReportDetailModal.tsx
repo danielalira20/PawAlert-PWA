@@ -24,12 +24,12 @@ interface Props {
   reporte: ReporteStaff | null;
   onClose: () => void;
   onEncontre: () => void;
+  onLlegadaZona: () => void;
+  onNoLocalizado: () => void;
   onRefugio: () => void;
   onVeterinaria: () => void;
-  // Mismo criterio que ReportCard: los hitos de campo (validan llegada
-  // contra el refugio de la asociación) solo aplican a voluntario_interno
-  // (y staff elevado) por ahora. Default true para no romper el
-  // comportamiento existente donde no se pase este prop explícitamente.
+  // Se conserva como permiso explícito para no exponer acciones de campo a
+  // otros roles que también pueden consultar el detalle.
   puedeRegistrarHitos?: boolean;
   esHogarTemporal?: boolean;
 }
@@ -39,6 +39,8 @@ export function ReportDetailModal({
   reporte,
   onClose,
   onEncontre,
+  onLlegadaZona,
+  onNoLocalizado,
   onRefugio,
   onVeterinaria,
   puedeRegistrarHitos = true,
@@ -109,11 +111,62 @@ export function ReportDetailModal({
                 </TouchableOpacity>
               </View>
 
-              {puedeRegistrarHitos && reporte.estado_reporte === 'en_camino' && (
+              {puedeRegistrarHitos &&
+                esHogarTemporal &&
+                reporte.estado_reporte === 'en_camino' &&
+                !reporte.llegada_zona_registrada && (
+                  <View style={styles.fieldProgressCard}>
+                    <View style={styles.fieldProgressIcon}>
+                      <Ionicons name="navigate" size={18} color={Brand.secondary} />
+                    </View>
+                    <View style={styles.fieldProgressCopy}>
+                      <Text style={styles.fieldProgressTitle}>Primero valida tu llegada</Text>
+                      <Text style={styles.fieldProgressText}>
+                        Al estar cerca del punto podrás registrar el resultado de la búsqueda.
+                      </Text>
+                    </View>
+                  </View>
+                )}
+
+              {puedeRegistrarHitos &&
+                esHogarTemporal &&
+                reporte.estado_reporte === 'en_camino' &&
+                !reporte.llegada_zona_registrada && (
+                  <TouchableOpacity
+                    style={[styles.actionButton, { backgroundColor: Brand.secondary }]}
+                    onPress={onLlegadaZona}
+                  >
+                    <Ionicons name="location-outline" size={18} color="#fff" />
+                    <Text style={styles.actionButtonText}>Llegué a la zona</Text>
+                  </TouchableOpacity>
+                )}
+
+              {puedeRegistrarHitos &&
+                reporte.estado_reporte === 'en_camino' &&
+                (!esHogarTemporal || reporte.llegada_zona_registrada) && (
                 <TouchableOpacity style={[styles.actionButton, { backgroundColor: Brand.primary }]} onPress={onEncontre}>
-                  <Ionicons name="checkmark-circle-outline" size={18} color="#fff" />
+                  <Ionicons name="paw-outline" size={18} color="#fff" />
                   <Text style={styles.actionButtonText}>Encontré al animal</Text>
                 </TouchableOpacity>
+              )}
+
+              {puedeRegistrarHitos &&
+                esHogarTemporal &&
+                reporte.estado_reporte === 'en_camino' &&
+                reporte.llegada_zona_registrada && (
+                  <TouchableOpacity style={styles.secondaryActionButton} onPress={onNoLocalizado}>
+                    <Ionicons name="search-outline" size={18} color="#9A6700" />
+                    <Text style={styles.secondaryActionText}>No lo localicé</Text>
+                  </TouchableOpacity>
+                )}
+
+              {esHogarTemporal && reporte.animal_no_localizado_registrado && (
+                <View style={styles.searchUpdate}>
+                  <Ionicons name="time-outline" size={16} color="#9A6700" />
+                  <Text style={styles.searchUpdateText}>
+                    Ya enviaste una búsqueda sin resultado. El caso permanece activo.
+                  </Text>
+                </View>
               )}
 
               {puedeRegistrarHitos &&
@@ -213,4 +266,49 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   actionButtonText: { color: '#fff', fontWeight: '800', fontSize: 14 },
+  fieldProgressCard: {
+    flexDirection: 'row',
+    gap: 10,
+    borderRadius: 15,
+    padding: 12,
+    backgroundColor: `${Brand.secondary}12`,
+    borderWidth: 1,
+    borderColor: `${Brand.secondary}3D`,
+    marginBottom: 10,
+  },
+  fieldProgressIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fieldProgressCopy: { flex: 1 },
+  fieldProgressTitle: { color: Brand.textDark, fontSize: 12, fontWeight: '800' },
+  fieldProgressText: { color: Brand.textMuted, fontSize: 10, lineHeight: 15, marginTop: 2 },
+  secondaryActionButton: {
+    paddingVertical: 13,
+    borderRadius: 14,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: -10,
+    marginBottom: 12,
+    borderWidth: 1.5,
+    borderColor: `${Brand.accent}88`,
+    backgroundColor: `${Brand.accent}0F`,
+  },
+  secondaryActionText: { color: '#9A6700', fontWeight: '800', fontSize: 14 },
+  searchUpdate: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+    padding: 11,
+    borderRadius: 13,
+    backgroundColor: `${Brand.accent}12`,
+    marginBottom: 18,
+  },
+  searchUpdateText: { color: Brand.textMuted, fontSize: 10, lineHeight: 15, flex: 1 },
 });
