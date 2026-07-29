@@ -43,7 +43,7 @@ export default function RootLayout() {
         <Stack.Screen name="red-aliados" options={{ presentation: 'modal' }} />
         <Stack.Screen name="aliados-directorio" options={{ presentation: 'modal' }} />
         <Stack.Screen name="mis-lotes" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="registro-aliado" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="registro-aliado" options={{ presentation: 'transparentModal', animation: 'fade', headerShown: false }} />
         <Stack.Screen name="staff-asignacion" />
         <Stack.Screen name="forgot-password" options={{ presentation: 'modal' }} />
         <Stack.Screen name="completar-cuenta" options={{ presentation: 'modal' }} />
@@ -52,6 +52,7 @@ export default function RootLayout() {
         <Stack.Screen name="como-ayudar" options={{ presentation: 'transparentModal', animation: 'fade', headerShown: false }} />
         <Stack.Screen name="notificaciones-aliado" options={{ presentation: 'transparentModal', animation: 'fade', headerShown: false }} />
         <Stack.Screen name="ofertas-asociacion" options={{ presentation: 'transparentModal', animation: 'fade', headerShown: false }} />
+        <Stack.Screen name="registro-comunitario" options={{ presentation: 'transparentModal', animation: 'fade', headerShown: false }} />
       </Stack>
     </AuthProvider>
     </GestureHandlerRootView>

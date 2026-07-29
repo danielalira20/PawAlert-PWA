@@ -515,7 +515,7 @@ export default function HowToHelpScreen() {
               <AnimatedButton onPress={() => {
                 setSelectedNecesidad(null);
                 if (isLoggedIn) {
-                  router.push('/profile?abrirFormularioAliado=true' as any);
+                  router.push('/registro-comunitario');
                 } else {
                   setAvisoDonanteSinSesion(true);
                 }
