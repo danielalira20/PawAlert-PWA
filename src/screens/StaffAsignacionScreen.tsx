@@ -122,6 +122,20 @@ interface Candidato {
   score: ScoreCandidato;
 }
 
+interface OfrecimientoExterno {
+  id: string;
+  voluntario_id: string;
+  nombre: string;
+  tipo: 'voluntario_externo';
+  etiqueta: 'Se ofreció';
+  distancia_km: number;
+  compatibilidad: number;
+  capacidad_disponible: number;
+  capacidad_resumen: string;
+  ofrecido_at: string;
+  foto_url?: string | null;
+}
+
 // Motor de sugerencias Ruta 1 (BACK01/BACK02) — lo que regresa
 // POST /reports/{id}/hitos en `sugerencia_aliado`. Interfaz local a
 // propósito, duplicada de la de StaffDashboardScreen.tsx: las dos
@@ -178,6 +192,7 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
   // ── Pestaña Voluntarios (dentro del modal de asignación) ──
   const [tabAsignacion, setTabAsignacion] = useState<TabAsignacion>('staff');
   const [candidatosList, setCandidatosList] = useState<Candidato[]>([]);
+  const [ofrecimientosExternos, setOfrecimientosExternos] = useState<OfrecimientoExterno[]>([]);
   const [modoAsignacion, setModoAsignacion] = useState<string>('manual');
   const [timeoutMin, setTimeoutMin] = useState<number>(10);
   const [estadoVoluntarios, setEstadoVoluntarios] = useState<EstadoVoluntarios>('cargando');
@@ -564,9 +579,15 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
       const res = await axios.get(`${API_URL}/reports/${reporteId}/candidatos`, { headers: { Authorization: `Bearer ${token}` } });
       const data = res.data;
       setCandidatosList(data.candidatos || []);
+      setOfrecimientosExternos(data.ofrecimientos_externos || []);
       setModoAsignacion(data.modo_asignacion || 'manual');
       setTimeoutMin(data.timeout_min || 10);
-      setEstadoVoluntarios((data.candidatos || []).length === 0 ? 'sin_candidatos' : 'candidatos');
+      setEstadoVoluntarios(
+        (data.candidatos || []).length === 0 &&
+        (data.ofrecimientos_externos || []).length === 0
+          ? 'sin_candidatos'
+          : 'candidatos',
+      );
     } catch (error: any) {
       showToast({ type: 'error', title: 'Error', message: 'No pudimos cargar los candidatos.' });
       setEstadoVoluntarios('sin_candidatos');
@@ -1489,6 +1510,21 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
                         )}
 
                     <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
+                      <View style={{ marginBottom: 12 }}>
+                        <Text style={{ color: COLORS.textDark, fontSize: 15, fontWeight: '800' }}>
+                          Equipo interno sugerido
+                        </Text>
+                        <Text style={{ color: COLORS.textLight, fontSize: 11, marginTop: 2 }}>
+                          Top 3 calculado únicamente con voluntariado de tu asociación.
+                        </Text>
+                      </View>
+                      {candidatosList.length === 0 && (
+                        <View style={{ backgroundColor: '#FFF6E8', padding: 14, borderRadius: 14, marginBottom: 16 }}>
+                          <Text style={{ color: COLORS.textLight, fontSize: 12, lineHeight: 18 }}>
+                            No hay integrantes internos elegibles en este momento.
+                          </Text>
+                        </View>
+                      )}
                       {candidatosList.map((candidato) => {
                         const maxScores = { proximidad: 30, disponibilidad: 25, experiencia: 20, movilidad: 15, carga: 10 };
                         const barras = [
@@ -1518,11 +1554,6 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
                                 <Text style={{ fontSize: 15, fontWeight: '700', color: COLORS.textDark }}>{candidato.nombre}</Text>
                                 <Text style={{ fontSize: 12, color: COLORS.textLight, marginTop: 2 }}>📍 a {candidato.distancia_km} km · radio de {candidato.radio_max_km} km</Text>
                                 <Text style={{ fontSize: 11, color: COLORS.textLight, marginTop: 3 }}>{candidato.capacidad_resumen}</Text>
-                                {candidato.tipo === 'voluntario_externo' && (
-                                  <View style={{ backgroundColor: '#E8CCAD', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, alignSelf: 'flex-start', marginTop: 5 }}>
-                                    <Text style={{ fontSize: 10, fontWeight: '700', color: COLORS.textDark }}>{candidato.etiqueta || 'Voluntario externo verificado'}</Text>
-                                  </View>
-                                )}
                               </View>
 
                               <View style={{ alignItems: 'center', marginLeft: 8 }}>
@@ -1569,6 +1600,144 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
                               style={{ backgroundColor: COLORS.primary, borderRadius: 14, paddingVertical: 11, alignItems: 'center', marginTop: 12 }}
                             >
                               <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 14 }}>Asignar</Text>
+                            </TouchableOpacity>
+                          </View>
+                        );
+                      })}
+
+                      <View style={{
+                        marginTop: candidatosList.length ? 8 : 0,
+                        marginBottom: 12,
+                        paddingTop: 16,
+                        borderTopWidth: 1,
+                        borderTopColor: '#E8DCCF',
+                      }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <View style={{
+                            width: 34, height: 34, borderRadius: 12,
+                            backgroundColor: 'rgba(102,188,180,0.14)',
+                            alignItems: 'center', justifyContent: 'center',
+                          }}>
+                            <Ionicons name="hand-left" size={18} color={COLORS.accent} />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ color: COLORS.textDark, fontSize: 15, fontWeight: '800' }}>
+                              Voluntarios externos que se ofrecieron
+                            </Text>
+                            <Text style={{ color: COLORS.textLight, fontSize: 11, marginTop: 2 }}>
+                              Interés voluntario; ninguno está asignado todavía.
+                            </Text>
+                          </View>
+                          <View style={{
+                            minWidth: 27, height: 27, borderRadius: 14,
+                            backgroundColor: COLORS.accent,
+                            alignItems: 'center', justifyContent: 'center',
+                          }}>
+                            <Text style={{ color: COLORS.white, fontSize: 12, fontWeight: '900' }}>
+                              {ofrecimientosExternos.length}
+                            </Text>
+                          </View>
+                        </View>
+                      </View>
+
+                      {ofrecimientosExternos.length === 0 ? (
+                        <View style={{
+                          borderWidth: 1, borderStyle: 'dashed', borderColor: '#CFC0B1',
+                          borderRadius: 16, padding: 16, marginBottom: 6,
+                          alignItems: 'center',
+                        }}>
+                          <Text style={{ color: COLORS.textLight, fontSize: 12, textAlign: 'center' }}>
+                            Aún nadie externo ha tocado “Quiero ayudar”.
+                          </Text>
+                        </View>
+                      ) : ofrecimientosExternos.map((oferta) => {
+                        const iniciales = oferta.nombre.split(' ').slice(0, 2)
+                          .map((parte) => parte[0]).join('').toUpperCase();
+                        return (
+                          <View
+                            key={oferta.id}
+                            style={{
+                              backgroundColor: '#F7FFFD',
+                              borderRadius: 20,
+                              borderWidth: 1,
+                              borderColor: '#CDEBE7',
+                              padding: 16,
+                              marginBottom: 12,
+                            }}
+                          >
+                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                              <View style={{
+                                width: 46, height: 46, borderRadius: 23,
+                                backgroundColor: 'rgba(102,188,180,0.16)',
+                                alignItems: 'center', justifyContent: 'center',
+                                marginRight: 11,
+                              }}>
+                                {oferta.foto_url ? (
+                                  <Image source={{ uri: oferta.foto_url }} style={{ width: 46, height: 46, borderRadius: 23 }} />
+                                ) : (
+                                  <Text style={{ color: COLORS.accent, fontSize: 15, fontWeight: '900' }}>
+                                    {iniciales}
+                                  </Text>
+                                )}
+                              </View>
+                              <View style={{ flex: 1 }}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                                  <Text style={{ color: COLORS.textDark, fontSize: 14, fontWeight: '800' }}>
+                                    {oferta.nombre}
+                                  </Text>
+                                  <View style={{
+                                    backgroundColor: COLORS.accent,
+                                    borderRadius: 9,
+                                    paddingHorizontal: 7,
+                                    paddingVertical: 3,
+                                  }}>
+                                    <Text style={{ color: COLORS.white, fontSize: 9, fontWeight: '900' }}>
+                                      Se ofreció
+                                    </Text>
+                                  </View>
+                                </View>
+                                <Text style={{ color: COLORS.textLight, fontSize: 11, marginTop: 4 }}>
+                                  A {oferta.distancia_km} km · {oferta.capacidad_resumen}
+                                </Text>
+                                <Text style={{ color: COLORS.accent, fontSize: 10, fontWeight: '700', marginTop: 3 }}>
+                                  Compatibilidad {Math.round(oferta.compatibilidad || 0)}% · {formatDistanceToNow(new Date(oferta.ofrecido_at), { addSuffix: true, locale: es })}
+                                </Text>
+                              </View>
+                            </View>
+                            <TouchableOpacity
+                              onPress={() => {
+                                setCandidatoAConfirmar({
+                                  voluntario_id: oferta.voluntario_id,
+                                  nombre: oferta.nombre,
+                                  tipo: oferta.tipo,
+                                  etiqueta: oferta.etiqueta,
+                                  distancia_km: oferta.distancia_km,
+                                  radio_max_km: 0,
+                                  carga_actual: 0,
+                                  max_casos_simultaneos: oferta.capacidad_disponible,
+                                  medios_transporte: [],
+                                  coincidencias: [],
+                                  alertas: [],
+                                  capacidad_resumen: oferta.capacidad_resumen,
+                                  foto_url: oferta.foto_url,
+                                  score: {
+                                    total: 0, proximidad: 0, disponibilidad: 0,
+                                    experiencia: 0, movilidad: 0, carga: 0,
+                                  },
+                                });
+                                setShowConfirmVoluntarioModal(true);
+                              }}
+                              style={{
+                                backgroundColor: COLORS.accent,
+                                borderRadius: 14,
+                                paddingVertical: 11,
+                                alignItems: 'center',
+                                marginTop: 12,
+                              }}
+                            >
+                              <Text style={{ color: COLORS.white, fontSize: 13, fontWeight: '800' }}>
+                                Enviar propuesta
+                              </Text>
                             </TouchableOpacity>
                           </View>
                         );

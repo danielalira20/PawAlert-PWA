@@ -3,6 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Platform, StyleSheet } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAuth } from '../../context/AuthContext';
 
 const ACTIVE_COLOR = '#EC802B';
 const INACTIVE_COLOR = '#5C4B3A';
@@ -10,6 +11,7 @@ const isWeb = Platform.OS === 'web';
 
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
 
   return (
     <Tabs
@@ -63,6 +65,16 @@ export default function TabsLayout() {
           title: 'Mapa',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'map' : 'map-outline'} size={22} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="nearby-cases"
+        options={{
+          title: 'Cerca de mí',
+          href: user?.rol === 'voluntario_externo' ? undefined : null,
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? 'heart' : 'heart-outline'} size={22} color={color} />
           ),
         }}
       />
