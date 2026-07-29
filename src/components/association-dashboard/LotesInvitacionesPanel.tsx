@@ -36,6 +36,12 @@ interface InvitacionLote {
     tipo_empaque: string;
     forma_entrega: string;
     descripcion: string | null;
+    fecha_disponibilidad: string | null;
+    vigencia: string | null;
+    lugar_entrega: string | null;
+    direccion_entrega: string | null;
+    direccion_detalle: Record<string, string>;
+    detalle: Record<string, string>;
     aliado_nombre: string;
     aliado_logo_url?: string | null;
     ubicacion_aliado?: {

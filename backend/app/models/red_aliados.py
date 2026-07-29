@@ -137,11 +137,26 @@ class LoteRequest(BaseModel):
     max_asociaciones: int = Field(ge=1, default=1)
     forma_entrega: FormaEntregaEnum
     descripcion: Optional[str] = Field(default=None, max_length=500)
+    fecha_disponibilidad: Optional[str] = None
+    vigencia: Optional[str] = None
+    lugar_entrega: Optional[str] = Field(default=None, max_length=250)
+    direccion_entrega: Optional[str] = Field(default=None, max_length=500)
+    direccion_detalle: dict[str, Any] = Field(default_factory=dict)
+    detalle: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validar_max_asociaciones(self):
         if self.divisible == DivisibleEnum.no and self.max_asociaciones != 1:
             raise ValueError("Un lote no divisible solo puede tener 1 asociación destino")
+        if not self.lugar_entrega or not self.direccion_entrega:
+            raise ValueError("Selecciona un punto y una dirección de entrega válidos")
+        campos_direccion = ("estado", "municipio", "calle", "codigo_postal", "colonia")
+        faltantes = [campo for campo in campos_direccion if not str(self.direccion_detalle.get(campo, "")).strip()]
+        if faltantes:
+            raise ValueError(f"Faltan datos de la dirección: {', '.join(faltantes)}")
+        codigo_postal = str(self.direccion_detalle["codigo_postal"]).strip()
+        if len(codigo_postal) != 5 or not codigo_postal.isdigit():
+            raise ValueError("El código postal debe contener 5 dígitos")
         return self
 
 
@@ -155,6 +170,13 @@ class LoteResponse(BaseModel):
     divisible: str
     max_asociaciones: int
     forma_entrega: str
+    descripcion: Optional[str] = None
+    fecha_disponibilidad: Optional[str] = None
+    vigencia: Optional[str] = None
+    lugar_entrega: Optional[str] = None
+    direccion_entrega: Optional[str] = None
+    direccion_detalle: dict[str, Any] = Field(default_factory=dict)
+    detalle: dict[str, Any] = Field(default_factory=dict)
     created_at: str
 
 
@@ -296,4 +318,3 @@ class ImpactoAliadoResponse(BaseModel):
     asociaciones_ayudadas: int
     ofertas: list[OfertaImpactoResponse] = Field(default_factory=list)
     aplicaciones: list[AplicacionImpactoResponse] = Field(default_factory=list)
-

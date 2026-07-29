@@ -49,6 +49,12 @@ const PASOS = ['Qué vas a aportar', 'Detalles del recurso', 'Logística y entre
 type Modo = 'reactiva' | 'proactiva';
 type Especie = 'perro' | 'gato';
 type Option = { value: string; label: string; description?: string };
+type AddressSearchResult = {
+  lat: string;
+  lon: string;
+  display_name: string;
+  address?: Record<string, string>;
+};
 
 type CampoCondicional =
   | { key: string; label: string; tipo: 'texto'; required?: boolean; numerico?: boolean }
@@ -313,6 +319,16 @@ export default function AportacionFormScreen({ onClose }: Props) {
   const [contenidoPorUnidad, setContenidoPorUnidad] = useState('');
   const [fechaDisponibilidad, setFechaDisponibilidad] = useState<Date | null>(null);
   const [ubicacion, setUbicacion] = useState<{ latitud: number; longitud: number } | null>(null);
+  const [direccionBusqueda, setDireccionBusqueda] = useState('');
+  const [direccionResultados, setDireccionResultados] = useState<AddressSearchResult[]>([]);
+  const [direccionConfirmada, setDireccionConfirmada] = useState('');
+  const [isBuscandoDireccion, setIsBuscandoDireccion] = useState(false);
+  const [direccionBusquedaMensaje, setDireccionBusquedaMensaje] = useState('');
+  const [direccionEstado, setDireccionEstado] = useState('');
+  const [direccionMunicipio, setDireccionMunicipio] = useState('');
+  const [direccionCalle, setDireccionCalle] = useState('');
+  const [direccionCodigoPostal, setDireccionCodigoPostal] = useState('');
+  const [direccionColonia, setDireccionColonia] = useState('');
   const [formaEntrega, setFormaEntrega] = useState<string | null>(null);
   const [vigencia, setVigencia] = useState<Date | null>(null);
   const [frecuencia, setFrecuencia] = useState<string | null>(null);
@@ -355,6 +371,113 @@ export default function AportacionFormScreen({ onClose }: Props) {
   // sentido preguntarles zona de entrega/recolección ni forma de entrega,
   // eso es logística de un objeto que se transporta.
   const esServicio = categoria?.clave === 'servicios_veterinarios' || categoria?.clave === 'difusion_campanas';
+
+  const completarCamposDireccion = (address: Record<string, string> = {}) => {
+    const calle = address.road || address.pedestrian || address.square || address.footway || address.path || '';
+    const numero = address.house_number || '';
+    setDireccionCalle([calle, numero].filter(Boolean).join(' '));
+    setDireccionColonia(
+      address.suburb ||
+      address.neighbourhood ||
+      address.colonia ||
+      address.city_district ||
+      address.quarter ||
+      address.residential ||
+      address.village ||
+      ''
+    );
+    setDireccionMunicipio(address.city || address.town || address.municipality || address.county || '');
+    setDireccionEstado(address.state || '');
+    setDireccionCodigoPostal((address.postcode || '').replace(/\D/g, '').slice(0, 5));
+  };
+
+  const buscarDireccion = async (params: Record<string, string>) => {
+    setIsBuscandoDireccion(true);
+    setDireccionBusquedaMensaje('');
+    setDireccionResultados([]);
+    try {
+      const res = await axios.get('https://nominatim.openstreetmap.org/search', {
+        params: {
+          ...params,
+          format: 'jsonv2',
+          addressdetails: 1,
+          limit: 6,
+          countrycodes: 'mx',
+          'accept-language': 'es',
+        },
+      });
+      const resultados = (res.data || []) as AddressSearchResult[];
+      setDireccionResultados(resultados);
+      if (!resultados.length) {
+        setDireccionBusquedaMensaje(
+          'No encontramos una coincidencia exacta. Completa los campos y usa “Ubicar estos datos”, o marca el punto directamente en el mapa.'
+        );
+      }
+    } catch {
+      setDireccionBusquedaMensaje(
+        'El servicio de direcciones no respondió. Puedes usar tu ubicación actual o marcar el punto en el mapa.'
+      );
+    } finally {
+      setIsBuscandoDireccion(false);
+    }
+  };
+
+  const buscarDireccionLibre = () => {
+    const query = direccionBusqueda.trim();
+    if (query.length < 4) {
+      setDireccionBusquedaMensaje('Escribe al menos 4 caracteres para buscar.');
+      return;
+    }
+    buscarDireccion({ q: query });
+  };
+
+  const buscarDireccionEstructurada = () => {
+    const street = direccionCalle.trim();
+    const city = direccionMunicipio.trim();
+    const state = direccionEstado.trim();
+    const postalcode = direccionCodigoPostal.trim();
+    if (!street && !city && !state && !postalcode) {
+      setDireccionBusquedaMensaje('Completa al menos calle, municipio, estado o código postal.');
+      return;
+    }
+    buscarDireccion({
+      ...(street ? { street } : {}),
+      ...(city ? { city } : {}),
+      ...(state ? { state } : {}),
+      ...(postalcode ? { postalcode } : {}),
+    });
+  };
+
+  const reverseGeocode = async (latitud: number, longitud: number) => {
+    try {
+      const res = await axios.get('https://nominatim.openstreetmap.org/reverse', {
+        params: { lat: latitud, lon: longitud, format: 'json', addressdetails: 1 },
+      });
+      const direccion = res.data?.display_name || '';
+      completarCamposDireccion(res.data?.address || {});
+      setDireccionConfirmada(direccion);
+      setDireccionBusqueda(direccion);
+      setDireccionResultados([]);
+    } catch {
+      setDireccionConfirmada('');
+    }
+  };
+
+  const seleccionarDireccion = (resultado: AddressSearchResult) => {
+    const latitud = Number(resultado.lat);
+    const longitud = Number(resultado.lon);
+    setUbicacion({ latitud, longitud });
+    setDireccionBusqueda(resultado.display_name);
+    setDireccionConfirmada(resultado.display_name);
+    completarCamposDireccion(resultado.address);
+    setDireccionResultados([]);
+    setDireccionBusquedaMensaje('');
+  };
+
+  const seleccionarUbicacionMapa = (latitud: number, longitud: number) => {
+    setUbicacion({ latitud, longitud });
+    reverseGeocode(latitud, longitud);
+  };
 
   const toggleEspecie = (value: string) => {
     const especie = value as Especie;
@@ -400,6 +523,7 @@ export default function AportacionFormScreen({ onClose }: Props) {
       }
       const current = await Location.getCurrentPositionAsync({});
       setUbicacion({ latitud: current.coords.latitude, longitud: current.coords.longitude });
+      reverseGeocode(current.coords.latitude, current.coords.longitude);
     } catch {
       showToast({
         type: 'error',
@@ -488,6 +612,17 @@ export default function AportacionFormScreen({ onClose }: Props) {
   };
 
   const lugarEntregaTexto = ubicacion ? `${ubicacion.latitud.toFixed(5)}, ${ubicacion.longitud.toFixed(5)}` : undefined;
+  const direccionEntregaTexto =
+    direccionConfirmada.trim() ||
+    [
+      direccionCalle.trim(),
+      direccionColonia.trim(),
+      direccionMunicipio.trim(),
+      direccionEstado.trim(),
+      direccionCodigoPostal.trim(),
+    ]
+      .filter(Boolean)
+      .join(', ');
 
   const validarPaso = (numero: number): boolean => {
     const nuevos: Record<string, string> = {};
@@ -532,6 +667,14 @@ export default function AportacionFormScreen({ onClose }: Props) {
           nuevos.maxAsociaciones = 'Indica a cuántas asociaciones se puede repartir.';
         }
         if (!formaEntrega) nuevos.formaEntrega = 'Selecciona una forma de entrega.';
+        if (!ubicacion) {
+          nuevos.ubicacion = 'Selecciona una sugerencia, usa tu ubicación o ajusta el pin.';
+        }
+        if (!direccionEstado.trim()) nuevos.direccionEstado = 'Indica el estado.';
+        if (!direccionMunicipio.trim()) nuevos.direccionMunicipio = 'Indica el municipio.';
+        if (!direccionCalle.trim()) nuevos.direccionCalle = 'Indica la calle.';
+        if (!/^\d{5}$/.test(direccionCodigoPostal)) nuevos.direccionCodigoPostal = 'Ingresa un CP de 5 dígitos.';
+        if (!direccionColonia.trim()) nuevos.direccionColonia = 'Indica la colonia.';
       }
     }
 
@@ -566,6 +709,15 @@ export default function AportacionFormScreen({ onClose }: Props) {
     setContenidoPorUnidad('');
     setFechaDisponibilidad(null);
     setUbicacion(null);
+    setDireccionBusqueda('');
+    setDireccionResultados([]);
+    setDireccionConfirmada('');
+    setDireccionBusquedaMensaje('');
+    setDireccionEstado('');
+    setDireccionMunicipio('');
+    setDireccionCalle('');
+    setDireccionCodigoPostal('');
+    setDireccionColonia('');
     setFormaEntrega(null);
     setVigencia(null);
     setFrecuencia(null);
@@ -694,6 +846,19 @@ export default function AportacionFormScreen({ onClose }: Props) {
             divisible,
             max_asociaciones: divisible === 'no' ? 1 : Number(maxAsociaciones),
             forma_entrega: formaEntrega,
+            descripcion: detalleValores.descripcion_contenido?.trim() || undefined,
+            fecha_disponibilidad: fechaDisponibilidad ? fechaDisponibilidad.toISOString().slice(0, 10) : undefined,
+            vigencia: vigencia ? vigencia.toISOString().slice(0, 10) : undefined,
+            lugar_entrega: lugarEntregaTexto,
+            direccion_entrega: direccionEntregaTexto || undefined,
+            direccion_detalle: {
+              estado: direccionEstado.trim(),
+              municipio: direccionMunicipio.trim(),
+              calle: direccionCalle.trim(),
+              codigo_postal: direccionCodigoPostal,
+              colonia: direccionColonia.trim(),
+            },
+            detalle: construirDetalle(),
           },
           { headers: { Authorization: `Bearer ${token}` } }
         );
@@ -1048,8 +1213,7 @@ export default function AportacionFormScreen({ onClose }: Props) {
           </>
         )}
 
-        {!esLote && (
-          <FormSection title="¿Desde cuándo y hasta cuándo está disponible?" subtitle="Toca el día de inicio y luego el día final.">
+        <FormSection title="¿Desde cuándo y hasta cuándo está disponible?" subtitle="Toca el día de inicio y luego el día final.">
             <DateRangePickerChip
               label=""
               startDate={fechaDisponibilidad}
@@ -1059,11 +1223,58 @@ export default function AportacionFormScreen({ onClose }: Props) {
                 setVigencia(end);
               }}
             />
-          </FormSection>
-        )}
+        </FormSection>
 
-        {!esLote && !esServicio && (
+        {!esServicio && (
           <FormSection title="¿Dónde se entrega o recolecta?" subtitle="Solo compartimos una zona aproximada.">
+            <TextInputField
+              value={direccionBusqueda}
+              onChangeText={(value) => {
+                setDireccionBusqueda(value);
+                if (value !== direccionConfirmada) setDireccionConfirmada('');
+                setDireccionResultados([]);
+                setDireccionBusquedaMensaje('');
+              }}
+              placeholder="Buscar dirección, ej. Avenida Reforma, Puebla"
+            />
+            <TouchableOpacity
+              style={[styles.addressSearchButton, isBuscandoDireccion && { opacity: 0.7 }]}
+              onPress={buscarDireccionLibre}
+              disabled={isBuscandoDireccion}
+            >
+              {isBuscandoDireccion ? (
+                <ActivityIndicator size="small" color={COLORS.bgWhite} />
+              ) : (
+                <>
+                  <Ionicons name="search" size={17} color={COLORS.bgWhite} />
+                  <Text style={styles.addressSearchButtonText}>Buscar dirección</Text>
+                </>
+              )}
+            </TouchableOpacity>
+            {isBuscandoDireccion && (
+              <Text style={[styles.sectionSubtitle, { marginTop: 6 }]}>Buscando dirección…</Text>
+            )}
+            {!!direccionBusquedaMensaje && (
+              <Text style={styles.addressSearchMessage}>{direccionBusquedaMensaje}</Text>
+            )}
+            {direccionResultados.length > 0 && (
+              <View style={styles.addressResults}>
+                {direccionResultados.map((resultado, index) => (
+                  <TouchableOpacity
+                    key={`${resultado.lat}-${resultado.lon}-${index}`}
+                    onPress={() => seleccionarDireccion(resultado)}
+                    style={[
+                      styles.addressResult,
+                      index === direccionResultados.length - 1 && styles.addressResultLast,
+                    ]}
+                  >
+                    <Ionicons name="location-outline" size={16} color={COLORS.bgTeal} />
+                    <Text style={styles.addressResultText}>{resultado.display_name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+            {errors.ubicacion && <ErrorText text={errors.ubicacion} />}
             <TouchableOpacity style={styles.locationButton} onPress={handleGetLocation} disabled={isLoadingGps}>
               <Ionicons name="locate" size={18} color={COLORS.bgTeal} />
               <Text style={styles.locationButtonText}>
@@ -1075,9 +1286,77 @@ export default function AportacionFormScreen({ onClose }: Props) {
                 selectedPosition={ubicacion}
                 instructionText="Toca el mapa para marcar el punto de entrega o recolección"
                 helperText="Puedes mover el pin para ajustar el punto"
-                onLocationSelect={(latitud, longitud) => setUbicacion({ latitud, longitud })}
+                onLocationSelect={seleccionarUbicacionMapa}
               />
             </View>
+            {!!direccionConfirmada && (
+              <View style={styles.confirmedAddress}>
+                <Ionicons name="location" size={16} color={COLORS.bgTeal} />
+                <Text style={styles.confirmedAddressText}>
+                  Ubicación seleccionada: <Text style={{ fontWeight: '700' }}>{direccionConfirmada}</Text>
+                </Text>
+              </View>
+            )}
+            {esLote && (
+              <View style={styles.structuredAddress}>
+                <View style={styles.addressFieldRow}>
+                  <View style={styles.addressField}>
+                    <Text style={styles.sectionSubtitle}>Estado *</Text>
+                    <TextInputField
+                      value={direccionEstado}
+                      onChangeText={setDireccionEstado}
+                      placeholder="Ej. Puebla"
+                    />
+                    {errors.direccionEstado && <ErrorText text={errors.direccionEstado} />}
+                  </View>
+                  <View style={styles.addressField}>
+                    <Text style={styles.sectionSubtitle}>Municipio *</Text>
+                    <TextInputField
+                      value={direccionMunicipio}
+                      onChangeText={setDireccionMunicipio}
+                      placeholder="Ej. Puebla"
+                    />
+                    {errors.direccionMunicipio && <ErrorText text={errors.direccionMunicipio} />}
+                  </View>
+                </View>
+                <Text style={styles.sectionSubtitle}>Calle *</Text>
+                <TextInputField
+                  value={direccionCalle}
+                  onChangeText={setDireccionCalle}
+                  placeholder="Ej. Avenida Reforma 123"
+                />
+                {errors.direccionCalle && <ErrorText text={errors.direccionCalle} />}
+                <View style={styles.addressFieldRow}>
+                  <View style={styles.addressField}>
+                    <Text style={styles.sectionSubtitle}>Código postal *</Text>
+                    <TextInputField
+                      value={direccionCodigoPostal}
+                      onChangeText={(value) => setDireccionCodigoPostal(value.replace(/\D/g, '').slice(0, 5))}
+                      placeholder="Ej. 72000"
+                      keyboardType="numeric"
+                    />
+                    {errors.direccionCodigoPostal && <ErrorText text={errors.direccionCodigoPostal} />}
+                  </View>
+                  <View style={styles.addressField}>
+                    <Text style={styles.sectionSubtitle}>Colonia *</Text>
+                    <TextInputField
+                      value={direccionColonia}
+                      onChangeText={setDireccionColonia}
+                      placeholder="Ej. Centro"
+                    />
+                    {errors.direccionColonia && <ErrorText text={errors.direccionColonia} />}
+                  </View>
+                </View>
+                <TouchableOpacity
+                  style={[styles.structuredSearchButton, isBuscandoDireccion && { opacity: 0.7 }]}
+                  onPress={buscarDireccionEstructurada}
+                  disabled={isBuscandoDireccion}
+                >
+                  <Ionicons name="navigate-outline" size={16} color={COLORS.bgTeal} />
+                  <Text style={styles.structuredSearchButtonText}>Ubicar estos datos en el mapa</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </FormSection>
         )}
 
@@ -1093,8 +1372,7 @@ export default function AportacionFormScreen({ onClose }: Props) {
           </FormSection>
         )}
 
-        {!esLote && (
-          <FormSection title="Evidencia fotográfica" subtitle="Opcional.">
+        <FormSection title="Evidencia fotográfica" subtitle="Opcional.">
             <TouchableOpacity onPress={handlePickFoto} style={styles.fotoBoton} disabled={isUploadingFoto}>
               {isUploadingFoto ? (
                 <ActivityIndicator color={COLORS.primary} />
@@ -1111,8 +1389,7 @@ export default function AportacionFormScreen({ onClose }: Props) {
                 </>
               )}
             </TouchableOpacity>
-          </FormSection>
-        )}
+        </FormSection>
       </>
     );
   };
@@ -1615,4 +1892,65 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.bgWhite,
   },
   asocCheckActive: { backgroundColor: COLORS.bgTeal, borderColor: COLORS.bgTeal },
+  addressResults: {
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginTop: 6,
+    backgroundColor: COLORS.bgWhite,
+  },
+  addressResult: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  addressResultLast: { borderBottomWidth: 0 },
+  addressResultText: { flex: 1, color: COLORS.textDark, fontSize: 12, lineHeight: 18 },
+  confirmedAddress: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 7,
+    backgroundColor: COLORS.bgTealLight,
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 10,
+  },
+  confirmedAddressText: { flex: 1, color: COLORS.textDark, fontSize: 12, lineHeight: 18 },
+  addressSearchButton: {
+    alignSelf: 'flex-start',
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    marginTop: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: COLORS.bgTeal,
+  },
+  addressSearchButtonText: { color: COLORS.bgWhite, fontSize: 13, fontWeight: '700' },
+  addressSearchMessage: { color: COLORS.textLight, fontSize: 12, lineHeight: 18, marginTop: 8 },
+  structuredAddress: { marginTop: 16, gap: 10 },
+  addressFieldRow: { flexDirection: 'row', gap: 10 },
+  addressField: { flex: 1 },
+  structuredSearchButton: {
+    alignSelf: 'flex-start',
+    minHeight: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderWidth: 1,
+    borderColor: COLORS.bgTeal,
+    borderRadius: 12,
+    backgroundColor: COLORS.bgWhite,
+  },
+  structuredSearchButtonText: { color: COLORS.bgTeal, fontSize: 12, fontWeight: '700' },
 });

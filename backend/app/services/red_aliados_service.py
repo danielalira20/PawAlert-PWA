@@ -211,6 +211,12 @@ async def crear_lote(usuario_id: str, body: LoteRequest) -> dict:
         "max_asociaciones": body.max_asociaciones,
         "forma_entrega": body.forma_entrega.value,
         "descripcion": body.descripcion,
+        "fecha_disponibilidad": body.fecha_disponibilidad,
+        "vigencia": body.vigencia,
+        "lugar_entrega": body.lugar_entrega,
+        "direccion_entrega": body.direccion_entrega,
+        "direccion_detalle": body.direccion_detalle,
+        "detalle": body.detalle,
     }).execute()
 
     fila = resultado.data[0]
@@ -224,6 +230,13 @@ async def crear_lote(usuario_id: str, body: LoteRequest) -> dict:
         "divisible": fila["divisible"],
         "max_asociaciones": fila["max_asociaciones"],
         "forma_entrega": fila["forma_entrega"],
+        "descripcion": fila.get("descripcion"),
+        "fecha_disponibilidad": str(fila["fecha_disponibilidad"]) if fila.get("fecha_disponibilidad") else None,
+        "vigencia": str(fila["vigencia"]) if fila.get("vigencia") else None,
+        "lugar_entrega": fila.get("lugar_entrega"),
+        "direccion_entrega": fila.get("direccion_entrega"),
+        "direccion_detalle": fila.get("direccion_detalle") or {},
+        "detalle": fila.get("detalle") or {},
         "created_at": str(fila["created_at"]),
     }
 
@@ -232,7 +245,8 @@ async def obtener_mis_lotes(usuario_id: str) -> list:
     perfil = _obtener_perfil_apoyo_o_falla(usuario_id)
     resultado = supabase.table("lotes").select(
         "id, categoria, subcategoria_id, cantidad_valor, cantidad_unidad, "
-        "tipo_empaque, divisible, max_asociaciones, forma_entrega, created_at, "
+        "tipo_empaque, divisible, max_asociaciones, forma_entrega, descripcion, "
+        "fecha_disponibilidad, vigencia, lugar_entrega, direccion_entrega, direccion_detalle, detalle, created_at, "
         "subcategoria_recurso(descripcion), "
         "lote_asociaciones(id, estado)"
     ).eq("perfil_apoyo_id", perfil["id"]).order("created_at", desc=True).execute()
@@ -250,6 +264,13 @@ async def obtener_mis_lotes(usuario_id: str) -> list:
             "divisible": l["divisible"],
             "max_asociaciones": l["max_asociaciones"],
             "forma_entrega": l["forma_entrega"],
+            "descripcion": l.get("descripcion"),
+            "fecha_disponibilidad": str(l["fecha_disponibilidad"]) if l.get("fecha_disponibilidad") else None,
+            "vigencia": str(l["vigencia"]) if l.get("vigencia") else None,
+            "lugar_entrega": l.get("lugar_entrega"),
+            "direccion_entrega": l.get("direccion_entrega"),
+            "direccion_detalle": l.get("direccion_detalle") or {},
+            "detalle": l.get("detalle") or {},
             "created_at": str(l["created_at"]),
             "asociaciones_invitadas": len(invitaciones),
             "asociaciones_aceptadas": len([i for i in invitaciones if i["estado"] in ("aceptada", "confirmada")]),
@@ -337,7 +358,8 @@ async def obtener_invitaciones_asociacion(asociacion_id: str) -> list:
     resultado = supabase.table("lote_asociaciones").select(
         "id, estado, cantidad_asignada, created_at, respondida_at, confirmada_at, "
         "lotes(id, categoria, cantidad_valor, cantidad_unidad, tipo_empaque, "
-        "forma_entrega, descripcion, subcategoria_recurso(descripcion), "
+        "forma_entrega, descripcion, fecha_disponibilidad, vigencia, lugar_entrega, direccion_entrega, direccion_detalle, detalle, "
+        "subcategoria_recurso(descripcion), "
         "perfil_apoyo(id, datos_extra, preferencia_visibilidad, usuarios(nombre, apellido_paterno)))"
     ).eq("asociacion_id", asociacion_id).order("created_at", desc=True).execute()
 
@@ -383,6 +405,12 @@ async def obtener_invitaciones_asociacion(asociacion_id: str) -> list:
                 "tipo_empaque": lote.get("tipo_empaque"),
                 "forma_entrega": lote.get("forma_entrega"),
                 "descripcion": lote.get("descripcion"),
+                "fecha_disponibilidad": str(lote["fecha_disponibilidad"]) if lote.get("fecha_disponibilidad") else None,
+                "vigencia": str(lote["vigencia"]) if lote.get("vigencia") else None,
+                "lugar_entrega": lote.get("lugar_entrega"),
+                "direccion_entrega": lote.get("direccion_entrega"),
+                "direccion_detalle": lote.get("direccion_detalle") or {},
+                "detalle": lote.get("detalle") or {},
                 "aliado_logo_url": datos_extra.get("logo_url"),
                 "aliado_nombre": _nombre_publico(
                     usuario.get("nombre"), usuario.get("apellido_paterno"),

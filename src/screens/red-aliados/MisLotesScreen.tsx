@@ -45,6 +45,13 @@ interface Lote {
   divisible: string;
   max_asociaciones: number;
   forma_entrega: string;
+  descripcion: string | null;
+  fecha_disponibilidad: string | null;
+  vigencia: string | null;
+  lugar_entrega: string | null;
+  direccion_entrega: string | null;
+  direccion_detalle: Record<string, string>;
+  detalle: Record<string, string>;
   created_at: string;
   asociaciones_invitadas: number;
   asociaciones_aceptadas: number;
