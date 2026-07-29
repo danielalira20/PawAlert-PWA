@@ -354,3 +354,12 @@ def test_escalamiento_amplia_radio_sin_interrumpir_custodia(make_query):
 
     assert resultado == {"radios_ampliados": 1, "escaladas_administracion": 0}
     assert tablas["solicitudes_relevo"].update.call_args.args[0]["radio_actual_km"] == 100
+
+
+def test_domicilio_solo_se_comparte_con_coordinadora_o_receptora():
+    custodia = {"asociacion_coordinadora_id": "aso-1"}
+    transferencia = {"asociacion_receptora_id": "aso-2"}
+
+    assert custody._puede_ver_ubicacion_hogar(custodia, transferencia, "aso-1")
+    assert custody._puede_ver_ubicacion_hogar(custodia, transferencia, "aso-2")
+    assert not custody._puede_ver_ubicacion_hogar(custodia, transferencia, "aso-3")

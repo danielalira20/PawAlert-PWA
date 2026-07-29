@@ -182,6 +182,20 @@ def _transferencia_activa(custodia_id: str) -> Optional[dict]:
     return resultado.data[0] if resultado.data else None
 
 
+def _puede_ver_ubicacion_hogar(
+    custodia: dict,
+    transferencia: Optional[dict],
+    asociacion_id: str,
+) -> bool:
+    return (
+        custodia.get("asociacion_coordinadora_id") == asociacion_id
+        or bool(
+            transferencia
+            and transferencia.get("asociacion_receptora_id") == asociacion_id
+        )
+    )
+
+
 @router.get("/me")
 def listar_mis_custodias(authorization: Optional[str] = Header(None)):
     usuario = _usuario(authorization)
@@ -379,7 +393,10 @@ def listar_seguimiento_regional(
         )
         perfil = (
             supabase.table("perfil_casa_temporal")
-            .select("latitud, longitud")
+            .select(
+                "latitud, longitud, calle, numero, colonia, municipio, "
+                "estado_ubicacion"
+            )
             .eq("voluntario_id", custodia["voluntario_id"])
             .limit(1)
             .execute()
@@ -403,6 +420,19 @@ def listar_seguimiento_regional(
         )
         persona = ((voluntario.data[0] if voluntario.data else {}).get("usuarios") or {})
         ultimo = _ultimo_seguimiento(custodia["id"])
+        transferencia = _transferencia_activa(custodia["id"])
+        ubicacion_hogar = None
+        if _puede_ver_ubicacion_hogar(custodia, transferencia, asociacion["id"]):
+            hogar = perfil.data[0]
+            ubicacion_hogar = {
+                "calle": hogar.get("calle"),
+                "numero": hogar.get("numero"),
+                "colonia": hogar.get("colonia"),
+                "municipio": hogar.get("municipio"),
+                "estado": hogar.get("estado_ubicacion"),
+                "latitud": hogar.get("latitud"),
+                "longitud": hogar.get("longitud"),
+            }
         tarjetas.append(
             {
                 **custodia,
@@ -413,7 +443,8 @@ def listar_seguimiento_regional(
                 "distancia_km": round(distancia, 1),
                 "ultimo_seguimiento": ultimo,
                 "solicitud_relevo": relevo_activo,
-                "transferencia_activa": _transferencia_activa(custodia["id"]),
+                "transferencia_activa": transferencia,
+                "ubicacion_hogar": ubicacion_hogar,
                 "es_coordinadora": custodia["asociacion_coordinadora_id"] == asociacion["id"],
             }
         )

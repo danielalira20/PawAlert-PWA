@@ -42,6 +42,15 @@ export interface Custodia {
   voluntario_nombre?: string;
   distancia_km?: number;
   es_coordinadora?: boolean;
+  ubicacion_hogar?: {
+    calle?: string | null;
+    numero?: string | null;
+    colonia?: string | null;
+    municipio?: string | null;
+    estado?: string | null;
+    latitud?: number | null;
+    longitud?: number | null;
+  } | null;
   reporte: {
     id: string;
     foto_url?: string | null;
@@ -391,6 +400,25 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
                   </View>
                 )}
 
+                {esAsociacion && custodia.ubicacion_hogar && (
+                  <View style={styles.privateLocation}>
+                    <Ionicons name="lock-closed-outline" size={17} color={Brand.secondary} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.privateLocationTitle}>Ubicación autorizada del hogar</Text>
+                      <Text style={styles.privateLocationText}>
+                        {[
+                          [custodia.ubicacion_hogar.calle, custodia.ubicacion_hogar.numero]
+                            .filter(Boolean)
+                            .join(' '),
+                          custodia.ubicacion_hogar.colonia,
+                          custodia.ubicacion_hogar.municipio,
+                          custodia.ubicacion_hogar.estado,
+                        ].filter(Boolean).join(', ')}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+
                 <View style={styles.actions}>
                   {!esAsociacion ? (
                     <>
@@ -567,6 +595,9 @@ const styles = StyleSheet.create({
   followup: { marginTop: 12, borderRadius: 13, padding: 11, backgroundColor: `${Brand.secondary}10`, flexDirection: 'row', gap: 8, alignItems: 'center' },
   followupTitle: { color: Brand.textDark, fontSize: 12, fontWeight: '800' },
   followupState: { color: Brand.textMuted, fontSize: 10, marginTop: 2, textTransform: 'capitalize' },
+  privateLocation: { flexDirection: 'row', gap: 10, padding: 12, borderRadius: 14, backgroundColor: '#EAF7F5', borderWidth: 1, borderColor: '#C3E8E4', marginTop: 12 },
+  privateLocationTitle: { color: Brand.textDark, fontWeight: '800', fontSize: 11 },
+  privateLocationText: { color: Brand.textMuted, fontSize: 11, lineHeight: 16, marginTop: 2 },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 13 },
   action: { minHeight: 39, borderRadius: 11, paddingHorizontal: 11, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: '#EFE3CD' },
   actionPrimary: { backgroundColor: Brand.secondary },
