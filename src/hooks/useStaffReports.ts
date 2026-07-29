@@ -8,7 +8,7 @@ import { API_URL } from '../constants/api';
 import type { ReporteStaff, RespuestaStaffReportes, SugerenciaAliado } from '../types/reportestaff';
 
 type ShowToastFn = (toast: {
-  type: 'success' | 'error' | 'warning';
+  type: 'success' | 'error' | 'warning' | 'info';
   title: string;
   message: string;
 }) => void;
@@ -29,7 +29,7 @@ export const OPCIONES_REFUGIO = [
 ];
 
 export function useStaffReports(showToast: ShowToastFn) {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
 
   // ── Reportes asignados ──────────────────────────────────────────────
   const [reportesPendientes, setReportesPendientes] = useState<ReporteStaff[]>([]);
@@ -184,6 +184,25 @@ export function useStaffReports(showToast: ShowToastFn) {
       try {
         let foto_url = null;
         if (fotoEncontre) foto_url = await subirFotoHito(reporteId, fotoEncontre);
+        let ubicacion_hito = null;
+        if (user?.rol === 'voluntario_externo') {
+          const permiso = await Location.requestForegroundPermissionsAsync();
+          if (permiso.status !== 'granted') {
+            showToast({
+              type: 'error',
+              title: 'Ubicación requerida',
+              message: 'Necesitamos tu GPS para registrar la llegada a la zona.',
+            });
+            return { exito: false, sugerenciaAliado: null };
+          }
+          const posicion = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.High,
+          });
+          ubicacion_hito = {
+            latitud: posicion.coords.latitude,
+            longitud: posicion.coords.longitude,
+          };
+        }
         const res = await axios.post(
           `${API_URL}/reports/${reporteId}/hitos`,
           {
@@ -191,6 +210,7 @@ export function useStaffReports(showToast: ShowToastFn) {
             condicion_observada: estadoEncontre,
             comentario: notasEncontre || null,
             foto_url: foto_url || null,
+            ...ubicacion_hito,
           },
           { headers: { Authorization: `Bearer ${token}` } },
         );
@@ -209,7 +229,7 @@ export function useStaffReports(showToast: ShowToastFn) {
         setIsSubmitting(false);
       }
     },
-    [estadoEncontre, notasEncontre, fotoEncontre, token, showToast, subirFotoHito, cargarReportesAsignados, resetEncontre],
+    [estadoEncontre, notasEncontre, fotoEncontre, token, user?.rol, showToast, subirFotoHito, cargarReportesAsignados, resetEncontre],
   );
 
   const confirmarAsignacion = useCallback(
@@ -313,7 +333,10 @@ const rechazarAsignacionVoluntario = useCallback(
         await axios.post(
           `${API_URL}/reports/${reporteId}/hitos`,
           {
-            tipo_hito: 'llegue_refugio',
+            tipo_hito:
+              user?.rol === 'voluntario_externo'
+                ? 'llegada_hogar_temporal'
+                : 'llegue_refugio',
             condicion_observada: estadoRefugio,
             comentario: notasRefugio || null,
             foto_url,
@@ -322,7 +345,14 @@ const rechazarAsignacionVoluntario = useCallback(
           },
           { headers: { Authorization: `Bearer ${token}` } },
         );
-        showToast({ type: 'success', title: 'Éxito', message: 'Caso cerrado correctamente' });
+        showToast({
+          type: 'success',
+          title: user?.rol === 'voluntario_externo' ? 'Custodia iniciada' : 'Rescate completado',
+          message:
+            user?.rol === 'voluntario_externo'
+              ? 'El rescate quedó a salvo y comenzó el seguimiento del hogar temporal.'
+              : 'La llegada quedó registrada correctamente.',
+        });
         resetRefugio();
         await cargarReportesAsignados();
         return true;
@@ -347,6 +377,7 @@ const rechazarAsignacionVoluntario = useCallback(
       subirFotoHito,
       cargarReportesAsignados,
       resetRefugio,
+      user?.rol,
     ],
   );
 
