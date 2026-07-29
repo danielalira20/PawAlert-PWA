@@ -1,7 +1,7 @@
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Header
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
-from app.models.report import ReportResponse, AnimalInput, ReportListItem, HitoRequest, RechazarReporteRequest
+from app.models.report import ReportResponse, AnimalInput, ReportListItem, HitoRequest, RechazarReporteRequest, CancelarReporteRequest
 from app.models.red_aliados import AceptarSugerenciaRequest, AceptarSugerenciaVeterinariaResponse
 from app.services.report_service import crear_reporte, obtener_reportes, cambiar_estado_reporte, obtener_reportes_usuario
 from app.services import coverage_service
@@ -979,3 +979,65 @@ async def update_report_status(reporte_id: str, body: dict, authorization: str =
 async def get_mis_reportes(authorization: str = Header(None)):
     usuario = _obtener_usuario_autenticado(authorization)
     return await obtener_reportes_usuario(usuario["id"])
+
+
+@router.post("/{reporte_id}/cancel", status_code=200)
+def cancelar_reporte_por_reportante(
+    reporte_id: str,
+    body: CancelarReporteRequest,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    reporte = (
+        supabase.table("reportes")
+        .select("id, usuario_id, estado_reporte, estado_cobertura, staff_asignado_id")
+        .eq("id", reporte_id)
+        .limit(1)
+        .execute()
+    )
+    if not reporte.data or reporte.data[0].get("usuario_id") != usuario["id"]:
+        raise HTTPException(status_code=404, detail="Reporte no encontrado")
+    fila = reporte.data[0]
+    if fila["estado_reporte"] in ("cerrado", "cancelado_por_reportante"):
+        raise HTTPException(status_code=409, detail="El reporte ya no puede cancelarse")
+
+    if fila["estado_reporte"] in ("en_camino", "en_atencion", "rescatado") or fila.get(
+        "estado_cobertura"
+    ) in ("confirmado", "en_atencion"):
+        from app.services.report_service import registrar_historial
+        registrar_historial(
+            reporte_id=reporte_id,
+            usuario_id=usuario["id"],
+            tipo_evento="cancelacion_reportante_avisada",
+            descripcion="El reportante solicitó cancelar con atención en curso",
+            datos_extra={"motivo": body.motivo},
+        )
+        return {
+            "estado": fila["estado_reporte"],
+            "cancelado": False,
+            "mensaje": "La asociación fue avisada; el caso no se cerrará mientras haya atención en curso.",
+        }
+
+    supabase.table("propuestas_asignacion").update(
+        {"estado": "cancelada", "respondida_at": datetime.now(timezone.utc).isoformat()}
+    ).eq("reporte_id", reporte_id).eq("estado", "activa").execute()
+    supabase.table("voluntario_ofrecimientos").update(
+        {"estado": "expirado", "actualizado_at": datetime.now(timezone.utc).isoformat()}
+    ).eq("reporte_id", reporte_id).in_("estado", ["vigente", "seleccionado"]).execute()
+    supabase.table("reportes").update(
+        {
+            "estado_reporte": "cancelado_por_reportante",
+            "estado_cobertura": "finalizado",
+            "staff_asignado_id": None,
+            "confirmacion_voluntario": None,
+        }
+    ).eq("id", reporte_id).execute()
+    from app.services.report_service import registrar_historial
+    registrar_historial(
+        reporte_id=reporte_id,
+        usuario_id=usuario["id"],
+        tipo_evento="reporte_cancelado",
+        descripcion="El reportante canceló antes de la confirmación",
+        datos_extra={"motivo": body.motivo},
+    )
+    return {"estado": "cancelado_por_reportante", "cancelado": True}

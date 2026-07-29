@@ -124,3 +124,7 @@ class HitoRequest(BaseModel):
 class RechazarReporteRequest(BaseModel):
     motivo: str
     comentario: Optional[str] = None
+
+
+class CancelarReporteRequest(BaseModel):
+    motivo: Optional[str] = Field(default=None, max_length=500)

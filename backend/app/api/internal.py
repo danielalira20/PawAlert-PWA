@@ -15,6 +15,7 @@ from app.services.whatsapp_notification_service import (
     evaluar_recordatorios_seguridad,
     procesar_pendientes,
 )
+from app.api.custody import generar_notificaciones_vencimiento, escalar_relevos_sin_respuesta
 
 router = APIRouter()
 
@@ -35,3 +36,15 @@ def correr_notificaciones_whatsapp(
     seguridad = evaluar_recordatorios_seguridad()
     envios = procesar_pendientes()
     return {"seguridad": seguridad, "envios": envios}
+
+
+@router.post("/custody-notifications/run")
+def correr_notificaciones_custodia(
+    x_cron_secret: Optional[str] = Header(None),
+):
+    if not settings.cron_secret or x_cron_secret != settings.cron_secret:
+        raise HTTPException(status_code=401, detail="No autorizado")
+    return {
+        "notificaciones": generar_notificaciones_vencimiento(),
+        "relevos": escalar_relevos_sin_respuesta(),
+    }
