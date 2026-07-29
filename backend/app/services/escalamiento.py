@@ -16,7 +16,7 @@ que llama POST /internal/escalamiento/run cada 5 min) en el MVP.
 from datetime import datetime, timezone
 
 from app.db.supabase import supabase
-from app.services import matching
+from app.services import coverage_service, matching
 from app.utils.animal_shaping import shape_animal_embed, condicion_mas_grave
 
 MODOS_CON_ESCALAMIENTO = ("semi_automatico", "automatico")
@@ -45,24 +45,13 @@ def evaluar_escalamientos() -> dict:
             continue  # nadie elegible; el caso sigue con el staff como siempre
 
         top = candidatos[0]
-        supabase.table("reportes").update({
-            "staff_asignado_id": top["usuario_id"],
-            "confirmacion_voluntario": "esperando",
-        }).eq("id", rep["id"]).execute()
-
-        estado_aceptada = supabase.table("asignacion_estados").select("id").eq("clave", "aceptada").execute()
-        if estado_aceptada.data:
-            supabase.table("reporte_asignaciones").update({
-                "estado_id": estado_aceptada.data[0]["id"],
-                "estado": "aceptada",
-            }).eq("reporte_id", rep["id"]).execute()
-
-        _evento(
-            rep["id"], top["usuario_id"], "asignado_automatico_timeout",
-            f"Asignado automáticamente a {top['nombre']} por falta de respuesta "
-            f"({timeout_min} min, condición {rep.get('condicion')})",
-            {"voluntario_id": top["voluntario_id"], "timeout_min": timeout_min,
-             "modo": modo, "score": top["score"]},
+        coverage_service.reservar_cobertura(
+            reporte_id=rep["id"],
+            usuario_asignado_id=top["usuario_id"],
+            voluntario_id=top["voluntario_id"],
+            asociacion_id=rep["asociacion_asignada_id"],
+            actor_id=top["usuario_id"],
+            origen="escalamiento_automatico",
         )
         escalados.append({"reporte_id": rep["id"], "voluntario": top["nombre"]})
 
@@ -83,11 +72,12 @@ def _reportes_esperando_asignacion() -> list:
     res = (
         supabase.table("reportes")
         .select(
-            "id, candidatos_presentados_at, "
+            "id, asociacion_asignada_id, candidatos_presentados_at, "
             "animal(condicion_catalogo(clave)), "
             "asociaciones(modo_asignacion, timeout_grave, timeout_herido, timeout_estable)"
         )
         .eq("estado_reporte", "asignado")
+        .eq("estado_cobertura", "abierto")
         .is_("staff_asignado_id", "null")
         .not_.is_("candidatos_presentados_at", "null")
         .execute()

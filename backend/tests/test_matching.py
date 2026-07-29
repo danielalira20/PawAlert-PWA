@@ -129,6 +129,20 @@ def test_matching_no_repite_voluntario_que_ya_rechazo(reporte_multi_animal):
     assert resultado["candidatos"] == []
 
 
+def test_matching_nunca_incluye_voluntario_externo_en_top_tres(reporte_multi_animal):
+    interno = candidato(usuario_id="interno")
+    externo = candidato(
+        voluntario_id="vol-externo",
+        usuario_id="externo",
+        rol="voluntario_externo",
+        distancia_km=0,
+    )
+
+    resultado = ejecutar_matching(reporte_multi_animal, [externo, interno])
+
+    assert [c["usuario_id"] for c in resultado["candidatos"]] == ["interno"]
+
+
 def test_matching_ordena_por_score_y_limita_top_tres(reporte_multi_animal):
     candidatos = [
         candidato(
