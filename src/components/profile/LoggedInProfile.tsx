@@ -41,6 +41,7 @@ interface Props {
   onOpenCapacidades: () => void; // <-- NUEVA PROP
   onOpenAliadoForm: () => void;
   onOpenAliadoDashboard: () => void;
+  onOpenCustodyDashboard: () => void;
   onLogout: () => void;
   capacidadesRefreshKey?: number;
 }
@@ -56,6 +57,7 @@ export function LoggedInProfile({
   onOpenCapacidades, // <-- NUEVA PROP
   onOpenAliadoForm,
   onOpenAliadoDashboard,
+  onOpenCustodyDashboard,
   onLogout,
   capacidadesRefreshKey,
 }: Props) {
@@ -263,13 +265,22 @@ useFocusEffect(
         <AccessRow icon="shield-checkmark-outline" label="Panel de administrador" onPress={onOpenAdminPanel} isLast />
       )}
       {esAsociacion && (
-        <AccessRow icon="business-outline" label="Panel de asociación" onPress={onOpenAssociationPanel} isLast />
+        <>
+          <AccessRow icon="business-outline" label="Panel de asociación" onPress={onOpenAssociationPanel} />
+          <AccessRow icon="pulse-outline" label="Seguimiento regional" onPress={onOpenCustodyDashboard} isLast />
+        </>
       )}
       {esStaff && (
-        <AccessRow icon="briefcase-outline" label="Panel de staff" onPress={onOpenStaffAsignacion} isLast />
+        <>
+          <AccessRow icon="briefcase-outline" label="Panel de staff" onPress={onOpenStaffAsignacion} />
+          <AccessRow icon="pulse-outline" label="Seguimiento regional" onPress={onOpenCustodyDashboard} isLast />
+        </>
       )}
       {esVoluntarioActivo && (
         <AccessRow icon="briefcase-outline" label="Mis casos" onPress={onOpenStaffPanel} />
+      )}
+      {esVoluntarioExterno && (
+        <AccessRow icon="heart-circle-outline" label="Mis custodias temporales" onPress={onOpenCustodyDashboard} />
       )}
       {esVoluntarioInterno && (
         <AccessRow

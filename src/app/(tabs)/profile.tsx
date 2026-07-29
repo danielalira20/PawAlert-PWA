@@ -16,6 +16,7 @@ import MisVerificacionesScreen from '../../screens/MisVerificacionesScreen';
 import DonanteComunitarioFormScreen from '../../screens/red-aliados/DonanteComunitarioFormScreen';
 import AportacionFormScreen from '../../screens/red-aliados/AportacionFormScreen';
 import AliadoDashboardScreen from '../../screens/AliadoDashboardScreen';
+import CustodyDashboardScreen from '../../screens/CustodyDashboardScreen';
 import { AppModal } from '@/components/AppModal';
 import { LoggedOutProfile } from '../../components/profile/LoggedOutProfile';
 import { LoggedInProfile } from '../../components/profile/LoggedInProfile';
@@ -48,6 +49,7 @@ export default function ProfileScreen() {
   const [isAliadoFormVisible, setIsAliadoFormVisible] = useState(false);
   const [isAliadoDashboardVisible, setIsAliadoDashboardVisible] = useState(false);
   const [isAportacionVisible, setIsAportacionVisible] = useState(false);
+  const [isCustodyVisible, setIsCustodyVisible] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(24)).current;
@@ -110,6 +112,7 @@ export default function ProfileScreen() {
       setIsVerificacionesVisible(false);
       setIsAliadoDashboardVisible(false);
       setIsAportacionVisible(false);
+      setIsCustodyVisible(false);
     }
   }, [isLoggedIn]);
 
@@ -134,6 +137,7 @@ export default function ProfileScreen() {
         onOpenCapacidades={() => setIsCapacidadesVisible(true)}
         onOpenAliadoForm={() => setIsAliadoFormVisible(true)}
         onOpenAliadoDashboard={() => setIsAliadoDashboardVisible(true)}
+        onOpenCustodyDashboard={() => setIsCustodyVisible(true)}
         onLogout={logout}
         capacidadesRefreshKey={capacidadesRefreshKey}
       />
@@ -154,6 +158,12 @@ export default function ProfileScreen() {
       
       <AppModal visible={isStaffVisible} onClose={() => setIsStaffVisible(false)}>
         {isStaffVisible && <StaffDashboardScreen onClose={() => setIsStaffVisible(false)} />}
+      </AppModal>
+
+      <AppModal visible={isCustodyVisible} onClose={() => setIsCustodyVisible(false)} maxWidth={1100}>
+        {isCustodyVisible && (
+          <CustodyDashboardScreen onClose={() => setIsCustodyVisible(false)} />
+        )}
       </AppModal>
 
       <AppModal visible={isStaffAsignacionVisible} onClose={() => setIsStaffAsignacionVisible(false)}>
