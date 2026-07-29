@@ -8,6 +8,7 @@ from app.services import escalamiento
 def reporte(modo="semi_automatico", condicion="grave"):
     return {
         "id": "rep-1",
+        "asociacion_asignada_id": "aso-1",
         "condicion": condicion,
         "candidatos_presentados_at": "2026-07-19T10:00:00+00:00",
         "asociaciones": {
@@ -55,31 +56,23 @@ def test_semi_automatico_respeta_timeout():
 
 @pytest.mark.parametrize(("modo", "minutos"), [("semi_automatico", 5), ("automatico", 0)])
 def test_escalamiento_asigna_top_uno_y_espera_confirmacion(make_query, modo, minutos):
-    tablas = {
-        "reportes": make_query(data=[]),
-        "asignacion_estados": make_query(data=[{"id": "aceptada-id"}]),
-        "reporte_asignaciones": make_query(data=[]),
-        "historial_reporte": make_query(data=[]),
-    }
-    supabase = MagicMock()
-    supabase.table.side_effect = lambda nombre: tablas[nombre]
-
     with (
         patch.object(escalamiento, "_reportes_esperando_asignacion", return_value=[reporte(modo)]),
         patch.object(escalamiento, "_minutos_desde", return_value=minutos),
         patch.object(escalamiento.matching, "obtener_candidatos", return_value={"candidatos": [top_candidato()]}),
-        patch.object(escalamiento, "supabase", supabase),
+        patch.object(escalamiento.coverage_service, "reservar_cobertura") as reservar,
     ):
         resultado = escalamiento.evaluar_escalamientos()
 
-    tablas["reportes"].update.assert_called_once_with({
-        "staff_asignado_id": "user-vol-1",
-        "confirmacion_voluntario": "esperando",
-    })
+    reservar.assert_called_once_with(
+        reporte_id="rep-1",
+        usuario_asignado_id="user-vol-1",
+        voluntario_id="vol-1",
+        asociacion_id="aso-1",
+        actor_id="user-vol-1",
+        origen="escalamiento_automatico",
+    )
     assert resultado["escalados"] == [{"reporte_id": "rep-1", "voluntario": "Ana López"}]
-    evento = tablas["historial_reporte"].insert.call_args.args[0]
-    assert evento["tipo_evento"] == "asignado_automatico_timeout"
-    assert evento["datos_extra"]["modo"] == modo
 
 
 def test_escalamiento_sin_candidatos_deja_caso_sin_asignar():

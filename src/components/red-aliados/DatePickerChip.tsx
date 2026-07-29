@@ -24,18 +24,24 @@ interface Props {
   onChange: (date: Date | null) => void;
   required?: boolean;
   error?: string;
-  minDate?: Date;
+  // Por default no deja elegir fechas pasadas (hoy es el mínimo) — se
+  // puede desactivar pasando null si algún caso sí lo necesita.
+  minDate?: Date | null;
 }
 
 // Calendario-popover extraído del patrón ya usado en MisReportesScreen.tsx
 // (mismo grid mensual, misma navegación) — se quita la lógica de "días con
 // reportes" (puntos de color) porque aquí no hay eventos que marcar, solo
 // se elige una fecha.
-export function DatePickerChip({ label, value, onChange, required, error, minDate }: Props) {
+export function DatePickerChip({ label, value, onChange, required, error, minDate = new Date() }: Props) {
   const [open, setOpen] = useState(false);
   const [mes, setMes] = useState(value || new Date());
 
+  const minDia = minDate ? startOfDay(minDate) : null;
+  const esDeshabilitado = (dia: Date) => !!minDia && isBefore(startOfDay(dia), minDia);
+
   const handlePickDay = (dia: Date) => {
+    if (esDeshabilitado(dia)) return;
     onChange(dia);
     setOpen(false);
   };
@@ -117,6 +123,7 @@ export function DatePickerChip({ label, value, onChange, required, error, minDat
                           styles.diaTexto,
                           (!enEsteMes || esDeshabilitado) && styles.diaTextoFuera,
                           esSeleccionado && styles.diaTextoSeleccionado,
+                         
                         ]}
                       >
                         {format(dia, 'd')}
@@ -187,6 +194,7 @@ const styles = StyleSheet.create({
   diaCirculoHoy: { borderWidth: 1.5, borderColor: Brand.secondary },
   diaTexto: { fontSize: 12, fontWeight: '500', color: Brand.textDark },
   diaTextoFuera: { color: '#D8D0C4' },
+  diaTextoDeshabilitado: { color: '#E5DCCC', textDecorationLine: 'line-through' },
   diaTextoSeleccionado: { color: '#fff', fontWeight: '800' },
   limpiarBtn: { marginTop: 8, alignItems: 'center', paddingVertical: 6, borderRadius: 10, backgroundColor: `${Brand.primary}22` },
   limpiarText: { fontSize: 11, fontWeight: '700', color: Brand.primaryDark },

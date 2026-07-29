@@ -7,9 +7,11 @@ import {
   endOfMonth,
   endOfWeek,
   format,
+  isBefore,
   isSameDay,
   isSameMonth,
   isWithinInterval,
+  startOfDay,
   startOfMonth,
   startOfWeek,
   subMonths,
@@ -24,23 +26,32 @@ interface Props {
   onChange: (start: Date | null, end: Date | null) => void;
   required?: boolean;
   error?: string;
+  minDate?: Date | null;
 }
 
-// Mismo calendario-popover que DatePickerChip.tsx, adaptado para elegir dos
-// fechas (inicio y fin) en vez de una — primer toque fija el inicio, segundo
-// toque fija el final (se invierten solas si el segundo toque cae antes del
-// inicio). El popover se queda abierto entre el primer y segundo toque para
-// no obligar a reabrirlo.
-export function DateRangePickerChip({ label, startDate, endDate, onChange, required, error }: Props) {
+// Mismo patrón de calendario-popover que DatePickerChip, pero de rango
+// (estilo Airbnb: tocas el día de inicio, luego el final, y se ilumina
+// todo lo de en medio) — reemplaza tener dos DatePickerChip separados
+// ("desde" y "hasta") por un solo selector. Si el segundo toque cae antes
+// del inicio, se invierten solos (nunca deja el rango a medias).
+export function DateRangePickerChip({ label, startDate, endDate, onChange, required, error, minDate = new Date() }: Props) {
   const [open, setOpen] = useState(false);
   const [mes, setMes] = useState(startDate || new Date());
 
+  const minDia = minDate ? startOfDay(minDate) : null;
+  const esDeshabilitado = (dia: Date) => !!minDia && isBefore(startOfDay(dia), minDia);
+
   const handlePickDay = (dia: Date) => {
+    if (esDeshabilitado(dia)) return;
+
     if (!startDate || (startDate && endDate)) {
+      // Sin selección, o ya había un rango completo: empieza uno nuevo.
       onChange(dia, null);
       return;
     }
-    if (dia < startDate) {
+
+    // Ya hay inicio, falta el final — si el toque cae antes, se invierten.
+    if (isBefore(dia, startDate)) {
       onChange(dia, startDate);
     } else {
       onChange(startDate, dia);
@@ -48,11 +59,13 @@ export function DateRangePickerChip({ label, startDate, endDate, onChange, requi
     setOpen(false);
   };
 
-  const triggerText = startDate && endDate
-    ? `${format(startDate, "d 'de' MMM", { locale: es })} — ${format(endDate, "d 'de' MMM, yyyy", { locale: es })}`
-    : startDate
-      ? `${format(startDate, "d 'de' MMM", { locale: es })} → elige la fecha final`
-      : 'Elegir fechas';
+  const triggerTexto = () => {
+    if (startDate && endDate) {
+      return `${format(startDate, 'd MMM', { locale: es })} – ${format(endDate, 'd MMM yyyy', { locale: es })}`;
+    }
+    if (startDate) return `${format(startDate, "d 'de' MMM", { locale: es })} → elige la fecha final`;
+    return 'Elegir fechas';
+  };
 
   return (
     <View style={styles.container}>
@@ -65,11 +78,12 @@ export function DateRangePickerChip({ label, startDate, endDate, onChange, requi
         style={[styles.trigger, error && styles.triggerError]}
       >
         <Ionicons name="calendar-outline" size={16} color={startDate ? '#fff' : Brand.textMuted} />
-        <Text style={[styles.triggerText, startDate && styles.triggerTextActive]}>
-          {triggerText}
-        </Text>
+        <Text style={[styles.triggerText, startDate && styles.triggerTextActive]}>{triggerTexto()}</Text>
       </TouchableOpacity>
       {error && <Text style={styles.errorText}>{error}</Text>}
+      {startDate && !endDate && (
+        <Text style={styles.hintText}>Ahora toca la fecha en la que termina</Text>
+      )}
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setOpen(false)}>
@@ -105,9 +119,15 @@ export function DateRangePickerChip({ label, startDate, endDate, onChange, requi
                   ? isWithinInterval(dia, { start: startDate, end: endDate })
                   : false;
                 const esHoy = isSameDay(dia, new Date());
+                const deshabilitado = esDeshabilitado(dia);
 
                 return (
-                  <TouchableOpacity key={i} onPress={() => handlePickDay(dia)} style={styles.diaCell}>
+                  <TouchableOpacity
+                    key={i}
+                    onPress={() => handlePickDay(dia)}
+                    disabled={deshabilitado}
+                    style={styles.diaCell}
+                  >
                     <View style={[styles.diaCeldaFondo, esEnRango && styles.diaCeldaFondoRango]}>
                       <View
                         style={[
@@ -121,6 +141,7 @@ export function DateRangePickerChip({ label, startDate, endDate, onChange, requi
                             styles.diaTexto,
                             !enEsteMes && styles.diaTextoFuera,
                             esExtremo && styles.diaTextoSeleccionado,
+                            deshabilitado && styles.diaTextoDeshabilitado,
                           ]}
                         >
                           {format(dia, 'd')}
@@ -132,7 +153,7 @@ export function DateRangePickerChip({ label, startDate, endDate, onChange, requi
               })}
             </View>
 
-            {startDate && (
+            {(startDate || endDate) && (
               <TouchableOpacity onPress={() => { onChange(null, null); setOpen(false); }} style={styles.limpiarBtn}>
                 <Text style={styles.limpiarText}>Quitar fechas</Text>
               </TouchableOpacity>
@@ -164,6 +185,7 @@ const styles = StyleSheet.create({
   triggerText: { fontSize: 13, fontWeight: '600', color: Brand.textMuted },
   triggerTextActive: { color: '#fff' },
   errorText: { color: Brand.danger, fontSize: 12, marginTop: 6 },
+  hintText: { color: Brand.textMuted, fontSize: 11, marginTop: 6, fontStyle: 'italic' },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
   popover: {
     width: 260,
@@ -195,6 +217,7 @@ const styles = StyleSheet.create({
   diaCirculoHoy: { borderWidth: 1.5, borderColor: Brand.secondary },
   diaTexto: { fontSize: 12, fontWeight: '500', color: Brand.textDark },
   diaTextoFuera: { color: '#D8D0C4' },
+  diaTextoDeshabilitado: { color: '#E5DCCC', textDecorationLine: 'line-through' },
   diaTextoSeleccionado: { color: '#fff', fontWeight: '800' },
   limpiarBtn: { marginTop: 8, alignItems: 'center', paddingVertical: 6, borderRadius: 10, backgroundColor: `${Brand.primary}22` },
   limpiarText: { fontSize: 11, fontWeight: '700', color: Brand.primaryDark },

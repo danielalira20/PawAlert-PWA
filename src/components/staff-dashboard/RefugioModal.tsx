@@ -33,6 +33,7 @@ interface Props {
   isSubmitting: boolean;
   onCancel: () => void;
   onConfirm: () => void;
+  esHogarTemporal?: boolean;
 }
 
 // Morado intencionalmente distinto a la paleta cálida principal — marca
@@ -55,6 +56,7 @@ export function RefugioModal({
   isSubmitting,
   onCancel,
   onConfirm,
+  esHogarTemporal = false,
 }: Props) {
   const puedeConfirmar = !!ubicacionActual && !!foto && !isSubmitting;
 
@@ -63,7 +65,9 @@ export function RefugioModal({
       <View style={styles.overlay}>
         <View style={styles.sheet}>
           <View style={styles.header}>
-            <Text style={styles.title}>¿Cómo concluyó el rescate?</Text>
+            <Text style={styles.title}>
+              {esHogarTemporal ? 'Llegada a tu hogar temporal' : '¿Cómo concluyó el rescate?'}
+            </Text>
             <TouchableOpacity onPress={onCancel} hitSlop={10}>
               <Ionicons name="close" size={22} color={Brand.textFaint} />
             </TouchableOpacity>
@@ -88,7 +92,7 @@ export function RefugioModal({
             <TextInput
               style={styles.textArea}
               multiline
-              placeholder="Notas del cierre (opcional)"
+              placeholder={esHogarTemporal ? 'Condición y observaciones al llegar' : 'Notas del cierre (opcional)'}
               placeholderTextColor={Brand.textFaint}
               value={notas}
               onChangeText={onChangeNotas}
@@ -179,7 +183,11 @@ export function RefugioModal({
                 <ActivityIndicator color="#fff" />
               ) : (
                 <Text style={styles.confirmText}>
-                  {!ubicacionActual || !foto ? 'Faltan datos' : 'Cerrar caso'}
+                  {!ubicacionActual || !foto
+                    ? 'Faltan datos'
+                    : esHogarTemporal
+                      ? 'Iniciar custodia'
+                      : 'Completar rescate'}
                 </Text>
               )}
             </TouchableOpacity>

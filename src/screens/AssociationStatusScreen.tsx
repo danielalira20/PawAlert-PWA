@@ -117,6 +117,20 @@ interface Candidato {
   score: ScoreCandidato;
 }
 
+interface OfrecimientoExterno {
+  id: string;
+  voluntario_id: string;
+  nombre: string;
+  tipo: 'voluntario_externo';
+  etiqueta: 'Se ofreció';
+  distancia_km: number;
+  compatibilidad: number;
+  capacidad_disponible: number;
+  capacidad_resumen: string;
+  ofrecido_at: string;
+  foto_url?: string | null;
+}
+
 interface VoluntarioAsociacion {
   voluntario_id: string;
   estado: 'activo_nivel_1' | 'activo_nivel_2' | 'dado_de_baja';
@@ -180,6 +194,7 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
   // ── Pestaña Voluntarios ──
   const [tabAsignacion, setTabAsignacion] = useState<TabAsignacion>('staff');
   const [candidatosList, setCandidatosList] = useState<Candidato[]>([]);
+  const [ofrecimientosExternos, setOfrecimientosExternos] = useState<OfrecimientoExterno[]>([]);
   const [modoAsignacion, setModoAsignacion] = useState<string>('manual');
   const [timeoutMin, setTimeoutMin] = useState<number>(10);
   const [estadoVoluntarios, setEstadoVoluntarios] = useState<EstadoVoluntarios>('cargando');
@@ -627,6 +642,7 @@ const confirmarReactivar = async () => {
     setNotasHito(''); setFotoHito(null); setReporteAccionId(null);
     setTabAsignacion('staff');
     setCandidatosList([]);
+    setOfrecimientosExternos([]);
     setEstadoVoluntarios('cargando');
     setVoluntarioEsperando(null);
     setCandidatoAConfirmar(null);
@@ -643,6 +659,7 @@ const confirmarReactivar = async () => {
 
       setTabAsignacion('staff');
       setCandidatosList([]);
+      setOfrecimientosExternos([]);
       setEstadoVoluntarios('cargando');
       setVoluntarioEsperando(null);
       setCandidatoAConfirmar(null);
@@ -685,9 +702,13 @@ const confirmarReactivar = async () => {
       const res = await axios.get(`${API_URL}/reports/${reporteId}/candidatos`, { headers: { Authorization: `Bearer ${token}` } });
       const data = res.data;
       setCandidatosList(data.candidatos || []);
+      setOfrecimientosExternos(data.ofrecimientos_externos || []);
       setModoAsignacion(data.modo_asignacion || 'manual');
       setTimeoutMin(data.timeout_min || 10);
-      if ((data.candidatos || []).length === 0) {
+      if (
+        (data.candidatos || []).length === 0
+        && (data.ofrecimientos_externos || []).length === 0
+      ) {
         setEstadoVoluntarios('sin_candidatos');
       } else {
         setEstadoVoluntarios('candidatos');
@@ -1457,7 +1478,13 @@ const confirmarReactivar = async () => {
                           : v.estado === 'dado_de_baja'
                       ).length === 0 ? (
                       <View style={{ alignItems: 'center', paddingVertical: 40 }}>
-                        <Text style={{ fontSize: 40, marginBottom: 12 }}>🐾</Text>
+                        <View style={{
+                          width: 62, height: 62, borderRadius: 21,
+                          backgroundColor: 'rgba(236,128,43,0.12)',
+                          alignItems: 'center', justifyContent: 'center', marginBottom: 14,
+                        }}>
+                          <Ionicons name="paw-outline" size={30} color={COLORS.primary} />
+                        </View>
                         <Text style={{ fontSize: 15, color: COLORS.textLight, textAlign: 'center' }}>
                           {filtroVoluntarios === 'activos' ? 'No tienes voluntarios activos todavía.' : 'No hay voluntarios dados de baja.'}
                         </Text>
@@ -1965,12 +1992,19 @@ const confirmarReactivar = async () => {
                     backgroundColor: tabAsignacion === tab ? COLORS.primary : 'transparent',
                   }}
                 >
-                  <Text style={{
-                    fontWeight: '700', fontSize: 14, textTransform: 'capitalize',
-                    color: tabAsignacion === tab ? COLORS.white : COLORS.textLight,
-                  }}>
-                    {tab === 'staff' ? '🧑‍💼 Staff' : '🤝 Voluntarios'}
-                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+                    <Ionicons
+                      name={tab === 'staff' ? 'briefcase-outline' : 'people-outline'}
+                      size={17}
+                      color={tabAsignacion === tab ? COLORS.white : COLORS.textLight}
+                    />
+                    <Text style={{
+                      fontWeight: '700', fontSize: 14, textTransform: 'capitalize',
+                      color: tabAsignacion === tab ? COLORS.white : COLORS.textLight,
+                    }}>
+                      {tab === 'staff' ? 'Staff' : 'Voluntarios'}
+                    </Text>
+                  </View>
                 </TouchableOpacity>
               ))}
             </View>
@@ -2039,7 +2073,13 @@ const confirmarReactivar = async () => {
                 {/* ESTADO: sin_candidatos */}
                 {estadoVoluntarios === 'sin_candidatos' && (
                   <View style={{ alignItems: 'center', paddingVertical: 32 }}>
-                    <Text style={{ fontSize: 40, marginBottom: 12 }}>🐾</Text>
+                    <View style={{
+                      width: 64, height: 64, borderRadius: 22,
+                      backgroundColor: 'rgba(236,128,43,0.12)',
+                      alignItems: 'center', justifyContent: 'center', marginBottom: 14,
+                    }}>
+                      <Ionicons name="paw-outline" size={31} color={COLORS.primary} />
+                    </View>
                     <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.textDark, textAlign: 'center', marginBottom: 8 }}>
                       Sin voluntarios disponibles
                     </Text>
@@ -2048,9 +2088,14 @@ const confirmarReactivar = async () => {
                     </Text>
                     <TouchableOpacity
                       onPress={() => reporteAccionId && cargarCandidatos(reporteAccionId)}
-                      style={{ backgroundColor: COLORS.primary, paddingHorizontal: 28, paddingVertical: 13, borderRadius: 20 }}
+                      style={{
+                        backgroundColor: COLORS.primary, paddingHorizontal: 24,
+                        paddingVertical: 13, borderRadius: 20, flexDirection: 'row',
+                        alignItems: 'center', gap: 8,
+                      }}
                     >
-                      <Text style={{ color: COLORS.white, fontWeight: '700' }}>🔄 Reintentar</Text>
+                      <Ionicons name="refresh" size={18} color={COLORS.white} />
+                      <Text style={{ color: COLORS.white, fontWeight: '700' }}>Reintentar</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       onPress={() => { setShowStaffModal(false); resetModales(); }}
@@ -2138,6 +2183,21 @@ const confirmarReactivar = async () => {
                       )}
 
                     <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
+                      <View style={{ marginBottom: 12 }}>
+                        <Text style={{ color: COLORS.textDark, fontSize: 15, fontWeight: '800' }}>
+                          Equipo interno sugerido
+                        </Text>
+                        <Text style={{ color: COLORS.textLight, fontSize: 11, marginTop: 2 }}>
+                          Top 3 calculado únicamente con voluntariado de tu asociación.
+                        </Text>
+                      </View>
+                      {candidatosList.length === 0 && (
+                        <View style={{ backgroundColor: '#FFF6E8', padding: 14, borderRadius: 14, marginBottom: 16 }}>
+                          <Text style={{ color: COLORS.textLight, fontSize: 12, lineHeight: 18 }}>
+                            No hay integrantes internos elegibles en este momento.
+                          </Text>
+                        </View>
+                      )}
                       {candidatosList.map((candidato) => {
                         const maxScores = { proximidad: 30, disponibilidad: 25, experiencia: 20, movilidad: 15, carga: 10 };
                         const barras = [
@@ -2175,9 +2235,12 @@ const confirmarReactivar = async () => {
                               {/* Nombre + distancia + chip externo */}
                               <View style={{ flex: 1 }}>
                                 <Text style={{ fontSize: 15, fontWeight: '700', color: COLORS.textDark }}>{candidato.nombre}</Text>
-                                <Text style={{ fontSize: 12, color: COLORS.textLight, marginTop: 2 }}>
-                                  📍 a {candidato.distancia_km} km · radio de {candidato.radio_max_km} km
-                                </Text>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                                  <Ionicons name="location-outline" size={13} color={COLORS.textLight} />
+                                  <Text style={{ fontSize: 12, color: COLORS.textLight }}>
+                                    A {candidato.distancia_km} km · radio de {candidato.radio_max_km} km
+                                  </Text>
+                                </View>
                                 <Text style={{ fontSize: 11, color: COLORS.textLight, marginTop: 3 }}>
                                   {candidato.capacidad_resumen}
                                 </Text>
@@ -2248,6 +2311,144 @@ const confirmarReactivar = async () => {
                               }}
                             >
                               <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 14 }}>Asignar</Text>
+                            </TouchableOpacity>
+                          </View>
+                        );
+                      })}
+
+                      <View style={{
+                        marginTop: candidatosList.length ? 8 : 0,
+                        marginBottom: 12,
+                        paddingTop: 16,
+                        borderTopWidth: 1,
+                        borderTopColor: '#E8DCCF',
+                      }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <View style={{
+                            width: 34, height: 34, borderRadius: 12,
+                            backgroundColor: 'rgba(102,188,180,0.14)',
+                            alignItems: 'center', justifyContent: 'center',
+                          }}>
+                            <Ionicons name="hand-left" size={18} color={COLORS.accent} />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ color: COLORS.textDark, fontSize: 15, fontWeight: '800' }}>
+                              Voluntarios externos que se ofrecieron
+                            </Text>
+                            <Text style={{ color: COLORS.textLight, fontSize: 11, marginTop: 2 }}>
+                              Interés voluntario; ninguno está asignado todavía.
+                            </Text>
+                          </View>
+                          <View style={{
+                            minWidth: 27, height: 27, borderRadius: 14,
+                            backgroundColor: COLORS.accent,
+                            alignItems: 'center', justifyContent: 'center',
+                          }}>
+                            <Text style={{ color: COLORS.white, fontSize: 12, fontWeight: '900' }}>
+                              {ofrecimientosExternos.length}
+                            </Text>
+                          </View>
+                        </View>
+                      </View>
+
+                      {ofrecimientosExternos.length === 0 ? (
+                        <View style={{
+                          borderWidth: 1, borderStyle: 'dashed', borderColor: '#CFC0B1',
+                          borderRadius: 16, padding: 16, marginBottom: 6,
+                          alignItems: 'center',
+                        }}>
+                          <Text style={{ color: COLORS.textLight, fontSize: 12, textAlign: 'center' }}>
+                            Aún nadie externo ha tocado “Quiero ayudar”.
+                          </Text>
+                        </View>
+                      ) : ofrecimientosExternos.map((oferta) => {
+                        const iniciales = oferta.nombre.split(' ').slice(0, 2)
+                          .map((parte) => parte[0]).join('').toUpperCase();
+                        return (
+                          <View
+                            key={oferta.id}
+                            style={{
+                              backgroundColor: '#F7FFFD',
+                              borderRadius: 20,
+                              borderWidth: 1,
+                              borderColor: '#CDEBE7',
+                              padding: 16,
+                              marginBottom: 12,
+                            }}
+                          >
+                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                              <View style={{
+                                width: 46, height: 46, borderRadius: 23,
+                                backgroundColor: 'rgba(102,188,180,0.16)',
+                                alignItems: 'center', justifyContent: 'center',
+                                marginRight: 11,
+                              }}>
+                                {oferta.foto_url ? (
+                                  <Image source={{ uri: oferta.foto_url }} style={{ width: 46, height: 46, borderRadius: 23 }} />
+                                ) : (
+                                  <Text style={{ color: COLORS.accent, fontSize: 15, fontWeight: '900' }}>
+                                    {iniciales}
+                                  </Text>
+                                )}
+                              </View>
+                              <View style={{ flex: 1 }}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                                  <Text style={{ color: COLORS.textDark, fontSize: 14, fontWeight: '800' }}>
+                                    {oferta.nombre}
+                                  </Text>
+                                  <View style={{
+                                    backgroundColor: COLORS.accent,
+                                    borderRadius: 9,
+                                    paddingHorizontal: 7,
+                                    paddingVertical: 3,
+                                  }}>
+                                    <Text style={{ color: COLORS.white, fontSize: 9, fontWeight: '900' }}>
+                                      Se ofreció
+                                    </Text>
+                                  </View>
+                                </View>
+                                <Text style={{ color: COLORS.textLight, fontSize: 11, marginTop: 4 }}>
+                                  A {oferta.distancia_km} km · {oferta.capacidad_resumen}
+                                </Text>
+                                <Text style={{ color: COLORS.accent, fontSize: 10, fontWeight: '700', marginTop: 3 }}>
+                                  Compatibilidad {Math.round(oferta.compatibilidad || 0)}% · {formatDistanceToNow(new Date(oferta.ofrecido_at), { addSuffix: true, locale: es })}
+                                </Text>
+                              </View>
+                            </View>
+                            <TouchableOpacity
+                              onPress={() => {
+                                setCandidatoAConfirmar({
+                                  voluntario_id: oferta.voluntario_id,
+                                  nombre: oferta.nombre,
+                                  tipo: oferta.tipo,
+                                  etiqueta: oferta.etiqueta,
+                                  distancia_km: oferta.distancia_km,
+                                  radio_max_km: 0,
+                                  carga_actual: 0,
+                                  max_casos_simultaneos: oferta.capacidad_disponible,
+                                  medios_transporte: [],
+                                  coincidencias: [],
+                                  alertas: [],
+                                  capacidad_resumen: oferta.capacidad_resumen,
+                                  foto_url: oferta.foto_url,
+                                  score: {
+                                    total: 0, proximidad: 0, disponibilidad: 0,
+                                    experiencia: 0, movilidad: 0, carga: 0,
+                                  },
+                                });
+                                setShowConfirmVoluntarioModal(true);
+                              }}
+                              style={{
+                                backgroundColor: COLORS.accent,
+                                borderRadius: 14,
+                                paddingVertical: 11,
+                                alignItems: 'center',
+                                marginTop: 12,
+                              }}
+                            >
+                              <Text style={{ color: COLORS.white, fontSize: 13, fontWeight: '800' }}>
+                                Enviar propuesta
+                              </Text>
                             </TouchableOpacity>
                           </View>
                         );

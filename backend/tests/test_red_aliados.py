@@ -50,6 +50,37 @@ OFERTA_BODY = {
     "detalle": {"nuevo_o_usado": "nuevo"},
 }
 
+LOTE_BODY = {
+    "categoria": "alimentos",
+    "subcategoria_id": "subcat-1",
+    "especies_aplica": ["perro", "gato"],
+    "cantidad_valor": 50,
+    "cantidad_unidad": "kg",
+    "tipo_empaque": "Costales de 25 kg",
+    "divisible": "solo_empaques_completos",
+    "max_asociaciones": 2,
+    "forma_entrega": "asociacion_recoge",
+    "descripcion": "Alimento sellado para cachorro",
+    "fecha_disponibilidad": "2026-08-01",
+    "vigencia": "2026-08-15",
+    "lugar_entrega": "19.43260,-99.13320",
+    "direccion_entrega": "Avenida Juárez 10, Centro, Ciudad de México",
+    "direccion_detalle": {
+        "estado": "Ciudad de México",
+        "municipio": "Cuauhtémoc",
+        "calle": "Avenida Juárez 10",
+        "codigo_postal": "06000",
+        "colonia": "Centro",
+    },
+    "detalle": {
+        "etapa": "cachorro",
+        "marca": "Marca ejemplo",
+        "producto_cerrado": "si",
+        "fecha_caducidad": "2027-01-10",
+        "foto_url": "https://x/recursos-aliados/lote.jpg",
+    },
+}
+
 
 # ─── GET /red-aliados/categorias ────────────────────────────────────────
 
@@ -196,6 +227,71 @@ def test_crear_oferta_proactiva_caso_feliz(make_query):
     insertado = tablas["ofertas_proactivas"].insert.call_args[0][0]
     assert insertado["perfil_apoyo_id"] == "perfil-1"
     assert insertado["capacidad_disponible"] == 5  # arranca igual a la declarada, nada reservado aún
+
+
+# ─── POST /red-aliados/lotes ────────────────────────────────────────────
+
+def test_crear_lote_conserva_detalles_y_logistica(make_query):
+    lote_guardado = {
+        "id": "lote-1",
+        "perfil_apoyo_id": "perfil-1",
+        **LOTE_BODY,
+        "created_at": "2026-07-29T10:00:00+00:00",
+    }
+    tablas = {
+        "perfil_apoyo": make_query(data=[{"id": "perfil-1", "tipo": "aliado_local"}]),
+        "categoria_recurso": make_query(data=[{"id": "cat-1"}]),
+        "subcategoria_recurso": make_query(data=[{"id": "subcat-1", "categoria_id": "cat-1"}]),
+        "lotes": make_query(data=[lote_guardado]),
+    }
+    _mock_usuario_autenticado(tablas, make_query)
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    supabase.auth.get_user.return_value = SimpleNamespace(user=SimpleNamespace(id="auth-user-1"))
+
+    patches = _patch_supabase(supabase)
+    with patches[0], patches[1], patches[2]:
+        response = client.post("/red-aliados/lotes", json=LOTE_BODY, headers=AUTH_HEADERS)
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["id"] == "lote-1"
+    assert body["detalle"]["marca"] == "Marca ejemplo"
+    assert body["detalle"]["foto_url"].endswith("/lote.jpg")
+    assert body["fecha_disponibilidad"] == "2026-08-01"
+    assert body["vigencia"] == "2026-08-15"
+    assert body["lugar_entrega"] == "19.43260,-99.13320"
+    assert body["direccion_entrega"] == "Avenida Juárez 10, Centro, Ciudad de México"
+    assert body["direccion_detalle"]["codigo_postal"] == "06000"
+
+    insertado = tablas["lotes"].insert.call_args[0][0]
+    assert insertado["detalle"] == LOTE_BODY["detalle"]
+    assert insertado["descripcion"] == LOTE_BODY["descripcion"]
+    assert insertado["fecha_disponibilidad"] == "2026-08-01"
+    assert insertado["vigencia"] == "2026-08-15"
+    assert insertado["lugar_entrega"] == "19.43260,-99.13320"
+    assert insertado["direccion_entrega"] == "Avenida Juárez 10, Centro, Ciudad de México"
+    assert insertado["direccion_detalle"] == LOTE_BODY["direccion_detalle"]
+
+
+def test_crear_lote_rechaza_direccion_escrita_sin_seleccionar(make_query):
+    tablas = {}
+    _mock_usuario_autenticado(tablas, make_query)
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    supabase.auth.get_user.return_value = SimpleNamespace(user=SimpleNamespace(id="auth-user-1"))
+
+    body = {
+        **LOTE_BODY,
+        "lugar_entrega": None,
+        "direccion_entrega": "texto escrito sin seleccionar",
+        "direccion_detalle": {},
+    }
+
+    with patch.object(red_aliados, "supabase", supabase):
+        response = client.post("/red-aliados/lotes", json=body, headers=AUTH_HEADERS)
+
+    assert response.status_code == 422
 
 
 # ─── model_validator: difusión sin contacto_responsable ──────────────────

@@ -239,6 +239,7 @@ async def crear_reporte(
         "reportante_telefono": telefono if not usuario_id else None,
         "estado_id": estado_asignado_id if asociacion_id else estado_id,
         "estado_reporte": "asignado" if asociacion_id else "pendiente",
+        "estado_cobertura": "abierto" if asociacion_id else None,
         "asociacion_asignada_id": asociacion_id,
         "latitud": latitud,
         "longitud": longitud,

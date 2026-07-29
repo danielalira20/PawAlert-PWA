@@ -1,8 +1,8 @@
-import { useRef } from 'react';
+import { useMemo, useRef } from 'react';
 import L from 'leaflet';
 import { useEffect } from 'react';
 import 'leaflet/dist/leaflet.css';
-import { MapContainer, Marker, Popup, TileLayer, useMapEvents } from 'react-leaflet';
+import { MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import { Reporte, getAnimales, condicionMasGrave, especieMasGrave, totalAnimales } from '../types/reporte';
 import { ICON_MULTIPLE } from '../constants/mapIcons';
 
@@ -271,6 +271,32 @@ function MapClickHandler({ onMapClick }: { onMapClick: () => void }) {
   return null;
 }
 
+function FitToMarkers({
+  enabled,
+  positions,
+}: {
+  enabled: boolean;
+  positions: [number, number][];
+}) {
+  const map = useMap();
+  const positionsKey = positions.map(([lat, lng]) => `${lat},${lng}`).join('|');
+
+  useEffect(() => {
+    if (!enabled || positions.length === 0) return;
+    if (positions.length === 1) {
+      map.setView(positions[0], 13, { animate: false });
+      return;
+    }
+    map.fitBounds(positions, {
+      animate: false,
+      padding: [42, 42],
+      maxZoom: 13,
+    });
+  }, [enabled, map, positionsKey]);
+
+  return null;
+}
+
 // ─── Props ────────────────────────────────────────────────────────────────────
 interface LeafletMapProps {
   reportes: Reporte[];
@@ -280,6 +306,7 @@ interface LeafletMapProps {
   getMarkerColor?: (reporte: Reporte) => string;
   width?: string | number;
   height?: string | number;
+  fitToMarkers?: boolean;
   onSelectReport: (reporte: Reporte) => void;
   onSelectAsociacion?: (asociacion: AsociacionMapa) => void;
   onMapClick: () => void;
@@ -296,8 +323,22 @@ export default function LeafletMap({
   onSelectAsociacion,
   onMapClick,
   width,
-  height
+  height,
+  fitToMarkers = false,
 }: LeafletMapProps) {
+  const markerPositions = useMemo(
+    () =>
+      [
+        ...reportes.map((reporte) => [reporte.latitud, reporte.longitud]),
+        ...asociaciones.map((asociacion) => [asociacion.latitud, asociacion.longitud]),
+        ...aliados.map((aliado) => [aliado.latitud, aliado.longitud]),
+      ].filter(
+        (position): position is [number, number] =>
+          typeof position[0] === 'number' && typeof position[1] === 'number',
+      ),
+    [aliados, asociaciones, reportes],
+  );
+
   useEffect(() => {
     const linkId = 'leaflet-css';
     if (!document.getElementById(linkId)) {
@@ -354,6 +395,7 @@ export default function LeafletMap({
           url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
         />
         <MapClickHandler onMapClick={onMapClick} />
+        <FitToMarkers enabled={fitToMarkers} positions={markerPositions} />
         {reportes
           .filter((r): r is typeof r & { latitud: number; longitud: number } =>
             r.latitud !== null && r.longitud !== null)

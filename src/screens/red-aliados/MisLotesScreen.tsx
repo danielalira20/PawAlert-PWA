@@ -45,6 +45,13 @@ interface Lote {
   divisible: string;
   max_asociaciones: number;
   forma_entrega: string;
+  descripcion: string | null;
+  fecha_disponibilidad: string | null;
+  vigencia: string | null;
+  lugar_entrega: string | null;
+  direccion_entrega: string | null;
+  direccion_detalle: Record<string, string>;
+  detalle: Record<string, string>;
   created_at: string;
   asociaciones_invitadas: number;
   asociaciones_aceptadas: number;
@@ -159,7 +166,7 @@ export default function MisLotesScreen({ onClose, embedded }: Props) {
               <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
                 <View style={{ backgroundColor: `${COLORS.primary}15`, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 }}>
                   <Text style={{ fontSize: 11, fontWeight: '700', color: COLORS.primary }}>
-                    {l.asociaciones_invitadas} invitada{l.asociaciones_invitadas !== 1 ? 's' : ''}
+                    {l.asociaciones_invitadas} invitada{l.asociaciones_invitadas !== 1 ? 's' : ''} en total
                   </Text>
                 </View>
                 <View style={{ backgroundColor: `${COLORS.success}15`, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 }}>

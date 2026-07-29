@@ -24,7 +24,10 @@ const isWeb = Platform.OS === 'web';
 
 export default function ProfileScreen() {
   const { user, isLoggedIn, logout, refreshUser } = useAuth();
-  const params = useLocalSearchParams<{ abrirFormularioAliado?: string }>();
+  const params = useLocalSearchParams<{
+    abrirFormularioAliado?: string;
+    abrirMisCasos?: string;
+  }>();
 
   const [isAdminVisible, setIsAdminVisible] = useState(false);
   const [isAssociationVisible, setIsAssociationVisible] = useState(false);
@@ -75,6 +78,13 @@ export default function ProfileScreen() {
       router.setParams({ abrirFormularioAliado: undefined });
     }
   }, [isLoggedIn, params.abrirFormularioAliado]);
+
+  useEffect(() => {
+    if (isLoggedIn && params.abrirMisCasos === 'true') {
+      setIsStaffVisible(true);
+      router.setParams({ abrirMisCasos: undefined });
+    }
+  }, [isLoggedIn, params.abrirMisCasos]);
 
   useEffect(() => {
     if (!isLoggedIn) {

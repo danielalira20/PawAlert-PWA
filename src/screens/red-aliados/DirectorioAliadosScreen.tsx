@@ -12,7 +12,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { API_URL } from '../../constants/api';
 import { AssocAvatar } from '../../components/admin-dashboard/AssocAvatar';
 
-const LeafletMap = Platform.OS === 'web' ? lazy(() => import('../LeafletMap')) : null;
 
 const COLORS = {
   bgTeal: '#66BCB4',
@@ -80,7 +79,7 @@ interface Historia {
   confirmada_at: string | null;
 }
 
-type Tab = 'directorio' | 'mapa' | 'mural';
+type Tab = 'directorio' | 'mural';
 
 interface Props {
   onClose?: () => void;
@@ -132,10 +131,6 @@ export default function DirectorioAliadosScreen({ onClose, embedded }: Props) {
     })();
   }, []);
 
-  const aliadosConUbicacion = aliados.filter(
-    (a): a is Aliado & { latitud: number; longitud: number } =>
-      a.latitud !== null && a.longitud !== null
-  );
 
   return (
     <View style={{ flex: 1, backgroundColor: COLORS.bgWhite }}>
@@ -172,7 +167,6 @@ export default function DirectorioAliadosScreen({ onClose, embedded }: Props) {
       <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: COLORS.border, paddingHorizontal: 20, marginTop: 4 }}>
         {([
           { key: 'directorio', label: 'Directorio', icon: 'list-outline' },
-          { key: 'mapa', label: 'Mapa', icon: 'map-outline' },
           { key: 'mural', label: 'Huellas que ayudan', icon: 'heart-outline' },
         ] as { key: Tab; label: string; icon: any }[]).map(({ key, label, icon }) => (
           <TouchableOpacity
@@ -242,31 +236,6 @@ export default function DirectorioAliadosScreen({ onClose, embedded }: Props) {
                 ))}
               </ScrollView>
             )
-          )}
-
-          {tab === 'mapa' && (
-            // Embebido dentro del ScrollView de AliadoDashboardScreen, flex:1
-            // no tiene un padre con alto acotado contra el cual resolver (a
-            // diferencia de la ruta standalone, que sí vive en un viewport
-            // real) — sin altura explícita en píxeles, el mapa mide 0 y no
-            // se ve. Mismo criterio que MapCard.tsx (height fijo en vez de
-            // flex:1 dentro de un dashboard con scroll), ajustado más grande
-            // porque aquí el mapa es todo el contenido del tab, no una
-            // tarjeta secundaria.
-            <View style={embedded ? { height: 400 } : { flex: 1 }}>
-              {Platform.OS === 'web' && LeafletMap ? (
-                <Suspense fallback={<View style={{ flex: 1, backgroundColor: COLORS.grayLight }} />}>
-                  <LeafletMap
-                    reportes={[]}
-                    aliados={aliadosConUbicacion}
-                    onSelectReport={() => {}}
-                    onMapClick={() => {}}
-                  />
-                </Suspense>
-              ) : (
-                <EstadoVacio icon="map-outline" title="Mapa disponible en la versión web" />
-              )}
-            </View>
           )}
 
           {tab === 'mural' && (

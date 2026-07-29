@@ -961,6 +961,23 @@ async def obtener_reportes_voluntario(usuario_id: str) -> dict:
             reporte["distancia_km"] = _distancia_km(
                 lat_voluntario, lon_voluntario, r.get("latitud"), r.get("longitud")
             )
+            # Antes de confirmar solo se comparte zona aproximada. La calle,
+            # referencia y coordenadas exactas se habilitan al pasar a
+            # en_camino.
+            reporte["latitud_aproximada"] = (
+                round(float(r["latitud"]), 3)
+                if r.get("latitud") is not None
+                else None
+            )
+            reporte["longitud_aproximada"] = (
+                round(float(r["longitud"]), 3)
+                if r.get("longitud") is not None
+                else None
+            )
+            reporte["latitud"] = None
+            reporte["longitud"] = None
+            reporte["calle"] = None
+            reporte["referencia"] = None
             esperando_confirmacion.append(reporte)
         elif estado in ("pendiente", "asignado"):
             pendientes.append(reporte)

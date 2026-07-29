@@ -31,6 +31,7 @@ interface Props {
   // (y staff elevado) por ahora. Default true para no romper el
   // comportamiento existente donde no se pase este prop explícitamente.
   puedeRegistrarHitos?: boolean;
+  esHogarTemporal?: boolean;
 }
 
 export function ReportDetailModal({
@@ -41,6 +42,7 @@ export function ReportDetailModal({
   onRefugio,
   onVeterinaria,
   puedeRegistrarHitos = true,
+  esHogarTemporal = false,
 }: Props) {
   const animales = reporte ? getAnimales(reporte) : [];
   const grave = animalMasGrave(animales);
@@ -127,7 +129,9 @@ export function ReportDetailModal({
               {puedeRegistrarHitos && reporte.estado_reporte === 'en_atencion' && (
                 <TouchableOpacity style={[styles.actionButton, { backgroundColor: '#8E44AD' }]} onPress={onRefugio}>
                   <Ionicons name="home-outline" size={18} color="#fff" />
-                  <Text style={styles.actionButtonText}>Llegué al refugio</Text>
+                  <Text style={styles.actionButtonText}>
+                    {esHogarTemporal ? 'Llegué a mi hogar temporal' : 'Llegué al refugio'}
+                  </Text>
                 </TouchableOpacity>
               )}
             </ScrollView>
