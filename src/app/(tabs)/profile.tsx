@@ -162,7 +162,7 @@ export default function ProfileScreen() {
 
       <AppModal visible={isCustodyVisible} onClose={() => setIsCustodyVisible(false)} maxWidth={1100}>
         {isCustodyVisible && (
-          <CustodyDashboardScreen onClose={() => setIsCustodyVisible(false)} />
+          <CustodyDashboardScreen />
         )}
       </AppModal>
 
@@ -217,9 +217,7 @@ export default function ProfileScreen() {
         maxWidth={1000}
       >
         {isVerificacionesVisible && (
-          <MisVerificacionesScreen
-            onClose={() => setIsVerificacionesVisible(false)}
-          />
+          <MisVerificacionesScreen />
         )}
       </AppModal>
 

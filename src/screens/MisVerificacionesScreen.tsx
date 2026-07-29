@@ -118,7 +118,7 @@ type DetallePropuesta = Propuesta & {
 type Filtro = 'pendientes' | 'aceptadas' | 'historial';
 
 interface Props {
-  onClose: () => void;
+  onClose?: () => void;
 }
 
 const ESTADO_LABELS: Record<EstadoAsignacion, string> = {
@@ -366,9 +366,11 @@ export default function MisVerificacionesScreen({ onClose }: Props) {
               {ESTADO_LABELS[detalle.estado]}
             </Text>
           </View>
-          <TouchableOpacity onPress={onClose} style={{ padding: 7 }}>
-            <Ionicons name="close" size={23} color={COLORS.textDark} />
-          </TouchableOpacity>
+          {onClose && (
+            <TouchableOpacity onPress={onClose} style={{ padding: 7 }}>
+              <Ionicons name="close" size={23} color={COLORS.textDark} />
+            </TouchableOpacity>
+          )}
         </View>
 
         <ScrollView contentContainerStyle={{ padding: isMobile ? 16 : 24, gap: 16, paddingBottom: aceptada ? 28 : 110 }}>
@@ -742,9 +744,11 @@ export default function MisVerificacionesScreen({ onClose }: Props) {
             <Text style={{ color: COLORS.white, fontSize: 11, fontWeight: '900' }}>{pendientes}</Text>
           </View>
         )}
-        <TouchableOpacity onPress={onClose} style={{ padding: 7 }}>
-          <Ionicons name="close" size={24} color={COLORS.textDark} />
-        </TouchableOpacity>
+        {onClose && (
+          <TouchableOpacity onPress={onClose} style={{ padding: 7 }}>
+            <Ionicons name="close" size={24} color={COLORS.textDark} />
+          </TouchableOpacity>
+        )}
       </View>
 
       <View style={{ paddingHorizontal: isMobile ? 16 : 24, paddingTop: 18 }}>
