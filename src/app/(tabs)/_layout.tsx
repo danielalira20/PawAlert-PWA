@@ -1,6 +1,6 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { Platform, StyleSheet } from 'react-native';
+import { Platform, StyleSheet, Text } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
@@ -73,6 +73,22 @@ export default function TabsLayout() {
         options={{
           title: 'Ayuda cerca',
           tabBarAccessibilityLabel: 'Casos cerca de mí',
+          tabBarLabel: ({ color }) => (
+            <Text
+              numberOfLines={2}
+              style={{
+                width: 64,
+                color,
+                fontSize: 10,
+                lineHeight: 11,
+                fontWeight: '700',
+                letterSpacing: 0.2,
+                textAlign: 'center',
+              }}
+            >
+              Ayuda{'\n'}cerca
+            </Text>
+          ),
           href: user?.rol === 'voluntario_externo' ? undefined : null,
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
