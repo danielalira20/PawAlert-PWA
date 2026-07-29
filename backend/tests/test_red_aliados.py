@@ -337,6 +337,72 @@ def test_crear_contribucion_subcategoria_inexistente(make_query):
     assert response.status_code == 422
 
 
+# ─── Invitaciones multi-asociación: reparto de cantidades ────────────────
+
+def test_aceptar_invitacion_no_permite_superar_disponible(make_query):
+    invitacion = {
+        "id": "inv-2",
+        "asociacion_id": "aso-1",
+        "estado": "invitada",
+        "lote_id": "lote-1",
+        "lotes": {
+            "perfil_apoyo_id": "perfil-1",
+            "subcategoria_id": "subcat-1",
+            "cantidad_valor": 50,
+            "cantidad_unidad": "kg",
+            "divisible": "aliado_prepara_lotes",
+            "perfil_apoyo": {"usuario_id": "aliado-1"},
+        },
+    }
+    tablas = {
+        "usuarios": make_query(data=[{"id": "user-1", "asociacion_id": "aso-1", "roles": None}]),
+        "lote_asociaciones": make_query(execute_results=[
+            [invitacion],
+            [
+                {"id": "inv-1", "estado": "aceptada", "cantidad_asignada": 40},
+                {"id": "inv-2", "estado": "invitada", "cantidad_asignada": None},
+            ],
+        ]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    supabase.auth.get_user.return_value = SimpleNamespace(user=SimpleNamespace(id="auth-user-1"))
+
+    with (
+        patch.object(red_aliados, "supabase", supabase),
+        patch.object(red_aliados_service, "supabase", supabase),
+    ):
+        response = client.post(
+            "/red-aliados/invitaciones/inv-2/responder",
+            json={"aceptar": True, "cantidad_asignada": 20},
+            headers=AUTH_HEADERS,
+        )
+
+    assert response.status_code == 409
+    assert "solo quedan 10 kg" in response.json()["detail"].lower()
+
+
+def test_invitar_asociaciones_duplicadas_rechazado_desde_modelo():
+    response = client.post(
+        "/red-aliados/lotes/lote-1/invitar",
+        json={"asociacion_ids": ["aso-1", "aso-1"]},
+        headers=AUTH_HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert "dos veces" in response.text.lower()
+
+
+def test_lote_no_permite_mas_de_diez_asociaciones():
+    response = client.post(
+        "/red-aliados/lotes",
+        json={**LOTE_BODY, "max_asociaciones": 11},
+        headers=AUTH_HEADERS,
+    )
+
+    assert response.status_code == 422
+
+
 # ─── GET /red-aliados/me — FRONT03/BACK04 ────────────────────────────────
 
 def test_mi_perfil_apoyo_sin_perfil(make_query):

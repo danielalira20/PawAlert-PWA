@@ -293,6 +293,9 @@ async def obtener_mis_lotes(usuario_id: str) -> list:
             "deshabilitado_at": str(l["deshabilitado_at"]) if l.get("deshabilitado_at") else None,
             "created_at": str(l["created_at"]),
             "asociaciones_invitadas": len(invitaciones),
+            "asociaciones_cupo_ocupado": len([
+                i for i in invitaciones if i["estado"] != "rechazada"
+            ]),
             "asociaciones_aceptadas": len([i for i in invitaciones if i["estado"] in ("aceptada", "confirmada")]),
         })
     return lotes
@@ -330,7 +333,8 @@ async def cambiar_estado_lote(lote_id: str, usuario_id: str, activo: bool) -> di
 async def _obtener_lote_propio_o_falla(lote_id: str, usuario_id: str) -> dict:
     perfil = _obtener_perfil_apoyo_o_falla(usuario_id)
     lote = supabase.table("lotes").select(
-        "id, perfil_apoyo_id, especies_aplica, max_asociaciones, activo"
+        "id, perfil_apoyo_id, especies_aplica, max_asociaciones, activo, "
+        "cantidad_valor, cantidad_unidad, divisible"
     ).eq("id", lote_id).execute()
     if not lote.data:
         raise HTTPException(status_code=404, detail="Lote no encontrado")
@@ -352,6 +356,11 @@ async def obtener_asociaciones_compatibles(lote_id: str, usuario_id: str) -> lis
         "p_especies": especies,
     }).execute()
 
+    invitaciones = supabase.table("lote_asociaciones").select(
+        "asociacion_id"
+    ).eq("lote_id", lote_id).execute()
+    ya_invitadas = {fila["asociacion_id"] for fila in invitaciones.data}
+
     return [
         {
             "id": a["id"],
@@ -359,6 +368,7 @@ async def obtener_asociaciones_compatibles(lote_id: str, usuario_id: str) -> lis
             "distancia_km": a["distancia_km"],
         }
         for a in resultado.data
+        if a["id"] not in ya_invitadas
     ]
 
 
@@ -367,8 +377,21 @@ async def invitar_asociaciones(lote_id: str, usuario_id: str, body: InvitarAsoci
     if lote.get("activo") is False:
         raise HTTPException(status_code=409, detail="Reactiva el lote antes de enviar nuevas invitaciones")
 
-    ya_invitadas = supabase.table("lote_asociaciones").select("id").eq("lote_id", lote_id).execute()
-    cupo_restante = lote["max_asociaciones"] - len(ya_invitadas.data)
+    ya_invitadas = supabase.table("lote_asociaciones").select(
+        "id, asociacion_id"
+    ).eq("lote_id", lote_id).execute()
+    ids_ya_invitados = {fila["asociacion_id"] for fila in ya_invitadas.data}
+    repetidas = [aid for aid in body.asociacion_ids if aid in ids_ya_invitados]
+    if repetidas:
+        raise HTTPException(
+            status_code=409,
+            detail="Una o más asociaciones seleccionadas ya fueron invitadas a este lote",
+        )
+
+    invitaciones_vigentes = supabase.table("lote_asociaciones").select(
+        "id"
+    ).eq("lote_id", lote_id).neq("estado", "rechazada").execute()
+    cupo_restante = lote["max_asociaciones"] - len(invitaciones_vigentes.data)
     if len(body.asociacion_ids) > cupo_restante:
         raise HTTPException(
             status_code=400,
@@ -411,7 +434,7 @@ async def obtener_invitaciones_asociacion(asociacion_id: str) -> list:
     resultado = supabase.table("lote_asociaciones").select(
         "id, estado, cantidad_asignada, created_at, respondida_at, confirmada_at, "
         "lotes(id, categoria, cantidad_valor, cantidad_unidad, tipo_empaque, "
-        "forma_entrega, descripcion, fecha_disponibilidad, vigencia, lugar_entrega, direccion_entrega, direccion_detalle, detalle, "
+        "divisible, forma_entrega, descripcion, fecha_disponibilidad, vigencia, lugar_entrega, direccion_entrega, direccion_detalle, detalle, "
         "subcategoria_recurso(descripcion), "
         "perfil_apoyo(id, datos_extra, preferencia_visibilidad, usuarios(nombre, apellido_paterno)))"
     ).eq("asociacion_id", asociacion_id).order("created_at", desc=True).execute()
@@ -419,6 +442,23 @@ async def obtener_invitaciones_asociacion(asociacion_id: str) -> list:
     invitaciones = []
     for i in resultado.data:
         lote = i.get("lotes") or {}
+        reparto = supabase.table("lote_asociaciones").select(
+            "id, estado, cantidad_asignada"
+        ).eq("lote_id", lote.get("id")).execute()
+        cantidad_total = float(lote.get("cantidad_valor") or 0)
+        cantidad_comprometida = sum(
+            float(fila.get("cantidad_asignada") or 0)
+            for fila in reparto.data
+            if fila.get("estado") in ("aceptada", "confirmada")
+        )
+        cantidad_disponible = max(0, cantidad_total - cantidad_comprometida)
+        pendientes = [
+            fila for fila in reparto.data if fila.get("estado") == "invitada"
+        ]
+        cantidad_sugerida = cantidad_disponible
+        if lote.get("divisible") != "no" and pendientes:
+            cantidad_sugerida = cantidad_disponible / len(pendientes)
+
         perfil = lote.get("perfil_apoyo") or {}
         usuario = perfil.get("usuarios") or {}
         datos_extra = perfil.get("datos_extra") or {}
@@ -448,6 +488,8 @@ async def obtener_invitaciones_asociacion(asociacion_id: str) -> list:
             "id": i["id"],
             "estado": i["estado"],
             "cantidad_asignada": i.get("cantidad_asignada"),
+            "cantidad_disponible": cantidad_disponible,
+            "cantidad_sugerida": cantidad_sugerida,
             "created_at": str(i["created_at"]),
             "lote": {
                 "id": lote.get("id"),
@@ -456,6 +498,7 @@ async def obtener_invitaciones_asociacion(asociacion_id: str) -> list:
                 "cantidad_valor": lote.get("cantidad_valor"),
                 "cantidad_unidad": lote.get("cantidad_unidad"),
                 "tipo_empaque": lote.get("tipo_empaque"),
+                "divisible": lote.get("divisible"),
                 "forma_entrega": lote.get("forma_entrega"),
                 "descripcion": lote.get("descripcion"),
                 "fecha_disponibilidad": str(lote["fecha_disponibilidad"]) if lote.get("fecha_disponibilidad") else None,
@@ -477,7 +520,8 @@ async def obtener_invitaciones_asociacion(asociacion_id: str) -> list:
 
 async def responder_invitacion(invitacion_id: str, asociacion_id: str, body: ResponderInvitacionRequest) -> dict:
     invitacion = supabase.table("lote_asociaciones").select(
-        "id, asociacion_id, estado, lote_id, lotes(perfil_apoyo_id, subcategoria_id, cantidad_valor, cantidad_unidad, perfil_apoyo(usuario_id))"
+        "id, asociacion_id, estado, lote_id, "
+        "lotes(perfil_apoyo_id, subcategoria_id, cantidad_valor, cantidad_unidad, divisible, perfil_apoyo(usuario_id))"
     ).eq("id", invitacion_id).execute()
     if not invitacion.data:
         raise HTTPException(status_code=404, detail="Invitación no encontrada")
@@ -498,11 +542,50 @@ async def responder_invitacion(invitacion_id: str, asociacion_id: str, body: Res
         return {"id": invitacion_id, "estado": "rechazada"}
 
     lote = fila["lotes"]
+    reparto = supabase.table("lote_asociaciones").select(
+        "id, estado, cantidad_asignada"
+    ).eq("lote_id", fila["lote_id"]).execute()
+    cantidad_total = float(lote["cantidad_valor"])
+    cantidad_comprometida = sum(
+        float(asignacion.get("cantidad_asignada") or 0)
+        for asignacion in reparto.data
+        if asignacion["id"] != invitacion_id
+        and asignacion.get("estado") in ("aceptada", "confirmada")
+    )
+    cantidad_disponible = max(0, cantidad_total - cantidad_comprometida)
+    pendientes = [
+        asignacion for asignacion in reparto.data
+        if asignacion.get("estado") == "invitada"
+    ]
+    cantidad_sugerida = cantidad_disponible
+    if lote.get("divisible") != "no" and pendientes:
+        cantidad_sugerida = cantidad_disponible / len(pendientes)
+    cantidad_solicitada = float(body.cantidad_asignada) if body.cantidad_asignada is not None else cantidad_sugerida
+
+    if cantidad_disponible <= 0:
+        raise HTTPException(
+            status_code=409,
+            detail="La cantidad total de este lote ya fue asignada",
+        )
+    if cantidad_solicitada > cantidad_disponible:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Solo quedan {cantidad_disponible:g} {lote['cantidad_unidad']} "
+                "disponibles de este lote"
+            ),
+        )
+    if lote.get("divisible") == "no" and cantidad_solicitada != cantidad_total:
+        raise HTTPException(
+            status_code=400,
+            detail="Este lote no se reparte; debes aceptar la cantidad completa",
+        )
+
     token_expira_at = ahora + timedelta(days=VIGENCIA_QR_DIAS)
 
     supabase.table("lote_asociaciones").update({
         "estado": "aceptada",
-        "cantidad_asignada": body.cantidad_asignada or lote["cantidad_valor"],
+        "cantidad_asignada": cantidad_solicitada,
         "respondida_at": ahora.isoformat(),
         "token_expira_at": token_expira_at.isoformat(),
     }).eq("id", invitacion_id).execute()
@@ -515,7 +598,7 @@ async def responder_invitacion(invitacion_id: str, asociacion_id: str, body: Res
         "modo": "lote",
         "lote_asociacion_id": invitacion_id,
         "subcategoria_id": lote["subcategoria_id"],
-        "cantidad_valor": body.cantidad_asignada or lote["cantidad_valor"],
+        "cantidad_valor": cantidad_solicitada,
         "cantidad_unidad": lote["cantidad_unidad"],
     }).execute()
 
