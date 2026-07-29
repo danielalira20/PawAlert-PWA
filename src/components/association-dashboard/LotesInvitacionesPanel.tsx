@@ -5,7 +5,6 @@ import axios from 'axios';
 import { API_URL } from '../../constants/api';
 import { useAuth } from '../../context/AuthContext';
 import { Toast, useToast } from '../Toast';
-import { QrDisplayModal } from '../red-aliados/QrDisplayModal';
 import { EscanearQrModal } from '../red-aliados/EscanearQrModal';
 import { AppModal } from '../AppModal';
 import { AssocAvatar } from '../admin-dashboard/AssocAvatar';
@@ -92,7 +91,6 @@ export function LotesInvitacionesPanel({ visible }: Props) {
   const [invitacionAccion, setInvitacionAccion] = useState<InvitacionLote | null>(null);
   const [showAceptarModal, setShowAceptarModal] = useState(false);
   const [cantidadAsignada, setCantidadAsignada] = useState('');
-  const [qrInvitacionId, setQrInvitacionId] = useState<string | null>(null);
   const [showScanModal, setShowScanModal] = useState(false);
   const [invitacionDetalle, setInvitacionDetalle] = useState<InvitacionLote | null>(null);
 
@@ -256,7 +254,6 @@ export function LotesInvitacionesPanel({ visible }: Props) {
         )}
       </View>
 
-      <QrDisplayModal visible={!!qrInvitacionId} invitacionId={qrInvitacionId} onClose={() => setQrInvitacionId(null)} />
       <EscanearQrModal
         visible={showScanModal}
         onClose={() => setShowScanModal(false)}
@@ -371,20 +368,15 @@ export function LotesInvitacionesPanel({ visible }: Props) {
             )}
 
             {invitacionDetalle.estado === 'aceptada' && (
-              <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
-                <TouchableOpacity
-                  onPress={() => setQrInvitacionId(invitacionDetalle.id)}
-                  style={{ flex: 1, flexDirection: 'row', gap: 6, backgroundColor: COLORS.cardBg, paddingVertical: 13, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }}
-                >
-                  <Ionicons name="qr-code-outline" size={17} color={COLORS.primary} />
-                  <Text style={{ color: COLORS.primary, fontWeight: '700', fontSize: 13 }}>Ver mi código</Text>
-                </TouchableOpacity>
+              <View style={{ marginTop: 20 }}>
                 <TouchableOpacity
                   onPress={() => setShowScanModal(true)}
-                  style={{ flex: 1, flexDirection: 'row', gap: 6, backgroundColor: COLORS.success, paddingVertical: 13, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }}
+                  style={{ flexDirection: 'row', gap: 6, backgroundColor: COLORS.success, paddingVertical: 13, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }}
                 >
                   <Ionicons name="camera-outline" size={17} color={COLORS.white} />
-                  <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 13 }}>Escanear</Text>
+                  <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 13 }}>
+                    Escanear código del aliado
+                  </Text>
                 </TouchableOpacity>
               </View>
             )}

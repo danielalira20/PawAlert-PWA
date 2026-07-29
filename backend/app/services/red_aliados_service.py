@@ -260,9 +260,10 @@ async def crear_lote(usuario_id: str, body: LoteRequest) -> dict:
 async def obtener_mis_lotes(usuario_id: str) -> list:
     perfil = _obtener_perfil_apoyo_o_falla(usuario_id)
     resultado = supabase.table("lotes").select(
-        "id, categoria, subcategoria_id, cantidad_valor, cantidad_unidad, "
+        "id, categoria, subcategoria_id, especies_aplica, cantidad_valor, cantidad_unidad, "
         "tipo_empaque, divisible, max_asociaciones, forma_entrega, descripcion, "
-        "fecha_disponibilidad, vigencia, lugar_entrega, direccion_entrega, direccion_detalle, detalle, created_at, "
+        "fecha_disponibilidad, vigencia, lugar_entrega, direccion_entrega, direccion_detalle, detalle, "
+        "activo, deshabilitado_at, created_at, "
         "subcategoria_recurso(descripcion), "
         "lote_asociaciones(id, estado)"
     ).eq("perfil_apoyo_id", perfil["id"]).order("created_at", desc=True).execute()
@@ -274,6 +275,7 @@ async def obtener_mis_lotes(usuario_id: str) -> list:
             "id": l["id"],
             "categoria": l["categoria"],
             "subcategoria_descripcion": (l.get("subcategoria_recurso") or {}).get("descripcion"),
+            "especies_aplica": l.get("especies_aplica") or [],
             "cantidad_valor": l["cantidad_valor"],
             "cantidad_unidad": l["cantidad_unidad"],
             "tipo_empaque": l["tipo_empaque"],
@@ -287,6 +289,8 @@ async def obtener_mis_lotes(usuario_id: str) -> list:
             "direccion_entrega": l.get("direccion_entrega"),
             "direccion_detalle": l.get("direccion_detalle") or {},
             "detalle": l.get("detalle") or {},
+            "activo": l.get("activo", True),
+            "deshabilitado_at": str(l["deshabilitado_at"]) if l.get("deshabilitado_at") else None,
             "created_at": str(l["created_at"]),
             "asociaciones_invitadas": len(invitaciones),
             "asociaciones_aceptadas": len([i for i in invitaciones if i["estado"] in ("aceptada", "confirmada")]),
@@ -294,10 +298,39 @@ async def obtener_mis_lotes(usuario_id: str) -> list:
     return lotes
 
 
+async def cambiar_estado_lote(lote_id: str, usuario_id: str, activo: bool) -> dict:
+    await _obtener_lote_propio_o_falla(lote_id, usuario_id)
+
+    if not activo:
+        invitaciones_aceptadas = supabase.table("lote_asociaciones").select(
+            "id"
+        ).eq("lote_id", lote_id).eq("estado", "aceptada").limit(1).execute()
+        if invitaciones_aceptadas.data:
+            raise HTTPException(
+                status_code=409,
+                detail="No puedes deshabilitar un lote con una entrega aceptada pendiente",
+            )
+
+    ahora = datetime.now(timezone.utc).isoformat() if not activo else None
+    resultado = supabase.table("lotes").update({
+        "activo": activo,
+        "deshabilitado_at": ahora,
+    }).eq("id", lote_id).execute()
+
+    if not resultado.data:
+        raise HTTPException(status_code=404, detail="Lote no encontrado")
+
+    return {
+        "id": lote_id,
+        "activo": activo,
+        "deshabilitado_at": ahora,
+    }
+
+
 async def _obtener_lote_propio_o_falla(lote_id: str, usuario_id: str) -> dict:
     perfil = _obtener_perfil_apoyo_o_falla(usuario_id)
     lote = supabase.table("lotes").select(
-        "id, perfil_apoyo_id, especies_aplica, max_asociaciones"
+        "id, perfil_apoyo_id, especies_aplica, max_asociaciones, activo"
     ).eq("id", lote_id).execute()
     if not lote.data:
         raise HTTPException(status_code=404, detail="Lote no encontrado")
@@ -310,6 +343,8 @@ async def obtener_asociaciones_compatibles(lote_id: str, usuario_id: str) -> lis
     """FRONT14 — asociaciones activas/verificadas dentro del radio de
     cobertura que declararon, ordenadas por cercanía al aliado."""
     lote = await _obtener_lote_propio_o_falla(lote_id, usuario_id)
+    if lote.get("activo") is False:
+        raise HTTPException(status_code=409, detail="Este lote está deshabilitado")
     especies = lote.get("especies_aplica") or None
 
     resultado = supabase.rpc("asociaciones_compatibles_lote", {
@@ -329,6 +364,8 @@ async def obtener_asociaciones_compatibles(lote_id: str, usuario_id: str) -> lis
 
 async def invitar_asociaciones(lote_id: str, usuario_id: str, body: InvitarAsociacionesRequest) -> list:
     lote = await _obtener_lote_propio_o_falla(lote_id, usuario_id)
+    if lote.get("activo") is False:
+        raise HTTPException(status_code=409, detail="Reactiva el lote antes de enviar nuevas invitaciones")
 
     ya_invitadas = supabase.table("lote_asociaciones").select("id").eq("lote_id", lote_id).execute()
     cupo_restante = lote["max_asociaciones"] - len(ya_invitadas.data)
@@ -492,8 +529,8 @@ async def responder_invitacion(invitacion_id: str, asociacion_id: str, body: Res
 async def obtener_qr_invitacion(invitacion_id: str, usuario_id: str) -> dict:
     """BACK07 — el token ya se generó al crear la fila (default
     gen_random_uuid()); esto solo lo expone una vez la invitación fue
-    aceptada y valida que quien lo pide sea parte de la operación (el
-    aliado dueño del lote o la asociación invitada)."""
+    aceptada. El código pertenece al aliado dueño del lote; la asociación
+    únicamente cuenta con la acción de escanearlo."""
     invitacion = supabase.table("lote_asociaciones").select(
         "id, estado, token, token_usado, token_expira_at, asociacion_id, "
         "lotes(perfil_apoyo(usuario_id))"
@@ -506,13 +543,8 @@ async def obtener_qr_invitacion(invitacion_id: str, usuario_id: str) -> dict:
         raise HTTPException(status_code=400, detail="Esta invitación todavía no fue aceptada")
 
     lote_usuario_id = (fila.get("lotes") or {}).get("perfil_apoyo", {}).get("usuario_id")
-    usuario = supabase.table("usuarios").select("asociacion_id").eq("id", usuario_id).execute()
-    asociacion_id_usuario = usuario.data[0]["asociacion_id"] if usuario.data else None
-
-    es_aliado_dueno = usuario_id == lote_usuario_id
-    es_asociacion_invitada = asociacion_id_usuario == fila["asociacion_id"]
-    if not es_aliado_dueno and not es_asociacion_invitada:
-        raise HTTPException(status_code=403, detail="No tienes acceso a este QR")
+    if usuario_id != lote_usuario_id:
+        raise HTTPException(status_code=403, detail="Solo el aliado dueño del lote puede ver este QR")
 
     return {
         "token": fila["token"],
@@ -522,9 +554,8 @@ async def obtener_qr_invitacion(invitacion_id: str, usuario_id: str) -> dict:
 
 
 async def confirmar_recepcion_qr(token: str, usuario_id: str) -> dict:
-    """FRONT16 — cualquiera de las dos partes puede escanear (el aliado
-    confirma que entregó, la asociación confirma que recibió); el primero
-    que escanea marca token_usado y ya no se puede repetir."""
+    """FRONT16 — la asociación invitada escanea el código que muestra el
+    aliado y confirma la recepción; el token solo se puede usar una vez."""
     invitacion = supabase.table("lote_asociaciones").select(
         "id, estado, token_usado, token_expira_at, asociacion_id, lote_id, "
         "lotes(perfil_apoyo(usuario_id))"
@@ -540,12 +571,11 @@ async def confirmar_recepcion_qr(token: str, usuario_id: str) -> dict:
     if fila["token_expira_at"] and datetime.fromisoformat(fila["token_expira_at"]) < datetime.now(timezone.utc):
         raise HTTPException(status_code=400, detail="Este código QR ya venció")
 
-    lote_usuario_id = (fila.get("lotes") or {}).get("perfil_apoyo", {}).get("usuario_id")
     usuario = supabase.table("usuarios").select("asociacion_id").eq("id", usuario_id).execute()
     asociacion_id_usuario = usuario.data[0]["asociacion_id"] if usuario.data else None
 
-    if usuario_id != lote_usuario_id and asociacion_id_usuario != fila["asociacion_id"]:
-        raise HTTPException(status_code=403, detail="No tienes acceso a esta entrega")
+    if asociacion_id_usuario != fila["asociacion_id"]:
+        raise HTTPException(status_code=403, detail="Solo la asociación invitada puede confirmar esta entrega")
 
     ahora = datetime.now(timezone.utc).isoformat()
 
