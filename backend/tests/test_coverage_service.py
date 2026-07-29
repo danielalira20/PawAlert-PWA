@@ -204,3 +204,29 @@ def test_reserva_concurrente_devuelve_conflicto_controlado():
 
     assert error.value.status_code == 409
     assert "ya no está disponible" in error.value.detail
+
+
+def test_reserva_explica_si_falta_compatibilidad_geografica():
+    ejecucion = MagicMock()
+    ejecucion.execute.side_effect = Exception(
+        "{'code': '42883', 'message': "
+        "'function st_point(numeric, numeric) does not exist'}"
+    )
+    supabase_admin = MagicMock()
+    supabase_admin.rpc.return_value = ejecucion
+
+    with (
+        patch.object(coverage_service, "supabase_admin", supabase_admin),
+        pytest.raises(HTTPException) as error,
+    ):
+        coverage_service.reservar_cobertura(
+            reporte_id="rep-1",
+            usuario_asignado_id="user-1",
+            voluntario_id="vol-1",
+            asociacion_id="aso-1",
+            actor_id="actor-1",
+            origen="ofrecimiento_externo",
+        )
+
+    assert error.value.status_code == 503
+    assert "migración 0021" in error.value.detail
