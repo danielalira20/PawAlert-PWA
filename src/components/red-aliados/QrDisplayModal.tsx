@@ -19,7 +19,12 @@ const COLORS = {
 
 interface Props {
   visible: boolean;
-  invitacionId: string | null;
+  // Exactamente uno de los dos: invitacionId para el QR de un lote,
+  // contribucionId para el de una contribución normal. invitacionId
+  // sigue siendo el comportamiento por default — MisLotesScreen.tsx no
+  // necesita ningún cambio.
+  invitacionId?: string | null;
+  contribucionId?: string | null;
   onClose: () => void;
 }
 
@@ -29,24 +34,25 @@ interface QrData {
   token_expira_at: string | null;
 }
 
-export function QrDisplayModal({ visible, invitacionId, onClose }: Props) {
+export function QrDisplayModal({ visible, invitacionId, contribucionId, onClose }: Props) {
   const { token } = useAuth();
   const [qr, setQr] = useState<QrData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!visible || !invitacionId) return;
+    if (!visible || (!invitacionId && !contribucionId)) return;
+    const url = contribucionId
+      ? `${API_URL}/red-aliados/me/contribuciones/${contribucionId}/qr`
+      : `${API_URL}/red-aliados/invitaciones/${invitacionId}/qr`;
     setIsLoading(true);
     setError(null);
     axios
-      .get(`${API_URL}/red-aliados/invitaciones/${invitacionId}/qr`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      .get(url, { headers: { Authorization: `Bearer ${token}` } })
       .then((res) => setQr(res.data))
       .catch((err) => setError(err?.response?.data?.detail || 'No pudimos cargar el código QR'))
       .finally(() => setIsLoading(false));
-  }, [visible, invitacionId]);
+  }, [visible, invitacionId, contribucionId]);
 
   const vencido = qr?.token_expira_at ? new Date(qr.token_expira_at) < new Date() : false;
 

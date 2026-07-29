@@ -98,7 +98,13 @@ function AnimatedButton({ onPress, style, children }: { onPress: () => void; sty
 // ─── PANTALLA PRINCIPAL ─────────────────────────────────────────────────────
 export default function HowToHelpScreen() {
   const router = useRouter();
-  const { isLoggedIn, user } = useAuth();
+  const { isLoggedIn, user, token } = useAuth();
+
+  // Badge "Ya ofreciste ayuda" — necesidad_ids donde el usuario actual ya
+  // tiene una contribución. Consulta aparte, autenticada; no toca el
+  // endpoint público /necesidades/publicas (que sigue sirviendo a
+  // visitantes sin sesión igual que siempre).
+  const [contribuidas, setContribuidas] = useState<Set<string>>(new Set());
   const [fontsLoaded] = useFonts({ Fraunces_800ExtraBold, Poppins_400Regular, Poppins_500Medium, Poppins_600SemiBold });
 
   // Camino "Aliado comunitario" sin sesión — en vez de mandarlo a /login sin
@@ -146,6 +152,27 @@ export default function HowToHelpScreen() {
     };
     cargarCategorias();
   }, []);
+
+  // ─── NECESIDADES A LAS QUE YA CONTRIBUÍ (solo con sesión) ───
+  // Efecto independiente del de necesidades públicas — no lo bloquea ni
+  // lo retrasa si falla o tarda.
+  useEffect(() => {
+    if (!isLoggedIn || !token) {
+      setContribuidas(new Set());
+      return;
+    }
+    const cargarContribuidas = async () => {
+      try {
+        const res = await axios.get(`${API_URL}/red-aliados/me/necesidades-contribuidas`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        setContribuidas(new Set<string>(res.data?.necesidad_ids || []));
+      } catch (error) {
+        console.error("Error al cargar necesidades ya contribuidas:", error);
+      }
+    };
+    cargarContribuidas();
+  }, [isLoggedIn, token]);
 
   // ─── FETCH A BD REAL CON GPS ───
   useEffect(() => {
@@ -384,6 +411,13 @@ export default function HowToHelpScreen() {
                             <Text style={{ fontSize: 11, fontFamily: F.bodySemiBold, color: C.primary }}>a {item.distancia_km} km</Text>
                           </View>
                         </View>
+
+                        {contribuidas.has(item.id) && (
+                          <View style={{ flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', backgroundColor: `${C.secondary}18`, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 100, marginBottom: 12 }}>
+                            <Ionicons name="checkmark-circle" size={12} color={C.secondary} style={{ marginRight: 4 }} />
+                            <Text style={{ fontSize: 11, fontFamily: F.bodySemiBold, color: C.secondary }}>Ya ofreciste ayuda</Text>
+                          </View>
+                        )}
 
                         {/* Contenido principal */}
                         <View style={{ marginBottom: 20 }}>

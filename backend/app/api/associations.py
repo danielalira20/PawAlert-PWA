@@ -41,9 +41,9 @@ from app.utils.animal_shaping import shape_animal_embed, shape_animal_response, 
 import json
 from app.services.email_service import email_bienvenida_staff
 from app.models.red_aliados import NecesidadCreate
-from app.services.red_aliados_service import crear_necesidad_asociacion
+from app.services.red_aliados_service import crear_necesidad_asociacion, VIGENCIA_QR_DIAS
 from enum import Enum
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 
 router = APIRouter()
@@ -1136,6 +1136,7 @@ def publicar_necesidad(
     return {"message": "Necesidad publicada con éxito", "data": resultado}
 
 
+
 class AccionOferta(str, Enum):
     aceptar = "aceptar"
     rechazar = "rechazar"
@@ -1169,7 +1170,9 @@ async def get_ofertas_recibidas(tab: str = "pendientes", authorization: str = He
     """
     FRONT10 / FRONT07: Obtiene la lista de ofertas (contribuciones).
     - tab=pendientes: ofertas en estado 'comprometida'.
-    - tab=historial: ofertas en estado 'confirmada' o 'parcial'.
+    - tab=aceptadas: ofertas en estado 'confirmada' o 'parcial' (ya aceptadas,
+      con o sin ajuste de cantidad) — aquí vive el QR de recepción.
+    - tab=historial: estados terminales 'entregada', 'rechazada', 'retirada'.
     """
     usuario = _obtener_usuario_autenticado(authorization)
     _verificar_rol(usuario, ("asociacion", "staff"))
@@ -1179,6 +1182,7 @@ async def get_ofertas_recibidas(tab: str = "pendientes", authorization: str = He
 
     query = supabase.table("contribuciones").select(
         "id, cantidad_valor, cantidad_unidad, estado, created_at, detalle, "
+        "token, token_usado, token_expira_at, "
         "necesidades(id, categoria, asociacion_id, subcategoria_id), "
         "reportes(id, asociacion_asignada_id), "
         "lote_asociaciones(id, asociacion_id), "
@@ -1187,6 +1191,8 @@ async def get_ofertas_recibidas(tab: str = "pendientes", authorization: str = He
     )
 
     if tab == "historial":
+        query = query.in_("estado", ["entregada", "rechazada", "retirada"])
+    elif tab == "aceptadas":
         query = query.in_("estado", ["confirmada", "parcial"])
     else:
         query = query.eq("estado", "comprometida")
@@ -1236,12 +1242,17 @@ async def patch_resolver_oferta(
     elif body.accion == AccionOferta.aceptar:
         update_data["estado"] = "confirmada"
         update_data["confirmada_at"] = datetime.now(timezone.utc).isoformat()
+        # Mismo VIGENCIA_QR_DIAS que usa el flujo de lotes al aceptar una
+        # invitación — activa el token (ya generado por default al crear
+        # la fila) para que el QR de recepción sea válido.
+        update_data["token_expira_at"] = (datetime.now(timezone.utc) + timedelta(days=VIGENCIA_QR_DIAS)).isoformat()
     elif body.accion == AccionOferta.ajustar:
         if not body.cantidad_ajustada or body.cantidad_ajustada <= 0:
             raise HTTPException(status_code=422, detail="Debes proporcionar una cantidad ajustada válida")
         update_data["estado"] = "parcial"
         update_data["cantidad_valor"] = body.cantidad_ajustada
         update_data["confirmada_at"] = datetime.now(timezone.utc).isoformat()
+        update_data["token_expira_at"] = (datetime.now(timezone.utc) + timedelta(days=VIGENCIA_QR_DIAS)).isoformat()
 
     resultado = supabase.table("contribuciones").update(update_data).eq("id", contribucion_id).execute()
 
@@ -1275,6 +1286,28 @@ async def patch_resolver_oferta(
                 "nombre_aliado": nombre_aliado,
             },
         )
+
+    if body.accion == AccionOferta.aceptar and necesidad.get("id"):
+        supabase.table("necesidades").update({
+            "estado": "cubierta"
+        }).eq("id", necesidad["id"]).execute()
+    # Notificación best-effort al aliado — mismo patrón try/except que ya
+    # usa aceptar_sugerencia_general (red_aliados_service.py) para
+    # notificaciones_aliado con tipo='oferta_aceptada'; nunca debe tumbar
+    # la aceptación ya confirmada si falla. Solo en la rama "aceptar".
+    if body.accion == AccionOferta.aceptar and necesidad.get("id"):
+        try:
+            perfil = supabase.table("perfil_apoyo").select("id").eq(
+                "usuario_id", contrib_res.data[0]["usuario_id"]
+            ).execute()
+            if perfil.data:
+                supabase.table("notificaciones_aliado").insert({
+                    "perfil_apoyo_id": perfil.data[0]["id"],
+                    "necesidad_id": necesidad["id"],
+                    "tipo": "oferta_aceptada",
+                }).execute()
+        except Exception as error:
+            print(f"[WARN] No se pudo crear notificaciones_aliado para contribucion {contribucion_id}: {error}")
 
     return {"mensaje": f"Oferta {body.accion.value} exitosamente", "oferta": resultado.data[0]}
 
@@ -1325,4 +1358,5 @@ async def patch_verificar_aliado(
         "aliado_verificado_at": datetime.now(timezone.utc).isoformat()
     }).eq("id", perfil["id"]).execute()
 
-    return {"mensaje": "Sello de aliado verificado otorgado exitosamente", "perfil": update_res.data[0]}
+    return {"mensaje": "Sello de aliado verificado otorgado exitosamente", "perfil": update_res.data[0]}
+

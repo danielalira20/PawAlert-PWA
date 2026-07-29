@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { AliadoImpactStats } from '../components/profile/AliadoImpactStats';
 import { useAliadoImpact } from '../hooks/useAliadoImpact';
 import MisLotesScreen from './red-aliados/MisLotesScreen';
+import MisAportacionesScreen from './red-aliados/MisAportacionesScreen';
 import NotificacionesAliadoScreen from './NotificacionesAliadoScreen';
 
 // Misma paleta que StaffAsignacionScreen.tsx (COLORS/SHADOW_SM), reusada
@@ -21,7 +22,7 @@ const COLORS = {
   cardBg: '#FAF3EA',
 };
 
-type ActiveTab = 'lotes' | 'notificaciones';
+type ActiveTab = 'lotes' | 'aportaciones' | 'notificaciones';
 
 interface Props {
   onClose?: () => void;
@@ -91,6 +92,7 @@ export default function AliadoDashboardScreen({ onClose, onOpenContribution }: P
           <View style={{ flexDirection: 'row', marginHorizontal: 24, marginBottom: 20, borderBottomWidth: 1, borderBottomColor: '#E5E7EB' }}>
             {([
               { key: 'lotes', label: 'Mis lotes' },
+              { key: 'aportaciones', label: 'Mis aportaciones' },
               { key: 'notificaciones', label: 'Notificaciones' },
             ] as { key: ActiveTab; label: string }[]).map((tab) => (
               <TouchableOpacity
@@ -115,6 +117,7 @@ export default function AliadoDashboardScreen({ onClose, onOpenContribution }: P
           </View>
 
           {activeTab === 'lotes' && <MisLotesScreen embedded />}
+          {activeTab === 'aportaciones' && <MisAportacionesScreen embedded />}
           {activeTab === 'notificaciones' && <NotificacionesAliadoScreen embedded />}
         </ScrollView>
       </View>
