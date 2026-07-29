@@ -206,11 +206,17 @@ def test_reserva_concurrente_devuelve_conflicto_controlado():
     assert "ya no está disponible" in error.value.detail
 
 
-def test_reserva_explica_si_falta_compatibilidad_geografica():
+@pytest.mark.parametrize(
+    "funcion_faltante",
+    [
+        "function st_point(numeric, numeric) does not exist",
+        "function st_setsrid(extensions.geometry, integer) does not exist",
+    ],
+)
+def test_reserva_explica_si_falta_compatibilidad_geografica(funcion_faltante):
     ejecucion = MagicMock()
     ejecucion.execute.side_effect = Exception(
-        "{'code': '42883', 'message': "
-        "'function st_point(numeric, numeric) does not exist'}"
+        f"{{'code': '42883', 'message': '{funcion_faltante}'}}"
     )
     supabase_admin = MagicMock()
     supabase_admin.rpc.return_value = ejecucion
@@ -229,4 +235,4 @@ def test_reserva_explica_si_falta_compatibilidad_geografica():
         )
 
     assert error.value.status_code == 503
-    assert "migración 0021" in error.value.detail
+    assert "migración 0022" in error.value.detail

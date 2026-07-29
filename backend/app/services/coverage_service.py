@@ -290,12 +290,14 @@ def reservar_cobertura(
                 status_code=409,
                 detail="El caso ya no está disponible. Actualiza la lista.",
             ) from exc
-        if "42883" in detalle and "st_point(numeric, numeric)" in detalle:
+        if "42883" in detalle and (
+            "st_point(" in detalle or "st_setsrid(" in detalle
+        ):
             raise HTTPException(
                 status_code=503,
                 detail=(
                     "La configuración geográfica de Supabase necesita la "
-                    "migración 0021 antes de enviar propuestas"
+                    "migración 0022 antes de enviar propuestas"
                 ),
             ) from exc
         raise
