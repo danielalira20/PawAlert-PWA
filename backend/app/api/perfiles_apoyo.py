@@ -126,7 +126,7 @@ async def registro_directo_aliado(
     if existente.data:
         raise HTTPException(status_code=409, detail="El usuario ya cuenta con un perfil de aliado.")
 
-    subcarpeta_base = "patrocinadores_institucionales" if body.tipo == "patrocinador_institucional" else "aliados_locales"
+    subcarpeta_base = "patrocinadores institucionales" if body.tipo == "patrocinador_institucional" else "aliados locales"
     carpeta_docs = f"documentos_aliados/{subcarpeta_base}/documentos_institucionales"
     carpeta_logos = f"documentos_aliados/{subcarpeta_base}/logos"
 

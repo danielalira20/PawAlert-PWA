@@ -38,6 +38,8 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showPasswordConfirm, setShowPasswordConfirm] = useState(false);
   const [paso, setPaso] = useState(1);
   const [tipoAliado, setTipoAliado] = useState(initialTipoAliado || 'aliado_local');
   const [nombreNegocio, setNombreNegocio] = useState('');
@@ -261,6 +263,8 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
       setErrors(prev => ({ ...prev, password: 'La contraseña es obligatoria.' }));
     } else if (val.length < 6) {
       setErrors(prev => ({ ...prev, password: 'Mínimo 6 caracteres.' }));
+    } else if (!/[a-z]/.test(val) || !/[A-Z]/.test(val)) {
+      setErrors(prev => ({ ...prev, password: 'Debe contener al menos 1 minúscula y 1 mayúscula.' }));
     } else {
       setErrors(prev => ({ ...prev, password: '' }));
       if (passwordConfirm && val !== passwordConfirm) {
@@ -319,10 +323,23 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
     setCedulaProfesional(val);
     if (!val.trim()) {
       setErrors(prev => ({ ...prev, cedulaProfesional: 'Obligatorio.' }));
+    } else if (/[a-zA-Z]/.test(val)) {
+      setErrors(prev => ({ ...prev, cedulaProfesional: 'No debe contener letras.' }));
     } else if (!/^\d{7,8}$/.test(val)) {
       setErrors(prev => ({ ...prev, cedulaProfesional: 'Debe contener entre 7 y 8 dígitos numéricos.' }));
     } else {
       setErrors(prev => ({ ...prev, cedulaProfesional: '' }));
+    }
+  };
+
+  const handleMedicoResponsableChange = (val: string) => {
+    setMedicoResponsable(val);
+    if (!val.trim()) {
+      setErrors(prev => ({ ...prev, medicoResponsable: 'Obligatorio.' }));
+    } else if (/\d/.test(val)) {
+      setErrors(prev => ({ ...prev, medicoResponsable: 'No debe contener números.' }));
+    } else {
+      setErrors(prev => ({ ...prev, medicoResponsable: '' }));
     }
   };
 
@@ -590,8 +607,7 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
 
       await axios.post(`${API_URL}/perfiles-apoyo/registro-directo`, formData, {
         headers: { 
-          Authorization: `Bearer ${newToken}`,
-          'Content-Type': 'multipart/form-data'
+          Authorization: `Bearer ${newToken}`
         }
       });
 
@@ -627,7 +643,7 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
             <Ionicons name="checkmark-circle" size={80} color={COLORS.bgTeal} style={{ marginBottom: 16 }} />
             <Text style={{ fontSize: 24, fontWeight: '700', color: COLORS.textDark, marginBottom: 8, textAlign: 'center' }}>¡Registro Exitoso!</Text>
             <Text style={{ fontSize: 16, color: COLORS.textLight, textAlign: 'center', marginBottom: 24 }}>Bienvenido a la Red de Aliados. Tu perfil ha sido creado.</Text>
-            <TouchableOpacity onPress={() => router.push('/(tabs)/profile')} style={{ backgroundColor: COLORS.bgTeal, paddingVertical: 14, paddingHorizontal: 32, borderRadius: 24 }}>
+            <TouchableOpacity onPress={() => { if (onClose) onClose(); router.push({ pathname: '/profile', params: { abrirPanelAliado: 'true' } } as any); }} style={{ backgroundColor: COLORS.bgTeal, paddingVertical: 14, paddingHorizontal: 32, borderRadius: 24 }}>
               <Text style={{ color: COLORS.bgWhite, fontWeight: '700', fontSize: 16 }}>Ir a mi perfil</Text>
             </TouchableOpacity>
           </View>
@@ -656,12 +672,18 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
                       <Input label="Correo Electrónico *" placeholder="email@ejemplo.com" value={email} onChangeText={handleEmailChange} keyboardType="email-address" autoCapitalize="none" />
                       {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
                     </View>
-                    <View style={{ marginBottom: 12 }}>
-                      <Input label="Contraseña *" placeholder="Mínimo 6 caracteres" value={password} onChangeText={handlePasswordChange} secureTextEntry />
+                    <View style={{ marginBottom: 12, position: 'relative' }}>
+                      <Input label="Contraseña *" placeholder="Mínimo 6 caracteres" value={password} onChangeText={handlePasswordChange} secureTextEntry={!showPassword} />
+                      <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={{ position: 'absolute', right: 16, top: 40, zIndex: 10, padding: 4 }}>
+                        <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={20} color={COLORS.textLight} />
+                      </TouchableOpacity>
                       {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
                     </View>
-                    <View style={{ marginBottom: 12 }}>
-                      <Input label="Confirmar Contraseña *" placeholder="Repite tu contraseña" value={passwordConfirm} onChangeText={handlePasswordConfirmChange} secureTextEntry />
+                    <View style={{ marginBottom: 12, position: 'relative' }}>
+                      <Input label="Confirmar Contraseña *" placeholder="Repite tu contraseña" value={passwordConfirm} onChangeText={handlePasswordConfirmChange} secureTextEntry={!showPasswordConfirm} />
+                      <TouchableOpacity onPress={() => setShowPasswordConfirm(!showPasswordConfirm)} style={{ position: 'absolute', right: 16, top: 40, zIndex: 10, padding: 4 }}>
+                        <Ionicons name={showPasswordConfirm ? "eye-off-outline" : "eye-outline"} size={20} color={COLORS.textLight} />
+                      </TouchableOpacity>
                       {errors.passwordConfirm && <Text style={styles.errorText}>{errors.passwordConfirm}</Text>}
                     </View>
                     <View style={{ marginBottom: 12 }}>
@@ -780,15 +802,28 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
                   {tipoAliado === 'aliado_local' && tipoEstablecimiento === 'Veterinaria' && (
                     <FormSection title="Servicios Veterinarios" subtitle="Detalles de tu práctica profesional">
                       <View style={{ marginBottom: 12 }}>
-                        <Input label="Médico Responsable *" placeholder="Nombre del Médico" value={medicoResponsable} onChangeText={(v) => { setMedicoResponsable(v); setErrors(p => ({ ...p, medicoResponsable: '' })) }} />
+                        <Input label="Médico Responsable *" placeholder="Nombre del Médico" value={medicoResponsable} onChangeText={handleMedicoResponsableChange} />
                         {errors.medicoResponsable && <Text style={styles.errorText}>{errors.medicoResponsable}</Text>}
                       </View>
                       <View style={{ marginBottom: 12 }}>
-                        <Input label="Cédula Profesional *" placeholder="Núm. de Cédula" value={cedulaProfesional} onChangeText={(v) => { setCedulaProfesional(v); setErrors(p => ({ ...p, cedulaProfesional: '' })) }} />
+                        <Input label="Cédula Profesional *" placeholder="Núm. de Cédula" value={cedulaProfesional} onChangeText={handleCedulaProfesionalChange} />
                         {errors.cedulaProfesional && <Text style={styles.errorText}>{errors.cedulaProfesional}</Text>}
                       </View>
                       <View style={{ marginBottom: 12 }}>
-                        <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginBottom: 8 }}>Documento de verificación (PDF o Imagen):</Text>
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginBottom: 8 }}>Tipo de Documento:</Text>
+                        <View style={styles.animalChips}>
+                          {['INE', 'Comprobante de domicilio o establecimiento', 'Otro'].map(tipo => (
+                            <TouchableOpacity key={tipo} style={[styles.animalChip, { backgroundColor: tipoDocumento === tipo ? COLORS.secondary : COLORS.grayLight }]} onPress={() => setTipoDocumento(tipo)}>
+                              <Text style={{ fontSize: 13, fontWeight: '700', color: tipoDocumento === tipo ? COLORS.textDark : COLORS.textLight }}>{tipo}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                        {tipoDocumento === 'Otro' && (
+                          <View style={{ marginTop: 8, marginBottom: 12 }}>
+                            <Input label="Especificar tipo de documento" placeholder="Ej. Acta constitutiva" value={tipoDocumentoOtro} onChangeText={setTipoDocumentoOtro} />
+                          </View>
+                        )}
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginTop: 8, marginBottom: 8 }}>Documento de verificación (PDF o Imagen):</Text>
                         <TouchableOpacity onPress={handlePickDocumento} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.grayLight, padding: 12, borderRadius: 16, borderWidth: 1, borderColor: COLORS.border }}>
                           <Ionicons name="document-text-outline" size={24} color={COLORS.textDark} style={{ marginRight: 8 }} />
                           <Text style={{ flex: 1, color: documentoFile ? COLORS.textDark : COLORS.textLight, fontSize: 14 }}>
