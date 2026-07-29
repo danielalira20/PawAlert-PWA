@@ -26,6 +26,7 @@ interface Props {
   onEncontre: () => void;
   onLlegadaZona: () => void;
   onNoLocalizado: () => void;
+  onBajoResguardo: () => void;
   onRefugio: () => void;
   onVeterinaria: () => void;
   // Se conserva como permiso explícito para no exponer acciones de campo a
@@ -41,6 +42,7 @@ export function ReportDetailModal({
   onEncontre,
   onLlegadaZona,
   onNoLocalizado,
+  onBajoResguardo,
   onRefugio,
   onVeterinaria,
   puedeRegistrarHitos = true,
@@ -179,7 +181,22 @@ export function ReportDetailModal({
                   </TouchableOpacity>
                 )}
 
-              {puedeRegistrarHitos && reporte.estado_reporte === 'en_atencion' && (
+              {puedeRegistrarHitos &&
+                esHogarTemporal &&
+                reporte.estado_reporte === 'en_atencion' &&
+                !reporte.animal_bajo_resguardo_registrado && (
+                  <TouchableOpacity
+                    style={[styles.actionButton, { backgroundColor: Brand.secondary }]}
+                    onPress={onBajoResguardo}
+                  >
+                    <Ionicons name="shield-checkmark-outline" size={18} color="#fff" />
+                    <Text style={styles.actionButtonText}>Animal bajo resguardo</Text>
+                  </TouchableOpacity>
+                )}
+
+              {puedeRegistrarHitos &&
+                reporte.estado_reporte === 'en_atencion' &&
+                (!esHogarTemporal || reporte.animal_bajo_resguardo_registrado) && (
                 <TouchableOpacity style={[styles.actionButton, { backgroundColor: '#8E44AD' }]} onPress={onRefugio}>
                   <Ionicons name="home-outline" size={18} color="#fff" />
                   <Text style={styles.actionButtonText}>

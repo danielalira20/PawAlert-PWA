@@ -120,6 +120,7 @@ const HITO_LABELS: Record<string, string> = {
   animal_encontrado: 'Encontraron al animal',
   hito_encontre_animal: 'Encontraron al animal',
   animal_no_localizado: 'Búsqueda sin localizar al animal',
+  animal_bajo_resguardo: 'Animal bajo resguardo',
   hito_animal_no_localizado: 'Búsqueda sin localizar al animal',
   llegada_veterinaria: 'Llegó a la veterinaria',
   hito_llegue_refugio: 'Llegó al refugio',

@@ -15,6 +15,7 @@ import { ReportDetailModal } from '../components/staff-dashboard/ReportDetailMod
 import { EncontreModal } from '../components/staff-dashboard/EncontreModal';
 import { LlegadaZonaModal } from '../components/staff-dashboard/LlegadaZonaModal';
 import { NoLocalizadoModal } from '../components/staff-dashboard/NoLocalizadoModal';
+import { ResguardoModal } from '../components/staff-dashboard/ResguardoModal';
 import { RefugioModal } from '../components/staff-dashboard/RefugioModal';
 import { VeterinariaModal } from '../components/staff-dashboard/VeterinariaModal';
 import { Brand } from '../constants/theme';
@@ -76,12 +77,24 @@ export default function StaffDashboardScreen({ onClose }: Props) {
     setNotasNoLocalizado,
     registrarNoLocalizado,
     resetNoLocalizado,
+    condicionResguardo,
+    setCondicionResguardo,
+    destinoResguardo,
+    setDestinoResguardo,
+    notasResguardo,
+    setNotasResguardo,
+    fotoResguardo,
+    setFotoResguardo,
+    registrarAnimalBajoResguardo,
+    resetResguardo,
     estadoRefugio,
     setEstadoRefugio,
     notasRefugio,
     setNotasRefugio,
     fotoRefugio,
     setFotoRefugio,
+    fotoEntornoRefugio,
+    setFotoEntornoRefugio,
     registrarRefugio,
     resetRefugio,
     OPCIONES_REFUGIO,
@@ -100,6 +113,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
   const [showEncontreModal, setShowEncontreModal] = useState(false);
   const [showLlegadaZonaModal, setShowLlegadaZonaModal] = useState(false);
   const [showNoLocalizadoModal, setShowNoLocalizadoModal] = useState(false);
+  const [showResguardoModal, setShowResguardoModal] = useState(false);
   const [showRefugioModal, setShowRefugioModal] = useState(false);
   const [showVeterinariaModal, setShowVeterinariaModal] = useState(false);
   const [sugerenciaAliado, setSugerenciaAliado] = useState<SugerenciaAliado | null>(null);
@@ -136,6 +150,12 @@ export default function StaffDashboardScreen({ onClose }: Props) {
     setReporteSeleccionado(reporte);
     setShowDetalles(false);
     setShowNoLocalizadoModal(true);
+  };
+
+  const abrirResguardo = (reporte: ReporteStaff) => {
+    setReporteSeleccionado(reporte);
+    setShowDetalles(false);
+    setShowResguardoModal(true);
   };
 
   const abrirRefugio = (reporte: ReporteStaff) => {
@@ -236,6 +256,21 @@ export default function StaffDashboardScreen({ onClose }: Props) {
     setReporteSeleccionado(null);
   };
 
+  const confirmarResguardo = async () => {
+    if (!reporteSeleccionado) return;
+    const ok = await registrarAnimalBajoResguardo(reporteSeleccionado.id);
+    if (ok) {
+      setShowResguardoModal(false);
+      setReporteSeleccionado(null);
+    }
+  };
+
+  const cancelarResguardo = () => {
+    setShowResguardoModal(false);
+    resetResguardo();
+    setReporteSeleccionado(null);
+  };
+
   const confirmarRefugio = async () => {
     if (!reporteSeleccionado) return;
     const ok = await registrarRefugio(reporteSeleccionado.id);
@@ -274,6 +309,16 @@ export default function StaffDashboardScreen({ onClose }: Props) {
   const capturarFotoRefugio = async () => {
     const uri = await usarCamara();
     if (uri) setFotoRefugio(uri);
+  };
+
+  const capturarFotoResguardo = async () => {
+    const uri = await usarCamara();
+    if (uri) setFotoResguardo(uri);
+  };
+
+  const capturarFotoEntorno = async () => {
+    const uri = await usarCamara();
+    if (uri) setFotoEntornoRefugio(uri);
   };
 
   const capturarFotoVeterinaria = async () => {
@@ -460,6 +505,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
                   reportes={reportesPendientes}
                   onOpenDetail={abrirDetalle}
                   onQuickLlegadaZona={abrirLlegadaZona}
+                  onQuickResguardo={abrirResguardo}
                   onQuickEncontre={abrirEncontre}
                   onQuickRefugio={abrirRefugio}
                   layout="grid"
@@ -472,6 +518,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
                   reportes={reportesEnAccion}
                   onOpenDetail={abrirDetalle}
                   onQuickLlegadaZona={abrirLlegadaZona}
+                  onQuickResguardo={abrirResguardo}
                   onQuickEncontre={abrirEncontre}
                   onQuickRefugio={abrirRefugio}
                   layout="grid"
@@ -484,6 +531,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
                   reportes={reportesCompletados}
                   onOpenDetail={abrirDetalle}
                   onQuickLlegadaZona={abrirLlegadaZona}
+                  onQuickResguardo={abrirResguardo}
                   onQuickEncontre={abrirEncontre}
                   onQuickRefugio={abrirRefugio}
                   layout="grid"
@@ -512,6 +560,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
               reportes={reportesPendientes}
               onOpenDetail={abrirDetalle}
               onQuickLlegadaZona={abrirLlegadaZona}
+              onQuickResguardo={abrirResguardo}
               onQuickEncontre={abrirEncontre}
               onQuickRefugio={abrirRefugio}
               layout="stack"
@@ -524,6 +573,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
               reportes={reportesEnAccion}
               onOpenDetail={abrirDetalle}
               onQuickLlegadaZona={abrirLlegadaZona}
+              onQuickResguardo={abrirResguardo}
               onQuickEncontre={abrirEncontre}
               onQuickRefugio={abrirRefugio}
               layout="stack"
@@ -536,6 +586,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
               reportes={reportesCompletados}
               onOpenDetail={abrirDetalle}
               onQuickLlegadaZona={abrirLlegadaZona}
+              onQuickResguardo={abrirResguardo}
               onQuickEncontre={abrirEncontre}
               onQuickRefugio={abrirRefugio}
               layout="stack"
@@ -554,6 +605,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
         onLlegadaZona={() => reporteSeleccionado && abrirLlegadaZona(reporteSeleccionado)}
         onEncontre={() => reporteSeleccionado && abrirEncontre(reporteSeleccionado)}
         onNoLocalizado={() => reporteSeleccionado && abrirNoLocalizado(reporteSeleccionado)}
+        onBajoResguardo={() => reporteSeleccionado && abrirResguardo(reporteSeleccionado)}
         onRefugio={() => reporteSeleccionado && abrirRefugio(reporteSeleccionado)}
         onVeterinaria={() => reporteSeleccionado && abrirVeterinaria(reporteSeleccionado)}
         puedeRegistrarHitos={puedeRegistrarHitos}
@@ -605,6 +657,24 @@ export default function StaffDashboardScreen({ onClose }: Props) {
         onConfirm={confirmarNoLocalizado}
       />
 
+      <ResguardoModal
+        visible={showResguardoModal}
+        condicion={condicionResguardo}
+        destino={destinoResguardo}
+        notas={notasResguardo}
+        foto={fotoResguardo}
+        ubicacionLista={!!ubicacionActual}
+        obteniendoGPS={obteniendoGPS}
+        isSubmitting={isSubmitting}
+        onChangeCondicion={setCondicionResguardo}
+        onChangeDestino={setDestinoResguardo}
+        onChangeNotas={setNotasResguardo}
+        onCapturarFoto={capturarFotoResguardo}
+        onCapturarUbicacion={obtenerUbicacionGPS}
+        onCancel={cancelarResguardo}
+        onConfirm={confirmarResguardo}
+      />
+
       <RefugioModal
         visible={showRefugioModal}
         opciones={
@@ -621,6 +691,8 @@ export default function StaffDashboardScreen({ onClose }: Props) {
         onCapturarUbicacion={obtenerUbicacionGPS}
         foto={fotoRefugio}
         onCapturarFoto={capturarFotoRefugio}
+        fotoEntorno={fotoEntornoRefugio}
+        onCapturarFotoEntorno={capturarFotoEntorno}
         isSubmitting={isSubmitting}
         onCancel={cancelarRefugio}
         onConfirm={confirmarRefugio}
@@ -719,6 +791,7 @@ function ReportesGroup({
   reportes,
   onOpenDetail,
   onQuickLlegadaZona,
+  onQuickResguardo,
   onQuickEncontre,
   onQuickRefugio,
   layout,
@@ -731,6 +804,7 @@ function ReportesGroup({
   reportes: ReporteStaff[];
   onOpenDetail: (r: ReporteStaff) => void;
   onQuickLlegadaZona: (r: ReporteStaff) => void;
+  onQuickResguardo: (r: ReporteStaff) => void;
   onQuickEncontre: (r: ReporteStaff) => void;
   onQuickRefugio: (r: ReporteStaff) => void;
   layout: 'stack' | 'grid';
@@ -758,6 +832,7 @@ function ReportesGroup({
               index={index}
               onOpenDetail={onOpenDetail}
               onQuickLlegadaZona={onQuickLlegadaZona}
+              onQuickResguardo={onQuickResguardo}
               onQuickEncontre={onQuickEncontre}
               onQuickRefugio={onQuickRefugio}
               puedeRegistrarHitos={puedeRegistrarHitos}

@@ -564,6 +564,7 @@ TIPOS_HITO_TIMELINE = [
     "llegada_zona_reporte",
     "animal_encontrado",
     "animal_no_localizado",
+    "animal_bajo_resguardo",
     "llegada_veterinaria",
     "llegada_hogar_temporal",
     "hito_llegada_zona_reporte",
@@ -664,6 +665,16 @@ async def get_historial_reporte(reporte_id: str, authorization: str = Header(Non
                 p
                 for p in (
                     f"{tiempo} min de búsqueda" if tiempo else None,
+                    datos_extra.get("comentario"),
+                )
+                if p
+            ]
+        elif hito["tipo_evento"] == "animal_bajo_resguardo":
+            nota_partes = [
+                p
+                for p in (
+                    datos_extra.get("condicion_observada"),
+                    datos_extra.get("destino"),
                     datos_extra.get("comentario"),
                 )
                 if p

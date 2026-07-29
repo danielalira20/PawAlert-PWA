@@ -268,6 +268,7 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
     animal_encontrado: { label: 'Animal encontrado', icon: 'paw-outline' },
     hito_encontre_animal: { label: 'Animal encontrado', icon: 'paw-outline' },
     animal_no_localizado: { label: 'Animal no localizado', icon: 'search-outline' },
+    animal_bajo_resguardo: { label: 'Animal bajo resguardo', icon: 'shield-checkmark-outline' },
     hito_animal_no_localizado: { label: 'Animal no localizado', icon: 'search-outline' },
     llegada_veterinaria: { label: 'Llegada a la veterinaria', icon: 'medkit-outline' },
     hito_llego_veterinaria: { label: 'Llegada a la veterinaria', icon: 'medkit-outline' },

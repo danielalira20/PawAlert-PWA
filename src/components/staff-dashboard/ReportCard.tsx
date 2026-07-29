@@ -19,7 +19,7 @@ import { getAnimales, animalMasGrave, totalAnimales } from '../../types/reporte'
 const TRAY_WIDTH = 92;
 const SWIPE_OPEN_THRESHOLD = -44;
 
-type QuickActionType = 'llegada_zona' | 'encontre' | 'refugio' | 'detalle';
+type QuickActionType = 'llegada_zona' | 'encontre' | 'resguardo' | 'refugio' | 'detalle';
 
 interface QuickActionConfig {
   label: string;
@@ -50,6 +50,14 @@ function getQuickAction(reporte: ReporteStaff, esHogarTemporal = false): QuickAc
         type: 'encontre',
       };
     case 'en_atencion':
+      if (esHogarTemporal && !reporte.animal_bajo_resguardo_registrado) {
+        return {
+          label: 'Bajo resguardo',
+          icon: 'shield-checkmark-outline',
+          color: Brand.secondary,
+          type: 'resguardo',
+        };
+      }
       return {
         label: esHogarTemporal ? 'Llegué a mi hogar' : 'Llegué al refugio',
         icon: 'home-outline',
@@ -68,6 +76,7 @@ interface Props {
   index?: number;
   onOpenDetail: (reporte: ReporteStaff) => void;
   onQuickLlegadaZona: (reporte: ReporteStaff) => void;
+  onQuickResguardo: (reporte: ReporteStaff) => void;
   onQuickEncontre: (reporte: ReporteStaff) => void;
   onQuickRefugio: (reporte: ReporteStaff) => void;
   // Permiso explícito: otros roles pueden consultar la tarjeta sin recibir
@@ -81,6 +90,7 @@ export function ReportCard({
   index = 0,
   onOpenDetail,
   onQuickLlegadaZona,
+  onQuickResguardo,
   onQuickEncontre,
   onQuickRefugio,
   puedeRegistrarHitos = true,
@@ -105,6 +115,7 @@ export function ReportCard({
   const handleQuickAction = () => {
     translateX.value = withSpring(0, { damping: 30, stiffness: 400 });
     if (action.type === 'llegada_zona') onQuickLlegadaZona(reporte);
+    else if (action.type === 'resguardo') onQuickResguardo(reporte);
     else if (action.type === 'encontre') onQuickEncontre(reporte);
     else if (action.type === 'refugio') onQuickRefugio(reporte);
     else onOpenDetail(reporte);

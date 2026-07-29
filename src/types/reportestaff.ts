@@ -24,6 +24,7 @@ export interface ReporteStaff {
   tiene_llegada_veterinaria_registrada: boolean;
   llegada_zona_registrada: boolean;
   animal_no_localizado_registrado: boolean;
+  animal_bajo_resguardo_registrado: boolean;
 }
 
 export interface RespuestaStaffReportes {

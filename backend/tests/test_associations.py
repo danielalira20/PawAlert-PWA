@@ -262,6 +262,15 @@ def test_historial_reporte_incluye_hitos_canonicos_externos(make_query):
                 },
                 "usuarios": {"nombre": "Rafael", "apellido_paterno": "Jude"},
             },
+            {
+                "tipo_evento": "animal_bajo_resguardo",
+                "created_at": "2026-07-21T10:30:00+00:00",
+                "datos_extra": {
+                    "condicion_observada": "Estable",
+                    "destino": "Hogar temporal verificado",
+                },
+                "usuarios": {"nombre": "Rafael", "apellido_paterno": "Jude"},
+            },
         ]),
     }
     _mock_usuario_autenticado(tablas, make_query)
@@ -283,12 +292,14 @@ def test_historial_reporte_incluye_hitos_canonicos_externos(make_query):
         "reporte_creado",
         "llegada_zona_reporte",
         "animal_no_localizado",
+        "animal_bajo_resguardo",
     ]
     assert eventos[2]["usuario_nombre"] == "Rafael Jude"
     assert (
         eventos[2]["nota"]
         == "40 min de búsqueda — Recorrí la calle y pregunté a vecinos."
     )
+    assert eventos[3]["nota"] == "Estable — Hogar temporal verificado"
 
 
 # ─── Regresión: contribuciones.necesidad_id es nullable desde hace varias
