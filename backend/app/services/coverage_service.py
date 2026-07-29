@@ -258,6 +258,18 @@ def obtener_ofrecimientos_reporte(reporte_id: str) -> list[dict]:
     return ofrecimientos
 
 
+def obtener_propuestas_pendientes(usuario_id: str) -> list[dict]:
+    resultado = (
+        supabase_admin.table("propuestas_asignacion")
+        .select("id, reporte_id, enviada_at, vence_at")
+        .eq("usuario_asignado_id", usuario_id)
+        .eq("estado", "activa")
+        .order("enviada_at", desc=True)
+        .execute()
+    )
+    return resultado.data or []
+
+
 def reservar_cobertura(
     *,
     reporte_id: str,

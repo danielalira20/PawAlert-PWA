@@ -153,6 +153,36 @@ def test_asociacion_recibe_datos_del_externo_con_cliente_administrativo():
     supabase_publico.table.assert_not_called()
 
 
+def test_propuestas_pendientes_solo_consulta_las_activas_del_usuario():
+    consulta = MagicMock()
+    consulta.select.return_value = consulta
+    consulta.eq.return_value = consulta
+    consulta.order.return_value = consulta
+    consulta.execute.return_value = SimpleNamespace(
+        data=[
+            {
+                "id": "propuesta-1",
+                "reporte_id": "rep-1",
+                "enviada_at": "2026-07-28T18:00:00+00:00",
+                "vence_at": None,
+            }
+        ]
+    )
+    supabase_admin = MagicMock()
+    supabase_admin.table.return_value = consulta
+
+    with patch.object(coverage_service, "supabase_admin", supabase_admin):
+        propuestas = coverage_service.obtener_propuestas_pendientes("user-1")
+
+    assert propuestas[0]["reporte_id"] == "rep-1"
+    supabase_admin.table.assert_called_once_with("propuestas_asignacion")
+    assert consulta.eq.call_args_list[0].args == (
+        "usuario_asignado_id",
+        "user-1",
+    )
+    assert consulta.eq.call_args_list[1].args == ("estado", "activa")
+
+
 def test_reserva_usa_una_sola_funcion_transaccional():
     ejecucion = MagicMock()
     ejecucion.execute.return_value = SimpleNamespace(data="propuesta-1")

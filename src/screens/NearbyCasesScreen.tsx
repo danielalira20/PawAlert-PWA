@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
@@ -215,6 +215,7 @@ export default function NearbyCasesScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [pendingProposalCount, setPendingProposalCount] = useState(0);
 
   const load = useCallback(
     async (silent = false) => {
@@ -224,11 +225,17 @@ export default function NearbyCasesScreen() {
       }
       if (!silent) setLoading(true);
       try {
-        const response = await axios.get(`${API_URL}/coverage/cercanos`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const headers = { Authorization: `Bearer ${token}` };
+        const [response, assignedResponse] = await Promise.all([
+          axios.get(`${API_URL}/coverage/cercanos`, { headers }),
+          axios
+            .get(`${API_URL}/coverage/propuestas/pendientes`, { headers })
+            .catch(() => null),
+        ]);
         const nextCases = response.data.casos || [];
+        const pendingProposals = assignedResponse?.data?.propuestas || [];
         setCases(nextCases);
+        setPendingProposalCount(pendingProposals.length);
         setSelectedId((current) =>
           current && nextCases.some((caso: CasoCercano) => caso.id === current)
             ? current
@@ -401,6 +408,42 @@ export default function NearbyCasesScreen() {
           </View>
         </View>
 
+        {pendingProposalCount > 0 && (
+          <View style={styles.proposalNotice}>
+            <View style={styles.proposalNoticeIcon}>
+              <Ionicons name="notifications" size={22} color={C.primary} />
+            </View>
+            <View style={styles.proposalNoticeCopy}>
+              <Text style={styles.proposalNoticeTitle}>
+                {pendingProposalCount === 1
+                  ? 'Tienes una propuesta por responder'
+                  : `Tienes ${pendingProposalCount} propuestas por responder`}
+              </Text>
+              <Text style={styles.proposalNoticeText}>
+                El caso dejó esta lista porque la asociación te seleccionó. Ya está disponible
+                en “Mis casos” para que lo aceptes o rechaces.
+              </Text>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Abrir Mis casos"
+              onPress={() =>
+                router.push({
+                  pathname: '/profile',
+                  params: { abrirMisCasos: 'true' },
+                })
+              }
+              style={({ pressed }) => [
+                styles.proposalNoticeButton,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text style={styles.proposalNoticeButtonText}>Ir a Mis casos</Text>
+              <Ionicons name="arrow-forward" size={16} color={C.white} />
+            </Pressable>
+          </View>
+        )}
+
         {loading ? (
           <View style={styles.loadingWrap}>
             <ActivityIndicator size="large" color={C.primary} />
@@ -545,6 +588,41 @@ const styles = StyleSheet.create({
   },
   liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: C.accent },
   liveText: { color: C.text, fontSize: 9, fontWeight: '800' },
+  proposalNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 12,
+    backgroundColor: '#FFF8EC',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#F2CF9E',
+    padding: 15,
+    marginBottom: 18,
+    ...shadow,
+  },
+  proposalNoticeIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 16,
+    backgroundColor: C.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  proposalNoticeCopy: { flex: 1, minWidth: 210 },
+  proposalNoticeTitle: { color: C.text, fontSize: 15, fontWeight: '900' },
+  proposalNoticeText: { color: C.muted, fontSize: 11, lineHeight: 17, marginTop: 3 },
+  proposalNoticeButton: {
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    backgroundColor: C.primary,
+    borderRadius: 14,
+    paddingHorizontal: 15,
+  },
+  proposalNoticeButtonText: { color: C.white, fontSize: 11, fontWeight: '900' },
   explorer: { gap: 18 },
   explorerDesktop: { flexDirection: 'row', alignItems: 'flex-start', gap: 22 },
   mapPanel: {

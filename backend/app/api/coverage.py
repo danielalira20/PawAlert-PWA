@@ -38,6 +38,19 @@ def listar_casos_cercanos(authorization: Optional[str] = Header(None)):
     }
 
 
+@router.get("/propuestas/pendientes")
+def listar_propuestas_pendientes(
+    authorization: Optional[str] = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    _solo_externo(usuario)
+    propuestas = coverage_service.obtener_propuestas_pendientes(usuario["id"])
+    return {
+        "total": len(propuestas),
+        "propuestas": propuestas,
+    }
+
+
 @router.post("/{reporte_id}/ofrecimientos", status_code=201)
 def ofrecer_ayuda(
     reporte_id: str,
