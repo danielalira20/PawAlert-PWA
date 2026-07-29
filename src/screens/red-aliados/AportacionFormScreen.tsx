@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -10,6 +10,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import axios from 'axios';
@@ -255,8 +256,8 @@ const CAMPOS_CONDICIONALES: Record<string, CampoCondicional[]> = {
         { value: 'usado', label: 'Usado en buen estado' },
       ],
     },
-    { key: 'descripcion_contenido', label: 'Descripción del contenido (solo kits)', tipo: 'texto' },
-    { key: 'fecha_caducidad', label: 'Fecha de caducidad del producto, si corresponde', tipo: 'fecha' },
+    { key: 'descripcion_contenido', label: 'Descripción del contenido (solo kits) · Opcional', tipo: 'texto' },
+    { key: 'fecha_caducidad', label: 'Fecha de caducidad del producto', tipo: 'fecha' },
   ],
   servicios_veterinarios: [
     {
@@ -303,6 +304,8 @@ interface Props {
 export default function AportacionFormScreen({ onClose }: Props) {
   const { token } = useAuth();
   const { toast, translateY, showToast } = useToast();
+  const { width: viewportWidth } = useWindowDimensions();
+  const mostrarPresentacionEnColumnas = viewportWidth >= 900;
   
   // ─── AQUÍ ATRAPAMOS EL PARÁMETRO QUE MANDASTE ───
   const { necesidad_id } = useLocalSearchParams<{ necesidad_id?: string }>();
@@ -429,6 +432,7 @@ export default function AportacionFormScreen({ onClose }: Props) {
 
   const [detalleValores, setDetalleValores] = useState<Record<string, string>>({});
   const [detalleFechas, setDetalleFechas] = useState<Record<string, Date | null>>({});
+  const [detalleFechasNoAplica, setDetalleFechasNoAplica] = useState<Record<string, boolean>>({});
   const [detalleMulti, setDetalleMulti] = useState<Record<string, string[]>>({});
   const [tipoApoyo, setTipoApoyo] = useState<string[]>([]);
   const [areaServicio, setAreaServicio] = useState<string | null>(null);
@@ -444,6 +448,7 @@ export default function AportacionFormScreen({ onClose }: Props) {
   const [cantidadValor, setCantidadValor] = useState('');
   const [cantidadUnidad, setCantidadUnidad] = useState('');
   const [unidadEsOtra, setUnidadEsOtra] = useState(false);
+  const [unidadMenuAbierto, setUnidadMenuAbierto] = useState(false);
   const [contenidoPorUnidad, setContenidoPorUnidad] = useState('');
   const [fechaDisponibilidad, setFechaDisponibilidad] = useState<Date | null>(null);
   const [ubicacion, setUbicacion] = useState<{ latitud: number; longitud: number } | null>(null);
@@ -452,6 +457,8 @@ export default function AportacionFormScreen({ onClose }: Props) {
   const [direccionConfirmada, setDireccionConfirmada] = useState('');
   const [isBuscandoDireccion, setIsBuscandoDireccion] = useState(false);
   const [direccionBusquedaMensaje, setDireccionBusquedaMensaje] = useState('');
+  const direccionBusquedaIdRef = useRef(0);
+  const ultimaBusquedaAutomaticaRef = useRef('');
   const [direccionEstado, setDireccionEstado] = useState('');
   const [direccionMunicipio, setDireccionMunicipio] = useState('');
   const [direccionCalle, setDireccionCalle] = useState('');
@@ -483,6 +490,11 @@ export default function AportacionFormScreen({ onClose }: Props) {
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const formScrollRef = useRef<ScrollView>(null);
+
+  useEffect(() => {
+    formScrollRef.current?.scrollTo({ y: 0, animated: false });
+  }, [paso]);
 
   const especiesDisponibles: Especie[] =
     (subcategoria?.especies_aplicables as Especie[] | undefined) || ['perro', 'gato'];
@@ -538,6 +550,7 @@ export default function AportacionFormScreen({ onClose }: Props) {
   };
 
   const buscarDireccion = async (params: Record<string, string>) => {
+    const requestId = ++direccionBusquedaIdRef.current;
     setIsBuscandoDireccion(true);
     setDireccionBusquedaMensaje('');
     setDireccionResultados([]);
@@ -553,29 +566,55 @@ export default function AportacionFormScreen({ onClose }: Props) {
         },
       });
       const resultados = (res.data || []) as AddressSearchResult[];
+      if (requestId !== direccionBusquedaIdRef.current) return;
       setDireccionResultados(resultados);
-      if (!resultados.length) {
+      if (resultados.length && params.q) {
+        const primeraCoincidencia = resultados[0];
+        const latitud = Number(primeraCoincidencia.lat);
+        const longitud = Number(primeraCoincidencia.lon);
+        ultimaBusquedaAutomaticaRef.current = String(params.q).trim();
+        setUbicacion({ latitud, longitud });
+        setDireccionConfirmada(primeraCoincidencia.display_name);
+        completarCamposDireccion(primeraCoincidencia.address);
+      } else if (!resultados.length) {
         setDireccionBusquedaMensaje(
           'No encontramos una coincidencia exacta. Completa los campos y usa “Ubicar estos datos”, o marca el punto directamente en el mapa.'
         );
       }
     } catch {
+      if (requestId !== direccionBusquedaIdRef.current) return;
       setDireccionBusquedaMensaje(
         'El servicio de direcciones no respondió. Puedes usar tu ubicación actual o marcar el punto en el mapa.'
       );
     } finally {
-      setIsBuscandoDireccion(false);
+      if (requestId === direccionBusquedaIdRef.current) {
+        setIsBuscandoDireccion(false);
+      }
     }
   };
 
-  const buscarDireccionLibre = () => {
+  useEffect(() => {
     const query = direccionBusqueda.trim();
-    if (query.length < 4) {
-      setDireccionBusquedaMensaje('Escribe al menos 4 caracteres para buscar.');
+    if (
+      query.length < 4 ||
+      query === direccionConfirmada.trim() ||
+      query === ultimaBusquedaAutomaticaRef.current
+    ) {
+      if (query.length < 4) {
+        direccionBusquedaIdRef.current += 1;
+        ultimaBusquedaAutomaticaRef.current = '';
+        setIsBuscandoDireccion(false);
+        setDireccionResultados([]);
+      }
       return;
     }
-    buscarDireccion({ q: query });
-  };
+
+    const timeoutId = setTimeout(() => {
+      void buscarDireccion({ q: query });
+    }, 650);
+
+    return () => clearTimeout(timeoutId);
+  }, [direccionBusqueda, direccionConfirmada]);
 
   const buscarDireccionEstructurada = () => {
     const street = direccionCalle.trim();
@@ -610,6 +649,7 @@ export default function AportacionFormScreen({ onClose }: Props) {
   };
 
   const seleccionarDireccion = (resultado: AddressSearchResult) => {
+    direccionBusquedaIdRef.current += 1;
     const latitud = Number(resultado.lat);
     const longitud = Number(resultado.lon);
     setUbicacion({ latitud, longitud });
@@ -650,6 +690,7 @@ export default function AportacionFormScreen({ onClose }: Props) {
 
   const setCampoFecha = (key: string, value: Date | null) => {
     setDetalleFechas((prev) => ({ ...prev, [key]: value }));
+    if (value) setDetalleFechasNoAplica((prev) => ({ ...prev, [key]: false }));
   };
 
   const handleGetLocation = async () => {
@@ -733,6 +774,7 @@ export default function AportacionFormScreen({ onClose }: Props) {
       if (c.tipo === 'fecha') {
         const fecha = detalleFechas[c.key];
         if (fecha) detalle[c.key] = fecha.toISOString().slice(0, 10);
+        else if (detalleFechasNoAplica[c.key]) detalle[c.key] = 'no_aplica';
       } else if (c.tipo === 'multi') {
         const valores = detalleMulti[c.key];
         if (valores?.length) detalle[c.key] = valores.join(',');
@@ -866,6 +908,7 @@ export default function AportacionFormScreen({ onClose }: Props) {
     setTamanio(null);
     setDetalleValores({});
     setDetalleFechas({});
+    setDetalleFechasNoAplica({});
     setDetalleMulti({});
     setTipoApoyo([]);
     setAreaServicio(null);
@@ -919,6 +962,7 @@ export default function AportacionFormScreen({ onClose }: Props) {
     setTamanio(null);
     setDetalleValores({});
     setDetalleFechas({});
+    setDetalleFechasNoAplica({});
     setDetalleMulti({});
     setTipoApoyo([]);
     setAreaServicio(null);
@@ -1156,14 +1200,20 @@ export default function AportacionFormScreen({ onClose }: Props) {
     }
     if (campo.tipo === 'fecha') {
       return (
-        <DatePickerChip
-          key={campo.key}
-          label={campo.label}
-          required={campo.required}
-          value={detalleFechas[campo.key] || null}
-          onChange={(d) => setCampoFecha(campo.key, d)}
-          error={errors[campo.key]}
-        />
+        <View key={campo.key} style={styles.dateConditionalField}>
+          <DatePickerChip
+            label={campo.label}
+            required={campo.required}
+            value={detalleFechas[campo.key] || null}
+            onChange={(d) => setCampoFecha(campo.key, d)}
+            allowNotApplicable={campo.key === 'fecha_caducidad'}
+            notApplicable={!!detalleFechasNoAplica[campo.key]}
+            onNotApplicableChange={(value) =>
+              setDetalleFechasNoAplica((prev) => ({ ...prev, [campo.key]: value }))
+            }
+            error={errors[campo.key]}
+          />
+        </View>
       );
     }
     return (
@@ -1174,6 +1224,7 @@ export default function AportacionFormScreen({ onClose }: Props) {
         <TextInputField
           value={detalleValores[campo.key] || ''}
           onChangeText={(v) => setCampoDetalle(campo.key, campo.numerico ? v.replace(/[^0-9.]/g, '') : v)}
+          placeholder={campo.key === 'descripcion_contenido' ? 'Opcional: describe qué incluye el kit' : undefined}
           keyboardType={campo.numerico ? 'numeric' : 'default'}
         />
         {campo.numerico && <Text style={styles.helperText}>Solo números</Text>}
@@ -1242,6 +1293,7 @@ export default function AportacionFormScreen({ onClose }: Props) {
                 setTamanio(null);
                 setDetalleValores({});
                 setDetalleFechas({});
+                setDetalleFechasNoAplica({});
                 setDetalleMulti({});
                 setTipoApoyo([]);
                 setAreaServicio(null);
@@ -1366,74 +1418,139 @@ export default function AportacionFormScreen({ onClose }: Props) {
 
     return (
       <>
-        <FormSection title={esLote ? 'Cantidad total del lote' : modo === 'reactiva' ? 'Cantidad' : 'Capacidad declarada'}>
-          {vieneDeNecesidad ? (
-            <View style={styles.stepperRow}>
-              <TouchableOpacity onPress={() => stepCantidadValor(-1)} style={styles.stepperBtn}>
-                <Ionicons name="remove" size={18} color={COLORS.bgWhite} />
-              </TouchableOpacity>
-              <Text style={styles.stepperValue}>{cantidadValor || '0'}</Text>
-              <TouchableOpacity onPress={() => stepCantidadValor(1)} style={styles.stepperBtn}>
-                <Ionicons name="add" size={18} color={COLORS.bgWhite} />
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <TextInputField
-              value={cantidadValor}
-              onChangeText={(v) => setCantidadValor(v.replace(/[^0-9.]/g, ''))}
-              placeholder="10"
-              keyboardType="numeric"
-            />
-          )}
-          {errors.cantidadValor && <ErrorText text={errors.cantidadValor} />}
-          <Text style={[styles.sectionSubtitle, { marginTop: 12 }]}>Unidad</Text>
-          {vieneDeNecesidad ? (
-            <Text style={styles.necesidadNombre}>{cantidadUnidad}</Text>
-          ) : (
-            <>
-              <SingleOptions
-                options={[
-                  ...(UNIDADES_POR_CATEGORIA[categoria?.clave || ''] || []),
-                  { value: UNIDAD_OTRA, label: 'Otra' },
-                ]}
-                selected={unidadEsOtra ? UNIDAD_OTRA : cantidadUnidad}
-                onSelect={(v) => {
-                  if (v === UNIDAD_OTRA) {
-                    setUnidadEsOtra(true);
-                    setCantidadUnidad('');
-                    setContenidoPorUnidad('');
-                  } else {
-                    setUnidadEsOtra(false);
-                    setCantidadUnidad(v);
-                    if (!UNIDADES_CONTENEDOR.has(v)) setContenidoPorUnidad('');
-                  }
-                }}
+        <FormSection
+          title={esLote ? 'Cantidad y presentación del lote' : modo === 'reactiva' ? 'Cantidad' : 'Capacidad declarada'}
+          subtitle={esLote ? 'Indica cuánto tienes y cómo viene empacado.' : undefined}
+        >
+          <View style={esLote && mostrarPresentacionEnColumnas ? styles.presentationColumns : undefined}>
+            <View style={esLote && mostrarPresentacionEnColumnas ? styles.presentationColumn : undefined}>
+              {esLote && <Text style={styles.presentationColumnTitle}>Cantidad total</Text>}
+              <TextInputField
+                value={cantidadValor}
+                onChangeText={(v) => setCantidadValor(v.replace(/[^0-9.]/g, ''))}
+                placeholder="Ej. 10"
+                placeholderTextColor="rgba(140, 122, 107, 0.55)"
+                keyboardType="numeric"
               />
+              {errors.cantidadValor && <ErrorText text={errors.cantidadValor} />}
+              <Text style={[styles.sectionSubtitle, { marginTop: 12 }]}>Unidad</Text>
+              <View style={styles.unitSelectContainer}>
+                <TouchableOpacity
+                  style={[
+                    styles.unitSelectTrigger,
+                    unidadMenuAbierto && styles.unitSelectTriggerOpen,
+                    errors.cantidadUnidad && styles.unitSelectTriggerError,
+                  ]}
+                  onPress={() => setUnidadMenuAbierto((abierto) => !abierto)}
+                  activeOpacity={0.8}
+                >
+                  <Text
+                    style={[
+                      styles.unitSelectValue,
+                      !cantidadUnidad && !unidadEsOtra && styles.unitSelectPlaceholder,
+                    ]}
+                  >
+                    {unidadEsOtra
+                      ? 'Otra'
+                      : (UNIDADES_POR_CATEGORIA[categoria?.clave || ''] || []).find(
+                          (unidad) => unidad.value === cantidadUnidad,
+                        )?.label || 'Selecciona una unidad'}
+                  </Text>
+                  <Ionicons
+                    name={unidadMenuAbierto ? 'chevron-up' : 'chevron-down'}
+                    size={18}
+                    color={COLORS.textLight}
+                  />
+                </TouchableOpacity>
+
+                {unidadMenuAbierto && (
+                  <View style={styles.unitSelectMenu}>
+                    {[
+                      ...(UNIDADES_POR_CATEGORIA[categoria?.clave || ''] || []),
+                      { value: UNIDAD_OTRA, label: 'Otra' },
+                    ].map((unidad, index, opciones) => {
+                      const seleccionada = unidadEsOtra
+                        ? unidad.value === UNIDAD_OTRA
+                        : unidad.value === cantidadUnidad;
+                      return (
+                        <TouchableOpacity
+                          key={unidad.value}
+                          style={[
+                            styles.unitSelectOption,
+                            index < opciones.length - 1 && styles.unitSelectOptionDivider,
+                            seleccionada && styles.unitSelectOptionSelected,
+                          ]}
+                          onPress={() => {
+                            if (unidad.value === UNIDAD_OTRA) {
+                              setUnidadEsOtra(true);
+                              setCantidadUnidad('');
+                              setContenidoPorUnidad('');
+                            } else {
+                              setUnidadEsOtra(false);
+                              setCantidadUnidad(unidad.value);
+                              if (!UNIDADES_CONTENEDOR.has(unidad.value)) {
+                                setContenidoPorUnidad('');
+                              }
+                            }
+                            setUnidadMenuAbierto(false);
+                          }}
+                        >
+                          <Text
+                            style={[
+                              styles.unitSelectOptionText,
+                              seleccionada && styles.unitSelectOptionTextSelected,
+                            ]}
+                          >
+                            {unidad.label}
+                          </Text>
+                          {seleccionada && (
+                            <Ionicons name="checkmark" size={18} color={COLORS.primary} />
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )}
+              </View>
               {unidadEsOtra && (
                 <View style={{ marginTop: 10 }}>
                   <TextInputField value={cantidadUnidad} onChangeText={setCantidadUnidad} placeholder="Escribe la unidad" />
                 </View>
               )}
-            </>
-          )}
-          {errors.cantidadUnidad && <ErrorText text={errors.cantidadUnidad} />}
+              {errors.cantidadUnidad && <ErrorText text={errors.cantidadUnidad} />}
 
-          {!esLote && UNIDADES_CONTENEDOR.has(cantidadUnidad) && (
-            <View style={{ marginTop: 12 }}>
-              <Text style={styles.sectionSubtitle}>¿De cuánto es cada {cantidadUnidad === 'kits' ? 'kit' : cantidadUnidad.slice(0, -1)}?</Text>
-              <TextInputField value={contenidoPorUnidad} onChangeText={setContenidoPorUnidad} placeholder="Ej. 25kg, 12 piezas, 5 litros" />
-              {errors.contenidoPorUnidad && <ErrorText text={errors.contenidoPorUnidad} />}
+              {!esLote && UNIDADES_CONTENEDOR.has(cantidadUnidad) && (
+                <View style={{ marginTop: 12 }}>
+                  <Text style={styles.sectionSubtitle}>¿De cuánto es cada {cantidadUnidad === 'kits' ? 'kit' : cantidadUnidad.slice(0, -1)}?</Text>
+                  <TextInputField value={contenidoPorUnidad} onChangeText={setContenidoPorUnidad} placeholder="Ej. 25kg, 12 piezas, 5 litros" />
+                  {errors.contenidoPorUnidad && <ErrorText text={errors.contenidoPorUnidad} />}
+                </View>
+              )}
             </View>
-          )}
+            {esLote && (
+              <View
+                style={[
+                  styles.packageQuestion,
+                  mostrarPresentacionEnColumnas && styles.packageQuestionColumn,
+                ]}
+              >
+                <Text style={styles.packageQuestionTitle}>¿Cómo viene empacado?</Text>
+                <Text style={styles.packageQuestionHelper}>
+                  Por ejemplo: “Costales de 25 kg” o “Cajas de 12 piezas”.
+                </Text>
+                <TextInputField
+                  value={tipoEmpaque}
+                  onChangeText={setTipoEmpaque}
+                  placeholder="Describe el empaque"
+                />
+                {errors.tipoEmpaque && <ErrorText text={errors.tipoEmpaque} />}
+              </View>
+            )}
+          </View>
         </FormSection>
 
         {esLote && (
           <>
-            <FormSection title="¿Cómo viene empacado?" subtitle="Por ejemplo: 'Costales de 25kg' o 'Cajas de 12 piezas'.">
-              <TextInputField value={tipoEmpaque} onChangeText={setTipoEmpaque} placeholder="Describe el empaque" />
-              {errors.tipoEmpaque && <ErrorText text={errors.tipoEmpaque} />}
-            </FormSection>
-
             <FormSection title="¿Se puede repartir entre varias asociaciones?">
               <SingleOptions options={DIVISIBLE_OPCIONES} selected={divisible || ''} onSelect={setDivisible} error={errors.divisible} />
             </FormSection>
@@ -1498,28 +1615,20 @@ export default function AportacionFormScreen({ onClose }: Props) {
               value={direccionBusqueda}
               onChangeText={(value) => {
                 setDireccionBusqueda(value);
+                if (value.trim() !== ultimaBusquedaAutomaticaRef.current) {
+                  ultimaBusquedaAutomaticaRef.current = '';
+                }
                 if (value !== direccionConfirmada) setDireccionConfirmada('');
                 setDireccionResultados([]);
                 setDireccionBusquedaMensaje('');
               }}
               placeholder="Buscar dirección, ej. Avenida Reforma, Puebla"
             />
-            <TouchableOpacity
-              style={[styles.addressSearchButton, isBuscandoDireccion && { opacity: 0.7 }]}
-              onPress={buscarDireccionLibre}
-              disabled={isBuscandoDireccion}
-            >
-              {isBuscandoDireccion ? (
-                <ActivityIndicator size="small" color={COLORS.bgWhite} />
-              ) : (
-                <>
-                  <Ionicons name="search" size={17} color={COLORS.bgWhite} />
-                  <Text style={styles.addressSearchButtonText}>Buscar dirección</Text>
-                </>
-              )}
-            </TouchableOpacity>
             {isBuscandoDireccion && (
-              <Text style={[styles.sectionSubtitle, { marginTop: 6 }]}>Buscando dirección…</Text>
+              <View style={styles.addressSearching}>
+                <ActivityIndicator size="small" color={COLORS.bgTeal} />
+                <Text style={styles.addressSearchingText}>Buscando dirección…</Text>
+              </View>
             )}
             {!!direccionBusquedaMensaje && (
               <Text style={styles.addressSearchMessage}>{direccionBusquedaMensaje}</Text>
@@ -1832,7 +1941,7 @@ export default function AportacionFormScreen({ onClose }: Props) {
             )
           ) : (
             <>
-              <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+              <ScrollView ref={formScrollRef} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
                 {renderPaso()}
               </ScrollView>
               <View style={styles.fixedFooter}>
@@ -2008,6 +2117,7 @@ function TextInputField(props: {
   value: string;
   onChangeText: (v: string) => void;
   placeholder?: string;
+  placeholderTextColor?: string;
   keyboardType?: 'default' | 'numeric' | 'phone-pad';
 }) {
   return (
@@ -2016,7 +2126,7 @@ function TextInputField(props: {
       value={props.value}
       onChangeText={props.onChangeText}
       placeholder={props.placeholder}
-      placeholderTextColor={COLORS.textLight}
+      placeholderTextColor={props.placeholderTextColor || COLORS.textLight}
       keyboardType={props.keyboardType}
     />
   );
@@ -2218,20 +2328,13 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   confirmedAddressText: { flex: 1, color: COLORS.textDark, fontSize: 12, lineHeight: 18 },
-  addressSearchButton: {
-    alignSelf: 'flex-start',
-    minHeight: 42,
+  addressSearching: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 7,
-    marginTop: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: COLORS.bgTeal,
+    gap: 8,
+    marginTop: 10,
   },
-  addressSearchButtonText: { color: COLORS.bgWhite, fontSize: 13, fontWeight: '700' },
+  addressSearchingText: { color: COLORS.textLight, fontSize: 12, fontWeight: '600' },
   addressSearchMessage: { color: COLORS.textLight, fontSize: 12, lineHeight: 18, marginTop: 8 },
   structuredAddress: { marginTop: 16, gap: 10 },
   addressFieldRow: { flexDirection: 'row', gap: 10 },
@@ -2250,4 +2353,110 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.bgWhite,
   },
   structuredSearchButtonText: { color: COLORS.bgTeal, fontSize: 12, fontWeight: '700' },
+  dateConditionalField: { marginTop: 14 },
+  presentationColumns: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 20,
+  },
+  presentationColumn: {
+    flex: 1,
+    minWidth: 0,
+  },
+  presentationColumnTitle: {
+    color: COLORS.textDark,
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 10,
+  },
+  unitSelectContainer: {
+    position: 'relative',
+    zIndex: 5,
+  },
+  unitSelectTrigger: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 14,
+    backgroundColor: COLORS.grayLight,
+  },
+  unitSelectTriggerOpen: {
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.bgWhite,
+  },
+  unitSelectTriggerError: {
+    borderColor: COLORS.danger,
+  },
+  unitSelectValue: {
+    flex: 1,
+    color: COLORS.textDark,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  unitSelectPlaceholder: {
+    color: 'rgba(140, 122, 107, 0.62)',
+    fontWeight: '500',
+  },
+  unitSelectMenu: {
+    marginTop: 7,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 14,
+    backgroundColor: COLORS.bgWhite,
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 7 },
+    elevation: 8,
+  },
+  unitSelectOption: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 15,
+    paddingVertical: 11,
+    backgroundColor: COLORS.bgWhite,
+  },
+  unitSelectOptionDivider: {
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  unitSelectOptionSelected: {
+    backgroundColor: COLORS.cardBg,
+  },
+  unitSelectOptionText: {
+    color: COLORS.textDark,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  unitSelectOptionTextSelected: {
+    color: COLORS.primary,
+    fontWeight: '800',
+  },
+  packageQuestion: {
+    marginTop: 22,
+    paddingTop: 18,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
+  packageQuestionColumn: {
+    flex: 1,
+    minWidth: 0,
+    marginTop: 0,
+    paddingTop: 0,
+    paddingLeft: 20,
+    borderTopWidth: 0,
+    borderLeftWidth: 1,
+    borderLeftColor: COLORS.border,
+  },
+  packageQuestionTitle: { color: COLORS.textDark, fontSize: 15, fontWeight: '700', marginBottom: 5 },
+  packageQuestionHelper: { color: COLORS.textLight, fontSize: 12, lineHeight: 18, marginBottom: 12 },
 });

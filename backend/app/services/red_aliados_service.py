@@ -199,25 +199,41 @@ async def crear_lote(usuario_id: str, body: LoteRequest) -> dict:
 
     _validar_subcategoria(body.subcategoria_id, body.categoria.value)
 
-    resultado = supabase.table("lotes").insert({
-        "perfil_apoyo_id": perfil["id"],
-        "categoria": body.categoria.value,
-        "subcategoria_id": body.subcategoria_id,
-        "especies_aplica": [e.value for e in body.especies_aplica],
-        "cantidad_valor": body.cantidad_valor,
-        "cantidad_unidad": body.cantidad_unidad,
-        "tipo_empaque": body.tipo_empaque,
-        "divisible": body.divisible.value,
-        "max_asociaciones": body.max_asociaciones,
-        "forma_entrega": body.forma_entrega.value,
-        "descripcion": body.descripcion,
-        "fecha_disponibilidad": body.fecha_disponibilidad,
-        "vigencia": body.vigencia,
-        "lugar_entrega": body.lugar_entrega,
-        "direccion_entrega": body.direccion_entrega,
-        "direccion_detalle": body.direccion_detalle,
-        "detalle": body.detalle,
-    }).execute()
+    try:
+        resultado = supabase.table("lotes").insert({
+            "perfil_apoyo_id": perfil["id"],
+            "categoria": body.categoria.value,
+            "subcategoria_id": body.subcategoria_id,
+            "especies_aplica": [e.value for e in body.especies_aplica],
+            "cantidad_valor": body.cantidad_valor,
+            "cantidad_unidad": body.cantidad_unidad,
+            "tipo_empaque": body.tipo_empaque,
+            "divisible": body.divisible.value,
+            "max_asociaciones": body.max_asociaciones,
+            "forma_entrega": body.forma_entrega.value,
+            "descripcion": body.descripcion,
+            "fecha_disponibilidad": body.fecha_disponibilidad,
+            "vigencia": body.vigencia,
+            "lugar_entrega": body.lugar_entrega,
+            "direccion_entrega": body.direccion_entrega,
+            "direccion_detalle": body.direccion_detalle,
+            "detalle": body.detalle,
+        }).execute()
+    except Exception as exc:
+        # PostgREST devuelve PGRST204 cuando el código ya usa las columnas
+        # nuevas pero la migración aún no se aplicó en la base conectada.
+        # Convertirlo en una respuesta legible evita el 500 genérico y deja
+        # claro qué acción de infraestructura falta.
+        if "PGRST204" in str(exc) or "schema cache" in str(exc):
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "La base de datos no está actualizada para registrar lotes. "
+                    "Aplica backend/migrations/0023_datos_completos_lotes.sql "
+                    "en Supabase y vuelve a intentarlo."
+                ),
+            ) from exc
+        raise
 
     fila = resultado.data[0]
     return {

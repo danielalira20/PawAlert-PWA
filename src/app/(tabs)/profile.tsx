@@ -14,6 +14,7 @@ import CapacidadesFormScreen from '../../screens/CapacidadesFormScreen';
 import ExternalVolunteerFormScreen from '../../screens/ExternalVolunteerFormScreen';
 import MisVerificacionesScreen from '../../screens/MisVerificacionesScreen';
 import DonanteComunitarioFormScreen from '../../screens/red-aliados/DonanteComunitarioFormScreen';
+import AportacionFormScreen from '../../screens/red-aliados/AportacionFormScreen';
 import AliadoDashboardScreen from '../../screens/AliadoDashboardScreen';
 import { AppModal } from '@/components/AppModal';
 import { LoggedOutProfile } from '../../components/profile/LoggedOutProfile';
@@ -26,6 +27,7 @@ export default function ProfileScreen() {
   const { user, isLoggedIn, logout, refreshUser } = useAuth();
   const params = useLocalSearchParams<{
     abrirFormularioAliado?: string;
+    abrirPanelAliado?: string;
     abrirMisCasos?: string;
   }>();
 
@@ -45,6 +47,7 @@ export default function ProfileScreen() {
   const [isVerificacionesVisible, setIsVerificacionesVisible] = useState(false);
   const [isAliadoFormVisible, setIsAliadoFormVisible] = useState(false);
   const [isAliadoDashboardVisible, setIsAliadoDashboardVisible] = useState(false);
+  const [isAportacionVisible, setIsAportacionVisible] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(24)).current;
@@ -80,6 +83,13 @@ export default function ProfileScreen() {
   }, [isLoggedIn, params.abrirFormularioAliado]);
 
   useEffect(() => {
+    if (isLoggedIn && params.abrirPanelAliado === 'true') {
+      setIsAliadoDashboardVisible(true);
+      router.setParams({ abrirPanelAliado: undefined });
+    }
+  }, [isLoggedIn, params.abrirPanelAliado]);
+
+  useEffect(() => {
     if (isLoggedIn && params.abrirMisCasos === 'true') {
       setIsStaffVisible(true);
       router.setParams({ abrirMisCasos: undefined });
@@ -98,6 +108,8 @@ export default function ProfileScreen() {
       setIsCapacidadesVisible(false);
       setIsExternalRetryVisible(false);
       setIsVerificacionesVisible(false);
+      setIsAliadoDashboardVisible(false);
+      setIsAportacionVisible(false);
     }
   }, [isLoggedIn]);
 
@@ -220,9 +232,34 @@ export default function ProfileScreen() {
         maxWidth={1000}
       >
         {isAliadoDashboardVisible && (
-          <AliadoDashboardScreen onClose={() => setIsAliadoDashboardVisible(false)} />
+          <AliadoDashboardScreen
+            onClose={() => setIsAliadoDashboardVisible(false)}
+            onOpenContribution={() => {
+              setIsAliadoDashboardVisible(false);
+              setIsAportacionVisible(true);
+            }}
+          />
         )}
       </AppModal>
+
+      <Modal
+        visible={isAportacionVisible}
+        animationType="fade"
+        transparent
+        onRequestClose={() => {
+          setIsAportacionVisible(false);
+          setIsAliadoDashboardVisible(true);
+        }}
+      >
+        {isAportacionVisible && (
+          <AportacionFormScreen
+            onClose={() => {
+              setIsAportacionVisible(false);
+              setIsAliadoDashboardVisible(true);
+            }}
+          />
+        )}
+      </Modal>
     </>
   );
 }

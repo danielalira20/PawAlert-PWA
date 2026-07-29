@@ -27,13 +27,26 @@ interface Props {
   // Por default no deja elegir fechas pasadas (hoy es el mínimo) — se
   // puede desactivar pasando null si algún caso sí lo necesita.
   minDate?: Date | null;
+  allowNotApplicable?: boolean;
+  notApplicable?: boolean;
+  onNotApplicableChange?: (value: boolean) => void;
 }
 
 // Calendario-popover extraído del patrón ya usado en MisReportesScreen.tsx
 // (mismo grid mensual, misma navegación) — se quita la lógica de "días con
 // reportes" (puntos de color) porque aquí no hay eventos que marcar, solo
 // se elige una fecha.
-export function DatePickerChip({ label, value, onChange, required, error, minDate = new Date() }: Props) {
+export function DatePickerChip({
+  label,
+  value,
+  onChange,
+  required,
+  error,
+  minDate = new Date(),
+  allowNotApplicable = false,
+  notApplicable = false,
+  onNotApplicableChange,
+}: Props) {
   const [open, setOpen] = useState(false);
   const [mes, setMes] = useState(value || new Date());
 
@@ -52,15 +65,39 @@ export function DatePickerChip({ label, value, onChange, required, error, minDat
         {label} {required && <Text style={styles.required}>*</Text>}
       </Text>
 
-      <TouchableOpacity
-        onPress={() => setOpen((v) => !v)}
-        style={[styles.trigger, error && styles.triggerError]}
-      >
-        <Ionicons name="calendar-outline" size={16} color={value ? '#fff' : Brand.textMuted} />
-        <Text style={[styles.triggerText, value && styles.triggerTextActive]}>
-          {value ? format(value, "d 'de' MMMM, yyyy", { locale: es }) : 'Elegir fecha'}
-        </Text>
-      </TouchableOpacity>
+      <View style={styles.actionsRow}>
+        <TouchableOpacity
+          onPress={() => {
+            onNotApplicableChange?.(false);
+            setOpen((v) => !v);
+          }}
+          style={[styles.trigger, value && styles.triggerSelected, error && styles.triggerError]}
+        >
+          <Ionicons name="calendar-outline" size={16} color={value ? '#fff' : Brand.textMuted} />
+          <Text style={[styles.triggerText, value && styles.triggerTextActive]}>
+            {value ? format(value, "d 'de' MMMM, yyyy", { locale: es }) : 'Elegir fecha'}
+          </Text>
+        </TouchableOpacity>
+        {allowNotApplicable && (
+          <TouchableOpacity
+            onPress={() => {
+              onChange(null);
+              onNotApplicableChange?.(!notApplicable);
+              setOpen(false);
+            }}
+            style={[styles.notApplicableButton, notApplicable && styles.notApplicableButtonActive]}
+          >
+            <Ionicons
+              name={notApplicable ? 'checkmark-circle' : 'remove-circle-outline'}
+              size={16}
+              color={notApplicable ? '#fff' : Brand.textMuted}
+            />
+            <Text style={[styles.notApplicableText, notApplicable && styles.notApplicableTextActive]}>
+              No aplica
+            </Text>
+          </TouchableOpacity>
+        )}
+      </View>
       {error && <Text style={styles.errorText}>{error}</Text>}
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
@@ -162,9 +199,26 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E4D3B8',
   },
+  triggerSelected: { backgroundColor: Brand.secondary, borderColor: Brand.secondary },
   triggerError: { borderColor: Brand.danger },
   triggerText: { fontSize: 13, fontWeight: '600', color: Brand.textMuted },
   triggerTextActive: { color: '#fff' },
+  actionsRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 10 },
+  notApplicableButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 100,
+    backgroundColor: '#F4F4F5',
+    borderWidth: 1,
+    borderColor: '#E2E3E6',
+  },
+  notApplicableButtonActive: { backgroundColor: Brand.primary, borderColor: Brand.primary },
+  notApplicableText: { fontSize: 13, fontWeight: '600', color: Brand.textMuted },
+  notApplicableTextActive: { color: '#fff' },
   errorText: { color: Brand.danger, fontSize: 12, marginTop: 6 },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
   popover: {
