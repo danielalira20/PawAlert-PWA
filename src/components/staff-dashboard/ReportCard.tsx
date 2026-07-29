@@ -32,7 +32,7 @@ interface QuickActionConfig {
 // detalle (no lo salta) — solo evita el paso extra de tocar la card y luego
 // buscar el botón. Se basa en tus mismos estados reales: `en_camino` ->
 // "Encontré al animal", `en_atencion` -> "Llegué al refugio".
-function getQuickAction(estadoReporte: string): QuickActionConfig {
+function getQuickAction(estadoReporte: string, esHogarTemporal = false): QuickActionConfig {
   switch (estadoReporte) {
     case 'en_camino':
       return {
@@ -43,7 +43,7 @@ function getQuickAction(estadoReporte: string): QuickActionConfig {
       };
     case 'en_atencion':
       return {
-        label: 'Llegué al refugio',
+        label: esHogarTemporal ? 'Llegué a mi hogar' : 'Llegué al refugio',
         icon: 'home-outline',
         color: '#8E44AD',
         type: 'refugio',
@@ -68,6 +68,7 @@ interface Props {
   // equivalente para casa hogar). Default true para no romper el
   // comportamiento existente donde no se pase este prop explícitamente.
   puedeRegistrarHitos?: boolean;
+  esHogarTemporal?: boolean;
 }
 
 export function ReportCard({
@@ -77,9 +78,13 @@ export function ReportCard({
   onQuickEncontre,
   onQuickRefugio,
   puedeRegistrarHitos = true,
+  esHogarTemporal = false,
 }: Props) {
   const translateX = useSharedValue(0);
-  const action = useMemo(() => getQuickAction(reporte.estado_reporte), [reporte.estado_reporte]);
+  const action = useMemo(
+    () => getQuickAction(reporte.estado_reporte, esHogarTemporal),
+    [esHogarTemporal, reporte.estado_reporte],
+  );
   const animales = useMemo(() => getAnimales(reporte), [reporte]);
   const grave = animalMasGrave(animales);
   const totalCaso = totalAnimales(animales);

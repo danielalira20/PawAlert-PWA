@@ -58,6 +58,11 @@ def obtener_candidatos(reporte_id: str) -> dict:
 
     candidatos = []
     for candidato in crudos:
+        # El ranking pertenece exclusivamente al equipo interno de la
+        # asociación. Los externos solo aparecen si se ofrecieron y se
+        # consultan por la vía independiente de coverage_service.
+        if candidato.get("rol") != "voluntario_interno":
+            continue
         if candidato["usuario_id"] in rechazaron:
             continue
 
@@ -117,11 +122,7 @@ def obtener_candidatos(reporte_id: str) -> dict:
             "usuario_id": candidato["usuario_id"],
             "nombre": candidato["nombre"],
             "tipo": candidato["rol"],
-            "etiqueta": (
-                "Voluntario externo verificado"
-                if candidato["rol"] == "voluntario_externo"
-                else None
-            ),
+            "etiqueta": None,
             "distancia_km": distancia,
             "radio_max_km": int(radio),
             "carga_actual": carga_actual,

@@ -4,10 +4,12 @@ from pydantic import ValidationError
 from app.models.report import ReportResponse, AnimalInput, ReportListItem, HitoRequest, RechazarReporteRequest
 from app.models.red_aliados import AceptarSugerenciaRequest, AceptarSugerenciaVeterinariaResponse
 from app.services.report_service import crear_reporte, obtener_reportes, cambiar_estado_reporte, obtener_reportes_usuario
+from app.services import coverage_service
 from app.utils.validators import validar_telefono, validar_email
 from app.utils.animal_shaping import shape_animal_embed, condicion_mas_grave
 from typing import Optional, List
 from app.db.supabase import supabase
+from datetime import datetime, timedelta, timezone
 import json
 
 
@@ -219,19 +221,18 @@ async def asignar_staff(reporte_id: str, body: dict, authorization: str = Header
     if len(casos) >= 2:
         raise HTTPException(status_code=400, detail="Este miembro del staff tiene 2 o más casos activos")
 
-    # Asignar staff y cambiar estado a en_camino
-    estado_en_camino_id = supabase.table("reporte_estados").select(
-        "id"
-    ).eq("clave", "en_camino").execute()
-
-    if not estado_en_camino_id.data:
-        raise HTTPException(status_code=500, detail="Error al resolver estado en_camino")
-
-    supabase.table("reportes").update({
-        "staff_asignado_id": staff_id,
-        "estado_reporte": "en_camino",
-        "estado_id": estado_en_camino_id.data[0]["id"],
-    }).eq("id", reporte_id).execute()
+    # La misma reserva transaccional protege staff, voluntariado interno,
+    # externos y escalamiento. El staff confirma en el mismo flujo porque
+    # esta pantalla ya valida su disponibilidad antes de seleccionarlo.
+    coverage_service.reservar_cobertura(
+        reporte_id=reporte_id,
+        usuario_asignado_id=staff_id,
+        voluntario_id=None,
+        asociacion_id=asociacion_id,
+        actor_id=usuario["id"],
+        origen="staff",
+    )
+    coverage_service.responder_propuesta(staff_id, reporte_id, True)
 
     # Actualizar estado de asignación
     estado_aceptada_id = supabase.table("asignacion_estados").select(
@@ -244,16 +245,7 @@ async def asignar_staff(reporte_id: str, body: dict, authorization: str = Header
             "estado": "aceptada",
         }).eq("reporte_id", reporte_id).eq("asociacion_id", asociacion_id).execute()
 
-    # Registrar en historial
-    from app.services.report_service import registrar_historial
     staff_nombre = f"{staff.data[0]['nombre']} {staff.data[0]['apellido_paterno']}"
-    registrar_historial(
-        reporte_id=reporte_id,
-        usuario_id=usuario["id"],
-        tipo_evento="staff_asignado",
-        descripcion=f"Reporte asignado a {staff_nombre}",
-        datos_extra={"staff_id": staff_id, "staff_nombre": staff_nombre}
-    )
 
     return {
         "mensaje": f"Reporte asignado a {staff_nombre}. Estado actualizado a en_camino.",
@@ -305,7 +297,7 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
         raise HTTPException(status_code=401, detail="Token inválido o expirado")
 
     usuario = supabase.table("usuarios").select(
-        "id, asociacion_id"
+        "id, asociacion_id, roles(nombre)"
     ).eq("auth_user_id", auth_response.user.id).execute()
 
     if not usuario.data:
@@ -315,7 +307,8 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
 
     # Verificar que el reporte existe y está asignado a este staff
     reporte = supabase.table("reportes").select(
-        "id, estado_reporte, staff_asignado_id, asociacion_asignada_id"
+        "id, estado_reporte, estado_cobertura, staff_asignado_id, "
+        "asociacion_asignada_id"
     ).eq("id", reporte_id).execute()
 
     if not reporte.data:
@@ -327,7 +320,12 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
         raise HTTPException(status_code=403, detail="No tienes permiso para registrar hitos en este reporte")
 
     # Validar tipo de hito
-    if body.tipo_hito not in ["encontre_animal", "llegue_refugio", "llego_veterinaria"]:
+    if body.tipo_hito not in [
+        "encontre_animal",
+        "llegue_refugio",
+        "llegada_hogar_temporal",
+        "llego_veterinaria",
+    ]:
         raise HTTPException(status_code=422, detail="Tipo de hito inválido")
 
     # Validar flujo de estados
@@ -336,6 +334,9 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
 
     if body.tipo_hito == "llegue_refugio" and reporte["estado_reporte"] != "en_atencion":
         raise HTTPException(status_code=400, detail="El reporte debe estar en estado en_atencion para registrar este hito")
+
+    if body.tipo_hito == "llegada_hogar_temporal" and reporte["estado_reporte"] != "en_atencion":
+        raise HTTPException(status_code=400, detail="El reporte debe estar en atención para iniciar la custodia")
 
     if body.tipo_hito == "llego_veterinaria" and reporte["estado_reporte"] != "en_atencion":
         raise HTTPException(status_code=400, detail="El reporte debe estar en estado en_atencion para registrar este hito")
@@ -373,6 +374,77 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
             raise HTTPException(
                 status_code=400,
                 detail=f"Tu ubicación no coincide con el refugio. Estás a {round(distancia_metros)} metros. Debes estar dentro de 200 metros."
+            )
+
+    rol_usuario = (usuario.get("roles") or {}).get("nombre")
+    if body.tipo_hito == "encontre_animal" and rol_usuario == "voluntario_externo":
+        if not body.foto_url:
+            raise HTTPException(
+                status_code=422,
+                detail="La fotografía desde la zona es obligatoria",
+            )
+        if body.latitud is None or body.longitud is None:
+            raise HTTPException(
+                status_code=422,
+                detail="La ubicación GPS es obligatoria para registrar que encontraste al animal",
+            )
+
+    if body.tipo_hito == "llegada_hogar_temporal":
+        if rol_usuario != "voluntario_externo":
+            raise HTTPException(
+                status_code=403,
+                detail="Este hito corresponde a un hogar temporal externo",
+            )
+        if body.latitud is None or body.longitud is None or not body.foto_url:
+            raise HTTPException(
+                status_code=422,
+                detail="La foto del animal y la ubicación GPS son obligatorias",
+            )
+
+        voluntario = (
+            supabase.table("voluntarios")
+            .select("id")
+            .eq("usuario_id", usuario["id"])
+            .limit(1)
+            .execute()
+        )
+        if not voluntario.data:
+            raise HTTPException(status_code=404, detail="Perfil externo no encontrado")
+        hogar = (
+            supabase.table("perfil_casa_temporal")
+            .select("latitud, longitud")
+            .eq("voluntario_id", voluntario.data[0]["id"])
+            .limit(1)
+            .execute()
+        )
+        if (
+            not hogar.data
+            or hogar.data[0].get("latitud") is None
+            or hogar.data[0].get("longitud") is None
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="Tu hogar temporal no tiene una ubicación verificada",
+            )
+
+        import math
+        radio_tierra = 6371000
+        lat1, lon1 = math.radians(body.latitud), math.radians(body.longitud)
+        lat2 = math.radians(float(hogar.data[0]["latitud"]))
+        lon2 = math.radians(float(hogar.data[0]["longitud"]))
+        dlat, dlon = lat2 - lat1, lon2 - lon1
+        a = (
+            math.sin(dlat / 2) ** 2
+            + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+        )
+        distancia_hogar = radio_tierra * 2 * math.asin(math.sqrt(a))
+        if distancia_hogar > 200:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Tu ubicación no coincide con el hogar verificado. "
+                    f"Estás a {round(distancia_hogar)} metros."
+                ),
             )
 
     # Validación GPS obligatoria para llego_veterinaria — Ruta 1
@@ -435,7 +507,7 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
     # solo queda como un evento más en historial_reporte.
     if body.tipo_hito == "encontre_animal":
         nuevo_estado = "en_atencion"
-    elif body.tipo_hito == "llegue_refugio":
+    elif body.tipo_hito in ("llegue_refugio", "llegada_hogar_temporal"):
         nuevo_estado = "rescatado"
     else:
         nuevo_estado = None
@@ -447,10 +519,44 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
             raise HTTPException(status_code=500, detail=f"Error al resolver estado {nuevo_estado}")
 
         # Actualizar estado del reporte
-        supabase.table("reportes").update({
+        actualizacion = {
             "estado_reporte": nuevo_estado,
             "estado_id": estado_id.data[0]["id"],
-        }).eq("id", reporte_id).execute()
+        }
+        if body.tipo_hito == "encontre_animal":
+            actualizacion["estado_cobertura"] = "en_atencion"
+        elif body.tipo_hito in ("llegue_refugio", "llegada_hogar_temporal"):
+            actualizacion["estado_cobertura"] = "finalizado"
+        supabase.table("reportes").update(actualizacion).eq("id", reporte_id).execute()
+
+    if body.tipo_hito == "llegada_hogar_temporal":
+        voluntario = (
+            supabase.table("voluntarios")
+            .select("id")
+            .eq("usuario_id", usuario["id"])
+            .limit(1)
+            .execute()
+        )
+        existente = (
+            supabase.table("custodias_temporales")
+            .select("id")
+            .eq("reporte_id", reporte_id)
+            .limit(1)
+            .execute()
+        )
+        if not existente.data:
+            supabase.table("custodias_temporales").insert(
+                {
+                    "reporte_id": reporte_id,
+                    "voluntario_id": voluntario.data[0]["id"],
+                    "asociacion_coordinadora_id": reporte["asociacion_asignada_id"],
+                    "estado": "activo",
+                    "proximo_seguimiento_at": (
+                        datetime.now(timezone.utc) + timedelta(hours=3)
+                    ).isoformat(),
+                    "frecuencia_horas": 72,
+                }
+            ).execute()
 
     # Registrar en historial
     from app.services.report_service import registrar_historial
@@ -463,6 +569,7 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
             "condicion_observada": body.condicion_observada,
             "comentario": body.comentario,
             "foto_url": body.foto_url,
+            "foto_entorno_url": body.foto_entorno_url,
             "latitud": body.latitud,
             "longitud": body.longitud,
         }
@@ -611,6 +718,7 @@ async def rechazar_reporte(reporte_id: str, body: RechazarReporteRequest, author
         supabase.table("reportes").update({
             "asociacion_asignada_id": nueva_asociacion["id"],
             "estado_reporte": "asignado",
+            "estado_cobertura": "abierto",
             "estado_id": estado_asignado_id.data[0]["id"],
             "staff_asignado_id": None,
         }).eq("id", reporte_id).execute()
@@ -650,6 +758,7 @@ async def rechazar_reporte(reporte_id: str, body: RechazarReporteRequest, author
         supabase.table("reportes").update({
             "asociacion_asignada_id": None,
             "estado_reporte": "sin_cobertura",
+            "estado_cobertura": None,
             "estado_id": estado_sin_cobertura_id.data[0]["id"],
             "staff_asignado_id": None,
         }).eq("id", reporte_id).execute()
