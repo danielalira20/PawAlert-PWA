@@ -7,11 +7,13 @@ import {
   endOfMonth,
   endOfWeek,
   format,
+  isBefore,
   isSameDay,
   isSameMonth,
   startOfMonth,
   startOfWeek,
   subMonths,
+  startOfDay,
 } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Brand } from '../../constants/theme';
@@ -22,13 +24,14 @@ interface Props {
   onChange: (date: Date | null) => void;
   required?: boolean;
   error?: string;
+  minDate?: Date;
 }
 
 // Calendario-popover extraído del patrón ya usado en MisReportesScreen.tsx
 // (mismo grid mensual, misma navegación) — se quita la lógica de "días con
 // reportes" (puntos de color) porque aquí no hay eventos que marcar, solo
 // se elige una fecha.
-export function DatePickerChip({ label, value, onChange, required, error }: Props) {
+export function DatePickerChip({ label, value, onChange, required, error, minDate }: Props) {
   const [open, setOpen] = useState(false);
   const [mes, setMes] = useState(value || new Date());
 
@@ -58,13 +61,23 @@ export function DatePickerChip({ label, value, onChange, required, error }: Prop
         <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setOpen(false)}>
           <TouchableOpacity activeOpacity={1} onPress={() => {}} style={styles.popover}>
             <View style={styles.popoverHeader}>
-              <TouchableOpacity onPress={() => setMes((m) => subMonths(m, 1))} style={styles.navBtn}>
-                <Feather name="chevron-left" size={16} color={Brand.textDark} />
-              </TouchableOpacity>
+              <View style={styles.navGroup}>
+                <TouchableOpacity onPress={() => setMes((m) => subMonths(m, 12))} style={styles.navBtn}>
+                  <Feather name="chevrons-left" size={16} color={Brand.textDark} />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setMes((m) => subMonths(m, 1))} style={styles.navBtn}>
+                  <Feather name="chevron-left" size={16} color={Brand.textDark} />
+                </TouchableOpacity>
+              </View>
               <Text style={styles.popoverMes}>{format(mes, 'MMMM yyyy', { locale: es })}</Text>
-              <TouchableOpacity onPress={() => setMes((m) => addMonths(m, 1))} style={styles.navBtn}>
-                <Feather name="chevron-right" size={16} color={Brand.textDark} />
-              </TouchableOpacity>
+              <View style={styles.navGroup}>
+                <TouchableOpacity onPress={() => setMes((m) => addMonths(m, 1))} style={styles.navBtn}>
+                  <Feather name="chevron-right" size={16} color={Brand.textDark} />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setMes((m) => addMonths(m, 12))} style={styles.navBtn}>
+                  <Feather name="chevrons-right" size={16} color={Brand.textDark} />
+                </TouchableOpacity>
+              </View>
             </View>
 
             <View style={styles.diasSemanaRow}>
@@ -83,9 +96,15 @@ export function DatePickerChip({ label, value, onChange, required, error }: Prop
                 const enEsteMes = isSameMonth(dia, mes);
                 const esSeleccionado = value ? isSameDay(dia, value) : false;
                 const esHoy = isSameDay(dia, new Date());
+                const esDeshabilitado = minDate ? isBefore(startOfDay(dia), startOfDay(minDate)) : false;
 
                 return (
-                  <TouchableOpacity key={i} onPress={() => handlePickDay(dia)} style={styles.diaCell}>
+                  <TouchableOpacity
+                    key={i}
+                    onPress={() => handlePickDay(dia)}
+                    disabled={esDeshabilitado}
+                    style={styles.diaCell}
+                  >
                     <View
                       style={[
                         styles.diaCirculo,
@@ -96,7 +115,7 @@ export function DatePickerChip({ label, value, onChange, required, error }: Prop
                       <Text
                         style={[
                           styles.diaTexto,
-                          !enEsteMes && styles.diaTextoFuera,
+                          (!enEsteMes || esDeshabilitado) && styles.diaTextoFuera,
                           esSeleccionado && styles.diaTextoSeleccionado,
                         ]}
                       >
@@ -155,6 +174,7 @@ const styles = StyleSheet.create({
     borderColor: '#F0EBE3',
   },
   popoverHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  navGroup: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   navBtn: { padding: 4 },
   popoverMes: { fontSize: 13, fontWeight: '700', color: Brand.textDark, textTransform: 'capitalize' },
   diasSemanaRow: { flexDirection: 'row', marginBottom: 4 },

@@ -81,6 +81,36 @@ const UNIDADES_POR_CATEGORIA: Record<string, Option[]> = {
   ],
 };
 
+// Copiadas tal cual de CAMPOS_CONDICIONALES.alimentos en
+// AportacionFormScreen.tsx (mismo catálogo de opciones) — ese archivo no
+// las exporta, así que se duplican aquí en vez de importarlas.
+const ETAPA_OPCIONES: Option[] = [
+  { value: 'bebe', label: 'Bebé' },
+  { value: 'cachorro', label: 'Cachorro' },
+  { value: 'adulto', label: 'Adulto' },
+  { value: 'senior', label: 'Senior' },
+  { value: 'cualquier_etapa', label: 'Cualquier etapa' },
+];
+
+const DIETA_ESPECIAL_OPCIONES: Option[] = [
+  { value: 'regular', label: 'Regular' },
+  { value: 'gastrointestinal', label: 'Gastrointestinal' },
+  { value: 'renal', label: 'Renal' },
+  { value: 'control_peso', label: 'Control de peso' },
+  { value: 'otra', label: 'Otra' },
+];
+
+// Mapeo confirmado: match exacto sugiere, 'joven'/'desconocido' (valores
+// reales de animal.edad_aproximada, EdadEnum en report.py) no tienen
+// equivalente en las opciones de etapa de arriba — no sugieren nada, campo
+// vacío para que la asociación decida. Solo aplica aquí al sugerir;
+// AportacionFormScreen no remapea nada, solo lee detalle.etapa tal cual.
+const SUGERENCIA_ETAPA_POR_EDAD: Record<string, string> = {
+  cachorro: 'cachorro',
+  adulto: 'adulto',
+  senior: 'senior',
+};
+
 // tipo_evento -> texto legible, para el "último hito" del detalle de caso.
 // Mismos valores reales que TIPOS_HITO_TIMELINE en associations.py.
 const HITO_LABELS: Record<string, string> = {
@@ -111,6 +141,7 @@ interface CasoCerrado {
   closed_at: string | null;
   condicion: string | null;
   tipo_animal: string | null;
+  edad_aproximada: string | null;
 }
 
 interface UltimoHito {
@@ -148,6 +179,9 @@ export default function CreateNeedScreen() {
 
   const [tiposAnimalesAsociacion, setTiposAnimalesAsociacion] = useState<string[]>([]);
   const [especiesSeleccionadas, setEspeciesSeleccionadas] = useState<string[]>([]);
+
+  const [etapa, setEtapa] = useState<string | null>(null);
+  const [dietaEspecial, setDietaEspecial] = useState<string | null>(null);
 
   const [cantidadValor, setCantidadValor] = useState('');
   const [cantidadUnidad, setCantidadUnidad] = useState('');
@@ -232,6 +266,7 @@ export default function CreateNeedScreen() {
             closed_at: reporte.closed_at || null,
             condicion: grave?.condicion || null,
             tipo_animal: grave?.tipo_animal || null,
+            edad_aproximada: grave?.edad_aproximada || null,
           };
         });
 
@@ -317,6 +352,19 @@ export default function CreateNeedScreen() {
 
   const casoSeleccionado = reporteId ? reportesActivos.find((r) => r.id === reporteId) || null : null;
 
+  // Sugerencia de etapa a partir de la edad del caso seleccionado — solo en
+  // modo 'especifica' y solo si no pisa una elección manual ya hecha
+  // (etapa !== null). En modo 'general' este efecto nunca corre: ambos
+  // campos quedan opcionales y sin sugerencia.
+  useEffect(() => {
+    if (tipoNecesidad !== 'especifica' || categoria !== 'alimentos' || !casoSeleccionado) return;
+    if (etapa !== null) return;
+    const sugerida = casoSeleccionado.edad_aproximada
+      ? SUGERENCIA_ETAPA_POR_EDAD[casoSeleccionado.edad_aproximada]
+      : undefined;
+    if (sugerida) setEtapa(sugerida);
+  }, [tipoNecesidad, categoria, casoSeleccionado, etapa]);
+
   const handleGuardarNecesidad = async () => {
     const newErrors: Record<string, string> = {};
     if (tipoNecesidad === 'especifica' && !reporteId) {
@@ -354,6 +402,8 @@ export default function CreateNeedScreen() {
       if (UNIDADES_CONTENEDOR.has(cantidadUnidad) && contenidoPorUnidad.trim()) {
         detalle.contenido_por_unidad = contenidoPorUnidad.trim();
       }
+      if (categoria === 'alimentos' && etapa) detalle.etapa = etapa;
+      if (categoria === 'alimentos' && dietaEspecial) detalle.dieta_especial = dietaEspecial;
 
       const payload = {
         reporte_id: reporteId,
@@ -555,6 +605,8 @@ export default function CreateNeedScreen() {
                           setCategoria(cat.clave);
                           setSubcategoriaId(null);
                           setUrgencia(null);
+                          setEtapa(null);
+                          setDietaEspecial(null);
                           setCantidadUnidad('');
                           setUnidadEsOtra(false);
                           setContenidoPorUnidad('');
@@ -607,6 +659,43 @@ export default function CreateNeedScreen() {
                           style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: isSelected ? COLORS.accent : COLORS.white, borderWidth: 1, borderColor: isSelected ? COLORS.accent : '#E5E7EB' }}
                         >
                           <Text style={{ fontSize: 12, fontWeight: '600', color: isSelected ? COLORS.white : COLORS.textDark }}>{label}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
+
+              {/* ── ETAPA Y DIETA ESPECIAL (solo alimentos) ── */}
+              {categoria === 'alimentos' && (
+                <View style={{ marginBottom: 24 }}>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: COLORS.textDark, marginBottom: 12 }}>Etapa (Opcional)</Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                    {ETAPA_OPCIONES.map((o) => {
+                      const isSelected = etapa === o.value;
+                      return (
+                        <TouchableOpacity
+                          key={o.value}
+                          onPress={() => setEtapa(o.value === etapa ? null : o.value)}
+                          style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: isSelected ? COLORS.accent : COLORS.white, borderWidth: 1, borderColor: isSelected ? COLORS.accent : '#E5E7EB' }}
+                        >
+                          <Text style={{ fontSize: 12, fontWeight: '600', color: isSelected ? COLORS.white : COLORS.textDark }}>{o.label}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: COLORS.textDark, marginTop: 16, marginBottom: 12 }}>Dieta especial (Opcional)</Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                    {DIETA_ESPECIAL_OPCIONES.map((o) => {
+                      const isSelected = dietaEspecial === o.value;
+                      return (
+                        <TouchableOpacity
+                          key={o.value}
+                          onPress={() => setDietaEspecial(o.value === dietaEspecial ? null : o.value)}
+                          style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: isSelected ? COLORS.accent : COLORS.white, borderWidth: 1, borderColor: isSelected ? COLORS.accent : '#E5E7EB' }}
+                        >
+                          <Text style={{ fontSize: 12, fontWeight: '600', color: isSelected ? COLORS.white : COLORS.textDark }}>{o.label}</Text>
                         </TouchableOpacity>
                       );
                     })}

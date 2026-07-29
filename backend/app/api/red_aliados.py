@@ -287,6 +287,30 @@ def get_necesidades_publicas():
 
     return necesidades
 
+
+# Registrado DESPUÉS de /necesidades/publicas a propósito: FastAPI matchea
+# rutas en orden de declaración y ambos paths tienen un solo segmento tras
+# /necesidades — si este fuera primero, capturaría también
+# necesidad_id="publicas".
+@router.get("/necesidades/{necesidad_id}", status_code=200)
+async def get_necesidad_detalle(necesidad_id: str, authorization: str = Header(None)):
+    """Detalle de una necesidad para quien va a aportarle
+    (AportacionFormScreen, vieneDeNecesidad) — no es parte del motor de
+    sugerencias, solo lectura de la fila para armar la tarjeta de resumen."""
+    _obtener_usuario_autenticado(authorization)
+
+    resultado = supabase.table("necesidades").select(
+        "id, categoria, urgencia, cantidad_valor, cantidad_unidad, detalle, asociacion_id, "
+        "subcategoria_recurso(id, clave, descripcion, requiere_tamanio), "
+        "asociaciones(nombre, calle, colonia, municipio, referencia, latitud, longitud)"
+    ).eq("id", necesidad_id).execute()
+
+    if not resultado.data:
+        raise HTTPException(status_code=404, detail="Necesidad no encontrada")
+
+    return resultado.data[0]
+
+
 @router.get("/me/notificaciones", status_code=200)
 def get_notificaciones_aliado(authorization: str = Header(None)):
     """

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   ActivityIndicator,
   Image,
+  Linking,
   Modal,
   Platform,
   ScrollView,
@@ -12,6 +13,7 @@ import {
   View,
 } from 'react-native';
 import axios from 'axios';
+import { addDays } from 'date-fns';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -49,6 +51,44 @@ const PASOS = ['Qué vas a aportar', 'Detalles del recurso', 'Logística y entre
 type Modo = 'reactiva' | 'proactiva';
 type Especie = 'perro' | 'gato';
 type Option = { value: string; label: string; description?: string };
+
+// Shape resumido de GET /red-aliados/necesidades/{id} — solo lo que se
+// muestra en la tarjeta de resumen de solo lectura (vieneDeNecesidad).
+type NecesidadDetalle = {
+  categoria: string;
+  subcategoria: { descripcion: string } | null;
+  especies: string[];
+  etapa: string | null;
+  dietaEspecial: string | null;
+  urgencia: string | null;
+  cantidadValor: number | null;
+  cantidadUnidad: string | null;
+  asociacion: {
+    nombre: string;
+    calle: string | null;
+    colonia: string | null;
+    municipio: string | null;
+    referencia: string | null;
+    latitud: number | null;
+    longitud: number | null;
+  } | null;
+};
+
+// Etiquetas locales solo para el resumen de solo lectura — no se tocan
+// CAMPOS_CONDICIONALES ni CategoriaSubcategoriaSelector.tsx; son los mismos
+// values que ya usan esos catálogos, solo se duplica el label a mostrar.
+const ETAPA_LABELS: Record<string, string> = {
+  bebe: 'Bebé', cachorro: 'Cachorro', adulto: 'Adulto', senior: 'Senior', cualquier_etapa: 'Cualquier etapa',
+};
+const DIETA_LABELS: Record<string, string> = {
+  regular: 'Regular', gastrointestinal: 'Gastrointestinal', renal: 'Renal', control_peso: 'Control de peso', otra: 'Otra',
+};
+const URGENCIA_LABELS: Record<string, string> = {
+  critico: 'Alta', urgente: 'Media', no_urgente: 'Baja',
+};
+const URGENCIA_COLOR: Record<string, string> = {
+  critico: COLORS.danger, urgente: COLORS.primary, no_urgente: COLORS.bgTeal,
+};
 
 type CampoCondicional =
   | { key: string; label: string; tipo: 'texto'; required?: boolean; numerico?: boolean }
@@ -293,6 +333,94 @@ export default function AportacionFormScreen({ onClose }: Props) {
   const [especiesAplica, setEspeciesAplica] = useState<Especie[]>([]);
   const [tamanio, setTamanio] = useState<string | null>(null);
 
+  const [necesidadDetalle, setNecesidadDetalle] = useState<NecesidadDetalle | null>(null);
+  const [isLoadingNecesidad, setIsLoadingNecesidad] = useState(false);
+
+  // Cuando se llega desde una necesidad puntual, categoría/subcategoría/
+  // especies ya las fijó la asociación al publicarla — se traen aquí y se
+  // muestran de solo lectura (Paso 1), en vez de dejar que el aliado las
+  // vuelva a elegir con el selector interactivo normal.
+  useEffect(() => {
+    if (!vieneDeNecesidad || !necesidadId) return;
+    let vigente = true;
+    (async () => {
+      setIsLoadingNecesidad(true);
+      try {
+        const res = await axios.get(`${API_URL}/red-aliados/necesidades/${necesidadId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!vigente) return;
+        const data = res.data;
+        const sub = data.subcategoria_recurso;
+        const detalle = data.detalle || {};
+        const especies: string[] = detalle.especies_aplica || [];
+
+        // categoria/subcategoria sí se setean (aunque no se rendericen de
+        // forma interactiva) porque el resto del wizard los sigue
+        // necesitando tal cual: camposCondicionalesBase,
+        // subcategoria?.requiere_tamanio en Paso 2, y
+        // categoria!.clave/subcategoria!.id en el payload final.
+        setCategoria({ id: data.categoria, clave: data.categoria, descripcion: data.categoria });
+        if (sub) {
+          setSubcategoria({ id: sub.id, clave: sub.clave, descripcion: sub.descripcion, requiere_tamanio: sub.requiere_tamanio });
+        }
+        // especiesAplica también se precarga (silenciosa, no editable): es
+        // un campo de nivel superior del payload (no vive dentro de
+        // `detalle`), así que si no se setea aquí la contribución se
+        // mandaría con especies_aplica: [] pese a que la necesidad sí las pedía.
+        setEspeciesAplica(especies as Especie[]);
+
+        // Mismo criterio: `ubicacion` alimenta lugar_entrega en el payload
+        // final — sin esto quedaría null (nunca se toca en este modo) y se
+        // perdería el dato pese a que la dirección real ya se conoce.
+        const asoc = data.asociaciones;
+        if (asoc?.latitud != null && asoc?.longitud != null) {
+          setUbicacion({ latitud: asoc.latitud, longitud: asoc.longitud });
+        }
+
+        // cantidadValor/cantidadUnidad también se precargan (y quedan
+        // bloqueados en el render, ver Paso 3) con lo que pidió la
+        // necesidad — no tiene caso volver a preguntarlos.
+        if (data.cantidad_valor != null) setCantidadValor(String(data.cantidad_valor));
+        if (data.cantidad_unidad) setCantidadUnidad(data.cantidad_unidad);
+
+        setNecesidadDetalle({
+          categoria: data.categoria,
+          subcategoria: sub ? { descripcion: sub.descripcion } : null,
+          especies,
+          etapa: detalle.etapa || null,
+          dietaEspecial: detalle.dieta_especial || null,
+          urgencia: data.urgencia || null,
+          cantidadValor: data.cantidad_valor ?? null,
+          cantidadUnidad: data.cantidad_unidad || null,
+          asociacion: asoc
+            ? {
+                nombre: asoc.nombre,
+                calle: asoc.calle || null,
+                colonia: asoc.colonia || null,
+                municipio: asoc.municipio || null,
+                referencia: asoc.referencia || null,
+                latitud: asoc.latitud ?? null,
+                longitud: asoc.longitud ?? null,
+              }
+            : null,
+        });
+      } catch {
+        showToast({ type: 'error', title: 'Error', message: 'No pudimos cargar el detalle de esta necesidad.' });
+      } finally {
+        if (vigente) setIsLoadingNecesidad(false);
+      }
+    })();
+    return () => { vigente = false; };
+  }, [vieneDeNecesidad, necesidadId, token]);
+
+  // Sugerencia de fecha de entrega: hoy + 7 días, editable — el aliado
+  // puede adelantarla si puede entregar antes. `vieneDeNecesidad` nunca
+  // cambia después del montaje, así que este efecto corre una sola vez.
+  useEffect(() => {
+    if (vieneDeNecesidad) setFechaDisponibilidad(addDays(new Date(), 7));
+  }, [vieneDeNecesidad]);
+
   const [detalleValores, setDetalleValores] = useState<Record<string, string>>({});
   const [detalleFechas, setDetalleFechas] = useState<Record<string, Date | null>>({});
   const [detalleMulti, setDetalleMulti] = useState<Record<string, string[]>>({});
@@ -346,15 +474,33 @@ export default function AportacionFormScreen({ onClose }: Props) {
   // Para un lote, "peso por empaque" y "número de empaques" ya quedan
   // cubiertos por "¿Cómo viene empacado?" + la cantidad total del paso 3
   // — no tiene caso preguntarlos dos veces con otras palabras.
-  const camposCondicionales = esLote
+  const camposCondicionalesSinLote = esLote
     ? camposCondicionalesBase.filter((c) => c.key !== 'peso_por_empaque' && c.key !== 'numero_empaques')
     : camposCondicionalesBase;
+  // etapa/dieta_especial describen lo que la necesidad pide (ya se
+  // muestran en la tarjeta de resumen de solo lectura del Paso 1) — no
+  // tiene caso volver a preguntarlas aquí cuando vieneDeNecesidad. El
+  // resto de campos condicionales (producto_cerrado, marca, etc.) sí
+  // siguen siendo del ítem propio del aliado, se quedan igual.
+  const camposCondicionales = vieneDeNecesidad
+    ? camposCondicionalesSinLote.filter((c) => c.key !== 'etapa' && c.key !== 'dieta_especial')
+    : camposCondicionalesSinLote;
   const esDifusion = categoria?.clave === 'difusion_campanas';
-  const esLoteAplicable = categoria?.clave === 'alimentos' || categoria?.clave === 'insumos';
+  // Un lote es una donación grande "suelta" que luego se reparte entre
+  // varias asociaciones — no tiene sentido si ya se está aportando a una
+  // necesidad puntual de una asociación específica.
+  const esLoteAplicable = !vieneDeNecesidad && (categoria?.clave === 'alimentos' || categoria?.clave === 'insumos');
   // Servicios (veterinarios/difusión) no son un bien físico — no tiene
   // sentido preguntarles zona de entrega/recolección ni forma de entrega,
   // eso es logística de un objeto que se transporta.
   const esServicio = categoria?.clave === 'servicios_veterinarios' || categoria?.clave === 'difusion_campanas';
+
+  // Solo se usa cuando vieneDeNecesidad (stepper +/- en vez de texto
+  // libre) — nunca baja de 1.
+  const stepCantidadValor = (delta: number) => {
+    const actual = Number(cantidadValor) || 0;
+    setCantidadValor(String(Math.max(1, actual + delta)));
+  };
 
   const toggleEspecie = (value: string) => {
     const especie = value as Especie;
@@ -489,6 +635,26 @@ export default function AportacionFormScreen({ onClose }: Props) {
 
   const lugarEntregaTexto = ubicacion ? `${ubicacion.latitud.toFixed(5)}, ${ubicacion.longitud.toFixed(5)}` : undefined;
 
+  // Mismo patrón que SeguimientoAliadoCard.tsx (staff-dashboard) para el
+  // botón "Cómo llegar" — se duplica la lógica en vez de importar ese
+  // componente porque toma props distintas (contacto/ubicación de un
+  // aliado veterinario, no de una asociación).
+  const direccionAsociacionTexto = necesidadDetalle?.asociacion
+    ? [necesidadDetalle.asociacion.calle, necesidadDetalle.asociacion.colonia, necesidadDetalle.asociacion.municipio]
+        .filter(Boolean)
+        .join(', ')
+    : '';
+
+  const abrirComoLlegar = () => {
+    const asoc = necesidadDetalle?.asociacion;
+    if (!asoc) return;
+    const url =
+      asoc.latitud != null && asoc.longitud != null
+        ? `https://www.google.com/maps/search/?api=1&query=${asoc.latitud},${asoc.longitud}`
+        : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(direccionAsociacionTexto)}`;
+    Linking.openURL(url);
+  };
+
   const validarPaso = (numero: number): boolean => {
     const nuevos: Record<string, string> = {};
 
@@ -513,6 +679,11 @@ export default function AportacionFormScreen({ onClose }: Props) {
         if (!contactoNombre.trim()) nuevos.contactoNombre = 'Ingresa el nombre completo.';
         if (!validarTelefono(contactoTelefono)) nuevos.contactoTelefono = 'Ingresa 10 dígitos.';
         if (!validarEmail(contactoCorreo)) nuevos.contactoCorreo = 'Ingresa un correo válido.';
+      }
+      // Por seguridad de los animales, un alimento abierto no se puede
+      // procesar como donación — bloquea el avance, no solo advierte.
+      if (categoria?.clave === 'alimentos' && detalleValores.producto_cerrado === 'no') {
+        nuevos.producto_cerrado = 'Por seguridad de los animales, no podemos procesar donaciones de alimento abierto.';
       }
     }
 
@@ -840,6 +1011,7 @@ export default function AportacionFormScreen({ onClose }: Props) {
           onChangeText={(v) => setCampoDetalle(campo.key, campo.numerico ? v.replace(/[^0-9.]/g, '') : v)}
           keyboardType={campo.numerico ? 'numeric' : 'default'}
         />
+        {campo.numerico && <Text style={styles.helperText}>Solo números</Text>}
         {errors[campo.key] && <ErrorText text={errors[campo.key]} />}
       </View>
     );
@@ -847,6 +1019,51 @@ export default function AportacionFormScreen({ onClose }: Props) {
 
   const renderPaso = () => {
     if (paso === 1) {
+      if (vieneDeNecesidad) {
+        return (
+          <FormSection title="Necesidad seleccionada" subtitle="Esto ya lo definió la asociación — no se puede editar aquí.">
+            {isLoadingNecesidad ? (
+              <ActivityIndicator color={COLORS.primary} />
+            ) : necesidadDetalle ? (
+              <View>
+                <Text style={styles.necesidadNombre}>
+                  {necesidadDetalle.subcategoria?.descripcion ||
+                    (necesidadDetalle.categoria.charAt(0).toUpperCase() + necesidadDetalle.categoria.slice(1))}
+                </Text>
+                {necesidadDetalle.subcategoria && (
+                  <Text style={styles.necesidadDato}>
+                    Categoría: {necesidadDetalle.categoria.charAt(0).toUpperCase() + necesidadDetalle.categoria.slice(1)}
+                  </Text>
+                )}
+                {necesidadDetalle.especies.length > 0 && (
+                  <Text style={styles.necesidadDato}>
+                    Para: {necesidadDetalle.especies.map((e) => (e === 'perro' ? 'Perros' : e === 'gato' ? 'Gatos' : e)).join(', ')}
+                  </Text>
+                )}
+                {necesidadDetalle.etapa && (
+                  <Text style={styles.necesidadDato}>Etapa: {ETAPA_LABELS[necesidadDetalle.etapa] || necesidadDetalle.etapa}</Text>
+                )}
+                {necesidadDetalle.dietaEspecial && (
+                  <Text style={styles.necesidadDato}>Dieta especial: {DIETA_LABELS[necesidadDetalle.dietaEspecial] || necesidadDetalle.dietaEspecial}</Text>
+                )}
+                {necesidadDetalle.urgencia && (
+                  <Text style={[styles.necesidadDato, { color: URGENCIA_COLOR[necesidadDetalle.urgencia] || COLORS.textDark, fontWeight: '800' }]}>
+                    Urgencia: {URGENCIA_LABELS[necesidadDetalle.urgencia] || necesidadDetalle.urgencia}
+                  </Text>
+                )}
+                {(necesidadDetalle.cantidadValor != null || necesidadDetalle.cantidadUnidad) && (
+                  <Text style={styles.necesidadDato}>
+                    Cantidad pedida: {necesidadDetalle.cantidadValor ?? ''} {necesidadDetalle.cantidadUnidad || ''}
+                  </Text>
+                )}
+              </View>
+            ) : (
+              <Text style={styles.sectionSubtitle}>No pudimos cargar el detalle de esta necesidad.</Text>
+            )}
+          </FormSection>
+        );
+      }
+
       return (
         <>
           <FormSection title="Categoría y subcategoría" subtitle="Elige qué tipo de recurso vas a aportar.">
@@ -906,12 +1123,16 @@ export default function AportacionFormScreen({ onClose }: Props) {
       return (
         <>
           <FormSection title={`Detalles de ${subcategoria?.descripcion?.toLowerCase() || 'tu aportación'}`}>
-            <Text style={styles.sectionSubtitle}>¿Para qué animales aplica?</Text>
-            <MultiOptions
-              options={especiesDisponibles.map((e) => ({ value: e, label: e === 'perro' ? 'Perros' : 'Gatos' }))}
-              selected={especiesAplica}
-              onToggle={toggleEspecie}
-            />
+            {!vieneDeNecesidad && (
+              <>
+                <Text style={styles.sectionSubtitle}>¿Para qué animales aplica?</Text>
+                <MultiOptions
+                  options={especiesDisponibles.map((e) => ({ value: e, label: e === 'perro' ? 'Perros' : 'Gatos' }))}
+                  selected={especiesAplica}
+                  onToggle={toggleEspecie}
+                />
+              </>
+            )}
 
             {subcategoria?.requiere_tamanio && (
               <>
@@ -981,36 +1202,54 @@ export default function AportacionFormScreen({ onClose }: Props) {
     return (
       <>
         <FormSection title={esLote ? 'Cantidad total del lote' : modo === 'reactiva' ? 'Cantidad' : 'Capacidad declarada'}>
-          <TextInputField
-            value={cantidadValor}
-            onChangeText={(v) => setCantidadValor(v.replace(/[^0-9.]/g, ''))}
-            placeholder="10"
-            keyboardType="numeric"
-          />
+          {vieneDeNecesidad ? (
+            <View style={styles.stepperRow}>
+              <TouchableOpacity onPress={() => stepCantidadValor(-1)} style={styles.stepperBtn}>
+                <Ionicons name="remove" size={18} color={COLORS.bgWhite} />
+              </TouchableOpacity>
+              <Text style={styles.stepperValue}>{cantidadValor || '0'}</Text>
+              <TouchableOpacity onPress={() => stepCantidadValor(1)} style={styles.stepperBtn}>
+                <Ionicons name="add" size={18} color={COLORS.bgWhite} />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TextInputField
+              value={cantidadValor}
+              onChangeText={(v) => setCantidadValor(v.replace(/[^0-9.]/g, ''))}
+              placeholder="10"
+              keyboardType="numeric"
+            />
+          )}
           {errors.cantidadValor && <ErrorText text={errors.cantidadValor} />}
           <Text style={[styles.sectionSubtitle, { marginTop: 12 }]}>Unidad</Text>
-          <SingleOptions
-            options={[
-              ...(UNIDADES_POR_CATEGORIA[categoria?.clave || ''] || []),
-              { value: UNIDAD_OTRA, label: 'Otra' },
-            ]}
-            selected={unidadEsOtra ? UNIDAD_OTRA : cantidadUnidad}
-            onSelect={(v) => {
-              if (v === UNIDAD_OTRA) {
-                setUnidadEsOtra(true);
-                setCantidadUnidad('');
-                setContenidoPorUnidad('');
-              } else {
-                setUnidadEsOtra(false);
-                setCantidadUnidad(v);
-                if (!UNIDADES_CONTENEDOR.has(v)) setContenidoPorUnidad('');
-              }
-            }}
-          />
-          {unidadEsOtra && (
-            <View style={{ marginTop: 10 }}>
-              <TextInputField value={cantidadUnidad} onChangeText={setCantidadUnidad} placeholder="Escribe la unidad" />
-            </View>
+          {vieneDeNecesidad ? (
+            <Text style={styles.necesidadNombre}>{cantidadUnidad}</Text>
+          ) : (
+            <>
+              <SingleOptions
+                options={[
+                  ...(UNIDADES_POR_CATEGORIA[categoria?.clave || ''] || []),
+                  { value: UNIDAD_OTRA, label: 'Otra' },
+                ]}
+                selected={unidadEsOtra ? UNIDAD_OTRA : cantidadUnidad}
+                onSelect={(v) => {
+                  if (v === UNIDAD_OTRA) {
+                    setUnidadEsOtra(true);
+                    setCantidadUnidad('');
+                    setContenidoPorUnidad('');
+                  } else {
+                    setUnidadEsOtra(false);
+                    setCantidadUnidad(v);
+                    if (!UNIDADES_CONTENEDOR.has(v)) setContenidoPorUnidad('');
+                  }
+                }}
+              />
+              {unidadEsOtra && (
+                <View style={{ marginTop: 10 }}>
+                  <TextInputField value={cantidadUnidad} onChangeText={setCantidadUnidad} placeholder="Escribe la unidad" />
+                </View>
+              )}
+            </>
           )}
           {errors.cantidadUnidad && <ErrorText text={errors.cantidadUnidad} />}
 
@@ -1049,39 +1288,66 @@ export default function AportacionFormScreen({ onClose }: Props) {
         )}
 
         {!esLote && (
-          <FormSection title="¿Desde cuándo y hasta cuándo está disponible?" subtitle="Toca el día de inicio y luego el día final.">
-            <DateRangePickerChip
-              label=""
-              startDate={fechaDisponibilidad}
-              endDate={vigencia}
-              onChange={(start, end) => {
-                setFechaDisponibilidad(start);
-                setVigencia(end);
-              }}
-            />
-          </FormSection>
+          vieneDeNecesidad ? (
+            <FormSection title="¿Cuándo puedes entregarlo?">
+              <DatePickerChip label="" value={fechaDisponibilidad} onChange={setFechaDisponibilidad} minDate={new Date()} />
+            </FormSection>
+          ) : (
+            <FormSection title="¿Desde cuándo y hasta cuándo está disponible?" subtitle="Toca el día de inicio y luego el día final.">
+              <DateRangePickerChip
+                label=""
+                startDate={fechaDisponibilidad}
+                endDate={vigencia}
+                onChange={(start, end) => {
+                  setFechaDisponibilidad(start);
+                  setVigencia(end);
+                }}
+              />
+            </FormSection>
+          )
         )}
 
         {!esLote && !esServicio && (
-          <FormSection title="¿Dónde se entrega o recolecta?" subtitle="Solo compartimos una zona aproximada.">
-            <TouchableOpacity style={styles.locationButton} onPress={handleGetLocation} disabled={isLoadingGps}>
-              <Ionicons name="locate" size={18} color={COLORS.bgTeal} />
-              <Text style={styles.locationButtonText}>
-                {isLoadingGps ? 'Obteniendo ubicación…' : 'Usar mi ubicación actual'}
-              </Text>
-            </TouchableOpacity>
-            <View style={styles.mapContainer}>
-              <LocationPickerMap
-                selectedPosition={ubicacion}
-                instructionText="Toca el mapa para marcar el punto de entrega o recolección"
-                helperText="Puedes mover el pin para ajustar el punto"
-                onLocationSelect={(latitud, longitud) => setUbicacion({ latitud, longitud })}
-              />
-            </View>
-          </FormSection>
+          vieneDeNecesidad ? (
+            <FormSection
+              title="¿Dónde entregas?"
+              subtitle="Lugar de entrega: una vez que se le dé aviso a la asociación, en tu panel de aliado podrás ver la ubicación e indicaciones necesarias para completar tu donación, que deberá ser llevada a la asociación."
+            >
+              {necesidadDetalle?.asociacion && (
+                <>
+                  <Text style={styles.necesidadNombre}>{necesidadDetalle.asociacion.nombre}</Text>
+                  {direccionAsociacionTexto ? <Text style={styles.necesidadDato}>{direccionAsociacionTexto}</Text> : null}
+                  {necesidadDetalle.asociacion.referencia ? (
+                    <Text style={styles.necesidadDato}>{necesidadDetalle.asociacion.referencia}</Text>
+                  ) : null}
+                  <TouchableOpacity onPress={abrirComoLlegar} style={[styles.locationButton, { marginTop: 12 }]}>
+                    <Ionicons name="navigate-outline" size={16} color={COLORS.bgTeal} />
+                    <Text style={styles.locationButtonText}>Cómo llegar</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </FormSection>
+          ) : (
+            <FormSection title="¿Dónde se entrega o recolecta?" subtitle="Solo compartimos una zona aproximada.">
+              <TouchableOpacity style={styles.locationButton} onPress={handleGetLocation} disabled={isLoadingGps}>
+                <Ionicons name="locate" size={18} color={COLORS.bgTeal} />
+                <Text style={styles.locationButtonText}>
+                  {isLoadingGps ? 'Obteniendo ubicación…' : 'Usar mi ubicación actual'}
+                </Text>
+              </TouchableOpacity>
+              <View style={styles.mapContainer}>
+                <LocationPickerMap
+                  selectedPosition={ubicacion}
+                  instructionText="Toca el mapa para marcar el punto de entrega o recolección"
+                  helperText="Puedes mover el pin para ajustar el punto"
+                  onLocationSelect={(latitud, longitud) => setUbicacion({ latitud, longitud })}
+                />
+              </View>
+            </FormSection>
+          )
         )}
 
-        {!esServicio && (
+        {!esServicio && !vieneDeNecesidad && (
           <FormSection title="Forma de entrega">
             <SingleOptions options={FORMA_ENTREGA_OPCIONES} selected={formaEntrega || ''} onSelect={setFormaEntrega} error={esLote ? errors.formaEntrega : undefined} />
           </FormSection>
@@ -1202,28 +1468,45 @@ export default function AportacionFormScreen({ onClose }: Props) {
           </View>
 
           {estadoPantalla === 'postEnvio' ? (
-            <>
-              <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-                <FormSection
-                  title="¿Quieres agregar otro recurso?"
-                  subtitle="Puedes registrar otra aportación ahora mismo, o terminar aquí."
-                >
-                  <View style={{ alignItems: 'center', paddingVertical: 12 }}>
-                    <Ionicons name="checkmark-circle" size={56} color={COLORS.bgTeal} />
-                  </View>
-                </FormSection>
-              </ScrollView>
-              <View style={styles.fixedFooter}>
-                <View style={{ flexDirection: 'row', gap: 12 }}>
-                  <TouchableOpacity style={[styles.secondaryButton, { flex: 1 }]} onPress={terminarFlujo}>
-                    <Text style={styles.secondaryButtonText}>No, terminar</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={[styles.primaryButton, { flex: 1 }]} onPress={reiniciarParcial}>
-                    <Text style={styles.primaryButtonText}>Sí, agregar otro</Text>
+            vieneDeNecesidad ? (
+              <>
+                <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+                  <FormSection title="¡Gracias por tu apoyo!" subtitle="La asociación ya puede ver tu aportación.">
+                    <View style={{ alignItems: 'center', paddingVertical: 12 }}>
+                      <Ionicons name="checkmark-circle" size={56} color={COLORS.bgTeal} />
+                    </View>
+                  </FormSection>
+                </ScrollView>
+                <View style={styles.fixedFooter}>
+                  <TouchableOpacity style={styles.primaryButton} onPress={terminarFlujo}>
+                    <Text style={styles.primaryButtonText}>Cerrar</Text>
                   </TouchableOpacity>
                 </View>
-              </View>
-            </>
+              </>
+            ) : (
+              <>
+                <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+                  <FormSection
+                    title="¿Quieres agregar otro recurso?"
+                    subtitle="Puedes registrar otra aportación ahora mismo, o terminar aquí."
+                  >
+                    <View style={{ alignItems: 'center', paddingVertical: 12 }}>
+                      <Ionicons name="checkmark-circle" size={56} color={COLORS.bgTeal} />
+                    </View>
+                  </FormSection>
+                </ScrollView>
+                <View style={styles.fixedFooter}>
+                  <View style={{ flexDirection: 'row', gap: 12 }}>
+                    <TouchableOpacity style={[styles.secondaryButton, { flex: 1 }]} onPress={terminarFlujo}>
+                      <Text style={styles.secondaryButtonText}>No, terminar</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.primaryButton, { flex: 1 }]} onPress={reiniciarParcial}>
+                      <Text style={styles.primaryButtonText}>Sí, agregar otro</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </>
+            )
           ) : estadoPantalla === 'invitar' ? (
             invitacionesEnviadas ? (
               <>
@@ -1534,6 +1817,18 @@ const styles = StyleSheet.create({
   },
   optionChipSelected: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
   optionText: { color: COLORS.textDark, fontSize: 13, fontWeight: '700', flexShrink: 1 },
+  // Jerarquía nombre/dato de SugerenciaAliadoCard.tsx (staff-dashboard),
+  // adaptada a los COLORS propios de este archivo — ver tarjeta "Necesidad
+  // seleccionada" y el bloque de dirección de la asociación en Paso 3.
+  necesidadNombre: { fontSize: 13, fontWeight: '800', color: COLORS.textDark },
+  necesidadDato: { fontSize: 13, fontWeight: '600', color: COLORS.textLight, marginTop: 8 },
+  // Stepper +/- de cantidadValor (solo vieneDeNecesidad, ver Paso 3).
+  stepperRow: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  stepperBtn: {
+    width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: COLORS.primary,
+  },
+  stepperValue: { fontSize: 20, fontWeight: '800', color: COLORS.textDark, minWidth: 40, textAlign: 'center' },
   optionDescription: { color: COLORS.textLight, fontSize: 11, marginTop: 2 },
   selectedText: { color: COLORS.bgWhite },
   selectedDescription: { color: 'rgba(255,255,255,0.82)' },
