@@ -30,6 +30,8 @@ interface Props {
   onCapturarUbicacion: () => void;
   foto: string | null;
   onCapturarFoto: () => void;
+  fotoEntorno?: string | null;
+  onCapturarFotoEntorno?: () => void;
   isSubmitting: boolean;
   onCancel: () => void;
   onConfirm: () => void;
@@ -53,12 +55,18 @@ export function RefugioModal({
   onCapturarUbicacion,
   foto,
   onCapturarFoto,
+  fotoEntorno = null,
+  onCapturarFotoEntorno,
   isSubmitting,
   onCancel,
   onConfirm,
   esHogarTemporal = false,
 }: Props) {
-  const puedeConfirmar = !!ubicacionActual && !!foto && !isSubmitting;
+  const puedeConfirmar =
+    !!ubicacionActual &&
+    !!foto &&
+    (!esHogarTemporal || !!fotoEntorno) &&
+    !isSubmitting;
 
   return (
     <Modal visible={visible} transparent animationType="fade">
@@ -164,6 +172,36 @@ export function RefugioModal({
                 <Text style={styles.sectionButtonText}>{foto ? 'Cambiar foto' : 'Abrir cámara'}</Text>
               </TouchableOpacity>
             </View>
+
+            {esHogarTemporal && (
+              <View style={[styles.section, styles.sectionEntorno]}>
+                <View style={styles.sectionHeader}>
+                  <Ionicons name="home-outline" size={18} color={Brand.secondary} />
+                  <Text style={[styles.sectionTitle, { color: Brand.secondary }]}>
+                    Foto del entorno (obligatoria)
+                  </Text>
+                </View>
+                {fotoEntorno ? (
+                  <View style={{ marginBottom: 10 }}>
+                    <Image source={{ uri: fotoEntorno }} style={styles.fotoPreview} resizeMode="cover" />
+                    <Text style={styles.sectionResultOk}>✓ Entorno capturado</Text>
+                  </View>
+                ) : (
+                  <Text style={styles.sectionHint}>
+                    Muestra el espacio donde permanecerá el animal
+                  </Text>
+                )}
+                <TouchableOpacity
+                  onPress={onCapturarFotoEntorno}
+                  style={[styles.sectionButton, { backgroundColor: Brand.secondary }]}
+                >
+                  <Ionicons name="camera-outline" size={16} color="#fff" />
+                  <Text style={styles.sectionButtonText}>
+                    {fotoEntorno ? 'Cambiar foto del entorno' : 'Fotografiar entorno'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </ScrollView>
 
           <View style={styles.actions}>
@@ -183,7 +221,7 @@ export function RefugioModal({
                 <ActivityIndicator color="#fff" />
               ) : (
                 <Text style={styles.confirmText}>
-                  {!ubicacionActual || !foto
+                  {!ubicacionActual || !foto || (esHogarTemporal && !fotoEntorno)
                     ? 'Faltan datos'
                     : esHogarTemporal
                       ? 'Iniciar custodia'
@@ -251,6 +289,7 @@ const styles = StyleSheet.create({
   section: { borderRadius: 14, padding: 12, marginBottom: 12 },
   sectionGps: { backgroundColor: `${Brand.secondary}1A`, borderWidth: 1, borderColor: `${Brand.secondary}55` },
   sectionFoto: { backgroundColor: `${Brand.primary}14`, borderWidth: 1, borderColor: `${Brand.primary}55` },
+  sectionEntorno: { backgroundColor: `${Brand.secondary}14`, borderWidth: 1, borderColor: `${Brand.secondary}55` },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
   sectionTitle: { fontSize: 13, fontWeight: '800' },
   sectionResult: { backgroundColor: '#FFFFFF', borderRadius: 8, padding: 8, marginBottom: 10 },

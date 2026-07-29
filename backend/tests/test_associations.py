@@ -230,6 +230,78 @@ def test_historial_reporte_sin_hitos(make_query):
     assert body["eventos"][0]["reportante_nombre"] == "anónimo"
 
 
+def test_historial_reporte_incluye_hitos_canonicos_externos(make_query):
+    tablas = {
+        "asociaciones": make_query(data=[{"verificado": True}]),
+        "reportes": make_query(data=[{
+            "id": "reporte-externo-1",
+            "created_at": "2026-07-21T09:00:00+00:00",
+            "asociacion_asignada_id": "aso-1",
+            "usuario_id": None,
+            "reportante_nombre": "María",
+            "reportante_apellido_paterno": "Luna",
+            "animal": [],
+        }]),
+        "historial_reporte": make_query(data=[
+            {
+                "tipo_evento": "llegada_zona_reporte",
+                "created_at": "2026-07-21T09:30:00+00:00",
+                "datos_extra": {
+                    "latitud": 19.43,
+                    "longitud": -99.13,
+                    "distancia_reporte_metros": 18,
+                },
+                "usuarios": {"nombre": "Rafael", "apellido_paterno": "Jude"},
+            },
+            {
+                "tipo_evento": "animal_no_localizado",
+                "created_at": "2026-07-21T10:10:00+00:00",
+                "datos_extra": {
+                    "tiempo_busqueda_minutos": 40,
+                    "comentario": "Recorrí la calle y pregunté a vecinos.",
+                },
+                "usuarios": {"nombre": "Rafael", "apellido_paterno": "Jude"},
+            },
+            {
+                "tipo_evento": "animal_bajo_resguardo",
+                "created_at": "2026-07-21T10:30:00+00:00",
+                "datos_extra": {
+                    "condicion_observada": "Estable",
+                    "destino": "Hogar temporal verificado",
+                },
+                "usuarios": {"nombre": "Rafael", "apellido_paterno": "Jude"},
+            },
+        ]),
+    }
+    _mock_usuario_autenticado(tablas, make_query)
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    supabase.auth.get_user.return_value = SimpleNamespace(
+        user=SimpleNamespace(id="auth-user-1")
+    )
+
+    with patch("app.api.associations.supabase", supabase):
+        response = client.get(
+            "/associations/me/reportes/reporte-externo-1/historial",
+            headers={"Authorization": "Bearer token-valido"},
+        )
+
+    assert response.status_code == 200
+    eventos = response.json()["eventos"]
+    assert [evento["tipo_evento"] for evento in eventos] == [
+        "reporte_creado",
+        "llegada_zona_reporte",
+        "animal_no_localizado",
+        "animal_bajo_resguardo",
+    ]
+    assert eventos[2]["usuario_nombre"] == "Rafael Jude"
+    assert (
+        eventos[2]["nota"]
+        == "40 min de búsqueda — Recorrí la calle y pregunté a vecinos."
+    )
+    assert eventos[3]["nota"] == "Estable — Hogar temporal verificado"
+
+
 # ─── Regresión: contribuciones.necesidad_id es nullable desde hace varias
 # migraciones — una contribución también puede venir de un reporte (Ruta 1)
 # o de un lote. necesidades!inner las excluía silenciosamente de estos 3

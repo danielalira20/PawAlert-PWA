@@ -897,11 +897,14 @@ async def obtener_reportes_voluntario(usuario_id: str) -> dict:
     # Motor de sugerencias Ruta 1 (BACK01/BACK02): mismo patrón batch que
     # get_reportes_asignados() en associations.py — si ya existe una
     # contribución con reporte_id, la sugerencia de aliado veterinario fue
-    # aceptada; si además hay un evento "hito_llego_veterinaria" en el
-    # historial, la llegada ya se registró.
+    # aceptada. La misma lectura batch obtiene los hitos canónicos de campo
+    # y conserva los alias históricos de versiones anteriores.
     reporte_ids_todos = [r["id"] for r in (resultado.data or [])]
     reportes_con_sugerencia_aceptada = set()
     reportes_con_llegada_registrada = set()
+    reportes_con_llegada_zona = set()
+    reportes_con_busqueda_sin_resultado = set()
+    reportes_con_animal_bajo_resguardo = set()
     if reporte_ids_todos:
         contribs = supabase.table("contribuciones").select("reporte_id").in_(
             "reporte_id", reporte_ids_todos
@@ -910,12 +913,39 @@ async def obtener_reportes_voluntario(usuario_id: str) -> dict:
             c["reporte_id"] for c in (contribs.data or []) if c.get("reporte_id")
         }
 
-        llegadas = supabase.table("historial_reporte").select("reporte_id").in_(
-            "reporte_id", reporte_ids_todos
-        ).eq("tipo_evento", "hito_llego_veterinaria").execute()
-        reportes_con_llegada_registrada = {
-            e["reporte_id"] for e in (llegadas.data or []) if e.get("reporte_id")
-        }
+        hitos = (
+            supabase.table("historial_reporte")
+            .select("reporte_id, tipo_evento")
+            .in_("reporte_id", reporte_ids_todos)
+            .in_(
+                "tipo_evento",
+                [
+                    "llegada_veterinaria",
+                    "hito_llego_veterinaria",
+                    "llegada_zona_reporte",
+                    "hito_llegada_zona_reporte",
+                    "animal_no_localizado",
+                    "hito_animal_no_localizado",
+                    "animal_bajo_resguardo",
+                ],
+            )
+            .execute()
+        )
+        for evento in hitos.data or []:
+            reporte_id_evento = evento.get("reporte_id")
+            # Compatibilidad con mocks y respuestas antiguas que solo
+            # seleccionaban reporte_id para la llegada veterinaria.
+            tipo_evento = evento.get("tipo_evento", "hito_llego_veterinaria")
+            if not reporte_id_evento:
+                continue
+            if tipo_evento in ("llegada_veterinaria", "hito_llego_veterinaria"):
+                reportes_con_llegada_registrada.add(reporte_id_evento)
+            elif tipo_evento in ("llegada_zona_reporte", "hito_llegada_zona_reporte"):
+                reportes_con_llegada_zona.add(reporte_id_evento)
+            elif tipo_evento in ("animal_no_localizado", "hito_animal_no_localizado"):
+                reportes_con_busqueda_sin_resultado.add(reporte_id_evento)
+            elif tipo_evento == "animal_bajo_resguardo":
+                reportes_con_animal_bajo_resguardo.add(reporte_id_evento)
 
     esperando_confirmacion = []
     pendientes = []
@@ -949,6 +979,9 @@ async def obtener_reportes_voluntario(usuario_id: str) -> dict:
             "animales": [shape_animal_response(a) for a in animales_crudos],
             "tiene_sugerencia_aceptada": r["id"] in reportes_con_sugerencia_aceptada,
             "tiene_llegada_veterinaria_registrada": r["id"] in reportes_con_llegada_registrada,
+            "llegada_zona_registrada": r["id"] in reportes_con_llegada_zona,
+            "animal_no_localizado_registrado": r["id"] in reportes_con_busqueda_sin_resultado,
+            "animal_bajo_resguardo_registrado": r["id"] in reportes_con_animal_bajo_resguardo,
         }
 
         estado = r.get("estado_reporte")

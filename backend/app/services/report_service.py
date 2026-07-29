@@ -555,14 +555,39 @@ async def cambiar_estado_reporte(
 
 async def obtener_reportes_usuario(usuario_id: str) -> list:
     resultado = supabase.table("reportes").select(
-        "id, estado_reporte, latitud, longitud, municipio, colonia, calle, created_at, "
-        "asociacion_asignada_id, "
+        "id, estado_reporte, estado_cobertura, latitud, longitud, municipio, colonia, calle, created_at, "
+        "asociacion_asignada_id, staff_asignado_id, "
         "animal(id, orden, es_grupo, cantidad, trae_crias_nacidas, numero_crias_nacidas, "
         "tipo_animal_id, condicion_id, sexo, edad_aproximada, descripcion, "
         "tipo_animal_catalogo(clave), condicion_catalogo(clave), tamanio_catalogo(clave), "
         "animal_fotos(foto_url, orden)), "
         "asociaciones!reportes_asociacion_asignada_id_fkey(nombre)"
     ).eq("usuario_id", usuario_id).order("created_at", desc=True).execute()
+
+    reporte_ids = [r["id"] for r in resultado.data or []]
+    eventos_por_reporte: dict[str, set[str]] = {rid: set() for rid in reporte_ids}
+    if reporte_ids:
+        historial = (
+            supabase.table("historial_reporte")
+            .select("reporte_id, tipo_evento")
+            .in_("reporte_id", reporte_ids)
+            .in_(
+                "tipo_evento",
+                [
+                    "animal_encontrado",
+                    "animal_bajo_resguardo",
+                    "llegada_hogar_temporal",
+                    "seguimiento_inicial",
+                    "seguimiento_resguardo",
+                    "entrega_confirmada",
+                ],
+            )
+            .execute()
+        )
+        for evento in historial.data or []:
+            eventos_por_reporte.setdefault(evento["reporte_id"], set()).add(
+                evento["tipo_evento"]
+            )
 
     reportes = []
     for r in resultado.data:
@@ -581,6 +606,28 @@ async def obtener_reportes_usuario(usuario_id: str) -> list:
                 fotos_urls = [f["foto_url"] for f in fotos_ordenadas]
                 foto_url = fotos_urls[0]
 
+        eventos = eventos_por_reporte.get(r["id"], set())
+        estado = r.get("estado_reporte")
+        cobertura = r.get("estado_cobertura")
+        if estado == "cerrado":
+            estado_publico = "Resolución final"
+        elif estado == "rescatado" or eventos.intersection(
+            {"llegada_hogar_temporal", "seguimiento_inicial", "seguimiento_resguardo"}
+        ):
+            estado_publico = "En seguimiento"
+        elif "animal_bajo_resguardo" in eventos:
+            estado_publico = "Animal bajo resguardo"
+        elif "animal_encontrado" in eventos or estado == "en_atencion":
+            estado_publico = "Animal localizado"
+        elif cobertura in ("confirmado", "en_atencion") or estado == "en_camino":
+            estado_publico = "Voluntario confirmado"
+        elif cobertura in ("abierto", "propuesta_enviada"):
+            estado_publico = "Buscando voluntario"
+        elif r.get("asociacion_asignada_id"):
+            estado_publico = "Asociación coordinando"
+        else:
+            estado_publico = "Reporte recibido"
+
         reportes.append({
             "id": r["id"],
             "estado_reporte": r.get("estado_reporte"),
@@ -592,6 +639,13 @@ async def obtener_reportes_usuario(usuario_id: str) -> list:
             "foto_url": foto_url,
             "fotos": fotos_urls,
             "animales": animales,
+            "asociacion_nombre": (r.get("asociaciones") or {}).get("nombre"),
+            "estado_publico": estado_publico,
+            "puede_cancelar": estado not in (
+                "cerrado",
+                "cancelado_por_reportante",
+                "rescatado",
+            ),
         })
 
     return reportes

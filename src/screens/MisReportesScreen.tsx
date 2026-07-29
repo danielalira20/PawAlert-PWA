@@ -19,6 +19,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Dimensions,
   Image,
   Modal,
@@ -45,6 +46,8 @@ interface ReporteItem {
   foto_url: string | null;
   fotos?: string[]; // si el backend manda varias fotos (animal_fotos), se usan aquí
   asociacion_nombre: string | null;
+  estado_publico: string;
+  puede_cancelar: boolean;
   animales: Animal[];
 }
 
@@ -116,7 +119,15 @@ function AnimalIcon({ tipoAnimal, condicion, size = 34, count = 1 }: { tipoAnima
 }
 
 // ─── Carrusel de fotos (para la sección expandida) ──────────────────────────
-function PhotoCarousel({ fotos, width, height }: { fotos: string[]; width: number | string; height: number }) {
+function PhotoCarousel({
+  fotos,
+  width,
+  height,
+}: {
+  fotos: string[];
+  width: number | `${number}%`;
+  height: number;
+}) {
   const [index, setIndex] = useState(0);
   if (fotos.length === 0) return null;
 
@@ -322,6 +333,39 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
     setExpandedId(prev => (prev === id ? null : id));
   };
 
+  const cancelarReporte = (reporte: ReporteItem) => {
+    Alert.alert(
+      '¿Cancelar este reporte?',
+      'Si ya hay una persona en camino, la asociación recibirá un aviso y el caso continuará abierto por seguridad.',
+      [
+        { text: 'Volver', style: 'cancel' },
+        {
+          text: 'Solicitar cancelación',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const response = await axios.post(
+                `${API_URL}/reports/${reporte.id}/cancel`,
+                {},
+                { headers: { Authorization: `Bearer ${token}` } },
+              );
+              Alert.alert(
+                response.data.cancelado ? 'Reporte cancelado' : 'Asociación avisada',
+                response.data.mensaje || 'La actualización quedó registrada.',
+              );
+              await cargarReportes();
+            } catch (error: any) {
+              Alert.alert(
+                'No pudimos cancelar',
+                error?.response?.data?.detail || 'Inténtalo nuevamente.',
+              );
+            }
+          },
+        },
+      ],
+    );
+  };
+
   // ─── Card de un reporte ──────────────────────────────────────────────────
   const renderCard = (reporte: ReporteItem, isLast: boolean) => {
     const isExpanded = expandedId === reporte.id;
@@ -483,6 +527,28 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
                       </View>
                     )}
 
+                    {reporte.puede_cancelar && (
+                      <TouchableOpacity
+                        onPress={() => cancelarReporte(reporte)}
+                        style={{
+                          alignSelf: 'flex-start',
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 6,
+                          borderWidth: 1,
+                          borderColor: '#C85A4A55',
+                          borderRadius: 10,
+                          paddingHorizontal: 10,
+                          paddingVertical: 8,
+                        }}
+                      >
+                        <Ionicons name="close-circle-outline" size={15} color="#A84335" />
+                        <Text style={{ color: '#A84335', fontSize: 11, fontWeight: '800' }}>
+                          Cancelar reporte
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+
                     {/* Datos del animal — navegable si el caso trae más de uno.
                     No-compact: incluye la descripción del animal actual, para
                     que quede sincronizada con el índice del carrusel (antes
@@ -495,10 +561,29 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
 
                 return (
                   <View style={{ borderTopWidth: 1, borderTopColor: '#F0EBE3', padding: 13 }}>
+                    <View style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 9,
+                      padding: 11,
+                      borderRadius: 12,
+                      backgroundColor: petzen.colors.teal + '12',
+                      marginBottom: 12,
+                    }}>
+                      <Ionicons name="pulse-outline" size={17} color={petzen.colors.tealDark} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 9, color: petzen.colors.textSecondary, fontWeight: '700', textTransform: 'uppercase' }}>
+                          Avance del rescate
+                        </Text>
+                        <Text style={{ fontSize: 13, color: petzen.colors.textDark, fontWeight: '800', marginTop: 2 }}>
+                          {reporte.estado_publico}
+                        </Text>
+                      </View>
+                    </View>
                     {stacked ? (
                       <View style={{ gap: 12 }}>
                         {fotos.length > 0 && (
-                          <PhotoCarousel fotos={fotos} width={'100%' as any} height={170} />
+                          <PhotoCarousel fotos={fotos} width="100%" height={170} />
                         )}
                         <View style={{ gap: 11 }}>{detailRows}</View>
                       </View>
