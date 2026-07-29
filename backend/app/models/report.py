@@ -109,10 +109,11 @@ class ReportListItem(BaseModel):
 
 ## Lo usa el staff para registrar el avance del rescate
 class HitoRequest(BaseModel):
-    tipo_hito: str  # "encontre_animal" o "llegue_refugio"
+    tipo_hito: str
     condicion_observada: Optional[str] = None
     comentario: Optional[str] = None
     foto_url: Optional[str] = None
+    foto_entorno_url: Optional[str] = None
     latitud: Optional[float] = None
     longitud: Optional[float] = None
 
@@ -121,4 +122,3 @@ class HitoRequest(BaseModel):
 class RechazarReporteRequest(BaseModel):
     motivo: str
     comentario: Optional[str] = None
-    

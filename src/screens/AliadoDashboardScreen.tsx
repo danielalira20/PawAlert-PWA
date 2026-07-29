@@ -6,7 +6,6 @@ import { AliadoImpactStats } from '../components/profile/AliadoImpactStats';
 import { useAliadoImpact } from '../hooks/useAliadoImpact';
 import MisLotesScreen from './red-aliados/MisLotesScreen';
 import NotificacionesAliadoScreen from './NotificacionesAliadoScreen';
-import DirectorioAliadosScreen from './red-aliados/DirectorioAliadosScreen';
 
 // Misma paleta que StaffAsignacionScreen.tsx (COLORS/SHADOW_SM), reusada
 // literalmente — no se inventa un estilo nuevo para este dashboard.
@@ -22,7 +21,7 @@ const COLORS = {
   cardBg: '#FAF3EA',
 };
 
-type ActiveTab = 'lotes' | 'notificaciones' | 'directorio';
+type ActiveTab = 'lotes' | 'notificaciones';
 
 interface Props {
   onClose?: () => void;
@@ -85,7 +84,6 @@ export default function AliadoDashboardScreen({ onClose }: Props) {
             {([
               { key: 'lotes', label: 'Mis lotes' },
               { key: 'notificaciones', label: 'Notificaciones' },
-              { key: 'directorio', label: 'Directorio de aliados' },
             ] as { key: ActiveTab; label: string }[]).map((tab) => (
               <TouchableOpacity
                 key={tab.key}
@@ -110,7 +108,6 @@ export default function AliadoDashboardScreen({ onClose }: Props) {
 
           {activeTab === 'lotes' && <MisLotesScreen embedded />}
           {activeTab === 'notificaciones' && <NotificacionesAliadoScreen embedded />}
-          {activeTab === 'directorio' && <DirectorioAliadosScreen embedded />}
         </ScrollView>
       </View>
     </View>

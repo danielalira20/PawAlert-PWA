@@ -12,8 +12,8 @@ from typing import Optional
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
-from app.services import matching
-from app.db.supabase import supabase
+from app.services import coverage_service, matching
+from app.db.supabase import supabase, supabase_admin
 from app.utils.animal_shaping import shape_animal_embed, condicion_mas_grave
 
 router = APIRouter()
@@ -79,6 +79,10 @@ def obtener_candidatos(reporte_id: str, authorization: Optional[str] = Header(No
     resultado["modo_asignacion"] = aso["modo_asignacion"]
     resultado["timeout_min"] = 0 if aso["modo_asignacion"] == "automatico" else _timeout_por_condicion(aso, reporte.get("condicion"))
     resultado["confirmacion_voluntario"] = reporte.get("confirmacion_voluntario")
+    resultado["estado_cobertura"] = reporte.get("estado_cobertura")
+    resultado["ofrecimientos_externos"] = (
+        coverage_service.obtener_ofrecimientos_reporte(reporte_id)
+    )
 
     # Primera presentacion: sellar timestamp + evento (solo una vez)
     if reporte.get("candidatos_presentados_at") is None and resultado["candidatos"]:
@@ -104,18 +108,32 @@ def asignar_voluntario(
     reporte = _reporte_o_404(reporte_id)
     _validar_es_asociacion_duena(usuario, reporte)
 
-    vol = (
-        supabase.table("voluntarios")
-        .select("id, usuario_id, estado, usuarios(nombre, apellido_paterno)")
-        .eq("id", body.voluntario_id).single().execute().data
-    )
+    try:
+        vol = (
+            supabase_admin.table("voluntarios")
+            .select(
+                "id, usuario_id, estado, "
+                "usuarios(nombre, apellido_paterno, roles(nombre))"
+            )
+            .eq("id", body.voluntario_id).single().execute().data
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="No pudimos consultar el perfil del voluntario seleccionado",
+        ) from exc
     if not vol or vol["estado"] not in ESTADOS_ACTIVOS_VOLUNTARIO:
         raise HTTPException(status_code=422, detail="El voluntario no existe o no está activo")
 
-    candidatos_vigentes = matching.obtener_candidatos(reporte_id)["candidatos"]
-    if body.voluntario_id not in {
-        candidato["voluntario_id"] for candidato in candidatos_vigentes
-    }:
+    rol = ((vol.get("usuarios") or {}).get("roles") or {}).get("nombre")
+    if rol == "voluntario_externo":
+        elegibles = coverage_service.obtener_ofrecimientos_reporte(reporte_id)
+        origen = "ofrecimiento_externo"
+    else:
+        elegibles = matching.obtener_candidatos(reporte_id)["candidatos"]
+        origen = "equipo_interno"
+
+    if body.voluntario_id not in {item["voluntario_id"] for item in elegibles}:
         raise HTTPException(
             status_code=409,
             detail=(
@@ -124,27 +142,16 @@ def asignar_voluntario(
             ),
         )
 
-    habia_asignado = reporte.get("staff_asignado_id") is not None
-    supabase.table("reportes").update({
-        "staff_asignado_id": vol["usuario_id"],
-        "confirmacion_voluntario": "esperando",
-    }).eq("id", reporte_id).execute()
-
-    estado_aceptada = supabase.table("asignacion_estados").select("id").eq("clave", "aceptada").execute()
-    if estado_aceptada.data:
-        supabase.table("reporte_asignaciones").update({
-            "estado_id": estado_aceptada.data[0]["id"],
-            "estado": "aceptada",
-        }).eq("reporte_id", reporte_id).execute()
+    coverage_service.reservar_cobertura(
+        reporte_id=reporte_id,
+        usuario_asignado_id=vol["usuario_id"],
+        voluntario_id=vol["id"],
+        asociacion_id=reporte["asociacion_asignada_id"],
+        actor_id=usuario["id"],
+        origen=origen,
+    )
 
     nombre = f"{vol['usuarios']['nombre']} {vol['usuarios']['apellido_paterno']}"
-    tipo_evento = "reasignado" if habia_asignado else "asignado_manual"
-    descripcion = (
-        f"Reasignado a {nombre} por la asociación" if habia_asignado
-        else f"Asignado a {nombre} por la asociación"
-    )
-    _evento(reporte_id, vol["usuario_id"], tipo_evento, descripcion,
-            {"voluntario_id": vol["id"]})
     return {"ok": True, "voluntario_asignado": nombre, "confirmacion": "esperando"}
 
 
@@ -154,21 +161,9 @@ def confirmar_asignacion(reporte_id: str, authorization: Optional[str] = Header(
     reporte = _reporte_o_404(reporte_id)
     _validar_es_el_voluntario_asignado(usuario, reporte)
 
-    supabase.table("reportes").update({
-        "confirmacion_voluntario": "confirmado",
-        "estado_reporte": "en_camino",
-    }).eq("id", reporte_id).execute()
-
-    estado_aceptada = supabase.table("asignacion_estados").select("id").eq("clave", "aceptada").execute()
-    if estado_aceptada.data:
-        supabase.table("reporte_asignaciones").update({
-            "estado_id": estado_aceptada.data[0]["id"],
-            "estado": "aceptada",
-        }).eq("reporte_id", reporte_id).execute()
-
-    _evento(reporte_id, usuario["id"], "voluntario_confirma",
-            "El voluntario confirmó el caso y va en camino", None)
-    return {"ok": True}
+    return coverage_service.responder_propuesta(
+        usuario["id"], reporte_id, True
+    )
 
 
 @router.post("/{reporte_id}/rechazar-asignacion")
@@ -179,26 +174,9 @@ def rechazar_asignacion(
     reporte = _reporte_o_404(reporte_id)
     _validar_es_el_voluntario_asignado(usuario, reporte)
 
-    # No se toca estado_reporte: ya estaba en "asignado" (asignar_voluntario
-    # nunca lo mueve), así que sigue viéndose disponible para que la
-    # asociación proponga otro candidato — coherente con la transición
-    # permitida asignado -> pendiente/en_camino del resto del sistema.
-    supabase.table("reportes").update({
-        "staff_asignado_id": None,
-        "confirmacion_voluntario": None,
-    }).eq("id", reporte_id).execute()
-
-    estado_notificada = supabase.table("asignacion_estados").select("id").eq("clave", "notificada").execute()
-    if estado_notificada.data:
-        supabase.table("reporte_asignaciones").update({
-            "estado_id": estado_notificada.data[0]["id"],
-            "estado": "notificada",
-        }).eq("reporte_id", reporte_id).execute()
-
-    _evento(reporte_id, usuario["id"], "voluntario_rechaza",
-            "El voluntario rechazó — se presenta el siguiente candidato",
-            {"motivo": body.motivo} if body.motivo else None)
-    return {"ok": True}
+    return coverage_service.responder_propuesta(
+        usuario["id"], reporte_id, False, body.motivo
+    )
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -209,6 +187,7 @@ def _reporte_o_404(reporte_id: str) -> dict:
         .select(
             "id, asociacion_asignada_id, staff_asignado_id, "
             "confirmacion_voluntario, candidatos_presentados_at, "
+            "estado_reporte, estado_cobertura, "
             "animal(condicion_catalogo(clave))"
         )
         .eq("id", reporte_id).single().execute()

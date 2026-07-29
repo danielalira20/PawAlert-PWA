@@ -35,12 +35,11 @@ export default function StaffDashboardScreen({ onClose }: Props) {
   const { width } = useWindowDimensions();
   const isDesktop = width >= DESKTOP_BREAKPOINT;
 
-  // Los hitos ("encontré al animal" / "llegué al refugio") validan la
-  // llegada contra las coordenadas del refugio de la asociación — por ahora
-  // solo tiene sentido para voluntario_interno (y el staff con permisos
-  // elevados, que también opera en campo). Un voluntario_externo puede
-  // ver esta misma pantalla con sus casos, pero sin esas acciones rápidas.
-  const puedeRegistrarHitos = user?.rol === 'voluntario_interno' || user?.rol === 'staff';
+  const esHogarTemporal = user?.rol === 'voluntario_externo';
+  const puedeRegistrarHitos =
+    user?.rol === 'voluntario_interno' ||
+    user?.rol === 'voluntario_externo' ||
+    user?.rol === 'staff';
 
   const {
     reportesEsperandoConfirmacion,
@@ -213,7 +212,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
   };
 
   const capturarFotoEncontre = async () => {
-    const uri = await handlePickFoto();
+    const uri = esHogarTemporal ? await usarCamara() : await handlePickFoto();
     if (uri) setFotoEncontre(uri);
   };
 
@@ -409,6 +408,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
                   onQuickRefugio={abrirRefugio}
                   layout="grid"
                   puedeRegistrarHitos={puedeRegistrarHitos}
+                  esHogarTemporal={esHogarTemporal}
                 />
                 <ReportesGroup
                   titulo="En antención"
@@ -419,6 +419,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
                   onQuickRefugio={abrirRefugio}
                   layout="grid"
                   puedeRegistrarHitos={puedeRegistrarHitos}
+                  esHogarTemporal={esHogarTemporal}
                 />
                 <ReportesGroup
                   titulo="Completados"
@@ -430,6 +431,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
                   layout="grid"
                   esUltimo
                   puedeRegistrarHitos={puedeRegistrarHitos}
+                  esHogarTemporal={esHogarTemporal}
                 />
               </View>
             </View>
@@ -455,6 +457,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
               onQuickRefugio={abrirRefugio}
               layout="stack"
               puedeRegistrarHitos={puedeRegistrarHitos}
+              esHogarTemporal={esHogarTemporal}
             />
             <ReportesGroup
               titulo="En acción"
@@ -465,6 +468,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
               onQuickRefugio={abrirRefugio}
               layout="stack"
               puedeRegistrarHitos={puedeRegistrarHitos}
+              esHogarTemporal={esHogarTemporal}
             />
             <ReportesGroup
               titulo="Completados"
@@ -476,6 +480,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
               layout="stack"
               esUltimo
               puedeRegistrarHitos={puedeRegistrarHitos}
+              esHogarTemporal={esHogarTemporal}
             />
           </ScrollView>
         )}
@@ -489,6 +494,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
         onRefugio={() => reporteSeleccionado && abrirRefugio(reporteSeleccionado)}
         onVeterinaria={() => reporteSeleccionado && abrirVeterinaria(reporteSeleccionado)}
         puedeRegistrarHitos={puedeRegistrarHitos}
+        esHogarTemporal={esHogarTemporal}
       />
 
       <EncontreModal
@@ -513,7 +519,11 @@ export default function StaffDashboardScreen({ onClose }: Props) {
 
       <RefugioModal
         visible={showRefugioModal}
-        opciones={OPCIONES_REFUGIO}
+        opciones={
+          esHogarTemporal
+            ? ['Animal bajo resguardo en hogar temporal']
+            : OPCIONES_REFUGIO
+        }
         estado={estadoRefugio}
         onSelectEstado={setEstadoRefugio}
         notas={notasRefugio}
@@ -526,6 +536,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
         isSubmitting={isSubmitting}
         onCancel={cancelarRefugio}
         onConfirm={confirmarRefugio}
+        esHogarTemporal={esHogarTemporal}
       />
 
       <VeterinariaModal
@@ -623,6 +634,7 @@ function ReportesGroup({
   layout,
   esUltimo,
   puedeRegistrarHitos,
+  esHogarTemporal,
 }: {
   titulo: string;
   color: string;
@@ -633,6 +645,7 @@ function ReportesGroup({
   layout: 'stack' | 'grid';
   esUltimo?: boolean;
   puedeRegistrarHitos: boolean;
+  esHogarTemporal: boolean;
 }) {
   if (reportes.length === 0) return null;
 
@@ -656,6 +669,7 @@ function ReportesGroup({
               onQuickEncontre={onQuickEncontre}
               onQuickRefugio={onQuickRefugio}
               puedeRegistrarHitos={puedeRegistrarHitos}
+              esHogarTemporal={esHogarTemporal}
             />
           </View>
         ))}

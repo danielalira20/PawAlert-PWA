@@ -54,6 +54,8 @@ export default function MapScreen() {
   const [reportes, setReportes] = useState<Reporte[]>([]);
   const [asociaciones, setAsociaciones] = useState<AsociacionMapa[]>([]);
   const [mostrarAsociaciones, setMostrarAsociaciones] = useState(false);
+  const [aliados, setAliados] = useState<any[]>([]);
+  const [mostrarAliados, setMostrarAliados] = useState(false);
   const [selectedReport, setSelectedReport] = useState<Reporte | null>(null);
   const [selectedAsociacion, setSelectedAsociacion] = useState<AsociacionMapa | null>(null);
   const [sidebarView, setSidebarView] = useState<SidebarView>('list');
@@ -107,6 +109,13 @@ export default function MapScreen() {
     } catch {}
   }, []);
 
+  const fetchAliados = useCallback(async () => {
+  try {
+    const res = await axios.get(`${API_URL}/red-aliados/directorio`);
+    setAliados(res.data.filter((a: any) => a.latitud && a.longitud));
+  } catch {}
+}, []);
+
   const handleClockPress = () => {
     if (!isMobile) return;
     setShowClockLabel(true);
@@ -124,6 +133,7 @@ export default function MapScreen() {
     setIsClient(true);
     fetchReportes();
     fetchAsociaciones();
+    fetchAliados();
     const fetchInterval = setInterval(fetchReportes, 600000);
     const tickInterval = setInterval(() => setTick(t => t + 1), 60000);
     return () => {
@@ -131,7 +141,8 @@ export default function MapScreen() {
       clearInterval(tickInterval);
       if (clockTimeoutRef.current) clearTimeout(clockTimeoutRef.current);
     };
-  }, [fetchReportes, fetchAsociaciones]);
+  }, [fetchReportes, fetchAsociaciones, fetchAliados]);
+  
 
   // Handle action parameter (e.g. action=create from landing CTA)
   useEffect(() => {
@@ -439,7 +450,7 @@ export default function MapScreen() {
   );
 
   // ── Filtros ──────────────────────────────────────────────────────────────────
-  const filtrosExtraActivos = filtroEspecie !== 'todos' || ordenar !== 'reciente' || mostrarAsociaciones;
+  const filtrosExtraActivos = filtroEspecie !== 'todos' || ordenar !== 'reciente' || mostrarAsociaciones || mostrarAliados;
   // "Más" se ve seleccionado mientras el flotante está abierto, o si ya se
   // dejó algún filtro no-default activo al cerrarlo — nunca los dos rellenos
   // a la vez, para que quede claro cuál está activo.
@@ -566,6 +577,13 @@ export default function MapScreen() {
               <Ionicons name="home" size={13} color={mostrarAsociaciones ? '#FFF' : '#2E86DE'} />
               <Text style={{ fontSize: 11, fontWeight: '700', color: mostrarAsociaciones ? '#FFF' : '#2E86DE' }}>Asociaciones</Text>
             </TouchableOpacity>
+            <TouchableOpacity onPress={() => setMostrarAliados(v => !v)}
+              style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, borderWidth: 1.5,
+                borderColor: '#E67E22', flexDirection: 'row', alignItems: 'center', gap: 5,
+                backgroundColor: mostrarAliados ? '#E67E22' : 'transparent' }}>
+              <Ionicons name="storefront" size={13} color={mostrarAliados ? '#FFF' : '#E67E22'} />
+              <Text style={{ fontSize: 11, fontWeight: '700', color: mostrarAliados ? '#FFF' : '#E67E22' }}>Red de Aliados</Text>
+            </TouchableOpacity>
           </View>
         </Animated.View>
       </>
@@ -579,8 +597,9 @@ export default function MapScreen() {
       {isClient ? (
         <Suspense fallback={<View style={{ flex: 1, backgroundColor: '#EAE0D0' }} />}>
           <LeafletMap
-            reportes={mostrarAsociaciones ? [] : reportesFiltrados}
+            reportes={(mostrarAsociaciones || mostrarAliados) ? [] : reportesFiltrados}
             asociaciones={mostrarAsociaciones ? asociaciones : []}
+            aliados={mostrarAliados ? aliados : []}
             selectedReportId={selectedReport?.id ?? null}
             onSelectReport={handleSelectReport}
             onSelectAsociacion={handleSelectAsociacion}
@@ -709,6 +728,12 @@ export default function MapScreen() {
                 borderColor: '#2E86DE', alignItems: 'center', justifyContent: 'center',
                 backgroundColor: mostrarAsociaciones ? '#2E86DE' : 'transparent' }}>
               <Ionicons name="home" size={14} color={mostrarAsociaciones ? '#FFF' : '#2E86DE'} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setMostrarAliados(v => !v)}
+              style={{ width: 28, height: 28, borderRadius: 14, borderWidth: 1.5,
+                borderColor: '#E67E22', alignItems: 'center', justifyContent: 'center',
+                backgroundColor: mostrarAliados ? '#E67E22' : 'transparent' }}>
+              <Ionicons name="storefront" size={14} color={mostrarAliados ? '#FFF' : '#E67E22'} />
             </TouchableOpacity>
           </View>
         </View>
