@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 
 import { Toast, useToast } from '../components/Toast';
+import { NearbyCasesMap } from '../components/nearby-cases/NearbyCasesMap';
 import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
 import { Animal, animalMasGrave, totalAnimales } from '../types/reporte';
@@ -43,7 +44,7 @@ interface Oferta {
   ofrecido_at: string;
 }
 
-interface CasoCercano {
+export interface CasoCercano {
   id: string;
   municipio?: string | null;
   colonia?: string | null;
@@ -62,37 +63,16 @@ function etiqueta(valor?: string | null) {
   return valor.replaceAll('_', ' ').replace(/^\w/, (letra) => letra.toUpperCase());
 }
 
-function ApproximatePin({ caso }: { caso: CasoCercano }) {
-  return (
-    <View style={styles.mapPreview} accessible accessibilityLabel="Zona aproximada del reporte">
-      <View style={[styles.mapLine, { top: '32%' }]} />
-      <View style={[styles.mapLine, { top: '67%' }]} />
-      <View style={[styles.mapLineVertical, { left: '28%' }]} />
-      <View style={[styles.mapLineVertical, { left: '72%' }]} />
-      <View style={styles.pinHalo}>
-        <View style={styles.pin}>
-          <Ionicons name="paw" size={18} color={C.white} />
-        </View>
-      </View>
-      <View style={styles.mapPrivacy}>
-        <Ionicons name="shield-checkmark" size={13} color={C.accent} />
-        <Text style={styles.mapPrivacyText}>Ubicación aproximada</Text>
-      </View>
-      <Text style={styles.coordinates}>
-        {caso.latitud_aproximada.toFixed(3)}, {caso.longitud_aproximada.toFixed(3)}
-      </Text>
-    </View>
-  );
-}
-
 function CaseCard({
   caso,
   busy,
+  selected,
   onOffer,
   onWithdraw,
 }: {
   caso: CasoCercano;
   busy: boolean;
+  selected: boolean;
   onOffer: () => void;
   onWithdraw: () => void;
 }) {
@@ -102,7 +82,7 @@ function CaseCard({
   const urgente = animal?.condicion === 'grave';
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, selected && styles.cardSelected]}>
       <View style={styles.cardTop}>
         <View style={styles.folio}>
           <Ionicons name="radio-button-on" size={12} color={C.accent} />
@@ -150,8 +130,6 @@ function CaseCard({
           </View>
         </View>
       </View>
-
-      <ApproximatePin caso={caso} />
 
       <View style={styles.coordinator}>
         <View style={styles.coordinatorIcon}>
@@ -236,6 +214,7 @@ export default function NearbyCasesScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const load = useCallback(
     async (silent = false) => {
@@ -248,7 +227,13 @@ export default function NearbyCasesScreen() {
         const response = await axios.get(`${API_URL}/coverage/cercanos`, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        setCases(response.data.casos || []);
+        const nextCases = response.data.casos || [];
+        setCases(nextCases);
+        setSelectedId((current) =>
+          current && nextCases.some((caso: CasoCercano) => caso.id === current)
+            ? current
+            : nextCases[0]?.id || null,
+        );
       } catch (error: any) {
         setCases([]);
         showToast({
@@ -279,24 +264,33 @@ export default function NearbyCasesScreen() {
   const offer = async (caseId: string) => {
     setBusyId(caseId);
     try {
-      await axios.post(
+      const response = await axios.post(
         `${API_URL}/coverage/${caseId}/ofrecimientos`,
         {},
         { headers: { Authorization: `Bearer ${token}` } },
       );
-      await load(true);
+      setCases((current) =>
+        current.map((caso) =>
+          caso.id === caseId
+            ? { ...caso, ofrecimiento: response.data }
+            : caso,
+        ),
+      );
       showToast({
         type: 'success',
         title: 'Ofrecimiento enviado',
         message: 'La asociación coordinadora ya puede ver que quieres ayudar.',
       });
     } catch (error: any) {
+      const status = error?.response?.status;
       showToast({
         type: 'error',
-        title: 'El caso cambió',
-        message: error?.response?.data?.detail || 'Actualiza la lista e inténtalo nuevamente.',
+        title: status === 409 ? 'El caso acaba de cambiar' : 'No pudimos enviar tu ayuda',
+        message:
+          error?.response?.data?.detail ||
+          'Hubo un problema al registrar tu ofrecimiento. Inténtalo nuevamente.',
       });
-      await load(true);
+      if (status === 409) await load(true);
     } finally {
       setBusyId(null);
     }
@@ -308,7 +302,11 @@ export default function NearbyCasesScreen() {
       await axios.delete(`${API_URL}/coverage/${caseId}/ofrecimientos`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      await load(true);
+      setCases((current) =>
+        current.map((caso) =>
+          caso.id === caseId ? { ...caso, ofrecimiento: null } : caso,
+        ),
+      );
       showToast({
         type: 'info',
         title: 'Ofrecimiento retirado',
@@ -355,21 +353,51 @@ export default function NearbyCasesScreen() {
           width >= 900 && styles.contentDesktop,
         ]}
       >
-        <View style={styles.header}>
-          <View style={styles.eyebrow}>
-            <Ionicons name="location" size={15} color={C.primary} />
-            <Text style={styles.eyebrowText}>OPORTUNIDADES EN TU RADIO</Text>
-          </View>
-          <Text style={styles.heading}>Casos cerca de mí</Text>
-          <Text style={styles.subtitle}>
-            Consulta reportes coordinados y ofrece tu ayuda sin comprometerte hasta recibir y
-            confirmar una propuesta.
-          </Text>
-          <View style={styles.privacyBanner}>
-            <Ionicons name="eye-off-outline" size={20} color={C.accent} />
-            <Text style={styles.privacyText}>
-              Protegemos la ubicación exacta hasta que la asociación confirme tu participación.
+        <View style={[styles.hero, width >= 900 && styles.heroDesktop]}>
+          <View style={styles.header}>
+            <View style={styles.eyebrow}>
+              <Ionicons name="navigate-circle" size={17} color={C.primary} />
+              <Text style={styles.eyebrowText}>OPORTUNIDADES EN TU RADIO</Text>
+            </View>
+            <Text style={styles.heading}>Tu ayuda puede empezar cerca</Text>
+            <Text style={styles.subtitle}>
+              Explora reportes coordinados, conoce lo esencial y ofrécete sin quedar asignado
+              hasta aceptar una propuesta.
             </Text>
+          </View>
+          <View style={styles.heroStats}>
+            <View style={styles.heroStat}>
+              <View style={[styles.heroStatIcon, { backgroundColor: C.primarySoft }]}>
+                <Ionicons name="paw" size={20} color={C.primary} />
+              </View>
+              <View>
+                <Text style={styles.heroStatValue}>{loading ? '—' : cases.length}</Text>
+                <Text style={styles.heroStatLabel}>
+                  {cases.length === 1 ? 'caso disponible' : 'casos disponibles'}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.heroStat}>
+              <View style={[styles.heroStatIcon, { backgroundColor: C.accentSoft }]}>
+                <Ionicons name="shield-checkmark" size={20} color={C.accent} />
+              </View>
+              <View>
+                <Text style={styles.heroStatValue}>Privado</Text>
+                <Text style={styles.heroStatLabel}>hasta tu confirmación</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.privacyBanner}>
+          <Ionicons name="eye-off-outline" size={20} color={C.accent} />
+          <Text style={styles.privacyText}>
+            El mapa muestra zonas aproximadas. La dirección exacta se comparte sólo si aceptas
+            una propuesta.
+          </Text>
+          <View style={styles.liveBadge}>
+            <View style={styles.liveDot} />
+            <Text style={styles.liveText}>Actualización automática</Text>
           </View>
         </View>
 
@@ -390,16 +418,53 @@ export default function NearbyCasesScreen() {
             </Text>
           </View>
         ) : (
-          <View style={[styles.grid, width >= 900 && styles.gridDesktop]}>
-            {cases.map((caso) => (
-              <CaseCard
-                key={caso.id}
-                caso={caso}
-                busy={busyId === caso.id}
-                onOffer={() => void offer(caso.id)}
-                onWithdraw={() => void withdraw(caso.id)}
+          <View style={[styles.explorer, width >= 900 && styles.explorerDesktop]}>
+            <View style={[styles.mapPanel, width >= 900 && styles.mapPanelDesktop]}>
+              <NearbyCasesMap
+                casos={cases}
+                selectedId={selectedId}
+                onSelect={setSelectedId}
               />
-            ))}
+              <View style={styles.mapBadge}>
+                <Ionicons name="location" size={14} color={C.primary} />
+                <Text style={styles.mapBadgeText}>
+                  {cases.length} {cases.length === 1 ? 'zona aproximada' : 'zonas aproximadas'}
+                </Text>
+              </View>
+              <View style={styles.mapTip}>
+                <Ionicons name="finger-print-outline" size={16} color={C.text} />
+                <Text style={styles.mapTipText}>Toca un pin para identificar su caso</Text>
+              </View>
+            </View>
+
+            <View style={styles.caseColumn}>
+              <View style={styles.sectionHeading}>
+                <View>
+                  <Text style={styles.sectionTitle}>Disponibles ahora</Text>
+                  <Text style={styles.sectionCaption}>Ordenados por cercanía y compatibilidad</Text>
+                </View>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Actualizar casos"
+                  onPress={() => void load()}
+                  style={({ pressed }) => [styles.refreshButton, pressed && styles.pressed]}
+                >
+                  <Ionicons name="refresh" size={18} color={C.primary} />
+                </Pressable>
+              </View>
+              <View style={styles.grid}>
+                {cases.map((caso) => (
+                  <CaseCard
+                    key={caso.id}
+                    caso={caso}
+                    selected={selectedId === caso.id}
+                    busy={busyId === caso.id}
+                    onOffer={() => void offer(caso.id)}
+                    onWithdraw={() => void withdraw(caso.id)}
+                  />
+                ))}
+              </View>
+            </View>
           </View>
         )}
       </ScrollView>
@@ -422,27 +487,124 @@ const shadow = Platform.select({
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: C.background },
   content: { paddingHorizontal: 18, paddingTop: 28, paddingBottom: 118 },
-  contentDesktop: { width: '100%', maxWidth: 1120, alignSelf: 'center', paddingTop: 44 },
-  header: { width: '100%', maxWidth: 720, marginBottom: 24 },
+  contentDesktop: { width: '100%', maxWidth: 1240, alignSelf: 'center', paddingTop: 44 },
+  hero: { width: '100%', marginBottom: 20, gap: 20 },
+  heroDesktop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+  },
+  header: { flex: 1, width: '100%', maxWidth: 720 },
   eyebrow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
   eyebrowText: { color: C.primary, fontSize: 11, fontWeight: '800', letterSpacing: 1.5 },
-  heading: { color: C.text, fontSize: 30, lineHeight: 36, fontWeight: '900' },
+  heading: { color: C.text, fontSize: 32, lineHeight: 38, fontWeight: '900', maxWidth: 620 },
   subtitle: { color: C.muted, fontSize: 14, lineHeight: 21, marginTop: 8, maxWidth: 640 },
+  heroStats: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  heroStat: {
+    minWidth: 172,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: 'rgba(255,255,255,0.72)',
+    borderRadius: 18,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  heroStatIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroStatValue: { color: C.text, fontSize: 15, fontWeight: '900' },
+  heroStatLabel: { color: C.muted, fontSize: 9, fontWeight: '700', marginTop: 1 },
   privacyBanner: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 10,
     backgroundColor: C.accentSoft,
     borderRadius: 16,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    marginTop: 18,
+    marginBottom: 18,
     borderWidth: 1,
     borderColor: '#CDEBE7',
   },
   privacyText: { flex: 1, color: C.text, fontSize: 12, lineHeight: 18, fontWeight: '600' },
+  liveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.75)',
+    borderRadius: 12,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+  },
+  liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: C.accent },
+  liveText: { color: C.text, fontSize: 9, fontWeight: '800' },
+  explorer: { gap: 18 },
+  explorerDesktop: { flexDirection: 'row', alignItems: 'flex-start', gap: 22 },
+  mapPanel: {
+    height: 280,
+    borderRadius: 26,
+    overflow: 'hidden',
+    backgroundColor: '#F4E9D9',
+    borderWidth: 1,
+    borderColor: C.border,
+    position: 'relative',
+    ...shadow,
+  },
+  mapPanelDesktop: { flex: 1.15, height: 590 },
+  mapBadge: {
+    position: 'absolute',
+    top: 14,
+    left: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.94)',
+    borderRadius: 13,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  mapBadgeText: { color: C.text, fontSize: 10, fontWeight: '900' },
+  mapTip: {
+    position: 'absolute',
+    left: 14,
+    bottom: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    backgroundColor: 'rgba(255,255,255,0.94)',
+    borderRadius: 13,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  mapTipText: { color: C.text, fontSize: 10, fontWeight: '700' },
+  caseColumn: { flex: 0.85, minWidth: 0 },
+  sectionHeading: {
+    minHeight: 46,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  sectionTitle: { color: C.text, fontSize: 17, fontWeight: '900' },
+  sectionCaption: { color: C.muted, fontSize: 10, marginTop: 2 },
+  refreshButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 13,
+    backgroundColor: C.white,
+    borderWidth: 1,
+    borderColor: C.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   grid: { gap: 18 },
-  gridDesktop: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start' },
   card: {
     backgroundColor: C.white,
     borderRadius: 24,
@@ -450,8 +612,11 @@ const styles = StyleSheet.create({
     borderColor: C.border,
     padding: 18,
     width: '100%',
-    maxWidth: 540,
     ...shadow,
+  },
+  cardSelected: {
+    borderColor: C.primary,
+    borderWidth: 2,
   },
   cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   folio: { flexDirection: 'row', alignItems: 'center', gap: 6 },
@@ -480,66 +645,6 @@ const styles = StyleSheet.create({
   condition: { color: C.muted, fontSize: 12, marginTop: 4 },
   distanceRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 7 },
   distanceText: { flex: 1, color: C.accent, fontSize: 12, fontWeight: '800' },
-  mapPreview: {
-    height: 126,
-    backgroundColor: '#F4E9D9',
-    borderRadius: 18,
-    marginTop: 16,
-    overflow: 'hidden',
-    position: 'relative',
-    borderWidth: 1,
-    borderColor: C.border,
-  },
-  mapLine: { position: 'absolute', left: 0, right: 0, height: 2, backgroundColor: '#FFFFFFAA' },
-  mapLineVertical: { position: 'absolute', top: 0, bottom: 0, width: 2, backgroundColor: '#FFFFFFAA' },
-  pinHalo: {
-    position: 'absolute',
-    left: '50%',
-    top: '50%',
-    width: 54,
-    height: 54,
-    marginLeft: -27,
-    marginTop: -27,
-    borderRadius: 27,
-    backgroundColor: 'rgba(236,128,43,0.18)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pin: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: C.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 3,
-    borderColor: C.white,
-  },
-  mapPrivacy: {
-    position: 'absolute',
-    left: 10,
-    top: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: 'rgba(255,255,255,0.92)',
-    borderRadius: 12,
-    paddingHorizontal: 9,
-    paddingVertical: 6,
-  },
-  mapPrivacyText: { color: C.text, fontSize: 10, fontWeight: '800' },
-  coordinates: {
-    position: 'absolute',
-    right: 9,
-    bottom: 8,
-    color: C.muted,
-    backgroundColor: 'rgba(255,255,255,0.88)',
-    borderRadius: 8,
-    paddingHorizontal: 7,
-    paddingVertical: 4,
-    fontSize: 9,
-    fontWeight: '700',
-  },
   coordinator: {
     flexDirection: 'row',
     alignItems: 'center',

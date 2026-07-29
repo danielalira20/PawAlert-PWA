@@ -71,10 +71,14 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="nearby-cases"
         options={{
-          title: 'Cerca de mí',
+          title: 'Casos',
           href: user?.rol === 'voluntario_externo' ? undefined : null,
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'heart' : 'heart-outline'} size={22} color={color} />
+            <Ionicons
+              name={focused ? 'navigate-circle' : 'navigate-circle-outline'}
+              size={23}
+              color={color}
+            />
           ),
         }}
       />

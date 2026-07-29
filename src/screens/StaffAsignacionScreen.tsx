@@ -1390,9 +1390,16 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
                   }}
                   style={{ flex: 1, paddingVertical: 10, borderRadius: 16, alignItems: 'center', backgroundColor: tabAsignacion === tab ? COLORS.primary : 'transparent' }}
                 >
-                  <Text style={{ fontWeight: '700', fontSize: 14, textTransform: 'capitalize', color: tabAsignacion === tab ? COLORS.white : COLORS.textLight }}>
-                    {tab === 'staff' ? '🧑‍💼 Staff' : '🤝 Voluntarios'}
-                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+                    <Ionicons
+                      name={tab === 'staff' ? 'briefcase-outline' : 'people-outline'}
+                      size={17}
+                      color={tabAsignacion === tab ? COLORS.white : COLORS.textLight}
+                    />
+                    <Text style={{ fontWeight: '700', fontSize: 14, textTransform: 'capitalize', color: tabAsignacion === tab ? COLORS.white : COLORS.textLight }}>
+                      {tab === 'staff' ? 'Staff' : 'Voluntarios'}
+                    </Text>
+                  </View>
                 </TouchableOpacity>
               ))}
             </View>
@@ -1442,11 +1449,14 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
 
                 {estadoVoluntarios === 'sin_candidatos' && (
                   <View style={{ alignItems: 'center', paddingVertical: 32 }}>
-                    <Text style={{ fontSize: 40, marginBottom: 12 }}>🐾</Text>
+                    <View style={{ width: 64, height: 64, borderRadius: 22, backgroundColor: 'rgba(236,128,43,0.12)', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
+                      <Ionicons name="paw-outline" size={31} color={COLORS.primary} />
+                    </View>
                     <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.textDark, textAlign: 'center', marginBottom: 8 }}>Sin voluntarios disponibles</Text>
                     <Text style={{ fontSize: 13, color: COLORS.textLight, textAlign: 'center', lineHeight: 20, marginBottom: 20 }}>No hay voluntarios disponibles cerca de este reporte por ahora.</Text>
-                    <TouchableOpacity onPress={() => reporteAccionId && cargarCandidatos(reporteAccionId)} style={{ backgroundColor: COLORS.primary, paddingHorizontal: 28, paddingVertical: 13, borderRadius: 20 }}>
-                      <Text style={{ color: COLORS.white, fontWeight: '700' }}>🔄 Reintentar</Text>
+                    <TouchableOpacity onPress={() => reporteAccionId && cargarCandidatos(reporteAccionId)} style={{ backgroundColor: COLORS.primary, paddingHorizontal: 24, paddingVertical: 13, borderRadius: 20, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Ionicons name="refresh" size={18} color={COLORS.white} />
+                      <Text style={{ color: COLORS.white, fontWeight: '700' }}>Reintentar</Text>
                     </TouchableOpacity>
                     <TouchableOpacity onPress={() => { setShowStaffModal(false); resetModales(); }} style={{ marginTop: 12 }}>
                       <Text style={{ color: COLORS.textLight, fontSize: 13 }}>Cerrar</Text>
