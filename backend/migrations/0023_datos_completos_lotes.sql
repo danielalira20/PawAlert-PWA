@@ -21,4 +21,8 @@ COMMENT ON COLUMN lotes.direccion_entrega IS
 COMMENT ON COLUMN lotes.direccion_detalle IS
     'Dirección estructurada del lote: estado, municipio, calle, codigo_postal y colonia.';
 
+-- Fuerza a PostgREST/Supabase a reconocer las columnas nuevas inmediatamente
+-- después de aplicar la migración.
+NOTIFY pgrst, 'reload schema';
+
 COMMIT;
