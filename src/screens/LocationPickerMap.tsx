@@ -8,6 +8,7 @@ interface Props {
   selectedPosition?: { latitud: number; longitud: number } | null;
   instructionText?: string;
   helperText?: string;
+  readOnly?: boolean;
 }
 
 const PUEBLA_CENTER = { latitude: 19.0414, longitude: -98.2063 };
@@ -51,6 +52,7 @@ export default function LocationPickerMap({
   selectedPosition,
   instructionText = 'Toca el mapa para marcar la ubicación del animal',
   helperText = 'También puedes arrastrar el pin para ajustar la posición',
+  readOnly = false,
 }: Props) {
   const mapRef = useRef<MapView>(null);
   const [markerCoord, setMarkerCoord] = useState(
@@ -60,6 +62,7 @@ export default function LocationPickerMap({
   );
 
   const handlePress = (e: any) => {
+    if (readOnly) return;
     const { latitude, longitude } = e.nativeEvent.coordinate;
     setMarkerCoord({ latitude, longitude });
     onLocationSelect(latitude, longitude);
@@ -74,8 +77,7 @@ export default function LocationPickerMap({
 
   return (
     <View style={{ marginTop: 8 }}>
-      {/* Instrucción superior */}
-      <View style={{
+      {!readOnly && <View style={{
         flexDirection: 'row', alignItems: 'center', gap: 6,
         backgroundColor: '#FFF5EE', borderRadius: 10,
         paddingHorizontal: 12, paddingVertical: 7, marginBottom: 8,
@@ -84,11 +86,11 @@ export default function LocationPickerMap({
         <Text style={{ fontSize: 11, color: '#D4691A', fontWeight: '600', flex: 1 }}>
           {instructionText}
         </Text>
-      </View>
+      </View>}
 
       {/* Mapa */}
       <View style={{
-        height: 220, width: '100%',
+        height: readOnly ? 180 : 220, width: '100%',
         borderRadius: 14, overflow: 'hidden',
         borderWidth: 1.5, borderColor: '#F0E8DC',
         shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
@@ -98,14 +100,14 @@ export default function LocationPickerMap({
           ref={mapRef}
           style={{ flex: 1 }}
           initialRegion={{ ...markerCoord, latitudeDelta: 0.05, longitudeDelta: 0.05 }}
-          onPress={handlePress}
-          showsUserLocation
+          onPress={readOnly ? undefined : handlePress}
+          showsUserLocation={!readOnly}
           showsMyLocationButton={false}
         >
           <TrackedMarker
-            draggable
+            draggable={!readOnly}
             coordinate={markerCoord}
-            onDragEnd={handlePress}
+            onDragEnd={readOnly ? undefined : handlePress}
           >
             <LocationPin />
           </TrackedMarker>
@@ -113,9 +115,9 @@ export default function LocationPickerMap({
       </View>
 
       {/* Instrucción inferior */}
-      <Text style={{ fontSize: 11, color: '#9B8B7A', textAlign: 'center', marginTop: 6 }}>
+      {!readOnly && <Text style={{ fontSize: 11, color: '#9B8B7A', textAlign: 'center', marginTop: 6 }}>
         {helperText}
-      </Text>
+      </Text>}
     </View>
   );
 }

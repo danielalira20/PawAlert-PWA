@@ -184,6 +184,10 @@ class InvitarAsociacionesRequest(BaseModel):
     asociacion_ids: list[str] = Field(min_length=1)
 
 
+class EstadoLoteRequest(BaseModel):
+    activo: bool
+
+
 class ResponderInvitacionRequest(BaseModel):
     aceptar: bool
     cantidad_asignada: Optional[float] = Field(default=None, gt=0)
