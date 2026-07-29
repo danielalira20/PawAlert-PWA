@@ -96,6 +96,63 @@ def test_ofrecimiento_devuelve_conflicto_cuando_el_caso_cambio():
     assert "ya no acepta ofrecimientos" in error.value.detail
 
 
+def test_asociacion_recibe_datos_del_externo_con_cliente_administrativo():
+    consulta_ofertas = MagicMock()
+    consulta_ofertas.select.return_value = consulta_ofertas
+    consulta_ofertas.eq.return_value = consulta_ofertas
+    consulta_ofertas.in_.return_value = consulta_ofertas
+    consulta_ofertas.order.return_value = consulta_ofertas
+    consulta_ofertas.execute.return_value = SimpleNamespace(
+        data=[
+            {
+                "id": "oferta-1",
+                "voluntario_id": "vol-1",
+                "estado": "vigente",
+                "compatibilidad": 100,
+                "distancia_km": 1.2,
+                "capacidad_disponible": 2,
+                "ofrecido_at": "2026-07-28T18:00:00+00:00",
+            }
+        ]
+    )
+
+    consulta_perfil = MagicMock()
+    consulta_perfil.select.return_value = consulta_perfil
+    consulta_perfil.eq.return_value = consulta_perfil
+    consulta_perfil.limit.return_value = consulta_perfil
+    consulta_perfil.execute.return_value = SimpleNamespace(
+        data=[
+            {
+                "id": "vol-1",
+                "usuario_id": "user-1",
+                "estado": "activo_nivel_2",
+                "usuarios": {
+                    "nombre": "Rafael",
+                    "apellido_paterno": "Jude",
+                },
+                "capacidades": {"max_casos_simultaneos": 2},
+            }
+        ]
+    )
+
+    supabase_admin = MagicMock()
+    supabase_admin.table.side_effect = [consulta_ofertas, consulta_perfil]
+    supabase_publico = MagicMock()
+
+    with (
+        patch.object(coverage_service, "supabase_admin", supabase_admin),
+        patch.object(coverage_service, "supabase", supabase_publico),
+    ):
+        ofertas = coverage_service.obtener_ofrecimientos_reporte("rep-1")
+
+    assert ofertas[0]["nombre"] == "Rafael Jude"
+    assert ofertas[0]["etiqueta"] == "Se ofreció"
+    assert ofertas[0]["tipo"] == "voluntario_externo"
+    assert ofertas[0]["capacidad_resumen"] == "2 espacios disponibles"
+    assert supabase_admin.table.call_count == 2
+    supabase_publico.table.assert_not_called()
+
+
 def test_reserva_usa_una_sola_funcion_transaccional():
     ejecucion = MagicMock()
     ejecucion.execute.return_value = SimpleNamespace(data="propuesta-1")

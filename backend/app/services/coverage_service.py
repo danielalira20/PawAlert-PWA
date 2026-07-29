@@ -220,7 +220,7 @@ def obtener_ofrecimientos_reporte(reporte_id: str) -> list[dict]:
     ofrecimientos = []
     for oferta in resultado.data or []:
         perfil = (
-            supabase.table("voluntarios")
+            supabase_admin.table("voluntarios")
             .select(
                 "id, usuario_id, estado, usuarios("
                 "nombre, apellido_paterno), "
