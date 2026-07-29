@@ -11,9 +11,49 @@ from typing import Optional, List
 from app.db.supabase import supabase
 from datetime import datetime, timedelta, timezone
 import json
+import math
 
 
 router = APIRouter()
+RADIO_LLEGADA_ZONA_METROS = 500
+
+HITOS_CANONICOS = {
+    "encontre_animal": "animal_encontrado",
+    "llego_veterinaria": "llegada_veterinaria",
+}
+
+EVENTOS_HISTORIAL_POR_HITO = {
+    "llegada_zona_reporte": "llegada_zona_reporte",
+    "animal_encontrado": "animal_encontrado",
+    "animal_no_localizado": "animal_no_localizado",
+    "llegada_veterinaria": "llegada_veterinaria",
+    "llegada_hogar_temporal": "llegada_hogar_temporal",
+    # El refugio interno aún no forma parte de los hitos canónicos del
+    # voluntariado externo. Conserva su evento histórico anterior.
+    "llegue_refugio": "hito_llegue_refugio",
+}
+
+
+def _distancia_metros(
+    latitud_origen: float,
+    longitud_origen: float,
+    latitud_destino: float,
+    longitud_destino: float,
+) -> float:
+    radio_tierra = 6371000
+    lat1 = math.radians(float(latitud_origen))
+    lon1 = math.radians(float(longitud_origen))
+    lat2 = math.radians(float(latitud_destino))
+    lon2 = math.radians(float(longitud_destino))
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    haversine = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+    )
+    return radio_tierra * 2 * math.asin(math.sqrt(haversine))
+
+
 def _obtener_usuario_autenticado(authorization: str | None) -> dict:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="No autenticado")
@@ -308,7 +348,7 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
     # Verificar que el reporte existe y está asignado a este staff
     reporte = supabase.table("reportes").select(
         "id, estado_reporte, estado_cobertura, staff_asignado_id, "
-        "asociacion_asignada_id"
+        "asociacion_asignada_id, latitud, longitud"
     ).eq("id", reporte_id).execute()
 
     if not reporte.data:
@@ -319,31 +359,113 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
     if reporte["staff_asignado_id"] != usuario["id"]:
         raise HTTPException(status_code=403, detail="No tienes permiso para registrar hitos en este reporte")
 
-    # Validar tipo de hito
-    if body.tipo_hito not in [
-        "encontre_animal",
+    tipo_hito = HITOS_CANONICOS.get(body.tipo_hito, body.tipo_hito)
+
+    # Validar tipo de hito. Los alias anteriores siguen aceptándose para
+    # conservar compatibilidad con versiones ya instaladas de la app.
+    if tipo_hito not in [
+        "llegada_zona_reporte",
+        "animal_encontrado",
+        "animal_no_localizado",
         "llegue_refugio",
         "llegada_hogar_temporal",
-        "llego_veterinaria",
+        "llegada_veterinaria",
     ]:
         raise HTTPException(status_code=422, detail="Tipo de hito inválido")
 
     # Validar flujo de estados
-    if body.tipo_hito == "encontre_animal" and reporte["estado_reporte"] != "en_camino":
+    if tipo_hito in (
+        "llegada_zona_reporte",
+        "animal_encontrado",
+        "animal_no_localizado",
+    ) and reporte["estado_reporte"] != "en_camino":
         raise HTTPException(status_code=400, detail="El reporte debe estar en estado en_camino para registrar este hito")
 
-    if body.tipo_hito == "llegue_refugio" and reporte["estado_reporte"] != "en_atencion":
+    if tipo_hito == "llegue_refugio" and reporte["estado_reporte"] != "en_atencion":
         raise HTTPException(status_code=400, detail="El reporte debe estar en estado en_atencion para registrar este hito")
 
-    if body.tipo_hito == "llegada_hogar_temporal" and reporte["estado_reporte"] != "en_atencion":
+    if tipo_hito == "llegada_hogar_temporal" and reporte["estado_reporte"] != "en_atencion":
         raise HTTPException(status_code=400, detail="El reporte debe estar en atención para iniciar la custodia")
 
-    if body.tipo_hito == "llego_veterinaria" and reporte["estado_reporte"] != "en_atencion":
+    if tipo_hito == "llegada_veterinaria" and reporte["estado_reporte"] != "en_atencion":
         raise HTTPException(status_code=400, detail="El reporte debe estar en estado en_atencion para registrar este hito")
 
+    rol_usuario = (usuario.get("roles") or {}).get("nombre")
+    distancia_reporte_metros = None
+
+    if tipo_hito == "llegada_zona_reporte":
+        if rol_usuario != "voluntario_externo":
+            raise HTTPException(
+                status_code=403,
+                detail="Este hito corresponde a un voluntario externo",
+            )
+        if body.latitud is None or body.longitud is None:
+            raise HTTPException(
+                status_code=422,
+                detail="La ubicación GPS es obligatoria para registrar la llegada a la zona",
+            )
+        if reporte.get("latitud") is None or reporte.get("longitud") is None:
+            raise HTTPException(
+                status_code=409,
+                detail="El reporte no tiene coordenadas para validar la llegada",
+            )
+        distancia_reporte_metros = _distancia_metros(
+            body.latitud,
+            body.longitud,
+            reporte["latitud"],
+            reporte["longitud"],
+        )
+        if distancia_reporte_metros > RADIO_LLEGADA_ZONA_METROS:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Aún estás lejos de la zona del reporte. "
+                    f"Estás a {round(distancia_reporte_metros)} metros; "
+                    f"acércate a menos de {RADIO_LLEGADA_ZONA_METROS} metros."
+                ),
+            )
+
+    if tipo_hito in ("animal_encontrado", "animal_no_localizado") and rol_usuario == "voluntario_externo":
+        llegada = (
+            supabase.table("historial_reporte")
+            .select("id")
+            .eq("reporte_id", reporte_id)
+            .eq("usuario_id", usuario["id"])
+            .in_("tipo_evento", ["llegada_zona_reporte", "hito_llegada_zona_reporte"])
+            .limit(1)
+            .execute()
+        )
+        if not llegada.data:
+            raise HTTPException(
+                status_code=409,
+                detail="Primero debes registrar tu llegada a la zona del reporte",
+            )
+
+    if tipo_hito == "animal_no_localizado":
+        if rol_usuario != "voluntario_externo":
+            raise HTTPException(
+                status_code=403,
+                detail="Este hito corresponde a un voluntario externo",
+            )
+        if body.latitud is None or body.longitud is None:
+            raise HTTPException(
+                status_code=422,
+                detail="La ubicación GPS es obligatoria para registrar la búsqueda",
+            )
+        if body.tiempo_busqueda_minutos is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Indica cuántos minutos buscaste al animal",
+            )
+        if not body.comentario or not body.comentario.strip():
+            raise HTTPException(
+                status_code=422,
+                detail="Describe brevemente dónde y cómo realizaste la búsqueda",
+            )
+
     # Validación GPS obligatoria para llegue_refugio
-    if body.tipo_hito == "llegue_refugio":
-        if not body.latitud or not body.longitud:
+    if tipo_hito == "llegue_refugio":
+        if body.latitud is None or body.longitud is None:
             raise HTTPException(status_code=422, detail="La ubicación GPS es obligatoria para registrar la llegada al refugio")
 
         if not body.foto_url:
@@ -360,15 +482,9 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
         refugio_lat = float(asociacion.data[0]["latitud"])
         refugio_lon = float(asociacion.data[0]["longitud"])
 
-        # Calcular distancia en metros usando fórmula de Haversine
-        import math
-        R = 6371000  # radio de la tierra en metros
-        lat1, lon1 = math.radians(body.latitud), math.radians(body.longitud)
-        lat2, lon2 = math.radians(refugio_lat), math.radians(refugio_lon)
-        dlat = lat2 - lat1
-        dlon = lon2 - lon1
-        a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
-        distancia_metros = R * 2 * math.asin(math.sqrt(a))
+        distancia_metros = _distancia_metros(
+            body.latitud, body.longitud, refugio_lat, refugio_lon
+        )
 
         if distancia_metros > 200:
             raise HTTPException(
@@ -376,8 +492,7 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
                 detail=f"Tu ubicación no coincide con el refugio. Estás a {round(distancia_metros)} metros. Debes estar dentro de 200 metros."
             )
 
-    rol_usuario = (usuario.get("roles") or {}).get("nombre")
-    if body.tipo_hito == "encontre_animal" and rol_usuario == "voluntario_externo":
+    if tipo_hito == "animal_encontrado" and rol_usuario == "voluntario_externo":
         if not body.foto_url:
             raise HTTPException(
                 status_code=422,
@@ -389,7 +504,7 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
                 detail="La ubicación GPS es obligatoria para registrar que encontraste al animal",
             )
 
-    if body.tipo_hito == "llegada_hogar_temporal":
+    if tipo_hito == "llegada_hogar_temporal":
         if rol_usuario != "voluntario_externo":
             raise HTTPException(
                 status_code=403,
@@ -427,17 +542,12 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
                 detail="Tu hogar temporal no tiene una ubicación verificada",
             )
 
-        import math
-        radio_tierra = 6371000
-        lat1, lon1 = math.radians(body.latitud), math.radians(body.longitud)
-        lat2 = math.radians(float(hogar.data[0]["latitud"]))
-        lon2 = math.radians(float(hogar.data[0]["longitud"]))
-        dlat, dlon = lat2 - lat1, lon2 - lon1
-        a = (
-            math.sin(dlat / 2) ** 2
-            + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+        distancia_hogar = _distancia_metros(
+            body.latitud,
+            body.longitud,
+            hogar.data[0]["latitud"],
+            hogar.data[0]["longitud"],
         )
-        distancia_hogar = radio_tierra * 2 * math.asin(math.sqrt(a))
         if distancia_hogar > 200:
             raise HTTPException(
                 status_code=400,
@@ -452,7 +562,7 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
     # con este reporte_id (la sugerencia de aliado ya fue aceptada), y la
     # ubicación se valida contra la veterinaria de esa contribución, no
     # contra la asociación.
-    if body.tipo_hito == "llego_veterinaria":
+    if tipo_hito == "llegada_veterinaria":
         contribucion = supabase.table("contribuciones").select(
             "id, oferta_proactiva_id"
         ).eq("reporte_id", reporte_id).order("created_at", desc=True).limit(1).execute()
@@ -463,7 +573,7 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
                 detail="No hay ninguna sugerencia de aliado veterinario aceptada para este reporte"
             )
 
-        if not body.latitud or not body.longitud:
+        if body.latitud is None or body.longitud is None:
             raise HTTPException(status_code=422, detail="La ubicación GPS es obligatoria para registrar la llegada a la veterinaria")
 
         if not body.foto_url:
@@ -487,15 +597,9 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
         vet_lat = float(ubicacion.data[0]["latitud"])
         vet_lon = float(ubicacion.data[0]["longitud"])
 
-        # Calcular distancia en metros usando fórmula de Haversine
-        import math
-        R = 6371000  # radio de la tierra en metros
-        lat1, lon1 = math.radians(body.latitud), math.radians(body.longitud)
-        lat2, lon2 = math.radians(vet_lat), math.radians(vet_lon)
-        dlat = lat2 - lat1
-        dlon = lon2 - lon1
-        a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
-        distancia_metros = R * 2 * math.asin(math.sqrt(a))
+        distancia_metros = _distancia_metros(
+            body.latitud, body.longitud, vet_lat, vet_lon
+        )
 
         if distancia_metros > 200:
             raise HTTPException(
@@ -505,9 +609,9 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
 
     # Determinar nuevo estado — llego_veterinaria no cambia estado_reporte,
     # solo queda como un evento más en historial_reporte.
-    if body.tipo_hito == "encontre_animal":
+    if tipo_hito == "animal_encontrado":
         nuevo_estado = "en_atencion"
-    elif body.tipo_hito in ("llegue_refugio", "llegada_hogar_temporal"):
+    elif tipo_hito in ("llegue_refugio", "llegada_hogar_temporal"):
         nuevo_estado = "rescatado"
     else:
         nuevo_estado = None
@@ -523,13 +627,13 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
             "estado_reporte": nuevo_estado,
             "estado_id": estado_id.data[0]["id"],
         }
-        if body.tipo_hito == "encontre_animal":
+        if tipo_hito == "animal_encontrado":
             actualizacion["estado_cobertura"] = "en_atencion"
-        elif body.tipo_hito in ("llegue_refugio", "llegada_hogar_temporal"):
+        elif tipo_hito in ("llegue_refugio", "llegada_hogar_temporal"):
             actualizacion["estado_cobertura"] = "finalizado"
         supabase.table("reportes").update(actualizacion).eq("id", reporte_id).execute()
 
-    if body.tipo_hito == "llegada_hogar_temporal":
+    if tipo_hito == "llegada_hogar_temporal":
         voluntario = (
             supabase.table("voluntarios")
             .select("id")
@@ -563,8 +667,8 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
     registrar_historial(
         reporte_id=reporte_id,
         usuario_id=usuario["id"],
-        tipo_evento=f"hito_{body.tipo_hito}",
-        descripcion=f"Hito registrado: {body.tipo_hito}",
+        tipo_evento=EVENTOS_HISTORIAL_POR_HITO[tipo_hito],
+        descripcion=f"Hito registrado: {tipo_hito}",
         datos_extra={
             "condicion_observada": body.condicion_observada,
             "comentario": body.comentario,
@@ -572,6 +676,12 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
             "foto_entorno_url": body.foto_entorno_url,
             "latitud": body.latitud,
             "longitud": body.longitud,
+            "tiempo_busqueda_minutos": body.tiempo_busqueda_minutos,
+            "distancia_reporte_metros": (
+                round(distancia_reporte_metros)
+                if distancia_reporte_metros is not None
+                else None
+            ),
         }
     )
 
@@ -581,7 +691,7 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
     # igual que hoy. Nunca modifica animal.condicion_id ni ninguna otra
     # columna del reporte.
     sugerencia_aliado = None
-    if body.tipo_hito == "encontre_animal":
+    if tipo_hito == "animal_encontrado":
         from app.services.red_aliados_service import _nivel_urgencia_efectivo, sugerir_aliado_veterinario
 
         animal_query = supabase.table("reportes").select(
@@ -597,7 +707,8 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
             sugerencia_aliado = sugerir_aliado_veterinario(reporte_id, nivel_urgencia)
 
     return {
-        "mensaje": f"Hito '{body.tipo_hito}' registrado correctamente.",
+        "mensaje": f"Hito '{tipo_hito}' registrado correctamente.",
+        "tipo_hito": tipo_hito,
         "estado": nuevo_estado,
         "sugerencia_aliado": sugerencia_aliado,
     }

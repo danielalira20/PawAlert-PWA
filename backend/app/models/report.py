@@ -116,6 +116,7 @@ class HitoRequest(BaseModel):
     foto_entorno_url: Optional[str] = None
     latitud: Optional[float] = None
     longitud: Optional[float] = None
+    tiempo_busqueda_minutos: Optional[int] = Field(default=None, ge=1, le=1440)
 
 
 ## Cuando el encargado de asociacion RECHACE reporte
