@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Header, HTTPException, File, Form, UploadFile
 from pydantic import BaseModel
 from typing import List, Optional
 from app.db.supabase import supabase
+from app.services.storage_service import subir_foto
 
 router = APIRouter()
 
@@ -97,23 +98,35 @@ class RegistroAliadoDirectoRequest(BaseModel):
     # Difusion
     tipo_apoyo_difusion: Optional[List[str]] = []
     area_servicio_profesional: Optional[str] = None
-    contacto_responsable_campana: Optional[str] = None
+    nombre_contacto_campana: Optional[str] = None
+    cargo_contacto_campana: Optional[str] = None
     
     # Institucional
     razon_social: Optional[str] = None
     tipo_institucion: Optional[str] = None
     nombre_representante: Optional[str] = None
+    cargo_representante: Optional[str] = None
     rfc: Optional[str] = None
 
 @router.post("/registro-directo", status_code=201)
-async def registro_directo_aliado(body: RegistroAliadoDirectoRequest, authorization: str = Header(None)):
+async def registro_directo_aliado(
+    payload: str = Form(...),
+    documento: Optional[UploadFile] = File(None),
+    authorization: str = Header(None)
+):
     usuario = _obtener_usuario_autenticado(authorization)
     usuario_id = usuario["id"]
+
+    body = RegistroAliadoDirectoRequest.parse_raw(payload)
 
     # Verificar si ya tiene un perfil
     existente = supabase.table("perfil_apoyo").select("id").eq("usuario_id", usuario_id).execute()
     if existente.data:
         raise HTTPException(status_code=409, detail="El usuario ya cuenta con un perfil de aliado.")
+
+    # Upload document if provided
+    if documento and documento.filename:
+        body.documento_verificacion_url = await subir_foto(documento, carpeta="documentos_aliados")
 
     # Preparar el insert.
     datos_extra = {
@@ -132,10 +145,12 @@ async def registro_directo_aliado(body: RegistroAliadoDirectoRequest, authorizat
         "requiere_cita": body.requiere_cita,
         "tipo_apoyo_difusion": body.tipo_apoyo_difusion,
         "area_servicio_profesional": body.area_servicio_profesional,
-        "contacto_responsable_campana": body.contacto_responsable_campana,
+        "nombre_contacto_campana": body.nombre_contacto_campana,
+        "cargo_contacto_campana": body.cargo_contacto_campana,
         "razon_social": body.razon_social,
         "tipo_institucion": body.tipo_institucion,
         "nombre_representante": body.nombre_representante,
+        "cargo_representante": body.cargo_representante,
         "rfc": body.rfc,
     }
     

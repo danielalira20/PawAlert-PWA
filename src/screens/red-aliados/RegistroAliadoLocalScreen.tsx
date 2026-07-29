@@ -8,6 +8,7 @@ import { API_URL } from '../../constants/api';
 import { useAuth } from '../../context/AuthContext';
 import LocationPickerMap from '../LocationPickerMap';
 import * as Location from 'expo-location';
+import * as DocumentPicker from 'expo-document-picker';
 import { useRouter } from 'expo-router';
 
 const COLORS = {
@@ -49,7 +50,7 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
 
   const [medicoResponsable, setMedicoResponsable] = useState('');
   const [cedulaProfesional, setCedulaProfesional] = useState('');
-  const [documentoUrl, setDocumentoUrl] = useState('');
+  const [documentoFile, setDocumentoFile] = useState<DocumentPicker.DocumentPickerAsset | null>(null);
   const [requiereCita, setRequiereCita] = useState(false);
   const [nivelesUrgencia, setNivelesUrgencia] = useState<string[]>([]);
   const [especiesAtendidas, setEspeciesAtendidas] = useState<string[]>([]);
@@ -57,7 +58,8 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
   const [tipoApoyoDifusion, setTipoApoyoDifusion] = useState<string[]>([]);
   const [areaServicio, setAreaServicio] = useState('');
   const [areaServicioOtro, setAreaServicioOtro] = useState('');
-  const [contactoCampana, setContactoCampana] = useState('');
+  const [nombreContactoCampana, setNombreContactoCampana] = useState('');
+  const [cargoContactoCampana, setCargoContactoCampana] = useState('');
 
   const [tipoEstablecimiento, setTipoEstablecimiento] = useState('');
   const [otroEstablecimiento, setOtroEstablecimiento] = useState('');
@@ -66,6 +68,7 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
   const [tipoInstitucion, setTipoInstitucion] = useState('');
   const [otroInstitucion, setOtroInstitucion] = useState('');
   const [nombreRepresentante, setNombreRepresentante] = useState('');
+  const [cargoRepresentante, setCargoRepresentante] = useState('');
   const [rfc, setRfc] = useState('');
 
   const [categorias, setCategorias] = useState<string[]>([]);
@@ -229,13 +232,101 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
 
   const handleCloseRequest = () => setShowCloseConfirm(true);
 
+  // ─── VALIDADORES EN TIEMPO REAL ───
+  const handleEmailChange = (val: string) => {
+    const lowered = val.toLowerCase();
+    setEmail(lowered);
+    if (!lowered.trim()) {
+      setErrors(prev => ({ ...prev, email: 'El correo es obligatorio.' }));
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(lowered.trim())) {
+      setErrors(prev => ({ ...prev, email: 'Correo inválido.' }));
+    } else {
+      setErrors(prev => ({ ...prev, email: '' }));
+    }
+  };
+
+  const handlePasswordChange = (val: string) => {
+    setPassword(val);
+    if (!val) {
+      setErrors(prev => ({ ...prev, password: 'La contraseña es obligatoria.' }));
+    } else if (val.length < 6) {
+      setErrors(prev => ({ ...prev, password: 'Mínimo 6 caracteres.' }));
+    } else {
+      setErrors(prev => ({ ...prev, password: '' }));
+    }
+  };
+
+  const handleTelefonoChange = (val: string) => {
+    setTelefono(val);
+    if (!val.trim()) {
+      setErrors(prev => ({ ...prev, telefono: 'El teléfono es obligatorio.' }));
+    } else if (/[a-zA-Z]/.test(val)) {
+      setErrors(prev => ({ ...prev, telefono: 'El teléfono no puede contener letras.' }));
+    } else if (!/^\d{10}$/.test(val.trim())) {
+      setErrors(prev => ({ ...prev, telefono: 'Debe tener exactamente 10 dígitos numéricos.' }));
+    } else {
+      setErrors(prev => ({ ...prev, telefono: '' }));
+    }
+  };
+
+  const handleNombreContactoChange = (val: string) => {
+    setNombreContacto(val);
+    if (!val.trim()) {
+      setErrors(prev => ({ ...prev, nombreContacto: 'Obligatorio.' }));
+    } else if (/\d/.test(val)) {
+      setErrors(prev => ({ ...prev, nombreContacto: 'No debe contener números.' }));
+    } else {
+      setErrors(prev => ({ ...prev, nombreContacto: '' }));
+    }
+  };
+
+  const handleNombreRepresentanteChange = (val: string) => {
+    setNombreRepresentante(val);
+    if (!val.trim()) {
+      setErrors(prev => ({ ...prev, nombreRepresentante: 'Obligatorio.' }));
+    } else if (/\d/.test(val)) {
+      setErrors(prev => ({ ...prev, nombreRepresentante: 'No debe contener números.' }));
+    } else {
+      setErrors(prev => ({ ...prev, nombreRepresentante: '' }));
+    }
+  };
+
+  const handleNombreContactoCampanaChange = (val: string) => {
+    setNombreContactoCampana(val);
+    if (val.trim() && /\d/.test(val)) {
+      setErrors(prev => ({ ...prev, nombreContactoCampana: 'No debe contener números.' }));
+    } else {
+      setErrors(prev => ({ ...prev, nombreContactoCampana: '' }));
+    }
+  };
+
+  const handleRfcChange = (val: string) => {
+    const uppercaseVal = val.toUpperCase().slice(0, 13);
+    setRfc(uppercaseVal);
+  };
+
+  const handlePickDocumento = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'image/*'],
+        copyToCacheDirectory: true,
+      });
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setDocumentoFile(result.assets[0]);
+      }
+    } catch (err) {
+      console.warn("Error picking document", err);
+    }
+  };
+
   // ─── LÓGICA WIZARD (MULTI-PASO) ───
   const validarPaso1 = () => {
     const newErrors: any = {};
     if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) newErrors.email = 'Obligatorio. Correo válido.';
     if (!password.trim() || password.length < 6) newErrors.password = 'Mínimo 6 caracteres.';
-    if (!telefono.trim() || telefono.length !== 10) newErrors.telefono = 'Debe tener 10 dígitos.';
+    if (!telefono.trim() || telefono.length !== 10 || /[a-zA-Z]/.test(telefono)) newErrors.telefono = 'Debe tener 10 dígitos numéricos.';
     if (!nombreContacto.trim()) newErrors.nombreContacto = 'Obligatorio.';
+    else if (/\d/.test(nombreContacto)) newErrors.nombreContacto = 'No debe contener números.';
     if (!nombreNegocio.trim()) newErrors.nombreNegocio = 'Obligatorio.';
 
     if (Object.keys(newErrors).length > 0) {
@@ -260,6 +351,8 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
       if (!tipoInstitucion) newErrors.tipoInstitucion = 'Selecciona una institución.';
       if (tipoInstitucion === 'Otro' && !otroInstitucion) newErrors.otroInstitucion = 'Especifica la institución.';
       if (!nombreRepresentante) newErrors.nombreRepresentante = 'Obligatorio.';
+      else if (/\d/.test(nombreRepresentante)) newErrors.nombreRepresentante = 'No debe contener números.';
+      if (!cargoRepresentante) newErrors.cargoRepresentante = 'Obligatorio.';
     }
 
     if (Object.keys(newErrors).length > 0) {
@@ -380,7 +473,6 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
         // Veterinaria
         medico_responsable: medicoResponsable,
         cedula_profesional: cedulaProfesional,
-        documento_verificacion_url: documentoUrl,
         requiere_cita: requiereCita,
         niveles_urgencia_atendida: nivelesUrgencia,
         especies_atendidas: especiesAtendidas,
@@ -388,7 +480,8 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
         // Difusion
         tipo_apoyo_difusion: tipoApoyoDifusion,
         area_servicio_profesional: areaServicio === 'Otro' ? areaServicioOtro : areaServicio,
-        contacto_responsable_campana: contactoCampana,
+        nombre_contacto_campana: nombreContactoCampana,
+        cargo_contacto_campana: cargoContactoCampana,
 
         // Aliado Local
         tipo_establecimiento: tipoEstablecimiento === 'Otro' ? otroEstablecimiento : tipoEstablecimiento,
@@ -397,11 +490,32 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
         razon_social: razonSocial,
         tipo_institucion: tipoInstitucion === 'Otro' ? otroInstitucion : tipoInstitucion,
         nombre_representante: nombreRepresentante,
+        cargo_representante: cargoRepresentante,
         rfc
       };
 
-      await axios.post(`${API_URL}/perfiles-apoyo/registro-directo`, payload, {
-        headers: { Authorization: `Bearer ${newToken}` }
+      const formData = new FormData();
+      formData.append('payload', JSON.stringify(payload));
+      
+      if (documentoFile) {
+        if (typeof window !== 'undefined' && typeof File !== 'undefined') {
+          const res = await fetch(documentoFile.uri);
+          const blob = await res.blob();
+          formData.append('documento', blob, documentoFile.name);
+        } else {
+          formData.append('documento', {
+            uri: documentoFile.uri,
+            name: documentoFile.name,
+            type: documentoFile.mimeType || 'application/pdf',
+          } as any);
+        }
+      }
+
+      await axios.post(`${API_URL}/perfiles-apoyo/registro-directo`, formData, {
+        headers: { 
+          Authorization: `Bearer ${newToken}`,
+          'Content-Type': 'multipart/form-data'
+        }
       });
 
       showToast({ type: 'success', title: '¡Registro Exitoso!', message: 'Bienvenido a la Red de Aliados.' });
@@ -447,19 +561,19 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
                 <>
                   <FormSection title={tipoAliado === 'aliado_local' ? 'Datos de la Cuenta (Aliado Local)' : 'Datos de la Cuenta (Patrocinador Institucional)'}>
                     <View style={{ marginBottom: 12 }}>
-                      <Input label="Correo Electrónico *" placeholder="email@ejemplo.com" value={email} onChangeText={(v) => { setEmail(v); setErrors(p => ({ ...p, email: '' })) }} keyboardType="email-address" autoCapitalize="none" />
+                      <Input label="Correo Electrónico *" placeholder="email@ejemplo.com" value={email} onChangeText={handleEmailChange} keyboardType="email-address" autoCapitalize="none" />
                       {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
                     </View>
                     <View style={{ marginBottom: 12 }}>
-                      <Input label="Contraseña *" placeholder="Mínimo 6 caracteres" value={password} onChangeText={(v) => { setPassword(v); setErrors(p => ({ ...p, password: '' })) }} secureTextEntry />
+                      <Input label="Contraseña *" placeholder="Mínimo 6 caracteres" value={password} onChangeText={handlePasswordChange} secureTextEntry />
                       {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
                     </View>
                     <View style={{ marginBottom: 12 }}>
-                      <Input label="Teléfono de contacto *" placeholder="10 dígitos" value={telefono} onChangeText={(v) => { setTelefono(v); setErrors(p => ({ ...p, telefono: '' })) }} keyboardType="phone-pad" />
+                      <Input label="Teléfono de contacto *" placeholder="10 dígitos" value={telefono} onChangeText={handleTelefonoChange} keyboardType="phone-pad" maxLength={10} />
                       {errors.telefono && <Text style={styles.errorText}>{errors.telefono}</Text>}
                     </View>
                     <View style={{ marginBottom: 12 }}>
-                      <Input label="Nombre de contacto *" placeholder="Tu nombre completo" value={nombreContacto} onChangeText={(v) => { setNombreContacto(v); setErrors(p => ({ ...p, nombreContacto: '' })) }} />
+                      <Input label="Nombre de contacto *" placeholder="Tu nombre completo" value={nombreContacto} onChangeText={handleNombreContactoChange} />
                       {errors.nombreContacto && <Text style={styles.errorText}>{errors.nombreContacto}</Text>}
                     </View>
                     <View style={{ marginBottom: 12 }}>
@@ -481,7 +595,7 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
                         {errors.razonSocial && <Text style={styles.errorText}>{errors.razonSocial}</Text>}
                       </View>
                       <View style={{ marginBottom: 12 }}>
-                        <Input label="RFC" placeholder="R.F.C. (Opcional)" value={rfc} onChangeText={setRfc} />
+                        <Input label="RFC" placeholder="R.F.C. (Opcional)" value={rfc} onChangeText={handleRfcChange} maxLength={13} autoCapitalize="characters" />
                       </View>
 
                       <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginTop: 12, marginBottom: 8 }}>Tipo de institución: *</Text>
@@ -502,12 +616,23 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
                       )}
 
                       <View style={{ marginBottom: 12, marginTop: 12 }}>
-                        <Input label="Nombre y cargo del representante *" placeholder="Ej. Juan Pérez - Director General" value={nombreRepresentante} onChangeText={(v) => { setNombreRepresentante(v); setErrors(p => ({ ...p, nombreRepresentante: '' })) }} />
+                        <Input label="Nombre del representante *" placeholder="Ej. Juan Pérez" value={nombreRepresentante} onChangeText={handleNombreRepresentanteChange} />
                         {errors.nombreRepresentante && <Text style={styles.errorText}>{errors.nombreRepresentante}</Text>}
                       </View>
 
                       <View style={{ marginBottom: 12 }}>
-                        <Input label="Documento de existencia/identificación URL (Opcional)" placeholder="Enlace al acta o poder" value={documentoUrl} onChangeText={setDocumentoUrl} autoCapitalize="none" />
+                        <Input label="Cargo del representante *" placeholder="Ej. Director General" value={cargoRepresentante} onChangeText={(v) => { setCargoRepresentante(v); setErrors(p => ({ ...p, cargoRepresentante: '' })) }} />
+                        {errors.cargoRepresentante && <Text style={styles.errorText}>{errors.cargoRepresentante}</Text>}
+                      </View>
+
+                      <View style={{ marginBottom: 12 }}>
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginBottom: 8 }}>Documento de existencia/identificación (PDF o Imagen):</Text>
+                        <TouchableOpacity onPress={handlePickDocumento} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.grayLight, padding: 12, borderRadius: 16, borderWidth: 1, borderColor: COLORS.border }}>
+                          <Ionicons name="document-text-outline" size={24} color={COLORS.textDark} style={{ marginRight: 8 }} />
+                          <Text style={{ flex: 1, color: documentoFile ? COLORS.textDark : COLORS.textLight, fontSize: 14 }}>
+                            {documentoFile ? documentoFile.name : 'Seleccionar archivo (Opcional)'}
+                          </Text>
+                        </TouchableOpacity>
                       </View>
                     </FormSection>
                   )}
@@ -545,7 +670,13 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
                         {errors.cedulaProfesional && <Text style={styles.errorText}>{errors.cedulaProfesional}</Text>}
                       </View>
                       <View style={{ marginBottom: 12 }}>
-                        <Input label="Documento de verificación URL (Opcional)" placeholder="Enlace a la foto de tu cédula" value={documentoUrl} onChangeText={setDocumentoUrl} autoCapitalize="none" />
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginBottom: 8 }}>Documento de verificación (PDF o Imagen):</Text>
+                        <TouchableOpacity onPress={handlePickDocumento} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.grayLight, padding: 12, borderRadius: 16, borderWidth: 1, borderColor: COLORS.border }}>
+                          <Ionicons name="document-text-outline" size={24} color={COLORS.textDark} style={{ marginRight: 8 }} />
+                          <Text style={{ flex: 1, color: documentoFile ? COLORS.textDark : COLORS.textLight, fontSize: 14 }}>
+                            {documentoFile ? documentoFile.name : 'Seleccionar archivo (Opcional)'}
+                          </Text>
+                        </TouchableOpacity>
                       </View>
                       {renderCheckbox('¿Requiere cita previa?', requiereCita, setRequiereCita)}
                     </FormSection>
@@ -674,7 +805,11 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
                     )}
 
                     <View style={{ marginBottom: 12, marginTop: 12 }}>
-                      <Input label="Contacto responsable de campaña *" placeholder="Nombre + cargo" value={contactoCampana} onChangeText={setContactoCampana} />
+                      <Input label="Nombre del responsable de campaña *" placeholder="Ej. Juan Pérez" value={nombreContactoCampana} onChangeText={handleNombreContactoCampanaChange} />
+                      {errors.nombreContactoCampana && <Text style={styles.errorText}>{errors.nombreContactoCampana}</Text>}
+                    </View>
+                    <View style={{ marginBottom: 12 }}>
+                      <Input label="Cargo del responsable de campaña *" placeholder="Ej. Gerente de Marketing" value={cargoContactoCampana} onChangeText={setCargoContactoCampana} />
                     </View>
                   </FormSection>
                   <Divider />
