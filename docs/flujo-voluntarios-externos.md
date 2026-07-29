@@ -5,9 +5,11 @@ qué comportamiento ya está disponible y cómo se divide el trabajo restante.
 
 ## Preparación
 
-1. Aplicar completa la migración
-   `backend/migrations/0019_flujo_cobertura_voluntarios_externos.sql` desde el
-   SQL Editor de Supabase.
+1. Aplicar completas y en orden las migraciones
+   `backend/migrations/0019_flujo_cobertura_voluntarios_externos.sql` y
+   `backend/migrations/0020_ofrecimientos_externos_transaccionales.sql` desde
+   el SQL Editor de Supabase. Si `0019` ya estaba instalada, ejecutar solamente
+   `0020`.
 2. Confirmar que el backend tenga `SUPABASE_SERVICE_KEY`. Esta llave nunca debe
    exponerse en Expo ni usar el prefijo `EXPO_PUBLIC_`.
 3. Reiniciar el backend después de actualizar el código.
@@ -256,4 +258,3 @@ Pendiente:
 - cancelación diferenciada antes y después de la confirmación;
 - administración regional cuando ninguna asociación pueda coordinar;
 - métricas, observabilidad y pruebas E2E automatizadas.
-

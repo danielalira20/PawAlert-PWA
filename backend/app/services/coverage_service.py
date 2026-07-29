@@ -142,98 +142,72 @@ def crear_ofrecimiento(usuario_id: str, reporte_id: str) -> dict:
             detail="Este caso ya no está disponible o no coincide con tu perfil",
         )
 
-    existente = (
-        supabase.table("voluntario_ofrecimientos")
-        .select("id, estado, ofrecido_at")
-        .eq("reporte_id", reporte_id)
-        .eq("voluntario_id", perfil["id"])
-        .in_("estado", ["vigente", "seleccionado"])
-        .limit(1)
-        .execute()
-    )
-    if existente.data:
-        return existente.data[0]
-
     capacidades = perfil["capacidades"]
     carga_actual = _carga_activa(usuario_id)
     max_casos = int(capacidades.get("max_casos_simultaneos") or 1)
-    registro = {
+    try:
+        resultado = supabase_admin.rpc(
+            "crear_ofrecimiento_externo",
+            {
+                "p_reporte_id": reporte_id,
+                "p_voluntario_id": perfil["id"],
+                "p_usuario_id": usuario_id,
+                "p_compatibilidad": 100,
+                "p_distancia_km": caso["distancia_precisa_km"],
+                "p_capacidad_disponible": max(0, max_casos - carga_actual),
+            },
+        ).execute()
+    except Exception as exc:
+        detalle = str(exc).lower()
+        if "caso_no_disponible" in detalle:
+            raise HTTPException(
+                status_code=409,
+                detail="El caso acaba de cambiar y ya no acepta ofrecimientos",
+            ) from exc
+        if "voluntario_externo_no_elegible" in detalle:
+            raise HTTPException(
+                status_code=403,
+                detail="Tu verificación externa ya no está activa",
+            ) from exc
+        raise HTTPException(
+            status_code=500,
+            detail="No pudimos registrar tu ofrecimiento. Inténtalo nuevamente.",
+        ) from exc
+
+    return resultado.data or {
         "reporte_id": reporte_id,
         "voluntario_id": perfil["id"],
         "estado": "vigente",
-        "compatibilidad": 100,
-        "distancia_km": caso["distancia_precisa_km"],
-        "capacidad_disponible": max(0, max_casos - carga_actual),
     }
-    try:
-        creado = (
-            supabase.table("voluntario_ofrecimientos")
-            .insert(registro)
-            .execute()
-        )
-    except Exception as exc:
-        # El índice parcial hace idempotentes dos pulsaciones concurrentes.
-        repetido = (
-            supabase.table("voluntario_ofrecimientos")
-            .select("id, estado, ofrecido_at")
-            .eq("reporte_id", reporte_id)
-            .eq("voluntario_id", perfil["id"])
-            .in_("estado", ["vigente", "seleccionado"])
-            .limit(1)
-            .execute()
-        )
-        if repetido.data:
-            return repetido.data[0]
-        raise exc
-
-    supabase.table("historial_reporte").insert(
-        {
-            "reporte_id": reporte_id,
-            "usuario_id": usuario_id,
-            "tipo_evento": "voluntario_se_ofrece",
-            "descripcion": "Un voluntario externo verificado se ofreció para ayudar",
-            "datos_extra": {
-                "voluntario_id": perfil["id"],
-                "distancia_km": caso["distancia_precisa_km"],
-            },
-        }
-    ).execute()
-    return (creado.data or [registro])[0]
 
 
 def retirar_ofrecimiento(usuario_id: str, reporte_id: str) -> dict:
     perfil = obtener_perfil_externo(usuario_id)
-    existente = (
-        supabase.table("voluntario_ofrecimientos")
-        .select("id, estado")
-        .eq("reporte_id", reporte_id)
-        .eq("voluntario_id", perfil["id"])
-        .eq("estado", "vigente")
-        .limit(1)
-        .execute()
-    )
-    if not existente.data:
-        raise HTTPException(
-            status_code=409,
-            detail="El ofrecimiento ya no se puede retirar",
-        )
-    (
-        supabase.table("voluntario_ofrecimientos")
-        .update(
+    try:
+        resultado = supabase_admin.rpc(
+            "retirar_ofrecimiento_externo",
             {
-                "estado": "retirado",
-                "actualizado_at": datetime.now(timezone.utc).isoformat(),
-            }
-        )
-        .eq("id", existente.data[0]["id"])
-        .execute()
-    )
-    return {"ok": True}
+                "p_reporte_id": reporte_id,
+                "p_voluntario_id": perfil["id"],
+                "p_usuario_id": usuario_id,
+            },
+        ).execute()
+    except Exception as exc:
+        if "ofrecimiento_no_retirable" in str(exc).lower():
+            raise HTTPException(
+                status_code=409,
+                detail="El ofrecimiento ya fue seleccionado o dejó de estar vigente",
+            ) from exc
+        raise HTTPException(
+            status_code=500,
+            detail="No pudimos retirar tu ofrecimiento. Inténtalo nuevamente.",
+        ) from exc
+    return {"ok": True, "ofrecimiento": resultado.data}
 
 
 def obtener_ofrecimientos_reporte(reporte_id: str) -> list[dict]:
     resultado = (
-        supabase.table("voluntario_ofrecimientos")
+        supabase_admin.table("voluntario_ofrecimientos")
         .select(
             "id, voluntario_id, estado, compatibilidad, distancia_km, "
             "capacidad_disponible, ofrecido_at"
@@ -348,7 +322,7 @@ def responder_propuesta(
 
 def _ofrecimientos_del_voluntario(voluntario_id: str) -> dict[str, dict]:
     resultado = (
-        supabase.table("voluntario_ofrecimientos")
+        supabase_admin.table("voluntario_ofrecimientos")
         .select("id, reporte_id, estado, ofrecido_at")
         .eq("voluntario_id", voluntario_id)
         .in_("estado", ["vigente", "seleccionado"])

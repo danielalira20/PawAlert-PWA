@@ -31,6 +31,71 @@ def test_distancia_cercana_se_calcula_en_kilometros():
     assert distancia == pytest.approx(1.11, abs=0.03)
 
 
+def test_ofrecimiento_usa_funcion_transaccional_e_idempotente():
+    ejecucion = MagicMock()
+    ejecucion.execute.return_value = SimpleNamespace(
+        data={"id": "oferta-1", "estado": "vigente"}
+    )
+    supabase_admin = MagicMock()
+    supabase_admin.rpc.return_value = ejecucion
+    perfil = {
+        "id": "vol-1",
+        "capacidades": {"max_casos_simultaneos": 2},
+    }
+    caso = {
+        "id": "rep-1",
+        "distancia_precisa_km": 3.4,
+    }
+
+    with (
+        patch.object(coverage_service, "supabase_admin", supabase_admin),
+        patch.object(coverage_service, "obtener_perfil_externo", return_value=perfil),
+        patch.object(coverage_service, "obtener_casos_cercanos", return_value=[caso]),
+        patch.object(coverage_service, "_carga_activa", return_value=0),
+    ):
+        oferta = coverage_service.crear_ofrecimiento("user-1", "rep-1")
+
+    assert oferta == {"id": "oferta-1", "estado": "vigente"}
+    supabase_admin.rpc.assert_called_once_with(
+        "crear_ofrecimiento_externo",
+        {
+            "p_reporte_id": "rep-1",
+            "p_voluntario_id": "vol-1",
+            "p_usuario_id": "user-1",
+            "p_compatibilidad": 100,
+            "p_distancia_km": 3.4,
+            "p_capacidad_disponible": 2,
+        },
+    )
+
+
+def test_ofrecimiento_devuelve_conflicto_cuando_el_caso_cambio():
+    ejecucion = MagicMock()
+    ejecucion.execute.side_effect = Exception("caso_no_disponible")
+    supabase_admin = MagicMock()
+    supabase_admin.rpc.return_value = ejecucion
+    perfil = {
+        "id": "vol-1",
+        "capacidades": {"max_casos_simultaneos": 1},
+    }
+    caso = {
+        "id": "rep-1",
+        "distancia_precisa_km": 1.0,
+    }
+
+    with (
+        patch.object(coverage_service, "supabase_admin", supabase_admin),
+        patch.object(coverage_service, "obtener_perfil_externo", return_value=perfil),
+        patch.object(coverage_service, "obtener_casos_cercanos", return_value=[caso]),
+        patch.object(coverage_service, "_carga_activa", return_value=0),
+        pytest.raises(HTTPException) as error,
+    ):
+        coverage_service.crear_ofrecimiento("user-1", "rep-1")
+
+    assert error.value.status_code == 409
+    assert "ya no acepta ofrecimientos" in error.value.detail
+
+
 def test_reserva_usa_una_sola_funcion_transaccional():
     ejecucion = MagicMock()
     ejecucion.execute.return_value = SimpleNamespace(data="propuesta-1")
