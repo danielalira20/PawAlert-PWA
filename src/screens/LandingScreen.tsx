@@ -238,6 +238,7 @@ export default function LandingScreen() {
   const [isAssociationFormVisible, setIsAssociationFormVisible] = useState(false);
   const [isReportGuideVisible, setIsReportGuideVisible] = useState(false);
   const [isExternalVolunteerFormVisible, setIsExternalVolunteerFormVisible] = useState(false);
+  const [isMuralVisible, setIsMuralVisible] = useState(false);
   const [recentPhotos, setRecentPhotos] = useState<string[]>([]);
   const [showFullMissionVision, setShowFullMissionVision] = useState(false);
 
@@ -559,6 +560,20 @@ export default function LandingScreen() {
               <PawDecor bottom={20} left={isDesktop ? -20 : -10} size={36} opacity={0.12} color={C.accent} rotate={-15} />
             </Animated.View>
           </View>
+        </View>
+
+        {/* ══════════════════════════════════════════════════════════════════
+            BOTÓN MURAL: HUELLAS QUE AYUDAN
+        ══════════════════════════════════════════════════════════════════ */}
+        <View style={{ alignItems: 'center', marginTop: 10, marginBottom: 30, zIndex: 10 }}>
+          <AnimatedButton onPress={() => setIsMuralVisible(true)}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 16 }}>
+              <Ionicons name="sparkles" size={20} color={C.primary} />
+              <Text style={{ fontSize: 18, fontFamily: F.displayBold, color: C.primary, letterSpacing: -0.3 }}>
+                Huellas que ayudan
+              </Text>
+            </View>
+          </AnimatedButton>
         </View>
 
         {/* ══════════════════════════════════════════════════════════════════
@@ -1570,7 +1585,127 @@ export default function LandingScreen() {
           </Suspense>
         )}
       </Modal>
+        {/* ── MODAL MURAL (Huellas que ayudan) ────────────────────────────── */}
+      <Modal
+        visible={isMuralVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setIsMuralVisible(false)}
+      >
+        <MuralModalContent onClose={() => setIsMuralVisible(false)} />
+      </Modal>
 
+    </View>
+  );
+}
+
+// ─── COMPONENTE MURAL (Huellas que ayudan) ──────────────────────────────────
+function MuralModalContent({ onClose }: { onClose: () => void }) {
+  const [historias, setHistorias] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    axios.get(`${API_URL}/red-aliados/mural`)
+      .then(res => setHistorias(res.data))
+      .catch(err => console.error(err))
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  const CATEGORIA_LABEL: Record<string, string> = {
+    alimentos: 'Alimentos', insumos: 'Insumos',
+    servicios_veterinarios: 'Servicios veterinarios', difusion_campanas: 'Difusión y campañas',
+  };
+
+  return (
+    <View style={{ flex: 1, backgroundColor: 'rgba(46,42,38,0.55)', justifyContent: 'center', alignItems: 'center', padding: 16, paddingTop: 60, paddingBottom: 40 }}>
+      <View style={{ flex: 1, width: '100%', maxWidth: 700, backgroundColor: C.bgSoft, borderRadius: 24, overflow: 'hidden', padding: 24 }}>
+        
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
+          <View style={{ flex: 1, paddingRight: 16 }}>
+            <Text style={{ fontSize: 28, fontFamily: F.displayBold, color: C.text, letterSpacing: -0.5 }}>
+              Huellas <Text style={{ color: C.primary }}>que ayudan</Text>
+            </Text>
+            <Text style={{ fontSize: 14, fontFamily: F.bodyMedium, color: C.muted, marginTop: 4 }}>
+              El impacto real de nuestra Red de Aliados. Toca una historia para ver más.
+            </Text>
+          </View>
+          <TouchableOpacity onPress={onClose} style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.05)', alignItems: 'center', justifyContent: 'center' }}>
+            <Ionicons name="close" size={20} color={C.text} />
+          </TouchableOpacity>
+        </View>
+
+        {isLoading ? (
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+            <ActivityIndicator size="large" color={C.primary} />
+          </View>
+        ) : historias.length === 0 ? (
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', opacity: 0.5 }}>
+            <Ionicons name="heart-outline" size={64} color={C.muted} />
+            <Text style={{ marginTop: 16, fontFamily: F.bodyMedium, color: C.muted, fontSize: 16 }}>Aún no hay historias registradas.</Text>
+          </View>
+        ) : (
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 16, paddingBottom: 20 }}>
+            {historias.map(h => {
+              const isExpanded = expandedId === h.id;
+              return (
+                <TouchableOpacity 
+                  key={h.id} 
+                  activeOpacity={0.8}
+                  onPress={() => setExpandedId(isExpanded ? null : h.id)}
+                  style={{
+                    backgroundColor: C.bg, borderRadius: 18, padding: 16,
+                    borderWidth: 1, borderColor: isExpanded ? C.secondary : `${C.neutralLight}60`,
+                    ...(Platform.OS === 'web' ? { boxShadow: `0 4px 15px rgba(0,0,0,0.03)` } : { elevation: 1 } as any),
+                  }}
+                >
+                  <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+                    <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: `${C.secondary}15`, alignItems: 'center', justifyContent: 'center' }}>
+                      <Ionicons name="heart" size={24} color={C.secondary} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 16, fontFamily: F.displayBold, color: C.text }}>{h.aliado_nombre}</Text>
+                      <Text style={{ fontSize: 13, color: C.muted, fontFamily: F.bodyMedium, marginTop: 2 }}>
+                        Apoyó a {h.asociacion_nombre || 'una asociación'}
+                      </Text>
+                    </View>
+                    <Ionicons name={isExpanded ? "chevron-up" : "chevron-down"} size={20} color={C.muted} />
+                  </View>
+
+                  {/* ── SECCIÓN EXPANDIDA DE DETALLES ── */}
+                  {isExpanded && (
+                    <View style={{ 
+                      marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: `${C.neutralLight}40`,
+                      backgroundColor: `${C.secondary}10`, padding: 16, borderRadius: 12
+                    }}>
+                      <Text style={{ fontSize: 14, fontFamily: F.bodySemiBold, color: C.text, marginBottom: 8 }}>
+                        Detalle de la aportación:
+                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                        <Ionicons name="cube-outline" size={16} color={C.secondary} />
+                        <Text style={{ fontSize: 13, fontFamily: F.bodyMedium, color: C.text }}>
+                          <Text style={{ fontFamily: F.bodySemiBold }}>Recurso:</Text> {h.cantidad_valor ? `${h.cantidad_valor} ${h.cantidad_unidad || ''} de ` : ''}{h.subcategoria || CATEGORIA_LABEL[h.categoria || ''] || h.categoria}
+                        </Text>
+                      </View>
+                      {h.confirmada_at && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Ionicons name="calendar-outline" size={16} color={C.secondary} />
+                          <Text style={{ fontSize: 13, fontFamily: F.bodyMedium, color: C.text }}>
+                            <Text style={{ fontFamily: F.bodySemiBold }}>Confirmado el:</Text> {new Date(h.confirmada_at).toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' })}
+                          </Text>
+                        </View>
+                      )}
+                      <Text style={{ fontSize: 13, fontFamily: F.bodyRegular, color: C.muted, fontStyle: 'italic', marginTop: 12, textAlign: 'center' }}>
+                        "Gracias por ser parte del cambio y ayudar a salvar vidas."
+                      </Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        )}
+      </View>
     </View>
   );
 }
