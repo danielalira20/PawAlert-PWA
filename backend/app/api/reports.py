@@ -26,6 +26,7 @@ EVENTOS_HISTORIAL_POR_HITO = {
     "llegada_zona_reporte": "llegada_zona_reporte",
     "animal_encontrado": "animal_encontrado",
     "animal_no_localizado": "animal_no_localizado",
+    "animal_bajo_resguardo": "animal_bajo_resguardo",
     "llegada_veterinaria": "llegada_veterinaria",
     "llegada_hogar_temporal": "llegada_hogar_temporal",
     # El refugio interno aún no forma parte de los hitos canónicos del
@@ -367,6 +368,7 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
         "llegada_zona_reporte",
         "animal_encontrado",
         "animal_no_localizado",
+        "animal_bajo_resguardo",
         "llegue_refugio",
         "llegada_hogar_temporal",
         "llegada_veterinaria",
@@ -383,6 +385,9 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
 
     if tipo_hito == "llegue_refugio" and reporte["estado_reporte"] != "en_atencion":
         raise HTTPException(status_code=400, detail="El reporte debe estar en estado en_atencion para registrar este hito")
+
+    if tipo_hito == "animal_bajo_resguardo" and reporte["estado_reporte"] != "en_atencion":
+        raise HTTPException(status_code=400, detail="El reporte debe estar en atención para registrar el resguardo")
 
     if tipo_hito == "llegada_hogar_temporal" and reporte["estado_reporte"] != "en_atencion":
         raise HTTPException(status_code=400, detail="El reporte debe estar en atención para iniciar la custodia")
@@ -504,16 +509,53 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
                 detail="La ubicación GPS es obligatoria para registrar que encontraste al animal",
             )
 
+    if tipo_hito == "animal_bajo_resguardo":
+        if rol_usuario != "voluntario_externo":
+            raise HTTPException(
+                status_code=403,
+                detail="Este hito corresponde a un voluntario externo",
+            )
+        if not body.foto_url or body.latitud is None or body.longitud is None:
+            raise HTTPException(
+                status_code=422,
+                detail="La foto del animal y la ubicación GPS son obligatorias",
+            )
+        if not body.condicion_observada or not body.destino:
+            raise HTTPException(
+                status_code=422,
+                detail="Indica la condición del animal y el destino del resguardo",
+            )
+
     if tipo_hito == "llegada_hogar_temporal":
         if rol_usuario != "voluntario_externo":
             raise HTTPException(
                 status_code=403,
                 detail="Este hito corresponde a un hogar temporal externo",
             )
-        if body.latitud is None or body.longitud is None or not body.foto_url:
+        if (
+            body.latitud is None
+            or body.longitud is None
+            or not body.foto_url
+            or not body.foto_entorno_url
+        ):
             raise HTTPException(
                 status_code=422,
-                detail="La foto del animal y la ubicación GPS son obligatorias",
+                detail="Las fotos del animal y del entorno, además del GPS, son obligatorias",
+            )
+
+        resguardo = (
+            supabase.table("historial_reporte")
+            .select("id")
+            .eq("reporte_id", reporte_id)
+            .eq("usuario_id", usuario["id"])
+            .eq("tipo_evento", "animal_bajo_resguardo")
+            .limit(1)
+            .execute()
+        )
+        if not resguardo.data:
+            raise HTTPException(
+                status_code=409,
+                detail="Primero registra que el animal está bajo tu resguardo",
             )
 
         voluntario = (
@@ -527,7 +569,7 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
             raise HTTPException(status_code=404, detail="Perfil externo no encontrado")
         hogar = (
             supabase.table("perfil_casa_temporal")
-            .select("latitud, longitud")
+            .select("latitud, longitud, tiempo_resguardo_dias")
             .eq("voluntario_id", voluntario.data[0]["id"])
             .limit(1)
             .execute()
@@ -649,15 +691,18 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
             .execute()
         )
         if not existente.data:
+            ahora_custodia = datetime.now(timezone.utc)
+            dias_resguardo = hogar.data[0].get("tiempo_resguardo_dias")
             supabase.table("custodias_temporales").insert(
                 {
                     "reporte_id": reporte_id,
                     "voluntario_id": voluntario.data[0]["id"],
                     "asociacion_coordinadora_id": reporte["asociacion_asignada_id"],
                     "estado": "activo",
-                    "proximo_seguimiento_at": (
-                        datetime.now(timezone.utc) + timedelta(hours=3)
-                    ).isoformat(),
+                    "fecha_limite": (
+                        ahora_custodia + timedelta(days=int(dias_resguardo))
+                    ).isoformat() if dias_resguardo else None,
+                    "proximo_seguimiento_at": (ahora_custodia + timedelta(hours=3)).isoformat(),
                     "frecuencia_horas": 72,
                 }
             ).execute()
@@ -672,6 +717,7 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
         datos_extra={
             "condicion_observada": body.condicion_observada,
             "comentario": body.comentario,
+            "destino": body.destino,
             "foto_url": body.foto_url,
             "foto_entorno_url": body.foto_entorno_url,
             "latitud": body.latitud,

@@ -904,6 +904,7 @@ async def obtener_reportes_voluntario(usuario_id: str) -> dict:
     reportes_con_llegada_registrada = set()
     reportes_con_llegada_zona = set()
     reportes_con_busqueda_sin_resultado = set()
+    reportes_con_animal_bajo_resguardo = set()
     if reporte_ids_todos:
         contribs = supabase.table("contribuciones").select("reporte_id").in_(
             "reporte_id", reporte_ids_todos
@@ -925,6 +926,7 @@ async def obtener_reportes_voluntario(usuario_id: str) -> dict:
                     "hito_llegada_zona_reporte",
                     "animal_no_localizado",
                     "hito_animal_no_localizado",
+                    "animal_bajo_resguardo",
                 ],
             )
             .execute()
@@ -942,6 +944,8 @@ async def obtener_reportes_voluntario(usuario_id: str) -> dict:
                 reportes_con_llegada_zona.add(reporte_id_evento)
             elif tipo_evento in ("animal_no_localizado", "hito_animal_no_localizado"):
                 reportes_con_busqueda_sin_resultado.add(reporte_id_evento)
+            elif tipo_evento == "animal_bajo_resguardo":
+                reportes_con_animal_bajo_resguardo.add(reporte_id_evento)
 
     esperando_confirmacion = []
     pendientes = []
@@ -977,6 +981,7 @@ async def obtener_reportes_voluntario(usuario_id: str) -> dict:
             "tiene_llegada_veterinaria_registrada": r["id"] in reportes_con_llegada_registrada,
             "llegada_zona_registrada": r["id"] in reportes_con_llegada_zona,
             "animal_no_localizado_registrado": r["id"] in reportes_con_busqueda_sin_resultado,
+            "animal_bajo_resguardo_registrado": r["id"] in reportes_con_animal_bajo_resguardo,
         }
 
         estado = r.get("estado_reporte")

@@ -112,6 +112,7 @@ class HitoRequest(BaseModel):
     tipo_hito: str
     condicion_observada: Optional[str] = None
     comentario: Optional[str] = None
+    destino: Optional[str] = Field(default=None, max_length=200)
     foto_url: Optional[str] = None
     foto_entorno_url: Optional[str] = None
     latitud: Optional[float] = None

@@ -32,6 +32,14 @@ def _reporte_en_camino():
     }
 
 
+def _reporte_en_atencion():
+    return {
+        **_reporte_en_camino(),
+        "estado_reporte": "en_atencion",
+        "estado_cobertura": "en_atencion",
+    }
+
+
 def _supabase_con_tablas(tablas):
     supabase = MagicMock()
     supabase.table.side_effect = lambda nombre: tablas[nombre]
@@ -231,3 +239,111 @@ def test_animal_no_localizado_exige_tiempo_y_comentario(make_query):
 
     assert response.status_code == 422
     assert "cuántos minutos" in response.json()["detail"]
+
+
+def test_animal_bajo_resguardo_registra_destino_y_evidencia(make_query):
+    tablas = {
+        "usuarios": make_query(data=[_usuario_externo()]),
+        "reportes": make_query(data=[_reporte_en_atencion()]),
+    }
+    supabase = _supabase_con_tablas(tablas)
+
+    with (
+        patch.object(reports, "supabase", supabase),
+        patch.object(report_service, "registrar_historial") as historial,
+    ):
+        response = client.post(
+            "/reports/reporte-1/hitos",
+            json={
+                "tipo_hito": "animal_bajo_resguardo",
+                "condicion_observada": "Estable",
+                "destino": "Mi hogar temporal",
+                "comentario": "Se mantiene tranquilo.",
+                "foto_url": "https://pawalert.test/resguardo.jpg",
+                "latitud": 19.4327,
+                "longitud": -99.1333,
+            },
+            headers=AUTH_HEADERS,
+        )
+
+    assert response.status_code == 201
+    assert response.json()["estado"] is None
+    tablas["reportes"].update.assert_not_called()
+    assert historial.call_args.kwargs["tipo_evento"] == "animal_bajo_resguardo"
+    assert historial.call_args.kwargs["datos_extra"]["destino"] == "Mi hogar temporal"
+
+
+def test_llegada_hogar_exige_resguardo_y_foto_entorno(make_query):
+    tablas = {
+        "usuarios": make_query(data=[_usuario_externo()]),
+        "reportes": make_query(data=[_reporte_en_atencion()]),
+    }
+    supabase = _supabase_con_tablas(tablas)
+
+    with patch.object(reports, "supabase", supabase):
+        response = client.post(
+            "/reports/reporte-1/hitos",
+            json={
+                "tipo_hito": "llegada_hogar_temporal",
+                "foto_url": "https://pawalert.test/animal.jpg",
+                "latitud": 19.4327,
+                "longitud": -99.1333,
+            },
+            headers=AUTH_HEADERS,
+        )
+
+    assert response.status_code == 422
+    assert "fotos del animal y del entorno" in response.json()["detail"]
+
+
+def test_llegada_hogar_inicia_custodia_y_programa_seguimiento(make_query):
+    tablas = {
+        "usuarios": make_query(data=[_usuario_externo()]),
+        "reportes": make_query(data=[_reporte_en_atencion()]),
+        "historial_reporte": make_query(data=[{"id": "resguardo-1"}]),
+        "voluntarios": make_query(data=[{"id": "voluntario-1"}]),
+        "perfil_casa_temporal": make_query(
+            data=[
+                {
+                    "latitud": 19.4327,
+                    "longitud": -99.1333,
+                    "tiempo_resguardo_dias": 14,
+                }
+            ]
+        ),
+        "reporte_estados": make_query(data=[{"id": "estado-rescatado"}]),
+        "custodias_temporales": make_query(data=[]),
+    }
+    supabase = _supabase_con_tablas(tablas)
+
+    with (
+        patch.object(reports, "supabase", supabase),
+        patch.object(report_service, "registrar_historial") as historial,
+    ):
+        response = client.post(
+            "/reports/reporte-1/hitos",
+            json={
+                "tipo_hito": "llegada_hogar_temporal",
+                "condicion_observada": "Estable",
+                "foto_url": "https://pawalert.test/animal.jpg",
+                "foto_entorno_url": "https://pawalert.test/entorno.jpg",
+                "latitud": 19.4327,
+                "longitud": -99.1333,
+            },
+            headers=AUTH_HEADERS,
+        )
+
+    assert response.status_code == 201
+    tablas["reportes"].update.assert_called_once_with(
+        {
+            "estado_reporte": "rescatado",
+            "estado_id": "estado-rescatado",
+            "estado_cobertura": "finalizado",
+        }
+    )
+    payload = tablas["custodias_temporales"].insert.call_args.args[0]
+    assert payload["estado"] == "activo"
+    assert payload["frecuencia_horas"] == 72
+    assert payload["fecha_limite"]
+    assert payload["proximo_seguimiento_at"]
+    assert historial.call_args.kwargs["tipo_evento"] == "llegada_hogar_temporal"

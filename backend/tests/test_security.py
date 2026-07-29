@@ -323,6 +323,7 @@ def test_reportes_voluntario_incluye_flags_sugerencia_veterinaria(make_query):
             {"reporte_id": "rep-1", "tipo_evento": "llegada_veterinaria"},
             {"reporte_id": "rep-1", "tipo_evento": "llegada_zona_reporte"},
             {"reporte_id": "rep-1", "tipo_evento": "animal_no_localizado"},
+            {"reporte_id": "rep-1", "tipo_evento": "animal_bajo_resguardo"},
         ]),
     }
     supabase = MagicMock()
@@ -337,7 +338,9 @@ def test_reportes_voluntario_incluye_flags_sugerencia_veterinaria(make_query):
     assert por_reporte["rep-1"]["tiene_llegada_veterinaria_registrada"] is True
     assert por_reporte["rep-1"]["llegada_zona_registrada"] is True
     assert por_reporte["rep-1"]["animal_no_localizado_registrado"] is True
+    assert por_reporte["rep-1"]["animal_bajo_resguardo_registrado"] is True
     assert por_reporte["rep-2"]["tiene_sugerencia_aceptada"] is False
     assert por_reporte["rep-2"]["tiene_llegada_veterinaria_registrada"] is False
     assert por_reporte["rep-2"]["llegada_zona_registrada"] is False
     assert por_reporte["rep-2"]["animal_no_localizado_registrado"] is False
+    assert por_reporte["rep-2"]["animal_bajo_resguardo_registrado"] is False
