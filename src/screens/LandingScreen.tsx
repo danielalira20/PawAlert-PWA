@@ -246,6 +246,7 @@ export default function LandingScreen() {
   const [isAuthRequiredModalVisible, setIsAuthRequiredModalVisible] = useState(false);
   const [isRegistroAliadoModalVisible, setIsRegistroAliadoModalVisible] = useState(false);
   const [isAssociationConflictModalVisible, setIsAssociationConflictModalVisible] = useState(false);
+  const [isVoluntarioConflictModalVisible, setIsVoluntarioConflictModalVisible] = useState(false);
   const [selectedAliadoTipo, setSelectedAliadoTipo] = useState<'aliado_local' | 'patrocinador_institucional'>('aliado_local');
 
   const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
@@ -301,6 +302,13 @@ export default function LandingScreen() {
     if (['custom_donante_comunitario', 'custom_registro_aliado_local', 'custom_registro_patrocinador'].includes(route)) {
       if (isLoggedIn && user?.rol === 'asociacion') {
         setIsAssociationConflictModalVisible(true);
+        return;
+      }
+    }
+
+    if (['custom_registro_aliado_local', 'custom_registro_patrocinador'].includes(route)) {
+      if (isLoggedIn && ['reportante', 'voluntario_interno', 'voluntario_externo'].includes(user?.rol as string)) {
+        setIsVoluntarioConflictModalVisible(true);
         return;
       }
     }
@@ -1693,6 +1701,33 @@ export default function LandingScreen() {
             <View style={{ flexDirection: 'row', gap: 12 }}>
               <TouchableOpacity onPress={() => setIsAssociationConflictModalVisible(false)} style={{ flex: 1, paddingVertical: 16, borderRadius: 20, backgroundColor: C.primary, alignItems: 'center' }}>
                 <Text style={{ color: '#FFF', fontFamily: F.bodySemiBold }}>Entendido</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── MODAL CONFLICTO DE VOLUNTARIO/REPORTANTE ── */}
+      <Modal
+        visible={isVoluntarioConflictModalVisible}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setIsVoluntarioConflictModalVisible(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 16 }}>
+          <View style={{ backgroundColor: C.bg, borderRadius: 32, padding: 32, width: '100%', maxWidth: 400 }}>
+            <Text style={{ fontSize: 22, fontFamily: F.displayBold, color: C.text, textAlign: 'center', marginBottom: 12 }}>
+              Acción no permitida
+            </Text>
+            <Text style={{ fontSize: 15, fontFamily: F.bodyMedium, color: C.muted, textAlign: 'center', marginBottom: 24, lineHeight: 22 }}>
+              Actualmente eres voluntario o reportante, si quieres apoyar puedes formar parte de los aliados como donante comunitario.
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <TouchableOpacity onPress={() => setIsVoluntarioConflictModalVisible(false)} style={{ flex: 1, paddingVertical: 16, borderRadius: 20, backgroundColor: C.neutralLight, alignItems: 'center' }}>
+                <Text style={{ color: C.text, fontFamily: F.bodySemiBold }}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => { setIsVoluntarioConflictModalVisible(false); handleCustomRouting('custom_donante_comunitario'); }} style={{ flex: 1, paddingVertical: 16, paddingLeft: 16, borderRadius: 20, backgroundColor: C.primary, alignItems: 'center' }}>
+                <Text style={{ color: '#FFF', fontFamily: F.bodySemiBold }}>Ir a Donante Comunitario</Text>
               </TouchableOpacity>
             </View>
           </View>

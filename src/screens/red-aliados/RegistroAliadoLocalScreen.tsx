@@ -31,12 +31,13 @@ interface Props {
 }
 
 export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }: Props) {
-  const { login } = useAuth();
+  const { login, refreshUser } = useAuth();
   const { showToast } = useToast();
   const router = useRouter();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [passwordConfirm, setPasswordConfirm] = useState('');
   const [paso, setPaso] = useState(1);
   const [tipoAliado, setTipoAliado] = useState(initialTipoAliado || 'aliado_local');
   const [nombreNegocio, setNombreNegocio] = useState('');
@@ -44,13 +45,21 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
   const [telefono, setTelefono] = useState('');
   const [formaColaboracion, setFormaColaboracion] = useState('Donaciones ocasionales');
   const [logistica, setLogistica] = useState('Puedo entregar');
-  const [horarioContacto, setHorarioContacto] = useState('');
-  const [logoUrl, setLogoUrl] = useState('');
+  
+  const DIAS_ORDEN = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+  const [diasSeleccionados, setDiasSeleccionados] = useState<string[]>([]);
+  const [horaApertura, setHoraApertura] = useState('');
+  const [horaCierre, setHoraCierre] = useState('');
+  const [campoHorarioActivo, setCampoHorarioActivo] = useState<'apertura' | 'cierre' | null>(null);
+
+  const [logoFile, setLogoFile] = useState<DocumentPicker.DocumentPickerAsset | null>(null);
   const [descripcion, setDescripcion] = useState('');
 
   const [medicoResponsable, setMedicoResponsable] = useState('');
   const [cedulaProfesional, setCedulaProfesional] = useState('');
   const [documentoFile, setDocumentoFile] = useState<DocumentPicker.DocumentPickerAsset | null>(null);
+  const [tipoDocumento, setTipoDocumento] = useState('');
+  const [tipoDocumentoOtro, setTipoDocumentoOtro] = useState('');
   const [requiereCita, setRequiereCita] = useState(false);
   const [nivelesUrgencia, setNivelesUrgencia] = useState<string[]>([]);
   const [especiesAtendidas, setEspeciesAtendidas] = useState<string[]>([]);
@@ -101,6 +110,7 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSubmitError, setShowSubmitError] = useState(false);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
+  const [registroExitoso, setRegistroExitoso] = useState(false);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
   // ─── Obtener categorías y subcategorías ───
@@ -253,6 +263,20 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
       setErrors(prev => ({ ...prev, password: 'Mínimo 6 caracteres.' }));
     } else {
       setErrors(prev => ({ ...prev, password: '' }));
+      if (passwordConfirm && val !== passwordConfirm) {
+        setErrors(prev => ({ ...prev, passwordConfirm: 'Las contraseñas no coinciden.' }));
+      } else {
+        setErrors(prev => ({ ...prev, passwordConfirm: '' }));
+      }
+    }
+  };
+
+  const handlePasswordConfirmChange = (val: string) => {
+    setPasswordConfirm(val);
+    if (val !== password) {
+      setErrors(prev => ({ ...prev, passwordConfirm: 'Las contraseñas no coinciden.' }));
+    } else {
+      setErrors(prev => ({ ...prev, passwordConfirm: '' }));
     }
   };
 
@@ -291,6 +315,17 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
     }
   };
 
+  const handleCedulaProfesionalChange = (val: string) => {
+    setCedulaProfesional(val);
+    if (!val.trim()) {
+      setErrors(prev => ({ ...prev, cedulaProfesional: 'Obligatorio.' }));
+    } else if (!/^\d{7,8}$/.test(val)) {
+      setErrors(prev => ({ ...prev, cedulaProfesional: 'Debe contener entre 7 y 8 dígitos numéricos.' }));
+    } else {
+      setErrors(prev => ({ ...prev, cedulaProfesional: '' }));
+    }
+  };
+
   const handleNombreContactoCampanaChange = (val: string) => {
     setNombreContactoCampana(val);
     if (val.trim() && /\d/.test(val)) {
@@ -319,11 +354,35 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
     }
   };
 
+  const handlePickLogo = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['image/*'],
+        copyToCacheDirectory: true,
+      });
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setLogoFile(result.assets[0]);
+      }
+    } catch (err) {
+      console.warn("Error picking logo", err);
+    }
+  };
+
+  const toggleDia = (dia: string) => {
+    setDiasSeleccionados(prev => prev.includes(dia) ? prev.filter(d => d !== dia) : [...prev, dia]);
+  };
+
+  const formatearHorario = () => {
+    if (diasSeleccionados.length === 0) return '';
+    return `${diasSeleccionados.join(', ')} de ${horaApertura || '00:00 AM'} a ${horaCierre || '00:00 PM'}`;
+  };
+
   // ─── LÓGICA WIZARD (MULTI-PASO) ───
   const validarPaso1 = () => {
     const newErrors: any = {};
     if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) newErrors.email = 'Obligatorio. Correo válido.';
     if (!password.trim() || password.length < 6) newErrors.password = 'Mínimo 6 caracteres.';
+    if (password !== passwordConfirm) newErrors.passwordConfirm = 'Las contraseñas no coinciden.';
     if (!telefono.trim() || telefono.length !== 10 || /[a-zA-Z]/.test(telefono)) newErrors.telefono = 'Debe tener 10 dígitos numéricos.';
     if (!nombreContacto.trim()) newErrors.nombreContacto = 'Obligatorio.';
     else if (/\d/.test(nombreContacto)) newErrors.nombreContacto = 'No debe contener números.';
@@ -344,7 +403,11 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
 
       if (tipoEstablecimiento === 'Veterinaria') {
         if (!medicoResponsable) newErrors.medicoResponsable = 'Obligatorio.';
-        if (!cedulaProfesional) newErrors.cedulaProfesional = 'Obligatorio.';
+        if (!cedulaProfesional) {
+          newErrors.cedulaProfesional = 'Obligatorio.';
+        } else if (!/^\d{7,8}$/.test(cedulaProfesional)) {
+          newErrors.cedulaProfesional = 'Debe contener entre 7 y 8 dígitos numéricos.';
+        }
       }
     } else {
       if (!razonSocial) newErrors.razonSocial = 'Obligatorio.';
@@ -465,8 +528,7 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
         nombre_negocio: nombreNegocio,
         forma_colaboracion: formaColaboracion,
         logistica,
-        horario_contacto: horarioContacto,
-        logo_url: logoUrl,
+        horario_contacto: formatearHorario(),
         descripcion,
         acepta_terminos: checkReglas,
 
@@ -491,7 +553,8 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
         tipo_institucion: tipoInstitucion === 'Otro' ? otroInstitucion : tipoInstitucion,
         nombre_representante: nombreRepresentante,
         cargo_representante: cargoRepresentante,
-        rfc
+        rfc,
+        tipo_documento_verificacion: tipoDocumento === 'Otro' ? tipoDocumentoOtro : tipoDocumento
       };
 
       const formData = new FormData();
@@ -511,6 +574,20 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
         }
       }
 
+      if (logoFile) {
+        if (typeof window !== 'undefined' && typeof File !== 'undefined') {
+          const res = await fetch(logoFile.uri);
+          const blob = await res.blob();
+          formData.append('logo', blob, logoFile.name);
+        } else {
+          formData.append('logo', {
+            uri: logoFile.uri,
+            name: logoFile.name,
+            type: logoFile.mimeType || 'image/jpeg',
+          } as any);
+        }
+      }
+
       await axios.post(`${API_URL}/perfiles-apoyo/registro-directo`, formData, {
         headers: { 
           Authorization: `Bearer ${newToken}`,
@@ -518,13 +595,10 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
         }
       });
 
-      showToast({ type: 'success', title: '¡Registro Exitoso!', message: 'Bienvenido a la Red de Aliados.' });
-      router.push('/(tabs)/profile');
+      await refreshUser();
+      setRegistroExitoso(true);
     } catch (error: any) {
-      console.error(error);
-      const msg = error.response?.data?.detail || 'Ocurrió un error al guardar.';
-      setErrors(prev => ({ ...prev, submit: msg }));
-      setShowSubmitError(true);
+      showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'Error al guardar.' });
     } finally {
       setIsSubmitting(false);
     }
@@ -539,8 +613,26 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
     </TouchableOpacity>
   );
 
+  const HORAS_DISPONIBLES = [
+    '06:00 AM', '07:00 AM', '08:00 AM', '09:00 AM', '10:00 AM', '11:00 AM', '12:00 PM',
+    '01:00 PM', '02:00 PM', '03:00 PM', '04:00 PM', '05:00 PM', '06:00 PM', '07:00 PM',
+    '08:00 PM', '09:00 PM', '10:00 PM', '11:00 PM', '12:00 AM', 'Abierto 24hrs'
+  ];
+
   return (
     <View style={styles.outerContainer}>
+      {registroExitoso ? (
+        <View style={[styles.centeredContent, { justifyContent: 'center', alignItems: 'center' }]}>
+          <View style={[styles.cardContainer, { padding: 32, alignItems: 'center' }]}>
+            <Ionicons name="checkmark-circle" size={80} color={COLORS.bgTeal} style={{ marginBottom: 16 }} />
+            <Text style={{ fontSize: 24, fontWeight: '700', color: COLORS.textDark, marginBottom: 8, textAlign: 'center' }}>¡Registro Exitoso!</Text>
+            <Text style={{ fontSize: 16, color: COLORS.textLight, textAlign: 'center', marginBottom: 24 }}>Bienvenido a la Red de Aliados. Tu perfil ha sido creado.</Text>
+            <TouchableOpacity onPress={() => router.push('/(tabs)/profile')} style={{ backgroundColor: COLORS.bgTeal, paddingVertical: 14, paddingHorizontal: 32, borderRadius: 24 }}>
+              <Text style={{ color: COLORS.bgWhite, fontWeight: '700', fontSize: 16 }}>Ir a mi perfil</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : (
       <View style={styles.centeredContent}>
         <View style={styles.cardContainer}>
           <View style={styles.headerSection}>
@@ -569,6 +661,10 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
                       {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
                     </View>
                     <View style={{ marginBottom: 12 }}>
+                      <Input label="Confirmar Contraseña *" placeholder="Repite tu contraseña" value={passwordConfirm} onChangeText={handlePasswordConfirmChange} secureTextEntry />
+                      {errors.passwordConfirm && <Text style={styles.errorText}>{errors.passwordConfirm}</Text>}
+                    </View>
+                    <View style={{ marginBottom: 12 }}>
                       <Input label="Teléfono de contacto *" placeholder="10 dígitos" value={telefono} onChangeText={handleTelefonoChange} keyboardType="phone-pad" maxLength={10} />
                       {errors.telefono && <Text style={styles.errorText}>{errors.telefono}</Text>}
                     </View>
@@ -579,6 +675,15 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
                     <View style={{ marginBottom: 12 }}>
                       <Input label={tipoAliado === 'aliado_local' ? 'Nombre del negocio/clínica *' : 'Nombre de la institución *'} placeholder="Nombre público" value={nombreNegocio} onChangeText={(v) => { setNombreNegocio(v); setErrors(p => ({ ...p, nombreNegocio: '' })) }} />
                       {errors.nombreNegocio && <Text style={styles.errorText}>{errors.nombreNegocio}</Text>}
+                    </View>
+                    <View style={{ marginBottom: 12 }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginBottom: 8 }}>Logo (Imagen Opcional):</Text>
+                      <TouchableOpacity onPress={handlePickLogo} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.grayLight, padding: 12, borderRadius: 16, borderWidth: 1, borderColor: COLORS.border }}>
+                        <Ionicons name="image-outline" size={24} color={COLORS.textDark} style={{ marginRight: 8 }} />
+                        <Text style={{ flex: 1, color: logoFile ? COLORS.textDark : COLORS.textLight, fontSize: 14 }}>
+                          {logoFile ? logoFile.name : 'Seleccionar logo (Opcional)'}
+                        </Text>
+                      </TouchableOpacity>
                     </View>
                   </FormSection>
                 </>
@@ -626,7 +731,20 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
                       </View>
 
                       <View style={{ marginBottom: 12 }}>
-                        <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginBottom: 8 }}>Documento de existencia/identificación (PDF o Imagen):</Text>
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginBottom: 8 }}>Tipo de Documento:</Text>
+                        <View style={styles.animalChips}>
+                          {['INE', 'Comprobante de domicilio o establecimiento', 'Otro'].map(tipo => (
+                            <TouchableOpacity key={tipo} style={[styles.animalChip, { backgroundColor: tipoDocumento === tipo ? COLORS.secondary : COLORS.grayLight }]} onPress={() => setTipoDocumento(tipo)}>
+                              <Text style={{ fontSize: 13, fontWeight: '700', color: tipoDocumento === tipo ? COLORS.textDark : COLORS.textLight }}>{tipo}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                        {tipoDocumento === 'Otro' && (
+                          <View style={{ marginTop: 8, marginBottom: 12 }}>
+                            <Input label="Especificar tipo de documento" placeholder="Ej. Acta constitutiva" value={tipoDocumentoOtro} onChangeText={setTipoDocumentoOtro} />
+                          </View>
+                        )}
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginTop: 8, marginBottom: 8 }}>Documento de existencia/identificación (PDF o Imagen):</Text>
                         <TouchableOpacity onPress={handlePickDocumento} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.grayLight, padding: 12, borderRadius: 16, borderWidth: 1, borderColor: COLORS.border }}>
                           <Ionicons name="document-text-outline" size={24} color={COLORS.textDark} style={{ marginRight: 8 }} />
                           <Text style={{ flex: 1, color: documentoFile ? COLORS.textDark : COLORS.textLight, fontSize: 14 }}>
@@ -936,14 +1054,34 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
               {paso === 5 && (
                 <>
                   <FormSection title="Detalles del Perfil Público">
-                    <View style={{ marginBottom: 12 }}>
-                      <Input label="Horario de contacto" placeholder="Ej. Lunes a Viernes de 9am a 6pm" value={horarioContacto} onChangeText={setHorarioContacto} />
+                    <Text style={styles.sectionLabel}>Horario de Atención (Opcional)</Text>
+                    <View style={styles.daysContainer}>
+                      {DIAS_ORDEN.map((dia) => {
+                        const isSelected = diasSeleccionados.includes(dia);
+                        return (
+                          <TouchableOpacity key={dia} onPress={() => toggleDia(dia)} style={[styles.dayChip, { backgroundColor: isSelected ? COLORS.bgTeal : COLORS.grayLight }]}>
+                            <Text style={[styles.dayChipText, { color: isSelected ? COLORS.bgWhite : COLORS.textLight }]}>{dia.slice(0, 3)}</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
                     </View>
+                    <View style={styles.timeContainer}>
+                      <View style={styles.halfWidth}>
+                        <Text style={styles.timeLabel}>Apertura</Text>
+                        <TouchableOpacity onPress={() => setCampoHorarioActivo('apertura')} style={styles.timeButton}>
+                          <Text style={[styles.timeButtonText, { color: horaApertura ? COLORS.textDark : COLORS.textLight }]}>{horaApertura || '00:00 AM'}</Text>
+                        </TouchableOpacity>
+                      </View>
+                      <View style={styles.halfWidth}>
+                        <Text style={styles.timeLabel}>Cierre</Text>
+                        <TouchableOpacity onPress={() => setCampoHorarioActivo('cierre')} style={styles.timeButton}>
+                          <Text style={[styles.timeButtonText, { color: horaCierre ? COLORS.textDark : COLORS.textLight }]}>{horaCierre || '00:00 PM'}</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                    
                     <View style={{ marginBottom: 12 }}>
                       <Input label="Descripción pública (Opcional)" placeholder="Cuéntanos un poco sobre ti o tu negocio" value={descripcion} onChangeText={setDescripcion} />
-                    </View>
-                    <View style={{ marginBottom: 12 }}>
-                      <Input label="URL de tu Logo (Opcional)" placeholder="https://..." value={logoUrl} onChangeText={setLogoUrl} autoCapitalize="none" />
                     </View>
                   </FormSection>
 
@@ -1018,8 +1156,28 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
             </View>
           </Modal>
 
+          {/* Modal de horarios */}
+          <Modal visible={campoHorarioActivo !== null} transparent animationType="fade" onRequestClose={() => setCampoHorarioActivo(null)}>
+            <View style={styles.modalBackdrop}>
+              <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>{campoHorarioActivo === 'apertura' ? 'Hora de apertura' : 'Hora de cierre'}</Text>
+                <ScrollView showsVerticalScrollIndicator={false} style={styles.modalScroll}>
+                  {HORAS_DISPONIBLES.map((hora) => (
+                    <TouchableOpacity key={hora} onPress={() => { if (campoHorarioActivo === 'apertura') { setHoraApertura(hora); } else { setHoraCierre(hora); }; setCampoHorarioActivo(null); }} style={styles.horaOption}>
+                      <Text style={styles.horaText}>{hora}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+                <TouchableOpacity onPress={() => setCampoHorarioActivo(null)} style={styles.modalCancel}>
+                  <Text style={styles.modalCancelText}>Cancelar</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Modal>
+
         </View>
       </View>
+      )}
     </View>
   );
 }
@@ -1078,4 +1236,19 @@ const styles = StyleSheet.create({
   navBtnSecText: { color: COLORS.textDark, fontWeight: '800', fontSize: 16 },
   navBtnPri: { backgroundColor: COLORS.primary },
   navBtnPriText: { color: COLORS.bgWhite, fontWeight: '900', fontSize: 16 },
+  daysContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
+  dayChip: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20 },
+  dayChipText: { fontWeight: '700', fontSize: 13 },
+  timeContainer: { flexDirection: 'row', gap: 12, marginBottom: 24 },
+  timeLabel: { fontSize: 12, color: COLORS.textLight, marginBottom: 4, fontWeight: '700' },
+  timeButton: { backgroundColor: COLORS.grayLight, borderRadius: 16, padding: 16 },
+  timeButtonText: { fontWeight: '600' },
+  modalContent: { backgroundColor: COLORS.bgWhite, width: '100%', maxWidth: 400, borderRadius: 24, padding: 32, maxHeight: '60%' },
+  modalTitle: { fontSize: 20, fontWeight: '800', color: COLORS.textDark, textAlign: 'center', marginBottom: 20 },
+  modalScroll: { marginBottom: 16 },
+  horaOption: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: COLORS.grayLight },
+  horaText: { fontSize: 16, color: COLORS.textDark, textAlign: 'center', fontWeight: '500' },
+  modalCancel: { alignItems: 'center', marginTop: 20, backgroundColor: COLORS.grayLight, padding: 16, borderRadius: 20 },
+  modalCancelText: { color: COLORS.textDark, fontWeight: '700' },
+  halfWidth: { flex: 1 },
 });
