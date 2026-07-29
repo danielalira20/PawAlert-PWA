@@ -171,10 +171,19 @@ class ConfirmarQrRequest(BaseModel):
     token: str
 
 
+class NivelUrgenciaNecesidad(str, Enum):
+    """Claves reales del CHECK necesidades_urgencia_check
+    (migrations/0006_red_aliados.sql) — no son 'Baja'/'Media'/'Alta',
+    esas son solo etiquetas de UI que el frontend traduce a estas claves."""
+    critico = "critico"
+    urgente = "urgente"
+    no_urgente = "no_urgente"
+
+
 class NecesidadCreate(BaseModel):
     reporte_id: Optional[UUID] = None
     categoria: str
-    urgencia: Optional[str] = None
+    urgencia: Optional[NivelUrgenciaNecesidad] = None
     subcategoria_id: Optional[UUID] = None
     cantidad_valor: Optional[float] = None
     cantidad_unidad: Optional[str] = None

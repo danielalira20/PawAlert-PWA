@@ -31,7 +31,66 @@ const SHADOW_SM = {
   elevation: 2,
 };
 
-type NivelUrgencia = 'Baja' | 'Media' | 'Alta';
+// Claves reales del CHECK necesidades_urgencia_check (migrations/
+// 0006_red_aliados.sql) — 'Baja'/'Media'/'Alta' son solo etiquetas de UI,
+// nunca se mandan al backend.
+type NivelUrgencia = 'critico' | 'urgente' | 'no_urgente';
+
+const URGENCIA_OPCIONES: { value: NivelUrgencia; label: string; color: string }[] = [
+  { value: 'no_urgente', label: 'Baja', color: '#2ECC71' },
+  { value: 'urgente', label: 'Media', color: '#F1C40F' },
+  { value: 'critico', label: 'Alta', color: '#E74C3C' },
+];
+
+type Option = { value: string; label: string };
+
+// Copiadas tal cual de AportacionFormScreen.tsx (mismo patrón de unidades
+// por categoría) — ese archivo no las exporta, así que cada formulario
+// mantiene su propia copia en vez de importarlas.
+const UNIDAD_OTRA = '__otra__';
+
+const UNIDADES_CONTENEDOR = new Set(['costales', 'cajas', 'kits']);
+
+const UNIDADES_POR_CATEGORIA: Record<string, Option[]> = {
+  alimentos: [
+    { value: 'kg', label: 'kg' },
+    { value: 'gramos', label: 'Gramos' },
+    { value: 'piezas', label: 'Piezas' },
+    { value: 'costales', label: 'Costales' },
+    { value: 'cajas', label: 'Cajas' },
+    { value: 'litros', label: 'Litros' },
+  ],
+  insumos: [
+    { value: 'kg', label: 'kg' },
+    { value: 'gramos', label: 'Gramos' },
+    { value: 'piezas', label: 'Piezas' },
+    { value: 'kits', label: 'Kits' },
+    { value: 'costales', label: 'Costales' },
+    { value: 'cajas', label: 'Cajas' },
+    { value: 'litros', label: 'Litros' },
+  ],
+  servicios_veterinarios: [
+    { value: 'consultas', label: 'Consultas' },
+    { value: 'citas', label: 'Citas' },
+    { value: 'atenciones', label: 'Atenciones' },
+  ],
+  difusion_campanas: [
+    { value: 'eventos', label: 'Eventos' },
+    { value: 'publicaciones', label: 'Publicaciones' },
+    { value: 'piezas', label: 'Piezas' },
+  ],
+};
+
+// tipo_evento -> texto legible, para el "último hito" del detalle de caso.
+// Mismos valores reales que TIPOS_HITO_TIMELINE en associations.py.
+const HITO_LABELS: Record<string, string> = {
+  reporte_creado: 'Reporte creado',
+  hito_encontre_animal: 'Encontraron al animal',
+  hito_llegue_refugio: 'Llegó al refugio',
+  hito_llego_veterinaria: 'Llegó a la veterinaria',
+  caso_cerrado: 'Caso cerrado',
+  necesidad_cubierta: 'Necesidad cubierta',
+};
 
 interface CategoriaRecursoApi {
   id: string;
@@ -45,6 +104,20 @@ interface SubcategoriaRecursoApi {
   descripcion: string;
 }
 
+interface CasoCerrado {
+  id: string;
+  titulo: string;
+  foto_url: string | null;
+  closed_at: string | null;
+  condicion: string | null;
+  tipo_animal: string | null;
+}
+
+interface UltimoHito {
+  tipo_evento: string;
+  created_at: string;
+}
+
 // Ícono por clave real de categoria_recurso — fallback genérico si el
 // catálogo llega a tener una categoría sin ícono asignado aquí.
 const ICONO_POR_CLAVE: Record<string, keyof typeof Ionicons.glyphMap> = {
@@ -54,6 +127,14 @@ const ICONO_POR_CLAVE: Record<string, keyof typeof Ionicons.glyphMap> = {
   difusion_campanas: 'megaphone-outline',
 };
 const ICONO_DEFAULT: keyof typeof Ionicons.glyphMap = 'cube-outline';
+
+const formatearHaceDias = (fechaIso: string | null): string => {
+  if (!fechaIso) return '';
+  const dias = Math.floor((Date.now() - new Date(fechaIso).getTime()) / 86400000);
+  if (dias <= 0) return 'Hoy';
+  if (dias === 1) return 'Hace 1 día';
+  return `Hace ${dias} días`;
+};
 
 export default function CreateNeedScreen() {
   const { token } = useAuth();
@@ -65,16 +146,28 @@ export default function CreateNeedScreen() {
   const [subcategoriaId, setSubcategoriaId] = useState<string | null>(null);
   const [urgencia, setUrgencia] = useState<NivelUrgencia | null>(null);
 
+  const [tiposAnimalesAsociacion, setTiposAnimalesAsociacion] = useState<string[]>([]);
+  const [especiesSeleccionadas, setEspeciesSeleccionadas] = useState<string[]>([]);
+
   const [cantidadValor, setCantidadValor] = useState('');
   const [cantidadUnidad, setCantidadUnidad] = useState('');
+  const [unidadEsOtra, setUnidadEsOtra] = useState(false);
+  const [contenidoPorUnidad, setContenidoPorUnidad] = useState('');
   const [notasAdicionales, setNotasAdicionales] = useState('');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [mostrarConfirmacion, setMostrarConfirmacion] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Ahora guardamos la foto_url en lugar de la ubicación
-  const [reportesActivos, setReportesActivos] = useState<{id: string, titulo: string, foto_url: string | null}[]>([]);
+  // Ahora guardamos closed_at/condicion/tipo_animal además de foto_url,
+  // para poder ordenar por fecha de cierre y mostrar el detalle del caso.
+  const [reportesActivos, setReportesActivos] = useState<CasoCerrado[]>([]);
   const [isLoadingReportes, setIsLoadingReportes] = useState(false);
+  const [necesidadesActivasIds, setNecesidadesActivasIds] = useState<Set<string>>(new Set());
+  const [filtroNecesidad, setFiltroNecesidad] = useState<'todos' | 'con' | 'sin'>('todos');
+
+  const [detalleHito, setDetalleHito] = useState<UltimoHito | null>(null);
+  const [isLoadingDetalleHito, setIsLoadingDetalleHito] = useState(false);
 
   const [categoriasData, setCategoriasData] = useState<CategoriaRecursoApi[]>([]);
   const [subcategoriasData, setSubcategoriasData] = useState<SubcategoriaRecursoApi[]>([]);
@@ -118,25 +211,36 @@ export default function CreateNeedScreen() {
     const cargarCasosCerrados = async () => {
       setIsLoadingReportes(true);
       try {
-        const res = await axios.get(`${API_URL}/associations/me/reportes`, { 
-          headers: { Authorization: `Bearer ${token}` } 
+        const res = await axios.get(`${API_URL}/associations/me/reportes`, {
+          headers: { Authorization: `Bearer ${token}` }
         });
-        
+
         // Filtramos para mostrar estrictamente los casos que ya fueron cerrados/rescatados
         const casosCerrados = res.data.filter((r: any) => r.estado_reporte === 'cerrado');
 
-        const casosMapeados = casosCerrados.map((reporte: any) => {
+        const casosMapeados: CasoCerrado[] = casosCerrados.map((reporte: any) => {
           const animales = getAnimales(reporte);
           const grave = animalMasGrave(animales);
-          
+
           const tipo = grave?.tipo_animal || 'Animal';
           const tituloCase = tipo.charAt(0).toUpperCase() + tipo.slice(1);
-          
+
           return {
-            id: reporte.reporte_id, 
+            id: reporte.reporte_id,
             titulo: `${tituloCase} · ${grave?.condicion || 'desconocido'}`,
-            foto_url: reporte.foto_url || null
+            foto_url: reporte.foto_url || null,
+            closed_at: reporte.closed_at || null,
+            condicion: grave?.condicion || null,
+            tipo_animal: grave?.tipo_animal || null,
           };
+        });
+
+        // Más reciente cerrado primero. Un caso 'cerrado' siempre debería
+        // traer closed_at, pero por si acaso los sin fecha van al final.
+        casosMapeados.sort((a, b) => {
+          if (!a.closed_at) return 1;
+          if (!b.closed_at) return -1;
+          return new Date(b.closed_at).getTime() - new Date(a.closed_at).getTime();
         });
 
         setReportesActivos(casosMapeados);
@@ -151,6 +255,67 @@ export default function CreateNeedScreen() {
       cargarCasosCerrados();
     }
   }, [token]);
+
+  useEffect(() => {
+    const cargarNecesidadesActivas = async () => {
+      try {
+        const res = await axios.get(`${API_URL}/associations/me/reportes/necesidades-activas`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setNecesidadesActivasIds(new Set<string>(res.data?.reporte_ids || []));
+      } catch (error) {
+        console.error("Error al cargar necesidades activas:", error);
+      }
+    };
+    if (token) cargarNecesidadesActivas();
+  }, [token]);
+
+  useEffect(() => {
+    const cargarAsociacion = async () => {
+      try {
+        const res = await axios.get(`${API_URL}/associations/me`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setTiposAnimalesAsociacion(res.data?.tipos_animales || []);
+      } catch (error) {
+        console.error("Error al cargar tipos de animales de la asociación:", error);
+      }
+    };
+    if (token) cargarAsociacion();
+  }, [token]);
+
+  const toggleEspecie = (especie: string) => {
+    setEspeciesSeleccionadas((prev) =>
+      prev.includes(especie) ? prev.filter((e) => e !== especie) : [...prev, especie]
+    );
+  };
+
+  const seleccionarReporte = async (reporte: CasoCerrado) => {
+    setReporteId(reporte.id);
+    setErrors((p) => ({ ...p, reporte: '' }));
+    setDetalleHito(null);
+    setIsLoadingDetalleHito(true);
+    try {
+      const res = await axios.get(`${API_URL}/associations/me/reportes/${reporte.id}/historial`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const eventos = res.data?.eventos || [];
+      setDetalleHito(eventos.length ? eventos[eventos.length - 1] : null);
+    } catch (error) {
+      console.error("Error al cargar el historial del caso:", error);
+      setDetalleHito(null);
+    } finally {
+      setIsLoadingDetalleHito(false);
+    }
+  };
+
+  const reportesFiltrados = reportesActivos.filter((r) => {
+    if (filtroNecesidad === 'con') return necesidadesActivasIds.has(r.id);
+    if (filtroNecesidad === 'sin') return !necesidadesActivasIds.has(r.id);
+    return true;
+  });
+
+  const casoSeleccionado = reporteId ? reportesActivos.find((r) => r.id === reporteId) || null : null;
 
   const handleGuardarNecesidad = async () => {
     const newErrors: Record<string, string> = {};
@@ -169,6 +334,9 @@ export default function CreateNeedScreen() {
     if (cantidadUnidad && !cantidadValor) {
       newErrors.cantidad_valor = 'Indica la cantidad numérica.';
     }
+    if (UNIDADES_CONTENEDOR.has(cantidadUnidad) && !contenidoPorUnidad.trim()) {
+      newErrors.contenidoPorUnidad = 'Indica de cuánto es cada unidad.';
+    }
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
@@ -180,24 +348,28 @@ export default function CreateNeedScreen() {
     setIsSubmitting(true);
 
     try {
+      const detalle: Record<string, any> = {};
+      if (notasAdicionales.trim()) detalle.notas = notasAdicionales.trim();
+      if (especiesSeleccionadas.length) detalle.especies_aplica = especiesSeleccionadas;
+      if (UNIDADES_CONTENEDOR.has(cantidadUnidad) && contenidoPorUnidad.trim()) {
+        detalle.contenido_por_unidad = contenidoPorUnidad.trim();
+      }
+
       const payload = {
         reporte_id: reporteId,
         categoria: categoria,
         urgencia: urgencia,
-        subcategoria_id: subcategoriaId, 
+        subcategoria_id: subcategoriaId,
         cantidad_valor: cantidadValor ? parseFloat(cantidadValor) : null,
         cantidad_unidad: cantidadUnidad || null,
-        detalle: notasAdicionales ? { notas: notasAdicionales } : {}
+        detalle,
       };
 
       await axios.post(`${API_URL}/associations/me/necesidades`, payload, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
-      showToast({ type: 'success', title: '¡Necesidad publicada!', message: 'Los aliados compatibles serán notificados.' });
-      setTimeout(() => {
-        router.back();
-      }, 1500);
+      setMostrarConfirmacion(true);
     } catch (error: any) {
       let errorMsg = 'No se pudo publicar la necesidad.';
       if (error?.response?.data?.detail) {
@@ -214,17 +386,28 @@ export default function CreateNeedScreen() {
     }
   };
 
+  const unidadesDisponibles: Option[] = [
+    ...(UNIDADES_POR_CATEGORIA[categoria || ''] || []),
+    { value: UNIDAD_OTRA, label: 'Otra' },
+  ];
+
+  const filtrosNecesidad: { value: 'todos' | 'con' | 'sin'; label: string }[] = [
+    { value: 'todos', label: 'Todos' },
+    { value: 'con', label: 'Con necesidad activa' },
+    { value: 'sin', label: 'Sin necesidad activa' },
+  ];
+
   return (
     <Modal visible={true} transparent animationType="fade">
       <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
         <Toast toast={toast} translateY={translateY} />
 
-        <KeyboardAvoidingView 
+        <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={{ width: '100%', maxWidth: 650, maxHeight: '90%' }}
         >
           <View style={{ backgroundColor: COLORS.cardBg, borderRadius: 32, padding: 32, paddingTop: 40, flexShrink: 1, overflow: 'hidden' }}>
-            
+
             <TouchableOpacity
               onPress={() => router.back()}
               hitSlop={8}
@@ -234,57 +417,128 @@ export default function CreateNeedScreen() {
             </TouchableOpacity>
 
             <Text style={{ fontSize: 24, fontWeight: '800', color: COLORS.textDark, marginBottom: 24 }}>
-              Crear Necesidad
+              {mostrarConfirmacion ? '¡Listo!' : 'Crear Necesidad'}
             </Text>
 
+            {mostrarConfirmacion ? (
+              <View style={{ alignItems: 'center', paddingVertical: 20, paddingBottom: 8 }}>
+                <Ionicons name="checkmark-circle" size={64} color={COLORS.accent} />
+                <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.textDark, marginTop: 16, textAlign: 'center' }}>
+                  Necesidad registrada.
+                </Text>
+                <Text style={{ fontSize: 14, color: COLORS.textLight, marginTop: 6, textAlign: 'center', lineHeight: 20 }}>
+                  Te avisaremos cuando un aliado de nuestra comunidad quiera cubrirla.
+                </Text>
+                <View style={{ marginTop: 24, width: '100%' }}>
+                  <Button label="Entendido" onPress={() => router.back()} />
+                </View>
+              </View>
+            ) : (
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
-              
+
               {/* ── TIPO Y REPORTE ── */}
               <View style={{ marginBottom: 24 }}>
                 <Text style={{ fontSize: 15, fontWeight: '700', color: COLORS.textDark, marginBottom: 12 }}>¿Para qué es esta necesidad?</Text>
                 <View style={{ flexDirection: 'row', backgroundColor: COLORS.white, borderRadius: 16, padding: 4, ...SHADOW_SM }}>
-                  <TouchableOpacity onPress={() => { setTipoNecesidad('general'); setReporteId(null); setErrors({}); }} style={{ flex: 1, paddingVertical: 12, borderRadius: 14, alignItems: 'center', backgroundColor: tipoNecesidad === 'general' ? COLORS.primary : 'transparent' }}>
+                  <TouchableOpacity onPress={() => { setTipoNecesidad('general'); setReporteId(null); setDetalleHito(null); setErrors({}); }} style={{ flex: 1, paddingVertical: 12, borderRadius: 14, alignItems: 'center', backgroundColor: tipoNecesidad === 'general' ? COLORS.primary : 'transparent' }}>
                     <Text style={{ fontWeight: '700', fontSize: 13, color: tipoNecesidad === 'general' ? COLORS.white : COLORS.textLight }}>Fondo general</Text>
                   </TouchableOpacity>
                   <TouchableOpacity onPress={() => { setTipoNecesidad('especifica'); setErrors({}); }} style={{ flex: 1, paddingVertical: 12, borderRadius: 14, alignItems: 'center', backgroundColor: tipoNecesidad === 'especifica' ? COLORS.primary : 'transparent' }}>
                     <Text style={{ fontWeight: '700', fontSize: 13, color: tipoNecesidad === 'especifica' ? COLORS.white : COLORS.textLight }}>Caso específico</Text>
                   </TouchableOpacity>
                 </View>
+                <Text style={{ fontSize: 12, color: COLORS.textLight, marginTop: 8, lineHeight: 17 }}>
+                  {tipoNecesidad === 'general'
+                    ? 'Se publica para cualquier aliado, sin ligarla a un caso puntual.'
+                    : 'Se liga a un caso ya cerrado y solo la ven aliados compatibles con ese caso.'}
+                </Text>
               </View>
 
               {tipoNecesidad === 'especifica' && (
                 <View style={{ marginBottom: 24 }}>
                   <Text style={{ fontSize: 15, fontWeight: '700', color: COLORS.textDark, marginBottom: 12 }}>Selecciona el caso</Text>
+
+                  {reportesActivos.length > 0 && (
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+                      {filtrosNecesidad.map((opcion) => {
+                        const isSelected = filtroNecesidad === opcion.value;
+                        return (
+                          <TouchableOpacity
+                            key={opcion.value}
+                            onPress={() => setFiltroNecesidad(opcion.value)}
+                            style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, backgroundColor: isSelected ? COLORS.accent : COLORS.white, borderWidth: 1, borderColor: isSelected ? COLORS.accent : '#E5E7EB' }}
+                          >
+                            <Text style={{ fontSize: 11, fontWeight: '600', color: isSelected ? COLORS.white : COLORS.textLight }}>{opcion.label}</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  )}
+
                   {isLoadingReportes ? (
                     <View style={{ padding: 20, alignItems: 'center', backgroundColor: COLORS.white, borderRadius: 16, ...SHADOW_SM }}>
                       <ActivityIndicator color={COLORS.primary} />
                       <Text style={{ fontSize: 12, color: COLORS.textLight, marginTop: 8 }}>Buscando casos rescatados...</Text>
                     </View>
-                  ) : reportesActivos.length === 0 ? (
+                  ) : reportesFiltrados.length === 0 ? (
                     <View style={{ padding: 20, alignItems: 'center', backgroundColor: COLORS.white, borderRadius: 16, ...SHADOW_SM }}>
-                      <Text style={{ fontSize: 13, color: COLORS.textLight }}>No tienes casos cerrados en este momento.</Text>
+                      <Text style={{ fontSize: 13, color: COLORS.textLight }}>
+                        {reportesActivos.length === 0 ? 'No tienes casos cerrados en este momento.' : 'No hay casos que coincidan con este filtro.'}
+                      </Text>
                     </View>
                   ) : (
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
-                      {reportesActivos.map((reporte) => (
-                        <TouchableOpacity 
-                          key={reporte.id} 
-                          onPress={() => setReporteId(reporte.id)} 
-                          style={{ width: 140, padding: 10, borderRadius: 16, backgroundColor: COLORS.white, borderWidth: 2, borderColor: reporteId === reporte.id ? COLORS.accent : 'transparent', ...SHADOW_SM }}
-                        >
-                          {reporte.foto_url ? (
-                            <Image source={{ uri: reporte.foto_url }} style={{ width: '100%', height: 90, borderRadius: 10, backgroundColor: '#2E2A26', marginBottom: 8 }} resizeMode="cover" />
-                          ) : (
-                            <View style={{ width: '100%', height: 90, borderRadius: 10, backgroundColor: 'rgba(236,128,43,0.1)', justifyContent: 'center', alignItems: 'center', marginBottom: 8 }}>
-                              <Ionicons name="paw" size={32} color={COLORS.primary} />
+                      {reportesFiltrados.map((reporte) => {
+                        const tieneNecesidadActiva = necesidadesActivasIds.has(reporte.id);
+                        return (
+                          <TouchableOpacity
+                            key={reporte.id}
+                            onPress={() => seleccionarReporte(reporte)}
+                            style={{ width: 140, padding: 10, borderRadius: 16, backgroundColor: COLORS.white, borderWidth: 2, borderColor: reporteId === reporte.id ? COLORS.accent : 'transparent', ...SHADOW_SM }}
+                          >
+                            <View>
+                              {reporte.foto_url ? (
+                                <Image source={{ uri: reporte.foto_url }} style={{ width: '100%', height: 90, borderRadius: 10, backgroundColor: '#2E2A26', marginBottom: 8 }} resizeMode="cover" />
+                              ) : (
+                                <View style={{ width: '100%', height: 90, borderRadius: 10, backgroundColor: 'rgba(236,128,43,0.1)', justifyContent: 'center', alignItems: 'center', marginBottom: 8 }}>
+                                  <Ionicons name="paw" size={32} color={COLORS.primary} />
+                                </View>
+                              )}
+                              {tieneNecesidadActiva && (
+                                <View style={{ position: 'absolute', top: 4, left: 4, backgroundColor: COLORS.secondary, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 }}>
+                                  <Text style={{ fontSize: 9, fontWeight: '700', color: COLORS.textDark }}>Necesidad activa</Text>
+                                </View>
+                              )}
                             </View>
-                          )}
-                          <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.textDark, textAlign: 'center' }} numberOfLines={2}>{reporte.titulo}</Text>
-                        </TouchableOpacity>
-                      ))}
+                            <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.textDark, textAlign: 'center' }} numberOfLines={2}>{reporte.titulo}</Text>
+                            {reporte.closed_at && (
+                              <Text style={{ fontSize: 10, color: COLORS.textLight, textAlign: 'center', marginTop: 2 }}>{formatearHaceDias(reporte.closed_at)}</Text>
+                            )}
+                          </TouchableOpacity>
+                        );
+                      })}
                     </ScrollView>
                   )}
                   {errors.reporte && <Text style={{ color: COLORS.danger, fontSize: 12, marginTop: 6 }}>{errors.reporte}</Text>}
+
+                  {casoSeleccionado && (
+                    <View style={{ marginTop: 12, padding: 14, backgroundColor: COLORS.white, borderRadius: 16, ...SHADOW_SM }}>
+                      <Text style={{ fontSize: 12, color: COLORS.textDark, marginBottom: 4 }}>
+                        <Text style={{ fontWeight: '700' }}>Condición: </Text>{casoSeleccionado.condicion || 'Desconocido'}
+                      </Text>
+                      <Text style={{ fontSize: 12, color: COLORS.textDark, marginBottom: 4 }}>
+                        <Text style={{ fontWeight: '700' }}>Tipo de animal: </Text>{casoSeleccionado.tipo_animal || 'Desconocido'}
+                      </Text>
+                      <Text style={{ fontSize: 12, color: COLORS.textDark, marginBottom: 4 }}>
+                        <Text style={{ fontWeight: '700' }}>Rescatado: </Text>
+                        {casoSeleccionado.closed_at ? formatearHaceDias(casoSeleccionado.closed_at) : 'Sin fecha registrada'}
+                      </Text>
+                      <Text style={{ fontSize: 12, color: COLORS.textDark }}>
+                        <Text style={{ fontWeight: '700' }}>Último hito: </Text>
+                        {isLoadingDetalleHito ? 'Cargando...' : detalleHito ? (HITO_LABELS[detalleHito.tipo_evento] || detalleHito.tipo_evento) : 'Sin hitos registrados'}
+                      </Text>
+                    </View>
+                  )}
                 </View>
               )}
 
@@ -297,7 +551,14 @@ export default function CreateNeedScreen() {
                     return (
                       <TouchableOpacity
                         key={cat.clave}
-                        onPress={() => { setCategoria(cat.clave); setSubcategoriaId(null); setUrgencia(null); }}
+                        onPress={() => {
+                          setCategoria(cat.clave);
+                          setSubcategoriaId(null);
+                          setUrgencia(null);
+                          setCantidadUnidad('');
+                          setUnidadEsOtra(false);
+                          setContenidoPorUnidad('');
+                        }}
                         style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20, backgroundColor: isSelected ? COLORS.secondary : COLORS.white, borderWidth: 1, borderColor: isSelected ? COLORS.secondary : 'rgba(0,0,0,0.05)', ...SHADOW_SM }}
                       >
                         <Ionicons name={ICONO_POR_CLAVE[cat.clave] || ICONO_DEFAULT} size={16} color={isSelected ? COLORS.textDark : COLORS.textLight} style={{ marginRight: 6 }} />
@@ -331,21 +592,42 @@ export default function CreateNeedScreen() {
                 </View>
               )}
 
+              {/* ── ESPECIE ── */}
+              {categoria && tiposAnimalesAsociacion.length > 0 && (
+                <View style={{ marginBottom: 24 }}>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: COLORS.textDark, marginBottom: 12 }}>¿Para qué especies aplica? (Opcional)</Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                    {tiposAnimalesAsociacion.map((especie) => {
+                      const isSelected = especiesSeleccionadas.includes(especie);
+                      const label = especie.charAt(0).toUpperCase() + especie.slice(1);
+                      return (
+                        <TouchableOpacity
+                          key={especie}
+                          onPress={() => toggleEspecie(especie)}
+                          style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: isSelected ? COLORS.accent : COLORS.white, borderWidth: 1, borderColor: isSelected ? COLORS.accent : '#E5E7EB' }}
+                        >
+                          <Text style={{ fontSize: 12, fontWeight: '600', color: isSelected ? COLORS.white : COLORS.textDark }}>{label}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
+
               {/* ── URGENCIA VETERINARIA ── */}
               {categoria === 'servicios_veterinarios' && (
                 <View style={{ marginBottom: 24 }}>
                   <Text style={{ fontSize: 15, fontWeight: '700', color: COLORS.textDark, marginBottom: 12 }}>Nivel de Urgencia</Text>
                   <View style={{ flexDirection: 'row', gap: 10 }}>
-                    {(['Baja', 'Media', 'Alta'] as NivelUrgencia[]).map((nivel) => {
-                      const isSelected = urgencia === nivel;
-                      const dotColor = nivel === 'Baja' ? '#2ECC71' : nivel === 'Media' ? '#F1C40F' : '#E74C3C';
+                    {URGENCIA_OPCIONES.map((opcion) => {
+                      const isSelected = urgencia === opcion.value;
                       return (
                         <TouchableOpacity
-                          key={nivel} onPress={() => setUrgencia(nivel)}
-                          style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 14, backgroundColor: isSelected ? COLORS.white : 'transparent', borderWidth: 2, borderColor: isSelected ? dotColor : '#D1D5DB' }}
+                          key={opcion.value} onPress={() => setUrgencia(opcion.value)}
+                          style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 14, backgroundColor: isSelected ? COLORS.white : 'transparent', borderWidth: 2, borderColor: isSelected ? opcion.color : '#D1D5DB' }}
                         >
-                          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: dotColor, marginRight: 6 }} />
-                          <Text style={{ fontWeight: '700', fontSize: 13, color: isSelected ? COLORS.textDark : COLORS.textLight }}>{nivel}</Text>
+                          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: opcion.color, marginRight: 6 }} />
+                          <Text style={{ fontWeight: '700', fontSize: 13, color: isSelected ? COLORS.textDark : COLORS.textLight }}>{opcion.label}</Text>
                         </TouchableOpacity>
                       );
                     })}
@@ -354,36 +636,73 @@ export default function CreateNeedScreen() {
                 </View>
               )}
 
-              {/* ── CANTIDAD Y DETALLES ── */}
-              <View style={{ marginBottom: 28, flexDirection: 'row', gap: 12 }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.textDark, marginBottom: 8 }}>Cantidad (Opcional)</Text>
-                  <Input 
-                    placeholder="Ej. 15" 
-                    value={cantidadValor} 
-                    onChangeText={(val) => { setCantidadValor(val); setErrors(p => ({ ...p, cantidad_valor: '' })); }} 
-                    keyboardType="numeric" 
-                    error={errors.cantidad_valor} 
-                  />
+              {/* ── CANTIDAD Y UNIDAD ── */}
+              <View style={{ marginBottom: 28 }}>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.textDark, marginBottom: 8 }}>Cantidad (solo numero)</Text>
+                <Input
+                  placeholder="Ej. 15"
+                  value={cantidadValor}
+                  onChangeText={(val) => { setCantidadValor(val.replace(/[^0-9.]/g, '')); setErrors(p => ({ ...p, cantidad_valor: '' })); }}
+                  keyboardType="numeric"
+                  error={errors.cantidad_valor}
+                />
+
+                <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.textDark, marginBottom: 8 }}>Unidad (Opcional)</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                  {unidadesDisponibles.map((u) => {
+                    const isSelected = unidadEsOtra ? u.value === UNIDAD_OTRA : cantidadUnidad === u.value;
+                    return (
+                      <TouchableOpacity
+                        key={u.value}
+                        onPress={() => {
+                          if (u.value === UNIDAD_OTRA) {
+                            setUnidadEsOtra(true);
+                            setCantidadUnidad('');
+                            setContenidoPorUnidad('');
+                          } else {
+                            setUnidadEsOtra(false);
+                            setCantidadUnidad(u.value);
+                            if (!UNIDADES_CONTENEDOR.has(u.value)) setContenidoPorUnidad('');
+                          }
+                          setErrors(p => ({ ...p, cantidad_unidad: '' }));
+                        }}
+                        style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: isSelected ? COLORS.primary : COLORS.white, borderWidth: 1, borderColor: isSelected ? COLORS.primary : '#E5E7EB' }}
+                      >
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: isSelected ? COLORS.white : COLORS.textDark }}>{u.label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
-                <View style={{ flex: 1.2 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.textDark, marginBottom: 8 }}>Unidad (Opcional)</Text>
-                  <Input 
-                    placeholder="Ej. kg, piezas, latas" 
-                    value={cantidadUnidad} 
-                    onChangeText={(val) => { setCantidadUnidad(val); setErrors(p => ({ ...p, cantidad_unidad: '' })); }} 
-                    error={errors.cantidad_unidad} 
-                  />
-                </View>
+                {errors.cantidad_unidad && <Text style={{ color: COLORS.danger, fontSize: 12, marginTop: 6 }}>{errors.cantidad_unidad}</Text>}
+
+                {unidadEsOtra && (
+                  <View style={{ marginTop: 10 }}>
+                    <Input placeholder="Escribe la unidad" value={cantidadUnidad} onChangeText={setCantidadUnidad} />
+                  </View>
+                )}
+
+                {UNIDADES_CONTENEDOR.has(cantidadUnidad) && (
+                  <View style={{ marginTop: 10 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.textDark, marginBottom: 6 }}>
+                      ¿De cuánto es cada {cantidadUnidad === 'kits' ? 'kit' : cantidadUnidad.slice(0, -1)}?
+                    </Text>
+                    <Input
+                      value={contenidoPorUnidad}
+                      onChangeText={setContenidoPorUnidad}
+                      placeholder="Ej. 25kg, 12 piezas, 5 litros"
+                      error={errors.contenidoPorUnidad}
+                    />
+                  </View>
+                )}
               </View>
 
               {/* Campo JSON (Se guarda en la columna "detalle") */}
               <View style={{ marginBottom: 28 }}>
                 <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.textDark, marginBottom: 8 }}>Detalles o Especificaciones (Opcional)</Text>
-                <Input 
+                <Input
                   placeholder={categoria === 'alimentos' ? "Ej. Para cachorro etapa 1, marca recomendada..." : "Añade notas para los aliados..."}
-                  value={notasAdicionales} 
-                  onChangeText={setNotasAdicionales} 
+                  value={notasAdicionales}
+                  onChangeText={setNotasAdicionales}
                 />
               </View>
 
@@ -396,8 +715,9 @@ export default function CreateNeedScreen() {
                   <Button label="Publicar" onPress={handleGuardarNecesidad} isLoading={isSubmitting} />
                 </View>
               </View>
-              
+
             </ScrollView>
+            )}
           </View>
         </KeyboardAvoidingView>
       </View>

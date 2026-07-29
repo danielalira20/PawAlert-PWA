@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 from app.db.supabase import supabase, supabase_admin, get_fresh_client
 from app.services.storage_service import subir_foto
-from app.services.report_service import obtener_id_catalogo
+from app.services.report_service import obtener_id_catalogo, registrar_historial
 from app.utils.validators import validar_telefono, validar_email
 from app.models.voluntario import (
     AsignarVerificadorRequest,
@@ -320,7 +320,7 @@ async def get_mi_asociacion(authorization: str = Header(None)):
         raise HTTPException(status_code=404, detail="Este usuario no está vinculado a ninguna asociación")
 
     resultado = supabase.table("asociaciones").select(
-        "id, nombre, verificado, motivo_rechazo"
+        "id, nombre, verificado, motivo_rechazo, tipos_animales"
     ).eq("id", usuario["asociacion_id"]).execute()
 
     if not resultado.data:
@@ -340,6 +340,7 @@ async def get_mi_asociacion(authorization: str = Header(None)):
         "nombre": asociacion["nombre"],
         "estado": estado,
         "motivo_rechazo": asociacion.get("motivo_rechazo"),
+        "tipos_animales": asociacion.get("tipos_animales") or [],
     }
 
 @router.post("/{asociacion_id}/representantes", status_code=201)
@@ -517,6 +518,7 @@ async def get_reportes_asignados(authorization: str = Header(None)):
             "latitud": rep.get("latitud"),
             "longitud": rep.get("longitud"),
             "created_at": str(rep["created_at"]),
+            "closed_at": str(r["closed_at"]) if r.get("closed_at") else None,
             "foto_url": foto_url,
             "fotos_urls": fotos_urls,
             "animales": [shape_animal_response(a) for a in animales_crudos],
@@ -527,6 +529,26 @@ async def get_reportes_asignados(authorization: str = Header(None)):
     return reportes
 
 
+@router.get("/me/reportes/necesidades-activas", status_code=200)
+async def get_reportes_con_necesidad_activa(authorization: str = Header(None)):
+    """Reporte_ids de esta asociación que ya tienen una necesidad en estado
+    'activa' ligada — para el badge/filtro "ya tiene necesidad activa" en
+    CreateNeedScreen. Consulta simple sobre `necesidades`, sin cruzar con
+    `reporte_asignaciones` — el reporte_id ya identifica el caso."""
+    usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion", "staff"))
+
+    if not usuario.get("asociacion_id"):
+        raise HTTPException(status_code=404, detail="Este usuario no está vinculado a ninguna asociación")
+
+    resultado = supabase.table("necesidades").select("reporte_id").eq(
+        "asociacion_id", usuario["asociacion_id"]
+    ).eq("estado", "activa").not_.is_("reporte_id", "null").execute()
+
+    reporte_ids = list({r["reporte_id"] for r in (resultado.data or []) if r.get("reporte_id")})
+    return {"reporte_ids": reporte_ids}
+
+
 # Tipos de evento que la línea de tiempo del panel de asociación necesita
 # mostrar además del evento de creación. Los valores reales que escribe
 # POST /reports/{id}/hitos son "hito_{tipo_hito}" (ver reports.py), es decir
@@ -535,6 +557,7 @@ async def get_reportes_asignados(authorization: str = Header(None)):
 # cambiar_estado_reporte() (report_service.py) cuando nuevo_estado == "cerrado".
 TIPOS_HITO_TIMELINE = [
     "hito_encontre_animal", "hito_llegue_refugio", "hito_llego_veterinaria", "caso_cerrado",
+    "necesidad_cubierta",
 ]
 
 
@@ -618,6 +641,8 @@ async def get_historial_reporte(reporte_id: str, authorization: str = Header(Non
         # son conclusion/notas (ver cambiar_estado_reporte).
         if hito["tipo_evento"] == "caso_cerrado":
             nota_partes = [p for p in (datos_extra.get("conclusion"), datos_extra.get("notas")) if p]
+        elif hito["tipo_evento"] == "necesidad_cubierta":
+            nota_partes = [p for p in (datos_extra.get("nombre_aliado"), datos_extra.get("subcategoria") or datos_extra.get("categoria")) if p]
         else:
             nota_partes = [p for p in (datos_extra.get("condicion_observada"), datos_extra.get("comentario")) if p]
         nota_hito = " — ".join(nota_partes) if nota_partes else None
@@ -1190,7 +1215,9 @@ async def patch_resolver_oferta(
     # de una necesidad, de un reporte (Ruta 1) o de un lote, nunca asumir
     # que siempre trae necesidad_id (ver _asociacion_id_contribucion).
     contrib_res = supabase.table("contribuciones").select(
-        "id, estado, necesidades(asociacion_id), reportes(asociacion_asignada_id), lote_asociaciones(asociacion_id)"
+        "id, estado, cantidad_valor, usuario_id, "
+        "necesidades(id, asociacion_id, reporte_id, categoria, subcategoria_recurso(descripcion)), "
+        "reportes(asociacion_asignada_id), lote_asociaciones(asociacion_id)"
     ).eq("id", contribucion_id).execute()
 
     if not contrib_res.data:
@@ -1217,7 +1244,38 @@ async def patch_resolver_oferta(
         update_data["confirmada_at"] = datetime.now(timezone.utc).isoformat()
 
     resultado = supabase.table("contribuciones").update(update_data).eq("id", contribucion_id).execute()
-    
+
+    # Ruta 1/necesidades ligadas a un reporte: al aceptar la oferta, deja
+    # rastro en la línea de tiempo del caso (historial_reporte) para que la
+    # asociación vea ahí mismo que la necesidad quedó cubierta. Una oferta
+    # rechazada no cubre nada, por eso solo aplica en la rama "aceptar".
+    necesidad = contrib_res.data[0].get("necesidades") or {}
+    if body.accion == AccionOferta.aceptar and necesidad.get("reporte_id"):
+        aliado_res = supabase.table("usuarios").select(
+            "nombre, apellido_paterno"
+        ).eq("id", contrib_res.data[0]["usuario_id"]).execute()
+        nombre_aliado = (
+            f"{aliado_res.data[0]['nombre']} {aliado_res.data[0]['apellido_paterno']}".strip()
+            if aliado_res.data else "Un aliado"
+        )
+        subcategoria_desc = (necesidad.get("subcategoria_recurso") or {}).get("descripcion")
+        categoria_o_subcategoria = subcategoria_desc or necesidad.get("categoria")
+
+        registrar_historial(
+            reporte_id=necesidad["reporte_id"],
+            tipo_evento="necesidad_cubierta",
+            descripcion=f"{nombre_aliado} cubrió la necesidad de {categoria_o_subcategoria}",
+            usuario_id=usuario["id"],
+            datos_extra={
+                "contribucion_id": contribucion_id,
+                "necesidad_id": necesidad.get("id"),
+                "categoria": necesidad.get("categoria"),
+                "subcategoria": subcategoria_desc,
+                "cantidad": contrib_res.data[0].get("cantidad_valor"),
+                "nombre_aliado": nombre_aliado,
+            },
+        )
+
     return {"mensaje": f"Oferta {body.accion.value} exitosamente", "oferta": resultado.data[0]}
 
 
