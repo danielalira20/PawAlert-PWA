@@ -98,7 +98,7 @@ function AnimatedButton({ onPress, style, children }: { onPress: () => void; sty
 // ─── PANTALLA PRINCIPAL ─────────────────────────────────────────────────────
 export default function HowToHelpScreen() {
   const router = useRouter();
-  const { isLoggedIn } = useAuth();
+  const { isLoggedIn, user } = useAuth();
   const [fontsLoaded] = useFonts({ Fraunces_800ExtraBold, Poppins_400Regular, Poppins_500Medium, Poppins_600SemiBold });
 
   // Camino "Aliado comunitario" sin sesión — en vez de mandarlo a /login sin
@@ -418,7 +418,15 @@ export default function HowToHelpScreen() {
                             </View>
                           ) : <View />}
 
-                          <AnimatedButton onPress={() => setSelectedNecesidad(item)}>
+                          <AnimatedButton onPress={() => {
+                            if (isLoggedIn && user?.tiene_perfil_apoyo) {
+                              // Si ya tiene perfil, lo mandamos directo a donar
+                              router.push(`/aportacion?necesidad_id=${item.id}` as any);
+                            } else {
+                              // Si no, abrimos el modal blanco para que elija cómo registrarse
+                              setSelectedNecesidad(item);
+                            }
+                          }}>
                             <View style={{
                               backgroundColor: C.primary, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 100,
                               flexDirection: 'row', alignItems: 'center', gap: 6
@@ -496,7 +504,16 @@ export default function HowToHelpScreen() {
               
               {/* Botón: Aliado institucional/local — siempre crea cuenta nueva
                   independiente en /registro-aliado, sin importar la sesión */}
-              <AnimatedButton onPress={() => { setSelectedNecesidad(null); router.push('/registro-aliado?tipo=aliado_local' as any); }}>
+              <AnimatedButton onPress={() => { 
+                const idNecesidad = selectedNecesidad?.id;
+                setSelectedNecesidad(null); 
+                
+                if (isLoggedIn && user?.tiene_perfil_apoyo) {
+                  router.push(`/aportacion?necesidad_id=${idNecesidad}` as any);
+                } else {
+                  router.push('/registro-aliado?tipo=aliado_local' as any); 
+                }
+              }}>
                 <View style={{ backgroundColor: C.primary, paddingVertical: 14, paddingHorizontal: 20, borderRadius: 16, flexDirection: 'row', alignItems: 'center', gap: 14 }}>
                   <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center' }}>
                     <Ionicons name="business" size={18} color="#FFF" />
@@ -513,9 +530,15 @@ export default function HowToHelpScreen() {
                   donante directo en Mi Perfil; sin sesión explica que necesita
                   cuenta primero, en vez de mandarlo a /login sin contexto */}
               <AnimatedButton onPress={() => {
+                const idNecesidad = selectedNecesidad?.id;
                 setSelectedNecesidad(null);
+                
                 if (isLoggedIn) {
-                  router.push('/registro-comunitario');
+                  if (user?.tiene_perfil_apoyo) {
+                    router.push(`/aportacion?necesidad_id=${idNecesidad}` as any);
+                  } else {
+                    router.push('/registro-comunitario' as any);
+                  }
                 } else {
                   setAvisoDonanteSinSesion(true);
                 }
