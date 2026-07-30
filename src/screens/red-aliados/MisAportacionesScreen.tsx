@@ -180,7 +180,7 @@ export default function MisAportacionesScreen({ onClose, embedded }: Props) {
           </Text>
         </View>
       ) : (
-        <ScrollView contentContainerStyle={{ padding: 18, gap: 14 }}>
+        <ScrollView contentContainerStyle={{ padding: 18, gap: 14, flexDirection: 'row', flexWrap: 'wrap' }}>
           {contribuciones.map((c) => {
             const asociacion = c.necesidades?.asociaciones || null;
             const titulo = c.subcategoria_recurso?.descripcion
@@ -191,13 +191,22 @@ export default function MisAportacionesScreen({ onClose, embedded }: Props) {
             return (
               <View
                 key={c.id}
-                style={{ backgroundColor: COLORS.cardBg, borderRadius: 18, padding: 16, borderWidth: 1, borderColor: COLORS.border }}
+                style={{ 
+                  flexGrow: 1, 
+                  flexBasis: 320, 
+                  maxWidth: '100%',
+                  backgroundColor: COLORS.cardBg, 
+                  borderRadius: 18, 
+                  padding: 16, 
+                  borderWidth: 1, 
+                  borderColor: COLORS.border 
+                }}
               >
                 {c.detalle?.foto_url && (
                   <Image
                     source={{ uri: c.detalle.foto_url }}
-                    style={{ width: '100%', height: 140, borderRadius: 14, marginBottom: 12 }}
-                    resizeMode="cover"
+                    style={{ width: '100%', height: 140, borderRadius: 14, marginBottom: 12, backgroundColor: COLORS.grayLight }}
+                    resizeMode="contain"
                   />
                 )}
 

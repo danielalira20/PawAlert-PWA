@@ -395,8 +395,9 @@ export default function MisLotesScreen({ onClose, embedded }: Props) {
               <Text style={styles.filteredEmptyText}>Prueba con otra categoría de estado.</Text>
             </View>
           ) : (
-            lotesFiltrados.map((lote) => {
-              const estado = estadoLote(lote);
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 14 }}>
+              {lotesFiltrados.map((lote) => {
+                const estado = estadoLote(lote);
               const fotoUrl = lote.detalle?.foto_url;
               const marca = normalizarValor(lote.detalle?.marca);
               const especie = lote.especies_aplica?.length
@@ -412,7 +413,11 @@ export default function MisLotesScreen({ onClose, embedded }: Props) {
                 >
                   <View style={styles.lotCardMedia}>
                     {fotoUrl ? (
-                      <Image source={{ uri: fotoUrl }} style={styles.lotImage} resizeMode="cover" />
+                      <Image 
+                        source={{ uri: fotoUrl }} 
+                        style={[styles.lotImage, { backgroundColor: COLORS.grayLight }]} 
+                        resizeMode="contain" 
+                      />
                     ) : (
                       <View style={styles.lotImagePlaceholder}>
                         <Ionicons name="cube-outline" size={34} color={COLORS.primary} />
@@ -485,7 +490,8 @@ export default function MisLotesScreen({ onClose, embedded }: Props) {
                   </View>
                 </TouchableOpacity>
               );
-            })
+            })}
+            </View>
           )}
         </ScrollView>
       )}
@@ -512,8 +518,8 @@ export default function MisLotesScreen({ onClose, embedded }: Props) {
                     {loteSeleccionado.detalle?.foto_url ? (
                       <Image
                         source={{ uri: loteSeleccionado.detalle.foto_url }}
-                        style={styles.modalResourceImage}
-                        resizeMode="cover"
+                        style={[styles.modalResourceImage, { backgroundColor: COLORS.grayLight }]}
+                        resizeMode="contain"
                       />
                     ) : (
                       <View style={[styles.modalResourceImage, styles.modalResourcePlaceholder]}>
@@ -842,6 +848,9 @@ const styles = StyleSheet.create({
   filteredEmptyTitle: { color: COLORS.textDark, fontSize: 14, fontWeight: '800', marginTop: 10 },
   filteredEmptyText: { color: COLORS.textLight, fontSize: 12, marginTop: 3 },
   lotCard: {
+    flex: 1,
+    minWidth: 320,
+    maxWidth: 500,
     overflow: 'hidden',
     borderRadius: 20,
     borderWidth: 1,
