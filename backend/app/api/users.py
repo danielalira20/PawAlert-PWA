@@ -60,7 +60,16 @@ async def get_usuario_actual(authorization: str = Header(None)):
     # distingue una cuenta sin rol de una que sí tiene 'reportante' asignado.
     usuario_data["rol"] = rol.get("nombre") if rol else None
 
-    perfil_apoyo = supabase.table("perfil_apoyo").select("id").eq("usuario_id", usuario_data["id"]).execute()
-    usuario_data["tiene_perfil_apoyo"] = bool(perfil_apoyo.data)
+    # Se recupera también el 'tipo' de perfil_apoyo (ej. aliado_local) para
+    # enviarlo al frontend de inmediato y evitar que la UI "parpadee" 
+    # mostrando el dashboard de reportante por defecto mientras se 
+    # hace una petición extra para averiguar el tipo de aliado.
+    perfil_apoyo = supabase.table("perfil_apoyo").select("id, tipo").eq("usuario_id", usuario_data["id"]).execute()
+    if perfil_apoyo.data:
+        usuario_data["tiene_perfil_apoyo"] = True
+        usuario_data["tipo_perfil_apoyo"] = perfil_apoyo.data[0]["tipo"]
+    else:
+        usuario_data["tiene_perfil_apoyo"] = False
+        usuario_data["tipo_perfil_apoyo"] = None
  
     return usuario_data

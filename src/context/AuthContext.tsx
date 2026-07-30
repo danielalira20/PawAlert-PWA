@@ -24,6 +24,7 @@ export interface Usuario {
   // — ver auth.py/users.py) — distinto de no tener el campo en absoluto.
   rol?: string | null;
   tiene_perfil_apoyo?: boolean;
+  tipo_perfil_apoyo?: string | null;
 }
 
 interface RegisterData {
@@ -169,6 +170,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!currentToken) return null;
     try {
       const usuarioActualizado = await fetchCurrentUser(currentToken);
+
+      // Si el usuario cerró sesión mientras la petición estaba en vuelo,
+      // tokenRef.current será null. No debemos restaurar la sesión.
+      if (!tokenRef.current) return null;
+
       setUser(usuarioActualizado);
       try {
         await AsyncStorage.setItem(STORAGE_KEY_USER, JSON.stringify(usuarioActualizado));

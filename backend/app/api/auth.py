@@ -188,8 +188,17 @@ async def register(body: RegisterRequest):
         rol_nombre = rol_result.data[0]["roles"]["nombre"]
 
 
-    perfil_apoyo_result = supabase.table("perfil_apoyo").select("id").eq("usuario_id", nuevo_usuario_id).execute()
-    tiene_perfil_apoyo = bool(perfil_apoyo_result.data)
+    # Se recupera también el 'tipo' de perfil_apoyo (ej. aliado_local) para
+    # enviarlo al frontend de inmediato y evitar que la UI "parpadee" 
+    # mostrando el dashboard de reportante por defecto mientras se 
+    # hace una petición extra para averiguar el tipo de aliado.
+    perfil_apoyo_result = supabase.table("perfil_apoyo").select("id, tipo").eq("usuario_id", nuevo_usuario_id).execute()
+    if perfil_apoyo_result.data:
+        tiene_perfil_apoyo = True
+        tipo_perfil_apoyo = perfil_apoyo_result.data[0]["tipo"]
+    else:
+        tiene_perfil_apoyo = False
+        tipo_perfil_apoyo = None
 
     return {
         "access_token": login_response.session.access_token,
@@ -204,7 +213,8 @@ async def register(body: RegisterRequest):
             "asociacion_id": usuario.data[0].get("asociacion_id"),
             "rol": rol_nombre,  
             "es_admin": rol_nombre == "admin",
-     "tiene_perfil_apoyo": tiene_perfil_apoyo,
+            "tiene_perfil_apoyo": tiene_perfil_apoyo,
+            "tipo_perfil_apoyo": tipo_perfil_apoyo,
         }
     }
 
@@ -231,8 +241,17 @@ async def login(body: LoginRequest):
     # None cuando rol_id es NULL de verdad (ver mismo comentario en /register).
     usuario_data["rol"] = rol.get("nombre") if rol else None
 
-    perfil_apoyo_result = supabase.table("perfil_apoyo").select("id").eq("usuario_id", usuario_data["id"]).execute()
-    usuario_data["tiene_perfil_apoyo"] = bool(perfil_apoyo_result.data)
+    # Se recupera también el 'tipo' de perfil_apoyo (ej. aliado_local) para
+    # enviarlo al frontend de inmediato y evitar que la UI "parpadee" 
+    # mostrando el dashboard de reportante por defecto mientras se 
+    # hace una petición extra para averiguar el tipo de aliado.
+    perfil_apoyo_result = supabase.table("perfil_apoyo").select("id, tipo").eq("usuario_id", usuario_data["id"]).execute()
+    if perfil_apoyo_result.data:
+        usuario_data["tiene_perfil_apoyo"] = True
+        usuario_data["tipo_perfil_apoyo"] = perfil_apoyo_result.data[0]["tipo"]
+    else:
+        usuario_data["tiene_perfil_apoyo"] = False
+        usuario_data["tipo_perfil_apoyo"] = None
 
     return {
         "access_token": response.session.access_token,

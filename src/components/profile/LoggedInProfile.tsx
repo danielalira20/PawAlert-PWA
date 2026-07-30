@@ -91,10 +91,10 @@ export function LoggedInProfile({
   // dona — son roles opuestos en el mismo intercambio. `tipo` no se guarda
   // aparte: AliadoImpactStats ya lo recibe dentro de `impacto` (GET
   // /red-aliados/me/impacto), no hace falta duplicarlo aquí.
-  const [tienePerfilApoyo, setTienePerfilApoyo] = useState<boolean | null>(null);
+  const [tienePerfilApoyo, setTienePerfilApoyo] = useState<boolean | null>(user?.tiene_perfil_apoyo ?? null);
   // Tipo real de perfil_apoyo (donante_comunitario/aliado_local/patrocinador_institucional)
   // — necesario para el badge principal de una cuenta sin rol_id (ver esAliadoPuro).
-  const [tipoPerfilApoyo, setTipoPerfilApoyo] = useState<string | null>(null);
+  const [tipoPerfilApoyo, setTipoPerfilApoyo] = useState<string | null>(user?.tipo_perfil_apoyo ?? null);
 
   useFocusEffect(
     useCallback(() => {
