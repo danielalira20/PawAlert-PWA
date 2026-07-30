@@ -441,3 +441,59 @@ def marcar_notificacion_leida(notificacion_id: str, authorization: str = Header(
         raise HTTPException(status_code=404, detail="Notificación no encontrada o acceso denegado")
 
     return {"status": "success", "leida": True}
+
+
+@router.get("/ofertas-proactivas/mias")
+async def listar_mis_ofertas_proactivas(authorization: str = Header(None)):
+    usuario =  _obtener_usuario_autenticado(authorization)
+
+    perfil = supabase.table("perfil_apoyo").select("id").eq(
+        "usuario_id", usuario["id"]
+    ).execute()
+
+    if not perfil.data:
+        return {"ofertas": []}
+
+    perfil_apoyo_id = perfil.data[0]["id"]
+
+    ofertas = supabase.table("ofertas_proactivas").select(
+        "id, categoria, capacidad_declarada, capacidad_disponible, unidad, activa, created_at, "
+        "subcategoria_recurso(descripcion)"
+    ).eq("perfil_apoyo_id", perfil_apoyo_id).order("created_at", desc=True).execute()
+
+    return {"ofertas": ofertas.data or []}
+
+@router.patch("/ofertas-proactivas/{oferta_id}/estado")
+async def cambiar_estado_oferta_proactiva(
+    oferta_id: str, body: dict, authorization: str = Header(None)
+):
+    usuario =  _obtener_usuario_autenticado(authorization)
+    nuevo_activo = body.get("activa")
+
+    oferta = supabase.table("ofertas_proactivas").select(
+        "id, perfil_apoyo_id, perfil_apoyo(usuario_id)"
+    ).eq("id", oferta_id).execute()
+
+    if not oferta.data:
+        raise HTTPException(status_code=404, detail="Oferta no encontrada")
+
+    if oferta.data[0]["perfil_apoyo"]["usuario_id"] != usuario["id"]:
+        raise HTTPException(status_code=403, detail="No tienes permiso sobre esta oferta")
+
+    # Regla de negocio: no pausar si tiene contribuciones activas esperando
+    if nuevo_activo is False:
+        pendientes = supabase.table("contribuciones").select("id").eq(
+            "oferta_proactiva_id", oferta_id
+        ).in_("estado", ["comprometida", "confirmada", "parcial"]).execute()
+
+        if pendientes.data:
+            raise HTTPException(
+                status_code=400,
+                detail="No puedes pausar esta oferta: tiene compromisos activos pendientes de completarse.",
+            )
+
+    actualizado = supabase.table("ofertas_proactivas").update({
+        "activa": nuevo_activo
+    }).eq("id", oferta_id).execute()
+
+    return actualizado.data[0]

@@ -1436,7 +1436,7 @@ const confirmarReactivar = async () => {
                             </TouchableOpacity>
 
                             <View style={{ marginTop: 14 }}>
-                              {!['rechazada', 'cancelada', 'aceptada', 'completada'].includes(reporte.estado_asignacion_clave)&& (reporte.estado_reporte === 'asignado' || reporte.estado_asignacion_clave === 'notificada') ? (
+                              {!['rechazada', 'cancelada', 'aceptada', 'completada'].includes(reporte.estado_asignacion_clave)&& !yaRescatado && (reporte.estado_reporte === 'asignado' || reporte.estado_asignacion_clave === 'notificada') ? (
                                 <View style={{ flexDirection: 'row', gap: 12 }}>
                                   <TouchableOpacity onPress={() => { setReporteAccionId(reporte.reporte_id); setShowAcceptModal(true); }} style={{ flex: 1, backgroundColor: COLORS.primary, paddingVertical: 14, borderRadius: 16, alignItems: 'center' }}>
                                     <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Aceptar</Text>
