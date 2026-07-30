@@ -7,6 +7,110 @@ from app.services import storage_service
 from app.services.video_evidence_service import distancia_metros
 
 
+TIPOS_EVIDENCIA = {
+    "video",
+    "identificacion",
+    "fotos",
+    "direccion",
+    "formulario",
+}
+
+CHECKLIST_REMOTO_CAMPOS = {
+    "identificacion_legible",
+    "identidad_consistente",
+    "direccion_consistente",
+    "formulario_completo",
+    "recorrido_suficiente",
+    "accesos_seguros",
+    "cierres_perimetrales",
+    "ventanas_balcones",
+    "espacio_aislamiento",
+    "higiene_ventilacion",
+    "convivencia_hogar",
+    "autorizacion_vivienda",
+}
+
+
+def _registrar_evento_verificacion(
+    verificacion_id: str,
+    tipo_evento: str,
+    descripcion: str,
+    *,
+    actor_usuario_id: str | None = None,
+    actor_tipo: str = "sistema",
+    datos: dict | None = None,
+) -> None:
+    """Registra auditoría sin impedir la operación principal por telemetría."""
+    try:
+        supabase_admin.table("bitacora_verificacion_hogar").insert({
+            "verificacion_hogar_id": verificacion_id,
+            "tipo_evento": tipo_evento,
+            "actor_usuario_id": actor_usuario_id,
+            "actor_tipo": actor_tipo,
+            "descripcion": descripcion,
+            "datos": datos or {},
+        }).execute()
+    except Exception:
+        # La migración se despliega antes que el código. Este resguardo evita
+        # que una falla secundaria de auditoría deje el expediente bloqueado.
+        pass
+
+
+def registrar_reintento_analisis(
+    verificacion_id: str,
+    usuario_staff_id: str,
+) -> None:
+    _registrar_evento_verificacion(
+        verificacion_id,
+        "analisis_reintentado",
+        "Un integrante de la asociación solicitó repetir el análisis del video.",
+        actor_usuario_id=usuario_staff_id,
+        actor_tipo="asociacion",
+    )
+
+
+def _snapshot_evidencia(verificacion: dict, perfil: dict) -> dict:
+    return {
+        "identificacion_url": perfil.get("identificacion_url"),
+        "video_url": perfil.get("video_recorrido_url"),
+        "analisis_video": verificacion.get("analisis_video"),
+        "analisis_video_estado": verificacion.get("analisis_video_estado"),
+        "analisis_video_modelo": verificacion.get("analisis_video_modelo"),
+        "analisis_video_error": verificacion.get("analisis_video_error"),
+        "estado_coordenadas": verificacion.get("estado_coordenadas"),
+        "distancia_coordenadas_m": verificacion.get("distancia_coordenadas_m"),
+    }
+
+
+def _crear_ronda_inicial(
+    verificacion_id: str,
+    perfil: dict,
+) -> None:
+    """Crea la ronda 1 para expedientes nuevos; es idempotente."""
+    try:
+        existente = supabase_admin.table(
+            "rondas_evidencia_verificacion"
+        ).select("id").eq(
+            "verificacion_hogar_id", verificacion_id
+        ).limit(1).execute()
+        if existente.data:
+            return
+        supabase_admin.table("rondas_evidencia_verificacion").insert({
+            "verificacion_hogar_id": verificacion_id,
+            "numero": 1,
+            "estado": "inicial",
+            "evidencia_anterior": {
+                "identificacion_url": perfil.get("identificacion_url"),
+                "video_url": perfil.get("video_recorrido_url"),
+                "analisis_video_estado": "pendiente",
+                "estado_coordenadas": "pendiente",
+            },
+            "entregada_at": datetime.now(timezone.utc).isoformat(),
+        }).execute()
+    except Exception:
+        pass
+
+
 DIAS = {
     "lun": "Lunes",
     "mar": "Martes",
@@ -385,6 +489,14 @@ async def finalizar_postulacion_externa(voluntario_id: str) -> dict:
         "distancia_asociacion_km": distancia_asociacion_km,
         "resumen_expediente": resumen,
     }).execute()
+    verificacion_id = verificacion_creada.data[0]["id"]
+    _crear_ronda_inicial(verificacion_id, perfil)
+    _registrar_evento_verificacion(
+        verificacion_id,
+        "verificacion_creada",
+        "Se creó el expediente de verificación del hogar.",
+        datos={"modalidad": "por_definir"},
+    )
 
     supabase_admin.table("voluntarios").update({
         "estado": "postulacion_pendiente",
@@ -393,7 +505,7 @@ async def finalizar_postulacion_externa(voluntario_id: str) -> dict:
 
     return {
         "postulacion_id": postulacion["id"],
-        "verificacion_id": verificacion_creada.data[0]["id"],
+        "verificacion_id": verificacion_id,
         "asociacion_id": asociacion_id,
         "asociacion_nombre": asociacion_nombre,
         "distancia_asociacion_km": distancia_asociacion_km,
@@ -415,6 +527,9 @@ def obtener_verificacion_postulacion(
         "analisis_video_iniciado_at, analisis_video_procesado_at, "
         "estado_coordenadas, distancia_coordenadas_m, coordenadas_fuente, "
         "coordenadas_detalle, notas_asociacion, motivo_resultado, "
+        "checklist_remoto, checklist_remoto_completado_at, "
+        "modalidad_definida_por, modalidad_definida_at, "
+        "resuelta_por_usuario_id, "
         "created_at, updated_at, resuelta_at"
     ).eq("postulacion_id", postulacion_id).eq(
         "asociacion_id", asociacion_id
@@ -466,7 +581,114 @@ def obtener_verificacion_postulacion(
         ).execute().data or []
     else:
         verificacion["candidatos"] = []
+
+    try:
+        rondas = supabase_admin.table(
+            "rondas_evidencia_verificacion"
+        ).select("*").eq(
+            "verificacion_hogar_id", verificacion["id"]
+        ).order("numero", desc=True).execute()
+        verificacion["rondas_evidencia"] = rondas.data or []
+    except Exception:
+        verificacion["rondas_evidencia"] = []
+
+    try:
+        bitacora = supabase_admin.table(
+            "bitacora_verificacion_hogar"
+        ).select(
+            "id, tipo_evento, actor_usuario_id, actor_tipo, descripcion, "
+            "datos, created_at"
+        ).eq(
+            "verificacion_hogar_id", verificacion["id"]
+        ).order("created_at", desc=True).execute()
+        eventos = bitacora.data or []
+        nombres_actor = {}
+        for evento in eventos:
+            actor_id = evento.get("actor_usuario_id")
+            if actor_id and actor_id not in nombres_actor:
+                nombres_actor[actor_id] = _nombre_usuario(actor_id)
+            evento["actor_nombre"] = nombres_actor.get(actor_id)
+        verificacion["bitacora"] = eventos
+    except Exception:
+        verificacion["bitacora"] = []
+    if verificacion.get("resuelta_por_usuario_id"):
+        verificacion["resuelta_por_nombre"] = _nombre_usuario(
+            verificacion["resuelta_por_usuario_id"]
+        )
     return verificacion
+
+
+def seleccionar_modalidad_verificacion(
+    verificacion_id: str,
+    asociacion_id: str,
+    usuario_staff_id: str,
+    modalidad: str,
+) -> dict:
+    """Permite que la asociación elija revisión presencial o remota."""
+    if modalidad not in ("presencial", "remota"):
+        raise HTTPException(status_code=422, detail="Modalidad no válida")
+
+    consulta = supabase_admin.table("verificaciones_hogar").select(
+        "id, estado, modalidad"
+    ).eq("id", verificacion_id).eq(
+        "asociacion_id", asociacion_id
+    ).limit(1).execute()
+    if not consulta.data:
+        raise HTTPException(status_code=404, detail="Verificación no encontrada")
+
+    verificacion = consulta.data[0]
+    if verificacion["estado"] not in (
+        "pendiente_revision",
+        "pendiente_asignacion",
+        "reagendar",
+        "revision_remota",
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="La modalidad ya no puede cambiarse en esta etapa",
+        )
+
+    activa = supabase_admin.table("asignaciones_verificacion_hogar").select(
+        "id"
+    ).eq("verificacion_hogar_id", verificacion_id).in_(
+        "estado", ["propuesta", "aceptada"]
+    ).execute()
+    if activa.data:
+        raise HTTPException(
+            status_code=409,
+            detail="Cancela primero la propuesta o visita activa",
+        )
+
+    ahora = datetime.now(timezone.utc).isoformat()
+    estado = "revision_remota" if modalidad == "remota" else "pendiente_asignacion"
+    supabase_admin.table("verificaciones_hogar").update({
+        "modalidad": modalidad,
+        "estado": estado,
+        "modalidad_definida_por": usuario_staff_id,
+        "modalidad_definida_at": ahora,
+        "updated_at": ahora,
+    }).eq("id", verificacion_id).execute()
+    _registrar_evento_verificacion(
+        verificacion_id,
+        "modalidad_seleccionada",
+        f"La asociación seleccionó la modalidad {modalidad}.",
+        actor_usuario_id=usuario_staff_id,
+        actor_tipo="asociacion",
+        datos={
+            "modalidad_anterior": verificacion.get("modalidad"),
+            "modalidad": modalidad,
+        },
+    )
+    return {
+        "verificacion_id": verificacion_id,
+        "estado": estado,
+        "modalidad": modalidad,
+        "mensaje": (
+            "El expediente está listo para revisión remota."
+            if modalidad == "remota"
+            else "Ya puedes buscar una persona verificadora cercana."
+        ),
+    }
 
 
 def preparar_verificacion_hogar(
@@ -504,6 +726,12 @@ def preparar_verificacion_hogar(
             "modalidad": "remota",
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }).eq("id", verificacion["id"]).execute()
+        _registrar_evento_verificacion(
+            verificacion["id"],
+            "modalidad_remota_automatica",
+            "No se encontraron verificadores elegibles; se activó la revisión remota.",
+            datos={"radio_maximo_km": 30},
+        )
         return {
             "verificacion_id": verificacion["id"],
             "estado": "revision_remota",
@@ -520,6 +748,12 @@ def preparar_verificacion_hogar(
         "modalidad": "presencial",
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }).eq("id", verificacion["id"]).execute()
+    _registrar_evento_verificacion(
+        verificacion["id"],
+        "candidatos_encontrados",
+        "Se encontraron personas verificadoras para una visita presencial.",
+        datos={"cantidad": len(candidatos)},
+    )
 
     return {
         "verificacion_id": verificacion["id"],
@@ -534,6 +768,7 @@ def asignar_verificador_hogar(
     verificacion_id: str,
     verificador_voluntario_id: str,
     asociacion_id: str,
+    usuario_staff_id: str | None = None,
 ) -> dict:
     verificacion = supabase_admin.table("verificaciones_hogar").select(
         "id, asociacion_id, estado"
@@ -602,6 +837,18 @@ def asignar_verificador_hogar(
         "modalidad": "presencial",
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }).eq("id", verificacion_id).execute()
+    _registrar_evento_verificacion(
+        verificacion_id,
+        "propuesta_visita_enviada",
+        "La asociación envió una propuesta de visita presencial.",
+        actor_usuario_id=usuario_staff_id,
+        actor_tipo="asociacion",
+        datos={
+            "asignacion_id": asignacion.data[0]["id"],
+            "verificador_voluntario_id": verificador_voluntario_id,
+            "distancia_km": float(candidato["distancia_km"]),
+        },
+    )
 
     return {
         "asignacion_id": asignacion.data[0]["id"],
@@ -617,6 +864,8 @@ def resolver_verificacion_remota(
     asociacion_id: str,
     decision: str,
     motivo: str | None = None,
+    tipos_evidencia: list[str] | None = None,
+    usuario_staff_id: str | None = None,
 ) -> dict:
     """Cierra o devuelve a corrección una revisión remota.
 
@@ -625,7 +874,10 @@ def resolver_verificacion_remota(
     """
     resultado = supabase_admin.table("verificaciones_hogar").select(
         "id, postulacion_id, voluntario_postulante_id, asociacion_id, "
-        "estado, modalidad"
+        "perfil_casa_temporal_id, estado, modalidad, analisis_video, "
+        "analisis_video_estado, analisis_video_modelo, analisis_video_error, "
+        "estado_coordenadas, distancia_coordenadas_m, checklist_remoto, "
+        "checklist_remoto_completado_at"
     ).eq("id", verificacion_id).eq(
         "asociacion_id", asociacion_id
     ).limit(1).execute()
@@ -660,15 +912,52 @@ def resolver_verificacion_remota(
 
     ahora = datetime.now(timezone.utc).isoformat()
     if decision == "solicitar_evidencia":
+        tipos = list(dict.fromkeys(tipos_evidencia or ["video"]))
+        if any(tipo not in TIPOS_EVIDENCIA for tipo in tipos):
+            raise HTTPException(status_code=422, detail="Tipo de evidencia no válido")
+
+        perfil = supabase_admin.table("perfil_casa_temporal").select(
+            "identificacion_url, video_recorrido_url"
+        ).eq("id", verificacion["perfil_casa_temporal_id"]).limit(1).execute()
+        perfil_actual = perfil.data[0] if perfil.data else {}
+        ultima = supabase_admin.table(
+            "rondas_evidencia_verificacion"
+        ).select("numero").eq(
+            "verificacion_hogar_id", verificacion_id
+        ).order("numero", desc=True).limit(1).execute()
+        numero = int(ultima.data[0]["numero"]) + 1 if ultima.data else 1
+        supabase_admin.table("rondas_evidencia_verificacion").insert({
+            "verificacion_hogar_id": verificacion_id,
+            "numero": numero,
+            "estado": "solicitada",
+            "tipos_solicitados": tipos,
+            "instrucciones": motivo_limpio,
+            "solicitada_por_usuario_id": usuario_staff_id,
+            "evidencia_anterior": _snapshot_evidencia(
+                verificacion,
+                perfil_actual,
+            ),
+            "solicitada_at": ahora,
+        }).execute()
         supabase_admin.table("verificaciones_hogar").update({
             "estado": "requiere_cambios",
             "motivo_resultado": motivo_limpio,
             "resuelta_at": None,
             "updated_at": ahora,
         }).eq("id", verificacion_id).execute()
+        _registrar_evento_verificacion(
+            verificacion_id,
+            "evidencia_solicitada",
+            "La asociación solicitó correcciones al expediente.",
+            actor_usuario_id=usuario_staff_id,
+            actor_tipo="asociacion",
+            datos={"ronda": numero, "tipos": tipos},
+        )
         return {
             "estado": "requiere_cambios",
-            "mensaje": "Se solicitó un nuevo recorrido al postulante.",
+            "ronda": numero,
+            "tipos_evidencia": tipos,
+            "mensaje": "Se solicitaron correcciones a la persona postulante.",
         }
 
     voluntario_id = verificacion["voluntario_postulante_id"]
@@ -685,9 +974,18 @@ def resolver_verificacion_remota(
         supabase_admin.table("verificaciones_hogar").update({
             "estado": "rechazada",
             "motivo_resultado": motivo_limpio,
+            "resuelta_por_usuario_id": usuario_staff_id,
             "resuelta_at": ahora,
             "updated_at": ahora,
         }).eq("id", verificacion_id).execute()
+        _registrar_evento_verificacion(
+            verificacion_id,
+            "verificacion_rechazada",
+            "La asociación rechazó la casa temporal en revisión remota.",
+            actor_usuario_id=usuario_staff_id,
+            actor_tipo="asociacion",
+            datos={"motivo": motivo_limpio},
+        )
         return {
             "estado": "rechazada",
             "mensaje": "La casa temporal no fue aprobada.",
@@ -695,6 +993,32 @@ def resolver_verificacion_remota(
 
     if decision != "aprobar":
         raise HTTPException(status_code=422, detail="Decisión no válida")
+
+    perfil = supabase_admin.table("perfil_casa_temporal").select(
+        "video_recorrido_url"
+    ).eq("id", verificacion["perfil_casa_temporal_id"]).limit(1).execute()
+    if not perfil.data or not perfil.data[0].get("video_recorrido_url"):
+        raise HTTPException(
+            status_code=409,
+            detail="No se puede aprobar sin un video del hogar",
+        )
+    if verificacion.get("analisis_video_estado") != "completado":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Espera a que termine correctamente el análisis del video "
+                "antes de aprobar"
+            ),
+        )
+    checklist = verificacion.get("checklist_remoto") or {}
+    if (
+        not CHECKLIST_REMOTO_CAMPOS.issubset(checklist.keys())
+        or not verificacion.get("checklist_remoto_completado_at")
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="Completa el checklist remoto antes de aprobar",
+        )
 
     voluntario = supabase_admin.table("voluntarios").select(
         "id, usuario_id"
@@ -729,9 +1053,17 @@ def resolver_verificacion_remota(
     supabase_admin.table("verificaciones_hogar").update({
         "estado": "aprobada",
         "motivo_resultado": motivo_limpio or None,
+        "resuelta_por_usuario_id": usuario_staff_id,
         "resuelta_at": ahora,
         "updated_at": ahora,
     }).eq("id", verificacion_id).execute()
+    _registrar_evento_verificacion(
+        verificacion_id,
+        "verificacion_aprobada",
+        "La asociación aprobó la casa temporal en revisión remota.",
+        actor_usuario_id=usuario_staff_id,
+        actor_tipo="asociacion",
+    )
     return {
         "estado": "aprobada",
         "nivel_voluntario": "activo_nivel_2",
@@ -739,17 +1071,66 @@ def resolver_verificacion_remota(
     }
 
 
-async def reemplazar_video_solicitado(
-    voluntario_id: str,
-    video_file,
+def guardar_checklist_remoto(
+    verificacion_id: str,
+    asociacion_id: str,
+    usuario_staff_id: str,
+    checklist: dict,
 ) -> dict:
-    """Reemplaza solo el recorrido cuando la asociación pidió evidencia."""
-    if not video_file or not (video_file.content_type or "").startswith("video/"):
+    consulta = supabase_admin.table("verificaciones_hogar").select(
+        "id, estado, modalidad"
+    ).eq("id", verificacion_id).eq(
+        "asociacion_id", asociacion_id
+    ).limit(1).execute()
+    if not consulta.data:
+        raise HTTPException(status_code=404, detail="Verificación no encontrada")
+    verificacion = consulta.data[0]
+    if (
+        verificacion["modalidad"] != "remota"
+        or verificacion["estado"] != "revision_remota"
+    ):
         raise HTTPException(
-            status_code=422,
-            detail="Selecciona un archivo de video válido",
+            status_code=409,
+            detail="El checklist sólo está disponible durante la revisión remota",
         )
 
+    evidencia = {
+        clave: checklist.get(clave)
+        for clave in CHECKLIST_REMOTO_CAMPOS
+    }
+    notas = (checklist.get("notas") or "").strip()
+    evidencia["notas"] = notas or None
+    evidencia["completado_por_usuario_id"] = usuario_staff_id
+    ahora = datetime.now(timezone.utc).isoformat()
+    evidencia["completado_at"] = ahora
+    supabase_admin.table("verificaciones_hogar").update({
+        "checklist_remoto": evidencia,
+        "checklist_remoto_completado_at": ahora,
+        "updated_at": ahora,
+    }).eq("id", verificacion_id).execute()
+    _registrar_evento_verificacion(
+        verificacion_id,
+        "checklist_remoto_completado",
+        "Se completó el checklist de revisión remota.",
+        actor_usuario_id=usuario_staff_id,
+        actor_tipo="asociacion",
+    )
+    return {
+        "checklist_remoto": evidencia,
+        "checklist_remoto_completado_at": ahora,
+        "mensaje": "Checklist remoto guardado.",
+    }
+
+
+async def enviar_evidencia_solicitada(
+    voluntario_id: str,
+    *,
+    video_file=None,
+    identificacion_file=None,
+    fotos_files=None,
+    correcciones: dict | None = None,
+) -> dict:
+    """Entrega la ronda activa sin destruir las evidencias anteriores."""
     postulacion = supabase_admin.table("postulaciones").select(
         "id"
     ).eq("voluntario_id", voluntario_id).eq(
@@ -764,49 +1145,344 @@ async def reemplazar_video_solicitado(
         )
 
     verificacion = supabase_admin.table("verificaciones_hogar").select(
-        "id, perfil_casa_temporal_id, estado, modalidad"
+        "id, perfil_casa_temporal_id, estado, modalidad, analisis_video, "
+        "analisis_video_estado, analisis_video_modelo, analisis_video_error, "
+        "estado_coordenadas, distancia_coordenadas_m"
     ).eq("postulacion_id", postulacion.data[0]["id"]).limit(1).execute()
     if not verificacion.data:
         raise HTTPException(status_code=404, detail="Verificación no encontrada")
     registro = verificacion.data[0]
-    if (
-        registro["estado"] != "requiere_cambios"
-        or registro["modalidad"] != "remota"
-    ):
+    if registro["estado"] != "requiere_cambios":
         raise HTTPException(
             status_code=409,
-            detail="La asociación no ha solicitado un nuevo recorrido",
+            detail="La asociación no ha solicitado correcciones",
         )
 
-    video_url = await storage_service.subir_foto(
+    ronda = supabase_admin.table("rondas_evidencia_verificacion").select(
+        "*"
+    ).eq("verificacion_hogar_id", registro["id"]).eq(
+        "estado", "solicitada"
+    ).order("numero", desc=True).limit(1).execute()
+    if not ronda.data:
+        raise HTTPException(status_code=409, detail="No hay una ronda pendiente")
+    ronda_actual = ronda.data[0]
+    solicitados = set(ronda_actual.get("tipos_solicitados") or [])
+    correcciones = correcciones or {}
+
+    if not any((
         video_file,
-        "videos_recorridos",
+        identificacion_file,
+        fotos_files,
+        correcciones.get("direccion"),
+        correcciones.get("formulario"),
+    )):
+        raise HTTPException(
+            status_code=422,
+            detail="Adjunta o corrige al menos uno de los elementos solicitados",
+        )
+    if video_file and not (video_file.content_type or "").startswith("video/"):
+        raise HTTPException(status_code=422, detail="Selecciona un video válido")
+    if identificacion_file and not (
+        identificacion_file.content_type or ""
+    ).startswith("image/"):
+        raise HTTPException(status_code=422, detail="Selecciona una imagen válida")
+
+    perfil_consulta = supabase_admin.table("perfil_casa_temporal").select(
+        "identificacion_url, video_recorrido_url"
+    ).eq("id", registro["perfil_casa_temporal_id"]).limit(1).execute()
+    perfil_actual = perfil_consulta.data[0] if perfil_consulta.data else {}
+    cambios_perfil = {}
+    evidencia_entregada = dict(
+        ronda_actual.get("evidencia_entregada") or {}
     )
+    reanalizar_video = False
+
+    if video_file:
+        video_url = await storage_service.subir_foto(
+            video_file,
+            "videos_recorridos",
+        )
+        cambios_perfil["video_recorrido_url"] = video_url
+        evidencia_entregada["video_url"] = video_url
+        reanalizar_video = True
+
+    if identificacion_file:
+        identificacion_url = await storage_service.subir_foto(
+            identificacion_file,
+            "identificaciones",
+        )
+        cambios_perfil["identificacion_url"] = identificacion_url
+        evidencia_entregada["identificacion_url"] = identificacion_url
+
+    fotos_urls = []
+    for foto in fotos_files or []:
+        if not (foto.content_type or "").startswith("image/"):
+            raise HTTPException(
+                status_code=422,
+                detail="Todas las fotos deben ser archivos de imagen",
+            )
+        fotos_urls.append(
+            await storage_service.subir_foto(foto, "evidencias_hogar")
+        )
+    if fotos_urls:
+        evidencia_entregada["fotos_urls"] = fotos_urls
+
+    direccion_permitida = {
+        "latitud",
+        "longitud",
+        "calle",
+        "numero",
+        "colonia",
+        "municipio",
+        "estado_ubicacion",
+        "referencia",
+    }
+    formulario_permitido = {
+        "tipo_vivienda",
+        "subcategoria_vivienda",
+        "vivienda_otra_desc",
+        "autorizacion_propietario",
+        "ubicacion_animal",
+        "acepta_visita",
+        "adultos_hogar",
+        "horas_solo",
+        "ninos_hogar",
+        "otros_animales",
+        "animales_vacunados",
+        "puede_aislar",
+        "preferencia_especies",
+        "preferencia_tamanios",
+        "tiempo_resguardo",
+        "tiempo_resguardo_dias",
+        "chk_accesos_seguros",
+        "chk_bardas",
+        "chk_balcones",
+        "chk_espacio",
+        "chk_aislamiento",
+        "chk_cuarentena",
+        "chk_no_entregar",
+    }
+    direccion = correcciones.get("direccion") or {}
+    formulario = correcciones.get("formulario") or {}
+    cambios_perfil.update({
+        clave: valor
+        for clave, valor in direccion.items()
+        if clave in direccion_permitida
+    })
+    cambios_perfil.update({
+        clave: valor
+        for clave, valor in formulario.items()
+        if clave in formulario_permitido
+    })
+    if direccion:
+        evidencia_entregada["direccion"] = direccion
+    if formulario:
+        evidencia_entregada["formulario"] = formulario
+
     ahora = datetime.now(timezone.utc).isoformat()
-    supabase_admin.table("perfil_casa_temporal").update({
-        "video_recorrido_url": video_url,
+    cambios_perfil["updated_at"] = ahora
+    supabase_admin.table("perfil_casa_temporal").update(
+        cambios_perfil
+    ).eq("id", registro["perfil_casa_temporal_id"]).execute()
+
+    tipos_entregados = {
+        tipo
+        for tipo, clave in (
+            ("video", "video_url"),
+            ("identificacion", "identificacion_url"),
+            ("fotos", "fotos_urls"),
+            ("direccion", "direccion"),
+            ("formulario", "formulario"),
+        )
+        if evidencia_entregada.get(clave)
+    }
+    pendientes = solicitados - tipos_entregados
+    cambio_verificacion = {
+        "estado": "requiere_cambios" if pendientes else "revision_remota",
+        "motivo_resultado": (
+            ronda_actual.get("instrucciones") if pendientes else None
+        ),
         "updated_at": ahora,
-    }).eq("id", registro["perfil_casa_temporal_id"]).execute()
-    supabase_admin.table("verificaciones_hogar").update({
-        "estado": "revision_remota",
-        "analisis_video": None,
-        "analisis_video_estado": "pendiente",
-        "analisis_video_modelo": None,
-        "analisis_video_error": None,
-        "analisis_video_iniciado_at": None,
-        "analisis_video_procesado_at": None,
-        "estado_coordenadas": "pendiente",
-        "coordenadas_video_lat": None,
-        "coordenadas_video_lng": None,
-        "distancia_coordenadas_m": None,
-        "coordenadas_fuente": None,
-        "coordenadas_detalle": {},
-        "updated_at": ahora,
-    }).eq("id", registro["id"]).execute()
+    }
+    if reanalizar_video:
+        cambio_verificacion.update({
+            "analisis_video": None,
+            "analisis_video_estado": "pendiente",
+            "analisis_video_modelo": None,
+            "analisis_video_error": None,
+            "analisis_video_iniciado_at": None,
+            "analisis_video_procesado_at": None,
+            "estado_coordenadas": "pendiente",
+            "coordenadas_video_lat": None,
+            "coordenadas_video_lng": None,
+            "distancia_coordenadas_m": None,
+            "coordenadas_fuente": None,
+            "coordenadas_detalle": {},
+            "checklist_remoto": {},
+            "checklist_remoto_completado_at": None,
+        })
+    supabase_admin.table("verificaciones_hogar").update(
+        cambio_verificacion
+    ).eq("id", registro["id"]).execute()
+    supabase_admin.table("rondas_evidencia_verificacion").update({
+        "estado": "solicitada" if pendientes else "entregada",
+        "evidencia_entregada": evidencia_entregada,
+        "entregada_at": None if pendientes else ahora,
+    }).eq("id", ronda_actual["id"]).execute()
+    _registrar_evento_verificacion(
+        registro["id"],
+        "evidencia_entregada",
+        "La persona postulante respondió la solicitud de correcciones.",
+        actor_tipo="postulante",
+        datos={
+            "ronda": ronda_actual["numero"],
+            "tipos_entregados": sorted(tipos_entregados),
+            "tipos_pendientes": sorted(pendientes),
+        },
+    )
     return {
         "verificacion_id": registro["id"],
-        "estado": "revision_remota",
-        "mensaje": "El nuevo recorrido fue enviado a revisión.",
+        "estado": cambio_verificacion["estado"],
+        "ronda": ronda_actual["numero"],
+        "reanalisar_video": reanalizar_video,
+        "tipos_pendientes": sorted(pendientes),
+        "mensaje": (
+            "Las correcciones fueron enviadas a revisión."
+            if not pendientes
+            else "Guardamos el avance. Aún faltan elementos por actualizar."
+        ),
+    }
+
+
+async def reemplazar_video_solicitado(
+    voluntario_id: str,
+    video_file,
+) -> dict:
+    """Compatibilidad con clientes anteriores que sólo envían un video."""
+    return await enviar_evidencia_solicitada(
+        voluntario_id,
+        video_file=video_file,
+    )
+
+
+def registrar_actualizacion_formulario_solicitada(
+    voluntario_id: str,
+    perfil: dict,
+    *,
+    identificacion_actualizada: bool = False,
+    video_actualizado: bool = False,
+) -> dict | None:
+    """Vincula la edición del formulario con la ronda pendiente, si existe."""
+    postulacion = supabase_admin.table("postulaciones").select("id").eq(
+        "voluntario_id", voluntario_id
+    ).eq("tipo", "externo").eq("estado", "pendiente").order(
+        "numero_intento", desc=True
+    ).limit(1).execute()
+    if not postulacion.data:
+        return None
+    verificacion = supabase_admin.table("verificaciones_hogar").select(
+        "id, estado"
+    ).eq("postulacion_id", postulacion.data[0]["id"]).limit(1).execute()
+    if not verificacion.data or verificacion.data[0]["estado"] != "requiere_cambios":
+        return None
+    verificacion_id = verificacion.data[0]["id"]
+    ronda = supabase_admin.table("rondas_evidencia_verificacion").select(
+        "*"
+    ).eq("verificacion_hogar_id", verificacion_id).eq(
+        "estado", "solicitada"
+    ).order("numero", desc=True).limit(1).execute()
+    if not ronda.data:
+        return None
+
+    actual = ronda.data[0]
+    solicitados = set(actual.get("tipos_solicitados") or [])
+    evidencia = dict(actual.get("evidencia_entregada") or {})
+    if "direccion" in solicitados:
+        evidencia["direccion"] = {
+            clave: perfil.get(clave)
+            for clave in (
+                "latitud", "longitud", "calle", "numero", "colonia",
+                "municipio", "estado_ubicacion", "referencia",
+            )
+        }
+    if "formulario" in solicitados:
+        evidencia["formulario"] = {
+            clave: perfil.get(clave)
+            for clave in (
+                "tipo_vivienda", "subcategoria_vivienda",
+                "autorizacion_propietario", "ubicacion_animal",
+                "acepta_visita", "adultos_hogar", "horas_solo",
+                "ninos_hogar", "otros_animales", "animales_vacunados",
+                "puede_aislar", "preferencia_especies",
+                "preferencia_tamanios", "tiempo_resguardo",
+            )
+        }
+    if identificacion_actualizada and "identificacion" in solicitados:
+        evidencia["identificacion_url"] = perfil.get("identificacion_url")
+    if video_actualizado and "video" in solicitados:
+        evidencia["video_url"] = perfil.get("video_recorrido_url")
+
+    entregados = {
+        tipo
+        for tipo, clave in (
+            ("video", "video_url"),
+            ("identificacion", "identificacion_url"),
+            ("fotos", "fotos_urls"),
+            ("direccion", "direccion"),
+            ("formulario", "formulario"),
+        )
+        if evidencia.get(clave)
+    }
+    pendientes = solicitados - entregados
+    ahora = datetime.now(timezone.utc).isoformat()
+    supabase_admin.table("rondas_evidencia_verificacion").update({
+        "estado": "solicitada" if pendientes else "entregada",
+        "evidencia_entregada": evidencia,
+        "entregada_at": None if pendientes else ahora,
+    }).eq("id", actual["id"]).execute()
+    cambio = {
+        "estado": "requiere_cambios" if pendientes else "revision_remota",
+        "motivo_resultado": (
+            actual.get("instrucciones") if pendientes else None
+        ),
+        "updated_at": ahora,
+    }
+    capacidades = supabase_admin.table("capacidades").select("*").eq(
+        "voluntario_id", voluntario_id
+    ).limit(1).execute()
+    cambio["resumen_expediente"] = generar_resumen_expediente(
+        perfil,
+        capacidades.data[0] if capacidades.data else {},
+    )
+    if video_actualizado:
+        cambio.update({
+            "analisis_video": None,
+            "analisis_video_estado": "pendiente",
+            "analisis_video_modelo": None,
+            "analisis_video_error": None,
+            "analisis_video_iniciado_at": None,
+            "analisis_video_procesado_at": None,
+            "estado_coordenadas": "pendiente",
+            "checklist_remoto": {},
+            "checklist_remoto_completado_at": None,
+        })
+    supabase_admin.table("verificaciones_hogar").update(
+        cambio
+    ).eq("id", verificacion_id).execute()
+    _registrar_evento_verificacion(
+        verificacion_id,
+        "formulario_actualizado",
+        "La persona postulante actualizó los datos solicitados.",
+        actor_tipo="postulante",
+        datos={
+            "ronda": actual["numero"],
+            "tipos_pendientes": sorted(pendientes),
+        },
+    )
+    return {
+        "verificacion_id": verificacion_id,
+        "reanalisar_video": video_actualizado,
+        "tipos_pendientes": sorted(pendientes),
     }
 
 
@@ -827,6 +1503,37 @@ def _nombre_voluntario(voluntario_id: str) -> str:
             usuario.data[0].get("apellido_paterno"),
         ) if parte
     )
+
+
+def _usuario_id_voluntario(voluntario_id: str) -> str | None:
+    try:
+        voluntario = supabase_admin.table("voluntarios").select(
+            "usuario_id"
+        ).eq("id", voluntario_id).limit(1).execute()
+        return (
+            voluntario.data[0].get("usuario_id")
+            if voluntario.data
+            else None
+        )
+    except Exception:
+        return None
+
+
+def _nombre_usuario(usuario_id: str) -> str | None:
+    try:
+        usuario = supabase_admin.table("usuarios").select(
+            "nombre, apellido_paterno"
+        ).eq("id", usuario_id).limit(1).execute()
+        if not usuario.data:
+            return None
+        return " ".join(
+            parte for parte in (
+                usuario.data[0].get("nombre"),
+                usuario.data[0].get("apellido_paterno"),
+            ) if parte
+        )
+    except Exception:
+        return None
 
 
 def listar_propuestas_verificacion_hogar(
@@ -1002,6 +1709,14 @@ def responder_propuesta_verificacion_hogar(
             "estado": "visita_aceptada",
             "updated_at": ahora,
         }).eq("id", propuesta["verificacion_hogar_id"]).execute()
+        _registrar_evento_verificacion(
+            propuesta["verificacion_hogar_id"],
+            "propuesta_visita_aceptada",
+            "La persona verificadora aceptó realizar la visita.",
+            actor_usuario_id=_usuario_id_voluntario(verificador_voluntario_id),
+            actor_tipo="verificador",
+            datos={"asignacion_id": asignacion_id},
+        )
         return {
             "estado": "aceptada",
             "estado_verificacion": "visita_aceptada",
@@ -1022,6 +1737,14 @@ def responder_propuesta_verificacion_hogar(
         "estado": "pendiente_asignacion",
         "updated_at": ahora,
     }).eq("id", propuesta["verificacion_hogar_id"]).execute()
+    _registrar_evento_verificacion(
+        propuesta["verificacion_hogar_id"],
+        "propuesta_visita_rechazada",
+        "La persona verificadora rechazó la propuesta de visita.",
+        actor_usuario_id=_usuario_id_voluntario(verificador_voluntario_id),
+        actor_tipo="verificador",
+        datos={"asignacion_id": asignacion_id, "motivo": motivo_limpio},
+    )
     return {
         "estado": "rechazada",
         "estado_verificacion": "pendiente_asignacion",
@@ -1087,6 +1810,14 @@ def proponer_horario_verificacion_hogar(
         "estado": "coordinando_visita",
         "updated_at": ahora,
     }).eq("id", visita["verificacion_hogar_id"]).execute()
+    _registrar_evento_verificacion(
+        visita["verificacion_hogar_id"],
+        "horario_propuesto",
+        "La persona verificadora propuso un horario para la visita.",
+        actor_usuario_id=_usuario_id_voluntario(verificador_voluntario_id),
+        actor_tipo="verificador",
+        datos={"horario": horario_iso, "motivo": motivo_limpio or None},
+    )
     return {
         "horario_estado": "pendiente_postulante",
         "horario_propuesto_at": horario_iso,
@@ -1384,6 +2115,14 @@ def registrar_check_in_visita(
         "estado": "visita_en_curso",
         "updated_at": ahora,
     }).eq("id", verificacion["id"]).execute()
+    _registrar_evento_verificacion(
+        verificacion["id"],
+        "check_in_visita",
+        "La persona verificadora registró su llegada al hogar.",
+        actor_usuario_id=_usuario_id_voluntario(verificador_voluntario_id),
+        actor_tipo="verificador",
+        datos={"asignacion_id": asignacion_id, "distancia_m": distancia},
+    )
     return {
         "check_in_at": ahora,
         "check_in_distancia_m": distancia,
@@ -1437,6 +2176,14 @@ def guardar_checklist_visita(
         "notas_visita": notas or None,
         "updated_at": ahora,
     }).eq("id", asignacion_id).execute()
+    _registrar_evento_verificacion(
+        verificacion["id"],
+        "checklist_presencial_completado",
+        "La persona verificadora completó el checklist presencial.",
+        actor_usuario_id=_usuario_id_voluntario(verificador_voluntario_id),
+        actor_tipo="verificador",
+        datos={"asignacion_id": asignacion_id},
+    )
     return {
         "checklist": evidencia,
         "notas_visita": notas or None,
@@ -1483,6 +2230,14 @@ def registrar_check_out_visita(
         "estado": "visita_realizada",
         "updated_at": ahora,
     }).eq("id", verificacion["id"]).execute()
+    _registrar_evento_verificacion(
+        verificacion["id"],
+        "check_out_visita",
+        "La persona verificadora registró su salida del hogar.",
+        actor_usuario_id=_usuario_id_voluntario(verificador_voluntario_id),
+        actor_tipo="verificador",
+        datos={"asignacion_id": asignacion_id},
+    )
     return {
         "check_out_at": ahora,
         "estado_verificacion": "visita_realizada",
@@ -1539,6 +2294,36 @@ def resolver_resultado_visita(
     }
 
     if resultado == "solicitar_ajustes":
+        perfil = supabase_admin.table("perfil_casa_temporal").select(
+            "identificacion_url, video_recorrido_url"
+        ).eq("id", verificacion["perfil_casa_temporal_id"]).limit(1).execute()
+        ultima = supabase_admin.table(
+            "rondas_evidencia_verificacion"
+        ).select("numero").eq(
+            "verificacion_hogar_id", verificacion["id"]
+        ).order("numero", desc=True).limit(1).execute()
+        numero_ronda = int(ultima.data[0]["numero"]) + 1 if ultima.data else 1
+        supabase_admin.table("rondas_evidencia_verificacion").insert({
+            "verificacion_hogar_id": verificacion["id"],
+            "numero": numero_ronda,
+            "estado": "solicitada",
+            "tipos_solicitados": ["video"],
+            "instrucciones": motivo_limpio,
+            "solicitada_por_usuario_id": _usuario_id_voluntario(
+                verificador_voluntario_id
+            ),
+            "evidencia_anterior": {
+                "identificacion_url": (
+                    perfil.data[0].get("identificacion_url")
+                    if perfil.data else None
+                ),
+                "video_url": (
+                    perfil.data[0].get("video_recorrido_url")
+                    if perfil.data else None
+                ),
+            },
+            "solicitada_at": ahora,
+        }).execute()
         supabase_admin.table("asignaciones_verificacion_hogar").update(
             cierre_asignacion
         ).eq("id", asignacion_id).execute()
@@ -1549,6 +2334,14 @@ def resolver_resultado_visita(
             "resuelta_at": None,
             "updated_at": ahora,
         }).eq("id", verificacion["id"]).execute()
+        _registrar_evento_verificacion(
+            verificacion["id"],
+            "ajustes_solicitados_visita",
+            "La persona verificadora solicitó ajustes después de la visita.",
+            actor_usuario_id=_usuario_id_voluntario(verificador_voluntario_id),
+            actor_tipo="verificador",
+            datos={"asignacion_id": asignacion_id, "motivo": motivo_limpio},
+        )
         return {
             "estado": "requiere_cambios",
             "mensaje": "Se solicitaron ajustes y un nuevo recorrido al postulante.",
@@ -1574,6 +2367,14 @@ def resolver_resultado_visita(
             "resuelta_at": ahora,
             "updated_at": ahora,
         }).eq("id", verificacion["id"]).execute()
+        _registrar_evento_verificacion(
+            verificacion["id"],
+            "verificacion_rechazada",
+            "La persona verificadora no aprobó la casa temporal.",
+            actor_usuario_id=_usuario_id_voluntario(verificador_voluntario_id),
+            actor_tipo="verificador",
+            datos={"asignacion_id": asignacion_id, "motivo": motivo_limpio},
+        )
         return {
             "estado": "rechazada",
             "mensaje": "La casa temporal no fue aprobada.",
@@ -1617,6 +2418,14 @@ def resolver_resultado_visita(
         "resuelta_at": ahora,
         "updated_at": ahora,
     }).eq("id", verificacion["id"]).execute()
+    _registrar_evento_verificacion(
+        verificacion["id"],
+        "verificacion_aprobada",
+        "La persona verificadora aprobó la casa temporal.",
+        actor_usuario_id=_usuario_id_voluntario(verificador_voluntario_id),
+        actor_tipo="verificador",
+        datos={"asignacion_id": asignacion_id},
+    )
     return {
         "estado": "aprobada",
         "nivel_voluntario": "activo_nivel_2",

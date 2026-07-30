@@ -2,6 +2,9 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+from fastapi import HTTPException
+
 from app.services.home_verification_service import generar_resumen_expediente
 from app.services import home_verification_service
 
@@ -236,12 +239,20 @@ def test_revision_remota_puede_solicitar_nueva_evidencia(make_query):
         "asociacion_id": "asoc-1",
         "estado": "revision_remota",
         "modalidad": "remota",
+        "perfil_casa_temporal_id": "perfil-1",
     }])
     postulaciones = make_query(data=[{"id": "post-1", "estado": "pendiente"}])
+    perfiles = make_query(data=[{
+        "identificacion_url": "id.jpg",
+        "video_recorrido_url": "video.mp4",
+    }])
+    rondas = make_query(data=[{"numero": 1}])
     cliente = MagicMock()
     cliente.table.side_effect = lambda tabla: {
-        "verificaciones_hogar": verificaciones,
-        "postulaciones": postulaciones,
+            "verificaciones_hogar": verificaciones,
+            "postulaciones": postulaciones,
+            "perfil_casa_temporal": perfiles,
+            "rondas_evidencia_verificacion": rondas,
     }[tabla]
 
     with patch.object(home_verification_service, "supabase_admin", cliente):
@@ -256,7 +267,94 @@ def test_revision_remota_puede_solicitar_nueva_evidencia(make_query):
     assert resultado["estado"] == "requiere_cambios"
     assert actualizacion["estado"] == "requiere_cambios"
     assert actualizacion["motivo_resultado"] == "Muestra accesos y ventanas."
+    assert rondas.insert.call_args.args[0]["tipos_solicitados"] == ["video"]
     postulaciones.update.assert_not_called()
+
+
+def test_asociacion_puede_seleccionar_revision_remota_manual(make_query):
+    verificaciones = make_query(data=[{
+        "id": "ver-1",
+        "estado": "pendiente_revision",
+        "modalidad": "por_definir",
+    }])
+    asignaciones = make_query(data=[])
+    cliente = MagicMock()
+    cliente.table.side_effect = lambda tabla: {
+        "verificaciones_hogar": verificaciones,
+        "asignaciones_verificacion_hogar": asignaciones,
+    }[tabla]
+
+    with patch.object(home_verification_service, "supabase_admin", cliente):
+        resultado = home_verification_service.seleccionar_modalidad_verificacion(
+            "ver-1", "asoc-1", "staff-1", "remota"
+        )
+
+    cambio = verificaciones.update.call_args.args[0]
+    assert resultado["estado"] == "revision_remota"
+    assert cambio["modalidad"] == "remota"
+    assert cambio["modalidad_definida_por"] == "staff-1"
+
+
+def test_revision_remota_no_aprueba_si_analisis_no_termino(make_query):
+    verificaciones = make_query(data=[{
+        "id": "ver-1",
+        "postulacion_id": "post-1",
+        "voluntario_postulante_id": "vol-1",
+        "asociacion_id": "asoc-1",
+        "perfil_casa_temporal_id": "perfil-1",
+        "estado": "revision_remota",
+        "modalidad": "remota",
+        "analisis_video_estado": "procesando",
+        "checklist_remoto": {
+            campo: "cumple"
+            for campo in home_verification_service.CHECKLIST_REMOTO_CAMPOS
+        },
+        "checklist_remoto_completado_at": "2026-07-29T12:00:00+00:00",
+    }])
+    postulaciones = make_query(data=[{"id": "post-1", "estado": "pendiente"}])
+    perfiles = make_query(data=[{"video_recorrido_url": "video.mp4"}])
+    cliente = MagicMock()
+    cliente.table.side_effect = lambda tabla: {
+        "verificaciones_hogar": verificaciones,
+        "postulaciones": postulaciones,
+        "perfil_casa_temporal": perfiles,
+    }[tabla]
+
+    with (
+        patch.object(home_verification_service, "supabase_admin", cliente),
+        pytest.raises(HTTPException) as error,
+    ):
+        home_verification_service.resolver_verificacion_remota(
+            "ver-1", "asoc-1", "aprobar", usuario_staff_id="staff-1"
+        )
+
+    assert error.value.status_code == 409
+    assert "análisis" in error.value.detail
+
+
+def test_checklist_remoto_guarda_responsable(make_query):
+    verificaciones = make_query(data=[{
+        "id": "ver-1",
+        "estado": "revision_remota",
+        "modalidad": "remota",
+    }])
+    cliente = MagicMock()
+    cliente.table.side_effect = lambda tabla: {
+        "verificaciones_hogar": verificaciones,
+    }[tabla]
+    checklist = {
+        campo: "cumple"
+        for campo in home_verification_service.CHECKLIST_REMOTO_CAMPOS
+    }
+
+    with patch.object(home_verification_service, "supabase_admin", cliente):
+        resultado = home_verification_service.guardar_checklist_remoto(
+            "ver-1", "asoc-1", "staff-1", checklist
+        )
+
+    guardado = verificaciones.update.call_args.args[0]["checklist_remoto"]
+    assert guardado["completado_por_usuario_id"] == "staff-1"
+    assert resultado["checklist_remoto_completado_at"]
 
 
 def test_aprobar_revision_remota_activa_nivel_2(make_query):
@@ -267,18 +365,27 @@ def test_aprobar_revision_remota_activa_nivel_2(make_query):
         "asociacion_id": "asoc-1",
         "estado": "revision_remota",
         "modalidad": "remota",
+        "perfil_casa_temporal_id": "perfil-1",
+        "analisis_video_estado": "completado",
+        "checklist_remoto": {
+            campo: "cumple"
+            for campo in home_verification_service.CHECKLIST_REMOTO_CAMPOS
+        },
+        "checklist_remoto_completado_at": "2026-07-29T12:00:00+00:00",
     }])
     postulaciones = make_query(data=[{"id": "post-1", "estado": "pendiente"}])
     voluntarios = make_query(data=[{"id": "vol-1", "usuario_id": "user-1"}])
     roles = make_query(data=[{"id": "rol-externo"}])
     usuarios = make_query(data=[{"id": "user-1"}])
+    perfiles = make_query(data=[{"video_recorrido_url": "video.mp4"}])
     cliente = MagicMock()
     cliente.table.side_effect = lambda tabla: {
         "verificaciones_hogar": verificaciones,
         "postulaciones": postulaciones,
         "voluntarios": voluntarios,
         "roles": roles,
-        "usuarios": usuarios,
+            "usuarios": usuarios,
+            "perfil_casa_temporal": perfiles,
     }[tabla]
 
     with patch.object(home_verification_service, "supabase_admin", cliente):
@@ -304,11 +411,18 @@ def test_reemplazar_video_devuelve_expediente_a_revision_remota(make_query):
         "modalidad": "remota",
     }])
     perfiles = make_query(data=[{"id": "perfil-1"}])
+    rondas = make_query(data=[{
+        "id": "ronda-2",
+        "numero": 2,
+        "estado": "solicitada",
+        "tipos_solicitados": ["video"],
+    }])
     cliente = MagicMock()
     cliente.table.side_effect = lambda tabla: {
         "postulaciones": postulaciones,
         "verificaciones_hogar": verificaciones,
-        "perfil_casa_temporal": perfiles,
+            "perfil_casa_temporal": perfiles,
+            "rondas_evidencia_verificacion": rondas,
     }[tabla]
     video = MagicMock()
     video.content_type = "video/mp4"
@@ -575,10 +689,17 @@ def test_resultado_presencial_puede_solicitar_ajustes(make_query):
         "estado": "visita_realizada",
         "modalidad": "presencial",
     }])
+    perfiles = make_query(data=[{
+        "identificacion_url": "id.jpg",
+        "video_recorrido_url": "video.mp4",
+    }])
+    rondas = make_query(data=[{"numero": 1}])
     cliente = MagicMock()
     cliente.table.side_effect = lambda tabla: {
         "asignaciones_verificacion_hogar": asignaciones,
         "verificaciones_hogar": verificaciones,
+        "perfil_casa_temporal": perfiles,
+        "rondas_evidencia_verificacion": rondas,
     }[tabla]
 
     with patch.object(home_verification_service, "supabase_admin", cliente):

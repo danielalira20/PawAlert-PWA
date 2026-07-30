@@ -35,6 +35,7 @@ from app.services.voluntario_service import (
     obtener_perfil_externo,
 )
 from app.services.home_verification_service import (
+    enviar_evidencia_solicitada,
     finalizar_postulacion_externa,
     confirmar_horario_como_verificador,
     guardar_checklist_visita,
@@ -44,7 +45,7 @@ from app.services.home_verification_service import (
     proponer_horario_verificacion_hogar,
     registrar_check_in_visita,
     registrar_check_out_visita,
-    reemplazar_video_solicitado,
+    registrar_actualizacion_formulario_solicitada,
     responder_horario_como_postulante,
     responder_propuesta_verificacion_hogar,
     resolver_resultado_visita,
@@ -420,6 +421,7 @@ async def get_perfil_voluntario_externo(
 
 @router.post("/externo/postular", status_code=201)
 async def postular_voluntario_externo(
+    background_tasks: BackgroundTasks,
     datos: str = Form(...),
     identificacion: UploadFile | None = File(None),
     video: UploadFile | None = File(None),
@@ -455,9 +457,22 @@ async def postular_voluntario_externo(
             identificacion_file=identificacion,
             video_file=video
         )
+        correccion = registrar_actualizacion_formulario_solicitada(
+            voluntario_id,
+            perfil,
+            identificacion_actualizada=identificacion is not None,
+            video_actualizado=video is not None,
+        )
+        if correccion and correccion.get("reanalisar_video"):
+            background_tasks.add_task(
+                procesar_evidencia_verificacion,
+                correccion["verificacion_id"],
+                True,
+            )
         return {
             "message": "Postulación como casa temporal recibida con éxito", 
-            "perfil_id": perfil["id"]
+            "perfil_id": perfil["id"],
+            "correccion": correccion,
         }
     except HTTPException:
         raise
@@ -490,16 +505,37 @@ async def finalizar_postulacion_voluntario_externo(
 @router.post("/externo/evidencia-solicitada", status_code=202)
 async def post_evidencia_solicitada_voluntario_externo(
     background_tasks: BackgroundTasks,
-    video: UploadFile = File(...),
+    video: UploadFile | None = File(None),
+    identificacion: UploadFile | None = File(None),
+    fotos: list[UploadFile] | None = File(None),
+    correcciones_json: str | None = Form(None),
     authorization: str = Header(None),
 ):
-    """Permite reemplazar solo el video cuando la asociación pide evidencia."""
+    """Entrega los elementos solicitados en la ronda de correcciones activa."""
     usuario = _obtener_usuario_autenticado(authorization)
     voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
-    resultado = await reemplazar_video_solicitado(voluntario_id, video)
-    background_tasks.add_task(
-        procesar_evidencia_verificacion,
-        resultado["verificacion_id"],
-        True,
+    try:
+        correcciones = (
+            json.loads(correcciones_json)
+            if correcciones_json
+            else {}
+        )
+    except json.JSONDecodeError:
+        raise HTTPException(
+            status_code=422,
+            detail="Las correcciones enviadas no tienen un formato válido",
+        )
+    resultado = await enviar_evidencia_solicitada(
+        voluntario_id,
+        video_file=video,
+        identificacion_file=identificacion,
+        fotos_files=fotos or [],
+        correcciones=correcciones,
     )
+    if resultado.get("reanalisar_video"):
+        background_tasks.add_task(
+            procesar_evidencia_verificacion,
+            resultado["verificacion_id"],
+            True,
+        )
     return resultado
