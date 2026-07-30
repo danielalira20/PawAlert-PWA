@@ -52,6 +52,7 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
   const [showSubmitError, setShowSubmitError] = useState(false);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [registroExitoso, setRegistroExitoso] = useState(false);
+  const [correccionActiva, setCorreccionActiva] = useState(false);
 
   // Modal genérico para selectores
   const [selectorActivo, setSelectorActivo] = useState<string | null>(null);
@@ -542,13 +543,14 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
       }
 
       // 3. Hacer la petición al endpoint que acabamos de crear en FastAPI
-      await axios.post(`${API_URL}/voluntarios/externo/postular`, formData, { 
+      const { data: resultadoGuardado } = await axios.post(`${API_URL}/voluntarios/externo/postular`, formData, {
         headers: { 
           Authorization: `Bearer ${token}` 
         } 
       });
 
       setIsSubmitting(false);
+      setCorreccionActiva(Boolean(resultadoGuardado?.correccion));
       setRegistroExitoso(true);
       
     } catch (error: any) {
@@ -946,19 +948,25 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
                {modoReintento ? '¡Información actualizada!' : '¡Información guardada!'}
              </Text>
              <Text style={{ fontSize: 16, color: COLORS.textLight, textAlign: 'center', lineHeight: 24, marginBottom: 32 }}>
-               {modoReintento
+               {correccionActiva
+                 ? 'Los cambios quedaron vinculados a la revisión de tu hogar. Puedes consultar el avance desde tu perfil.'
+                 : modoReintento
                  ? 'Revisa tus capacidades para enviar nuevamente tu postulación.'
                  : 'Para terminar tu postulación, cuéntanos cómo puedes ayudar.'}
              </Text>
              <TouchableOpacity 
                onPress={() => {
                  if (onClose) onClose(); 
-                 router.push('/capacidades' as any);
+                 if (!correccionActiva) router.push('/capacidades' as any);
                }} 
                style={[styles.submitButton, { width: '100%' }]}
              >
                <Text style={styles.submitButtonText}>
-                 {modoReintento ? 'Revisar mis capacidades' : 'Completar mis capacidades'}
+                 {correccionActiva
+                   ? 'Volver a mi perfil'
+                   : modoReintento
+                     ? 'Revisar mis capacidades'
+                     : 'Completar mis capacidades'}
                </Text>
              </TouchableOpacity>
            </View>

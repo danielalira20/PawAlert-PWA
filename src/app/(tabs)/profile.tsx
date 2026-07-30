@@ -238,6 +238,7 @@ export default function ProfileScreen() {
         visible={isAliadoDashboardVisible}
         onClose={() => setIsAliadoDashboardVisible(false)}
         maxWidth={1000}
+        dismissable={false}
       >
         {isAliadoDashboardVisible && (
           <AliadoDashboardScreen

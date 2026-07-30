@@ -491,6 +491,7 @@ export default function MapScreen() {
           <TouchableOpacity
             onPress={() => {
               setFiltroEspecie('todos'); setOrdenar('reciente'); setMostrarAsociaciones(false);
+              setMostrarAliados(false);
               setShowFiltersModal(false);
             }}
             style={{ paddingHorizontal: 11, paddingVertical: 4, borderRadius: 20, borderWidth: 1.5,
@@ -568,21 +569,42 @@ export default function MapScreen() {
             ))}
           </View>
 
-          <Text style={{ fontSize: 10, fontWeight: '800', color: C.light, textTransform: 'uppercase', marginBottom: 8 }}>En el mapa</Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+          <View style={{
+            backgroundColor: '#FBF7F2',
+            borderWidth: 1,
+            borderColor: '#EEE2D5',
+            borderRadius: 14,
+            padding: 12,
+          }}>
+            <Text style={{ fontSize: 11, fontWeight: '900', color: C.dark, marginBottom: 2 }}>Explorar en el mapa</Text>
+            <Text style={{ fontSize: 9, color: C.light, lineHeight: 13, marginBottom: 10 }}>
+              Muestra organizaciones y puntos de apoyo cercanos.
+            </Text>
             <TouchableOpacity onPress={() => setMostrarAsociaciones(v => !v)}
-              style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, borderWidth: 1.5,
-                borderColor: '#2E86DE', flexDirection: 'row', alignItems: 'center', gap: 5,
-                backgroundColor: mostrarAsociaciones ? '#2E86DE' : 'transparent' }}>
-              <Ionicons name="home" size={13} color={mostrarAsociaciones ? '#FFF' : '#2E86DE'} />
-              <Text style={{ fontSize: 11, fontWeight: '700', color: mostrarAsociaciones ? '#FFF' : '#2E86DE' }}>Asociaciones</Text>
+              style={{ paddingHorizontal: 12, paddingVertical: 9, borderRadius: 11, borderWidth: 1.5,
+                borderColor: '#2E86DE', flexDirection: 'row', alignItems: 'center', gap: 9,
+                backgroundColor: mostrarAsociaciones ? '#2E86DE' : '#FFF', marginBottom: 8 }}>
+              <View style={{ width: 28, height: 28, borderRadius: 9, backgroundColor: mostrarAsociaciones ? 'rgba(255,255,255,0.2)' : '#EAF4FF', alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name="home" size={15} color={mostrarAsociaciones ? '#FFF' : '#2E86DE'} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 11, fontWeight: '800', color: mostrarAsociaciones ? '#FFF' : '#2E86DE' }}>Asociaciones</Text>
+                <Text style={{ fontSize: 8, color: mostrarAsociaciones ? 'rgba(255,255,255,0.82)' : C.light }}>Refugios y organizaciones</Text>
+              </View>
+              <Ionicons name={mostrarAsociaciones ? 'checkmark-circle' : 'eye-outline'} size={16} color={mostrarAsociaciones ? '#FFF' : '#2E86DE'} />
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setMostrarAliados(v => !v)}
-              style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, borderWidth: 1.5,
-                borderColor: '#E67E22', flexDirection: 'row', alignItems: 'center', gap: 5,
-                backgroundColor: mostrarAliados ? '#E67E22' : 'transparent' }}>
-              <Ionicons name="storefront" size={13} color={mostrarAliados ? '#FFF' : '#E67E22'} />
-              <Text style={{ fontSize: 11, fontWeight: '700', color: mostrarAliados ? '#FFF' : '#E67E22' }}>Red de Aliados</Text>
+              style={{ paddingHorizontal: 12, paddingVertical: 9, borderRadius: 11, borderWidth: 1.5,
+                borderColor: '#E67E22', flexDirection: 'row', alignItems: 'center', gap: 9,
+                backgroundColor: mostrarAliados ? '#E67E22' : '#FFF' }}>
+              <View style={{ width: 28, height: 28, borderRadius: 9, backgroundColor: mostrarAliados ? 'rgba(255,255,255,0.2)' : '#FFF0E2', alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name="storefront" size={15} color={mostrarAliados ? '#FFF' : '#E67E22'} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 11, fontWeight: '800', color: mostrarAliados ? '#FFF' : '#E67E22' }}>Red de aliados</Text>
+                <Text style={{ fontSize: 8, color: mostrarAliados ? 'rgba(255,255,255,0.82)' : C.light }}>Veterinarias y comercios</Text>
+              </View>
+              <Ionicons name={mostrarAliados ? 'checkmark-circle' : 'eye-outline'} size={16} color={mostrarAliados ? '#FFF' : '#E67E22'} />
             </TouchableOpacity>
           </View>
         </Animated.View>
@@ -723,17 +745,28 @@ export default function MapScreen() {
                 <Image source={{ uri: icon }} style={{ width: 16, height: 16, tintColor: ordenar === key ? '#FFF' : '#B0A090' }} />
               </TouchableOpacity>
             ))}
+          </View>
+          {/* Fila 3: capas destacadas */}
+          <View style={{ flexDirection: 'row', paddingHorizontal: 8, paddingVertical: 7, gap: 7, borderTopWidth: 1, borderTopColor: '#F0E8DC' }}>
             <TouchableOpacity onPress={() => setMostrarAsociaciones(v => !v)}
-              style={{ width: 28, height: 28, borderRadius: 14, borderWidth: 1.5,
+              style={{ flex: 1, minHeight: 34, borderRadius: 11, borderWidth: 1.5,
                 borderColor: '#2E86DE', alignItems: 'center', justifyContent: 'center',
-                backgroundColor: mostrarAsociaciones ? '#2E86DE' : 'transparent' }}>
+                flexDirection: 'row', gap: 6,
+                backgroundColor: mostrarAsociaciones ? '#2E86DE' : '#F4F9FF' }}>
               <Ionicons name="home" size={14} color={mostrarAsociaciones ? '#FFF' : '#2E86DE'} />
+              <Text numberOfLines={1} style={{ fontSize: 10, fontWeight: '800', color: mostrarAsociaciones ? '#FFF' : '#2E86DE' }}>
+                Asociaciones
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setMostrarAliados(v => !v)}
-              style={{ width: 28, height: 28, borderRadius: 14, borderWidth: 1.5,
+              style={{ flex: 1, minHeight: 34, borderRadius: 11, borderWidth: 1.5,
                 borderColor: '#E67E22', alignItems: 'center', justifyContent: 'center',
-                backgroundColor: mostrarAliados ? '#E67E22' : 'transparent' }}>
+                flexDirection: 'row', gap: 6,
+                backgroundColor: mostrarAliados ? '#E67E22' : '#FFF7EF' }}>
               <Ionicons name="storefront" size={14} color={mostrarAliados ? '#FFF' : '#E67E22'} />
+              <Text numberOfLines={1} style={{ fontSize: 10, fontWeight: '800', color: mostrarAliados ? '#FFF' : '#E67E22' }}>
+                Red de aliados
+              </Text>
             </TouchableOpacity>
           </View>
         </View>

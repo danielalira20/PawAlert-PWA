@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AliadoImpactStats } from '../components/profile/AliadoImpactStats';
@@ -11,7 +11,7 @@ import NotificacionesAliadoScreen from './NotificacionesAliadoScreen';
 // Misma paleta que StaffAsignacionScreen.tsx (COLORS/SHADOW_SM), reusada
 // literalmente — no se inventa un estilo nuevo para este dashboard.
 const COLORS = {
-  bg: '#E8CCAD',
+  bg: '#F8F3ED',
   primary: '#EC802B',
   secondary: '#EDC55B',
   accent: '#66BCB4',
@@ -35,15 +35,16 @@ export default function AliadoDashboardScreen({ onClose, onOpenContribution }: P
 
   return (
     <View style={{ flex: 1, backgroundColor: COLORS.bg }}>
-      <View style={{ flex: 1, width: '100%', maxWidth: 900, alignSelf: 'center' }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 24, paddingTop: 24 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center', marginRight: 16 }}>
+      <View style={styles.dashboardShell}>
+        <View style={styles.header}>
+          <View style={styles.headerIdentity}>
+            <View style={styles.headerIcon}>
               <Ionicons name="heart" size={24} color={COLORS.white} />
             </View>
             <View>
-              <Text style={{ color: COLORS.textLight, fontSize: 14, fontWeight: '500' }}>Panel de</Text>
-              <Text style={{ color: COLORS.textDark, fontSize: 22, fontWeight: 'bold' }}>Aliado</Text>
+              <Text style={styles.headerEyebrow}>RED DE ALIADOS</Text>
+              <Text style={styles.headerTitle}>Panel de Aliado</Text>
+              <Text style={styles.headerSubtitle}>Gestiona tus aportaciones y revisa su impacto.</Text>
             </View>
           </View>
           <TouchableOpacity
@@ -52,7 +53,8 @@ export default function AliadoDashboardScreen({ onClose, onOpenContribution }: P
               else if (router.canGoBack()) router.back();
               else router.replace('/');
             }}
-            style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.06)', alignItems: 'center', justifyContent: 'center' }}
+            style={styles.closeButton}
+            accessibilityLabel="Cerrar panel de aliado"
           >
             <Ionicons name="close" size={20} color={COLORS.textDark} />
           </TouchableOpacity>
@@ -62,8 +64,8 @@ export default function AliadoDashboardScreen({ onClose, onOpenContribution }: P
             exterior envuelve impacto + tab bar + contenido de la tab activa
             — sin esto, cuando el impacto completo (con desglose de ofertas/
             aplicaciones) no cabe, la tab bar queda atorada fuera de vista. */}
-        <ScrollView contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
-          <View style={{ paddingHorizontal: 24 }}>
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          <View style={styles.horizontalSection}>
             <AliadoImpactStats impacto={impacto} isLoading={isLoading} />
           </View>
 
@@ -71,7 +73,7 @@ export default function AliadoDashboardScreen({ onClose, onOpenContribution }: P
               necesidad_id) — dejó de existir cuando se quitaron los botones
               de LandingScreen al reorganizar la UI. Visible siempre, no
               dentro de una pestaña, porque no es exclusivo de lotes. */}
-          <View style={{ paddingHorizontal: 24, marginBottom: 20 }}>
+          <View style={[styles.horizontalSection, { marginBottom: 20 }]}>
             <TouchableOpacity
               onPress={() => {
                 if (onOpenContribution) {
@@ -81,7 +83,7 @@ export default function AliadoDashboardScreen({ onClose, onOpenContribution }: P
                 if (onClose) onClose();
                 router.push('/red-aliados');
               }}
-              style={{ backgroundColor: COLORS.primary, paddingVertical: 14, borderRadius: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}
+              style={styles.primaryAction}
             >
               <Ionicons name="add-circle-outline" size={18} color={COLORS.white} style={{ marginRight: 8 }} />
               <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 14 }}>Nueva aportación o lote</Text>
@@ -89,27 +91,23 @@ export default function AliadoDashboardScreen({ onClose, onOpenContribution }: P
           </View>
 
           {/* Tabs de navegación — mismo patrón/tokens que StaffAsignacionScreen.tsx */}
-          <View style={{ flexDirection: 'row', marginHorizontal: 24, marginBottom: 20, borderBottomWidth: 1, borderBottomColor: '#E5E7EB' }}>
+          <View style={styles.tabs}>
             {([
-              { key: 'lotes', label: 'Mis lotes' },
-              { key: 'aportaciones', label: 'Mis aportaciones' },
-              { key: 'notificaciones', label: 'Notificaciones' },
-            ] as { key: ActiveTab; label: string }[]).map((tab) => (
+              { key: 'lotes', label: 'Mis lotes', icon: 'cube-outline' },
+              { key: 'aportaciones', label: 'Mis aportaciones', icon: 'heart-outline' },
+              { key: 'notificaciones', label: 'Notificaciones', icon: 'notifications-outline' },
+            ] as { key: ActiveTab; label: string; icon: React.ComponentProps<typeof Ionicons>['name'] }[]).map((tab) => (
               <TouchableOpacity
                 key={tab.key}
                 onPress={() => setActiveTab(tab.key)}
-                style={{
-                  paddingBottom: 12,
-                  marginRight: 24,
-                  borderBottomWidth: activeTab === tab.key ? 3 : 0,
-                  borderBottomColor: COLORS.primary,
-                }}
+                style={[styles.tabButton, activeTab === tab.key && styles.tabButtonActive]}
               >
-                <Text style={{
-                  fontSize: 16,
-                  fontWeight: activeTab === tab.key ? '800' : '600',
-                  color: activeTab === tab.key ? COLORS.primary : COLORS.textLight,
-                }}>
+                <Ionicons
+                  name={tab.icon}
+                  size={17}
+                  color={activeTab === tab.key ? COLORS.primary : COLORS.textLight}
+                />
+                <Text style={[styles.tabText, activeTab === tab.key && styles.tabTextActive]}>
                   {tab.label}
                 </Text>
               </TouchableOpacity>
@@ -124,3 +122,83 @@ export default function AliadoDashboardScreen({ onClose, onOpenContribution }: P
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  dashboardShell: { flex: 1, width: '100%', maxWidth: 940, alignSelf: 'center' },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 20,
+    backgroundColor: '#FFFDFB',
+    borderBottomWidth: 1,
+    borderBottomColor: '#EFE5D9',
+  },
+  headerIdentity: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingRight: 16 },
+  headerIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 18,
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 14,
+  },
+  headerEyebrow: { color: COLORS.primary, fontSize: 9, fontWeight: '900', letterSpacing: 1 },
+  headerTitle: { color: COLORS.textDark, fontSize: 21, fontWeight: '900', marginTop: 2 },
+  headerSubtitle: { color: COLORS.textLight, fontSize: 11, marginTop: 2 },
+  closeButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F2E8DD',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scrollContent: { paddingTop: 20, paddingBottom: 40 },
+  horizontalSection: { paddingHorizontal: 24 },
+  primaryAction: {
+    minHeight: 50,
+    paddingHorizontal: 18,
+    borderRadius: 16,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    shadowColor: COLORS.primary,
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 2,
+  },
+  tabs: {
+    flexDirection: 'row',
+    gap: 8,
+    marginHorizontal: 24,
+    marginBottom: 18,
+    padding: 5,
+    borderRadius: 15,
+    backgroundColor: '#EEE5DB',
+  },
+  tabButton: {
+    flex: 1,
+    minHeight: 42,
+    paddingHorizontal: 12,
+    borderRadius: 11,
+    flexDirection: 'row',
+    gap: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabButtonActive: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#4A3728',
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
+  },
+  tabText: { color: COLORS.textLight, fontSize: 13, fontWeight: '700' },
+  tabTextActive: { color: COLORS.primary, fontWeight: '900' },
+});

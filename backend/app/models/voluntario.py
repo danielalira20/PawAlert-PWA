@@ -40,6 +40,23 @@ class AsignarVerificadorRequest(BaseModel):
     voluntario_id: str
 
 
+class ModalidadVerificacionEnum(str, Enum):
+    presencial = "presencial"
+    remota = "remota"
+
+
+class SeleccionarModalidadVerificacionRequest(BaseModel):
+    modalidad: ModalidadVerificacionEnum
+
+
+class TipoEvidenciaVerificacionEnum(str, Enum):
+    video = "video"
+    identificacion = "identificacion"
+    fotos = "fotos"
+    direccion = "direccion"
+    formulario = "formulario"
+
+
 class DecisionVerificacionRemotaEnum(str, Enum):
     aprobar = "aprobar"
     solicitar_evidencia = "solicitar_evidencia"
@@ -51,6 +68,18 @@ class ResolverVerificacionRemotaRequest(BaseModel):
 
     decision: DecisionVerificacionRemotaEnum
     motivo: Optional[str] = Field(default=None, max_length=250)
+    tipos_evidencia: list[TipoEvidenciaVerificacionEnum] = Field(
+        default_factory=list
+    )
+
+    @model_validator(mode="after")
+    def validar_solicitud_evidencia(self):
+        if self.decision == DecisionVerificacionRemotaEnum.solicitar_evidencia:
+            if not self.tipos_evidencia:
+                raise ValueError("Selecciona al menos un elemento por corregir")
+            if not (self.motivo or "").strip():
+                raise ValueError("Escribe indicaciones para la persona postulante")
+        return self
 
 
 class RespuestaPropuestaVerificacionEnum(str, Enum):
@@ -132,6 +161,30 @@ class ChecklistVisitaRequest(BaseModel):
         if self.identidad_coincide == EstadoPuntoChecklistEnum.no_aplica:
             raise ValueError("La comprobación de identidad es obligatoria")
         return self
+
+
+class EstadoPuntoChecklistRemotoEnum(str, Enum):
+    cumple = "cumple"
+    no_cumple = "no_cumple"
+    no_evaluable = "no_evaluable"
+
+
+class ChecklistRemotoRequest(BaseModel):
+    """Comprobaciones documentales de una revisión sin visita presencial."""
+
+    identificacion_legible: EstadoPuntoChecklistRemotoEnum
+    identidad_consistente: EstadoPuntoChecklistRemotoEnum
+    direccion_consistente: EstadoPuntoChecklistRemotoEnum
+    formulario_completo: EstadoPuntoChecklistRemotoEnum
+    recorrido_suficiente: EstadoPuntoChecklistRemotoEnum
+    accesos_seguros: EstadoPuntoChecklistRemotoEnum
+    cierres_perimetrales: EstadoPuntoChecklistRemotoEnum
+    ventanas_balcones: EstadoPuntoChecklistRemotoEnum
+    espacio_aislamiento: EstadoPuntoChecklistRemotoEnum
+    higiene_ventilacion: EstadoPuntoChecklistRemotoEnum
+    convivencia_hogar: EstadoPuntoChecklistRemotoEnum
+    autorizacion_vivienda: EstadoPuntoChecklistRemotoEnum
+    notas: Optional[str] = Field(default=None, max_length=500)
 
 
 class ResultadoVisitaEnum(str, Enum):
