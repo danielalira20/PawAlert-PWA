@@ -1172,13 +1172,26 @@ const confirmarReactivar = async () => {
                 </TouchableOpacity>
               </View>
 
-              {/* Tabs de navegación */}
-              <View style={{ flexDirection: 'row', marginBottom: 20, borderBottomWidth: 1, borderBottomColor: '#E5E7EB' }}>
+              {/* Tabs de navegación: desplazables en pantallas angostas */}
+              <ScrollView
+                horizontal
+                nestedScrollEnabled
+                directionalLockEnabled
+                showsHorizontalScrollIndicator={false}
+                style={{ marginBottom: 20, flexGrow: 0, width: '100%' }}
+                contentContainerStyle={{
+                  flexDirection: 'row',
+                  paddingRight: 18,
+                  borderBottomWidth: 1,
+                  borderBottomColor: '#E5E7EB',
+                }}
+              >
                 <TouchableOpacity
                   onPress={() => setActiveTab('reportes')}
                   style={{
                     paddingBottom: 12,
                     marginRight: 24,
+                    flexShrink: 0,
                     borderBottomWidth: activeTab === 'reportes' ? 3 : 0,
                     borderBottomColor: COLORS.primary
                   }}
@@ -1196,7 +1209,8 @@ const confirmarReactivar = async () => {
                   onPress={() => setActiveTab('postulaciones')}
                   style={{
                     paddingBottom: 12,
-                      marginRight: 24,  
+                    marginRight: 24,
+                    flexShrink: 0,
                     borderBottomWidth: activeTab === 'postulaciones' ? 3 : 0,
                     borderBottomColor: COLORS.primary
                   }}
@@ -1215,6 +1229,7 @@ const confirmarReactivar = async () => {
                   style={{
                     paddingBottom: 12,
                     marginRight: 24,
+                    flexShrink: 0,
                     borderBottomWidth: activeTab === 'voluntarios' ? 3 : 0,
                     borderBottomColor: COLORS.primary
                   }}
@@ -1232,6 +1247,7 @@ const confirmarReactivar = async () => {
                   onPress={() => setActiveTab('lotes')}
                   style={{
                     paddingBottom: 12,
+                    flexShrink: 0,
                     borderBottomWidth: activeTab === 'lotes' ? 3 : 0,
                     borderBottomColor: COLORS.primary
                   }}
@@ -1244,7 +1260,7 @@ const confirmarReactivar = async () => {
                     Lotes de aliados
                   </Text>
                 </TouchableOpacity>
-              </View>
+              </ScrollView>
 
               {/* Título de sección */}
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
