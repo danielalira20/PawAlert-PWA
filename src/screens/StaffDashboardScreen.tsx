@@ -195,6 +195,12 @@ export default function StaffDashboardScreen({ onClose }: Props) {
       // del aliado) hasta que el staff confirme que ya entendió a dónde llevar el caso.
       setSugerenciaAliado(null);
       setSeguimientoAliado(res.data);
+      // Sin esto, tiene_sugerencia_aceptada se queda en el valor obsoleto
+      // (false) en el reporte que ya está en memoria — el botón "Registrar
+      // llegada a veterinaria" nunca aparece pese a que el backend ya lo
+      // marcaría true. Mismo patrón que registrarEncontre/registrarRefugio/
+      // registrarLlegadaVeterinaria en useStaffReports.ts.
+      await cargarReportesAsignados();
     } catch (error: any) {
       showToast({
         type: 'error',
