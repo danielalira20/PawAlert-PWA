@@ -216,11 +216,7 @@ const AREA_SERVICIO_OPCIONES: Option[] = [
 // elegida (paso 1), respectivamente.
 const CAMPOS_CONDICIONALES: Record<string, CampoCondicional[]> = {
   alimentos: [
-    {
-      key: 'etapa',
-      label: 'Etapa',
-      tipo: 'single',
-      opciones: [
+    { key: 'etapa', label: 'Etapa', tipo: 'single', required: true, opciones: [
         { value: 'bebe', label: 'Bebé' },
         { value: 'cachorro', label: 'Cachorro' },
         { value: 'adulto', label: 'Adulto' },
@@ -232,6 +228,7 @@ const CAMPOS_CONDICIONALES: Record<string, CampoCondicional[]> = {
       key: 'dieta_especial',
       label: 'Dieta especial',
       tipo: 'single',
+      required: true,
       opciones: [
         { value: 'regular', label: 'Regular' },
         { value: 'gastrointestinal', label: 'Gastrointestinal' },
@@ -240,30 +237,32 @@ const CAMPOS_CONDICIONALES: Record<string, CampoCondicional[]> = {
         { value: 'otra', label: 'Otra' },
       ],
     },
-    { key: 'producto_cerrado', label: '¿El producto está cerrado?', tipo: 'boolean' },
+    { key: 'producto_cerrado', label: '¿El producto está cerrado?', tipo: 'boolean', required: true},
     { key: 'marca', label: 'Marca (opcional)', tipo: 'texto' },
-    { key: 'peso_por_empaque', label: 'Peso por empaque', tipo: 'texto', numerico: true },
-    { key: 'numero_empaques', label: 'Número de empaques', tipo: 'texto', numerico: true },
-    { key: 'fecha_caducidad', label: 'Fecha de caducidad', tipo: 'fecha' },
+    { key: 'peso_por_empaque', label: 'Peso por empaque', tipo: 'texto', numerico: true, required:true},
+    { key: 'numero_empaques', label: 'Número de empaques', tipo: 'texto', numerico: true, required:true},
+    { key: 'fecha_caducidad', label: 'Fecha de caducidad', tipo: 'fecha', required:true },
   ],
   insumos: [
     {
       key: 'nuevo_o_usado',
       label: 'Nuevo o usado',
       tipo: 'single',
+      required:true,
       opciones: [
         { value: 'nuevo', label: 'Nuevo' },
         { value: 'usado', label: 'Usado en buen estado' },
       ],
     },
     { key: 'descripcion_contenido', label: 'Descripción del contenido (solo kits) · Opcional', tipo: 'texto' },
-    { key: 'fecha_caducidad', label: 'Fecha de caducidad del producto', tipo: 'fecha' },
+    { key: 'fecha_caducidad', label: 'Fecha de caducidad del producto', tipo: 'fecha', required:true},
   ],
   servicios_veterinarios: [
     {
       key: 'nivel',
       label: 'Nivel que puede recibir',
       tipo: 'single',
+      required:true,
       opciones: [
         { value: 'critico', label: 'Crítico' },
         { value: 'urgente', label: 'Urgente' },
@@ -274,6 +273,7 @@ const CAMPOS_CONDICIONALES: Record<string, CampoCondicional[]> = {
       key: 'periodo',
       label: 'Periodo',
       tipo: 'single',
+      required:true,
       opciones: [
         { value: 'semana', label: 'Por semana' },
         { value: 'mes', label: 'Por mes' },
@@ -283,10 +283,10 @@ const CAMPOS_CONDICIONALES: Record<string, CampoCondicional[]> = {
     // 'numero_atenciones' se quitó por redundante: el paso 3 ya pregunta
     // la cantidad ("Capacidad declarada"/"Cantidad") para cualquier
     // categoría, no hace falta preguntarla dos veces solo para este caso.
-    { key: 'requiere_cita', label: '¿Requiere cita?', tipo: 'boolean' },
-    { key: 'dias', label: 'Días disponibles', tipo: 'multi', opciones: DIAS_SEMANA },
-    { key: 'horario', label: 'Horario', tipo: 'multi', opciones: FRANJAS_HORARIO },
-    { key: 'restricciones', label: 'Restricciones', tipo: 'texto' },
+    { key: 'requiere_cita', label: '¿Requiere cita?', tipo: 'boolean', required:true},
+    { key: 'dias', label: 'Días disponibles', tipo: 'multi', opciones: DIAS_SEMANA, required:true},
+    { key: 'horario', label: 'Horario', tipo: 'multi', opciones: FRANJAS_HORARIO, required:true },
+    { key: 'restricciones', label: 'Restricciones', tipo: 'texto', required:true},
   ],
   // Difusión y campañas se maneja aparte (tipo de apoyo + área condicional
   // anidada + contacto responsable con 4 campos propios) — ver bloques
@@ -874,6 +874,14 @@ export default function AportacionFormScreen({ onClose }: Props) {
         nuevos.contenidoPorUnidad = 'Indica de cuánto es cada unidad.';
       }
 
+      if (!esLote) {
+        if (!fechaDisponibilidad) nuevos.fechaDisponibilidad = 'Selecciona una fecha.';
+        if (!vieneDeNecesidad && !vigencia) nuevos.vigencia = 'Selecciona la fecha final de disponibilidad.';
+        if (!vieneDeNecesidad && !ubicacion) {
+          nuevos.ubicacion = 'Selecciona una ubicación en el mapa.';
+        }
+      }
+
       if (esLote) {
         if (!tipoEmpaque.trim()) nuevos.tipoEmpaque = 'Describe cómo viene empacado.';
         if (!divisible) nuevos.divisible = 'Selecciona una opción.';
@@ -903,6 +911,23 @@ export default function AportacionFormScreen({ onClose }: Props) {
     }
     return true;
   };
+
+
+const validarPasoSilencioso = (numero: number) => {
+  // Exactamente la misma lógica de validarPaso, pero sin el toast
+  // ni el bloqueo — solo actualiza errors en vivo.
+  // (copia el cuerpo de validarPaso, quita el showToast/return false final)
+};
+
+useEffect(() => {
+  validarPasoSilencioso(paso);
+}, [
+  paso, categoria, subcategoria, tamanio, detalleValores, detalleFechas, detalleMulti,
+  contactoNombre, contactoTelefono, contactoCorreo, cantidadValor, cantidadUnidad,
+  contenidoPorUnidad, esLote, tipoEmpaque, divisible, maxAsociaciones, formaEntrega,
+  ubicacion, direccionEstado, direccionMunicipio, direccionCalle, direccionCodigoPostal,
+  direccionColonia, fechaDisponibilidad, vigencia,
+]);
 
   const resetForm = () => {
     setPaso(1);
