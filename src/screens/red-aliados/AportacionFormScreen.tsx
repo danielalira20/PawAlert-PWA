@@ -317,7 +317,7 @@ export default function AportacionFormScreen({ onClose }: Props) {
   // el componente, ANTES de que el usuario toque la categoría — anulando el
   // guard de onChangeCategoria de abajo.
   const [vieneDeNecesidad] = useState(() => Boolean(necesidad_id));
-
+  const [haElegidoProactiva, setHaElegidoProactiva] = useState(false);
   const [paso, setPaso] = useState(1);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [mostrarPostEnvio, setMostrarPostEnvio] = useState(false);
@@ -1306,6 +1306,34 @@ export default function AportacionFormScreen({ onClose }: Props) {
           </FormSection>
         );
       }
+
+  if (!vieneDeNecesidad && !haElegidoProactiva) {
+  return(
+    <FormSection title="¿Qué quieres hacer?" subtitle="Elige cómo quieres ayudar.">
+      <TouchableOpacity
+        onPress={() => {
+          if (onClose) onClose();
+          router.push('/como-ayudar');
+        }}
+        style={styles.optionCard}
+      >
+        <Text style={styles.optionCardTitle}>Responder a una necesidad puntual</Text>
+        <Text style={styles.optionCardSubtitle}>
+          Te llevamos a "Cómo ayudar" para que elijas exactamente qué necesidad quieres cubrir.
+        </Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        onPress={() => setHaElegidoProactiva(true)}
+        style={styles.optionCard}
+      >
+        <Text style={styles.optionCardTitle}>Dejar mi disponibilidad abierta</Text>
+        <Text style={styles.optionCardSubtitle}>
+          Ofrece algo que las asociaciones podrán encontrar y usar cuando lo necesiten.
+        </Text>
+      </TouchableOpacity>
+    </FormSection>
+  );
+}
 
       return (
         <>
@@ -2579,4 +2607,23 @@ const styles = StyleSheet.create({
   },
   packageQuestionTitle: { color: COLORS.textDark, fontSize: 15, fontWeight: '700', marginBottom: 5 },
   packageQuestionHelper: { color: COLORS.textLight, fontSize: 12, lineHeight: 18, marginBottom: 12 },
+  optionCard: {
+    backgroundColor: COLORS.cardBg,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 14,
+  },
+  optionCardTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: COLORS.textDark,
+    marginBottom: 4,
+  },
+  optionCardSubtitle: {
+    fontSize: 13,
+    color: COLORS.textLight,
+    lineHeight: 19,
+  },
 });
