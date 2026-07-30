@@ -21,6 +21,8 @@ export interface AplicacionImpacto {
 
 export interface ImpactoAliado {
   tipo: string | null;
+  verificado_admin?: boolean;
+  razon_rechazo?: string | null;
   total_contribuciones: number;
   asociaciones_ayudadas: number;
   ofertas: OfertaImpacto[];
@@ -29,6 +31,8 @@ export interface ImpactoAliado {
 
 const IMPACTO_VACIO: ImpactoAliado = {
   tipo: null,
+  verificado_admin: false,
+  razon_rechazo: null,
   total_contribuciones: 0,
   asociaciones_ayudadas: 0,
   ofertas: [],
