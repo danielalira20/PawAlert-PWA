@@ -1239,9 +1239,9 @@ function AliadoDetailScreen({
                   </View>
                 )}
 
-                {datosExtra.documento_verificacion_url && (
-                  <View style={{ marginTop: 12 }}>
-                    <Text style={[styles.infoLabel, { marginBottom: 8 }]}>Documento de verificación adjunto</Text>
+                <View style={{ marginTop: 12 }}>
+                  <Text style={[styles.infoLabel, { marginBottom: 8 }]}>Documento de verificación adjunto</Text>
+                  {typeof datosExtra.documento_verificacion_url === 'string' && datosExtra.documento_verificacion_url.startsWith('http') ? (
                     <TouchableOpacity
                       onPress={() => Linking.openURL(datosExtra.documento_verificacion_url)}
                       style={styles.apelacionDocRow}
@@ -1249,8 +1249,12 @@ function AliadoDetailScreen({
                       <Ionicons name="document-text" size={20} color={Brand.primary} />
                       <Text style={styles.apelacionDocText}>Ver documento de verificación</Text>
                     </TouchableOpacity>
-                  </View>
-                )}
+                  ) : (
+                    <Text style={[styles.infoValue, { color: Brand.textFaint, fontStyle: 'italic' }]}>
+                      No se adjuntó ningún documento o el formato es inválido.
+                    </Text>
+                  )}
+                </View>
               </View>
             </View>
           )}
