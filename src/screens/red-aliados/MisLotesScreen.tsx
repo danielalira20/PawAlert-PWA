@@ -57,6 +57,7 @@ interface Lote {
   deshabilitado_at: string | null;
   created_at: string;
   asociaciones_invitadas: number;
+  asociaciones_cupo_ocupado: number;
   asociaciones_aceptadas: number;
 }
 
@@ -65,6 +66,12 @@ interface InvitacionLote {
   estado: string;
   cantidad_asignada: number | null;
   asociacion_nombre: string | null;
+}
+
+interface AsociacionCompatible {
+  id: string;
+  nombre: string;
+  distancia_km: number;
 }
 
 type FiltroLote = 'todos' | 'activos' | 'asignados' | 'deshabilitados';
@@ -147,6 +154,12 @@ export default function MisLotesScreen({ onClose, embedded }: Props) {
   const [confirmarCambioEstado, setConfirmarCambioEstado] = useState(false);
   const [isUpdatingEstado, setIsUpdatingEstado] = useState(false);
   const [estadoError, setEstadoError] = useState('');
+  const [mostrarInvitar, setMostrarInvitar] = useState(false);
+  const [asociacionesCompatibles, setAsociacionesCompatibles] = useState<AsociacionCompatible[]>([]);
+  const [asociacionesSeleccionadas, setAsociacionesSeleccionadas] = useState<string[]>([]);
+  const [isLoadingAsociaciones, setIsLoadingAsociaciones] = useState(false);
+  const [isInvitando, setIsInvitando] = useState(false);
+  const [invitacionError, setInvitacionError] = useState('');
 
   const cargarLotes = async () => {
     setIsLoading(true);
@@ -171,6 +184,10 @@ export default function MisLotesScreen({ onClose, embedded }: Props) {
     setLoteSeleccionado(lote);
     setConfirmarCambioEstado(false);
     setEstadoError('');
+    setMostrarInvitar(false);
+    setAsociacionesCompatibles([]);
+    setAsociacionesSeleccionadas([]);
+    setInvitacionError('');
     setIsLoadingInvitaciones(true);
     try {
       const res = await axios.get(`${API_URL}/red-aliados/lotes/${lote.id}/invitaciones`, {
@@ -181,6 +198,92 @@ export default function MisLotesScreen({ onClose, embedded }: Props) {
       setInvitaciones([]);
     } finally {
       setIsLoadingInvitaciones(false);
+    }
+  };
+
+  const abrirSelectorAsociaciones = async () => {
+    if (!loteSeleccionado) return;
+    setMostrarInvitar(true);
+    setIsLoadingAsociaciones(true);
+    setInvitacionError('');
+    setAsociacionesSeleccionadas([]);
+    try {
+      const res = await axios.get(
+        `${API_URL}/red-aliados/lotes/${loteSeleccionado.id}/asociaciones-compatibles`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      setAsociacionesCompatibles(res.data);
+    } catch (error: any) {
+      setAsociacionesCompatibles([]);
+      setInvitacionError(error?.response?.data?.detail || 'No pudimos cargar asociaciones compatibles.');
+    } finally {
+      setIsLoadingAsociaciones(false);
+    }
+  };
+
+  const toggleAsociacion = (asociacionId: string) => {
+    if (!loteSeleccionado) return;
+    const cupoRestante = loteSeleccionado.max_asociaciones - loteSeleccionado.asociaciones_cupo_ocupado;
+    setInvitacionError('');
+    setAsociacionesSeleccionadas((actuales) => {
+      if (actuales.includes(asociacionId)) {
+        return actuales.filter((id) => id !== asociacionId);
+      }
+      if (loteSeleccionado.divisible === 'no') return [asociacionId];
+      if (actuales.length >= cupoRestante) {
+        setInvitacionError(`Solo puedes seleccionar ${cupoRestante} asociación(es) más.`);
+        return actuales;
+      }
+      return [...actuales, asociacionId];
+    });
+  };
+
+  const invitarAsociaciones = async () => {
+    if (!loteSeleccionado || asociacionesSeleccionadas.length === 0) return;
+    const cupoRestante = loteSeleccionado.max_asociaciones - loteSeleccionado.asociaciones_cupo_ocupado;
+    if (asociacionesSeleccionadas.length !== cupoRestante) {
+      setInvitacionError(
+        cupoRestante === 1
+          ? 'Selecciona la asociación que recibirá el lote.'
+          : `Selecciona exactamente ${cupoRestante} asociaciones.`,
+      );
+      return;
+    }
+    setIsInvitando(true);
+    setInvitacionError('');
+    try {
+      await axios.post(
+        `${API_URL}/red-aliados/lotes/${loteSeleccionado.id}/invitar`,
+        { asociacion_ids: asociacionesSeleccionadas },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      const invitacionesRes = await axios.get(
+        `${API_URL}/red-aliados/lotes/${loteSeleccionado.id}/invitaciones`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      setInvitaciones(invitacionesRes.data);
+      const totalInvitaciones = invitacionesRes.data.length;
+      const cupoOcupado = invitacionesRes.data.filter(
+        (invitacion: InvitacionLote) => invitacion.estado !== 'rechazada',
+      ).length;
+      const totalAceptadas = invitacionesRes.data.filter(
+        (invitacion: InvitacionLote) => ['aceptada', 'confirmada'].includes(invitacion.estado),
+      ).length;
+      const actualizado = {
+        ...loteSeleccionado,
+        asociaciones_invitadas: totalInvitaciones,
+        asociaciones_cupo_ocupado: cupoOcupado,
+        asociaciones_aceptadas: totalAceptadas,
+      };
+      setLoteSeleccionado(actualizado);
+      setLotes((actuales) => actuales.map((lote) => (lote.id === actualizado.id ? actualizado : lote)));
+      setMostrarInvitar(false);
+      setAsociacionesSeleccionadas([]);
+      setAsociacionesCompatibles([]);
+    } catch (error: any) {
+      setInvitacionError(error?.response?.data?.detail || 'No pudimos enviar las invitaciones.');
+    } finally {
+      setIsInvitando(false);
     }
   };
 
@@ -470,7 +573,15 @@ export default function MisLotesScreen({ onClose, embedded }: Props) {
                     </View>
                   )}
 
-                  <Text style={styles.invitationsTitle}>Invitaciones</Text>
+                  <View style={styles.invitationsHeading}>
+                    <Text style={styles.invitationsTitle}>Invitaciones</Text>
+                    <Text style={styles.allocationSummary}>
+                      {invitaciones
+                        .filter((inv) => ['aceptada', 'confirmada'].includes(inv.estado))
+                        .reduce((total, inv) => total + Number(inv.cantidad_asignada || 0), 0)}{' '}
+                      de {loteSeleccionado.cantidad_valor} {loteSeleccionado.cantidad_unidad} asignados
+                    </Text>
+                  </View>
                 </>
               )}
 
@@ -493,6 +604,11 @@ export default function MisLotesScreen({ onClose, embedded }: Props) {
                     </View>
                     {inv.estado === 'aceptada' && (
                       <View style={{ marginTop: 10 }}>
+                        {!!inv.cantidad_asignada && (
+                          <Text style={styles.invitationAmount}>
+                            Parte aceptada: {inv.cantidad_asignada} {loteSeleccionado?.cantidad_unidad}
+                          </Text>
+                        )}
                         <TouchableOpacity
                           onPress={() => abrirQr(inv.id)}
                           style={{ flexDirection: 'row', gap: 6, backgroundColor: COLORS.primary, paddingVertical: 10, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }}
@@ -504,9 +620,112 @@ export default function MisLotesScreen({ onClose, embedded }: Props) {
                         </TouchableOpacity>
                       </View>
                     )}
+                    {inv.estado === 'confirmada' && !!inv.cantidad_asignada && (
+                      <Text style={styles.invitationAmount}>
+                        Recibido: {inv.cantidad_asignada} {loteSeleccionado?.cantidad_unidad}
+                      </Text>
+                    )}
                   </View>
                 ))
               )}
+
+              {loteSeleccionado?.activo
+                && loteSeleccionado.asociaciones_cupo_ocupado < loteSeleccionado.max_asociaciones
+                && (
+                  <View style={styles.inviteMoreSection}>
+                    {!mostrarInvitar ? (
+                      <TouchableOpacity style={styles.inviteMoreButton} onPress={abrirSelectorAsociaciones}>
+                        <Ionicons name="person-add-outline" size={16} color={COLORS.primary} />
+                        <Text style={styles.inviteMoreButtonText}>Invitar asociaciones</Text>
+                        <Text style={styles.inviteSlotsText}>
+                          {loteSeleccionado.max_asociaciones - loteSeleccionado.asociaciones_cupo_ocupado} lugar(es)
+                        </Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <View style={styles.inviteSelector}>
+                        <View style={styles.inviteSelectorHeader}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.inviteSelectorTitle}>
+                              {loteSeleccionado.max_asociaciones - loteSeleccionado.asociaciones_cupo_ocupado === 1
+                                ? 'Escoge tu asociación'
+                                : `Escoge tus ${loteSeleccionado.max_asociaciones - loteSeleccionado.asociaciones_cupo_ocupado} asociaciones`}
+                            </Text>
+                            <Text style={styles.inviteSelectorSubtitle}>
+                              Selecciona exactamente {loteSeleccionado.max_asociaciones - loteSeleccionado.asociaciones_cupo_ocupado}.
+                            </Text>
+                          </View>
+                          <TouchableOpacity
+                            onPress={() => {
+                              setMostrarInvitar(false);
+                              setInvitacionError('');
+                            }}
+                          >
+                            <Ionicons name="close" size={19} color={COLORS.textLight} />
+                          </TouchableOpacity>
+                        </View>
+
+                        {isLoadingAsociaciones ? (
+                          <ActivityIndicator color={COLORS.primary} style={{ marginVertical: 20 }} />
+                        ) : asociacionesCompatibles.length === 0 ? (
+                          <Text style={styles.inviteEmptyText}>
+                            No hay nuevas asociaciones compatibles disponibles.
+                          </Text>
+                        ) : (
+                          asociacionesCompatibles.map((asociacion) => {
+                            const seleccionada = asociacionesSeleccionadas.includes(asociacion.id);
+                            return (
+                              <TouchableOpacity
+                                key={asociacion.id}
+                                style={[styles.associationOption, seleccionada && styles.associationOptionSelected]}
+                                onPress={() => toggleAsociacion(asociacion.id)}
+                              >
+                                <View style={{ flex: 1 }}>
+                                  <Text style={styles.associationName}>{asociacion.nombre}</Text>
+                                  <Text style={styles.associationDistance}>
+                                    {Number(asociacion.distancia_km).toFixed(1)} km
+                                  </Text>
+                                </View>
+                                <Ionicons
+                                  name={seleccionada ? 'checkmark-circle' : 'ellipse-outline'}
+                                  size={21}
+                                  color={seleccionada ? COLORS.primary : COLORS.textLight}
+                                />
+                              </TouchableOpacity>
+                            );
+                          })
+                        )}
+
+                        {!!invitacionError && <Text style={styles.inviteError}>{invitacionError}</Text>}
+                        {asociacionesCompatibles.length > 0 && (
+                          <TouchableOpacity
+                            style={[
+                              styles.sendInvitesButton,
+                              (
+                                asociacionesSeleccionadas.length
+                                  !== loteSeleccionado.max_asociaciones - loteSeleccionado.asociaciones_cupo_ocupado
+                                || isInvitando
+                              ) && { opacity: 0.5 },
+                            ]}
+                            onPress={invitarAsociaciones}
+                            disabled={
+                              asociacionesSeleccionadas.length
+                                !== loteSeleccionado.max_asociaciones - loteSeleccionado.asociaciones_cupo_ocupado
+                              || isInvitando
+                            }
+                          >
+                            {isInvitando
+                              ? <ActivityIndicator size="small" color={COLORS.bgWhite} />
+                              : (
+                                <Text style={styles.sendInvitesText}>
+                                  Enviar invitación{asociacionesSeleccionadas.length !== 1 ? 'es' : ''} ({asociacionesSeleccionadas.length})
+                                </Text>
+                              )}
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    )}
+                  </View>
+                )}
 
               {loteSeleccionado && (
                 <View style={styles.statusActions}>
@@ -732,7 +951,73 @@ const styles = StyleSheet.create({
   },
   modalAddressText: { flex: 1, color: COLORS.textDark, fontSize: 11, lineHeight: 17 },
   modalMap: { marginTop: 10, overflow: 'hidden', borderRadius: 14 },
-  invitationsTitle: { color: COLORS.textDark, fontSize: 14, fontWeight: '900', marginTop: 20, marginBottom: 10 },
+  invitationsHeading: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: 10,
+    marginTop: 20,
+    marginBottom: 10,
+  },
+  invitationsTitle: { color: COLORS.textDark, fontSize: 14, fontWeight: '900' },
+  allocationSummary: { flex: 1, color: COLORS.textLight, fontSize: 9, textAlign: 'right' },
+  invitationAmount: { color: COLORS.textLight, fontSize: 10, fontWeight: '700', marginTop: 8, marginBottom: 8 },
+  inviteMoreSection: { marginTop: 4 },
+  inviteMoreButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: `${COLORS.primary}55`,
+    borderRadius: 12,
+    backgroundColor: `${COLORS.primary}08`,
+  },
+  inviteMoreButtonText: { flex: 1, color: COLORS.primary, fontSize: 12, fontWeight: '800' },
+  inviteSlotsText: { color: COLORS.textLight, fontSize: 10, fontWeight: '700' },
+  inviteSelector: {
+    padding: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 14,
+    backgroundColor: '#FFFCF8',
+  },
+  inviteSelectorHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 10 },
+  inviteSelectorTitle: { color: COLORS.textDark, fontSize: 13, fontWeight: '900' },
+  inviteSelectorSubtitle: { color: COLORS.textLight, fontSize: 10, marginTop: 2 },
+  associationOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 11,
+    marginBottom: 7,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 11,
+    backgroundColor: COLORS.bgWhite,
+  },
+  associationOptionSelected: { borderColor: COLORS.primary, backgroundColor: `${COLORS.primary}0D` },
+  associationName: { color: COLORS.textDark, fontSize: 12, fontWeight: '800' },
+  associationDistance: { color: COLORS.textLight, fontSize: 10, marginTop: 2 },
+  inviteEmptyText: { color: COLORS.textLight, fontSize: 11, textAlign: 'center', paddingVertical: 18 },
+  inviteError: {
+    color: COLORS.danger,
+    fontSize: 10,
+    lineHeight: 15,
+    marginTop: 5,
+    padding: 8,
+    borderRadius: 9,
+    backgroundColor: `${COLORS.danger}0D`,
+  },
+  sendInvitesButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 40,
+    marginTop: 9,
+    borderRadius: 11,
+    backgroundColor: COLORS.primary,
+  },
+  sendInvitesText: { color: COLORS.bgWhite, fontSize: 11, fontWeight: '800' },
   statusActions: { marginTop: 12, paddingTop: 14, borderTopWidth: 1, borderTopColor: COLORS.border },
   statusError: {
     color: COLORS.danger,

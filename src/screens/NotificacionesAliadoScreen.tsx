@@ -29,12 +29,27 @@ const isWeb = Platform.OS === 'web';
 interface NotificacionAliado {
   id: string;
   necesidad_id: string;
+  tipo: string;
+  resuelta: boolean;
   asociacion_nombre: string;
   categoria: string;
   mensaje: string;
   fecha: string;
   leida: boolean;
 }
+
+// Ícono/color por tipo de notificación — 'oferta_aceptada' se distingue
+// visualmente de los tipos de "match" (necesidad_disponible/proximidad).
+const ICONO_POR_TIPO: Record<string, keyof typeof Ionicons.glyphMap> = {
+  oferta_aceptada: 'checkmark-circle-outline',
+  proximidad: 'location-outline',
+  necesidad_disponible: 'business-outline',
+};
+const COLOR_POR_TIPO: Record<string, string> = {
+  oferta_aceptada: '#2ECC71',
+  proximidad: C.secondary,
+  necesidad_disponible: C.secondary,
+};
 
 interface Props {
   // Modo embebido (dentro de AliadoDashboardScreen, como tab) — reemplaza el
@@ -46,7 +61,8 @@ interface Props {
 export default function NotificacionesAliadoScreen({ embedded }: Props) {
   const router = useRouter();
   const { token } = useAuth();
-  
+
+  const [activeTab, setActiveTab] = useState<'nuevas' | 'resueltas'>('nuevas');
   const [notificaciones, setNotificaciones] = useState<NotificacionAliado[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -56,7 +72,8 @@ export default function NotificacionesAliadoScreen({ embedded }: Props) {
       try {
         // CORRECCIÓN: Ruta ajustada al prefijo correcto del backend
         const res = await axios.get(`${API_URL}/red-aliados/me/notificaciones`, {
-          headers: { Authorization: `Bearer ${token}` }
+          headers: { Authorization: `Bearer ${token}` },
+          params: { resuelta: activeTab === 'resueltas' },
         });
         setNotificaciones(res.data);
       } catch (error) {
@@ -69,7 +86,7 @@ export default function NotificacionesAliadoScreen({ embedded }: Props) {
     if (token) {
       fetchNotificaciones();
     }
-  }, [token]);
+  }, [token, activeTab]);
 
   const handlePressNotificacion = async (item: NotificacionAliado) => {
     // 1. Si no está leída, avisamos al backend
@@ -105,8 +122,8 @@ export default function NotificacionesAliadoScreen({ embedded }: Props) {
     >
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-          <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: `${C.secondary}15`, alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-            <Ionicons name="business-outline" size={20} color={C.secondary} />
+          <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: `${COLOR_POR_TIPO[item.tipo] || C.secondary}15`, alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+            <Ionicons name={ICONO_POR_TIPO[item.tipo] || 'business-outline'} size={20} color={COLOR_POR_TIPO[item.tipo] || C.secondary} />
           </View>
           <View style={{ flex: 1, paddingRight: 10 }}>
             <Text style={{ fontSize: 13, fontFamily: F.bodySemiBold, color: C.muted }}>
@@ -168,8 +185,36 @@ export default function NotificacionesAliadoScreen({ embedded }: Props) {
     />
   );
 
+  const tabs = (
+    <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+      {([
+        { key: 'nuevas', label: 'Nuevas' },
+        { key: 'resueltas', label: 'Resueltas' },
+      ] as { key: 'nuevas' | 'resueltas'; label: string }[]).map((t) => (
+        <TouchableOpacity
+          key={t.key}
+          onPress={() => setActiveTab(t.key)}
+          style={{
+            flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 14,
+            backgroundColor: activeTab === t.key ? C.primary : C.bg,
+            borderWidth: 1, borderColor: activeTab === t.key ? C.primary : `${C.neutralLight}60`,
+          }}
+        >
+          <Text style={{ fontSize: 13, fontFamily: F.bodySemiBold, color: activeTab === t.key ? '#FFF' : C.muted }}>
+            {t.label}
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+
   if (embedded) {
-    return <View style={{ flex: 1, paddingTop: 4 }}>{lista}</View>;
+    return (
+      <View style={{ flex: 1, paddingTop: 4 }}>
+        {tabs}
+        {lista}
+      </View>
+    );
   }
 
   // CORRECCIÓN: Renderizado con Modal transparente
@@ -203,6 +248,7 @@ export default function NotificacionesAliadoScreen({ embedded }: Props) {
 
           {/* LISTA */}
           <View style={{ flex: 1, paddingHorizontal: 24, paddingTop: 24 }}>
+            {tabs}
             {lista}
           </View>
 

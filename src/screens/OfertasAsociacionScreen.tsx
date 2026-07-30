@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  View, Text, FlatList, TouchableOpacity, ActivityIndicator, 
-  Platform, Modal, TextInput 
+import {
+  View, Text, FlatList, TouchableOpacity, ActivityIndicator,
+  Platform, Modal, TextInput, Image
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
@@ -10,9 +10,10 @@ import { es } from 'date-fns/locale';
 import { useRouter } from 'expo-router';
 import { useFonts, Fraunces_800ExtraBold } from '@expo-google-fonts/fraunces';
 import { Poppins_400Regular, Poppins_500Medium, Poppins_600SemiBold } from '@expo-google-fonts/poppins';
-import { API_URL } from '../constants/api'; 
+import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
-import { useToast, Toast } from '../components/Toast'; 
+import { useToast, Toast } from '../components/Toast';
+import { EscanearQrModal } from '../components/red-aliados/EscanearQrModal';
 
 // ─── DESIGN TOKENS ───
 const C = {
@@ -45,6 +46,8 @@ interface Oferta {
   estado: string;
   created_at: string;
   detalle: any;
+  token?: string | null;
+  token_usado?: boolean;
   necesidades?: {
     categoria: string;
   } | null;
@@ -70,15 +73,18 @@ export default function OfertasAsociacionScreen() {
   
   const [fontsLoaded] = useFonts({ Fraunces_800ExtraBold, Poppins_400Regular, Poppins_500Medium, Poppins_600SemiBold });
   
-  const [activeTab, setActiveTab] = useState<'pendientes' | 'historial'>('pendientes');
+  const [activeTab, setActiveTab] = useState<'pendientes' | 'aceptadas' | 'historial'>('pendientes');
   const [ofertas, setOfertas] = useState<Oferta[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isVerificando, setIsVerificando] = useState<string | null>(null);
-  
+
   // Estados para el Modal de Ajuste
   const [ofertaParaAjustar, setOfertaParaAjustar] = useState<Oferta | null>(null);
   const [nuevaCantidad, setNuevaCantidad] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Escaneo de QR de recepción — pestaña "Aceptadas"
+  const [mostrarEscaner, setMostrarEscaner] = useState(false);
 
   const fetchOfertas = async () => {
     setIsLoading(true);
@@ -224,10 +230,37 @@ export default function OfertasAsociacionScreen() {
           </View>
         ) : (
           <View style={{ borderTopWidth: 1, borderTopColor: `${C.neutralLight}40`, paddingTop: 16, alignItems: 'center' }}>
+            {activeTab === 'aceptadas' && (
+              <View style={{ width: '100%', marginBottom: 16 }}>
+                {item.detalle?.foto_url && (
+                  <Image
+                    source={{ uri: item.detalle.foto_url }}
+                    style={{ width: '100%', height: 140, borderRadius: 16, marginBottom: 10 }}
+                    resizeMode="cover"
+                  />
+                )}
+                {item.detalle?.nuevo_o_usado && (
+                  <Text style={{ fontFamily: F.bodyMedium, color: C.muted, fontSize: 13, marginBottom: 10 }}>
+                    Condición: <Text style={{ fontFamily: F.bodySemiBold, color: C.text }}>
+                      {item.detalle.nuevo_o_usado === 'nuevo' ? 'Nuevo' : 'Usado en buen estado'}
+                    </Text>
+                  </Text>
+                )}
+                {!item.token_usado && (
+                  <TouchableOpacity
+                    onPress={() => setMostrarEscaner(true)}
+                    style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: C.secondary, paddingVertical: 12, borderRadius: 100 }}
+                  >
+                    <Ionicons name="qr-code-outline" size={18} color="#FFF" />
+                    <Text style={{ color: '#FFF', fontFamily: F.bodySemiBold, fontSize: 13 }}>Escanear QR de recepción</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
             <Text style={{ fontFamily: F.bodyMedium, color: C.muted, marginBottom: 12 }}>
-              Estado: <Text style={{ color: item.estado === 'confirmada' ? C.success : C.primary, fontFamily: F.bodySemiBold }}>{item.estado.toUpperCase()}</Text>
+              Estado: <Text style={{ color: item.estado === 'confirmada' || item.estado === 'entregada' ? C.success : C.primary, fontFamily: F.bodySemiBold }}>{item.estado.toUpperCase()}</Text>
             </Text>
-            
+
             {(() => {
               const p_array = Array.isArray(item.usuarios?.perfil_apoyo) ? item.usuarios.perfil_apoyo : [];
               const perfil = p_array.length > 0 ? p_array[0] : item.usuarios?.perfil_apoyo;
@@ -310,13 +343,19 @@ export default function OfertasAsociacionScreen() {
 
               {/* ── TABS ── */}
               <View style={{ flexDirection: 'row', paddingHorizontal: 32, marginBottom: 16 }}>
-                <TouchableOpacity 
+                <TouchableOpacity
                   onPress={() => setActiveTab('pendientes')}
                   style={{ flex: 1, paddingVertical: 12, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: activeTab === 'pendientes' ? C.primary : 'transparent' }}
                 >
                   <Text style={{ fontFamily: F.bodySemiBold, color: activeTab === 'pendientes' ? C.primary : C.muted }}>Pendientes</Text>
                 </TouchableOpacity>
-                <TouchableOpacity 
+                <TouchableOpacity
+                  onPress={() => setActiveTab('aceptadas')}
+                  style={{ flex: 1, paddingVertical: 12, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: activeTab === 'aceptadas' ? C.primary : 'transparent' }}
+                >
+                  <Text style={{ fontFamily: F.bodySemiBold, color: activeTab === 'aceptadas' ? C.primary : C.muted }}>Aceptadas</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
                   onPress={() => setActiveTab('historial')}
                   style={{ flex: 1, paddingVertical: 12, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: activeTab === 'historial' ? C.primary : 'transparent' }}
                 >
@@ -332,10 +371,16 @@ export default function OfertasAsociacionScreen() {
                   </View>
                 ) : ofertas.length === 0 ? (
                   <View style={{ paddingVertical: 60, alignItems: 'center' }}>
-                    <Ionicons name={activeTab === 'pendientes' ? "gift-outline" : "time-outline"} size={48} color={C.neutralLight} style={{ marginBottom: 16 }} />
-                    <Text style={{ fontSize: 16, fontFamily: F.bodySemiBold, color: C.text }}>Sin ofertas {activeTab === 'pendientes' ? 'pendientes' : 'en el historial'}</Text>
+                    <Ionicons name={activeTab === 'pendientes' ? "gift-outline" : activeTab === 'aceptadas' ? "qr-code-outline" : "time-outline"} size={48} color={C.neutralLight} style={{ marginBottom: 16 }} />
+                    <Text style={{ fontSize: 16, fontFamily: F.bodySemiBold, color: C.text }}>
+                      Sin ofertas {activeTab === 'pendientes' ? 'pendientes' : activeTab === 'aceptadas' ? 'aceptadas' : 'en el historial'}
+                    </Text>
                     <Text style={{ fontSize: 14, fontFamily: F.bodyRegular, color: C.muted, textAlign: 'center', marginTop: 8 }}>
-                      {activeTab === 'pendientes' ? 'Las nuevas contribuciones aparecerán aquí.' : 'Aquí aparecerán las contribuciones que hayas aceptado.'}
+                      {activeTab === 'pendientes'
+                        ? 'Las nuevas contribuciones aparecerán aquí.'
+                        : activeTab === 'aceptadas'
+                        ? 'Las contribuciones que aceptes aparecerán aquí hasta que se confirme la entrega.'
+                        : 'Aquí aparecerán las contribuciones ya entregadas, rechazadas o retiradas.'}
                     </Text>
                   </View>
                 ) : (
@@ -396,6 +441,13 @@ export default function OfertasAsociacionScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* ── Escanear QR de recepción (pestaña Aceptadas) ── */}
+      <EscanearQrModal
+        visible={mostrarEscaner}
+        onClose={() => setMostrarEscaner(false)}
+        onConfirmado={() => { setMostrarEscaner(false); fetchOfertas(); }}
+      />
     </>
   );
 }

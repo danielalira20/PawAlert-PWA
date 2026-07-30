@@ -480,6 +480,7 @@ export default function AportacionFormScreen({ onClose }: Props) {
   const [tipoEmpaque, setTipoEmpaque] = useState('');
   const [divisible, setDivisible] = useState<string | null>(null);
   const [maxAsociaciones, setMaxAsociaciones] = useState('1');
+  const [maxAsociacionesMenuAbierto, setMaxAsociacionesMenuAbierto] = useState(false);
   const [loteId, setLoteId] = useState<string | null>(null);
   const [mostrarInvitar, setMostrarInvitar] = useState(false);
   const [asociacionesCompatibles, setAsociacionesCompatibles] = useState<{ id: string; nombre: string; distancia_km: number }[]>([]);
@@ -876,8 +877,12 @@ export default function AportacionFormScreen({ onClose }: Props) {
       if (esLote) {
         if (!tipoEmpaque.trim()) nuevos.tipoEmpaque = 'Describe cómo viene empacado.';
         if (!divisible) nuevos.divisible = 'Selecciona una opción.';
-        if (divisible && divisible !== 'no' && (!maxAsociaciones.trim() || Number(maxAsociaciones) < 1)) {
-          nuevos.maxAsociaciones = 'Indica a cuántas asociaciones se puede repartir.';
+        if (
+          divisible
+          && divisible !== 'no'
+          && (!maxAsociaciones.trim() || Number(maxAsociaciones) < 1 || Number(maxAsociaciones) > 10)
+        ) {
+          nuevos.maxAsociaciones = 'Selecciona entre 1 y 10 asociaciones.';
         }
         if (!formaEntrega) nuevos.formaEntrega = 'Selecciona una forma de entrega.';
         if (!ubicacion) {
@@ -941,6 +946,7 @@ export default function AportacionFormScreen({ onClose }: Props) {
     setTipoEmpaque('');
     setDivisible(null);
     setMaxAsociaciones('1');
+    setMaxAsociacionesMenuAbierto(false);
     setLoteId(null);
     setMostrarInvitar(false);
     setAsociacionesCompatibles([]);
@@ -1018,13 +1024,34 @@ export default function AportacionFormScreen({ onClose }: Props) {
       if (divisible === 'no') {
         return prev.includes(id) ? [] : [id];
       }
-      return prev.includes(id) ? prev.filter((v) => v !== id) : [...prev, id];
+      if (prev.includes(id)) return prev.filter((v) => v !== id);
+      const limite = Number(maxAsociaciones) || 1;
+      if (prev.length >= limite) {
+        showToast({
+          type: 'warning',
+          title: 'Límite alcanzado',
+          message: `Este lote admite hasta ${limite} asociación(es).`,
+        });
+        return prev;
+      }
+      return [...prev, id];
     });
   };
 
   const handleInvitar = async () => {
     if (!loteId || !asociacionesSeleccionadas.length) return;
-    const asociacionIds = divisible === 'no' ? asociacionesSeleccionadas.slice(0, 1) : asociacionesSeleccionadas;
+    const cantidadObjetivo = divisible === 'no' ? 1 : Number(maxAsociaciones);
+    if (asociacionesSeleccionadas.length !== cantidadObjetivo) {
+      showToast({
+        type: 'warning',
+        title: 'Completa tu selección',
+        message: cantidadObjetivo === 1
+          ? 'Selecciona la asociación que recibirá el lote.'
+          : `Selecciona ${cantidadObjetivo} asociaciones antes de enviar.`,
+      });
+      return;
+    }
+    const asociacionIds = asociacionesSeleccionadas;
     setIsInvitando(true);
     try {
       await axios.post(
@@ -1570,17 +1597,77 @@ export default function AportacionFormScreen({ onClose }: Props) {
         {esLote && (
           <>
             <FormSection title="¿Se puede repartir entre varias asociaciones?">
-              <SingleOptions options={DIVISIBLE_OPCIONES} selected={divisible || ''} onSelect={setDivisible} error={errors.divisible} />
+              <SingleOptions
+                options={DIVISIBLE_OPCIONES}
+                selected={divisible || ''}
+                onSelect={(opcion) => {
+                  setDivisible(opcion);
+                  setAsociacionesSeleccionadas([]);
+                  setMaxAsociacionesMenuAbierto(false);
+                  if (opcion === 'no') setMaxAsociaciones('1');
+                }}
+                error={errors.divisible}
+              />
             </FormSection>
 
             {divisible && divisible !== 'no' && (
-              <FormSection title="¿Entre cuántas asociaciones como máximo?">
-                <TextInputField
-                  value={maxAsociaciones}
-                  onChangeText={(v) => setMaxAsociaciones(v.replace(/[^0-9]/g, ''))}
-                  placeholder="3"
-                  keyboardType="numeric"
-                />
+              <FormSection
+                title="¿Entre cuántas asociaciones quieres repartirlo?"
+                subtitle="Define cuántas asociaciones recibirán una parte de este lote."
+              >
+                <View style={styles.unitSelectContainer}>
+                  <TouchableOpacity
+                    style={[
+                      styles.unitSelectTrigger,
+                      maxAsociacionesMenuAbierto && styles.unitSelectTriggerOpen,
+                      errors.maxAsociaciones && styles.unitSelectTriggerError,
+                    ]}
+                    onPress={() => setMaxAsociacionesMenuAbierto((abierto) => !abierto)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.unitSelectValue}>
+                      {maxAsociaciones} {Number(maxAsociaciones) === 1 ? 'asociación' : 'asociaciones'}
+                    </Text>
+                    <Ionicons
+                      name={maxAsociacionesMenuAbierto ? 'chevron-up' : 'chevron-down'}
+                      size={18}
+                      color={COLORS.textLight}
+                    />
+                  </TouchableOpacity>
+
+                  {maxAsociacionesMenuAbierto && (
+                    <View style={styles.unitSelectMenu}>
+                      {Array.from({ length: 10 }, (_, index) => String(index + 1)).map((cantidad, index) => {
+                        const seleccionada = cantidad === maxAsociaciones;
+                        return (
+                          <TouchableOpacity
+                            key={cantidad}
+                            style={[
+                              styles.unitSelectOption,
+                              index < 9 && styles.unitSelectOptionDivider,
+                              seleccionada && styles.unitSelectOptionSelected,
+                            ]}
+                            onPress={() => {
+                              setMaxAsociaciones(cantidad);
+                              setAsociacionesSeleccionadas([]);
+                              setMaxAsociacionesMenuAbierto(false);
+                            }}
+                          >
+                            <Text
+                              style={[
+                                styles.unitSelectOptionText,
+                                seleccionada && styles.unitSelectOptionTextSelected,
+                              ]}
+                            >
+                              {cantidad} {cantidad === '1' ? 'asociación' : 'asociaciones'}
+                            </Text>
+                            {seleccionada && <Ionicons name="checkmark" size={18} color={COLORS.primary} />}
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  )}
+                </View>
                 {errors.maxAsociaciones && <ErrorText text={errors.maxAsociaciones} />}
               </FormSection>
             )}
@@ -1791,11 +1878,15 @@ export default function AportacionFormScreen({ onClose }: Props) {
 
   const renderInvitar = () => (
     <FormSection
-      title="Asociaciones cercanas compatibles"
+      title={
+        divisible === 'no' || Number(maxAsociaciones) === 1
+          ? 'Escoge la asociación que recibirá tu lote'
+          : `Escoge tus ${maxAsociaciones} asociaciones`
+      }
       subtitle={
         divisible === 'no'
-          ? 'Este lote no se reparte: elige solo una asociación destino.'
-          : 'Ordenadas por cercanía a tu zona de cobertura. Toca las que quieras invitar.'
+          ? 'Este lote se entregará completo a la asociación seleccionada.'
+          : `Selecciona exactamente ${maxAsociaciones} asociación(es). Están ordenadas por cercanía.`
       }
     >
       {isLoadingAsociaciones ? (
@@ -1943,9 +2034,20 @@ export default function AportacionFormScreen({ onClose }: Props) {
                       <Text style={styles.secondaryButtonText}>Invitar después</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={[styles.primaryButton, { flex: 1, opacity: asociacionesSeleccionadas.length ? 1 : 0.5 }]}
+                      style={[
+                        styles.primaryButton,
+                        {
+                          flex: 1,
+                          opacity: asociacionesSeleccionadas.length === (divisible === 'no' ? 1 : Number(maxAsociaciones))
+                            ? 1
+                            : 0.5,
+                        },
+                      ]}
                       onPress={handleInvitar}
-                      disabled={!asociacionesSeleccionadas.length || isInvitando}
+                      disabled={
+                        asociacionesSeleccionadas.length !== (divisible === 'no' ? 1 : Number(maxAsociaciones))
+                        || isInvitando
+                      }
                     >
                       {isInvitando ? (
                         <ActivityIndicator color={COLORS.bgWhite} />

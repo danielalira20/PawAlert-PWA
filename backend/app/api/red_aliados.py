@@ -16,7 +16,10 @@ from app.services.red_aliados_service import (
     obtener_invitaciones_lote,
     responder_invitacion,
     obtener_qr_invitacion,
-    confirmar_recepcion_qr,
+    confirmar_recepcion_qr_generico,
+    obtener_qr_contribucion,
+    obtener_mis_contribuciones,
+    obtener_necesidades_contribuidas,
     buscar_ofertas_compatibles,
     aceptar_sugerencia_general,
     obtener_mi_perfil_apoyo,
@@ -211,9 +214,36 @@ async def get_qr_invitacion_endpoint(invitacion_id: str, authorization: str = He
 
 @router.post("/qr/confirmar", status_code=200)
 async def confirmar_qr_endpoint(body: ConfirmarQrRequest, authorization: str = Header(None)):
-    """FRONT16 — escanear el QR y confirmar recepción."""
+    """FRONT16 — escanear el QR y confirmar recepción. Sirve tanto para
+    QR de lotes como de contribuciones normales — confirmar_recepcion_qr_generico
+    resuelve cuál de las dos tablas es dueña del token."""
     usuario = _obtener_usuario_autenticado(authorization)
-    return await confirmar_recepcion_qr(body.token, usuario["id"])
+    return await confirmar_recepcion_qr_generico(body.token, usuario["id"])
+
+
+@router.get("/me/contribuciones/{contribucion_id}/qr", status_code=200)
+async def get_qr_contribucion_endpoint(contribucion_id: str, authorization: str = Header(None)):
+    """Código QR (token + vigencia) de una contribución normal ya
+    aceptada — análogo a GET /invitaciones/{id}/qr para lotes."""
+    usuario = _obtener_usuario_autenticado(authorization)
+    return await obtener_qr_contribucion(contribucion_id, usuario["id"])
+
+
+@router.get("/me/contribuciones", status_code=200)
+async def get_mis_contribuciones_endpoint(tab: str = "pendientes", authorization: str = Header(None)):
+    """Panel de aliado — 'Mis aportaciones' (contribuciones propias que
+    no vinieron de un lote, esas se ven en Mis Lotes)."""
+    usuario = _obtener_usuario_autenticado(authorization)
+    return await obtener_mis_contribuciones(usuario["id"], tab)
+
+
+@router.get("/me/necesidades-contribuidas", status_code=200)
+async def get_necesidades_contribuidas_endpoint(authorization: str = Header(None)):
+    """Badge 'Ya ofreciste ayuda' en Cómo ayudar — no toca el endpoint
+    público /necesidades/publicas, es una consulta aparte que el
+    frontend cruza en cliente."""
+    usuario = _obtener_usuario_autenticado(authorization)
+    return await obtener_necesidades_contribuidas(usuario["id"])
 
 
 @router.get("/directorio", status_code=200)
@@ -324,26 +354,39 @@ async def get_necesidad_detalle(necesidad_id: str, authorization: str = Header(N
     return resultado.data[0]
 
 
+# tipo -> mensaje amigable. 'oferta_aceptada' no es un "match" (el aliado
+# ya envió su oferta y fue aceptada), así que necesita texto propio; el
+# resto de tipos ('necesidad_disponible', 'proximidad', ...) sigue con el
+# genérico de siempre.
+MENSAJES_POR_TIPO_NOTIFICACION = {
+    "oferta_aceptada": "¡Tu oferta de ayuda fue aceptada!",
+}
+
+
 @router.get("/me/notificaciones", status_code=200)
-def get_notificaciones_aliado(authorization: str = Header(None)):
+def get_notificaciones_aliado(resuelta: bool | None = None, authorization: str = Header(None)):
     """
     FRONT09: Obtiene la lista de notificaciones de match para el aliado logueado.
+    `resuelta` filtra Nuevas (false) / Resueltas (true) cuando se manda.
     """
     usuario = _obtener_usuario_autenticado(authorization)
 
     # 1. Obtenemos el perfil de apoyo del usuario logueado
     perfil_res = supabase.table("perfil_apoyo").select("id").eq("usuario_id", usuario["id"]).execute()
-    
+
     if not perfil_res.data:
         return [] # Si no es un aliado registrado, devolvemos lista vacía
 
     perfil_apoyo_id = perfil_res.data[0]["id"]
 
     # 2. Consultamos usando 'tipo' en lugar de 'mensaje'
-    noti_res = supabase.table("notificaciones_aliado").select(
-        "id, necesidad_id, tipo, leida, created_at, "
+    query = supabase.table("notificaciones_aliado").select(
+        "id, necesidad_id, tipo, leida, resuelta, created_at, "
         "necesidades(categoria, asociaciones(nombre))"
-    ).eq("perfil_apoyo_id", perfil_apoyo_id).order("created_at", desc=True).execute()
+    ).eq("perfil_apoyo_id", perfil_apoyo_id)
+    if resuelta is not None:
+        query = query.eq("resuelta", resuelta)
+    noti_res = query.order("created_at", desc=True).execute()
 
     # 3. Formateamos la respuesta para la pantalla FRONT09
     notificaciones = []
@@ -353,14 +396,19 @@ def get_notificaciones_aliado(authorization: str = Header(None)):
 
         fecha_raw = row.get("created_at")
         fecha_str = fecha_raw[:10] if fecha_raw else "Reciente"
-        
+
         # Generamos un mensaje amigable basándonos en el tipo de notificación
         tipo_notificacion = row.get("tipo", "compatibilidad")
-        mensaje_dinamico = f"¡Match encontrado por {tipo_notificacion}! Tienes una necesidad compatible."
+        mensaje_dinamico = MENSAJES_POR_TIPO_NOTIFICACION.get(
+            tipo_notificacion,
+            f"¡Match encontrado por {tipo_notificacion}! Tienes una necesidad compatible.",
+        )
 
         notificaciones.append({
             "id": row["id"],
             "necesidad_id": row["necesidad_id"],
+            "tipo": tipo_notificacion,
+            "resuelta": row.get("resuelta", False),
             "asociacion_nombre": asociacion.get("nombre", "Asociación Desconocida"),
             "categoria": necesidad.get("categoria", "Recurso solicitado"),
             "mensaje": mensaje_dinamico,
