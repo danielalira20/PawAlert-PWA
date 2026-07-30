@@ -107,11 +107,13 @@ class RegistroAliadoDirectoRequest(BaseModel):
     nombre_representante: Optional[str] = None
     cargo_representante: Optional[str] = None
     rfc: Optional[str] = None
+    tipo_documento_verificacion: Optional[str] = None
 
 @router.post("/registro-directo", status_code=201)
 async def registro_directo_aliado(
     payload: str = Form(...),
     documento: Optional[UploadFile] = File(None),
+    logo: Optional[UploadFile] = File(None),
     authorization: str = Header(None)
 ):
     usuario = _obtener_usuario_autenticado(authorization)
@@ -124,9 +126,17 @@ async def registro_directo_aliado(
     if existente.data:
         raise HTTPException(status_code=409, detail="El usuario ya cuenta con un perfil de aliado.")
 
+    subcarpeta_base = "patrocinadores institucionales" if body.tipo == "patrocinador_institucional" else "aliados locales"
+    carpeta_docs = f"documentos_aliados/{subcarpeta_base}/documentos_institucionales"
+    carpeta_logos = f"documentos_aliados/{subcarpeta_base}/logos"
+
     # Upload document if provided
     if documento and documento.filename:
-        body.documento_verificacion_url = await subir_foto(documento, carpeta="documentos_aliados")
+        body.documento_verificacion_url = await subir_foto(documento, carpeta=carpeta_docs)
+        
+    # Upload logo if provided
+    if logo and logo.filename:
+        body.logo_url = await subir_foto(logo, carpeta=carpeta_logos)
 
     # Preparar el insert.
     datos_extra = {
@@ -152,6 +162,7 @@ async def registro_directo_aliado(
         "nombre_representante": body.nombre_representante,
         "cargo_representante": body.cargo_representante,
         "rfc": body.rfc,
+        "tipo_documento_verificacion": body.tipo_documento_verificacion,
     }
     
     # Remove None values from datos_extra

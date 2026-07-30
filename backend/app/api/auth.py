@@ -188,6 +188,9 @@ async def register(body: RegisterRequest):
         rol_nombre = rol_result.data[0]["roles"]["nombre"]
 
 
+    perfil_apoyo_result = supabase.table("perfil_apoyo").select("id").eq("usuario_id", nuevo_usuario_id).execute()
+    tiene_perfil_apoyo = bool(perfil_apoyo_result.data)
+
     return {
         "access_token": login_response.session.access_token,
         "refresh_token": login_response.session.refresh_token,
@@ -201,6 +204,7 @@ async def register(body: RegisterRequest):
             "asociacion_id": usuario.data[0].get("asociacion_id"),
             "rol": rol_nombre,  
             "es_admin": rol_nombre == "admin",
+     "tiene_perfil_apoyo": tiene_perfil_apoyo,
         }
     }
 
@@ -226,6 +230,9 @@ async def login(body: LoginRequest):
     usuario_data["es_admin"] = bool(rol and rol.get("nombre") == "admin")
     # None cuando rol_id es NULL de verdad (ver mismo comentario en /register).
     usuario_data["rol"] = rol.get("nombre") if rol else None
+
+    perfil_apoyo_result = supabase.table("perfil_apoyo").select("id").eq("usuario_id", usuario_data["id"]).execute()
+    usuario_data["tiene_perfil_apoyo"] = bool(perfil_apoyo_result.data)
 
     return {
         "access_token": response.session.access_token,
@@ -404,6 +411,16 @@ async def telefono_existe(telefono: str):
     telefono_limpio = telefono.replace(" ", "").replace("-", "")
     resultado = supabase.table("usuarios").select("auth_user_id").eq(
         "telefono", telefono_limpio
+    ).execute()
+
+    existe_cuenta = bool(resultado.data and resultado.data[0].get("auth_user_id"))
+    return {"existe_cuenta": existe_cuenta}
+
+@router.get("/email-existe", status_code=200)
+async def email_existe(email: EmailStr):
+    """Consulta rápida para saber si ya existe una cuenta asociada a este correo."""
+    resultado = supabase.table("usuarios").select("auth_user_id").eq(
+        "email", email
     ).execute()
 
     existe_cuenta = bool(resultado.data and resultado.data[0].get("auth_user_id"))
