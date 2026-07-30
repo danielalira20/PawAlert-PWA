@@ -22,6 +22,7 @@ import {
 import { Toast, useToast } from '../Toast';
 import { AssocLocationMap } from '../admin-dashboard/AssocLocationMap';
 import VisitSafetyMap from '../home-verification/VisitSafetyMap';
+import RemoteReviewChecklist from '../home-verification/RemoteReviewChecklist';
 
 const COLORS = {
   primary: '#EC802B',
@@ -95,6 +96,34 @@ type VerificationData = {
     mensaje?: string;
   };
   motivo_resultado?: string | null;
+  checklist_remoto?: Record<string, string | null> | null;
+  checklist_remoto_completado_at?: string | null;
+  resuelta_por_usuario_id?: string | null;
+  modalidad_definida_por?: string | null;
+  rondas_evidencia?: Array<{
+    id: string;
+    numero: number;
+    estado: 'inicial' | 'solicitada' | 'entregada' | 'cancelada';
+    tipos_solicitados?: string[];
+    instrucciones?: string | null;
+    evidencia_entregada?: {
+      video_url?: string;
+      identificacion_url?: string;
+      fotos_urls?: string[];
+      direccion?: Record<string, unknown>;
+      formulario?: Record<string, unknown>;
+    };
+    solicitada_at?: string | null;
+    entregada_at?: string | null;
+  }>;
+  bitacora?: Array<{
+    id: string;
+    tipo_evento: string;
+    actor_tipo: string;
+    actor_nombre?: string | null;
+    descripcion: string;
+    created_at: string;
+  }>;
   asignacion_actual?: {
     id: string;
     verificador_voluntario_id: string;
@@ -312,7 +341,9 @@ function buildApplicationSummary({
       modality = 'Presencial.';
     }
   } else if (verification.modalidad === 'remota') {
-    modality = 'Remota; no se encontraron verificadores disponibles dentro de su radio de desplazamiento.';
+    modality = verification.modalidad_definida_por
+      ? 'Remota; seleccionada por la asociación.'
+      : 'Remota; no se encontraron verificadores disponibles dentro de su radio de desplazamiento.';
   }
 
   return {
@@ -397,8 +428,9 @@ export function ExternalVerificationDetail({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRetryingAnalysis, setIsRetryingAnalysis] = useState(false);
   const [safetyNow, setSafetyNow] = useState(Date.now());
-  const [decisionModal, setDecisionModal] = useState<'aprobar' | 'evidencia' | null>(null);
+  const [decisionModal, setDecisionModal] = useState<'aprobar' | 'evidencia' | 'rechazar' | null>(null);
   const [motivoEvidencia, setMotivoEvidencia] = useState('');
+  const [tiposEvidencia, setTiposEvidencia] = useState<string[]>([]);
 
   const cargar = async (silencioso = false) => {
     if (!token) return;
@@ -488,6 +520,38 @@ export function ExternalVerificationDetail({
     }
   };
 
+  const seleccionarModalidad = async (modalidad: 'presencial' | 'remota') => {
+    if (!token || !verification) return;
+    setIsSubmitting(true);
+    try {
+      const { data } = await axios.patch(
+        `${API_URL}/associations/me/verificaciones/${verification.id}/modalidad`,
+        { modalidad },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      setVerification((actual) => actual ? {
+        ...actual,
+        modalidad: data.modalidad,
+        estado: data.estado,
+      } : actual);
+      if (modalidad === 'presencial') await prepararVisita();
+      showToast({
+        type: 'success',
+        title: modalidad === 'remota' ? 'Revisión remota seleccionada' : 'Modalidad presencial',
+        message: data.mensaje,
+      });
+      onUpdated();
+    } catch (error: any) {
+      showToast({
+        type: 'error',
+        title: 'No pudimos cambiar la modalidad',
+        message: error?.response?.data?.detail || 'Intenta nuevamente.',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const proponerVisita = async (candidato: Candidato) => {
     if (!token || !verification) return;
     setIsSubmitting(true);
@@ -559,14 +623,20 @@ export function ExternalVerificationDetail({
   };
 
   const resolverRevisionRemota = async (
-    decision: 'aprobar' | 'solicitar_evidencia',
+    decision: 'aprobar' | 'solicitar_evidencia' | 'rechazar',
   ) => {
     if (!token || !verification) return;
-    if (decision === 'solicitar_evidencia' && !motivoEvidencia.trim()) {
+    if (
+      (decision === 'solicitar_evidencia'
+        && (!motivoEvidencia.trim() || !tiposEvidencia.length))
+      || (decision === 'rechazar' && !motivoEvidencia.trim())
+    ) {
       showToast({
         type: 'error',
-        title: 'Cuéntale qué hace falta',
-        message: 'Escribe una indicación breve para que pueda enviar la evidencia correcta.',
+        title: decision === 'rechazar' ? 'Explica la decisión' : 'Cuéntale qué hace falta',
+        message: decision === 'rechazar'
+          ? 'Escribe un motivo breve para orientar a la persona postulante.'
+          : 'Selecciona qué debe corregir y escribe una indicación breve.',
       });
       return;
     }
@@ -577,28 +647,36 @@ export function ExternalVerificationDetail({
         `${API_URL}/associations/me/verificaciones/${verification.id}/resolver-remota`,
         {
           decision,
-          motivo: decision === 'solicitar_evidencia'
+          motivo: decision !== 'aprobar'
             ? motivoEvidencia.trim()
             : undefined,
+          tipos_evidencia: decision === 'solicitar_evidencia'
+            ? tiposEvidencia
+            : [],
         },
         { headers: { Authorization: `Bearer ${token}` } },
       );
       setVerification((actual) => actual ? {
         ...actual,
         estado: data.estado,
-        motivo_resultado: decision === 'solicitar_evidencia'
+        motivo_resultado: decision !== 'aprobar'
           ? motivoEvidencia.trim()
           : actual.motivo_resultado,
       } : actual);
       setDecisionModal(null);
       setMotivoEvidencia('');
+      setTiposEvidencia([]);
       showToast({
         type: 'success',
-        title: decision === 'aprobar' ? 'Casa temporal aprobada' : 'Solicitud enviada',
+        title: decision === 'aprobar'
+          ? 'Casa temporal aprobada'
+          : decision === 'rechazar'
+            ? 'Postulación no aprobada'
+            : 'Solicitud enviada',
         message: data.mensaje,
       });
       await onUpdated();
-      if (decision === 'aprobar') onClose();
+      if (decision === 'aprobar' || decision === 'rechazar') onClose();
     } catch (error: any) {
       showToast({
         type: 'error',
@@ -643,6 +721,11 @@ export function ExternalVerificationDetail({
   const alertas = resumen.alertas || [];
   const videoAnalysis = verification.analisis_video;
   const videoAnalysisState = verification.analisis_video_estado || 'pendiente';
+  const canApproveRemotely = Boolean(
+    hogar.video_recorrido_url
+    && videoAnalysisState === 'completado'
+    && verification.checklist_remoto_completado_at,
+  );
   const coordinatesState = verification.estado_coordenadas || 'pendiente';
   const activeVisit = verification.asignacion_actual;
   const elapsedVisitMinutes = activeVisit?.check_in_at
@@ -1441,6 +1524,92 @@ export function ExternalVerificationDetail({
                   )}
                 </View>
               )}
+
+            {verification.estado === 'revision_remota' && (
+              <RemoteReviewChecklist
+                verificationId={verification.id}
+                initialValue={verification.checklist_remoto}
+                onSaved={(checklist, completedAt) => {
+                  setVerification((actual) => actual ? {
+                    ...actual,
+                    checklist_remoto: checklist,
+                    checklist_remoto_completado_at: completedAt,
+                  } : actual);
+                }}
+              />
+            )}
+
+            {!!verification.rondas_evidencia?.length && (
+              <SectionCard icon="layers-outline" title="Historial de evidencias">
+                {verification.rondas_evidencia.map((ronda) => (
+                  <View
+                    key={ronda.id}
+                    style={{
+                      padding: 11,
+                      borderRadius: 13,
+                      backgroundColor: COLORS.white,
+                      gap: 4,
+                    }}
+                  >
+                    <Text style={{ color: COLORS.textDark, fontSize: 12, fontWeight: '900' }}>
+                      Ronda {ronda.numero} · {
+                        ronda.estado === 'solicitada'
+                          ? 'Pendiente'
+                          : ronda.estado === 'entregada'
+                            ? 'Entregada'
+                            : 'Evidencia inicial'
+                      }
+                    </Text>
+                    {!!ronda.tipos_solicitados?.length && (
+                      <Text style={{ color: COLORS.textLight, fontSize: 11 }}>
+                        Se solicitó: {ronda.tipos_solicitados.join(', ')}
+                      </Text>
+                    )}
+                    {!!ronda.instrucciones && (
+                      <Text style={{ color: COLORS.textDark, fontSize: 11, lineHeight: 17 }}>
+                        {ronda.instrucciones}
+                      </Text>
+                    )}
+                    {!!ronda.evidencia_entregada?.fotos_urls?.length && (
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
+                        {ronda.evidencia_entregada.fotos_urls.map((url, index) => (
+                          <TouchableOpacity
+                            key={`${url}-${index}`}
+                            onPress={() => Linking.openURL(url)}
+                            style={{
+                              paddingHorizontal: 10,
+                              paddingVertical: 7,
+                              borderRadius: 10,
+                              backgroundColor: COLORS.cardBg,
+                            }}
+                          >
+                            <Text style={{ color: COLORS.primary, fontSize: 10, fontWeight: '800' }}>
+                              Ver foto {index + 1}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+                ))}
+              </SectionCard>
+            )}
+
+            {!!verification.bitacora?.length && (
+              <SectionCard icon="time-outline" title="Bitácora de verificación">
+                {verification.bitacora.map((evento) => (
+                  <View key={evento.id} style={{ gap: 2 }}>
+                    <Text style={{ color: COLORS.textDark, fontSize: 11, fontWeight: '700' }}>
+                      {evento.descripcion}
+                    </Text>
+                    <Text style={{ color: COLORS.textLight, fontSize: 10 }}>
+                      {evento.actor_nombre ? `${evento.actor_nombre} · ` : ''}
+                      {new Date(evento.created_at).toLocaleString('es-MX')}
+                    </Text>
+                  </View>
+                ))}
+              </SectionCard>
+            )}
           </View>
         </View>
       </ScrollView>
@@ -1462,13 +1631,20 @@ export function ExternalVerificationDetail({
             <Text style={{ color: COLORS.danger, fontWeight: '800' }}>No continuar</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            onPress={prepararVisita}
+            onPress={() => seleccionarModalidad('remota')}
+            disabled={isSubmitting}
+            style={{ paddingHorizontal: 18, paddingVertical: 12, borderRadius: 14, borderWidth: 1, borderColor: COLORS.accent, alignItems: 'center' }}
+          >
+            <Text style={{ color: COLORS.accent, fontWeight: '800' }}>Revisar a distancia</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => seleccionarModalidad('presencial')}
             disabled={isSubmitting}
             style={{ minWidth: isMobile ? undefined : 220, paddingHorizontal: 18, paddingVertical: 12, borderRadius: 14, backgroundColor: COLORS.primary, alignItems: 'center', opacity: isSubmitting ? 0.7 : 1 }}
           >
             {isSubmitting
               ? <ActivityIndicator color={COLORS.white} />
-              : <Text style={{ color: COLORS.white, fontWeight: '800' }}>Buscar verificador cercano</Text>}
+              : <Text style={{ color: COLORS.white, fontWeight: '800' }}>Coordinar visita presencial</Text>}
           </TouchableOpacity>
         </View>
       )}
@@ -1481,7 +1657,15 @@ export function ExternalVerificationDetail({
           flexDirection: 'row',
           justifyContent: 'flex-end',
           backgroundColor: COLORS.white,
+          gap: 10,
         }}>
+          <TouchableOpacity
+            onPress={() => seleccionarModalidad('remota')}
+            disabled={isSubmitting}
+            style={{ paddingHorizontal: 18, paddingVertical: 12, borderRadius: 14, borderWidth: 1, borderColor: COLORS.accent, alignItems: 'center' }}
+          >
+            <Text style={{ color: COLORS.accent, fontWeight: '800' }}>Cambiar a revisión remota</Text>
+          </TouchableOpacity>
           <TouchableOpacity
             onPress={prepararVisita}
             disabled={isSubmitting}
@@ -1505,7 +1689,7 @@ export function ExternalVerificationDetail({
           backgroundColor: COLORS.white,
         }}>
           <TouchableOpacity
-            onPress={onReject}
+            onPress={() => setDecisionModal('rechazar')}
             disabled={isSubmitting}
             style={{ paddingHorizontal: 18, paddingVertical: 12, borderRadius: 14, borderWidth: 1, borderColor: COLORS.danger, alignItems: 'center' }}
           >
@@ -1520,10 +1704,12 @@ export function ExternalVerificationDetail({
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => setDecisionModal('aprobar')}
-            disabled={isSubmitting}
-            style={{ minWidth: isMobile ? undefined : 190, paddingHorizontal: 18, paddingVertical: 12, borderRadius: 14, backgroundColor: COLORS.accent, alignItems: 'center', opacity: isSubmitting ? 0.7 : 1 }}
+            disabled={isSubmitting || !canApproveRemotely}
+            style={{ minWidth: isMobile ? undefined : 190, paddingHorizontal: 18, paddingVertical: 12, borderRadius: 14, backgroundColor: COLORS.accent, alignItems: 'center', opacity: isSubmitting || !canApproveRemotely ? 0.5 : 1 }}
           >
-            <Text style={{ color: COLORS.white, fontWeight: '800' }}>Aprobar casa temporal</Text>
+            <Text style={{ color: COLORS.white, fontWeight: '800' }}>
+              {canApproveRemotely ? 'Aprobar casa temporal' : 'Completa análisis y checklist'}
+            </Text>
           </TouchableOpacity>
         </View>
       )}
@@ -1536,36 +1722,110 @@ export function ExternalVerificationDetail({
       >
         <View style={{ flex: 1, padding: 20, backgroundColor: 'rgba(38, 29, 22, 0.55)', alignItems: 'center', justifyContent: 'center' }}>
           <View style={{ width: '100%', maxWidth: 460, padding: isMobile ? 20 : 26, borderRadius: 24, backgroundColor: COLORS.white, gap: 14 }}>
-            <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: decisionModal === 'aprobar' ? '#EAF7F6' : '#FFF7E6', alignItems: 'center', justifyContent: 'center' }}>
+            <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: decisionModal === 'aprobar' ? '#EAF7F6' : decisionModal === 'rechazar' ? '#FDEDEC' : '#FFF7E6', alignItems: 'center', justifyContent: 'center' }}>
               <Ionicons
-                name={decisionModal === 'aprobar' ? 'checkmark-circle-outline' : 'videocam-outline'}
+                name={decisionModal === 'aprobar' ? 'checkmark-circle-outline' : decisionModal === 'rechazar' ? 'close-circle-outline' : 'folder-open-outline'}
                 size={27}
-                color={decisionModal === 'aprobar' ? COLORS.accent : COLORS.warning}
+                color={decisionModal === 'aprobar' ? COLORS.accent : decisionModal === 'rechazar' ? COLORS.danger : COLORS.warning}
               />
             </View>
             <Text style={{ color: COLORS.textDark, fontSize: 20, fontWeight: '900' }}>
               {decisionModal === 'aprobar'
                 ? '¿Aprobar esta casa temporal?'
-                : 'Solicitar un nuevo recorrido'}
+                : decisionModal === 'rechazar'
+                  ? '¿No aprobar esta casa temporal?'
+                : 'Solicitar correcciones'}
             </Text>
             <Text style={{ color: COLORS.textLight, fontSize: 13, lineHeight: 20 }}>
               {decisionModal === 'aprobar'
                 ? 'La postulación quedará aceptada y la persona podrá participar como voluntario externo con casa temporal.'
-                : 'El formulario y la identificación se conservarán. La persona solo tendrá que reemplazar el video.'}
+                : decisionModal === 'rechazar'
+                  ? 'La postulación se cerrará. Explica el motivo para que la persona entienda la decisión.'
+                : 'Selecciona exactamente qué debe actualizar la persona postulante y explícale qué necesitas revisar.'}
             </Text>
 
             {decisionModal === 'evidencia' && (
               <>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                  {([
+                    ['video', 'Nuevo recorrido'],
+                    ['identificacion', 'Identificación'],
+                    ['fotos', 'Fotos'],
+                    ['direccion', 'Dirección'],
+                    ['formulario', 'Datos del formulario'],
+                  ] as const).map(([value, label]) => {
+                    const selected = tiposEvidencia.includes(value);
+                    return (
+                      <TouchableOpacity
+                        key={value}
+                        onPress={() => setTiposEvidencia((current) => (
+                          selected
+                            ? current.filter((item) => item !== value)
+                            : [...current, value]
+                        ))}
+                        style={{
+                          paddingHorizontal: 11,
+                          paddingVertical: 8,
+                          borderRadius: 12,
+                          borderWidth: 1,
+                          borderColor: selected ? COLORS.warning : COLORS.border,
+                          backgroundColor: selected ? '#FFF7E6' : COLORS.white,
+                        }}
+                      >
+                        <Text style={{
+                          color: selected ? COLORS.warning : COLORS.textDark,
+                          fontSize: 11,
+                          fontWeight: '800',
+                        }}>
+                          {selected ? '✓ ' : ''}{label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
                 <TextInput
                   value={motivoEvidencia}
                   onChangeText={setMotivoEvidencia}
-                  placeholder="Ej. Necesitamos un recorrido donde se vean los accesos, ventanas y el espacio para aislar al animal."
+                  placeholder="Ej. Actualiza el número exterior y comparte fotos claras de ventanas y accesos."
                   placeholderTextColor={COLORS.textLight}
                   multiline
                   maxLength={250}
                   editable={!isSubmitting}
                   style={{
                     minHeight: 110,
+                    padding: 13,
+                    borderRadius: 14,
+                    borderWidth: 1,
+                    borderColor: COLORS.border,
+                    color: COLORS.textDark,
+                    textAlignVertical: 'top',
+                    fontSize: 13,
+                    lineHeight: 19,
+                  }}
+                />
+                <Text style={{ alignSelf: 'flex-end', color: COLORS.textLight, fontSize: 11 }}>
+                  {motivoEvidencia.length}/250
+                </Text>
+                {!tiposEvidencia.length && (
+                  <Text style={{ color: COLORS.danger, fontSize: 11 }}>
+                    Selecciona al menos un elemento por corregir.
+                  </Text>
+                )}
+              </>
+            )}
+
+            {decisionModal === 'rechazar' && (
+              <>
+                <TextInput
+                  value={motivoEvidencia}
+                  onChangeText={setMotivoEvidencia}
+                  placeholder="Explica brevemente por qué el hogar no puede aprobarse."
+                  placeholderTextColor={COLORS.textLight}
+                  multiline
+                  maxLength={250}
+                  editable={!isSubmitting}
+                  style={{
+                    minHeight: 100,
                     padding: 13,
                     borderRadius: 14,
                     borderWidth: 1,
@@ -1587,6 +1847,7 @@ export function ExternalVerificationDetail({
                 onPress={() => {
                   setDecisionModal(null);
                   setMotivoEvidencia('');
+                  setTiposEvidencia([]);
                 }}
                 disabled={isSubmitting}
                 style={{ paddingHorizontal: 18, paddingVertical: 12, borderRadius: 14, borderWidth: 1, borderColor: COLORS.border, alignItems: 'center' }}
@@ -1595,22 +1856,42 @@ export function ExternalVerificationDetail({
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => resolverRevisionRemota(
-                  decisionModal === 'aprobar' ? 'aprobar' : 'solicitar_evidencia',
+                  decisionModal === 'aprobar'
+                    ? 'aprobar'
+                    : decisionModal === 'rechazar'
+                      ? 'rechazar'
+                      : 'solicitar_evidencia',
                 )}
-                disabled={isSubmitting || (decisionModal === 'evidencia' && !motivoEvidencia.trim())}
+                disabled={isSubmitting
+                  || (decisionModal === 'evidencia'
+                    && (!motivoEvidencia.trim() || !tiposEvidencia.length))
+                  || (decisionModal === 'rechazar' && !motivoEvidencia.trim())}
                 style={{
                   paddingHorizontal: 18,
                   paddingVertical: 12,
                   borderRadius: 14,
-                  backgroundColor: decisionModal === 'aprobar' ? COLORS.accent : COLORS.warning,
+                  backgroundColor: decisionModal === 'aprobar'
+                    ? COLORS.accent
+                    : decisionModal === 'rechazar'
+                      ? COLORS.danger
+                      : COLORS.warning,
                   alignItems: 'center',
-                  opacity: isSubmitting || (decisionModal === 'evidencia' && !motivoEvidencia.trim()) ? 0.6 : 1,
+                  opacity: isSubmitting
+                    || (decisionModal === 'evidencia'
+                      && (!motivoEvidencia.trim() || !tiposEvidencia.length))
+                    || (decisionModal === 'rechazar' && !motivoEvidencia.trim())
+                    ? 0.6
+                    : 1,
                 }}
               >
                 {isSubmitting
                   ? <ActivityIndicator color={COLORS.white} />
                   : <Text style={{ color: COLORS.white, fontWeight: '800' }}>
-                      {decisionModal === 'aprobar' ? 'Sí, aprobar' : 'Enviar solicitud'}
+                      {decisionModal === 'aprobar'
+                        ? 'Sí, aprobar'
+                        : decisionModal === 'rechazar'
+                          ? 'Confirmar decisión'
+                          : 'Enviar solicitud'}
                     </Text>}
               </TouchableOpacity>
             </View>

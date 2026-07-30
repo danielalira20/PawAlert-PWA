@@ -242,11 +242,28 @@ async def obtener_mi_voluntario(usuario_id: str) -> dict:
             verificacion = supabase_admin.table(
                 "verificaciones_hogar"
             ).select(
-                "estado, modalidad, motivo_resultado, analisis_video_estado, "
+                "id, estado, modalidad, motivo_resultado, analisis_video_estado, "
                 "updated_at"
             ).eq("postulacion_id", p["id"]).limit(1).execute()
             if verificacion.data:
-                postulacion_data["verificacion_hogar"] = verificacion.data[0]
+                verificacion_data = verificacion.data[0]
+                try:
+                    ronda = supabase_admin.table(
+                        "rondas_evidencia_verificacion"
+                    ).select(
+                        "id, numero, tipos_solicitados, instrucciones, "
+                        "solicitada_at"
+                    ).eq(
+                        "verificacion_hogar_id", verificacion_data["id"]
+                    ).eq("estado", "solicitada").order(
+                        "numero", desc=True
+                    ).limit(1).execute()
+                    verificacion_data["ronda_evidencia_actual"] = (
+                        ronda.data[0] if ronda.data else None
+                    )
+                except Exception:
+                    verificacion_data["ronda_evidencia_actual"] = None
+                postulacion_data["verificacion_hogar"] = verificacion_data
 
         if p["numero_intento"] > 1:
             previos = supabase.table("postulaciones").select(

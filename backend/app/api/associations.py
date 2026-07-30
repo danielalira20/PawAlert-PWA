@@ -17,8 +17,10 @@ from app.services.report_service import obtener_id_catalogo, registrar_historial
 from app.utils.validators import validar_telefono, validar_email
 from app.models.voluntario import (
     AsignarVerificadorRequest,
+    ChecklistRemotoRequest,
     ResolverPostulacionRequest,
     ResolverVerificacionRemotaRequest,
+    SeleccionarModalidadVerificacionRequest,
 )
 from app.services.voluntario_service import (
     obtener_postulaciones_asociacion,
@@ -29,8 +31,11 @@ from app.services.voluntario_service import (
 )
 from app.services.home_verification_service import (
     asignar_verificador_hogar,
+    guardar_checklist_remoto,
     obtener_verificacion_postulacion,
+    registrar_reintento_analisis,
     resolver_verificacion_remota,
+    seleccionar_modalidad_verificacion,
 )
 from app.services.video_evidence_service import procesar_evidencia_verificacion
 from app.services.whatsapp_notification_service import (
@@ -1039,6 +1044,7 @@ async def post_reintentar_analisis_verificacion(
         "estado_coordenadas": "pendiente",
         "analisis_video_error": None,
     }).eq("id", verificacion_id).execute()
+    registrar_reintento_analisis(verificacion_id, usuario["id"])
     background_tasks.add_task(
         procesar_evidencia_verificacion,
         verificacion_id,
@@ -1049,6 +1055,56 @@ async def post_reintentar_analisis_verificacion(
         "analisis_video_estado": "pendiente",
         "estado_coordenadas": "pendiente",
     }
+
+
+@router.patch(
+    "/me/verificaciones/{verificacion_id}/modalidad",
+    status_code=200,
+)
+async def patch_modalidad_verificacion(
+    verificacion_id: str,
+    body: SeleccionarModalidadVerificacionRequest,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion", "staff"))
+    if not usuario.get("asociacion_id"):
+        raise HTTPException(
+            status_code=404,
+            detail="Este usuario no está vinculado a ninguna asociación",
+        )
+    _verificar_asociacion_aprobada(usuario["asociacion_id"])
+    return seleccionar_modalidad_verificacion(
+        verificacion_id,
+        usuario["asociacion_id"],
+        usuario["id"],
+        body.modalidad.value,
+    )
+
+
+@router.put(
+    "/me/verificaciones/{verificacion_id}/checklist-remoto",
+    status_code=200,
+)
+async def put_checklist_remoto(
+    verificacion_id: str,
+    body: ChecklistRemotoRequest,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion", "staff"))
+    if not usuario.get("asociacion_id"):
+        raise HTTPException(
+            status_code=404,
+            detail="Este usuario no está vinculado a ninguna asociación",
+        )
+    _verificar_asociacion_aprobada(usuario["asociacion_id"])
+    return guardar_checklist_remoto(
+        verificacion_id,
+        usuario["asociacion_id"],
+        usuario["id"],
+        body.model_dump(mode="json"),
+    )
 
 
 @router.post(
@@ -1073,6 +1129,7 @@ async def post_asignar_verificador(
         verificacion_id=verificacion_id,
         verificador_voluntario_id=body.voluntario_id,
         asociacion_id=usuario["asociacion_id"],
+        usuario_staff_id=usuario["id"],
     )
     background_tasks.add_task(
         notificar_evento_verificacion,
@@ -1105,6 +1162,10 @@ async def patch_resolver_verificacion_remota(
         asociacion_id=usuario["asociacion_id"],
         decision=body.decision.value,
         motivo=body.motivo,
+        tipos_evidencia=[
+            tipo.value for tipo in body.tipos_evidencia
+        ],
+        usuario_staff_id=usuario["id"],
     )
  
  
@@ -1405,4 +1466,3 @@ async def patch_verificar_aliado(
     }).eq("id", perfil["id"]).execute()
 
     return {"mensaje": "Sello de aliado verificado otorgado exitosamente", "perfil": update_res.data[0]}
-

@@ -18,6 +18,13 @@ interface UltimaPostulacionRaw {
     motivo_resultado?: string;
     analisis_video_estado?: string;
     updated_at?: string;
+    ronda_evidencia_actual?: {
+      id: string;
+      numero: number;
+      tipos_solicitados: string[];
+      instrucciones?: string;
+      solicitada_at?: string;
+    } | null;
   };
 }
 
@@ -62,6 +69,13 @@ export interface VoluntarioStatusResponse {
       motivo_resultado?: string;
       analisis_video_estado?: string;
       updated_at?: string;
+      ronda_evidencia_actual?: {
+        id: string;
+        numero: number;
+        tipos_solicitados: string[];
+        instrucciones?: string;
+        solicitada_at?: string;
+      } | null;
     };
   };
   intentos_previos?: Array<{

@@ -233,6 +233,7 @@ function PawPatternBackground() {
 export default function LandingScreen() {
   const { width } = useWindowDimensions();
   const isDesktop = width > 768;
+  const isCompactHeader = width < 600;
 
   const router = useRouter();
   const { isLoggedIn, user } = useAuth(); // Obtener si está logueado y datos del usuario
@@ -441,35 +442,52 @@ export default function LandingScreen() {
         ══════════════════════════════════════════════════════════════════ */}
         <View style={{
           backgroundColor: C.bg,
-          paddingHorizontal: 24,
-          paddingVertical: 14,
+          paddingHorizontal: isCompactHeader ? 12 : 24,
+          paddingVertical: isCompactHeader ? 10 : 14,
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'space-between',
           ...(isWeb ? { boxShadow: '0 2px 12px rgba(46,42,38,0.06)' } : { elevation: 3 }),
         } as any}>
           {/* Logo */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: isCompactHeader ? 7 : 10, flexShrink: 1 }}>
             <View style={{
-              width: 38, height: 38, borderRadius: 12,
+              width: isCompactHeader ? 34 : 38,
+              height: isCompactHeader ? 34 : 38,
+              borderRadius: isCompactHeader ? 10 : 12,
               backgroundColor: C.primary,
               alignItems: 'center', justifyContent: 'center',
             }}>
-              <Ionicons name="paw" size={20} color="#FFF" />
+              <Ionicons name="paw" size={isCompactHeader ? 18 : 20} color="#FFF" />
             </View>
-            <Text style={{ fontSize: 22, fontFamily: F.displayBold, color: C.text, letterSpacing: -0.5 }}>
+            <Text
+              numberOfLines={1}
+              style={{ fontSize: isCompactHeader ? 18 : 22, fontFamily: F.displayBold, color: C.text, letterSpacing: -0.5 }}
+            >
               Paw<Text style={{ color: C.primary }}>Alert</Text>
             </Text>
           </View>
 
           {/* ─── BOTONES DEL NAVBAR ─── */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: isCompactHeader ? 6 : 16, flexShrink: 0 }}>
 
             {/* Nuevo botón: Cómo ayudar */}
             <AnimatedButton onPress={() => router.push('/como-ayudar')}>
-              <View style={{ paddingHorizontal: 8, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <View style={{
+                width: isCompactHeader ? 38 : undefined,
+                height: isCompactHeader ? 38 : undefined,
+                paddingHorizontal: isCompactHeader ? 0 : 8,
+                paddingVertical: isCompactHeader ? 0 : 8,
+                borderRadius: 19,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+              }}>
                 <Ionicons name="heart-outline" size={18} color={C.primary} />
-                <Text style={{ color: C.primary, fontSize: 14, fontFamily: F.bodySemiBold }}>Cómo ayudar</Text>
+                {!isCompactHeader && (
+                  <Text style={{ color: C.primary, fontSize: 14, fontFamily: F.bodySemiBold }}>Cómo ayudar</Text>
+                )}
               </View>
             </AnimatedButton>
 
@@ -477,13 +495,16 @@ export default function LandingScreen() {
             <AnimatedButton onPress={() => router.push({ pathname: '/map', params: { action: 'create' } })}>
               <View style={{
                 backgroundColor: C.primary,
-                paddingHorizontal: 18, paddingVertical: 9,
+                paddingHorizontal: isCompactHeader ? 12 : 18,
+                paddingVertical: isCompactHeader ? 9 : 9,
                 borderRadius: 100,
-                flexDirection: 'row', alignItems: 'center', gap: 6,
+                flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
                 ...(isWeb ? { boxShadow: `0 4px 14px ${C.primary}40` } : {}),
               } as any}>
                 <Ionicons name="add-circle-outline" size={16} color="#FFF" />
-                <Text style={{ color: '#FFF', fontSize: 13, fontFamily: F.bodySemiBold }}>Crear reporte</Text>
+                <Text numberOfLines={1} style={{ color: '#FFF', fontSize: isCompactHeader ? 12 : 13, fontFamily: F.bodySemiBold }}>
+                  {isCompactHeader ? 'Reportar' : 'Crear reporte'}
+                </Text>
               </View>
             </AnimatedButton>
 
