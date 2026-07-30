@@ -448,7 +448,7 @@ async def obtener_invitaciones_lote(lote_id: str, usuario_id: str) -> list:
 async def obtener_invitaciones_asociacion(asociacion_id: str) -> list:
     resultado = supabase.table("lote_asociaciones").select(
         "id, estado, cantidad_asignada, created_at, respondida_at, confirmada_at, "
-        "lotes(id, categoria, cantidad_valor, cantidad_unidad, tipo_empaque, "
+        "lotes(id, categoria, especies_aplica, cantidad_valor, cantidad_unidad, tipo_empaque, "
         "divisible, forma_entrega, descripcion, fecha_disponibilidad, vigencia, lugar_entrega, direccion_entrega, direccion_detalle, detalle, "
         "subcategoria_recurso(descripcion), "
         "perfil_apoyo(id, datos_extra, preferencia_visibilidad, usuarios(nombre, apellido_paterno)))"
@@ -510,6 +510,7 @@ async def obtener_invitaciones_asociacion(asociacion_id: str) -> list:
                 "id": lote.get("id"),
                 "categoria": lote.get("categoria"),
                 "subcategoria_descripcion": (lote.get("subcategoria_recurso") or {}).get("descripcion"),
+                "especies_aplica": lote.get("especies_aplica") or [],
                 "cantidad_valor": lote.get("cantidad_valor"),
                 "cantidad_unidad": lote.get("cantidad_unidad"),
                 "tipo_empaque": lote.get("tipo_empaque"),
