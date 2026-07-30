@@ -672,18 +672,12 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
                       <Input label="Correo Electrónico *" placeholder="email@ejemplo.com" value={email} onChangeText={handleEmailChange} keyboardType="email-address" autoCapitalize="none" />
                       {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
                     </View>
-                    <View style={{ marginBottom: 12, position: 'relative' }}>
-                      <Input label="Contraseña *" placeholder="Mínimo 6 caracteres" value={password} onChangeText={handlePasswordChange} secureTextEntry={!showPassword} />
-                      <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={{ position: 'absolute', right: 16, top: 40, zIndex: 10, padding: 4 }}>
-                        <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={20} color={COLORS.textLight} />
-                      </TouchableOpacity>
+                    <View style={{ marginBottom: 12 }}>
+                      <Input label="Contraseña *" placeholder="Mínimo 6 caracteres" value={password} onChangeText={handlePasswordChange} secureTextEntry={true} />
                       {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
                     </View>
-                    <View style={{ marginBottom: 12, position: 'relative' }}>
-                      <Input label="Confirmar Contraseña *" placeholder="Repite tu contraseña" value={passwordConfirm} onChangeText={handlePasswordConfirmChange} secureTextEntry={!showPasswordConfirm} />
-                      <TouchableOpacity onPress={() => setShowPasswordConfirm(!showPasswordConfirm)} style={{ position: 'absolute', right: 16, top: 40, zIndex: 10, padding: 4 }}>
-                        <Ionicons name={showPasswordConfirm ? "eye-off-outline" : "eye-outline"} size={20} color={COLORS.textLight} />
-                      </TouchableOpacity>
+                    <View style={{ marginBottom: 12 }}>
+                      <Input label="Confirmar Contraseña *" placeholder="Repite tu contraseña" value={passwordConfirm} onChangeText={handlePasswordConfirmChange} secureTextEntry={true} />
                       {errors.passwordConfirm && <Text style={styles.errorText}>{errors.passwordConfirm}</Text>}
                     </View>
                     <View style={{ marginBottom: 12 }}>
@@ -1239,7 +1233,7 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 24, fontWeight: '900', color: COLORS.bgWhite },
   headerSubtitle: { fontSize: 13, fontWeight: '600', color: COLORS.bgWhite, opacity: 0.9, marginTop: 4 },
   closeButton: { backgroundColor: 'rgba(255,255,255,0.3)', padding: 8, borderRadius: 20 },
-  bodySection: { flex: 1, backgroundColor: COLORS.bgWhite, borderTopLeftRadius: 40, borderTopRightRadius: 40, paddingHorizontal: 32, paddingTop: 32, paddingBottom: 20, zIndex: 2, marginTop: -20 },
+  bodySection: { flex: 1, backgroundColor: COLORS.bgWhite, paddingHorizontal: 32, paddingTop: 32, paddingBottom: 20, zIndex: 2 },
   scrollContent: { paddingBottom: 40 },
   formSection: { marginBottom: 16 },
   formSectionTitle: { fontSize: 20, fontWeight: '800', color: COLORS.textDark, marginBottom: 4 },

@@ -525,7 +525,7 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 24, fontWeight: '900', color: COLORS.bgWhite },
   headerSubtitle: { fontSize: 13, fontWeight: '600', color: COLORS.bgWhite, opacity: 0.9, marginTop: 4 },
   closeButton: { backgroundColor: 'rgba(255,255,255,0.3)', padding: 8, borderRadius: 20 },
-  bodySection: { flex: 1, backgroundColor: COLORS.bgWhite, borderTopLeftRadius: 40, borderTopRightRadius: 40, paddingHorizontal: 32, paddingTop: 32, paddingBottom: 20, zIndex: 2, marginTop: -20 },
+  bodySection: { flex: 1, backgroundColor: COLORS.bgWhite, paddingHorizontal: 32, paddingTop: 32, paddingBottom: 20, zIndex: 2 },
   scrollContent: { paddingBottom: 40 },
   formSection: { marginBottom: 16 },
   formSectionTitle: { fontSize: 20, fontWeight: '800', color: COLORS.textDark, marginBottom: 4 },
