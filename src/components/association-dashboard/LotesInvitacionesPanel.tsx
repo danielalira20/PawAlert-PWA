@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Modal, TextInput, ActivityIndicator, Image } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Modal, TextInput, ActivityIndicator, Image, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
 import { API_URL } from '../../constants/api';
@@ -8,6 +8,7 @@ import { Toast, useToast } from '../Toast';
 import { EscanearQrModal } from '../red-aliados/EscanearQrModal';
 import { AppModal } from '../AppModal';
 import { AssocAvatar } from '../admin-dashboard/AssocAvatar';
+import LocationPickerMap from '../../screens/LocationPickerMap';
 
 // Misma paleta que PostulacionesPanel.tsx.
 const COLORS = {
@@ -32,6 +33,7 @@ interface InvitacionLote {
     id: string;
     categoria: string;
     subcategoria_descripcion: string | null;
+    especies_aplica: string[];
     cantidad_valor: number;
     cantidad_unidad: string;
     tipo_empaque: string;
@@ -56,6 +58,47 @@ interface InvitacionLote {
     };
   };
 }
+
+const DETALLE_LABEL: Record<string, string> = {
+  marca: 'Marca',
+  etapa: 'Etapa',
+  dieta_especial: 'Dieta',
+  producto_cerrado: 'Producto cerrado',
+  nuevo_o_usado: 'Estado',
+  descripcion_contenido: 'Contenido',
+  fecha_caducidad: 'Caducidad',
+  tamanio: 'Tamaño',
+  contenido_por_unidad: 'Contenido por unidad',
+};
+
+const normalizarValor = (valor?: string | null) => {
+  if (!valor) return null;
+  if (valor === 'si') return 'Sí';
+  if (valor === 'no') return 'No';
+  if (valor === 'no_aplica') return 'No aplica';
+  return valor.replace(/_/g, ' ').replace(/^./, (letra) => letra.toUpperCase());
+};
+
+const formatearFecha = (valor?: string | null) => {
+  if (!valor) return null;
+  const fecha = new Date(`${valor.slice(0, 10)}T12:00:00`);
+  if (Number.isNaN(fecha.getTime())) return valor;
+  return fecha.toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
+};
+
+const coordenadasLote = (invitacion: InvitacionLote) => {
+  const lugar = invitacion.lote.lugar_entrega;
+  if (lugar) {
+    const [latitudTexto, longitudTexto] = lugar.split(',');
+    const latitud = Number(latitudTexto);
+    const longitud = Number(longitudTexto);
+    if (Number.isFinite(latitud) && Number.isFinite(longitud)) return { latitud, longitud };
+  }
+
+  const latitud = invitacion.lote.ubicacion_aliado?.latitud;
+  const longitud = invitacion.lote.ubicacion_aliado?.longitud;
+  return latitud != null && longitud != null ? { latitud, longitud } : null;
+};
 
 const FORMA_ENTREGA_LABEL: Record<string, string> = {
   institucion_lleva: 'El aliado lo lleva',
@@ -260,29 +303,49 @@ export function LotesInvitacionesPanel({ visible }: Props) {
               }}
               activeOpacity={0.7}
               style={{
-                backgroundColor: COLORS.white, borderRadius: 16, padding: 16, marginBottom: 12,
-                borderLeftWidth: 4, borderLeftColor: ESTADO_COLOR[inv.estado],
+                backgroundColor: COLORS.white, borderRadius: 18, marginBottom: 14,
+                borderWidth: 1, borderColor: '#EFE5D9', overflow: 'hidden',
               }}
             >
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 15, fontWeight: '700', color: COLORS.textDark, marginBottom: 4 }}>
-                    {inv.lote.aliado_nombre}
-                  </Text>
-                  <Text style={{ fontSize: 13, color: COLORS.textDark, marginBottom: 6 }}>
-                    {inv.lote.subcategoria_descripcion || inv.lote.categoria} —{' '}
-                    {inv.cantidad_asignada || inv.cantidad_sugerida || inv.lote.cantidad_valor}{' '}
-                    {inv.lote.cantidad_unidad}
-                  </Text>
-                  <Text style={{ fontSize: 12, color: COLORS.textLight }}>
-                    {FORMA_ENTREGA_LABEL[inv.lote.forma_entrega] || inv.lote.forma_entrega}
-                  </Text>
-                </View>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <View style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, backgroundColor: `${ESTADO_COLOR[inv.estado]}18` }}>
-                    <Text style={{ fontSize: 11, fontWeight: '700', color: ESTADO_COLOR[inv.estado] }}>{ESTADO_LABEL[inv.estado]}</Text>
+              <View style={{ flexDirection: 'row' }}>
+                {inv.lote.detalle?.foto_url ? (
+                  <Image
+                    source={{ uri: inv.lote.detalle.foto_url }}
+                    style={{ width: 112, minHeight: 126 }}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View style={{ width: 112, minHeight: 126, backgroundColor: '#FFF7EC', alignItems: 'center', justifyContent: 'center' }}>
+                    <Ionicons name="cube-outline" size={30} color={COLORS.primary} />
+                    <Text style={{ color: COLORS.textLight, fontSize: 10, marginTop: 5 }}>Sin fotografía</Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={16} color={COLORS.textLight} />
+                )}
+                <View style={{ flex: 1, padding: 15 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 10, fontWeight: '900', color: COLORS.primary, textTransform: 'uppercase' }}>
+                        {inv.lote.categoria}
+                      </Text>
+                      <Text style={{ fontSize: 16, fontWeight: '800', color: COLORS.textDark, marginTop: 2 }}>
+                        {inv.lote.subcategoria_descripcion || inv.lote.categoria}
+                      </Text>
+                    </View>
+                    <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, backgroundColor: `${ESTADO_COLOR[inv.estado]}18` }}>
+                      <Text style={{ fontSize: 10, fontWeight: '800', color: ESTADO_COLOR[inv.estado] }}>{ESTADO_LABEL[inv.estado]}</Text>
+                    </View>
+                  </View>
+                  <Text style={{ fontSize: 12, color: COLORS.textLight, marginTop: 5 }}>
+                    Ofrecido por {inv.lote.aliado_nombre}
+                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 12 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 9, color: COLORS.textLight, fontWeight: '800', textTransform: 'uppercase' }}>Cantidad</Text>
+                      <Text style={{ fontSize: 14, color: COLORS.textDark, fontWeight: '900', marginTop: 2 }}>
+                        {inv.cantidad_asignada || inv.cantidad_sugerida || inv.lote.cantidad_valor} {inv.lote.cantidad_unidad}
+                      </Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color={COLORS.textLight} />
+                  </View>
                 </View>
               </View>
             </TouchableOpacity>
@@ -299,23 +362,40 @@ export function LotesInvitacionesPanel({ visible }: Props) {
         }}
       />
 
-      <AppModal visible={!!invitacionDetalle} onClose={() => setInvitacionDetalle(null)} maxWidth={560}>
+      <AppModal visible={!!invitacionDetalle} onClose={() => setInvitacionDetalle(null)} maxWidth={680}>
         {invitacionDetalle && (
-          <View style={{ padding: 24 }}>
-            <View style={{ alignItems: 'center', marginBottom: 18 }}>
+          <ScrollView contentContainerStyle={{ paddingBottom: 24 }} showsVerticalScrollIndicator={false}>
+            {invitacionDetalle.lote.detalle?.foto_url ? (
+              <Image
+                source={{ uri: invitacionDetalle.lote.detalle.foto_url }}
+                style={styles.detailHero}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={[styles.detailHero, styles.detailHeroPlaceholder]}>
+                <Ionicons name="cube-outline" size={42} color={COLORS.primary} />
+                <Text style={styles.photoPlaceholderText}>Este lote no tiene fotografía</Text>
+              </View>
+            )}
+
+            <View style={{ paddingHorizontal: 24, paddingTop: 20 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 18 }}>
               {invitacionDetalle.lote.aliado_logo_url ? (
                 <Image
                   source={{ uri: invitacionDetalle.lote.aliado_logo_url }}
-                  style={{ width: 72, height: 72, borderRadius: 36, marginBottom: 10 }}
+                  style={{ width: 54, height: 54, borderRadius: 27 }}
                   resizeMode="cover"
                 />
               ) : (
                 <AssocAvatar nombre={invitacionDetalle.lote.aliado_nombre} logoUrl={null} size="lg" />
               )}
-              <Text style={{ fontSize: 19, fontWeight: '800', color: COLORS.textDark, marginTop: 8, textAlign: 'center' }}>
-                {invitacionDetalle.lote.aliado_nombre}
-              </Text>
-              <View style={{ marginTop: 8, paddingHorizontal: 14, paddingVertical: 6, borderRadius: 14, backgroundColor: `${ESTADO_COLOR[invitacionDetalle.estado]}18` }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 10, color: COLORS.primary, fontWeight: '900', letterSpacing: 0.5 }}>OFRECIDO POR</Text>
+                <Text style={{ fontSize: 18, fontWeight: '800', color: COLORS.textDark, marginTop: 2 }}>
+                  {invitacionDetalle.lote.aliado_nombre}
+                </Text>
+              </View>
+              <View style={{ paddingHorizontal: 14, paddingVertical: 6, borderRadius: 14, backgroundColor: `${ESTADO_COLOR[invitacionDetalle.estado]}18` }}>
                 <Text style={{ fontSize: 12, fontWeight: '700', color: ESTADO_COLOR[invitacionDetalle.estado] }}>
                   {ESTADO_LABEL[invitacionDetalle.estado]}
                 </Text>
@@ -352,6 +432,39 @@ export function LotesInvitacionesPanel({ visible }: Props) {
                 </Text>
               </View>
 
+              {(Object.entries(invitacionDetalle.lote.detalle || {}).some(
+                ([key, value]) => key !== 'foto_url' && !!DETALLE_LABEL[key] && !!value,
+              ) || invitacionDetalle.lote.especies_aplica?.length > 0) && (
+                <View style={{ backgroundColor: COLORS.white, borderRadius: 16, padding: 14, borderWidth: 1, borderColor: '#EFE5D9' }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 12 }}>
+                    <Ionicons name="information-circle-outline" size={18} color={COLORS.primary} />
+                    <Text style={{ fontSize: 14, fontWeight: '800', color: COLORS.textDark }}>Características del producto</Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                    {invitacionDetalle.lote.especies_aplica?.length > 0 && (
+                      <View style={styles.attributeItem}>
+                        <Text style={styles.attributeLabel}>Para</Text>
+                        <Text style={styles.attributeValue}>
+                          {invitacionDetalle.lote.especies_aplica.map((item) => normalizarValor(item)).join(', ')}
+                        </Text>
+                      </View>
+                    )}
+                    {Object.entries(invitacionDetalle.lote.detalle || {})
+                      .filter(([key, value]) => key !== 'foto_url' && !!DETALLE_LABEL[key] && !!value)
+                      .map(([key, value]) => (
+                        <View key={key} style={styles.attributeItem}>
+                          <Text style={styles.attributeLabel}>{DETALLE_LABEL[key]}</Text>
+                          <Text style={styles.attributeValue}>
+                            {key === 'fecha_caducidad'
+                              ? formatearFecha(String(value))
+                              : normalizarValor(String(value))}
+                          </Text>
+                        </View>
+                      ))}
+                  </View>
+                </View>
+              )}
+
               {!!invitacionDetalle.lote.descripcion && (
                 <View style={{ backgroundColor: '#EAF8FC', borderRadius: 16, padding: 14, borderWidth: 1, borderColor: '#D2EFF8' }}>
                   <Text style={{ fontSize: 11, color: COLORS.textLight, textTransform: 'uppercase', fontWeight: '700', marginBottom: 3 }}>Descripción</Text>
@@ -359,10 +472,17 @@ export function LotesInvitacionesPanel({ visible }: Props) {
                 </View>
               )}
 
-              {(invitacionDetalle.lote.ubicacion_aliado?.calle || invitacionDetalle.lote.ubicacion_aliado?.latitud != null) && (
+              {(invitacionDetalle.lote.direccion_entrega || invitacionDetalle.lote.ubicacion_aliado?.calle || coordenadasLote(invitacionDetalle)) && (
                 <View style={{ backgroundColor: COLORS.cardBg, borderRadius: 16, padding: 14 }}>
-                  <Text style={{ fontSize: 11, color: COLORS.textLight, textTransform: 'uppercase', fontWeight: '700', marginBottom: 5 }}>Ubicación del aliado</Text>
-                  {invitacionDetalle.lote.ubicacion_aliado?.calle ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 8 }}>
+                    <Ionicons name="location-outline" size={18} color={COLORS.primary} />
+                    <Text style={{ fontSize: 14, color: COLORS.textDark, fontWeight: '800' }}>Punto de entrega o recolección</Text>
+                  </View>
+                  {invitacionDetalle.lote.direccion_entrega ? (
+                    <Text style={{ fontSize: 13, color: COLORS.textDark, lineHeight: 19 }}>
+                      {invitacionDetalle.lote.direccion_entrega}
+                    </Text>
+                  ) : invitacionDetalle.lote.ubicacion_aliado?.calle ? (
                     <Text style={{ fontSize: 13, color: COLORS.textDark, lineHeight: 19 }}>
                       {[
                         invitacionDetalle.lote.ubicacion_aliado?.calle,
@@ -372,25 +492,43 @@ export function LotesInvitacionesPanel({ visible }: Props) {
                         .filter(Boolean)
                         .join(', ')}
                     </Text>
-                  ) : (
+                  ) : coordenadasLote(invitacionDetalle) ? (
                     <Text style={{ fontSize: 13, color: COLORS.textDark, lineHeight: 19 }}>
-                      {invitacionDetalle.lote.ubicacion_aliado?.latitud?.toFixed(5)},{' '}
-                      {invitacionDetalle.lote.ubicacion_aliado?.longitud?.toFixed(5)}
+                      Zona indicada en el mapa
                     </Text>
-                  )}
+                  ) : null}
                   {!!invitacionDetalle.lote.ubicacion_aliado?.referencia && (
                     <Text style={{ fontSize: 12, color: COLORS.textLight, marginTop: 6 }}>
                       Referencia: {invitacionDetalle.lote.ubicacion_aliado?.referencia}
                     </Text>
                   )}
+                  {coordenadasLote(invitacionDetalle) && (
+                    <View style={styles.detailMap}>
+                      <LocationPickerMap
+                        selectedPosition={coordenadasLote(invitacionDetalle)!}
+                        onLocationSelect={() => undefined}
+                        readOnly
+                      />
+                    </View>
+                  )}
                 </View>
               )}
 
-              <View>
-                <Text style={{ fontSize: 11, color: COLORS.textLight, textTransform: 'uppercase', fontWeight: '700', marginBottom: 2 }}>Recibido el</Text>
-                <Text style={{ fontSize: 13, color: COLORS.textDark }}>
-                  {new Date(invitacionDetalle.created_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })}
-                </Text>
+              <View style={{ backgroundColor: COLORS.white, borderRadius: 16, padding: 14, borderWidth: 1, borderColor: '#EFE5D9' }}>
+                <View style={{ flexDirection: 'row', gap: 18 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.attributeLabel}>Invitación recibida</Text>
+                    <Text style={styles.attributeValue}>
+                      {new Date(invitacionDetalle.created_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })}
+                    </Text>
+                  </View>
+                  {!!invitacionDetalle.lote.vigencia && (
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.attributeLabel}>Disponible hasta</Text>
+                      <Text style={styles.attributeValue}>{formatearFecha(invitacionDetalle.lote.vigencia)}</Text>
+                    </View>
+                  )}
+                </View>
               </View>
             </View>
 
@@ -462,7 +600,8 @@ export function LotesInvitacionesPanel({ visible }: Props) {
                 </TouchableOpacity>
               </View>
             )}
-          </View>
+            </View>
+          </ScrollView>
         )}
       </AppModal>
 
@@ -511,3 +650,51 @@ export function LotesInvitacionesPanel({ visible }: Props) {
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  detailHero: {
+    width: '100%',
+    height: 230,
+    backgroundColor: '#FFF7EC',
+  },
+  detailHeroPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoPlaceholderText: {
+    color: COLORS.textLight,
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 8,
+  },
+  attributeItem: {
+    minWidth: 145,
+    flexGrow: 1,
+    flexBasis: '45%',
+    backgroundColor: '#FAF7F3',
+    borderRadius: 12,
+    padding: 11,
+  },
+  attributeLabel: {
+    color: COLORS.textLight,
+    fontSize: 9,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  attributeValue: {
+    color: COLORS.textDark,
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 18,
+    marginTop: 3,
+  },
+  detailMap: {
+    height: 210,
+    borderRadius: 14,
+    overflow: 'hidden',
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: '#EADCCA',
+  },
+});
