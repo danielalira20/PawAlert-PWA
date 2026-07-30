@@ -50,6 +50,8 @@ export default function MiPostulacionScreen({ onClose, onRetryExternal }: Props)
   const isDesktop = screenWidth >= DESKTOP_BREAKPOINT;
   const [showCapacidadesForm, setShowCapacidadesForm] = useState(false);
   const [nuevoVideo, setNuevoVideo] = useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [nuevaIdentificacion, setNuevaIdentificacion] = useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [nuevasFotos, setNuevasFotos] = useState<ImagePicker.ImagePickerAsset[]>([]);
   const [isUploadingEvidence, setIsUploadingEvidence] = useState(false);
   const [evidenceFeedback, setEvidenceFeedback] = useState<{
     type: 'success' | 'error';
@@ -228,6 +230,8 @@ export default function MiPostulacionScreen({ onClose, onRetryExternal }: Props)
   const postulacion = data.postulacion_actual;
   const intentosPrevios = data.intentos_previos || [];
   const verificacionHogar = postulacion?.verificacion_hogar;
+  const rondaEvidencia = verificacionHogar?.ronda_evidencia_actual;
+  const tiposSolicitados = rondaEvidencia?.tipos_solicitados || ['video'];
   const estadosVisiblesVerificacion = [
     'requiere_cambios',
     'revision_remota',
@@ -251,25 +255,61 @@ export default function MiPostulacionScreen({ onClose, onRetryExternal }: Props)
     if (!result.canceled) setNuevoVideo(result.assets[0]);
   };
 
-  const enviarNuevoVideo = async () => {
-    if (!token || !nuevoVideo) return;
+  const seleccionarIdentificacion = async () => {
+    setEvidenceFeedback(null);
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.9,
+    });
+    if (!result.canceled) setNuevaIdentificacion(result.assets[0]);
+  };
+
+  const seleccionarFotos = async () => {
+    setEvidenceFeedback(null);
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.85,
+      allowsMultipleSelection: true,
+    });
+    if (!result.canceled) setNuevasFotos(result.assets);
+  };
+
+  const enviarNuevaEvidencia = async () => {
+    if (!token || (!nuevoVideo && !nuevaIdentificacion && !nuevasFotos.length)) return;
     setIsUploadingEvidence(true);
     setEvidenceFeedback(null);
     try {
       const formData = new FormData();
-      if (Platform.OS === 'web') {
-        const response = await fetch(nuevoVideo.uri);
-        formData.append(
-          'video',
-          await response.blob(),
-          nuevoVideo.fileName || `recorrido_${Date.now()}.mp4`,
+      const appendAsset = async (
+        field: string,
+        asset: ImagePicker.ImagePickerAsset,
+        fallbackName: string,
+        fallbackType: string,
+      ) => {
+        if (Platform.OS === 'web') {
+          const response = await fetch(asset.uri);
+          formData.append(field, await response.blob(), asset.fileName || fallbackName);
+        } else {
+          formData.append(field, {
+            uri: asset.uri,
+            name: asset.fileName || fallbackName,
+            type: asset.mimeType || fallbackType,
+          } as any);
+        }
+      };
+      if (nuevoVideo) {
+        await appendAsset('video', nuevoVideo, `recorrido_${Date.now()}.mp4`, 'video/mp4');
+      }
+      if (nuevaIdentificacion) {
+        await appendAsset(
+          'identificacion',
+          nuevaIdentificacion,
+          `identificacion_${Date.now()}.jpg`,
+          'image/jpeg',
         );
-      } else {
-        formData.append('video', {
-          uri: nuevoVideo.uri,
-          name: nuevoVideo.fileName || `recorrido_${Date.now()}.mp4`,
-          type: nuevoVideo.mimeType || 'video/mp4',
-        } as any);
+      }
+      for (const [index, foto] of nuevasFotos.entries()) {
+        await appendAsset('fotos', foto, `evidencia_${Date.now()}_${index}.jpg`, 'image/jpeg');
       }
       await axios.post(
         `${API_URL}/voluntarios/externo/evidencia-solicitada`,
@@ -277,15 +317,17 @@ export default function MiPostulacionScreen({ onClose, onRetryExternal }: Props)
         { headers: { Authorization: `Bearer ${token}` } },
       );
       setNuevoVideo(null);
+      setNuevaIdentificacion(null);
+      setNuevasFotos([]);
       setEvidenceFeedback({
         type: 'success',
-        message: 'Recorrido enviado. La asociación podrá revisarlo cuando termine el análisis.',
+        message: 'Guardamos la evidencia. Revisa si todavía queda algún elemento pendiente.',
       });
       await refetch();
     } catch (uploadError: any) {
       setEvidenceFeedback({
         type: 'error',
-        message: uploadError?.response?.data?.detail || 'No pudimos enviar el video. Intenta nuevamente.',
+        message: uploadError?.response?.data?.detail || 'No pudimos enviar la evidencia. Intenta nuevamente.',
       });
     } finally {
       setIsUploadingEvidence(false);
@@ -418,18 +460,20 @@ export default function MiPostulacionScreen({ onClose, onRetryExternal }: Props)
                 gap: 10,
               }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
-                  <Ionicons name="videocam-outline" size={22} color={COLORS.warning} />
+                  <Ionicons name="folder-open-outline" size={22} color={COLORS.warning} />
                   <Text style={{ flex: 1, color: COLORS.textDark, fontSize: 15, fontWeight: '800' }}>
-                    Comparte un nuevo recorrido
+                    Actualiza tu expediente
                   </Text>
                 </View>
                 <Text style={{ color: COLORS.textDark, fontSize: 12, lineHeight: 18 }}>
-                  {verificacionHogar.motivo_resultado || 'La asociación necesita ver mejor algunos espacios de tu hogar.'}
+                  {rondaEvidencia?.instrucciones || verificacionHogar.motivo_resultado || 'La asociación necesita información adicional para continuar.'}
                 </Text>
                 <Text style={{ color: COLORS.textLight, fontSize: 11, lineHeight: 17 }}>
-                  No tendrás que repetir el formulario ni volver a subir tu identificación.
+                  Sólo necesitas actualizar los elementos que aparecen a continuación.
                 </Text>
 
+                {tiposSolicitados.includes('video') && (
+                  <>
                 {nuevoVideo ? (
                   <View style={{ padding: 12, borderRadius: 13, backgroundColor: COLORS.bgWhite, gap: 8 }}>
                     <Text style={{ color: COLORS.textDark, fontSize: 12, fontWeight: '700' }}>
@@ -462,10 +506,71 @@ export default function MiPostulacionScreen({ onClose, onRetryExternal }: Props)
                     </Text>
                   </TouchableOpacity>
                 )}
+                  </>
+                )}
 
-                {!!nuevoVideo && (
+                {tiposSolicitados.includes('identificacion') && (
                   <TouchableOpacity
-                    onPress={enviarNuevoVideo}
+                    onPress={seleccionarIdentificacion}
+                    disabled={isUploadingEvidence}
+                    style={{
+                      paddingVertical: 12,
+                      borderRadius: 13,
+                      borderWidth: 1,
+                      borderColor: COLORS.warning,
+                      backgroundColor: COLORS.bgWhite,
+                      alignItems: 'center',
+                    }}
+                  >
+                    <Text style={{ color: COLORS.warning, fontWeight: '800' }}>
+                      {nuevaIdentificacion ? '✓ Identificación seleccionada' : 'Elegir identificación'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                {tiposSolicitados.includes('fotos') && (
+                  <TouchableOpacity
+                    onPress={seleccionarFotos}
+                    disabled={isUploadingEvidence}
+                    style={{
+                      paddingVertical: 12,
+                      borderRadius: 13,
+                      borderWidth: 1,
+                      borderColor: COLORS.warning,
+                      backgroundColor: COLORS.bgWhite,
+                      alignItems: 'center',
+                    }}
+                  >
+                    <Text style={{ color: COLORS.warning, fontWeight: '800' }}>
+                      {nuevasFotos.length
+                        ? `✓ ${nuevasFotos.length} foto${nuevasFotos.length === 1 ? '' : 's'} seleccionada${nuevasFotos.length === 1 ? '' : 's'}`
+                        : 'Elegir fotos'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                {(tiposSolicitados.includes('direccion') || tiposSolicitados.includes('formulario')) && (
+                  <TouchableOpacity
+                    onPress={onRetryExternal}
+                    disabled={isUploadingEvidence || !onRetryExternal}
+                    style={{
+                      paddingVertical: 12,
+                      borderRadius: 13,
+                      borderWidth: 1,
+                      borderColor: COLORS.bgTeal,
+                      backgroundColor: COLORS.bgWhite,
+                      alignItems: 'center',
+                    }}
+                  >
+                    <Text style={{ color: COLORS.bgTeal, fontWeight: '800' }}>
+                      Editar datos de mi hogar
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                {(!!nuevoVideo || !!nuevaIdentificacion || nuevasFotos.length > 0) && (
+                  <TouchableOpacity
+                    onPress={enviarNuevaEvidencia}
                     disabled={isUploadingEvidence}
                     style={{
                       paddingVertical: 13,
@@ -477,7 +582,7 @@ export default function MiPostulacionScreen({ onClose, onRetryExternal }: Props)
                   >
                     {isUploadingEvidence
                       ? <ActivityIndicator color={COLORS.bgWhite} />
-                      : <Text style={{ color: COLORS.bgWhite, fontWeight: '800' }}>Enviar recorrido</Text>}
+                      : <Text style={{ color: COLORS.bgWhite, fontWeight: '800' }}>Enviar evidencia seleccionada</Text>}
                   </TouchableOpacity>
                 )}
 
