@@ -833,7 +833,7 @@ export default function AportacionFormScreen({ onClose }: Props) {
       .filter(Boolean)
       .join(', ');
 
-  const validarPaso = (numero: number): boolean => {
+    const validarPaso = (numero: number, silencioso: boolean = false): boolean => {
     const nuevos: Record<string, string> = {};
 
     if (numero === 1) {
@@ -846,7 +846,8 @@ export default function AportacionFormScreen({ onClose }: Props) {
       camposCondicionales.forEach((c) => {
         if (!c.required) return;
         if (c.tipo === 'fecha') {
-          if (!detalleFechas[c.key]) nuevos[c.key] = 'Este campo es obligatorio.';
+          
+          if (!detalleFechas[c.key] && !detalleFechasNoAplica[c.key]) nuevos[c.key] = 'Este campo es obligatorio.';
         } else if (c.tipo === 'multi') {
           if (!detalleMulti[c.key]?.length) nuevos[c.key] = 'Selecciona al menos una opción.';
         } else if (!detalleValores[c.key]?.trim()) {
@@ -877,7 +878,7 @@ export default function AportacionFormScreen({ onClose }: Props) {
       if (!esLote) {
         if (!fechaDisponibilidad) nuevos.fechaDisponibilidad = 'Selecciona una fecha.';
         if (!vieneDeNecesidad && !vigencia) nuevos.vigencia = 'Selecciona la fecha final de disponibilidad.';
-        if (!vieneDeNecesidad && !ubicacion) {
+        if (!vieneDeNecesidad && !esServicio && !ubicacion) {
           nuevos.ubicacion = 'Selecciona una ubicación en el mapa.';
         }
       }
@@ -906,21 +907,17 @@ export default function AportacionFormScreen({ onClose }: Props) {
 
     setErrors(nuevos);
     if (Object.keys(nuevos).length) {
-      showToast({ type: 'warning', title: 'Falta información', message: 'Revisa las preguntas marcadas antes de continuar.' });
+      if (!silencioso) {
+        showToast({ type: 'warning', title: 'Falta información', message: 'Revisa las preguntas marcadas antes de continuar.' });
+      }
       return false;
     }
     return true;
   };
 
 
-const validarPasoSilencioso = (numero: number) => {
-  // Exactamente la misma lógica de validarPaso, pero sin el toast
-  // ni el bloqueo — solo actualiza errors en vivo.
-  // (copia el cuerpo de validarPaso, quita el showToast/return false final)
-};
-
 useEffect(() => {
-  validarPasoSilencioso(paso);
+  validarPaso(paso, true);
 }, [
   paso, categoria, subcategoria, tamanio, detalleValores, detalleFechas, detalleMulti,
   contactoNombre, contactoTelefono, contactoCorreo, cantidadValor, cantidadUnidad,

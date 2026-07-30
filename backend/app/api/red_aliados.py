@@ -445,7 +445,7 @@ def marcar_notificacion_leida(notificacion_id: str, authorization: str = Header(
 
 @router.get("/ofertas-proactivas/mias")
 async def listar_mis_ofertas_proactivas(authorization: str = Header(None)):
-    usuario = await _obtener_usuario_autenticado(authorization)
+    usuario =  _obtener_usuario_autenticado(authorization)
 
     perfil = supabase.table("perfil_apoyo").select("id").eq(
         "usuario_id", usuario["id"]
@@ -467,7 +467,7 @@ async def listar_mis_ofertas_proactivas(authorization: str = Header(None)):
 async def cambiar_estado_oferta_proactiva(
     oferta_id: str, body: dict, authorization: str = Header(None)
 ):
-    usuario = await _obtener_usuario_autenticado(authorization)
+    usuario =  _obtener_usuario_autenticado(authorization)
     nuevo_activo = body.get("activa")
 
     oferta = supabase.table("ofertas_proactivas").select(
