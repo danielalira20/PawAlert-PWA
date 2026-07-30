@@ -165,8 +165,8 @@ const ROLES = [
     ctaRoute: '/association-register',
   },
   {
-    id: 'patrocinador',
-    title: 'Patrocinador',
+    id: 'aliado',
+    title: 'Aliado',
     icon: 'star-outline',
     subcategories: [
       {
@@ -898,7 +898,7 @@ export default function LandingScreen() {
                                                 }}>
                                                   <Ionicons name="chevron-back" size={14} color={activeColor} />
                                                   <Text style={{ fontSize: 12, fontFamily: F.bodySemiBold, color: activeColor }}>
-                                                    Tipos de patrocinador
+                                                    Tipos de Aliados
                                                   </Text>
                                                 </View>
                                               </AnimatedButton>
