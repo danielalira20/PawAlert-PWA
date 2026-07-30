@@ -256,7 +256,7 @@ useFocusEffect(
       {tienePerfilApoyo === true && (
         <AccessRow
           icon="grid-outline"
-          label="Ir a mi panel de aliado"
+          label="Mis donaciones"
           onPress={onOpenAliadoDashboard}
           isLast={!esAdmin && !esAsociacion && !esStaff && !puedeVerPostulacion}
         />

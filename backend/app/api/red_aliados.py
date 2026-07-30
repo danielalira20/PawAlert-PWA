@@ -458,7 +458,7 @@ async def listar_mis_ofertas_proactivas(authorization: str = Header(None)):
 
     ofertas = supabase.table("ofertas_proactivas").select(
         "id, categoria, capacidad_declarada, capacidad_disponible, unidad, activa, created_at, "
-        "subcategoria_recurso(descripcion)"
+        "detalle,subcategoria_recurso(descripcion)"
     ).eq("perfil_apoyo_id", perfil_apoyo_id).order("created_at", desc=True).execute()
 
     return {"ofertas": ofertas.data or []}

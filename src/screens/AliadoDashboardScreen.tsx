@@ -44,7 +44,7 @@ export default function AliadoDashboardScreen({ onClose, onOpenContribution }: P
             </View>
             <View>
               <Text style={styles.headerEyebrow}>RED DE ALIADOS</Text>
-              <Text style={styles.headerTitle}>Panel de Aliado</Text>
+              <Text style={styles.headerTitle}>Mis donaciones</Text>
               <Text style={styles.headerSubtitle}>Gestiona tus aportaciones y revisa su impacto.</Text>
             </View>
           </View>
