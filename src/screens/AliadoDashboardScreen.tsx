@@ -70,26 +70,43 @@ export default function AliadoDashboardScreen({ onClose, onOpenContribution }: P
             <AliadoImpactStats impacto={impacto} isLoading={isLoading} />
           </View>
 
+          {/* BANNER DE ESTADO */}
+          {!isLoading && impacto?.tipo && impacto.tipo !== 'donante_comunitario' && !impacto.verificado_admin && (
+            <View style={{ marginHorizontal: 24, marginBottom: 20, padding: 16, backgroundColor: impacto.razon_rechazo ? '#FDEDEC' : '#FFF9E6', borderRadius: 12, borderWidth: 1, borderColor: impacto.razon_rechazo ? '#E74C3C' : '#F1C40F' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                <Ionicons name={impacto.razon_rechazo ? "close-circle" : "time"} size={20} color={impacto.razon_rechazo ? '#E74C3C' : '#F39C12'} style={{ marginRight: 8 }} />
+                <Text style={{ fontWeight: 'bold', fontSize: 14, color: impacto.razon_rechazo ? '#C0392B' : '#D68910' }}>
+                  {impacto.razon_rechazo ? 'Perfil rechazado' : 'Perfil en validación'}
+                </Text>
+              </View>
+              <Text style={{ fontSize: 13, color: '#4A3728', lineHeight: 18 }}>
+                {impacto.razon_rechazo ? `Motivo: ${impacto.razon_rechazo}` : 'No puedes realizar nuevas aportaciones hasta que el administrador verifique tu perfil.'}
+              </Text>
+            </View>
+          )}
+
           {/* Punto de entrada a AportacionFormScreen en modo manual (sin
               necesidad_id) — dejó de existir cuando se quitaron los botones
               de LandingScreen al reorganizar la UI. Visible siempre, no
               dentro de una pestaña, porque no es exclusivo de lotes. */}
-          <View style={[styles.horizontalSection, { marginBottom: 20 }]}>
-            <TouchableOpacity
-              onPress={() => {
-                if (onOpenContribution) {
-                  onOpenContribution();
-                  return;
-                }
-                if (onClose) onClose();
-                router.push('/red-aliados');
-              }}
-              style={styles.primaryAction}
-            >
-              <Ionicons name="add-circle-outline" size={18} color={COLORS.white} style={{ marginRight: 8 }} />
-              <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 14 }}>Nueva aportación o lote</Text>
-            </TouchableOpacity>
-          </View>
+          {(!impacto || impacto.tipo === 'donante_comunitario' || impacto.verificado_admin) && (
+            <View style={[styles.horizontalSection, { marginBottom: 20 }]}>
+              <TouchableOpacity
+                onPress={() => {
+                  if (onOpenContribution) {
+                    onOpenContribution();
+                    return;
+                  }
+                  if (onClose) onClose();
+                  router.push('/red-aliados');
+                }}
+                style={styles.primaryAction}
+              >
+                <Ionicons name="add-circle-outline" size={18} color={COLORS.white} style={{ marginRight: 8 }} />
+                <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 14 }}>Nueva aportación o lote</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* Tabs de navegación — mismo patrón/tokens que StaffAsignacionScreen.tsx */}
           <View style={styles.tabs}>

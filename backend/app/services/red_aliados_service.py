@@ -1260,7 +1260,7 @@ def obtener_mi_perfil_apoyo(usuario_id: str) -> dict:
 
 
 def obtener_impacto_aliado(usuario_id: str) -> dict:
-    perfil = supabase.table("perfil_apoyo").select("id, tipo").eq(
+    perfil = supabase.table("perfil_apoyo").select("id, tipo, verificado_admin, razon_rechazo").eq(
         "usuario_id", usuario_id
     ).execute()
 
@@ -1269,6 +1269,8 @@ def obtener_impacto_aliado(usuario_id: str) -> dict:
 
     perfil_apoyo_id = perfil.data[0]["id"]
     tipo = perfil.data[0]["tipo"]
+    verificado_admin = perfil.data[0].get("verificado_admin", False)
+    razon_rechazo = perfil.data[0].get("razon_rechazo", None)
 
     # Cada contribución del usuario cuelga de una necesidad (Ruta 2 /
     # reactiva) o de un reporte (Ruta 1) — nunca de ambas (constraint
@@ -1332,6 +1334,8 @@ def obtener_impacto_aliado(usuario_id: str) -> dict:
 
     return {
         "tipo": tipo,
+        "verificado_admin": verificado_admin,
+        "razon_rechazo": razon_rechazo,
         "total_contribuciones": total_contribuciones,
         "asociaciones_ayudadas": len(asociaciones_ayudadas),
         "ofertas": ofertas_out,

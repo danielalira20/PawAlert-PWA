@@ -333,6 +333,8 @@ class ImpactoAliadoResponse(BaseModel):
     tipos de perfil_apoyo; `ofertas`/`aplicaciones` vienen vacíos para
     donante_comunitario (no declara capacidad proactiva)."""
     tipo: str
+    verificado_admin: bool = False
+    razon_rechazo: Optional[str] = None
     total_contribuciones: int
     asociaciones_ayudadas: int
     ofertas: list[OfertaImpactoResponse] = Field(default_factory=list)
