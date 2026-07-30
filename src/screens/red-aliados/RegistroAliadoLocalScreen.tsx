@@ -115,6 +115,9 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
   const [registroExitoso, setRegistroExitoso] = useState(false);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
+  const [emailConflict, setEmailConflict] = useState(false);
+  const [phoneConflict, setPhoneConflict] = useState(false);
+
   // ─── Obtener categorías y subcategorías ───
   useEffect(() => {
     const fetchCategorias = async () => {
@@ -257,6 +260,18 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
     }
   };
 
+  const handleEmailBlur = async () => {
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return;
+    try {
+      const res = await axios.get(`${API_URL}/auth/email-existe?email=${encodeURIComponent(email.trim())}`);
+      if (res.data.existe_cuenta) {
+        setEmailConflict(true);
+      }
+    } catch (err) {
+      console.warn("Error checking email", err);
+    }
+  };
+
   const handlePasswordChange = (val: string) => {
     setPassword(val);
     if (!val) {
@@ -294,6 +309,18 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
       setErrors(prev => ({ ...prev, telefono: 'Debe tener exactamente 10 dígitos numéricos.' }));
     } else {
       setErrors(prev => ({ ...prev, telefono: '' }));
+    }
+  };
+
+  const handleTelefonoBlur = async () => {
+    if (!telefono || !/^\d{10}$/.test(telefono.trim())) return;
+    try {
+      const res = await axios.get(`${API_URL}/auth/telefono-existe?telefono=${encodeURIComponent(telefono.trim())}`);
+      if (res.data.existe_cuenta) {
+        setPhoneConflict(true);
+      }
+    } catch (err) {
+      console.warn("Error checking telefono", err);
     }
   };
 
@@ -669,7 +696,7 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
                 <>
                   <FormSection title={tipoAliado === 'aliado_local' ? 'Datos de la Cuenta (Aliado Local)' : 'Datos de la Cuenta (Patrocinador Institucional)'}>
                     <View style={{ marginBottom: 12 }}>
-                      <Input label="Correo Electrónico *" placeholder="email@ejemplo.com" value={email} onChangeText={handleEmailChange} keyboardType="email-address" autoCapitalize="none" />
+                      <Input label="Correo Electrónico *" placeholder="email@ejemplo.com" value={email} onChangeText={handleEmailChange} onBlur={handleEmailBlur} keyboardType="email-address" autoCapitalize="none" />
                       {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
                     </View>
                     <View style={{ marginBottom: 12 }}>
@@ -681,7 +708,7 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
                       {errors.passwordConfirm && <Text style={styles.errorText}>{errors.passwordConfirm}</Text>}
                     </View>
                     <View style={{ marginBottom: 12 }}>
-                      <Input label="Teléfono de contacto *" placeholder="10 dígitos" value={telefono} onChangeText={handleTelefonoChange} keyboardType="phone-pad" maxLength={10} />
+                      <Input label="Teléfono de contacto *" placeholder="10 dígitos" value={telefono} onChangeText={handleTelefonoChange} onBlur={handleTelefonoBlur} keyboardType="phone-pad" maxLength={10} />
                       {errors.telefono && <Text style={styles.errorText}>{errors.telefono}</Text>}
                     </View>
                     <View style={{ marginBottom: 12 }}>
@@ -1167,6 +1194,42 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
 
             </ScrollView>
           </View>
+
+      {/* MODAL CONFLICTO CORREO */}
+      <Modal visible={emailConflict} transparent animationType="fade">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.confirmModal}>
+            <Text style={styles.confirmTitle}>Correo en uso</Text>
+            <Text style={styles.confirmMessage}>Detectamos que ya tienes una cuenta registrada con este correo electrónico.</Text>
+            <View style={styles.confirmButtons}>
+              <TouchableOpacity style={styles.confirmButtonCancel} onPress={() => { setEmailConflict(false); handleCloseRequest(); router.push('/profile?abrirLogin=true' as any); }}>
+                <Text style={styles.confirmButtonCancelText}>Iniciar sesión</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.confirmButtonExit} onPress={() => { setEmailConflict(false); setEmail(''); }}>
+                <Text style={styles.confirmButtonExitText}>Usar otro</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL CONFLICTO TELÉFONO */}
+      <Modal visible={phoneConflict} transparent animationType="fade">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.confirmModal}>
+            <Text style={styles.confirmTitle}>Teléfono en uso</Text>
+            <Text style={styles.confirmMessage}>Detectamos que ya tienes una cuenta registrada con este número de teléfono.</Text>
+            <View style={styles.confirmButtons}>
+              <TouchableOpacity style={styles.confirmButtonCancel} onPress={() => { setPhoneConflict(false); handleCloseRequest(); router.push('/profile?abrirLogin=true' as any); }}>
+                <Text style={styles.confirmButtonCancelText}>Iniciar sesión</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.confirmButtonExit} onPress={() => { setPhoneConflict(false); setTelefono(''); }}>
+                <Text style={styles.confirmButtonExitText}>Usar otro</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
           <Modal visible={showCloseConfirm} transparent animationType="fade" onRequestClose={() => setShowCloseConfirm(false)}>
             <View style={styles.modalBackdrop}>

@@ -416,6 +416,16 @@ async def telefono_existe(telefono: str):
     existe_cuenta = bool(resultado.data and resultado.data[0].get("auth_user_id"))
     return {"existe_cuenta": existe_cuenta}
 
+@router.get("/email-existe", status_code=200)
+async def email_existe(email: EmailStr):
+    """Consulta rápida para saber si ya existe una cuenta asociada a este correo."""
+    resultado = supabase.table("usuarios").select("auth_user_id").eq(
+        "email", email
+    ).execute()
+
+    existe_cuenta = bool(resultado.data and resultado.data[0].get("auth_user_id"))
+    return {"existe_cuenta": existe_cuenta}
+
 @router.get("/resolver-token-invitacion")
 async def resolver_token_invitacion(token: str):
     resultado = supabase.table("tokens_invitacion").select("telefono, expira_at, usado").eq("token", token).execute()
