@@ -9,7 +9,7 @@ import { Poppins_600SemiBold } from '@expo-google-fonts/poppins';
 
 export default function NotificationBell() {
   const router = useRouter();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const [unreadCount, setUnreadCount] = useState(0);
 
   // useFocusEffect se ejecuta cada vez que la pantalla vuelve a estar activa/visible
@@ -27,11 +27,12 @@ export default function NotificationBell() {
         }
       };
 
-      if (token) {
+      if (token && user?.rol !== 'asociacion') {
         fetchUnread();
       }
     }, [token])
   );
+   if (user?.rol === 'asociacion') return null;
 
   return (
     <TouchableOpacity 
