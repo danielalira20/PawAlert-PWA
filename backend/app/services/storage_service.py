@@ -1,5 +1,6 @@
 import uuid
 from fastapi import UploadFile
+from fastapi.concurrency import run_in_threadpool
 from app.db.supabase import supabase_admin
 
 from app.config import settings
@@ -10,7 +11,8 @@ async def subir_foto(foto: UploadFile, carpeta: str = "reportes") -> str:
     nombre_archivo = f"{uuid.uuid4()}.{extension}"
     ruta = f"{carpeta}/{nombre_archivo}"
 
-    supabase_admin.storage.from_(settings.supabase_bucket).upload(
+    await run_in_threadpool(
+    supabase_admin.storage.from_(settings.supabase_bucket).upload,
         path=ruta,
         file=contenido,
         file_options={"content-type": foto.content_type}
