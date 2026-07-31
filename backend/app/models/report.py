@@ -114,6 +114,7 @@ class HitoRequest(BaseModel):
     comentario: Optional[str] = None
     destino: Optional[str] = Field(default=None, max_length=200)
     foto_url: Optional[str] = None
+    evidencia_id: Optional[str] = None
     foto_entorno_url: Optional[str] = None
     latitud: Optional[float] = None
     longitud: Optional[float] = None

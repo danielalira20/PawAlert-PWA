@@ -13,6 +13,12 @@ type ShowToastFn = (toast: {
   message: string;
 }) => void;
 
+type FotoHitoSubida = {
+  foto_url: string;
+  evidencia_id?: string;
+  exif_gps_disponible?: boolean;
+};
+
 export const OPCIONES_ENCONTRE = [
   'Igual que en el reporte',
   'Peor de lo esperado',
@@ -120,7 +126,11 @@ export function useStaffReports(showToast: ShowToastFn) {
         showToast({ type: 'error', title: 'Permiso denegado', message: 'Necesitamos acceso a la cámara' });
         return null;
       }
-      const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8 });
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ['images'],
+        quality: 1,
+        exif: true,
+      });
       if (!result.canceled) return result.assets[0].uri;
       return null;
     } catch (error) {
@@ -131,13 +141,17 @@ export function useStaffReports(showToast: ShowToastFn) {
   }, [showToast]);
 
   const handlePickFoto = useCallback(async (): Promise<string | null> => {
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 });
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 1,
+      exif: true,
+    });
     if (!result.canceled) return result.assets[0].uri;
     return null;
   }, []);
 
   const subirFotoHito = useCallback(
-    async (reporteId: string, fotoUri: string): Promise<string | null> => {
+    async (reporteId: string, fotoUri: string): Promise<FotoHitoSubida | null> => {
       try {
         const formData = new FormData();
         if (Platform.OS === 'web') {
@@ -155,7 +169,7 @@ export function useStaffReports(showToast: ShowToastFn) {
         const res = await axios.post(`${API_URL}/reports/${reporteId}/hitos/foto`, formData, {
           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' },
         });
-        return res.data.foto_url;
+        return res.data as FotoHitoSubida;
       } catch (error) {
         console.error('Error subiendo foto hito:', error);
         return null;
@@ -335,8 +349,8 @@ export function useStaffReports(showToast: ShowToastFn) {
       }
       setIsSubmitting(true);
       try {
-        const foto_url = await subirFotoHito(reporteId, fotoResguardo);
-        if (!foto_url) {
+        const fotoSubida = await subirFotoHito(reporteId, fotoResguardo);
+        if (!fotoSubida) {
           showToast({
             type: 'error',
             title: 'No pudimos subir la foto',
@@ -351,7 +365,8 @@ export function useStaffReports(showToast: ShowToastFn) {
             condicion_observada: condicionResguardo,
             destino: destinoResguardo.trim(),
             comentario: notasResguardo.trim() || null,
-            foto_url,
+            foto_url: fotoSubida.foto_url,
+            evidencia_id: fotoSubida.evidencia_id || null,
             latitud: ubicacionActual.latitude,
             longitud: ubicacionActual.longitude,
           },
@@ -416,10 +431,10 @@ export function useStaffReports(showToast: ShowToastFn) {
       }
       setIsSubmitting(true);
       try {
-        let foto_url = null;
+        let fotoSubida: FotoHitoSubida | null = null;
         if (fotoEncontre) {
-          foto_url = await subirFotoHito(reporteId, fotoEncontre);
-          if (!foto_url) {
+          fotoSubida = await subirFotoHito(reporteId, fotoEncontre);
+          if (!fotoSubida) {
             showToast({
               type: 'error',
               title: 'No pudimos subir la foto',
@@ -453,7 +468,8 @@ export function useStaffReports(showToast: ShowToastFn) {
             tipo_hito: 'animal_encontrado',
             condicion_observada: estadoEncontre,
             comentario: notasEncontre || null,
-            foto_url: foto_url || null,
+            foto_url: fotoSubida?.foto_url || null,
+            evidencia_id: fotoSubida?.evidencia_id || null,
             ...ubicacion_hito,
           },
           { headers: { Authorization: `Bearer ${token}` } },
@@ -579,16 +595,16 @@ const rechazarAsignacionVoluntario = useCallback(
       }
       setIsSubmitting(true);
       try {
-        const foto_url = await subirFotoHito(reporteId, fotoRefugio);
-        if (!foto_url) {
+        const fotoSubida = await subirFotoHito(reporteId, fotoRefugio);
+        if (!fotoSubida) {
           showToast({ type: 'error', title: 'Error', message: 'No pudimos subir la foto. Intenta de nuevo.' });
           return false;
         }
-        const foto_entorno_url =
+        const fotoEntornoSubida =
           user?.rol === 'voluntario_externo' && fotoEntornoRefugio
             ? await subirFotoHito(reporteId, fotoEntornoRefugio)
             : null;
-        if (user?.rol === 'voluntario_externo' && !foto_entorno_url) {
+        if (user?.rol === 'voluntario_externo' && !fotoEntornoSubida) {
           showToast({
             type: 'error',
             title: 'No pudimos subir la foto del entorno',
@@ -605,8 +621,9 @@ const rechazarAsignacionVoluntario = useCallback(
                 : 'llegue_refugio',
             condicion_observada: estadoRefugio,
             comentario: notasRefugio || null,
-            foto_url,
-            foto_entorno_url,
+            foto_url: fotoSubida.foto_url,
+            evidencia_id: fotoSubida.evidencia_id || null,
+            foto_entorno_url: fotoEntornoSubida?.foto_url || null,
             latitud: ubicacionActual.latitude,
             longitud: ubicacionActual.longitude,
           },
@@ -682,8 +699,8 @@ const rechazarAsignacionVoluntario = useCallback(
       }
       setIsSubmitting(true);
       try {
-        const foto_url = await subirFotoHito(reporteId, fotoVeterinaria);
-        if (!foto_url) {
+        const fotoSubida = await subirFotoHito(reporteId, fotoVeterinaria);
+        if (!fotoSubida) {
           showToast({ type: 'error', title: 'Error', message: 'No pudimos subir la foto. Intenta de nuevo.' });
           return false;
         }
@@ -692,7 +709,8 @@ const rechazarAsignacionVoluntario = useCallback(
           {
             tipo_hito: 'llegada_veterinaria',
             comentario: notasVeterinaria || null,
-            foto_url,
+            foto_url: fotoSubida.foto_url,
+            evidencia_id: fotoSubida.evidencia_id || null,
             latitud: ubicacionActual.latitude,
             longitud: ubicacionActual.longitude,
           },
