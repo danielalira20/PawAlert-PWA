@@ -1748,7 +1748,7 @@ useEffect(() => {
           vieneDeNecesidad ? (
             <FormSection
               title="¿Dónde entregas?"
-              subtitle="Lugar de entrega: una vez que se le dé aviso a la asociación, en tu panel de aliado podrás ver la ubicación e indicaciones necesarias para completar tu donación, que deberá ser llevada a la asociación."
+              subtitle="Lugar de entrega: una vez que se le dé aviso a la asociación, en MIS DONACIONES podrás ver la ubicación e indicaciones necesarias para completar tu donación, que deberá ser llevada a la asociación."
             >
               {necesidadDetalle?.asociacion && (
                 <>
