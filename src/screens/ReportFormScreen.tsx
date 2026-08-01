@@ -143,6 +143,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
   // ─── Fotos — un solo arreglo para todo el caso, cada foto etiquetada con
   // el animal (AnimalDraft.id) al que pertenece ───
   const [fotos, setFotos] = useState<AnimalFoto[]>([]);
+  const [isValidatingFoto, setIsValidatingFoto] = useState(false);
 
   // ─── Ubicación ───
   const [pinLocation, setPinLocation] = useState<{ latitud: number; longitud: number }>({
@@ -323,6 +324,31 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
     if (!result.canceled) {
       const asset = result.assets[0];
       const manipulated = await manipulateAsync(asset.uri, [], { compress: 0.8, format: SaveFormat.JPEG });
+
+      setIsValidatingFoto(true);
+      try {
+        const formData = new FormData();
+        if (Platform.OS === 'web') {
+          const res = await fetch(manipulated.uri);
+          const blob = await res.blob();
+          formData.append('foto', blob, `check_${Date.now()}.jpg`);
+        } else {
+          formData.append('foto', { uri: manipulated.uri, name: `check_${Date.now()}.jpg`, type: 'image/jpeg' } as any);
+        }
+        const { data } = await axios.post(`${API_URL}/reports/validar-foto`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        if (!data.valido) {
+          showToast({ type: 'warning', title: 'Foto no válida', message: data.mensaje });
+          return;
+        }
+      } catch {
+        // Fallo de red del pre-check: no bloquea (fail-open), igual que el
+        // backend cuando el análisis de Gemini falla técnicamente.
+      } finally {
+        setIsValidatingFoto(false);
+      }
+
       setFotos((prev) => {
         const ordenSiguiente = prev.filter((f) => f.animalLocalId === animalLocalId).length + 1;
         const newFoto: AnimalFoto = {
@@ -853,6 +879,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
 
         <TouchableOpacity
           onPress={() => handleAddFoto(animalLocalId)}
+          disabled={isValidatingFoto}
           style={{
             flexDirection: 'row',
             justifyContent: 'center',
@@ -861,13 +888,13 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
             borderRadius: 16,
             borderWidth: 2,
             borderStyle: 'dashed',
-            borderColor: petzen.colors.orange,
-            backgroundColor: petzen.colors.peach + '40',
+            borderColor: isValidatingFoto ? '#B0A098' : petzen.colors.orange,
+            backgroundColor: isValidatingFoto ? '#ECECEC' : petzen.colors.peach + '40',
           }}
         >
-          <Feather name="camera" size={18} color={petzen.colors.orange} style={{ marginRight: 8 }} />
-          <Text style={{ fontFamily: petzen.fonts.bold, fontSize: 14, color: petzen.colors.orange }}>
-            {opcional ? 'Agregar foto grupal' : 'Agregar Foto del animalito'}
+          <Feather name="camera" size={18} color={isValidatingFoto ? '#B0A098' : petzen.colors.orange} style={{ marginRight: 8 }} />
+          <Text style={{ fontFamily: petzen.fonts.bold, fontSize: 14, color: isValidatingFoto ? '#B0A098' : petzen.colors.orange }}>
+            {isValidatingFoto ? 'Validando foto...' : (opcional ? 'Agregar foto grupal' : 'Agregar Foto del animalito')}
           </Text>
         </TouchableOpacity>
         {!opcional && errors.foto && <Text style={{ color: '#E74C3C', fontSize: 12, marginTop: 8 }}>{errors.foto}</Text>}
