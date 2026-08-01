@@ -8,7 +8,7 @@ from app.services import coverage_service
 from app.utils.validators import validar_telefono, validar_email
 from app.utils.animal_shaping import shape_animal_embed, condicion_mas_grave
 from typing import Optional, List
-from app.db.supabase import supabase
+from app.db.supabase import supabase, supabase_admin
 from datetime import datetime, timedelta, timezone
 import json
 import math
@@ -16,6 +16,7 @@ import math
 
 router = APIRouter()
 RADIO_LLEGADA_ZONA_METROS = 500
+LIMITE_DISCREPANCIA_EXIF_METROS = 200
 
 HITOS_CANONICOS = {
     "encontre_animal": "animal_encontrado",
@@ -53,6 +54,79 @@ def _distancia_metros(
         + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
     )
     return radio_tierra * 2 * math.asin(math.sqrt(haversine))
+
+
+def _vincular_y_verificar_evidencia(
+    *,
+    evidencia_id: str,
+    reporte_id: str,
+    usuario_id: str,
+    tipo_hito: str,
+    foto_url: str | None,
+    latitud_declarada: float | None,
+    longitud_declarada: float | None,
+) -> dict:
+    """Vincula la evidencia al hito y compara EXIF contra el GPS declarado."""
+    resultado = (
+        supabase_admin.table("reporte_evidencias")
+        .select(
+            "id, reporte_id, usuario_id, foto_url, tipo_hito, vinculada_at, "
+            "exif_latitud, exif_longitud"
+        )
+        .eq("id", evidencia_id)
+        .limit(1)
+        .execute()
+    )
+    if not resultado.data:
+        raise HTTPException(status_code=422, detail="La evidencia fotográfica no existe")
+
+    evidencia = resultado.data[0]
+    if evidencia.get("reporte_id") != reporte_id or evidencia.get("usuario_id") != usuario_id:
+        raise HTTPException(status_code=403, detail="La evidencia no pertenece a este reporte o usuario")
+    if foto_url and evidencia.get("foto_url") != foto_url:
+        raise HTTPException(status_code=422, detail="La fotografía no coincide con la evidencia registrada")
+    if evidencia.get("vinculada_at"):
+        raise HTTPException(status_code=409, detail="La evidencia ya fue utilizada en otro hito")
+
+    exif_latitud = evidencia.get("exif_latitud")
+    exif_longitud = evidencia.get("exif_longitud")
+    distancia = None
+    requiere_revision = False
+
+    if exif_latitud is None or exif_longitud is None:
+        estado = "sin_gps_exif"
+    elif latitud_declarada is None or longitud_declarada is None:
+        # El modelo permite hitos internos sin GPS; no se inventa una comparación.
+        estado = "sin_gps_exif"
+    else:
+        distancia = _distancia_metros(
+            exif_latitud,
+            exif_longitud,
+            latitud_declarada,
+            longitud_declarada,
+        )
+        requiere_revision = distancia > LIMITE_DISCREPANCIA_EXIF_METROS
+        estado = "discrepancia" if requiere_revision else "coincidente"
+
+    ahora = datetime.now(timezone.utc).isoformat()
+    supabase_admin.table("reporte_evidencias").update(
+        {
+            "tipo_hito": tipo_hito,
+            "gps_declarada_latitud": latitud_declarada,
+            "gps_declarada_longitud": longitud_declarada,
+            "distancia_exif_declarada_m": distancia,
+            "estado_verificacion": estado,
+            "requiere_revision": requiere_revision,
+            "vinculada_at": ahora,
+        }
+    ).eq("id", evidencia_id).execute()
+
+    return {
+        "evidencia_id": evidencia_id,
+        "estado": estado,
+        "distancia_metros": round(distancia) if distancia is not None else None,
+        "requiere_revision": requiere_revision,
+    }
 
 
 def _obtener_usuario_autenticado(authorization: str | None) -> dict:
@@ -303,23 +377,71 @@ async def subir_foto_hito(
     foto: UploadFile = File(...),
     authorization: str = Header(None)
 ):
-    """Sube una foto para un hito y devuelve la URL en Supabase Storage."""
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="No autenticado")
+    """Valida y registra una evidencia; la copia pública se guarda sin EXIF."""
+    usuario = _obtener_usuario_autenticado(authorization)
 
-    token = authorization.replace("Bearer ", "")
-    try:
-        auth_response = supabase.auth.get_user(token)
-    except Exception:
-        raise HTTPException(status_code=401, detail="Token inválido o expirado")
+    reporte = (
+        supabase.table("reportes")
+        .select("id, staff_asignado_id, asociacion_asignada_id")
+        .eq("id", reporte_id)
+        .limit(1)
+        .execute()
+    )
+    if not reporte.data:
+        raise HTTPException(status_code=404, detail="Reporte no encontrado")
+    fila_reporte = reporte.data[0]
+    es_staff_asignado = fila_reporte.get("staff_asignado_id") == usuario["id"]
+    es_representante_asignado = (
+        usuario.get("rol") == "asociacion"
+        and usuario.get("asociacion_id") == fila_reporte.get("asociacion_asignada_id")
+    )
+    if not es_staff_asignado and not es_representante_asignado:
+        raise HTTPException(status_code=403, detail="No puedes agregar evidencias a este reporte")
 
     if foto.content_type not in ["image/jpeg", "image/png", "image/jpg", "image/webp"]:
         raise HTTPException(status_code=422, detail="La foto debe ser JPG, PNG o WEBP")
 
-    from app.services.storage_service import subir_foto
-    foto_url = await subir_foto(foto, carpeta="reportes/hitos")
+    from app.services.image_evidence_service import (
+        ImagenEvidenciaInvalida,
+        procesar_imagen_evidencia,
+    )
+    from app.services.storage_service import subir_bytes
 
-    return {"foto_url": foto_url}
+    contenido = await foto.read()
+    try:
+        procesada = procesar_imagen_evidencia(contenido)
+    except ImagenEvidenciaInvalida as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    foto_url = await subir_bytes(
+        procesada.contenido_publico,
+        carpeta="reportes/hitos",
+        content_type=procesada.content_type_publico,
+        extension=procesada.extension_publica,
+    )
+
+    evidencia = supabase_admin.table("reporte_evidencias").insert(
+        {
+            "reporte_id": reporte_id,
+            "usuario_id": usuario["id"],
+            "foto_url": foto_url,
+            "formato_original": procesada.formato_original,
+            "ancho": procesada.ancho,
+            "alto": procesada.alto,
+            "size_bytes_original": procesada.size_bytes_original,
+            "exif_latitud": procesada.exif_latitud,
+            "exif_longitud": procesada.exif_longitud,
+            "exif_captured_at": procesada.exif_captured_at,
+        }
+    ).execute()
+    if not evidencia.data:
+        raise HTTPException(status_code=500, detail="No se pudo registrar la evidencia fotográfica")
+
+    return {
+        "foto_url": foto_url,
+        "evidencia_id": evidencia.data[0]["id"],
+        "exif_gps_disponible": procesada.tiene_gps_exif,
+    }
 
 #FIN: endpoind hitos fotos
 
@@ -649,6 +771,18 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
                 detail=f"Tu ubicación no coincide con la veterinaria. Estás a {round(distancia_metros)} metros. Debes estar dentro de 200 metros."
             )
 
+    verificacion_ubicacion = None
+    if body.evidencia_id:
+        verificacion_ubicacion = _vincular_y_verificar_evidencia(
+            evidencia_id=body.evidencia_id,
+            reporte_id=reporte_id,
+            usuario_id=usuario["id"],
+            tipo_hito=tipo_hito,
+            foto_url=body.foto_url,
+            latitud_declarada=body.latitud,
+            longitud_declarada=body.longitud,
+        )
+
     # Determinar nuevo estado — llego_veterinaria no cambia estado_reporte,
     # solo queda como un evento más en historial_reporte.
     if tipo_hito == "animal_encontrado":
@@ -719,6 +853,7 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
             "comentario": body.comentario,
             "destino": body.destino,
             "foto_url": body.foto_url,
+            "evidencia_id": body.evidencia_id,
             "foto_entorno_url": body.foto_entorno_url,
             "latitud": body.latitud,
             "longitud": body.longitud,
@@ -728,6 +863,7 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
                 if distancia_reporte_metros is not None
                 else None
             ),
+            "verificacion_ubicacion": verificacion_ubicacion,
         }
     )
 
@@ -756,6 +892,7 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
         "mensaje": f"Hito '{tipo_hito}' registrado correctamente.",
         "tipo_hito": tipo_hito,
         "estado": nuevo_estado,
+        "verificacion_ubicacion": verificacion_ubicacion,
         "sugerencia_aliado": sugerencia_aliado,
     }
 
