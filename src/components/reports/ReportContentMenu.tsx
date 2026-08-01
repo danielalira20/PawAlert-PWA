@@ -48,6 +48,7 @@ export function ReportContentMenu({
   const [error, setError] = useState('');
   const [enviando, setEnviando] = useState(false);
   const [retirarAlCerrar, setRetirarAlCerrar] = useState(false);
+  const [triggerHovered, setTriggerHovered] = useState(false);
 
   const abrir = () => {
     setError('');
@@ -90,24 +91,42 @@ export function ReportContentMenu({
 
   return (
     <>
-      <TouchableOpacity
-        accessibilityLabel="Opciones del reporte"
+      <Pressable
+        accessibilityLabel="Reportar publicación"
+        accessibilityRole="button"
+        onHoverIn={() => setTriggerHovered(true)}
+        onHoverOut={() => setTriggerHovered(false)}
         onPress={(event) => {
           event.stopPropagation?.();
           abrir();
         }}
-        style={{
-          width: compact ? 26 : 30,
-          height: compact ? 26 : 30,
-          borderRadius: 15,
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: '#F8F3ED',
-          flexShrink: 0,
+        style={({ pressed }) => {
+          const active = pressed || triggerHovered || visible;
+          return {
+            width: compact ? 28 : 32,
+            height: compact ? 28 : 32,
+            borderRadius: 16,
+            borderWidth: 1.5,
+            borderColor: '#E64A3C',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: active ? '#E64A3C' : '#FFF9F7',
+            flexShrink: 0,
+            transform: [{ scale: pressed ? 0.94 : 1 }],
+          };
         }}
       >
-        <Ionicons name="ellipsis-horizontal" size={compact ? 15 : 17} color="#6E5B49" />
-      </TouchableOpacity>
+        {({ pressed }) => {
+          const active = pressed || triggerHovered || visible;
+          return (
+            <Ionicons
+              name={active ? 'flag' : 'flag-outline'}
+              size={compact ? 15 : 17}
+              color={active ? '#FFFFFF' : '#E64A3C'}
+            />
+          );
+        }}
+      </Pressable>
 
       <Modal visible={visible} transparent animationType="fade" onRequestClose={cerrar}>
         <Pressable
