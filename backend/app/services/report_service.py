@@ -1,7 +1,7 @@
 import uuid
 from fastapi import UploadFile, HTTPException
 from app.db.supabase import supabase
-from app.services.storage_service import subir_foto
+from app.services.storage_service import subir_bytes
 from app.services.assignment_service import asignar_asociacion, obtener_contactos_emergencia
 from datetime import datetime, timezone, timedelta
 from app.services import matching
@@ -295,13 +295,28 @@ async def crear_reporte(
             indices = json.loads(fotos_animal_index) if fotos_animal_index and fotos_animal_index.strip() else []
             for i, foto in enumerate(fotos):
                 if foto and foto.filename:
+                    from app.services.report_moderation_service import calcular_phash, registrar_phash_reporte
+
                     animal_idx = indices[i] if i < len(indices) else 0
-                    foto_url = await subir_foto(foto, carpeta="animales/fotos")
-                    supabase.table("animal_fotos").insert({
+                    contenido_foto = await foto.read()
+                    phash = calcular_phash(contenido_foto)
+                    extension = foto.filename.rsplit(".", 1)[-1]
+                    foto_url = await subir_bytes(
+                        contenido_foto,
+                        carpeta="animales/fotos",
+                        content_type=foto.content_type or "application/octet-stream",
+                        extension=extension,
+                    )
+                    foto_insertada = supabase.table("animal_fotos").insert({
                         "animal_id": animal_ids[animal_idx],
                         "foto_url": foto_url,
                         "orden": ordenes[i] if i < len(ordenes) else i + 1,
                     }).execute()
+                    registrar_phash_reporte(
+                        reporte_id=reporte_id,
+                        animal_foto_id=(foto_insertada.data or [{}])[0].get("id"),
+                        phash=phash,
+                    )
     except Exception as e:
         print(f"[ERROR] Falló la creación de animales/fotos, limpiando reporte {reporte_id}: {e}")
         for animal_id in animal_ids:
@@ -438,7 +453,9 @@ async def obtener_reportes() -> list:
         "tipo_animal_id, condicion_id, tamanio_id, sexo, edad_aproximada, descripcion, "
         "tipo_animal_catalogo(clave), condicion_catalogo(clave), tamanio_catalogo(clave), "
         "animal_fotos(foto_url, orden))"
-    ).neq("estado_reporte", "cerrado").execute()
+    ).neq("estado_reporte", "cerrado").in_(
+        "estado_moderacion", ["visible", "aprobado"]
+    ).execute()
 
     reportes = []
     for r in resultado.data:
@@ -555,7 +572,8 @@ async def cambiar_estado_reporte(
 
 async def obtener_reportes_usuario(usuario_id: str) -> list:
     resultado = supabase.table("reportes").select(
-        "id, estado_reporte, estado_cobertura, latitud, longitud, municipio, colonia, calle, created_at, "
+        "id, estado_reporte, estado_cobertura, estado_moderacion, moderacion_origen, "
+        "latitud, longitud, municipio, colonia, calle, created_at, "
         "asociacion_asignada_id, staff_asignado_id, "
         "animal(id, orden, es_grupo, cantidad, trae_crias_nacidas, numero_crias_nacidas, "
         "tipo_animal_id, condicion_id, sexo, edad_aproximada, descripcion, "
@@ -631,6 +649,8 @@ async def obtener_reportes_usuario(usuario_id: str) -> list:
         reportes.append({
             "id": r["id"],
             "estado_reporte": r.get("estado_reporte"),
+            "estado_moderacion": r.get("estado_moderacion"),
+            "moderacion_origen": r.get("moderacion_origen"),
             "latitud": r.get("latitud"),
             "longitud": r.get("longitud"),
             "municipio": r.get("municipio"),

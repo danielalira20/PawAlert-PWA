@@ -9,7 +9,7 @@ import { Poppins_600SemiBold } from '@expo-google-fonts/poppins';
 
 export default function NotificationBell() {
   const router = useRouter();
-  const { token, user } = useAuth();
+  const { token } = useAuth();
   const [unreadCount, setUnreadCount] = useState(0);
 
   // useFocusEffect se ejecuta cada vez que la pantalla vuelve a estar activa/visible
@@ -17,26 +17,30 @@ export default function NotificationBell() {
     useCallback(() => {
       const fetchUnread = async () => {
         try {
-          const res = await axios.get(`${API_URL}/red-aliados/me/notificaciones`, {
-            headers: { Authorization: `Bearer ${token}` }
-          });
-          const unread = res.data.filter((n: any) => !n.leida).length;
+          const headers = { Authorization: `Bearer ${token}` };
+          const resultados = await Promise.allSettled([
+            axios.get(`${API_URL}/reports/me/notificaciones-moderacion`, { headers }),
+            axios.get(`${API_URL}/red-aliados/me/notificaciones`, { headers }),
+          ]);
+          const unread = resultados.reduce((total, resultado) => {
+            if (resultado.status !== 'fulfilled' || !Array.isArray(resultado.value.data)) return total;
+            return total + resultado.value.data.filter((n: any) => !n.leida).length;
+          }, 0);
           setUnreadCount(unread);
-        } catch (error) {
-          console.error("Error cargando campanita:", error);
+        } catch {
+          setUnreadCount(0);
         }
       };
 
-      if (token && user?.rol !== 'asociacion') {
+      if (token) {
         fetchUnread();
       }
     }, [token])
   );
-   if (user?.rol === 'asociacion') return null;
 
   return (
     <TouchableOpacity 
-      onPress={() => router.push('/notificaciones-aliado')}
+      onPress={() => router.push('/notificaciones')}
       style={{ padding: 8, position: 'relative' }}
     >
       <Ionicons name="notifications-outline" size={26} color="#2E2A26" />

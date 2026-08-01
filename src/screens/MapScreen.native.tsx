@@ -8,6 +8,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import MapView, { Callout, Region } from 'react-native-maps';
 import { TrackedMarker } from './TrackedMarker';
 import AuthGateModal from '../components/AuthGateModal';
+import { ReportContentMenu } from '../components/reports/ReportContentMenu';
 import { ICON_CAT, ICON_CLOCK, ICON_CALENDAR, ICON_DOG, ICON_PAW, ICON_WARNING, ICON_MULTIPLE } from '../constants/mapIcons';
 import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
@@ -505,6 +506,16 @@ export default function MapScreen() {
                 <Feather name="x" size={14} color={COLORS.textMid} />
               </View>
             </TouchableOpacity>
+            <View style={{ position: 'absolute', top: 11, right: 54, zIndex: 5 }}>
+              <ReportContentMenu
+                reportId={r.id}
+                compact
+                onModerated={() => {
+                  setReportes((actuales) => actuales.filter((item) => item.id !== r.id));
+                  hideSheet();
+                }}
+              />
+            </View>
 
             <View style={{ paddingHorizontal: 16, paddingTop: 4 }}>
               <View style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start' }}>

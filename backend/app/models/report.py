@@ -129,3 +129,8 @@ class RechazarReporteRequest(BaseModel):
 
 class CancelarReporteRequest(BaseModel):
     motivo: Optional[str] = Field(default=None, max_length=500)
+
+
+class DenunciarReporteRequest(BaseModel):
+    motivo: str
+    detalle: Optional[str] = Field(default=None, max_length=500)

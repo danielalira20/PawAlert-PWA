@@ -30,6 +30,7 @@ import { AssocLocationMap } from '../components/admin-dashboard/AssocLocationMap
 import { PhotoGallery } from '../components/admin-dashboard/PhotoGallery';
 import { ActionBar } from '../components/admin-dashboard/ActionBar';
 import { AdminActionButton } from '../components/admin-dashboard/AdminActionButton';
+import { ReportModerationPanel } from '../components/admin-dashboard/ReportModerationPanel';
 import { StatsRow, type StatItem } from '../components/staff-dashboard/StatsRow';
 import { Brand } from '../constants/theme';
 import type { AsociacionDetalle } from '../types/asociacionAdmin';
@@ -38,7 +39,7 @@ interface Props {
   onClose?: () => void;
 }
 
-type Tab = 'solicitudes' | 'apelaciones' | 'aliados';
+type Tab = 'solicitudes' | 'apelaciones' | 'aliados' | 'moderacion';
 type DetailScreenState = 'list' | 'detail';
 
 const DESKTOP_BREAKPOINT = 900;
@@ -98,6 +99,7 @@ export default function AdminDashboardScreen({ onClose }: Props) {
   const isDesktop = width >= DESKTOP_BREAKPOINT;
 
   const [tab, setTab] = useState<Tab>('solicitudes');
+  const [moderacionPendiente, setModeracionPendiente] = useState(0);
 
   // ── Datos compartidos: lista/detalle de asociaciones + aprobar/rechazar ─
   // Tanto "Solicitudes" como el detalle dentro de "Apelaciones" usan el
@@ -295,6 +297,20 @@ export default function AdminDashboardScreen({ onClose }: Props) {
             </View>
           )}
         </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={() => setTab('moderacion')}
+          style={[styles.tab, tab === 'moderacion' && styles.tabActiva]}
+        >
+          <Text style={[styles.tabText, tab === 'moderacion' && styles.tabTextActiva]}>
+            Reportes
+          </Text>
+          {moderacionPendiente > 0 && (
+            <View style={styles.tabBadge}>
+              <Text style={styles.tabBadgeText}>{moderacionPendiente}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
       </View>
 
       {tab === 'solicitudes' ? (
@@ -348,7 +364,7 @@ export default function AdminDashboardScreen({ onClose }: Props) {
             />
           </DetailShell>
         )
-      ) : (
+      ) : tab === 'aliados' ? (
         aliadosScreen === 'list' ? (
           <AliadosListScreen aliados={aliadosPendientes} isLoading={isLoadingAliados} onSelect={abrirAliado} />
         ) : (
@@ -362,6 +378,11 @@ export default function AdminDashboardScreen({ onClose }: Props) {
             isResolviendo={isResolviendoAliado}
           />
         )
+      ) : (
+        <ReportModerationPanel
+          onCountChange={setModeracionPendiente}
+          showToast={showToast}
+        />
       )}
 
       <Toast toast={toast} translateY={translateY} />

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
-from app.db.supabase import supabase
+from app.db.supabase import supabase, supabase_admin
+from datetime import datetime, timezone
 from app.models.association import RespuestaApelacionBody
 from app.services.email_service import (email_asociacion_aprobada, email_asociacion_rechazada, email_apelacion_aprobada, email_apelacion_rechazada)
 router = APIRouter()
@@ -250,4 +251,103 @@ async def resolver_perfil_aliado(perfil_id: str, body: ResolverPerfilApoyoBody, 
     if not resultado.data:
         raise HTTPException(status_code=404, detail="Perfil no encontrado")
 
-    return {"message": f"Perfil {body.decision}d exitosamente", "data": resultado.data[0]}
+    return {"message": f"Perfil {body.decision}d exitosamente", "data": resultado.data[0]}
+
+
+class ResolverModeracionReporteBody(BaseModel):
+    decision: str
+    notas: str | None = None
+
+
+@router.get("/reportes-moderacion", status_code=200)
+async def listar_reportes_moderacion(authorization: str = Header(None)):
+    """Cola de casos ocultos por denuncias y alertas perceptuales."""
+    _verificar_admin(authorization)
+    resultado = (
+        supabase_admin.table("reportes")
+        .select(
+            "id, usuario_id, estado_reporte, estado_moderacion, moderacion_origen, "
+            "moderacion_actualizada_at, calle, colonia, municipio, estado_ubicacion, "
+            "referencia, latitud, longitud, ubicacion_fuente, created_at, "
+            "reportante_nombre, reportante_apellido_paterno, reportante_apellido_materno, "
+            "reportante_telefono, "
+            "phash_alerta, phash_coincidencia_reporte_id, phash_distancia, "
+            "animal(id, orden, cantidad, es_grupo, sexo, edad_aproximada, descripcion, "
+            "especie_descripcion, tiene_collar, esta_prenada, es_agresivo, "
+            "es_domestico_probable, trae_crias_nacidas, numero_crias_nacidas, "
+            "tipo_animal_catalogo(clave), condicion_catalogo(clave), "
+            "tamanio_catalogo(clave), animal_fotos(id, foto_url, orden)), "
+            "reporte_denuncias(id, motivo, detalle, created_at, resuelta_at, resolucion)"
+        )
+        .or_("estado_moderacion.eq.en_revision,phash_alerta.eq.true")
+        .order("moderacion_actualizada_at", desc=False)
+        .execute()
+    )
+    reportes = resultado.data or []
+    usuarios_ids = list({r.get("usuario_id") for r in reportes if r.get("usuario_id")})
+    usuarios_por_id = {}
+    if usuarios_ids:
+        usuarios = supabase_admin.table("usuarios").select(
+            "id, nombre, apellido_paterno, apellido_materno, email, telefono"
+        ).in_("id", usuarios_ids).execute()
+        usuarios_por_id = {u["id"]: u for u in (usuarios.data or [])}
+    for reporte in reportes:
+        reporte["reportante"] = usuarios_por_id.get(reporte.get("usuario_id"))
+    return reportes
+
+
+@router.patch("/reportes-moderacion/{reporte_id}", status_code=200)
+async def resolver_moderacion_reporte(
+    reporte_id: str,
+    body: ResolverModeracionReporteBody,
+    authorization: str = Header(None),
+):
+    admin = _verificar_admin(authorization)
+    if body.decision not in ("aprobar", "rechazar"):
+        raise HTTPException(status_code=422, detail="La decisión debe ser aprobar o rechazar")
+    if body.decision == "rechazar" and not (body.notas or "").strip():
+        raise HTTPException(status_code=422, detail="Indica el motivo del rechazo")
+
+    consulta = supabase_admin.table("reportes").select(
+        "id, usuario_id, estado_moderacion, estado_reporte"
+    ).eq("id", reporte_id).limit(1).execute()
+    if not consulta.data:
+        raise HTTPException(status_code=404, detail="Reporte no encontrado")
+
+    ahora = datetime.now(timezone.utc).isoformat()
+    estado = "aprobado" if body.decision == "aprobar" else "rechazado"
+    supabase_admin.table("reportes").update({
+        "estado_moderacion": estado,
+        "moderacion_revisada_por": admin["id"],
+        "moderacion_notas": (body.notas or "").strip() or None,
+        "moderacion_actualizada_at": ahora,
+        "phash_alerta": False,
+    }).eq("id", reporte_id).execute()
+    supabase_admin.table("reporte_denuncias").update({
+        "resuelta_at": ahora,
+        "resolucion": estado,
+    }).eq("reporte_id", reporte_id).is_("resuelta_at", "null").execute()
+
+    reportante_id = consulta.data[0].get("usuario_id")
+    if reportante_id:
+        mensaje = (
+            "Revisamos tu reporte y volvió a estar visible."
+            if estado == "aprobado"
+            else f"Tu reporte fue retirado después de una revisión. Motivo: {(body.notas or '').strip()}"
+        )
+        supabase_admin.table("notificaciones_moderacion").insert({
+            "usuario_id": reportante_id,
+            "reporte_id": reporte_id,
+            "tipo": estado,
+            "mensaje": mensaje,
+        }).execute()
+
+    from app.services.report_service import registrar_historial
+    registrar_historial(
+        reporte_id=reporte_id,
+        usuario_id=admin["id"],
+        tipo_evento=f"moderacion_{estado}",
+        descripcion=f"El administrador marcó el reporte como {estado}",
+        datos_extra={"notas": (body.notas or "").strip() or None},
+    )
+    return {"mensaje": "Moderación resuelta", "estado_moderacion": estado}
