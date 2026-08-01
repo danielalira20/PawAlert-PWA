@@ -13,6 +13,7 @@ import { Reporte, getAnimales, condicionMasGrave, especieMasGrave, totalAnimales
 import { AnimalCarousel } from '../components/common/AnimalCarousel';
 import ReportFormScreen from './ReportFormScreen';
 import type { AsociacionMapa } from './LeafletMap';
+import { ReportContentMenu } from '../components/reports/ReportContentMenu';
 
 const LeafletMap = lazy(() => import('./LeafletMap'));
 
@@ -57,6 +58,7 @@ export default function MapScreen() {
   const [aliados, setAliados] = useState<any[]>([]);
   const [mostrarAliados, setMostrarAliados] = useState(false);
   const [selectedReport, setSelectedReport] = useState<Reporte | null>(null);
+  const [highlightedReportId, setHighlightedReportId] = useState<string | null>(null);
   const [selectedAsociacion, setSelectedAsociacion] = useState<AsociacionMapa | null>(null);
   const [sidebarView, setSidebarView] = useState<SidebarView>('list');
   const [filtro, setFiltro] = useState('todos');
@@ -72,6 +74,7 @@ export default function MapScreen() {
 
   // Bottom sheet para mobile web
   const sheetY = useRef(new Animated.Value(300)).current;
+  const reportCardRefs = useRef<Record<string, any>>({});
   const [showClockLabel, setShowClockLabel] = useState(false);
 
   // Animación del flotante de filtros (entra/sale suave, no de golpe)
@@ -167,6 +170,7 @@ export default function MapScreen() {
     Animated.timing(sheetY, { toValue: 300, duration: 200, useNativeDriver: false }).start(() => setSelectedReport(null));
 
   const handleSelectReport = useCallback((r: Reporte) => {
+    setHighlightedReportId(r.id);
     setSelectedReport(r);
     if (isMobile) {
       showSheet();
@@ -191,11 +195,23 @@ export default function MapScreen() {
   };
 
   const handleMapClick = useCallback(() => {
+    setHighlightedReportId(null);
     if (selectedReport) {
       if (isMobile) hideSheet();
       else { setSelectedReport(null); setSidebarView('list'); }
     }
   }, [selectedReport, isMobile]);
+
+  useEffect(() => {
+    if (!highlightedReportId || isMobile || sidebarView !== 'list') return;
+
+    const frame = requestAnimationFrame(() => {
+      reportCardRefs.current[highlightedReportId]
+        ?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [highlightedReportId, isMobile, sidebarView]);
 
   const handleCrearReporte = () => {
     if (isLoggedIn) {
@@ -241,7 +257,7 @@ export default function MapScreen() {
     const condicionValor = condicionMasGrave(animales) ?? '';
     const condCfg = getCfg(CONDICION, condicionValor);
     const estCfg  = getCfg(ESTADO, reporte.estado_reporte ?? '');
-    const isSelected = selectedReport?.id === reporte.id;
+    const isSelected = highlightedReportId === reporte.id || selectedReport?.id === reporte.id;
     const especie = especieMasGrave(animales);
     const tipoLabel = especie
       ? especie[0].toUpperCase() + especie.slice(1)
@@ -252,19 +268,33 @@ export default function MapScreen() {
 
     return (
       <TouchableOpacity
+        ref={(node) => {
+          if (node) reportCardRefs.current[reporte.id] = node;
+          else delete reportCardRefs.current[reporte.id];
+        }}
         onPress={() => handleSelectReport(reporte)}
         style={{
           flexDirection: 'row', gap: compact ? 8 : 10,
           padding: compact ? 8 : 10,
           borderRadius: 14, borderWidth: 1.5,
-          borderColor: isSelected ? C.orange : C.border,
-          backgroundColor: isSelected ? '#FFF5EE' : '#FFFFFF',
-          shadowColor: isSelected ? C.orange : '#000',
+          borderColor: isSelected ? condCfg.color : C.border,
+          backgroundColor: isSelected ? condCfg.bg : '#FFFFFF',
+          shadowColor: isSelected ? condCfg.color : '#000',
           shadowOffset: { width: 0, height: 1 },
           shadowOpacity: isSelected ? 0.15 : 0.04,
           shadowRadius: isSelected ? 8 : 3,
         }}
       >
+        {isSelected && (
+          <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute', left: 0, top: 0, bottom: 0, width: 5,
+              borderTopLeftRadius: 12, borderBottomLeftRadius: 12,
+              backgroundColor: condCfg.color,
+            }}
+          />
+        )}
         {/* Miniatura: tocable para ampliar, sin disparar la selección de la tarjeta completa */}
         <TouchableOpacity
           onPress={(e) => { e.stopPropagation(); abrirImagenAmpliada(reporte); }}
@@ -300,7 +330,17 @@ export default function MapScreen() {
             </View>
           </View>
         </View>
-        <View style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: condCfg.color, marginTop: 3, flexShrink: 0 }} />
+        <ReportContentMenu
+          reportId={reporte.id}
+          compact={compact}
+          onModerated={() => {
+            setReportes((actuales) => actuales.filter((item) => item.id !== reporte.id));
+            if (selectedReport?.id === reporte.id) {
+              setSelectedReport(null);
+              setSidebarView('list');
+            }
+          }}
+        />
       </TouchableOpacity>
     );
   };
@@ -622,8 +662,17 @@ export default function MapScreen() {
             reportes={(mostrarAsociaciones || mostrarAliados) ? [] : reportesFiltrados}
             asociaciones={mostrarAsociaciones ? asociaciones : []}
             aliados={mostrarAliados ? aliados : []}
-            selectedReportId={selectedReport?.id ?? null}
+            selectedReportId={selectedReport?.id ?? highlightedReportId}
+            showReportMenuInPopup={isMobile}
             onSelectReport={handleSelectReport}
+            onHighlightReport={(reporte) => setHighlightedReportId(reporte.id)}
+            onReportModerated={(reporteId) => {
+              setReportes((actuales) => actuales.filter((item) => item.id !== reporteId));
+              if (selectedReport?.id === reporteId) {
+                setSelectedReport(null);
+                setSidebarView('list');
+              }
+            }}
             onSelectAsociacion={handleSelectAsociacion}
             onMapClick={handleMapClick}
           />

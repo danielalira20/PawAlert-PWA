@@ -3,6 +3,7 @@ import L from 'leaflet';
 import { useEffect } from 'react';
 import 'leaflet/dist/leaflet.css';
 import { MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
+import { ReportContentMenu } from '../components/reports/ReportContentMenu';
 import { Reporte, getAnimales, condicionMasGrave, especieMasGrave, totalAnimales } from '../types/reporte';
 import { ICON_MULTIPLE } from '../constants/mapIcons';
 
@@ -307,7 +308,10 @@ interface LeafletMapProps {
   width?: string | number;
   height?: string | number;
   fitToMarkers?: boolean;
+  showReportMenuInPopup?: boolean;
   onSelectReport: (reporte: Reporte) => void;
+  onHighlightReport?: (reporte: Reporte) => void;
+  onReportModerated?: (reporteId: string) => void;
   onSelectAsociacion?: (asociacion: AsociacionMapa) => void;
   onMapClick: () => void;
 }
@@ -320,11 +324,14 @@ export default function LeafletMap({
   getMarkerColor,
   selectedReportId,
   onSelectReport,
+  onHighlightReport,
+  onReportModerated,
   onSelectAsociacion,
   onMapClick,
   width,
   height,
   fitToMarkers = false,
+  showReportMenuInPopup = true,
 }: LeafletMapProps) {
   const markerPositions = useMemo(
     () =>
@@ -376,8 +383,9 @@ export default function LeafletMap({
         .pp-wrap .leaflet-popup-tip-container { margin-top:-2px !important; }
         .pp-wrap .leaflet-popup-tip { box-shadow:none !important; }
         .pp-accent { height:5px; width:100%; }
-        .pp-body { padding:13px 14px 14px; font-family:'Segoe UI',Arial,sans-serif; }
-        .pp-title { font-size:14px; font-weight:900; color:#1A1A1A; margin-bottom:8px; letter-spacing:-0.3px; }
+        .pp-body { position:relative; padding:13px 14px 14px; font-family:'Segoe UI',Arial,sans-serif; }
+        .pp-title { padding-right:32px; font-size:14px; font-weight:900; color:#1A1A1A; margin-bottom:8px; letter-spacing:-0.3px; }
+        .pp-menu { position:absolute; top:9px; right:10px; z-index:10; }
         .pp-badges { display:flex; gap:5px; flex-wrap:wrap; margin-bottom:9px; }
         .pp-badge { padding:3px 9px; border-radius:20px; font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:0.4px; }
         .pp-loc { display:flex; align-items:center; gap:5px; font-size:10px; color:#9B8B7A; margin-bottom:11px; padding:5px 8px; background:#FAFAFA; border-radius:8px; }
@@ -416,14 +424,23 @@ export default function LeafletMap({
                 key={reporte.id}
                 position={[reporte.latitud, reporte.longitud]}
                 icon={createPin(condicionValor, tipo, selectedReportId === reporte.id, total)}
-                eventHandlers={{ click: () => {} }}
+                eventHandlers={{ click: () => onHighlightReport?.(reporte) }}
               >
                 <Popup closeButton={false} className="pp-wrap" offset={[0, -6]}>
                   {/* Barra de acento del color de condición */}
                   <div className="pp-accent" style={{ background: cond.border }} />
                   <div className="pp-body">
+                    {showReportMenuInPopup && (
+                      <div className="pp-menu" onClick={(event) => event.stopPropagation()}>
+                        <ReportContentMenu
+                          reportId={reporte.id}
+                          compact
+                          onModerated={() => onReportModerated?.(reporte.id)}
+                        />
+                      </div>
+                    )}
                     {/* Título */}
-                    <div className="pp-title">
+                    <div className="pp-title" style={{ paddingRight: showReportMenuInPopup ? 32 : 0 }}>
                       {tipoLabel}{tamanioLabel ? ` · ${tamanioLabel}` : ''}{total > 1 ? ` · ${total} animales` : ''}
                     </div>
                     {/* Badges de condición y estado */}

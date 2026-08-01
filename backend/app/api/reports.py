@@ -1,7 +1,7 @@
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Header
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
-from app.models.report import ReportResponse, AnimalInput, ReportListItem, HitoRequest, RechazarReporteRequest, CancelarReporteRequest
+from app.models.report import ReportResponse, AnimalInput, ReportListItem, HitoRequest, RechazarReporteRequest, CancelarReporteRequest, DenunciarReporteRequest
 from app.models.red_aliados import AceptarSugerenciaRequest, AceptarSugerenciaVeterinariaResponse
 from app.services.report_service import crear_reporte, obtener_reportes, cambiar_estado_reporte, obtener_reportes_usuario
 from app.services import coverage_service
@@ -1079,6 +1079,109 @@ async def rechazar_reporte(reporte_id: str, body: RechazarReporteRequest, author
             "estado": "sin_cobertura"
         }
 ### FIN: postrechazo de reportes
+
+MOTIVOS_DENUNCIA = {
+    "informacion_falsa",
+    "foto_internet",
+    "reporte_repetido",
+    "ubicacion_incorrecta",
+    "animal_no_esta",
+    "contenido_inapropiado",
+    "posible_fraude",
+    "otro",
+}
+
+
+@router.post("/{reporte_id}/denuncias", status_code=201)
+async def denunciar_reporte(
+    reporte_id: str,
+    body: DenunciarReporteRequest,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    if body.motivo not in MOTIVOS_DENUNCIA:
+        raise HTTPException(status_code=422, detail="Selecciona un motivo válido")
+
+    consulta = supabase_admin.table("reportes").select(
+        "id, usuario_id, estado_moderacion"
+    ).eq("id", reporte_id).limit(1).execute()
+    if not consulta.data:
+        raise HTTPException(status_code=404, detail="Reporte no encontrado")
+    reporte = consulta.data[0]
+    if reporte.get("usuario_id") == usuario["id"]:
+        raise HTTPException(status_code=403, detail="No puedes reportar tu propia publicación")
+    if reporte.get("estado_moderacion") in ("en_revision", "rechazado"):
+        raise HTTPException(status_code=409, detail="Este reporte ya no está disponible para denuncias")
+
+    try:
+        resultado = supabase_admin.rpc(
+            "denunciar_reporte_moderacion",
+            {
+                "p_reporte_id": reporte_id,
+                "p_usuario_id": usuario["id"],
+                "p_motivo": body.motivo,
+                "p_detalle": body.detalle,
+                "p_umbral": 3,
+            },
+        ).execute()
+    except Exception as exc:
+        if "denuncia_duplicada" in str(exc):
+            raise HTTPException(status_code=409, detail="Ya reportaste esta publicación") from exc
+        print(f"[ERROR] No se pudo registrar denuncia para reporte {reporte_id}: {exc}")
+        raise HTTPException(status_code=500, detail="No se pudo registrar la denuncia") from exc
+
+    fila = (resultado.data or [{}])[0]
+    from app.services.report_service import registrar_historial
+    registrar_historial(
+        reporte_id=reporte_id,
+        # La identidad de quien denuncia es confidencial. Solo queda en la
+        # tabla privada que aplica la unicidad por usuario.
+        usuario_id=None,
+        tipo_evento="denuncia_comunitaria",
+        descripcion="Un usuario reportó la publicación para revisión",
+        datos_extra={"motivo": body.motivo},
+    )
+    return {
+        "mensaje": "Gracias por avisarnos. Revisaremos esta publicación.",
+        "total_denuncias": fila.get("total_denuncias"),
+        "estado_moderacion": fila.get("estado_moderacion"),
+    }
+
+
+@router.get("/{reporte_id}/mi-denuncia", status_code=200)
+async def obtener_mi_denuncia(reporte_id: str, authorization: str = Header(None)):
+    usuario = _obtener_usuario_autenticado(authorization)
+    resultado = supabase_admin.table("reporte_denuncias").select(
+        "id, motivo, created_at"
+    ).eq("reporte_id", reporte_id).eq("usuario_id", usuario["id"]).limit(1).execute()
+    return {"reportado": bool(resultado.data), "denuncia": (resultado.data or [None])[0]}
+
+
+@router.get("/me/notificaciones-moderacion", status_code=200)
+async def obtener_notificaciones_moderacion(authorization: str = Header(None)):
+    usuario = _obtener_usuario_autenticado(authorization)
+    resultado = supabase_admin.table("notificaciones_moderacion").select(
+        "id, reporte_id, tipo, mensaje, leida, created_at"
+    ).eq("usuario_id", usuario["id"]).order("created_at", desc=True).limit(50).execute()
+    return resultado.data or []
+
+
+@router.patch("/me/notificaciones-moderacion/{notificacion_id}/leer", status_code=200)
+async def marcar_notificacion_moderacion_leida(
+    notificacion_id: str,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    resultado = (
+        supabase_admin.table("notificaciones_moderacion")
+        .update({"leida": True})
+        .eq("id", notificacion_id)
+        .eq("usuario_id", usuario["id"])
+        .execute()
+    )
+    if not resultado.data:
+        raise HTTPException(status_code=404, detail="Notificación no encontrada")
+    return {"mensaje": "Notificación marcada como leída"}
 
 @router.get("", response_model=list[ReportListItem], status_code=200)
 async def get_reports():

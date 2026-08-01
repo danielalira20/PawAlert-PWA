@@ -6,7 +6,39 @@ export type ToastType = 'error' | 'success' | 'warning' | 'info';
 interface ToastState {
   type: ToastType;
   title: string;
-  message?: string;
+  message?: unknown;
+}
+
+function formatToastMessage(message: unknown): string {
+  if (typeof message === 'string') return message;
+  if (typeof message === 'number' || typeof message === 'boolean') return String(message);
+
+  if (Array.isArray(message)) {
+    return message
+      .map((item) => {
+        if (!item || typeof item !== 'object') return String(item);
+
+        const validationError = item as { loc?: unknown; msg?: unknown };
+        const field = Array.isArray(validationError.loc)
+          ? validationError.loc.filter((part) => part !== 'body').join('.')
+          : '';
+        const detail = typeof validationError.msg === 'string'
+          ? validationError.msg.replace(/^Value error,\s*/i, '')
+          : 'Dato inválido';
+
+        return field ? `${field}: ${detail}` : detail;
+      })
+      .join('\n');
+  }
+
+  if (message && typeof message === 'object') {
+    const apiError = message as { detail?: unknown; msg?: unknown; message?: unknown };
+    if (apiError.detail !== undefined) return formatToastMessage(apiError.detail);
+    if (apiError.msg !== undefined) return formatToastMessage(apiError.msg);
+    if (apiError.message !== undefined) return formatToastMessage(apiError.message);
+  }
+
+  return '';
 }
 
 const COLORS: Record<ToastType, string> = {
@@ -30,6 +62,7 @@ interface ToastProps {
 
 export function Toast({ toast, translateY }: ToastProps) {
   if (!toast) return null;
+  const message = formatToastMessage(toast.message);
 
   return (
     <Animated.View
@@ -41,7 +74,7 @@ export function Toast({ toast, translateY }: ToastProps) {
       <Text style={styles.icon}>{ICONS[toast.type]}</Text>
       <View style={styles.content}>
         <Text style={styles.title}>{toast.title}</Text>
-        {toast.message ? <Text style={styles.message}>{toast.message}</Text> : null}
+        {message ? <Text style={styles.message}>{message}</Text> : null}
       </View>
     </Animated.View>
   );
