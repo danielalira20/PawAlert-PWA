@@ -1,7 +1,7 @@
 import uuid
 from fastapi import UploadFile, HTTPException
 from app.db.supabase import supabase
-from app.services.storage_service import subir_bytes
+from app.services.storage_service import subir_bytes, eliminar_por_url
 from app.services.assignment_service import asignar_asociacion, obtener_contactos_emergencia
 from datetime import datetime, timezone, timedelta
 from app.services import matching
@@ -290,15 +290,28 @@ async def crear_reporte(
             animal_result = supabase.table("animal").insert(animal_data).execute()
             animal_ids.append(animal_result.data[0]["id"])
 
+        condiciones_ia_por_animal: dict[str, list[str]] = {}
+        fotos_urls_subidas: list[str] = []
         if fotos:
             ordenes = json.loads(fotos_ordenes) if fotos_ordenes and fotos_ordenes.strip() else []
             indices = json.loads(fotos_animal_index) if fotos_animal_index and fotos_animal_index.strip() else []
             for i, foto in enumerate(fotos):
                 if foto and foto.filename:
                     from app.services.report_moderation_service import calcular_phash, registrar_phash_reporte
+                    from app.services.report_photo_vision_service import mensaje_rechazo, verificar_foto_animal
 
                     animal_idx = indices[i] if i < len(indices) else 0
+                    animal_id_actual = animal_ids[animal_idx]
                     contenido_foto = await foto.read()
+
+                    resultado_vision = verificar_foto_animal(contenido_foto, foto.content_type)
+
+                    if resultado_vision.get("es_animal_real") is False:
+                        raise HTTPException(
+                            status_code=422,
+                            detail=mensaje_rechazo(resultado_vision.get("categoria_rechazo")),
+                        )
+
                     phash = calcular_phash(contenido_foto)
                     extension = foto.filename.rsplit(".", 1)[-1]
                     foto_url = await subir_bytes(
@@ -307,18 +320,63 @@ async def crear_reporte(
                         content_type=foto.content_type or "application/octet-stream",
                         extension=extension,
                     )
-                    foto_insertada = supabase.table("animal_fotos").insert({
-                        "animal_id": animal_ids[animal_idx],
+                    fotos_urls_subidas.append(foto_url)
+
+                    foto_data = {
+                        "animal_id": animal_id_actual,
                         "foto_url": foto_url,
                         "orden": ordenes[i] if i < len(ordenes) else i + 1,
-                    }).execute()
+                    }
+                    es_error_tecnico = resultado_vision.get("estado") == "error_tecnico"
+                    if es_error_tecnico:
+                        foto_data.update({
+                            "analisis_ia_estado": "error_tecnico",
+                            "analisis_ia_error": resultado_vision.get("detalle"),
+                            "requiere_revision": True,
+                        })
+                    else:
+                        condicion_ia = resultado_vision.get("condicion_estimada")
+                        foto_data.update({
+                            "analisis_ia_modelo": resultado_vision.get("modelo"),
+                            "analisis_ia_confianza": resultado_vision.get("confianza"),
+                            "analisis_ia_condicion": condicion_ia,
+                            "analisis_ia_procesado_at": datetime.now(timezone.utc).isoformat(),
+                            "analisis_ia_estado": "completado",
+                        })
+                        if condicion_ia:
+                            condiciones_ia_por_animal.setdefault(animal_id_actual, []).append(condicion_ia)
+
+                    foto_insertada = supabase.table("animal_fotos").insert(foto_data).execute()
+
+                    if es_error_tecnico:
+                        registrar_historial(
+                            reporte_id=reporte_id,
+                            usuario_id=usuario_id,
+                            tipo_evento="foto_revision_pendiente",
+                            descripcion="El análisis automático de una fotografía falló técnicamente; requiere revisión manual.",
+                        )
+
                     registrar_phash_reporte(
                         reporte_id=reporte_id,
                         animal_foto_id=(foto_insertada.data or [{}])[0].get("id"),
                         phash=phash,
                     )
+
+            for animal_id, condiciones in condiciones_ia_por_animal.items():
+                peor = max(condiciones, key=lambda c: CONDICION_SEVERIDAD.get(c, 0))
+                supabase.table("animal").update({"condicion_estimada_ia": peor}).eq("id", animal_id).execute()
+    except HTTPException:
+        for url in fotos_urls_subidas:
+            eliminar_por_url(url)
+        for animal_id in animal_ids:
+            supabase.table("animal_fotos").delete().eq("animal_id", animal_id).execute()
+        supabase.table("animal").delete().eq("reporte_id", reporte_id).execute()
+        supabase.table("reportes").delete().eq("id", reporte_id).execute()
+        raise
     except Exception as e:
         print(f"[ERROR] Falló la creación de animales/fotos, limpiando reporte {reporte_id}: {e}")
+        for url in fotos_urls_subidas:
+            eliminar_por_url(url)
         for animal_id in animal_ids:
             supabase.table("animal_fotos").delete().eq("animal_id", animal_id).execute()
         supabase.table("animal").delete().eq("reporte_id", reporte_id).execute()

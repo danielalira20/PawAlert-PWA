@@ -36,3 +36,16 @@ async def subir_foto(foto: UploadFile, carpeta: str = "reportes") -> str:
         content_type=foto.content_type or "application/octet-stream",
         extension=extension,
     )
+
+def eliminar_por_url(url: str) -> None:
+    """Borra un objeto de Storage a partir de su URL pública. Limpieza de
+    mejor esfuerzo para rollback: si el objeto ya no existe o el borrado
+    falla, no debe tumbar el flujo que la está llamando."""
+    marcador = f"/{settings.supabase_bucket}/"
+    if marcador not in url:
+        return
+    ruta = url.split(marcador, 1)[1]
+    try:
+        supabase_admin.storage.from_(settings.supabase_bucket).remove([ruta])
+    except Exception:
+        pass

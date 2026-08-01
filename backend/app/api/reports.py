@@ -273,6 +273,30 @@ async def create_report(
 
     return resultado
 
+
+### Endpoint: pre-check de foto con Gemini Vision antes de armar el reporte
+@router.post("/validar-foto", status_code=200)
+async def validar_foto(foto: UploadFile = File(...)):
+    """Verifica que la foto muestre un animal real antes de que el usuario
+    complete el resto del formulario. No toca Storage ni BD."""
+    if foto.content_type not in ["image/jpeg", "image/png", "image/jpg", "image/webp"]:
+        raise HTTPException(status_code=422, detail="La foto debe ser JPG, PNG o WEBP")
+
+    from app.services.report_photo_vision_service import mensaje_rechazo, verificar_foto_animal
+
+    contenido = await foto.read()
+    resultado = verificar_foto_animal(contenido, foto.content_type)
+
+    if resultado.get("estado") == "error_tecnico":
+        return {"valido": True, "mensaje": ""}
+
+    if resultado.get("es_animal_real") is False:
+        return {"valido": False, "mensaje": mensaje_rechazo(resultado.get("categoria_rechazo"))}
+
+    return {"valido": True, "mensaje": ""}
+#### FIN endpoint: pre-check de foto
+
+
 ### Endpoint para que el representante pueda seleccionar STAFF
 @router.post("/{reporte_id}/asignar-staff", status_code=200)
 async def asignar_staff(reporte_id: str, body: dict, authorization: str = Header(None)):
