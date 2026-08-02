@@ -545,7 +545,8 @@ def obtener_verificacion_postulacion(
     perfil = supabase_admin.table("perfil_casa_temporal").select(
         "latitud, longitud, calle, numero, colonia, municipio, "
         "estado_ubicacion, referencia, identificacion_url, "
-        "video_recorrido_url, horarios_visita"
+        "video_recorrido_url, foto_accesos_url, foto_bardas_url, "
+        "foto_balcones_url, foto_espacio_url, horarios_visita"
     ).eq("id", verificacion["perfil_casa_temporal_id"]).limit(1).execute()
     verificacion["hogar"] = perfil.data[0] if perfil.data else None
 
@@ -1632,7 +1633,8 @@ def obtener_propuesta_verificacion_hogar(
     if detalle["estado"] in ("aceptada", "completada"):
         perfil_campos += (
             ", latitud, longitud, calle, numero, referencia, "
-            "identificacion_url, video_recorrido_url"
+            "identificacion_url, video_recorrido_url, foto_accesos_url, "
+            "foto_bardas_url, foto_balcones_url, foto_espacio_url"
         )
     perfil = supabase_admin.table("perfil_casa_temporal").select(
         perfil_campos

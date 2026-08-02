@@ -165,6 +165,10 @@ type VerificationData = {
     referencia?: string;
     identificacion_url?: string;
     video_recorrido_url?: string;
+    foto_accesos_url?: string;
+    foto_bardas_url?: string;
+    foto_balcones_url?: string;
+    foto_espacio_url?: string;
     horarios_visita?: Array<{ dia?: string; hora?: string }>;
   };
 };
@@ -324,6 +328,7 @@ function buildApplicationSummary({
   const evidenceLabels = [
     evidencias.identificacion_recibida ? 'identificación' : '',
     evidencias.video_recibido ? 'video del hogar' : '',
+    hogar.foto_accesos_url || hogar.foto_bardas_url || hogar.foto_balcones_url || hogar.foto_espacio_url ? 'fotos de seguridad' : '',
     hogar.latitud != null && hogar.longitud != null ? 'ubicación declarada' : '',
   ].filter(Boolean);
 
@@ -1148,6 +1153,8 @@ export function ExternalVerificationDetail({
             <SectionCard icon="folder-open-outline" title="Evidencias recibidas">
               <InfoRow label="Identificación" value={evidencias.identificacion_recibida} />
               <InfoRow label="Video del hogar" value={evidencias.video_recibido} />
+              <InfoRow label="Fotos de seguridad" value={!!(hogar.foto_accesos_url || hogar.foto_bardas_url || hogar.foto_balcones_url || hogar.foto_espacio_url)} />
+              
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                 {!!hogar.identificacion_url && (
                   <TouchableOpacity
@@ -1163,6 +1170,38 @@ export function ExternalVerificationDetail({
                     style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: COLORS.white }}
                   >
                     <Text style={{ color: COLORS.primary, fontSize: 12, fontWeight: '700' }}>Ver recorrido</Text>
+                  </TouchableOpacity>
+                )}
+                {!!hogar.foto_accesos_url && (
+                  <TouchableOpacity
+                    onPress={() => Linking.openURL(hogar.foto_accesos_url!)}
+                    style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: COLORS.white }}
+                  >
+                    <Text style={{ color: COLORS.primary, fontSize: 12, fontWeight: '700' }}>Foto accesos</Text>
+                  </TouchableOpacity>
+                )}
+                {!!hogar.foto_bardas_url && (
+                  <TouchableOpacity
+                    onPress={() => Linking.openURL(hogar.foto_bardas_url!)}
+                    style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: COLORS.white }}
+                  >
+                    <Text style={{ color: COLORS.primary, fontSize: 12, fontWeight: '700' }}>Foto bardas</Text>
+                  </TouchableOpacity>
+                )}
+                {!!hogar.foto_balcones_url && (
+                  <TouchableOpacity
+                    onPress={() => Linking.openURL(hogar.foto_balcones_url!)}
+                    style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: COLORS.white }}
+                  >
+                    <Text style={{ color: COLORS.primary, fontSize: 12, fontWeight: '700' }}>Foto balcones/fachada</Text>
+                  </TouchableOpacity>
+                )}
+                {!!hogar.foto_espacio_url && (
+                  <TouchableOpacity
+                    onPress={() => Linking.openURL(hogar.foto_espacio_url!)}
+                    style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: COLORS.white }}
+                  >
+                    <Text style={{ color: COLORS.primary, fontSize: 12, fontWeight: '700' }}>Foto espacio</Text>
                   </TouchableOpacity>
                 )}
               </View>
