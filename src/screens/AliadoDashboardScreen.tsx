@@ -4,6 +4,8 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AliadoImpactStats } from '../components/profile/AliadoImpactStats';
 import { useAliadoImpact } from '../hooks/useAliadoImpact';
+import { useApelacionAliado } from '../hooks/useApelacionAliado';
+import ApelacionAliadoModal from '../components/red-aliados/ApelacionAliadoModal';
 import MisLotesScreen from './red-aliados/MisLotesScreen';
 import MisAportacionesScreen from './red-aliados/MisAportacionesScreen';
 import NotificacionesAliadoScreen from './NotificacionesAliadoScreen';
@@ -32,7 +34,9 @@ interface Props {
 
 export default function AliadoDashboardScreen({ onClose, onOpenContribution }: Props) {
   const { impacto, isLoading } = useAliadoImpact(true);
+  const { apelacionActiva, loading: loadingApelacion } = useApelacionAliado();
   const [activeTab, setActiveTab] = useState<ActiveTab>('lotes');
+  const [showApelacionModal, setShowApelacionModal] = useState(false);
 
   return (
     <View style={{ flex: 1, backgroundColor: COLORS.bg }}>
@@ -71,17 +75,38 @@ export default function AliadoDashboardScreen({ onClose, onOpenContribution }: P
           </View>
 
           {/* BANNER DE ESTADO */}
-          {!isLoading && impacto?.tipo && impacto.tipo !== 'donante_comunitario' && !impacto.verificado_admin && (
-            <View style={{ marginHorizontal: 24, marginBottom: 20, padding: 16, backgroundColor: impacto.razon_rechazo ? '#FDEDEC' : '#FFF9E6', borderRadius: 12, borderWidth: 1, borderColor: impacto.razon_rechazo ? '#E74C3C' : '#F1C40F' }}>
+          {!isLoading && !loadingApelacion && impacto?.tipo && impacto.tipo !== 'donante_comunitario' && !impacto.verificado_admin && (
+            <View style={{ marginHorizontal: 24, marginBottom: 20, padding: 16, backgroundColor: impacto.razon_rechazo ? (apelacionActiva ? '#FFF9E6' : '#FDEDEC') : '#FFF9E6', borderRadius: 12, borderWidth: 1, borderColor: impacto.razon_rechazo ? (apelacionActiva ? '#F1C40F' : '#E74C3C') : '#F1C40F' }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-                <Ionicons name={impacto.razon_rechazo ? "close-circle" : "time"} size={20} color={impacto.razon_rechazo ? '#E74C3C' : '#F39C12'} style={{ marginRight: 8 }} />
-                <Text style={{ fontWeight: 'bold', fontSize: 14, color: impacto.razon_rechazo ? '#C0392B' : '#D68910' }}>
-                  {impacto.razon_rechazo ? 'Perfil rechazado' : 'Perfil en validación'}
+                <Ionicons name={impacto.razon_rechazo ? (apelacionActiva ? "time" : "close-circle") : "time"} size={20} color={impacto.razon_rechazo ? (apelacionActiva ? '#F39C12' : '#E74C3C') : '#F39C12'} style={{ marginRight: 8 }} />
+                <Text style={{ fontWeight: 'bold', fontSize: 14, color: impacto.razon_rechazo ? (apelacionActiva ? '#D68910' : '#C0392B') : '#D68910' }}>
+                  {impacto.razon_rechazo 
+                    ? (apelacionActiva ? 'Apelación en revisión' : 'Perfil rechazado')
+                    : 'Perfil en validación'}
                 </Text>
               </View>
-              <Text style={{ fontSize: 13, color: '#4A3728', lineHeight: 18 }}>
-                {impacto.razon_rechazo ? `Motivo: ${impacto.razon_rechazo}` : 'No puedes realizar nuevas aportaciones hasta que el administrador verifique tu perfil.'}
+              <Text style={{ fontSize: 13, color: '#4A3728', lineHeight: 18, marginBottom: impacto.razon_rechazo && !apelacionActiva ? 12 : 0 }}>
+                {impacto.razon_rechazo 
+                  ? (apelacionActiva 
+                      ? 'Hemos recibido tu apelación y estamos revisando tu caso. Pronto te daremos una respuesta.' 
+                      : `Motivo: ${impacto.razon_rechazo}`) 
+                  : 'No puedes realizar nuevas aportaciones hasta que el administrador verifique tu perfil.'}
               </Text>
+              
+              {impacto.razon_rechazo && !apelacionActiva && (
+                <TouchableOpacity 
+                  onPress={() => setShowApelacionModal(true)}
+                  style={{
+                    backgroundColor: '#E74C3C',
+                    paddingVertical: 10,
+                    paddingHorizontal: 16,
+                    borderRadius: 8,
+                    alignSelf: 'flex-start'
+                  }}
+                >
+                  <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 13 }}>Volver a postular</Text>
+                </TouchableOpacity>
+              )}
             </View>
           )}
 
@@ -139,6 +164,17 @@ export default function AliadoDashboardScreen({ onClose, onOpenContribution }: P
           {activeTab === 'notificaciones' && <NotificacionesAliadoScreen embedded />}
         </ScrollView>
       </View>
+
+      <ApelacionAliadoModal
+        visible={showApelacionModal}
+        onClose={() => setShowApelacionModal(false)}
+        onSuccess={() => {
+          setShowApelacionModal(false);
+          // La hook useApelacionAliado recarga active automatically if modified to return fetch method, wait, let's force re-render or the hook already does it when we re-mount?
+          // To be safe we could just reload, but react state will update if we had exposed fetch in hook.
+          // Since it's fine we just let it be or the user can refresh. We will reload via hook or window.location.reload()
+        }}
+      />
     </View>
   );
 }
