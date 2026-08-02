@@ -177,6 +177,62 @@ async def resolver_apelacion(apelacion_id: str, body: RespuestaApelacionBody, au
     
 ### FIN: admin rechaza o acepta apelacion 
 
+### INICIO: apelaciones aliados
+@router.get("/apelaciones-aliados", status_code=200)
+async def listar_apelaciones_aliados(authorization: str = Header(None)):
+    """Lista todas las apelaciones pendientes de aliados."""
+    _verificar_admin(authorization)
+
+    resultado = supabase.table("apelaciones_aliados").select(
+        "id, mensaje, documentos_urls, created_at, "
+        "perfil_apoyo(id, datos_extra, tipo, usuario_id, "
+        "usuarios(nombre, apellido_paterno, email))"
+    ).eq("estado", "pendiente").order("created_at").execute()
+
+    return resultado.data
+
+@router.patch("/apelaciones-aliados/{apelacion_id}", status_code=200)
+async def resolver_apelacion_aliado(apelacion_id: str, body: RespuestaApelacionBody, authorization: str = Header(None)):
+    """El admin aprueba o rechaza una apelación de un aliado."""
+    _verificar_admin(authorization)
+
+    if body.decision not in ["aprobar", "rechazar"]:
+        raise HTTPException(status_code=422, detail="La decisión debe ser 'aprobar' o 'rechazar'")
+
+    apelacion = supabase.table("apelaciones_aliados").select(
+        "id, perfil_apoyo_id, estado"
+    ).eq("id", apelacion_id).execute()
+
+    if not apelacion.data:
+        raise HTTPException(status_code=404, detail="Apelación de aliado no encontrada")
+
+    if apelacion.data[0]["estado"] != "pendiente":
+        raise HTTPException(status_code=400, detail="Esta apelación ya fue resuelta")
+
+    perfil_apoyo_id = apelacion.data[0]["perfil_apoyo_id"]
+
+    if body.decision == "aprobar":
+        supabase.table("perfil_apoyo").update({
+            "verificado_admin": True,
+            "razon_rechazo": None,
+        }).eq("id", perfil_apoyo_id).execute()
+
+        supabase.table("apelaciones_aliados").update({
+            "estado": "aprobada",
+            "respuesta_admin": body.respuesta,
+        }).eq("id", apelacion_id).execute()
+
+        return {"mensaje": "Apelación aprobada. El aliado ha sido verificado."}
+
+    else:
+        supabase.table("apelaciones_aliados").update({
+            "estado": "rechazada",
+            "respuesta_admin": body.respuesta,
+        }).eq("id", apelacion_id).execute()
+
+        return {"mensaje": "Apelación rechazada."}
+### FIN: apelaciones aliados
+
 @router.get("/asociaciones/{asociacion_id}", status_code=200)
 async def obtener_detalle_asociacion(asociacion_id: str, authorization: str = Header(None)):
     """Detalle completo de una asociación para que el admin pueda revisar

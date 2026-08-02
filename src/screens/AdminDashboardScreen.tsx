@@ -19,6 +19,7 @@ import { useAuth } from '../context/AuthContext';
 import { API_URL } from '../constants/api';
 import { useAdminAssociations } from '../hooks/useAdminAssociations';
 import { useAdminAliados, type PerfilAliadoAdmin } from '../hooks/useAdminAliados';
+import { useAdminApelacionesAliados, type ApelacionAliado } from '../hooks/useAdminApelacionesAliados';
 import { AssocListCard } from '../components/admin-dashboard/AssocListCard';
 import { AssocAvatar } from '../components/admin-dashboard/AssocAvatar';
 import { PendingBadge } from '../components/admin-dashboard/PendingBadge';
@@ -39,7 +40,7 @@ interface Props {
   onClose?: () => void;
 }
 
-type Tab = 'solicitudes' | 'apelaciones' | 'aliados' | 'moderacion';
+type Tab = 'solicitudes' | 'apelaciones' | 'apelaciones-aliados' | 'aliados' | 'moderacion';
 type DetailScreenState = 'list' | 'detail';
 
 const DESKTOP_BREAKPOINT = 900;
@@ -210,6 +211,44 @@ export default function AdminDashboardScreen({ onClose }: Props) {
 
   // ── Aliados (FRONT06): lista ↔ detalle ──────
   const { pendientes: aliadosPendientes, isLoading: isLoadingAliados, cargarPendientes: cargarAliados, resolverPerfil } = useAdminAliados(showToast);
+  
+  // ── Apelaciones Aliados ──────────────────────────────────────
+  const { apelaciones: apelacionesAliados, loading: loadingApelacionesAliados, fetchApelaciones: cargarApelacionesAliados, resolverApelacion: resolverApelacionAliado } = useAdminApelacionesAliados();
+  const [apelacionAliadoScreen, setApelacionAliadoScreen] = useState<DetailScreenState>('list');
+  const [apelacionAliadoSeleccionada, setApelacionAliadoSeleccionada] = useState<ApelacionAliado | null>(null);
+  const [respuestaApelacionAliado, setRespuestaApelacionAliado] = useState('');
+  const [isResolviendoApelacionAliado, setIsResolviendoApelacionAliado] = useState(false);
+
+  useEffect(() => {
+    if (tab === 'apelaciones-aliados') cargarApelacionesAliados();
+  }, [tab, cargarApelacionesAliados]);
+
+  const abrirApelacionAliado = (a: ApelacionAliado) => {
+    setApelacionAliadoSeleccionada(a);
+    setApelacionAliadoScreen('detail');
+    setRespuestaApelacionAliado('');
+  };
+
+  const volverAApelacionesAliados = () => {
+    setApelacionAliadoScreen('list');
+    setApelacionAliadoSeleccionada(null);
+    setRespuestaApelacionAliado('');
+  };
+
+  const handleResolverApelacionAliado = async (decision: 'aprobar' | 'rechazar') => {
+    if (!apelacionAliadoSeleccionada) return;
+    setIsResolviendoApelacionAliado(true);
+    try {
+      await resolverApelacionAliado(apelacionAliadoSeleccionada.id, decision, respuestaApelacionAliado);
+      showToast({ type: 'success', title: 'Completado', message: decision === 'aprobar' ? 'Aliado verificado.' : 'Apelación rechazada.' });
+      volverAApelacionesAliados();
+    } catch (err) {
+      showToast({ type: 'error', title: 'Error', message: 'No se pudo procesar la apelación.' });
+    } finally {
+      setIsResolviendoApelacionAliado(false);
+    }
+  };
+
   const [aliadosScreen, setAliadosScreen] = useState<DetailScreenState>('list');
   const [aliadoSeleccionado, setAliadoSeleccionado] = useState<PerfilAliadoAdmin | null>(null);
   const [razonRechazoAliado, setRazonRechazoAliado] = useState('');
@@ -277,6 +316,23 @@ export default function AdminDashboardScreen({ onClose }: Props) {
           {apelaciones.length > 0 && (
             <View style={styles.tabBadge}>
               <Text style={styles.tabBadgeText}>{apelaciones.length}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={() => {
+            setTab('apelaciones-aliados');
+            setApelacionAliadoScreen('list');
+          }}
+          style={[styles.tab, tab === 'apelaciones-aliados' && styles.tabActiva]}
+        >
+          <Text style={[styles.tabText, tab === 'apelaciones-aliados' && styles.tabTextActiva]}>
+            Apelaciones Aliados
+          </Text>
+          {apelacionesAliados.length > 0 && (
+            <View style={styles.tabBadge}>
+              <Text style={styles.tabBadgeText}>{apelacionesAliados.length}</Text>
             </View>
           )}
         </TouchableOpacity>
@@ -363,6 +419,44 @@ export default function AdminDashboardScreen({ onClose }: Props) {
               isResolviendo={isResolviendo}
             />
           </DetailShell>
+        )
+      ) : tab === 'apelaciones-aliados' ? (
+        apelacionAliadoScreen === 'list' ? (
+          <ApelacionesAliadosListScreen apelaciones={apelacionesAliados} isLoading={loadingApelacionesAliados} onSelect={abrirApelacionAliado} />        ) : (
+          <View style={{ flex: 1, backgroundColor: Brand.backgroundWarm }}>
+            <View style={{ paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#E4D3B8', backgroundColor: Brand.cardWarm }}>
+              <TouchableOpacity onPress={volverAApelacionesAliados} style={styles.backButton}>
+                <Ionicons name="chevron-back" size={18} color={Brand.textMuted} />
+                <Text style={styles.backText}>Apelación de Aliado</Text>
+              </TouchableOpacity>
+            </View>
+            
+            <AliadoDetailBody 
+              aliado={{
+                id: apelacionAliadoSeleccionada!.perfil_apoyo.id,
+                usuario_id: apelacionAliadoSeleccionada!.perfil_apoyo.usuario_id,
+                tipo: apelacionAliadoSeleccionada!.perfil_apoyo.tipo as any,
+                datos_extra: apelacionAliadoSeleccionada!.perfil_apoyo.datos_extra,
+                categorias: apelacionAliadoSeleccionada!.perfil_apoyo.categorias || [],
+                especies_atendidas: apelacionAliadoSeleccionada!.perfil_apoyo.especies_atendidas || [],
+                niveles_urgencia_atendida: apelacionAliadoSeleccionada!.perfil_apoyo.niveles_urgencia_atendida || [],
+                created_at: apelacionAliadoSeleccionada!.created_at,
+                verificado_admin: false,
+                usuarios: apelacionAliadoSeleccionada!.perfil_apoyo.usuarios
+              }} 
+              extraTop={
+                <ApelacionAliadoContextBlock apelacion={apelacionAliadoSeleccionada!} showToast={showToast} />
+              }
+            />
+
+            <ApelacionResolverBar
+              respuesta={respuestaApelacionAliado}
+              onChangeRespuesta={setRespuestaApelacionAliado}
+              onAprobar={() => handleResolverApelacionAliado('aprobar')}
+              onRechazar={() => handleResolverApelacionAliado('rechazar')}
+              isResolviendo={isResolviendoApelacionAliado}
+            />
+          </View>
         )
       ) : tab === 'aliados' ? (
         aliadosScreen === 'list' ? (
@@ -538,6 +632,7 @@ function ApelacionResolverBar({
   onAprobar: () => void;
   onRechazar: () => void;
   isResolviendo: boolean;
+  hideButtons?: boolean;
 }) {
   return (
     <View style={styles.resolverBarContainer}>
@@ -1118,36 +1213,13 @@ function AliadosListScreen({
 }
 
 
-// ─── Pantalla: Detalle del Aliado ────────────────────────────────
-function AliadoDetailScreen({
-  aliado,
-  onBack,
-  respuesta,
-  onChangeRespuesta,
-  onAprobar,
-  onRechazar,
-  isResolviendo
-}: {
-  aliado: PerfilAliadoAdmin;
-  onBack: () => void;
-  respuesta: string;
-  onChangeRespuesta: (text: string) => void;
-  onAprobar: () => void;
-  onRechazar: () => void;
-  isResolviendo: boolean;
-}) {
-  const datosExtra = aliado.datos_extra || {};
 
+function AliadoDetailBody({ aliado, extraTop }: { aliado: PerfilAliadoAdmin, extraTop?: React.ReactNode }) {
+  const datosExtra = aliado.datos_extra || {};
   return (
-    <View style={{ flex: 1, backgroundColor: Brand.backgroundWarm }}>
-      <View style={{ paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#E4D3B8', backgroundColor: Brand.cardWarm }}>
-        <TouchableOpacity onPress={onBack} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={20} color={Brand.textMuted} />
-          <Text style={styles.backText}>Volver a Aliados</Text>
-        </TouchableOpacity>
-      </View>
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 18, maxWidth: 800, alignSelf: 'center', width: '100%' }}>
+      {extraTop}
         <View style={styles.detailHeaderBlock}>
           <View style={[styles.detailHeaderBlockDesktop, { width: '100%' }]}>
             <View style={{ width: 60, height: 60, borderRadius: 30, backgroundColor: Brand.primary, alignItems: 'center', justifyContent: 'center' }}>
@@ -1280,7 +1352,41 @@ function AliadoDetailScreen({
             </View>
           )}
         </View>
-      </ScrollView>
+      </ScrollView>);
+}
+
+// ─── Pantalla: Detalle del Aliado ────────────────────────────────
+function AliadoDetailScreen({
+  aliado,
+  onBack,
+  respuesta,
+  onChangeRespuesta,
+  onAprobar,
+  onRechazar,
+  isResolviendo
+}: {
+  aliado: PerfilAliadoAdmin;
+  onBack: () => void;
+  respuesta: string;
+  onChangeRespuesta: (text: string) => void;
+  onAprobar: () => void;
+  onRechazar: () => void;
+  isResolviendo: boolean;
+  hideButtons?: boolean;
+}) {
+  const datosExtra = aliado.datos_extra || {};
+
+  return (
+    <View style={{ flex: 1, backgroundColor: Brand.backgroundWarm }}>
+      <View style={{ paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#E4D3B8', backgroundColor: Brand.cardWarm }}>
+        <TouchableOpacity onPress={onBack} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={20} color={Brand.textMuted} />
+          <Text style={styles.backText}>Volver a Aliados</Text>
+        </TouchableOpacity>
+      </View>
+
+      <AliadoDetailBody aliado={aliado} />
+
 
       <View style={styles.resolverBarContainer}>
         <Text style={styles.resolverBarLabel}>Resolución del administrador</Text>
@@ -1309,6 +1415,62 @@ function AliadoDetailScreen({
           />
         </View>
       </View>
+    </View>
+  );
+}
+
+function ApelacionesAliadosListScreen({ apelaciones, isLoading, onSelect }: { apelaciones: ApelacionAliado[], isLoading: boolean, onSelect: (a: ApelacionAliado) => void }) {
+  if (isLoading) {
+    return <View style={styles.centered}><ActivityIndicator size="large" color={Brand.primary} /></View>;
+  }
+  if (apelaciones.length === 0) {
+    return <View style={styles.centered}><Text style={styles.emptyText}>No hay apelaciones de aliados pendientes.</Text></View>;
+  }
+  return (
+    <ScrollView contentContainerStyle={styles.listScrollContent}>
+      <View style={styles.listCentered}>
+        {apelaciones.map((a) => (
+          <View key={a.id} style={styles.apelacionCard}>
+            <Text style={styles.apelacionNombre}>{a.perfil_apoyo.usuarios.nombre} {a.perfil_apoyo.usuarios.apellido_paterno}</Text>
+            <Text style={styles.apelacionMeta}>Tipo: {a.perfil_apoyo.tipo === 'donante_comunitario' ? 'Donante Comunitario' : (a.perfil_apoyo.tipo === 'veterinario' ? 'Veterinario' : 'Empresa/Negocio')}</Text>
+            <Text style={styles.apelacionMeta}>Correo: {a.perfil_apoyo.usuarios.email}</Text>
+            <Text style={styles.apelacionMotivo} numberOfLines={2}>Mensaje: {a.mensaje}</Text>
+            <TouchableOpacity onPress={() => onSelect(a)} style={styles.apelacionRevisarButton}>
+              <Text style={styles.apelacionRevisarText}>Revisar apelación</Text>
+            </TouchableOpacity>
+          </View>
+        ))}
+      </View>
+    </ScrollView>
+  );
+}
+
+function ApelacionAliadoContextBlock({ apelacion, showToast }: { apelacion: ApelacionAliado, showToast: ShowToastFn }) {
+  return (
+    <View style={styles.apelacionContextBlock}>
+      <View style={styles.apelacionContextHeader}>
+        <Ionicons name="alert-circle" size={16} color="#C48A00" />
+        <Text style={styles.apelacionContextTitle}>Este aliado está apelando su rechazo</Text>
+      </View>
+      <Text style={styles.apelacionContextLabel}>Mensaje de la apelación</Text>
+      <Text style={styles.apelacionContextMensaje}>{apelacion.mensaje}</Text>
+      {apelacion.documentos_urls && apelacion.documentos_urls.length > 0 && (
+        <View style={{ marginTop: 10 }}>
+          <Text style={styles.apelacionContextLabel}>Documentos adjuntos</Text>
+          {apelacion.documentos_urls.map((url, idx) =>
+            esImagen(url) ? (
+              <TouchableOpacity key={idx} onPress={() => abrirDocumento(url, showToast)}>
+                <Image source={{ uri: url }} style={styles.apelacionDocImagePreview} resizeMode="cover" />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity key={idx} onPress={() => abrirDocumento(url, showToast)} style={styles.apelacionDocRow}>
+                <Ionicons name="document-attach-outline" size={14} color={Brand.primary} />
+                <Text style={styles.apelacionDocText}>Documento {idx + 1} (PDF) — Ver</Text>
+              </TouchableOpacity>
+            )
+          )}
+        </View>
+      )}
     </View>
   );
 }

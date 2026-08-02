@@ -1,4 +1,5 @@
-from fastapi import APIRouter, UploadFile, File, Header, HTTPException
+from fastapi import APIRouter, UploadFile, File, Header, HTTPException, Form
+from typing import List
 from app.db.supabase import supabase
 from app.services.storage_service import subir_foto
 from app.services.report_service import obtener_id_catalogo
@@ -497,3 +498,64 @@ async def cambiar_estado_oferta_proactiva(
     }).eq("id", oferta_id).execute()
 
     return actualizado.data[0]
+
+@router.get("/apelaciones/activa", status_code=200)
+async def get_apelacion_activa(authorization: str = Header(None)):
+    usuario = _obtener_usuario_autenticado(authorization)
+    
+    perfil = supabase.table("perfil_apoyo").select("id").eq("usuario_id", usuario["id"]).execute()
+    if not perfil.data:
+        return {"activa": False}
+        
+    perfil_apoyo_id = perfil.data[0]["id"]
+    
+    apelacion = supabase.table("apelaciones_aliados").select("id, estado").eq(
+        "perfil_apoyo_id", perfil_apoyo_id
+    ).eq("estado", "pendiente").execute()
+    
+    return {"activa": len(apelacion.data) > 0}
+
+@router.post("/apelaciones", status_code=201)
+async def crear_apelacion_aliado(
+    mensaje: str = Form(...),
+    documentos: List[UploadFile] = File(None),
+    authorization: str = Header(None)
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    
+    perfil = supabase.table("perfil_apoyo").select("id, verificado_admin").eq(
+        "usuario_id", usuario["id"]
+    ).execute()
+    
+    if not perfil.data:
+        raise HTTPException(status_code=404, detail="Perfil de aliado no encontrado")
+        
+    if perfil.data[0].get("verificado_admin"):
+        raise HTTPException(status_code=400, detail="Tu perfil ya está verificado, no necesitas apelar.")
+        
+    perfil_apoyo_id = perfil.data[0]["id"]
+    
+    apelacion_existente = supabase.table("apelaciones_aliados").select("id").eq(
+        "perfil_apoyo_id", perfil_apoyo_id
+    ).eq("estado", "pendiente").execute()
+    
+    if apelacion_existente.data:
+        raise HTTPException(status_code=400, detail="Ya tienes una apelación pendiente de revisión.")
+        
+    documentos_urls = []
+    if documentos:
+        if len(documentos) > 3:
+            raise HTTPException(status_code=400, detail="Máximo 3 documentos permitidos.")
+        for doc in documentos:
+            if doc and doc.filename:
+                doc_url = await subir_foto(doc, carpeta="documentos_aliados/documentos_apelaciones")
+                documentos_urls.append(doc_url)
+                
+    supabase.table("apelaciones_aliados").insert({
+        "perfil_apoyo_id": perfil_apoyo_id,
+        "mensaje": mensaje,
+        "documentos_urls": documentos_urls,
+        "estado": "pendiente"
+    }).execute()
+    
+    return {"status": "success", "message": "Apelación enviada correctamente"}
