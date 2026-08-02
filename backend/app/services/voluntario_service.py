@@ -1065,6 +1065,10 @@ async def crear_perfil_externo(
     datos_json: dict,
     identificacion_file=None,
     video_file=None,
+    foto_accesos=None,
+    foto_bardas=None,
+    foto_balcones=None,
+    foto_espacio=None,
 ) -> dict:
     """Crea o actualiza el perfil externo sin borrar evidencia existente.
 
@@ -1073,38 +1077,37 @@ async def crear_perfil_externo(
     formulario; la identificación siempre debe permanecer.
     """
     existente = supabase_admin.table("perfil_casa_temporal").select(
-        "id, identificacion_url, video_recorrido_url"
+        "id, identificacion_url, video_recorrido_url, foto_accesos_url, foto_bardas_url, foto_balcones_url, foto_espacio_url"
     ).eq("voluntario_id", voluntario_id).limit(1).execute()
     perfil_existente = existente.data[0] if existente.data else None
 
-    identificacion_url = (
-        perfil_existente.get("identificacion_url")
-        if perfil_existente
-        else None
-    )
+    identificacion_url = perfil_existente.get("identificacion_url") if perfil_existente else None
     if identificacion_file:
-        identificacion_url = await storage_service.subir_foto(
-            identificacion_file,
-            "identificaciones",
-        )
+        identificacion_url = await storage_service.subir_foto(identificacion_file, "identificaciones")
     if not identificacion_url:
-        raise HTTPException(
-            status_code=422,
-            detail="Debes subir una identificación",
-        )
+        raise HTTPException(status_code=422, detail="Debes subir una identificación")
 
-    video_url = (
-        perfil_existente.get("video_recorrido_url")
-        if perfil_existente
-        else None
-    )
+    video_url = perfil_existente.get("video_recorrido_url") if perfil_existente else None
     if datos_json.get("eliminarVideo"):
         video_url = None
     if video_file:
-        video_url = await storage_service.subir_foto(
-            video_file,
-            "videos_recorridos",
-        )
+        video_url = await storage_service.subir_foto(video_file, "videos_recorridos")
+
+    foto_accesos_url = perfil_existente.get("foto_accesos_url") if perfil_existente else None
+    if foto_accesos:
+        foto_accesos_url = await storage_service.subir_foto(foto_accesos, "evidencias_hogar")
+
+    foto_bardas_url = perfil_existente.get("foto_bardas_url") if perfil_existente else None
+    if foto_bardas:
+        foto_bardas_url = await storage_service.subir_foto(foto_bardas, "evidencias_hogar")
+
+    foto_balcones_url = perfil_existente.get("foto_balcones_url") if perfil_existente else None
+    if foto_balcones:
+        foto_balcones_url = await storage_service.subir_foto(foto_balcones, "evidencias_hogar")
+
+    foto_espacio_url = perfil_existente.get("foto_espacio_url") if perfil_existente else None
+    if foto_espacio:
+        foto_espacio_url = await storage_service.subir_foto(foto_espacio, "evidencias_hogar")
 
     # 2. Armar el diccionario con exactamente los nombres de las columnas que creaste en SQL
     payload = {
@@ -1154,6 +1157,10 @@ async def crear_perfil_externo(
         
         "identificacion_url": identificacion_url,
         "video_recorrido_url": video_url,
+        "foto_accesos_url": foto_accesos_url,
+        "foto_bardas_url": foto_bardas_url,
+        "foto_balcones_url": foto_balcones_url,
+        "foto_espacio_url": foto_espacio_url,
         "horarios_visita": datos_json.get("horariosVisita", []),
         "consentimiento_evidencia": datos_json.get("consentimiento", False),
         "updated_at": datetime.now(timezone.utc).isoformat(),

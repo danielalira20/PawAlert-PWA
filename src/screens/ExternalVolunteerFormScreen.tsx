@@ -102,6 +102,11 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
   const [checkEspacio, setCheckEspacio] = useState(false);
   const [checkNingunoSeguridad, setCheckNingunoSeguridad] = useState(false);
 
+  const [fotoAccesos, setFotoAccesos] = useState('');
+  const [fotoBardas, setFotoBardas] = useState('');
+  const [fotoBalcones, setFotoBalcones] = useState('');
+  const [fotoEspacio, setFotoEspacio] = useState('');
+
   const [checkAislamiento, setCheckAislamiento] = useState(false);
   const [checkCuarentena, setCheckCuarentena] = useState(false);
   const [checkNoEntregar, setCheckNoEntregar] = useState(false);
@@ -183,10 +188,13 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
             ? String(perfil.tiempo_resguardo_dias)
             : '',
         );
-        setCheckAccesos(!!perfil.chk_accesos_seguros);
         setCheckBardas(!!perfil.chk_bardas);
         setCheckBalcones(!!perfil.chk_balcones);
         setCheckEspacio(!!perfil.chk_espacio);
+        setFotoAccesos(perfil.foto_accesos_url || '');
+        setFotoBardas(perfil.foto_bardas_url || '');
+        setFotoBalcones(perfil.foto_balcones_url || '');
+        setFotoEspacio(perfil.foto_espacio_url || '');
         setCheckNingunoSeguridad(
           !perfil.chk_accesos_seguros
           && !perfil.chk_bardas
@@ -293,8 +301,8 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
 
     if (preferenciaTamanio.length === 0) newErrors.preferenciaTamanio = 'Selecciona al menos uno.';
     
-    if (!tiempoResguardo) newErrors.tiempoResguardo = 'Selecciona el tiempo máximo.';
-    else if (tiempoResguardo === 'Flexible' && !tiempoResguardoDias.trim()) newErrors.tiempoResguardoDias = 'Indica el aproximado de días.';
+    if (!tiempoResguardoDias.trim()) newErrors.tiempoResguardoDias = 'Obligatorio.';
+    else if (isNaN(Number(tiempoResguardoDias))) newErrors.tiempoResguardoDias = 'Debe ser un número válido.';
     
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -306,6 +314,11 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
     if (!checkAccesos && !checkBardas && !checkBalcones && !checkEspacio && !checkNingunoSeguridad) {
       newErrors.seguridadGeneral = 'Debes marcar al menos una opción o indicar que no cumples con ninguna.';
     }
+    
+    if (checkAccesos && !fotoAccesos) newErrors.fotoAccesos = 'Sube una foto de evidencia.';
+    if (checkBardas && !fotoBardas) newErrors.fotoBardas = 'Sube una foto de evidencia.';
+    if (checkBalcones && !fotoBalcones) newErrors.fotoBalcones = 'Sube una foto de evidencia.';
+    if (checkEspacio && !fotoEspacio) newErrors.fotoEspacio = 'Sube una foto de evidencia.';
 
     if (!checkAislamiento && !checkCuarentena && !checkNoEntregar && !checkNingunoCompromiso) {
       newErrors.compromisosGeneral = 'Debes marcar al menos una opción o indicar que no cumples con ninguna.';
@@ -469,6 +482,14 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
   };
 
   // ─── MULTIMEDIA ───
+  const handlePickSecurityPhoto = async (setter: any, errorKey: string) => {
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 });
+    if (!result.canceled) {
+      setter(result.assets[0].uri);
+      setErrors(prev => ({ ...prev, [errorKey]: '' }));
+    }
+  };
+
   const handlePickIdentificacion = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 });
     if (!result.canceled) {
@@ -541,6 +562,21 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
           formData.append('video', { uri: videoUrl, name: `video_${Date.now()}.mp4`, type: 'video/mp4' } as any);
         }
       }
+
+      const addImageToForm = async (uri: string, fieldName: string) => {
+        if (!uri || uri.startsWith('http')) return; // Evita enviar si es URL de BD
+        if (Platform.OS === 'web') {
+          const res = await fetch(uri);
+          formData.append(fieldName, await res.blob(), `${fieldName}_${Date.now()}.jpg`);
+        } else {
+          formData.append(fieldName, { uri, name: `${fieldName}_${Date.now()}.jpg`, type: 'image/jpeg' } as any);
+        }
+      };
+
+      await addImageToForm(fotoAccesos, 'foto_accesos');
+      await addImageToForm(fotoBardas, 'foto_bardas');
+      await addImageToForm(fotoBalcones, 'foto_balcones');
+      await addImageToForm(fotoEspacio, 'foto_espacio');
 
       // 3. Hacer la petición al endpoint que acabamos de crear en FastAPI
       const { data: resultadoGuardado } = await axios.post(`${API_URL}/voluntarios/externo/postular`, formData, {
@@ -777,24 +813,17 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
         </View>
         {errors.preferenciaTamanio && <Text style={styles.errorText}>{errors.preferenciaTamanio}</Text>}
 
-        <Text style={styles.sectionLabel}>Tiempo máximo de resguardo ofrecido</Text>
-        {renderChipOptions(['Una semana', 'Un mes', 'Más de un mes', 'Flexible'], tiempoResguardo, setTiempoResguardo, 'tiempoResguardo')}
-        {tiempoResguardo === 'Flexible' && (
-          <View style={{ marginTop: 8 }}>
-            <Input 
-              label="¿Aproximadamente cuántos días?" 
-              keyboardType="numeric" 
-              value={tiempoResguardoDias} 
-              onChangeText={(v) => {
-                setTiempoResguardoDias(v.replace(/[^0-9]/g, '')); 
-                setErrors(prev=>({...prev, tiempoResguardoDias: ''}));
-              }} 
-              error={errors.tiempoResguardoDias} 
-              placeholder="Ej. 15" 
-            />
-          </View>
-        )}
-        {errors.tiempoResguardo && <Text style={styles.errorText}>{errors.tiempoResguardo}</Text>}
+        <Text style={styles.sectionLabel}>Tiempo máximo de resguardo ofrecido (Días)</Text>
+        <Input 
+          keyboardType="numeric" 
+          value={tiempoResguardoDias} 
+          onChangeText={(v) => {
+            setTiempoResguardoDias(v.replace(/[^0-9]/g, '')); 
+            setErrors(prev=>({...prev, tiempoResguardoDias: ''}));
+          }} 
+          error={errors.tiempoResguardoDias} 
+          placeholder="Ej. 5" 
+        />
       </FormSection>
 
       {showSubmitError && <Text style={styles.submitError}>Revisa los campos en rojo arriba.</Text>}
@@ -802,13 +831,38 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
     </ScrollView>
   );
 
+  const renderSecurityCheckbox = (label: string, recommendation: string, checked: boolean, setChecked: any, photoUrl: string, setPhotoUrl: any, errorKeyPhoto: string) => (
+    <View style={{ marginBottom: 16 }}>
+      <TouchableOpacity onPress={() => handleSeguridadCheck(setChecked, !checked)} style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <Ionicons name={checked ? "checkbox" : "square-outline"} size={24} color={checked ? COLORS.primary : COLORS.textLight} />
+        <Text style={{ marginLeft: 10, color: COLORS.textDark, flex: 1, fontSize: 15, lineHeight: 22 }}>{label}</Text>
+      </TouchableOpacity>
+      {checked && (
+        <View style={{ marginLeft: 34, marginTop: 8, padding: 12, backgroundColor: COLORS.grayLight, borderRadius: 12 }}>
+          <Text style={{ fontSize: 12, color: COLORS.textLight, marginBottom: 8 }}><Ionicons name="information-circle" /> {recommendation}</Text>
+          {photoUrl ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <Image source={{ uri: photoUrl }} style={{ width: 60, height: 60, borderRadius: 8 }} />
+              <TouchableOpacity onPress={() => setPhotoUrl('')}><Text style={{ color: COLORS.danger, fontWeight: '700', fontSize: 12 }}>Eliminar foto</Text></TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity onPress={() => handlePickSecurityPhoto(setPhotoUrl, errorKeyPhoto)} style={{ padding: 10, borderWidth: 1, borderColor: COLORS.primary, borderStyle: 'dashed', borderRadius: 8, alignItems: 'center' }}>
+              <Text style={{ color: COLORS.primary, fontSize: 12, fontWeight: '700' }}><Ionicons name="camera" /> Subir foto de evidencia</Text>
+            </TouchableOpacity>
+          )}
+          {errors[errorKeyPhoto] && <Text style={styles.errorText}>{errors[errorKeyPhoto]}</Text>}
+        </View>
+      )}
+    </View>
+  );
+
   const renderPaso3 = () => (
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
       <FormSection title="Checklist de Seguridad" subtitle="Selecciona las opciones con las que cumples (Obligatorio marcar al menos una):">
-        {renderCheckbox('Puertas, ventanas y accesos seguros para evitar escapes.', checkAccesos, (v: boolean) => handleSeguridadCheck(setCheckAccesos, v))}
-        {renderCheckbox('Bardas o protecciones suficientes de acuerdo a las especies que acepto.', checkBardas, (v: boolean) => handleSeguridadCheck(setCheckBardas, v))}
-        {renderCheckbox('NO tengo balcones abiertos, azoteas accesibles, albercas sin protección ni salida directa a la calle.', checkBalcones, (v: boolean) => handleSeguridadCheck(setCheckBalcones, v))}
-        {renderCheckbox('Cuento con espacio ventilado, con sombra, agua constante y zona de descanso.', checkEspacio, (v: boolean) => handleSeguridadCheck(setCheckEspacio, v))}
+        {renderSecurityCheckbox('Puertas, ventanas y accesos seguros para evitar escapes.', 'Muestra una foto de la puerta principal o ventanas clave cerradas.', checkAccesos, setCheckAccesos, fotoAccesos, setFotoAccesos, 'fotoAccesos')}
+        {renderSecurityCheckbox('Bardas o protecciones suficientes de acuerdo a las especies que acepto.', 'Muestra la altura de las bardas en patios o muros perimetrales.', checkBardas, setCheckBardas, fotoBardas, setFotoBardas, 'fotoBardas')}
+        {renderSecurityCheckbox('NO tengo balcones abiertos, azoteas accesibles, albercas sin protección ni salida directa a la calle.', 'Muestra una foto general de la vivienda o fachada.', checkBalcones, setCheckBalcones, fotoBalcones, setFotoBalcones, 'fotoBalcones')}
+        {renderSecurityCheckbox('Cuento con espacio ventilado, con sombra, agua constante y zona de descanso.', 'Muestra el área específica donde el animal pasará la mayor parte del tiempo.', checkEspacio, setCheckEspacio, fotoEspacio, setFotoEspacio, 'fotoEspacio')}
         {renderCheckbox('No cumplo con ninguna de las anteriores.', checkNingunoSeguridad, handleNingunoSeguridad)}
         {errors.seguridadGeneral && <Text style={styles.errorText}>{errors.seguridadGeneral}</Text>}
       </FormSection>
@@ -869,6 +923,12 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
         title="Recorrido del Hogar *" 
         subtitle="Un video corto mostrando los accesos y el lugar donde dormirá el animal es obligatorio para tu aprobación."
       >
+        <View style={{ backgroundColor: 'rgba(236, 128, 43, 0.1)', padding: 12, borderRadius: 12, marginBottom: 16 }}>
+          <Text style={{ color: COLORS.primary, fontWeight: '700', fontSize: 13 }}>
+            <Ionicons name="information-circle" size={14} /> Nota: El peso recomendado para el video es menor a 50MB.
+          </Text>
+        </View>
+
         {videoUrl ? (
           <View style={[styles.fotoItem, { backgroundColor: 'rgba(102, 188, 180, 0.1)' }]}>
             <Ionicons name="videocam" size={32} color={COLORS.bgTeal} style={{ marginHorizontal: 16 }} />

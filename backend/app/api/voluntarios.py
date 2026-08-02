@@ -425,6 +425,10 @@ async def postular_voluntario_externo(
     datos: str = Form(...),
     identificacion: UploadFile | None = File(None),
     video: UploadFile | None = File(None),
+    foto_accesos: UploadFile | None = File(None),
+    foto_bardas: UploadFile | None = File(None),
+    foto_balcones: UploadFile | None = File(None),
+    foto_espacio: UploadFile | None = File(None),
     authorization: str = Header(None)
 ):
     """Crea o actualiza el formulario de casa temporal y sus evidencias."""
@@ -455,7 +459,11 @@ async def postular_voluntario_externo(
             voluntario_id=voluntario_id,
             datos_json=datos_json,
             identificacion_file=identificacion,
-            video_file=video
+            video_file=video,
+            foto_accesos=foto_accesos,
+            foto_bardas=foto_bardas,
+            foto_balcones=foto_balcones,
+            foto_espacio=foto_espacio
         )
         correccion = registrar_actualizacion_formulario_solicitada(
             voluntario_id,
