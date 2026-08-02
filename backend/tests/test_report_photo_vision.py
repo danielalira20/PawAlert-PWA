@@ -136,3 +136,7 @@ def test_mensaje_rechazo_otras_categorias_usa_generico():
         None,
     ]:
         assert vision.mensaje_rechazo(categoria) == vision.MENSAJE_RECHAZO_GENERICO
+
+
+def test_mensaje_advertencia_identificacion_devuelve_texto_esperado():
+    assert vision.mensaje_advertencia_identificacion() == vision.MENSAJE_ADVERTENCIA_IDENTIFICACION

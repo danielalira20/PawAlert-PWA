@@ -282,18 +282,27 @@ async def validar_foto(foto: UploadFile = File(...)):
     if foto.content_type not in ["image/jpeg", "image/png", "image/jpg", "image/webp"]:
         raise HTTPException(status_code=422, detail="La foto debe ser JPG, PNG o WEBP")
 
-    from app.services.report_photo_vision_service import mensaje_rechazo, verificar_foto_animal
+    from app.services.report_photo_vision_service import (
+        mensaje_advertencia_identificacion,
+        mensaje_rechazo,
+        verificar_foto_animal,
+    )
 
     contenido = await foto.read()
     resultado = verificar_foto_animal(contenido, foto.content_type)
 
     if resultado.get("estado") == "error_tecnico":
-        return {"valido": True, "mensaje": ""}
+        return {"valido": True, "mensaje": "", "advertencia": None}
 
     if resultado.get("es_animal_real") is False:
-        return {"valido": False, "mensaje": mensaje_rechazo(resultado.get("categoria_rechazo"))}
+        return {"valido": False, "mensaje": mensaje_rechazo(resultado.get("categoria_rechazo")), "advertencia": None}
 
-    return {"valido": True, "mensaje": ""}
+    advertencia = (
+        mensaje_advertencia_identificacion()
+        if resultado.get("calidad_identificacion") == "limitada"
+        else None
+    )
+    return {"valido": True, "mensaje": "", "advertencia": advertencia}
 #### FIN endpoint: pre-check de foto
 
 

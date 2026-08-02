@@ -169,7 +169,7 @@ def test_validar_foto_endpoint_valido():
             files={"foto": ("foto.jpg", b"contenido-fake", "image/jpeg")},
         )
     assert response.status_code == 200
-    assert response.json() == {"valido": True, "mensaje": ""}
+    assert response.json() == {"valido": True, "mensaje": "", "advertencia": None}
 
 
 def test_validar_foto_endpoint_rechazo_imagen_no_clara():
@@ -185,6 +185,7 @@ def test_validar_foto_endpoint_rechazo_imagen_no_clara():
     data = response.json()
     assert data["valido"] is False
     assert "no se ve clara" in data["mensaje"]
+    assert data["advertencia"] is None
 
 
 def test_validar_foto_endpoint_error_tecnico_deja_pasar():
@@ -197,7 +198,43 @@ def test_validar_foto_endpoint_error_tecnico_deja_pasar():
             files={"foto": ("foto.jpg", b"contenido-fake", "image/jpeg")},
         )
     assert response.status_code == 200
-    assert response.json() == {"valido": True, "mensaje": ""}
+    assert response.json() == {"valido": True, "mensaje": "", "advertencia": None}
+
+
+def test_validar_foto_endpoint_advertencia_identificacion_limitada():
+    with patch(
+        "app.services.report_photo_vision_service.verificar_foto_animal",
+        return_value={
+            "estado": "completado", "es_animal_real": True, "categoria_rechazo": None,
+            "confianza": 0.9, "calidad_identificacion": "limitada",
+        },
+    ):
+        response = client.post(
+            "/reports/validar-foto",
+            files={"foto": ("foto.jpg", b"contenido-fake", "image/jpeg")},
+        )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["valido"] is True
+    assert "otro ángulo" in data["advertencia"]
+
+
+def test_validar_foto_endpoint_sin_advertencia_cuando_calidad_adecuada():
+    with patch(
+        "app.services.report_photo_vision_service.verificar_foto_animal",
+        return_value={
+            "estado": "completado", "es_animal_real": True, "categoria_rechazo": None,
+            "confianza": 0.9, "calidad_identificacion": "adecuada",
+        },
+    ):
+        response = client.post(
+            "/reports/validar-foto",
+            files={"foto": ("foto.jpg", b"contenido-fake", "image/jpeg")},
+        )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["valido"] is True
+    assert data["advertencia"] is None
 
 
 def test_validar_foto_endpoint_content_type_invalido():
