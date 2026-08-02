@@ -99,6 +99,10 @@ type DetallePropuesta = Propuesta & {
     referencia?: string;
     identificacion_url?: string;
     video_recorrido_url?: string;
+    foto_accesos_url?: string;
+    foto_bardas_url?: string;
+    foto_balcones_url?: string;
+    foto_espacio_url?: string;
   };
   resumen_expediente?: Record<string, any>;
   analisis_video?: {
@@ -357,14 +361,16 @@ export default function MisVerificacionesScreen({ onClose }: Props) {
             <Text style={{ color: COLORS.textDark, fontSize: isMobile ? 17 : 21, fontWeight: '900' }}>
               Propuesta de verificación
             </Text>
-            <Text style={{ marginTop: 2, color: COLORS.textLight, fontSize: 12 }}>
-              {detalle.asociacion_nombre}
-            </Text>
-          </View>
-          <View style={{ paddingHorizontal: 11, paddingVertical: 6, borderRadius: 13, backgroundColor: aceptada ? '#EAF7F6' : '#FFF2E7' }}>
-            <Text style={{ color: aceptada ? COLORS.accent : COLORS.primary, fontSize: 10, fontWeight: '800' }}>
-              {ESTADO_LABELS[detalle.estado]}
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 }}>
+              <Text style={{ color: COLORS.textLight, fontSize: 12 }}>
+                {detalle.asociacion_nombre}
+              </Text>
+              <View style={{ paddingHorizontal: 9, paddingVertical: 4, borderRadius: 10, backgroundColor: aceptada ? '#EAF7F6' : '#FFF2E7' }}>
+                <Text style={{ color: aceptada ? COLORS.accent : COLORS.primary, fontSize: 10, fontWeight: '800' }}>
+                  {ESTADO_LABELS[detalle.estado]}
+                </Text>
+              </View>
+            </View>
           </View>
           {onClose && (
             <TouchableOpacity onPress={onClose} style={{ padding: 7 }}>
@@ -584,11 +590,11 @@ export default function MisVerificacionesScreen({ onClose }: Props) {
                   <Ionicons name="folder-open-outline" size={20} color={COLORS.primary} />
                   <Text style={{ color: COLORS.textDark, fontWeight: '900' }}>Evidencias para preparar la visita</Text>
                 </View>
-                <View style={{ flexDirection: isMobile ? 'column' : 'row', gap: 10 }}>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
                   {!!hogar.identificacion_url && (
                     <TouchableOpacity
                       onPress={() => Linking.openURL(hogar.identificacion_url!)}
-                      style={{ flex: 1, paddingVertical: 11, borderRadius: 13, backgroundColor: COLORS.card, alignItems: 'center' }}
+                      style={{ flexGrow: 1, paddingHorizontal: 16, paddingVertical: 11, borderRadius: 13, backgroundColor: COLORS.card, alignItems: 'center' }}
                     >
                       <Text style={{ color: COLORS.primary, fontWeight: '800' }}>Ver identificación</Text>
                     </TouchableOpacity>
@@ -596,9 +602,41 @@ export default function MisVerificacionesScreen({ onClose }: Props) {
                   {!!hogar.video_recorrido_url && (
                     <TouchableOpacity
                       onPress={() => Linking.openURL(hogar.video_recorrido_url!)}
-                      style={{ flex: 1, paddingVertical: 11, borderRadius: 13, backgroundColor: COLORS.card, alignItems: 'center' }}
+                      style={{ flexGrow: 1, paddingHorizontal: 16, paddingVertical: 11, borderRadius: 13, backgroundColor: COLORS.card, alignItems: 'center' }}
                     >
                       <Text style={{ color: COLORS.primary, fontWeight: '800' }}>Ver recorrido</Text>
+                    </TouchableOpacity>
+                  )}
+                  {!!hogar.foto_accesos_url && (
+                    <TouchableOpacity
+                      onPress={() => Linking.openURL(hogar.foto_accesos_url!)}
+                      style={{ flexGrow: 1, paddingHorizontal: 16, paddingVertical: 11, borderRadius: 13, backgroundColor: COLORS.card, alignItems: 'center' }}
+                    >
+                      <Text style={{ color: COLORS.primary, fontWeight: '800' }}>Ver accesos</Text>
+                    </TouchableOpacity>
+                  )}
+                  {!!hogar.foto_bardas_url && (
+                    <TouchableOpacity
+                      onPress={() => Linking.openURL(hogar.foto_bardas_url!)}
+                      style={{ flexGrow: 1, paddingHorizontal: 16, paddingVertical: 11, borderRadius: 13, backgroundColor: COLORS.card, alignItems: 'center' }}
+                    >
+                      <Text style={{ color: COLORS.primary, fontWeight: '800' }}>Ver bardas</Text>
+                    </TouchableOpacity>
+                  )}
+                  {!!hogar.foto_balcones_url && (
+                    <TouchableOpacity
+                      onPress={() => Linking.openURL(hogar.foto_balcones_url!)}
+                      style={{ flexGrow: 1, paddingHorizontal: 16, paddingVertical: 11, borderRadius: 13, backgroundColor: COLORS.card, alignItems: 'center' }}
+                    >
+                      <Text style={{ color: COLORS.primary, fontWeight: '800' }}>Ver balcones</Text>
+                    </TouchableOpacity>
+                  )}
+                  {!!hogar.foto_espacio_url && (
+                    <TouchableOpacity
+                      onPress={() => Linking.openURL(hogar.foto_espacio_url!)}
+                      style={{ flexGrow: 1, paddingHorizontal: 16, paddingVertical: 11, borderRadius: 13, backgroundColor: COLORS.card, alignItems: 'center' }}
+                    >
+                      <Text style={{ color: COLORS.primary, fontWeight: '800' }}>Ver espacio</Text>
                     </TouchableOpacity>
                   )}
                 </View>
