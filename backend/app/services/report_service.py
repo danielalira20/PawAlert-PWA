@@ -342,6 +342,7 @@ async def crear_reporte(
                             "analisis_ia_condicion": condicion_ia,
                             "analisis_ia_procesado_at": datetime.now(timezone.utc).isoformat(),
                             "analisis_ia_estado": "completado",
+                            "analisis_ia_raw": resultado_vision,
                         })
                         if condicion_ia:
                             condiciones_ia_por_animal.setdefault(animal_id_actual, []).append(condicion_ia)
