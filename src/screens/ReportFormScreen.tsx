@@ -342,6 +342,9 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
           showToast({ type: 'warning', title: 'Foto no válida', message: data.mensaje });
           return;
         }
+        if (data.advertencia) {
+          showToast({ type: 'info', title: 'Sugerencia', message: data.advertencia });
+        }
       } catch {
         // Fallo de red del pre-check: no bloquea (fail-open), igual que el
         // backend cuando el análisis de Gemini falla técnicamente.
