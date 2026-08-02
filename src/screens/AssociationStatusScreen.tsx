@@ -74,6 +74,7 @@ interface ReporteAsignado {
   foto_url: string | null;
   fotos_urls: string[];
   animales: Animal[];
+  requiere_revision?: boolean;
 }
 
 interface HistorialEvento {
@@ -1430,6 +1431,15 @@ const confirmarReactivar = async () => {
                             <View style={{ marginTop: 8 }}>
                               <AnimalCarousel animales={animales} compact />
                             </View>
+
+                            {reporte.requiere_revision && (
+                              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(230, 168, 20, 0.12)', borderRadius: 10, paddingVertical: 5, paddingHorizontal: 8, marginTop: 8 }}>
+                                <Ionicons name="alert-circle-outline" size={13} color="#B87F0A" />
+                                <Text style={{ color: '#B87F0A', fontSize: 11, fontWeight: '600', marginLeft: 5, flexShrink: 1 }} numberOfLines={2}>
+                                  No pudimos verificar automáticamente esta foto
+                                </Text>
+                              </View>
+                            )}
 
                             <TouchableOpacity onPress={() => setReporteSeleccionado(reporte)} style={{ marginTop: 8 }}>
                               <Text style={{ fontSize: 12, color: COLORS.accent, fontWeight: '700' }}>Ver detalle completo →</Text>
