@@ -57,6 +57,88 @@ def test_associations_me_reportes_token_invalido():
     assert response.status_code == 401
 
 
+def _mock_reporte_asignado(make_query, *, fotos: list[dict]) -> dict:
+    """Arma el mínimo de tablas para que get_reportes_asignados llegue al
+    happy path con un solo reporte, animal y las fotos dadas."""
+    tablas = {
+        "asociaciones": make_query(data=[{"verificado": True}]),
+        "reporte_asignaciones": make_query(data=[{
+            "id": "asignacion-1",
+            "assigned_at": "2026-08-02T10:00:00+00:00",
+            "accepted_at": None,
+            "closed_at": None,
+            "notas": None,
+            "asignacion_estados": {"clave": "notificada", "descripcion": "Notificada"},
+            "reportes": {
+                "id": "reporte-1",
+                "estado_reporte": "asignado",
+                "confirmacion_voluntario": None,
+                "municipio": "Puebla",
+                "colonia": "Centro",
+                "calle": None,
+                "latitud": 19.04,
+                "longitud": -98.19,
+                "created_at": "2026-08-02T09:00:00+00:00",
+                "animal": [{
+                    "id": "animal-1",
+                    "orden": 1,
+                    "es_grupo": False,
+                    "cantidad": 1,
+                    "trae_crias_nacidas": None,
+                    "numero_crias_nacidas": None,
+                    "sexo": "macho",
+                    "edad_aproximada": "adulto",
+                    "descripcion": None,
+                    "tipo_animal_catalogo": {"clave": "perro"},
+                    "condicion_catalogo": {"clave": "herido"},
+                    "tamanio_catalogo": {"clave": "mediano"},
+                    "animal_fotos": fotos,
+                }],
+            },
+        }]),
+        "historial_reporte": make_query(data=[]),
+        "contribuciones": make_query(data=[]),
+    }
+    _mock_usuario_autenticado(tablas, make_query)
+    return tablas
+
+
+def test_me_reportes_requiere_revision_true_si_alguna_foto_lo_tiene(make_query):
+    tablas = _mock_reporte_asignado(make_query, fotos=[
+        {"foto_url": "https://x/foto.jpg", "orden": 1, "requiere_revision": True},
+    ])
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    supabase.auth.get_user.return_value = SimpleNamespace(user=SimpleNamespace(id="auth-user-1"))
+
+    with patch("app.api.associations.supabase", supabase):
+        response = client.get(
+            "/associations/me/reportes",
+            headers={"Authorization": "Bearer token-valido"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()[0]["requiere_revision"] is True
+
+
+def test_me_reportes_requiere_revision_false_si_ninguna_foto_lo_tiene(make_query):
+    tablas = _mock_reporte_asignado(make_query, fotos=[
+        {"foto_url": "https://x/foto.jpg", "orden": 1, "requiere_revision": False},
+    ])
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    supabase.auth.get_user.return_value = SimpleNamespace(user=SimpleNamespace(id="auth-user-1"))
+
+    with patch("app.api.associations.supabase", supabase):
+        response = client.get(
+            "/associations/me/reportes",
+            headers={"Authorization": "Bearer token-valido"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()[0]["requiere_revision"] is False
+
+
 def test_registro_asociacion_devuelve_access_y_refresh_token(make_query):
     tablas = {
         "asociaciones": make_query(data=[{"id": "aso-1"}]),

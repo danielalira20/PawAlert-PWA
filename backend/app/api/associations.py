@@ -437,7 +437,7 @@ async def get_reportes_asignados(authorization: str = Header(None)):
     "animal(id, orden, es_grupo, cantidad, trae_crias_nacidas, numero_crias_nacidas, "
     "sexo, edad_aproximada, descripcion, "
     "tipo_animal_catalogo(clave), condicion_catalogo(clave), tamanio_catalogo(clave), "
-    "animal_fotos(foto_url, orden)))"
+    "animal_fotos(foto_url, orden, requiere_revision)))"
     ).eq("asociacion_id", usuario["asociacion_id"]).order("assigned_at", desc=True).execute()
 
     reporte_ids_sin_asignar = [
@@ -518,6 +518,12 @@ async def get_reportes_asignados(authorization: str = Header(None)):
             foto_url = fotos_ordenadas[0]["foto_url"]
             fotos_urls = [f["foto_url"] for f in fotos_ordenadas if f.get("foto_url")]
 
+        requiere_revision = any(
+            f.get("requiere_revision")
+            for a in animales_crudos
+            for f in (a.get("animal_fotos") or [])
+        )
+
         reportes.append({
             "asignacion_id": r["id"],
             "reporte_id": rep["id"],
@@ -535,6 +541,7 @@ async def get_reportes_asignados(authorization: str = Header(None)):
             "foto_url": foto_url,
             "fotos_urls": fotos_urls,
             "animales": [shape_animal_response(a) for a in animales_crudos],
+            "requiere_revision": requiere_revision,
             "tiene_sugerencia_aceptada": rep["id"] in reportes_con_sugerencia_aceptada,
             "tiene_llegada_veterinaria_registrada": rep["id"] in reportes_con_llegada_registrada,
         })
