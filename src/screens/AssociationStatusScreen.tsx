@@ -1402,6 +1402,13 @@ const confirmarReactivar = async () => {
                               <View style={{ position: 'absolute', bottom: 0, width: '100%', backgroundColor: 'rgba(107, 114, 128, 0.9)', paddingVertical: 8, paddingHorizontal: 16 }}>
                                 <Text style={{ color: COLORS.white, fontSize: 12, fontWeight: '600' }}><Ionicons name="checkmark-done" size={12} /> Caso completado</Text>
                               </View>
+                            ) : (filtro === 'pendientes' && reporte.requiere_revision) ? (
+                              <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(230, 168, 20, 0.88)', paddingVertical: 8, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center' }}>
+                                <Ionicons name="alert-circle-outline" size={13} color={COLORS.white} />
+                                <Text style={{ color: COLORS.white, fontSize: 11, fontWeight: '700', marginLeft: 6, flexShrink: 1 }} numberOfLines={2}>
+                                  No pudimos verificar automáticamente esta foto
+                                </Text>
+                              </View>
                             ) : null}
                           </View>
 
@@ -1431,15 +1438,6 @@ const confirmarReactivar = async () => {
                             <View style={{ marginTop: 8 }}>
                               <AnimalCarousel animales={animales} compact />
                             </View>
-
-                            {reporte.requiere_revision && (
-                              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(230, 168, 20, 0.12)', borderRadius: 10, paddingVertical: 5, paddingHorizontal: 8, marginTop: 8 }}>
-                                <Ionicons name="alert-circle-outline" size={13} color="#B87F0A" />
-                                <Text style={{ color: '#B87F0A', fontSize: 11, fontWeight: '600', marginLeft: 5, flexShrink: 1 }} numberOfLines={2}>
-                                  No pudimos verificar automáticamente esta foto
-                                </Text>
-                              </View>
-                            )}
 
                             <TouchableOpacity onPress={() => setReporteSeleccionado(reporte)} style={{ marginTop: 8 }}>
                               <Text style={{ fontSize: 12, color: COLORS.accent, fontWeight: '700' }}>Ver detalle completo →</Text>
