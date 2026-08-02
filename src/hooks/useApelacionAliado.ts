@@ -30,7 +30,7 @@ export function useApelacionAliado() {
   const enviarApelacion = async (mensaje: string, documentos: File[]) => {
     const formData = new FormData();
     formData.append('mensaje', mensaje);
-    
+
     documentos.forEach((doc) => {
       formData.append('documentos', doc);
     });
@@ -41,9 +41,9 @@ export function useApelacionAliado() {
         Authorization: `Bearer ${token}`
       },
     });
-    
+
     await checkApelacionActiva();
   };
 
-  return { apelacionActiva, loading, enviarApelacion };
+  return { apelacionActiva, loading, enviarApelacion, checkApelacionActiva };
 }

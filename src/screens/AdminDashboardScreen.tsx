@@ -211,7 +211,7 @@ export default function AdminDashboardScreen({ onClose }: Props) {
 
   // ── Aliados (FRONT06): lista ↔ detalle ──────
   const { pendientes: aliadosPendientes, isLoading: isLoadingAliados, cargarPendientes: cargarAliados, resolverPerfil } = useAdminAliados(showToast);
-  
+
   // ── Apelaciones Aliados ──────────────────────────────────────
   const { apelaciones: apelacionesAliados, loading: loadingApelacionesAliados, fetchApelaciones: cargarApelacionesAliados, resolverApelacion: resolverApelacionAliado } = useAdminApelacionesAliados();
   const [apelacionAliadoScreen, setApelacionAliadoScreen] = useState<DetailScreenState>('list');
@@ -422,7 +422,7 @@ export default function AdminDashboardScreen({ onClose }: Props) {
         )
       ) : tab === 'apelaciones-aliados' ? (
         apelacionAliadoScreen === 'list' ? (
-          <ApelacionesAliadosListScreen apelaciones={apelacionesAliados} isLoading={loadingApelacionesAliados} onSelect={abrirApelacionAliado} />        ) : (
+          <ApelacionesAliadosListScreen apelaciones={apelacionesAliados} isLoading={loadingApelacionesAliados} onSelect={abrirApelacionAliado} />) : (
           <View style={{ flex: 1, backgroundColor: Brand.backgroundWarm }}>
             <View style={{ paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#E4D3B8', backgroundColor: Brand.cardWarm }}>
               <TouchableOpacity onPress={volverAApelacionesAliados} style={styles.backButton}>
@@ -430,8 +430,8 @@ export default function AdminDashboardScreen({ onClose }: Props) {
                 <Text style={styles.backText}>Apelación de Aliado</Text>
               </TouchableOpacity>
             </View>
-            
-            <AliadoDetailBody 
+
+            <AliadoDetailBody
               aliado={{
                 id: apelacionAliadoSeleccionada!.perfil_apoyo.id,
                 usuario_id: apelacionAliadoSeleccionada!.perfil_apoyo.usuario_id,
@@ -443,7 +443,7 @@ export default function AdminDashboardScreen({ onClose }: Props) {
                 created_at: apelacionAliadoSeleccionada!.created_at,
                 verificado_admin: false,
                 usuarios: apelacionAliadoSeleccionada!.perfil_apoyo.usuarios
-              }} 
+              }}
               extraTop={
                 <ApelacionAliadoContextBlock apelacion={apelacionAliadoSeleccionada!} showToast={showToast} />
               }
@@ -455,6 +455,7 @@ export default function AdminDashboardScreen({ onClose }: Props) {
               onAprobar={() => handleResolverApelacionAliado('aprobar')}
               onRechazar={() => handleResolverApelacionAliado('rechazar')}
               isResolviendo={isResolviendoApelacionAliado}
+              targetName="el aliado"
             />
           </View>
         )
@@ -626,6 +627,7 @@ function ApelacionResolverBar({
   onAprobar,
   onRechazar,
   isResolviendo,
+  targetName = 'la asociación',
 }: {
   respuesta: string;
   onChangeRespuesta: (v: string) => void;
@@ -633,10 +635,11 @@ function ApelacionResolverBar({
   onRechazar: () => void;
   isResolviendo: boolean;
   hideButtons?: boolean;
+  targetName?: string;
 }) {
   return (
     <View style={styles.resolverBarContainer}>
-      <Text style={styles.resolverBarLabel}>Respuesta para la asociación (opcional)</Text>
+      <Text style={styles.resolverBarLabel}>Respuesta para {targetName} (opcional)</Text>
       <TextInput
         style={styles.resolverBarInput}
         multiline
@@ -1218,141 +1221,141 @@ function AliadoDetailBody({ aliado, extraTop }: { aliado: PerfilAliadoAdmin, ext
   const datosExtra = aliado.datos_extra || {};
   return (
 
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 18, maxWidth: 800, alignSelf: 'center', width: '100%' }}>
+    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 18, maxWidth: 800, alignSelf: 'center', width: '100%' }}>
       {extraTop}
-        <View style={styles.detailHeaderBlock}>
-          <View style={[styles.detailHeaderBlockDesktop, { width: '100%' }]}>
-            <View style={{ width: 60, height: 60, borderRadius: 30, backgroundColor: Brand.primary, alignItems: 'center', justifyContent: 'center' }}>
-              <Ionicons name="person" size={32} color="#FFF" />
+      <View style={styles.detailHeaderBlock}>
+        <View style={[styles.detailHeaderBlockDesktop, { width: '100%' }]}>
+          <View style={{ width: 60, height: 60, borderRadius: 30, backgroundColor: Brand.primary, alignItems: 'center', justifyContent: 'center' }}>
+            <Ionicons name="person" size={32} color="#FFF" />
+          </View>
+          <View style={styles.detailHeaderTextCol}>
+            <Text style={styles.detailNombreDesktop}>{aliado.usuarios?.nombre}</Text>
+            <Text style={styles.detailResponsable}>{aliado.tipo.replace('_', ' ').toUpperCase()}</Text>
+          </View>
+        </View>
+      </View>
+
+      <View style={styles.cardsGrid}>
+        {/* Card de Contacto */}
+        <View style={styles.infoCard}>
+          <View style={styles.infoCardHeader}>
+            <Ionicons name="mail" size={20} color={Brand.primary} />
+            <Text style={styles.infoCardTitle}>Contacto</Text>
+          </View>
+          <View style={styles.infoCardBody}>
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Correo Electrónico</Text>
+              <Text style={styles.infoValue}>{aliado.usuarios?.email}</Text>
             </View>
-            <View style={styles.detailHeaderTextCol}>
-              <Text style={styles.detailNombreDesktop}>{aliado.usuarios?.nombre}</Text>
-              <Text style={styles.detailResponsable}>{aliado.tipo.replace('_', ' ').toUpperCase()}</Text>
-            </View>
+            {aliado.usuarios?.telefono && (
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Teléfono</Text>
+                <Text style={styles.infoValue}>{aliado.usuarios?.telefono}</Text>
+              </View>
+            )}
           </View>
         </View>
 
-        <View style={styles.cardsGrid}>
-          {/* Card de Contacto */}
-          <View style={styles.infoCard}>
-            <View style={styles.infoCardHeader}>
-              <Ionicons name="mail" size={20} color={Brand.primary} />
-              <Text style={styles.infoCardTitle}>Contacto</Text>
-            </View>
-            <View style={styles.infoCardBody}>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Correo Electrónico</Text>
-                <Text style={styles.infoValue}>{aliado.usuarios?.email}</Text>
-              </View>
-              {aliado.usuarios?.telefono && (
-                <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>Teléfono</Text>
-                  <Text style={styles.infoValue}>{aliado.usuarios?.telefono}</Text>
-                </View>
-              )}
-            </View>
+        {/* Card de Cobertura y Servicios */}
+        <View style={styles.infoCard}>
+          <View style={styles.infoCardHeader}>
+            <Ionicons name="paw" size={20} color={Brand.primary} />
+            <Text style={styles.infoCardTitle}>Servicios y Cobertura</Text>
           </View>
-
-          {/* Card de Cobertura y Servicios */}
-          <View style={styles.infoCard}>
-            <View style={styles.infoCardHeader}>
-              <Ionicons name="paw" size={20} color={Brand.primary} />
-              <Text style={styles.infoCardTitle}>Servicios y Cobertura</Text>
+          <View style={styles.infoCardBody}>
+            <View style={styles.infoBlock}>
+              <Text style={styles.infoLabel}>Categorías que ofrece</Text>
+              <View style={styles.chipContainer}>
+                {aliado.categorias?.map((cat, idx) => (
+                  <View key={idx} style={styles.chip}>
+                    <Text style={styles.chipText}>{cat}</Text>
+                  </View>
+                ))}
+              </View>
             </View>
-            <View style={styles.infoCardBody}>
+
+            {aliado.especies_atendidas && aliado.especies_atendidas.length > 0 && (
               <View style={styles.infoBlock}>
-                <Text style={styles.infoLabel}>Categorías que ofrece</Text>
+                <Text style={styles.infoLabel}>Especies atendidas</Text>
                 <View style={styles.chipContainer}>
-                  {aliado.categorias?.map((cat, idx) => (
+                  {aliado.especies_atendidas.map((esp, idx) => (
                     <View key={idx} style={styles.chip}>
-                      <Text style={styles.chipText}>{cat}</Text>
+                      <Text style={styles.chipText}>{esp}</Text>
                     </View>
                   ))}
                 </View>
               </View>
-              
-              {aliado.especies_atendidas && aliado.especies_atendidas.length > 0 && (
-                <View style={styles.infoBlock}>
-                  <Text style={styles.infoLabel}>Especies atendidas</Text>
-                  <View style={styles.chipContainer}>
-                    {aliado.especies_atendidas.map((esp, idx) => (
-                      <View key={idx} style={styles.chip}>
-                        <Text style={styles.chipText}>{esp}</Text>
-                      </View>
-                    ))}
-                  </View>
+            )}
+
+            {aliado.niveles_urgencia_atendida && aliado.niveles_urgencia_atendida.length > 0 && (
+              <View style={styles.infoBlock}>
+                <Text style={styles.infoLabel}>Niveles de Urgencia</Text>
+                <View style={styles.chipContainer}>
+                  {aliado.niveles_urgencia_atendida.map((urg, idx) => (
+                    <View key={idx} style={styles.chipUrgencia}>
+                      <Text style={styles.chipTextUrgencia}>{urg}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+          </View>
+        </View>
+
+        {/* Card de Datos Legales / Profesionales */}
+        {(datosExtra.razon_social || datosExtra.rfc || datosExtra.medico_responsable || datosExtra.cedula_profesional || datosExtra.documento_verificacion_url) && (
+          <View style={styles.infoCard}>
+            <View style={styles.infoCardHeader}>
+              <Ionicons name="business" size={20} color={Brand.primary} />
+              <Text style={styles.infoCardTitle}>Datos Legales y Profesionales</Text>
+            </View>
+            <View style={styles.infoCardBody}>
+              {datosExtra.razon_social && (
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Razón Social</Text>
+                  <Text style={styles.infoValue}>{datosExtra.razon_social}</Text>
                 </View>
               )}
-              
-              {aliado.niveles_urgencia_atendida && aliado.niveles_urgencia_atendida.length > 0 && (
-                <View style={styles.infoBlock}>
-                  <Text style={styles.infoLabel}>Niveles de Urgencia</Text>
-                  <View style={styles.chipContainer}>
-                    {aliado.niveles_urgencia_atendida.map((urg, idx) => (
-                      <View key={idx} style={styles.chipUrgencia}>
-                        <Text style={styles.chipTextUrgencia}>{urg}</Text>
-                      </View>
-                    ))}
-                  </View>
+              {datosExtra.rfc && (
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>RFC</Text>
+                  <Text style={styles.infoValue}>{datosExtra.rfc}</Text>
                 </View>
               )}
+              {datosExtra.medico_responsable && (
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Médico Responsable</Text>
+                  <Text style={styles.infoValue}>{datosExtra.medico_responsable}</Text>
+                </View>
+              )}
+              {datosExtra.cedula_profesional && (
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Cédula Profesional</Text>
+                  <Text style={styles.infoValue}>{datosExtra.cedula_profesional}</Text>
+                </View>
+              )}
+
+              <View style={{ marginTop: 12 }}>
+                <Text style={[styles.infoLabel, { marginBottom: 8 }]}>Documento de verificación adjunto</Text>
+                {typeof datosExtra.documento_verificacion_url === 'string' && datosExtra.documento_verificacion_url.startsWith('http') ? (
+                  <TouchableOpacity
+                    onPress={() => Linking.openURL(datosExtra.documento_verificacion_url)}
+                    style={styles.apelacionDocRow}
+                  >
+                    <Ionicons name="document-text" size={20} color={Brand.primary} />
+                    <Text style={styles.apelacionDocText}>Ver documento de verificación</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <Text style={[styles.infoValue, { color: Brand.textFaint, fontStyle: 'italic' }]}>
+                    No se adjuntó ningún documento o el formato es inválido.
+                  </Text>
+                )}
+              </View>
             </View>
           </View>
-
-          {/* Card de Datos Legales / Profesionales */}
-          {(datosExtra.razon_social || datosExtra.rfc || datosExtra.medico_responsable || datosExtra.cedula_profesional || datosExtra.documento_verificacion_url) && (
-            <View style={styles.infoCard}>
-              <View style={styles.infoCardHeader}>
-                <Ionicons name="business" size={20} color={Brand.primary} />
-                <Text style={styles.infoCardTitle}>Datos Legales y Profesionales</Text>
-              </View>
-              <View style={styles.infoCardBody}>
-                {datosExtra.razon_social && (
-                  <View style={styles.infoRow}>
-                    <Text style={styles.infoLabel}>Razón Social</Text>
-                    <Text style={styles.infoValue}>{datosExtra.razon_social}</Text>
-                  </View>
-                )}
-                {datosExtra.rfc && (
-                  <View style={styles.infoRow}>
-                    <Text style={styles.infoLabel}>RFC</Text>
-                    <Text style={styles.infoValue}>{datosExtra.rfc}</Text>
-                  </View>
-                )}
-                {datosExtra.medico_responsable && (
-                  <View style={styles.infoRow}>
-                    <Text style={styles.infoLabel}>Médico Responsable</Text>
-                    <Text style={styles.infoValue}>{datosExtra.medico_responsable}</Text>
-                  </View>
-                )}
-                {datosExtra.cedula_profesional && (
-                  <View style={styles.infoRow}>
-                    <Text style={styles.infoLabel}>Cédula Profesional</Text>
-                    <Text style={styles.infoValue}>{datosExtra.cedula_profesional}</Text>
-                  </View>
-                )}
-
-                <View style={{ marginTop: 12 }}>
-                  <Text style={[styles.infoLabel, { marginBottom: 8 }]}>Documento de verificación adjunto</Text>
-                  {typeof datosExtra.documento_verificacion_url === 'string' && datosExtra.documento_verificacion_url.startsWith('http') ? (
-                    <TouchableOpacity
-                      onPress={() => Linking.openURL(datosExtra.documento_verificacion_url)}
-                      style={styles.apelacionDocRow}
-                    >
-                      <Ionicons name="document-text" size={20} color={Brand.primary} />
-                      <Text style={styles.apelacionDocText}>Ver documento de verificación</Text>
-                    </TouchableOpacity>
-                  ) : (
-                    <Text style={[styles.infoValue, { color: Brand.textFaint, fontStyle: 'italic' }]}>
-                      No se adjuntó ningún documento o el formato es inválido.
-                    </Text>
-                  )}
-                </View>
-              </View>
-            </View>
-          )}
-        </View>
-      </ScrollView>);
+        )}
+      </View>
+    </ScrollView>);
 }
 
 // ─── Pantalla: Detalle del Aliado ────────────────────────────────
