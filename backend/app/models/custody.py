@@ -50,6 +50,11 @@ class ExtensionCustodiaRequest(BaseModel):
     nueva_fecha_limite: datetime
 
 
+class RespuestaVencimientoRequest(BaseModel):
+    respuesta: Literal["puede_continuar", "no_puede", "no_seguro"]
+    nueva_fecha_limite: Optional[datetime] = None
+
+
 class SolicitudRelevoRequest(BaseModel):
     motivo: str = Field(min_length=5, max_length=500)
 

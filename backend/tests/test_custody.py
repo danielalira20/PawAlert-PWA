@@ -124,6 +124,80 @@ def test_solicitud_relevo_no_transfiere_custodia(make_query):
     )
 
 
+def test_respuesta_vencimiento_no_puede_abre_relevo(make_query):
+    custodia = {**_custodia(), "fecha_limite": "2026-08-05T18:00:00+00:00"}
+    tablas = {
+        "custodias_temporales": make_query(data=[custodia]),
+        "solicitudes_relevo": make_query(
+            execute_results=[
+                SimpleNamespace(data=[], count=None),
+                SimpleNamespace(data=[{"id": "sol-vence"}], count=None),
+            ]
+        ),
+        "respuestas_vencimiento_custodia": make_query(data=[]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+
+    with (
+        patch.object(custody, "supabase", supabase),
+        patch.object(custody, "_usuario", return_value=_usuario_externo()),
+        patch.object(custody, "_voluntario_externo", return_value={"id": "vol-1"}),
+        patch.object(custody, "registrar_historial") as historial,
+    ):
+        response = client.post(
+            "/custody/cust-1/expiry-response",
+            headers=AUTH,
+            json={"respuesta": "no_puede"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["solicitud_id"] == "sol-vence"
+    tablas["custodias_temporales"].update.assert_called_once_with(
+        {"estado": "buscando_relevo"}
+    )
+    assert historial.call_args.kwargs["tipo_evento"] == "relevo_solicitado"
+
+
+def test_avisos_vencimiento_duplicados_no_reactivan_notificacion(make_query):
+    fecha_limite = (datetime.now(timezone.utc) + timedelta(hours=20)).isoformat()
+    custodias = make_query(
+        execute_results=[
+            SimpleNamespace(data=[{
+                "id": "cust-1",
+                "voluntario_id": "vol-1",
+                "asociacion_coordinadora_id": None,
+                "fecha_limite": fecha_limite,
+                "proximo_seguimiento_at": None,
+            }], count=None),
+            SimpleNamespace(data=[], count=None),
+        ]
+    )
+    respuestas = make_query(
+        execute_results=[
+            SimpleNamespace(data=[], count=None),
+            SimpleNamespace(data=[{"respuesta": None}], count=None),
+        ]
+    )
+    notificaciones = make_query(data=[])
+    notificaciones.execute.side_effect = Exception("duplicate key")
+    tablas = {
+        "custodias_temporales": custodias,
+        "voluntarios": make_query(data=[{"usuario_id": "user-ext"}]),
+        "respuestas_vencimiento_custodia": respuestas,
+        "notificaciones_custodia": notificaciones,
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+
+    with patch.object(custody, "supabase", supabase):
+        resultado = custody.generar_notificaciones_vencimiento()
+
+    assert resultado["notificaciones_generadas"] == 0
+    notificaciones.insert.assert_called_once()
+    notificaciones.upsert.assert_not_called()
+
+
 def test_aceptar_relevo_usa_reserva_transaccional():
     supabase = MagicMock()
     supabase.table.return_value.select.return_value.eq.return_value.limit.return_value.execute.return_value = SimpleNamespace(
