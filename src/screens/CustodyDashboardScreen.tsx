@@ -153,6 +153,9 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
     entornoAdecuado: null as boolean | null,
     condicionEvolucion: '',
     posiblesInconsistencias: false,
+    revisionMedica: false,
+    revisionLegal: false,
+    idoneidadAdoptante: false,
   });
   const [fotoAnimal, setFotoAnimal] = useState<string | null>(null);
   const [fotoEntorno, setFotoEntorno] = useState<string | null>(null);
@@ -211,6 +214,9 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
       entornoAdecuado: null,
       condicionEvolucion: '',
       posiblesInconsistencias: false,
+      revisionMedica: false,
+      revisionLegal: false,
+      idoneidadAdoptante: false,
     });
     setFotoAnimal(null);
     setFotoEntorno(null);
@@ -522,6 +528,25 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
     if (!seleccionada || !form.resolucion || form.comentario.trim().length < 3) {
       throw new Error('Selecciona la resolución e indica la referencia del proceso.');
     }
+    if (form.resolucion !== 'transferencia_confirmada') {
+      if (!form.revisionMedica || !form.revisionLegal) {
+        throw new Error('Confirma la revisión médica y legal del proceso.');
+      }
+      if (form.resolucion === 'adopcion_aprobada' && !form.idoneidadAdoptante) {
+        throw new Error('La adopción requiere confirmar la idoneidad del adoptante.');
+      }
+      await axios.post(
+        `${API_URL}/custody/${seleccionada.id}/resolution-processes`,
+        {
+          tipo: form.resolucion,
+          referencia: form.comentario.trim(),
+          revision_medica: form.revisionMedica,
+          revision_legal: form.revisionLegal,
+          idoneidad_adoptante: form.resolucion === 'adopcion_aprobada' ? form.idoneidadAdoptante : null,
+        },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+    }
     await axios.post(
       `${API_URL}/custody/${seleccionada.id}/finish`,
       {
@@ -545,7 +570,7 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
     );
     try {
       await axios.patch(
-        `${API_URL}/custody/notifications/${avisoActivo.id}/read`,
+        `${API_URL}/custody/${avisoActivo.origen === 'coordinacion' ? 'coordination-notifications' : 'notifications'}/${avisoActivo.id}/read`,
         {},
         { headers: { Authorization: `Bearer ${token}` } },
       );
@@ -575,7 +600,7 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
         )}
       </View>
 
-      {!esAsociacion && avisoActivo && (
+      {avisoActivo && (
         <View style={styles.notification}>
           <Ionicons name="notifications-outline" size={20} color="#9A6700" />
           <Text style={styles.notificationText}>{avisoActivo.mensaje}</Text>
@@ -731,7 +756,7 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
                       {custodia.puede_confirmar_recepcion && custodia.transferencia_activa?.confirma_entrega_at && !custodia.transferencia_activa.confirma_recepcion_at && (
                         <Action icon="checkmark-done-outline" label="Confirmar recepción" primary onPress={() => abrir('transferencia', custodia)} />
                       )}
-                      {custodia.es_coordinadora && custodia.estado === 'transferido' && (
+                      {custodia.es_coordinadora && custodia.estado !== 'finalizado' && (
                         <Action icon="flag-outline" label="Finalizar custodia" primary onPress={() => abrir('finalizar', custodia)} />
                       )}
                     </>
@@ -984,6 +1009,24 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
                     <Action icon="heart-outline" label="Adopción aprobada" primary={form.resolucion === 'adopcion_aprobada'} onPress={() => setForm({ ...form, resolucion: 'adopcion_aprobada' })} />
                   </View>
                   <Field label="Folio o referencia del proceso" value={form.comentario} onChangeText={(v) => setForm({ ...form, comentario: v })} placeholder="Ej. expediente de ingreso o adopción aprobada" />
+                  {form.resolucion !== 'transferencia_confirmada' && !!form.resolucion && (
+                    <>
+                      <TouchableOpacity style={[styles.inconsistency, form.revisionMedica && styles.selectedCard]} onPress={() => setForm({ ...form, revisionMedica: !form.revisionMedica })}>
+                        <Ionicons name={form.revisionMedica ? 'checkbox' : 'square-outline'} size={19} color={Brand.secondary} />
+                        <Text style={styles.inconsistencyText}>Expediente médico revisado</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[styles.inconsistency, form.revisionLegal && styles.selectedCard]} onPress={() => setForm({ ...form, revisionLegal: !form.revisionLegal })}>
+                        <Ionicons name={form.revisionLegal ? 'checkbox' : 'square-outline'} size={19} color={Brand.secondary} />
+                        <Text style={styles.inconsistencyText}>Documentación legal revisada</Text>
+                      </TouchableOpacity>
+                      {form.resolucion === 'adopcion_aprobada' && (
+                        <TouchableOpacity style={[styles.inconsistency, form.idoneidadAdoptante && styles.selectedCard]} onPress={() => setForm({ ...form, idoneidadAdoptante: !form.idoneidadAdoptante })}>
+                          <Ionicons name={form.idoneidadAdoptante ? 'checkbox' : 'square-outline'} size={19} color={Brand.secondary} />
+                          <Text style={styles.inconsistencyText}>Idoneidad del adoptante validada</Text>
+                        </TouchableOpacity>
+                      )}
+                    </>
+                  )}
                   <Submit label="Finalizar custodia" loading={submitting} onPress={finalizarCustodia} />
                 </>
               )}

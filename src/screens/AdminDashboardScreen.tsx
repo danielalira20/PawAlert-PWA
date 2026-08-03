@@ -40,8 +40,19 @@ interface Props {
   onClose?: () => void;
 }
 
-type Tab = 'solicitudes' | 'apelaciones' | 'apelaciones-aliados' | 'aliados' | 'moderacion';
+type Tab = 'solicitudes' | 'apelaciones' | 'apelaciones-aliados' | 'aliados' | 'operativos' | 'moderacion';
 type DetailScreenState = 'list' | 'detail';
+
+interface CasoOperativo {
+  id: string;
+  reporte_id?: string | null;
+  tipo: 'reporte_sin_coordinadora' | 'relevo_sin_respuesta' | 'cancelacion_en_atencion';
+  prioridad: string;
+  detalle?: string | null;
+  estado: string;
+  creado_at: string;
+  reportes?: { estado_reporte?: string; municipio?: string; colonia?: string } | null;
+}
 
 const DESKTOP_BREAKPOINT = 900;
 
@@ -101,6 +112,26 @@ export default function AdminDashboardScreen({ onClose }: Props) {
 
   const [tab, setTab] = useState<Tab>('solicitudes');
   const [moderacionPendiente, setModeracionPendiente] = useState(0);
+  const [casosOperativos, setCasosOperativos] = useState<CasoOperativo[]>([]);
+  const [asociacionesOperativas, setAsociacionesOperativas] = useState<Array<{ id: string; nombre: string }>>([]);
+
+  const cargarCasosOperativos = async () => {
+    try {
+      const headers = { Authorization: `Bearer ${token}` };
+      const [casos, asociacionesDisponibles] = await Promise.all([
+        axios.get(`${API_URL}/admin/casos-operativos`, { headers }),
+        axios.get(`${API_URL}/admin/casos-operativos/asociaciones`, { headers }),
+      ]);
+      setCasosOperativos(casos.data || []);
+      setAsociacionesOperativas(asociacionesDisponibles.data || []);
+    } catch {
+      showToast({ type: 'error', title: 'No pudimos cargar la bandeja', message: 'Inténtalo nuevamente.' });
+    }
+  };
+
+  useEffect(() => {
+    if (tab === 'operativos') void cargarCasosOperativos();
+  }, [tab]);
 
   // ── Datos compartidos: lista/detalle de asociaciones + aprobar/rechazar ─
   // Tanto "Solicitudes" como el detalle dentro de "Apelaciones" usan el
@@ -285,7 +316,7 @@ export default function AdminDashboardScreen({ onClose }: Props) {
         <Text style={styles.headerTitle}>Revisión de Asociaciones</Text>
       </View>
 
-      <View style={styles.tabsRow}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsRow}>
         <TouchableOpacity
           onPress={() => {
             setTab('solicitudes');
@@ -355,6 +386,20 @@ export default function AdminDashboardScreen({ onClose }: Props) {
         </TouchableOpacity>
 
         <TouchableOpacity
+          onPress={() => setTab('operativos')}
+          style={[styles.tab, tab === 'operativos' && styles.tabActiva]}
+        >
+          <Text style={[styles.tabText, tab === 'operativos' && styles.tabTextActiva]}>
+            Casos operativos
+          </Text>
+          {casosOperativos.length > 0 && (
+            <View style={styles.tabBadge}>
+              <Text style={styles.tabBadgeText}>{casosOperativos.length}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
           onPress={() => setTab('moderacion')}
           style={[styles.tab, tab === 'moderacion' && styles.tabActiva]}
         >
@@ -367,7 +412,7 @@ export default function AdminDashboardScreen({ onClose }: Props) {
             </View>
           )}
         </TouchableOpacity>
-      </View>
+      </ScrollView>
 
       {tab === 'solicitudes' ? (
         solicitudScreen === 'list' ? (
@@ -479,6 +524,14 @@ export default function AdminDashboardScreen({ onClose }: Props) {
             isResolviendo={isResolviendoAliado}
           />
         )
+      ) : tab === 'operativos' ? (
+        <CasosOperativosPanel
+          casos={casosOperativos}
+          asociaciones={asociacionesOperativas}
+          token={token || ''}
+          onUpdated={cargarCasosOperativos}
+          showToast={showToast}
+        />
       ) : (
         <ReportModerationPanel
           onCountChange={setModeracionPendiente}
@@ -488,6 +541,97 @@ export default function AdminDashboardScreen({ onClose }: Props) {
 
       <Toast toast={toast} translateY={translateY} />
     </View>
+  );
+}
+
+function CasosOperativosPanel({
+  casos,
+  asociaciones,
+  token,
+  onUpdated,
+  showToast,
+}: {
+  casos: CasoOperativo[];
+  asociaciones: Array<{ id: string; nombre: string }>;
+  token: string;
+  onUpdated: () => Promise<void>;
+  showToast: ShowToastFn;
+}) {
+  const [selecciones, setSelecciones] = useState<Record<string, string>>({});
+  const [resoluciones, setResoluciones] = useState<Record<string, string>>({});
+  const [enviando, setEnviando] = useState<string | null>(null);
+
+  const resolver = async (caso: CasoOperativo) => {
+    const asignacion = selecciones[caso.id];
+    const resolucion = (resoluciones[caso.id] || '').trim();
+    if (caso.tipo === 'reporte_sin_coordinadora' && !asignacion) {
+      showToast({ type: 'warning', title: 'Selecciona una coordinadora', message: 'El reporte necesita una asociación verificada.' });
+      return;
+    }
+    if (!resolucion) {
+      showToast({ type: 'warning', title: 'Falta la resolución', message: 'Describe brevemente la acción aplicada.' });
+      return;
+    }
+    setEnviando(caso.id);
+    try {
+      await axios.patch(
+        `${API_URL}/admin/casos-operativos/${caso.id}`,
+        {
+          accion: caso.tipo === 'reporte_sin_coordinadora' ? 'asignar_asociacion' : 'resolver',
+          asociacion_id: asignacion || null,
+          resolucion,
+        },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      showToast({ type: 'success', title: 'Caso resuelto', message: 'La bandeja y el reporte fueron actualizados.' });
+      await onUpdated();
+    } catch (error: any) {
+      showToast({ type: 'error', title: 'No pudimos resolverlo', message: error?.response?.data?.detail || 'Inténtalo nuevamente.' });
+    } finally {
+      setEnviando(null);
+    }
+  };
+
+  if (casos.length === 0) {
+    return <View style={styles.centered}><Text style={styles.emptyText}>No hay casos operativos pendientes.</Text></View>;
+  }
+  return (
+    <ScrollView contentContainerStyle={styles.listScrollContent}>
+      <View style={styles.listCentered}>
+        {casos.map((caso) => (
+          <View key={caso.id} style={styles.apelacionCard}>
+            <Text style={styles.apelacionNombre}>{caso.tipo.replaceAll('_', ' ')}</Text>
+            <Text style={styles.apelacionMeta}>Prioridad {caso.prioridad} · {new Date(caso.creado_at).toLocaleString('es-MX')}</Text>
+            <Text style={styles.apelacionMotivo}>{caso.detalle || 'Requiere seguimiento administrativo.'}</Text>
+            {!!caso.reportes && <Text style={styles.apelacionMeta}>Zona: {[caso.reportes.colonia, caso.reportes.municipio].filter(Boolean).join(', ') || 'Sin zona confirmada'}</Text>}
+            {caso.tipo === 'reporte_sin_coordinadora' && (
+              <View style={styles.caseChoices}>
+                {asociaciones.map((asociacion) => (
+                  <TouchableOpacity
+                    key={asociacion.id}
+                    onPress={() => setSelecciones((actual) => ({ ...actual, [caso.id]: asociacion.id }))}
+                    style={[styles.caseChoice, selecciones[caso.id] === asociacion.id && styles.caseChoiceActive]}
+                  >
+                    <Text style={styles.apelacionMeta}>{asociacion.nombre}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+            <TextInput
+              style={styles.adminTextArea}
+              value={resoluciones[caso.id] || ''}
+              onChangeText={(valor) => setResoluciones((actual) => ({ ...actual, [caso.id]: valor }))}
+              placeholder="Describe la resolución aplicada"
+              placeholderTextColor={Brand.textFaint}
+              multiline
+            />
+            <TouchableOpacity style={styles.apelacionRevisarButton} disabled={enviando === caso.id} onPress={() => void resolver(caso)}>
+              <Text style={styles.apelacionRevisarText}>{enviando === caso.id ? 'Guardando…' : 'Resolver caso'}</Text>
+            </TouchableOpacity>
+          </View>
+        ))}
+      </View>
+    </ScrollView>
   );
 }
 
@@ -1008,6 +1152,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   apelacionRevisarText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  caseChoices: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginVertical: 12 },
+  caseChoice: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 10, backgroundColor: Brand.cardWarm, borderWidth: 1, borderColor: '#E4D3B8' },
+  caseChoiceActive: { borderColor: Brand.secondary, backgroundColor: '#EAF7F5' },
+  adminTextArea: { minHeight: 70, borderRadius: 11, borderWidth: 1, borderColor: '#E4D3B8', backgroundColor: '#fff', color: Brand.textDark, padding: 10, marginVertical: 10, textAlignVertical: 'top' },
 
   // Bloque de contexto de apelación, inyectado arriba del expediente
   apelacionContextBlock: {
