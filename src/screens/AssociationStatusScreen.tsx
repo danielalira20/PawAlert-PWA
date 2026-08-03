@@ -453,56 +453,56 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
   };
 
   const cargarVoluntarios = async () => {
-  setIsLoadingVoluntarios(true);
-  try {
-    const res = await axios.get(`${API_URL}/associations/me/voluntarios`, { headers: { Authorization: `Bearer ${token}` } });
-    setVoluntarios(res.data || []);
-  } catch (error: any) {
-    showToast({ type: 'error', title: 'Error', message: 'No pudimos cargar tus voluntarios.' });
-  } finally {
-    setIsLoadingVoluntarios(false);
-  }
-};
+    setIsLoadingVoluntarios(true);
+    try {
+      const res = await axios.get(`${API_URL}/associations/me/voluntarios`, { headers: { Authorization: `Bearer ${token}` } });
+      setVoluntarios(res.data || []);
+    } catch (error: any) {
+      showToast({ type: 'error', title: 'Error', message: 'No pudimos cargar tus voluntarios.' });
+    } finally {
+      setIsLoadingVoluntarios(false);
+    }
+  };
 
-const confirmarDarDeBaja = async () => {
-  if (!voluntarioAccion) return;
-  setIsSubmittingVoluntario(true);
-  try {
-    await axios.patch(
-      `${API_URL}/associations/me/voluntarios/${voluntarioAccion.voluntario_id}/baja`,
-      {},
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    showToast({ type: 'success', title: 'Voluntario dado de baja', message: 'Sus casos activos volvieron al pool de asignación.' });
-    await cargarVoluntarios();
-  } catch (error: any) {
-    showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'No pudimos dar de baja al voluntario.' });
-  } finally {
-    setShowBajaModal(false);
-    setVoluntarioAccion(null);
-    setIsSubmittingVoluntario(false);
-  }
-};
+  const confirmarDarDeBaja = async () => {
+    if (!voluntarioAccion) return;
+    setIsSubmittingVoluntario(true);
+    try {
+      await axios.patch(
+        `${API_URL}/associations/me/voluntarios/${voluntarioAccion.voluntario_id}/baja`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      showToast({ type: 'success', title: 'Voluntario dado de baja', message: 'Sus casos activos volvieron al pool de asignación.' });
+      await cargarVoluntarios();
+    } catch (error: any) {
+      showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'No pudimos dar de baja al voluntario.' });
+    } finally {
+      setShowBajaModal(false);
+      setVoluntarioAccion(null);
+      setIsSubmittingVoluntario(false);
+    }
+  };
 
-const confirmarReactivar = async () => {
-  if (!voluntarioAccion) return;
-  setIsSubmittingVoluntario(true);
-  try {
-    await axios.patch(
-      `${API_URL}/associations/me/voluntarios/${voluntarioAccion.voluntario_id}/reactivar`,
-      {},
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    showToast({ type: 'success', title: 'Voluntario reactivado', message: 'Ya vuelve a aparecer en el ranking de candidatos.' });
-    await cargarVoluntarios();
-  } catch (error: any) {
-    showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'No pudimos reactivar al voluntario.' });
-  } finally {
-    setShowReactivarModal(false);
-    setVoluntarioAccion(null);
-    setIsSubmittingVoluntario(false);
-  }
-};
+  const confirmarReactivar = async () => {
+    if (!voluntarioAccion) return;
+    setIsSubmittingVoluntario(true);
+    try {
+      await axios.patch(
+        `${API_URL}/associations/me/voluntarios/${voluntarioAccion.voluntario_id}/reactivar`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      showToast({ type: 'success', title: 'Voluntario reactivado', message: 'Ya vuelve a aparecer en el ranking de candidatos.' });
+      await cargarVoluntarios();
+    } catch (error: any) {
+      showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'No pudimos reactivar al voluntario.' });
+    } finally {
+      setShowReactivarModal(false);
+      setVoluntarioAccion(null);
+      setIsSubmittingVoluntario(false);
+    }
+  };
 
   useEffect(() => {
     if (!isLoading) cargarEstado();
@@ -890,9 +890,16 @@ const confirmarReactivar = async () => {
       default: return COLORS.textLight;
     }
   };
-  
+
 
   if (isLoadingInfo) {
+    if (!standalone) {
+      return (
+        <View style={{ width: '100%', maxWidth: 400, minHeight: 200, alignSelf: 'center', alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+        </View>
+      );
+    }
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.bg }}>
         <ActivityIndicator size="large" color={COLORS.primary} />
@@ -901,6 +908,13 @@ const confirmarReactivar = async () => {
   }
 
   if (!info) {
+    if (!standalone) {
+      return (
+        <View style={{ width: '100%', maxWidth: 400, minHeight: 200, alignSelf: 'center', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <Text style={{ fontSize: 14, color: COLORS.textLight, textAlign: 'center' }}>No pudimos cargar la información de tu asociación.</Text>
+        </View>
+      );
+    }
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.bg, padding: 24 }}>
         <Text style={{ fontSize: 14, color: COLORS.textLight, textAlign: 'center' }}>No pudimos cargar la información de tu asociación.</Text>
@@ -910,30 +924,30 @@ const confirmarReactivar = async () => {
 
   const reportesFiltrados = reportes.filter((r) => {
     if (filtro === 'todas') return true;
-    if (filtro === 'pendientes') {if (['rechazada', 'cancelada'].includes(r.estado_asignacion_clave)) return false; return r.estado_reporte === 'asignado' && !r.confirmacion_voluntario;}
+    if (filtro === 'pendientes') { if (['rechazada', 'cancelada'].includes(r.estado_asignacion_clave)) return false; return r.estado_reporte === 'asignado' && !r.confirmacion_voluntario; }
     if (filtro === 'aceptadas') {
-        const esAceptado = ['en_camino', 'en_atencion', 'rescatado'].includes(r.estado_reporte)
-          || (r.estado_reporte === 'asignado' && r.confirmacion_voluntario === 'esperando')
-          || r.estado_asignacion_clave === 'completada';
-        if (!esAceptado) return false;
+      const esAceptado = ['en_camino', 'en_atencion', 'rescatado'].includes(r.estado_reporte)
+        || (r.estado_reporte === 'asignado' && r.confirmacion_voluntario === 'esperando')
+        || r.estado_asignacion_clave === 'completada';
+      if (!esAceptado) return false;
 
-        if (subFiltroAceptadas === 'todas') return true;
-        if (subFiltroAceptadas === 'en_proceso') {
-          return r.confirmacion_voluntario === 'esperando' || ['en_camino', 'en_atencion'].includes(r.estado_reporte);
-        }
-        if (subFiltroAceptadas === 'por_cerrar') return r.estado_reporte === 'rescatado';
-        if (subFiltroAceptadas === 'completados') return r.estado_asignacion_clave === 'completada';
+      if (subFiltroAceptadas === 'todas') return true;
+      if (subFiltroAceptadas === 'en_proceso') {
+        return r.confirmacion_voluntario === 'esperando' || ['en_camino', 'en_atencion'].includes(r.estado_reporte);
       }
+      if (subFiltroAceptadas === 'por_cerrar') return r.estado_reporte === 'rescatado';
+      if (subFiltroAceptadas === 'completados') return r.estado_asignacion_clave === 'completada';
+    }
     if (filtro === 'rechazadas') return ['rechazada', 'cancelada'].includes(r.estado_asignacion_clave);
     return true;
   });
 
   const tiempoTotalTranscurrido = historialTimeline && historialTimeline.length > 1
     ? formatDistanceStrict(
-        new Date(historialTimeline[historialTimeline.length - 1].created_at),
-        new Date(historialTimeline[0].created_at),
-        { locale: es }
-      )
+      new Date(historialTimeline[historialTimeline.length - 1].created_at),
+      new Date(historialTimeline[0].created_at),
+      { locale: es }
+    )
     : null;
 
   if (!standalone) {
@@ -1135,7 +1149,7 @@ const confirmarReactivar = async () => {
 
               {/* ─── BOTONES DE ACCIÓN (NECESIDADES Y OFERTAS) ─── */}
               <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginBottom: 24 }}>
-                
+
                 {/* NUEVO BOTÓN: VER OFERTAS */}
                 <TouchableOpacity
                   onPress={() => { if (onClose) onClose(); router.push('/ofertas-asociacion' as any); }}
@@ -1305,303 +1319,303 @@ const confirmarReactivar = async () => {
                   </ScrollView>
 
                   {filtro === 'aceptadas' && (
-                      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-                        {([
-                          { key: 'todas', label: 'Todas' },
-                          { key: 'en_proceso', label: 'En proceso' },
-                          { key: 'por_cerrar', label: 'Por cerrar' },
-                          { key: 'completados', label: 'Completados' },
-                        ] as const).map((s) => (
-                          <TouchableOpacity
-                            key={s.key}
-                            onPress={() => setSubFiltroAceptadas(s.key)}
-                            style={{
-                              paddingHorizontal: 14, paddingVertical: 8, borderRadius: 16,
-                              backgroundColor: subFiltroAceptadas === s.key ? COLORS.secondary : COLORS.white,
-                              borderWidth: subFiltroAceptadas === s.key ? 0 : 1, borderColor: 'rgba(0,0,0,0.08)',
-                            }}
-                          >
-                            <Text style={{
-                              color: subFiltroAceptadas === s.key ? COLORS.white : COLORS.textDark,
-                              fontWeight: '700', fontSize: 12,
-                            }}>
-                              {s.label}
-                            </Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    )}
+                    <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+                      {([
+                        { key: 'todas', label: 'Todas' },
+                        { key: 'en_proceso', label: 'En proceso' },
+                        { key: 'por_cerrar', label: 'Por cerrar' },
+                        { key: 'completados', label: 'Completados' },
+                      ] as const).map((s) => (
+                        <TouchableOpacity
+                          key={s.key}
+                          onPress={() => setSubFiltroAceptadas(s.key)}
+                          style={{
+                            paddingHorizontal: 14, paddingVertical: 8, borderRadius: 16,
+                            backgroundColor: subFiltroAceptadas === s.key ? COLORS.secondary : COLORS.white,
+                            borderWidth: subFiltroAceptadas === s.key ? 0 : 1, borderColor: 'rgba(0,0,0,0.08)',
+                          }}
+                        >
+                          <Text style={{
+                            color: subFiltroAceptadas === s.key ? COLORS.white : COLORS.textDark,
+                            fontWeight: '700', fontSize: 12,
+                          }}>
+                            {s.label}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
 
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 16, justifyContent: 'center' }}>
-                      {reportesFiltrados.length === 0 ? (
-                        <View style={{ width: '100%', alignItems: 'center', paddingVertical: 40 }}>
-                          <Ionicons name="file-tray-outline" size={40} color={COLORS.textLight} style={{ marginBottom: 12, opacity: 0.6 }} />
-                          <Text style={{ color: COLORS.textLight, fontSize: 14, fontWeight: '600', textAlign: 'center' }}>
-                            No hay casos en esta categoría por ahora.
-                          </Text>
-                        </View>
-                      ) : (
-                    reportesFiltrados.map((reporte) => {
-                      const enProceso = ['en_camino', 'en_atencion'].includes(reporte.estado_reporte);
-                      const esperandoConfirmacion = reporte.confirmacion_voluntario === 'esperando';
-                      const yaRescatado = reporte.estado_reporte === 'rescatado';
-                      const fueRechazada = reporte.estado_asignacion_clave === 'rechazada';
-                      const completado = reporte.estado_asignacion_clave === 'completada';
-                      const animales = getAnimales(reporte);
-                      const grave = animalMasGrave(animales);
-                      const totalCaso = totalAnimales(animales);
-                      return (
-                        <View key={reporte.asignacion_id} style={{
-                          flexGrow: 1,
-                          flexBasis: 260,
-                          maxWidth: 300,
-                          backgroundColor: COLORS.cardBg, borderRadius: 20, overflow: 'hidden', marginBottom: 8,
-                          opacity: fueRechazada ? 0.65 : 1,
-                          shadowColor: '#000',
-                          shadowOffset: { width: 0, height: 4 },
-                          shadowOpacity: 0.1,
-                          shadowRadius: 10,
-                          elevation: 3,
-                        }}>
-                          <View style={{ position: 'relative' }}>
-                            <View style={{ width: '100%', height: 130, backgroundColor: '#2E2A26', justifyContent: 'center' }}>
-                              <Image
-                                source={{ uri: reporte.foto_url || 'https://via.placeholder.com/400' }}
-                                style={{ width: '100%', height: '100%' }}
-                                resizeMode="contain"
-                              />
-                            </View>
-                            <View style={{ position: 'absolute', top: 12, right: 12, backgroundColor: getBadgeColor(grave?.condicion || ''), paddingHorizontal: 16, paddingVertical: 6, borderRadius: 16 }}>
-                              <Text style={{ color: COLORS.white, fontWeight: '800', fontSize: 12, textTransform: 'capitalize' }}>{grave?.condicion || 'Desconocido'}</Text>
-                            </View>
-                            {totalCaso > 1 && (
-                              <View style={{ position: 'absolute', top: 12, left: 12, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                                <Ionicons name="paw" size={11} color={COLORS.white} />
-                                <Text style={{ color: COLORS.white, fontWeight: '800', fontSize: 11 }}>{totalCaso}</Text>
+                    {reportesFiltrados.length === 0 ? (
+                      <View style={{ width: '100%', alignItems: 'center', paddingVertical: 40 }}>
+                        <Ionicons name="file-tray-outline" size={40} color={COLORS.textLight} style={{ marginBottom: 12, opacity: 0.6 }} />
+                        <Text style={{ color: COLORS.textLight, fontSize: 14, fontWeight: '600', textAlign: 'center' }}>
+                          No hay casos en esta categoría por ahora.
+                        </Text>
+                      </View>
+                    ) : (
+                      reportesFiltrados.map((reporte) => {
+                        const enProceso = ['en_camino', 'en_atencion'].includes(reporte.estado_reporte);
+                        const esperandoConfirmacion = reporte.confirmacion_voluntario === 'esperando';
+                        const yaRescatado = reporte.estado_reporte === 'rescatado';
+                        const fueRechazada = reporte.estado_asignacion_clave === 'rechazada';
+                        const completado = reporte.estado_asignacion_clave === 'completada';
+                        const animales = getAnimales(reporte);
+                        const grave = animalMasGrave(animales);
+                        const totalCaso = totalAnimales(animales);
+                        return (
+                          <View key={reporte.asignacion_id} style={{
+                            flexGrow: 1,
+                            flexBasis: 260,
+                            maxWidth: 300,
+                            backgroundColor: COLORS.cardBg, borderRadius: 20, overflow: 'hidden', marginBottom: 8,
+                            opacity: fueRechazada ? 0.65 : 1,
+                            shadowColor: '#000',
+                            shadowOffset: { width: 0, height: 4 },
+                            shadowOpacity: 0.1,
+                            shadowRadius: 10,
+                            elevation: 3,
+                          }}>
+                            <View style={{ position: 'relative' }}>
+                              <View style={{ width: '100%', height: 130, backgroundColor: '#2E2A26', justifyContent: 'center' }}>
+                                <Image
+                                  source={{ uri: reporte.foto_url || 'https://via.placeholder.com/400' }}
+                                  style={{ width: '100%', height: '100%' }}
+                                  resizeMode="contain"
+                                />
                               </View>
-                            )}
-                            {fueRechazada && (
-                              <View style={{
-                                position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-                                backgroundColor: 'rgba(46,42,38,0.45)',
-                                justifyContent: 'center', alignItems: 'center',
-                              }}>
-                                <View style={{
-                                  backgroundColor: COLORS.danger, paddingHorizontal: 18, paddingVertical: 6,
-                                  borderRadius: 8, transform: [{ rotate: '-8deg' }],
-                                }}>
-                                  <Text style={{ color: COLORS.white, fontWeight: '900', fontSize: 14, letterSpacing: 1 }}>
-                                    RECHAZADO
-                                  </Text>
+                              <View style={{ position: 'absolute', top: 12, right: 12, backgroundColor: getBadgeColor(grave?.condicion || ''), paddingHorizontal: 16, paddingVertical: 6, borderRadius: 16 }}>
+                                <Text style={{ color: COLORS.white, fontWeight: '800', fontSize: 12, textTransform: 'capitalize' }}>{grave?.condicion || 'Desconocido'}</Text>
+                              </View>
+                              {totalCaso > 1 && (
+                                <View style={{ position: 'absolute', top: 12, left: 12, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                  <Ionicons name="paw" size={11} color={COLORS.white} />
+                                  <Text style={{ color: COLORS.white, fontWeight: '800', fontSize: 11 }}>{totalCaso}</Text>
                                 </View>
-                              </View>
-                            )}
-                            {esperandoConfirmacion ? (
-                              <View style={{ position: 'absolute', bottom: 0, width: '100%', backgroundColor: 'rgba(230, 168, 20, 0.9)', paddingVertical: 8, paddingHorizontal: 16 }}>
-                                <Text style={{ color: COLORS.white, fontSize: 12, fontWeight: '600' }}><Ionicons name="time" size={12} /> Esperando confirmación del rescatista</Text>
-                              </View>
-                            ) : enProceso ? (
-                              <View style={{ position: 'absolute', bottom: 0, width: '100%', backgroundColor: 'rgba(102, 188, 180, 0.9)', paddingVertical: 8, paddingHorizontal: 16 }}>
-                                <Text style={{ color: COLORS.white, fontSize: 12, fontWeight: '600' }}><Ionicons name="car" size={12} /> Rescatista en camino</Text>
-                              </View>
-                            ) : yaRescatado ? (
-                              <View style={{ position: 'absolute', bottom: 0, width: '100%', backgroundColor: 'rgba(236, 128, 43, 0.92)', paddingVertical: 8, paddingHorizontal: 16 }}>
-                                <Text style={{ color: COLORS.white, fontSize: 12, fontWeight: '700' }}><Ionicons name="alert-circle" size={12} /> Llegó al refugio — cierra el caso</Text>
-                              </View>
-                            ) : completado ? (
-                              <View style={{ position: 'absolute', bottom: 0, width: '100%', backgroundColor: 'rgba(107, 114, 128, 0.9)', paddingVertical: 8, paddingHorizontal: 16 }}>
-                                <Text style={{ color: COLORS.white, fontSize: 12, fontWeight: '600' }}><Ionicons name="checkmark-done" size={12} /> Caso completado</Text>
-                              </View>
-                            ) : (filtro === 'pendientes' && reporte.requiere_revision) ? (
-                              <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(230, 168, 20, 0.88)', paddingVertical: 8, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center' }}>
-                                <Ionicons name="alert-circle-outline" size={13} color={COLORS.white} />
-                                <Text style={{ color: COLORS.white, fontSize: 11, fontWeight: '700', marginLeft: 6, flexShrink: 1 }} numberOfLines={2}>
-                                  No pudimos verificar automáticamente esta foto
-                                </Text>
-                              </View>
-                            ) : null}
-                          </View>
-
-                          <View style={{ padding: 15 }}>
-                            <Text style={{ fontSize: 16, fontWeight: '800', color: COLORS.textDark, textTransform: 'capitalize' }}>{grave?.tipo_animal || 'Animal'}{totalCaso > 1 ? ` · ${totalCaso} animales` : ''}</Text>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
-                              <Ionicons name="location-outline" size={13} color={COLORS.primary} />
-                              <Text style={{ color: COLORS.textLight, fontSize: 12, marginLeft: 4 }} numberOfLines={1}>
-                                {[reporte.colonia, reporte.municipio].filter(Boolean).join(', ')}
-                              </Text>
-                            </View>
-                            <Text style={{ color: COLORS.textLight, fontSize: 11, marginTop: 3, marginLeft: 2 }}>
-                              hace {formatDistanceToNow(new Date(reporte.created_at), { locale: es })}
-                            </Text>
-
-                            {reporte.ultimo_rechazo && (
-                              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(230, 168, 20, 0.12)', borderRadius: 10, paddingVertical: 5, paddingHorizontal: 8, marginTop: 8 }}>
-                                <Ionicons name="alert-circle-outline" size={13} color="#B87F0A" />
-                                <Text style={{ color: '#B87F0A', fontSize: 11, fontWeight: '600', marginLeft: 5, flexShrink: 1 }} numberOfLines={2}>
-                                  {reporte.ultimo_rechazo.nombre_voluntario} rechazó — {modoAsignacionConfig !== 'manual' ? 'buscando siguiente candidato' : 'elige otro voluntario'}
-                                </Text>
-                              </View>
-                            )}
-
-                            {/* Datos rápidos del animal — para decidir si aceptar sin
-                            tener que adivinar. Navegable si el caso trae más de uno. */}
-                            <View style={{ marginTop: 8 }}>
-                              <AnimalCarousel animales={animales} compact />
-                            </View>
-
-                            <TouchableOpacity onPress={() => setReporteSeleccionado(reporte)} style={{ marginTop: 8 }}>
-                              <Text style={{ fontSize: 12, color: COLORS.accent, fontWeight: '700' }}>Ver detalle completo →</Text>
-                            </TouchableOpacity>
-
-                            <View style={{ marginTop: 14 }}>
-                              {!['rechazada', 'cancelada', 'aceptada', 'completada'].includes(reporte.estado_asignacion_clave)&& !yaRescatado && (reporte.estado_reporte === 'asignado' || reporte.estado_asignacion_clave === 'notificada') ? (
-                                <View style={{ flexDirection: 'row', gap: 12 }}>
-                                  <TouchableOpacity onPress={() => { setReporteAccionId(reporte.reporte_id); setShowAcceptModal(true); }} style={{ flex: 1, backgroundColor: COLORS.primary, paddingVertical: 14, borderRadius: 16, alignItems: 'center' }}>
-                                    <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Aceptar</Text>
-                                  </TouchableOpacity>
-                                  <TouchableOpacity onPress={() => { resetModales(); setReporteAccionId(reporte.reporte_id); setShowRejectModal(true); }} style={{ flex: 1, backgroundColor: 'transparent', borderWidth: 1, borderColor: COLORS.danger, paddingVertical: 14, borderRadius: 16, alignItems: 'center' }}>
-                                    <Text style={{ color: COLORS.danger, fontWeight: 'bold' }}>Rechazar</Text>
-                                  </TouchableOpacity>
+                              )}
+                              {fueRechazada && (
+                                <View style={{
+                                  position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                                  backgroundColor: 'rgba(46,42,38,0.45)',
+                                  justifyContent: 'center', alignItems: 'center',
+                                }}>
+                                  <View style={{
+                                    backgroundColor: COLORS.danger, paddingHorizontal: 18, paddingVertical: 6,
+                                    borderRadius: 8, transform: [{ rotate: '-8deg' }],
+                                  }}>
+                                    <Text style={{ color: COLORS.white, fontWeight: '900', fontSize: 14, letterSpacing: 1 }}>
+                                      RECHAZADO
+                                    </Text>
+                                  </View>
+                                </View>
+                              )}
+                              {esperandoConfirmacion ? (
+                                <View style={{ position: 'absolute', bottom: 0, width: '100%', backgroundColor: 'rgba(230, 168, 20, 0.9)', paddingVertical: 8, paddingHorizontal: 16 }}>
+                                  <Text style={{ color: COLORS.white, fontSize: 12, fontWeight: '600' }}><Ionicons name="time" size={12} /> Esperando confirmación del rescatista</Text>
+                                </View>
+                              ) : enProceso ? (
+                                <View style={{ position: 'absolute', bottom: 0, width: '100%', backgroundColor: 'rgba(102, 188, 180, 0.9)', paddingVertical: 8, paddingHorizontal: 16 }}>
+                                  <Text style={{ color: COLORS.white, fontSize: 12, fontWeight: '600' }}><Ionicons name="car" size={12} /> Rescatista en camino</Text>
                                 </View>
                               ) : yaRescatado ? (
-                                // El staff ya mandó su hito final ("llegué al refugio") — ya
-                                // se puede cerrar el caso formalmente.
-                                <View style={{ gap: 10 }}>
+                                <View style={{ position: 'absolute', bottom: 0, width: '100%', backgroundColor: 'rgba(236, 128, 43, 0.92)', paddingVertical: 8, paddingHorizontal: 16 }}>
+                                  <Text style={{ color: COLORS.white, fontSize: 12, fontWeight: '700' }}><Ionicons name="alert-circle" size={12} /> Llegó al refugio — cierra el caso</Text>
+                                </View>
+                              ) : completado ? (
+                                <View style={{ position: 'absolute', bottom: 0, width: '100%', backgroundColor: 'rgba(107, 114, 128, 0.9)', paddingVertical: 8, paddingHorizontal: 16 }}>
+                                  <Text style={{ color: COLORS.white, fontSize: 12, fontWeight: '600' }}><Ionicons name="checkmark-done" size={12} /> Caso completado</Text>
+                                </View>
+                              ) : (filtro === 'pendientes' && reporte.requiere_revision) ? (
+                                <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(230, 168, 20, 0.88)', paddingVertical: 8, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center' }}>
+                                  <Ionicons name="alert-circle-outline" size={13} color={COLORS.white} />
+                                  <Text style={{ color: COLORS.white, fontSize: 11, fontWeight: '700', marginLeft: 6, flexShrink: 1 }} numberOfLines={2}>
+                                    No pudimos verificar automáticamente esta foto
+                                  </Text>
+                                </View>
+                              ) : null}
+                            </View>
+
+                            <View style={{ padding: 15 }}>
+                              <Text style={{ fontSize: 16, fontWeight: '800', color: COLORS.textDark, textTransform: 'capitalize' }}>{grave?.tipo_animal || 'Animal'}{totalCaso > 1 ? ` · ${totalCaso} animales` : ''}</Text>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
+                                <Ionicons name="location-outline" size={13} color={COLORS.primary} />
+                                <Text style={{ color: COLORS.textLight, fontSize: 12, marginLeft: 4 }} numberOfLines={1}>
+                                  {[reporte.colonia, reporte.municipio].filter(Boolean).join(', ')}
+                                </Text>
+                              </View>
+                              <Text style={{ color: COLORS.textLight, fontSize: 11, marginTop: 3, marginLeft: 2 }}>
+                                hace {formatDistanceToNow(new Date(reporte.created_at), { locale: es })}
+                              </Text>
+
+                              {reporte.ultimo_rechazo && (
+                                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(230, 168, 20, 0.12)', borderRadius: 10, paddingVertical: 5, paddingHorizontal: 8, marginTop: 8 }}>
+                                  <Ionicons name="alert-circle-outline" size={13} color="#B87F0A" />
+                                  <Text style={{ color: '#B87F0A', fontSize: 11, fontWeight: '600', marginLeft: 5, flexShrink: 1 }} numberOfLines={2}>
+                                    {reporte.ultimo_rechazo.nombre_voluntario} rechazó — {modoAsignacionConfig !== 'manual' ? 'buscando siguiente candidato' : 'elige otro voluntario'}
+                                  </Text>
+                                </View>
+                              )}
+
+                              {/* Datos rápidos del animal — para decidir si aceptar sin
+                            tener que adivinar. Navegable si el caso trae más de uno. */}
+                              <View style={{ marginTop: 8 }}>
+                                <AnimalCarousel animales={animales} compact />
+                              </View>
+
+                              <TouchableOpacity onPress={() => setReporteSeleccionado(reporte)} style={{ marginTop: 8 }}>
+                                <Text style={{ fontSize: 12, color: COLORS.accent, fontWeight: '700' }}>Ver detalle completo →</Text>
+                              </TouchableOpacity>
+
+                              <View style={{ marginTop: 14 }}>
+                                {!['rechazada', 'cancelada', 'aceptada', 'completada'].includes(reporte.estado_asignacion_clave) && !yaRescatado && (reporte.estado_reporte === 'asignado' || reporte.estado_asignacion_clave === 'notificada') ? (
+                                  <View style={{ flexDirection: 'row', gap: 12 }}>
+                                    <TouchableOpacity onPress={() => { setReporteAccionId(reporte.reporte_id); setShowAcceptModal(true); }} style={{ flex: 1, backgroundColor: COLORS.primary, paddingVertical: 14, borderRadius: 16, alignItems: 'center' }}>
+                                      <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Aceptar</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity onPress={() => { resetModales(); setReporteAccionId(reporte.reporte_id); setShowRejectModal(true); }} style={{ flex: 1, backgroundColor: 'transparent', borderWidth: 1, borderColor: COLORS.danger, paddingVertical: 14, borderRadius: 16, alignItems: 'center' }}>
+                                      <Text style={{ color: COLORS.danger, fontWeight: 'bold' }}>Rechazar</Text>
+                                    </TouchableOpacity>
+                                  </View>
+                                ) : yaRescatado ? (
+                                  // El staff ya mandó su hito final ("llegué al refugio") — ya
+                                  // se puede cerrar el caso formalmente.
+                                  <View style={{ gap: 10 }}>
+                                    <TouchableOpacity onPress={() => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${reporte.latitud},${reporte.longitud}`)} style={{ backgroundColor: COLORS.primary, paddingVertical: 14, borderRadius: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}>
+                                      <Ionicons name="map" size={16} color={COLORS.white} style={{ marginRight: 6 }} />
+                                      <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Cómo llegar</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity onPress={() => { resetModales(); setReporteAccionId(reporte.reporte_id); setShowCerrarModal(true); }} style={{ backgroundColor: COLORS.accent, paddingVertical: 14, borderRadius: 16, alignItems: 'center' }}>
+                                      <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Cerrar caso</Text>
+                                    </TouchableOpacity>
+                                  </View>
+                                ) : enProceso ? (
+                                  // en_camino / en_atencion: el staff sigue trabajando el caso.
+                                  // "Hito rescate" NO va aquí — le pertenece al dashboard del
+                                  // staff (el backend lo rechaza con 403 si alguien más lo llama).
+                                  // La asociación solo monitorea mientras tanto.
                                   <TouchableOpacity onPress={() => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${reporte.latitud},${reporte.longitud}`)} style={{ backgroundColor: COLORS.primary, paddingVertical: 14, borderRadius: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}>
                                     <Ionicons name="map" size={16} color={COLORS.white} style={{ marginRight: 6 }} />
                                     <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Cómo llegar</Text>
                                   </TouchableOpacity>
-                                  <TouchableOpacity onPress={() => { resetModales(); setReporteAccionId(reporte.reporte_id); setShowCerrarModal(true); }} style={{ backgroundColor: COLORS.accent, paddingVertical: 14, borderRadius: 16, alignItems: 'center' }}>
-                                    <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Cerrar caso</Text>
-                                  </TouchableOpacity>
-                                </View>
-                              ) : enProceso ? (
-                                // en_camino / en_atencion: el staff sigue trabajando el caso.
-                                // "Hito rescate" NO va aquí — le pertenece al dashboard del
-                                // staff (el backend lo rechaza con 403 si alguien más lo llama).
-                                // La asociación solo monitorea mientras tanto.
-                                <TouchableOpacity onPress={() => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${reporte.latitud},${reporte.longitud}`)} style={{ backgroundColor: COLORS.primary, paddingVertical: 14, borderRadius: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}>
-                                  <Ionicons name="map" size={16} color={COLORS.white} style={{ marginRight: 6 }} />
-                                  <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Cómo llegar</Text>
-                                </TouchableOpacity>
-                              ) : (
-                                <TouchableOpacity onPress={() => setReporteSeleccionado(reporte)} style={{ backgroundColor: COLORS.accent, paddingVertical: 14, borderRadius: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}>
-                                  <Ionicons name="eye" size={16} color={COLORS.white} style={{ marginRight: 6 }} />
-                                  <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Ver detalle</Text>
-                                </TouchableOpacity>
-                              )}
-                            </View>
-                          </View>
-                        </View>
-                      );
-                    })
-                  )}
-                  </View>
-                </>
-
-                ) : activeTab === 'postulaciones' ? (
-                  <PostulacionesPanel visible={activeTab === 'postulaciones'} />
-                ) : activeTab === 'lotes' ? (
-                  <LotesInvitacionesPanel visible={activeTab === 'lotes'} />
-                ) : (
-                  <>
-                    <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
-                      {([
-                        { key: 'activos', label: 'Activos' },
-                        { key: 'dados_de_baja', label: 'Dados de baja' },
-                      ] as { key: FiltroVoluntarios; label: string }[]).map((f) => (
-                        <TouchableOpacity
-                          key={f.key} onPress={() => setFiltroVoluntarios(f.key)}
-                          style={{
-                            paddingHorizontal: 20, paddingVertical: 10, borderRadius: 24,
-                            backgroundColor: filtroVoluntarios === f.key ? COLORS.primary : COLORS.cardBg,
-                            borderWidth: filtroVoluntarios === f.key ? 0 : 1, borderColor: 'rgba(0,0,0,0.05)',
-                          }}
-                        >
-                          <Text style={{ color: filtroVoluntarios === f.key ? COLORS.white : COLORS.textDark, fontWeight: '700' }}>{f.label}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-
-                    {isLoadingVoluntarios ? (
-                      <ActivityIndicator color={COLORS.primary} style={{ marginTop: 40 }} />
-                    ) : voluntarios.filter((v) =>
-                        filtroVoluntarios === 'activos'
-                          ? ['activo_nivel_1', 'activo_nivel_2'].includes(v.estado)
-                          : v.estado === 'dado_de_baja'
-                      ).length === 0 ? (
-                      <View style={{ alignItems: 'center', paddingVertical: 40 }}>
-                        <View style={{
-                          width: 62, height: 62, borderRadius: 21,
-                          backgroundColor: 'rgba(236,128,43,0.12)',
-                          alignItems: 'center', justifyContent: 'center', marginBottom: 14,
-                        }}>
-                          <Ionicons name="paw-outline" size={30} color={COLORS.primary} />
-                        </View>
-                        <Text style={{ fontSize: 15, color: COLORS.textLight, textAlign: 'center' }}>
-                          {filtroVoluntarios === 'activos' ? 'No tienes voluntarios activos todavía.' : 'No hay voluntarios dados de baja.'}
-                        </Text>
-                      </View>
-                    ) : (
-                      <View style={{ gap: 12 }}>
-                        {voluntarios.filter((v) =>
-                          filtroVoluntarios === 'activos'
-                            ? ['activo_nivel_1', 'activo_nivel_2'].includes(v.estado)
-                            : v.estado === 'dado_de_baja'
-                        ).map((v) => {
-                          const nivel = v.estado === 'activo_nivel_2' ? 'Nivel 2 — casa hogar' : v.estado === 'activo_nivel_1' ? 'Nivel 1 — campo' : null;
-                          return (
-                            <View key={v.voluntario_id} style={{ backgroundColor: COLORS.cardBg, borderRadius: 20, padding: 16, ...SHADOW_SM }}>
-                              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                <View style={{ flex: 1 }}>
-                                  <Text style={{ fontSize: 16, fontWeight: '800', color: COLORS.textDark }}>
-                                    {v.nombre} {v.apellido_paterno}
-                                  </Text>
-                                  {v.telefono && (
-                                    <Text style={{ fontSize: 12, color: COLORS.textLight, marginTop: 2 }}>📞 {v.telefono}</Text>
-                                  )}
-                                  {nivel && (
-                                    <View style={{ backgroundColor: 'rgba(102,188,180,0.15)', alignSelf: 'flex-start', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, marginTop: 6 }}>
-                                      <Text style={{ fontSize: 10, fontWeight: '700', color: COLORS.accent }}>{nivel}</Text>
-                                    </View>
-                                  )}
-                                  {v.especies.length > 0 && (
-                                    <Text style={{ fontSize: 12, color: COLORS.textLight, marginTop: 6, textTransform: 'capitalize' }}>
-                                      Atiende: {v.especies.join(', ')}
-                                    </Text>
-                                  )}
-                                  {v.estado === 'dado_de_baja' && (
-                                    <View style={{ backgroundColor: 'rgba(231,76,60,0.12)', alignSelf: 'flex-start', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, marginTop: 6 }}>
-                                      <Text style={{ fontSize: 10, fontWeight: '700', color: COLORS.danger }}>Dado de baja</Text>
-                                    </View>
-                                  )}
-                                </View>
-
-                                {v.estado === 'dado_de_baja' ? (
-                                  <TouchableOpacity
-                                    onPress={() => { setVoluntarioAccion(v); setShowReactivarModal(true); }}
-                                    style={{ backgroundColor: COLORS.accent, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 14 }}
-                                  >
-                                    <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 13 }}>Reactivar</Text>
-                                  </TouchableOpacity>
                                 ) : (
-                                  <TouchableOpacity
-                                    onPress={() => { setVoluntarioAccion(v); setShowBajaModal(true); }}
-                                    style={{ backgroundColor: 'transparent', borderWidth: 1, borderColor: COLORS.danger, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 14 }}
-                                  >
-                                    <Text style={{ color: COLORS.danger, fontWeight: '700', fontSize: 13 }}>Dar de baja</Text>
+                                  <TouchableOpacity onPress={() => setReporteSeleccionado(reporte)} style={{ backgroundColor: COLORS.accent, paddingVertical: 14, borderRadius: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}>
+                                    <Ionicons name="eye" size={16} color={COLORS.white} style={{ marginRight: 6 }} />
+                                    <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Ver detalle</Text>
                                   </TouchableOpacity>
                                 )}
                               </View>
                             </View>
-                          );
-                        })}
-                      </View>
+                          </View>
+                        );
+                      })
                     )}
-                  </>
-                )}
+                  </View>
+                </>
 
-              
+              ) : activeTab === 'postulaciones' ? (
+                <PostulacionesPanel visible={activeTab === 'postulaciones'} />
+              ) : activeTab === 'lotes' ? (
+                <LotesInvitacionesPanel visible={activeTab === 'lotes'} />
+              ) : (
+                <>
+                  <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
+                    {([
+                      { key: 'activos', label: 'Activos' },
+                      { key: 'dados_de_baja', label: 'Dados de baja' },
+                    ] as { key: FiltroVoluntarios; label: string }[]).map((f) => (
+                      <TouchableOpacity
+                        key={f.key} onPress={() => setFiltroVoluntarios(f.key)}
+                        style={{
+                          paddingHorizontal: 20, paddingVertical: 10, borderRadius: 24,
+                          backgroundColor: filtroVoluntarios === f.key ? COLORS.primary : COLORS.cardBg,
+                          borderWidth: filtroVoluntarios === f.key ? 0 : 1, borderColor: 'rgba(0,0,0,0.05)',
+                        }}
+                      >
+                        <Text style={{ color: filtroVoluntarios === f.key ? COLORS.white : COLORS.textDark, fontWeight: '700' }}>{f.label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  {isLoadingVoluntarios ? (
+                    <ActivityIndicator color={COLORS.primary} style={{ marginTop: 40 }} />
+                  ) : voluntarios.filter((v) =>
+                    filtroVoluntarios === 'activos'
+                      ? ['activo_nivel_1', 'activo_nivel_2'].includes(v.estado)
+                      : v.estado === 'dado_de_baja'
+                  ).length === 0 ? (
+                    <View style={{ alignItems: 'center', paddingVertical: 40 }}>
+                      <View style={{
+                        width: 62, height: 62, borderRadius: 21,
+                        backgroundColor: 'rgba(236,128,43,0.12)',
+                        alignItems: 'center', justifyContent: 'center', marginBottom: 14,
+                      }}>
+                        <Ionicons name="paw-outline" size={30} color={COLORS.primary} />
+                      </View>
+                      <Text style={{ fontSize: 15, color: COLORS.textLight, textAlign: 'center' }}>
+                        {filtroVoluntarios === 'activos' ? 'No tienes voluntarios activos todavía.' : 'No hay voluntarios dados de baja.'}
+                      </Text>
+                    </View>
+                  ) : (
+                    <View style={{ gap: 12 }}>
+                      {voluntarios.filter((v) =>
+                        filtroVoluntarios === 'activos'
+                          ? ['activo_nivel_1', 'activo_nivel_2'].includes(v.estado)
+                          : v.estado === 'dado_de_baja'
+                      ).map((v) => {
+                        const nivel = v.estado === 'activo_nivel_2' ? 'Nivel 2 — casa hogar' : v.estado === 'activo_nivel_1' ? 'Nivel 1 — campo' : null;
+                        return (
+                          <View key={v.voluntario_id} style={{ backgroundColor: COLORS.cardBg, borderRadius: 20, padding: 16, ...SHADOW_SM }}>
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                              <View style={{ flex: 1 }}>
+                                <Text style={{ fontSize: 16, fontWeight: '800', color: COLORS.textDark }}>
+                                  {v.nombre} {v.apellido_paterno}
+                                </Text>
+                                {v.telefono && (
+                                  <Text style={{ fontSize: 12, color: COLORS.textLight, marginTop: 2 }}>📞 {v.telefono}</Text>
+                                )}
+                                {nivel && (
+                                  <View style={{ backgroundColor: 'rgba(102,188,180,0.15)', alignSelf: 'flex-start', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, marginTop: 6 }}>
+                                    <Text style={{ fontSize: 10, fontWeight: '700', color: COLORS.accent }}>{nivel}</Text>
+                                  </View>
+                                )}
+                                {v.especies.length > 0 && (
+                                  <Text style={{ fontSize: 12, color: COLORS.textLight, marginTop: 6, textTransform: 'capitalize' }}>
+                                    Atiende: {v.especies.join(', ')}
+                                  </Text>
+                                )}
+                                {v.estado === 'dado_de_baja' && (
+                                  <View style={{ backgroundColor: 'rgba(231,76,60,0.12)', alignSelf: 'flex-start', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, marginTop: 6 }}>
+                                    <Text style={{ fontSize: 10, fontWeight: '700', color: COLORS.danger }}>Dado de baja</Text>
+                                  </View>
+                                )}
+                              </View>
+
+                              {v.estado === 'dado_de_baja' ? (
+                                <TouchableOpacity
+                                  onPress={() => { setVoluntarioAccion(v); setShowReactivarModal(true); }}
+                                  style={{ backgroundColor: COLORS.accent, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 14 }}
+                                >
+                                  <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 13 }}>Reactivar</Text>
+                                </TouchableOpacity>
+                              ) : (
+                                <TouchableOpacity
+                                  onPress={() => { setVoluntarioAccion(v); setShowBajaModal(true); }}
+                                  style={{ backgroundColor: 'transparent', borderWidth: 1, borderColor: COLORS.danger, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 14 }}
+                                >
+                                  <Text style={{ color: COLORS.danger, fontWeight: '700', fontSize: 13 }}>Dar de baja</Text>
+                                </TouchableOpacity>
+                              )}
+                            </View>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  )}
+                </>
+              )}
+
+
 
               <View style={{ backgroundColor: COLORS.cardBg, padding: 28, borderRadius: 32, marginTop: 32, ...SHADOW_MD }}>
                 <Text style={{ fontSize: 22, fontWeight: '800', color: COLORS.textDark, marginBottom: 6 }}>Modo de asignación de casos</Text>
@@ -1720,53 +1734,53 @@ const confirmarReactivar = async () => {
               <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={true}>
 
                 {/* ─── Foto(s) del reporte ─── */}
-              {(() => {
-                const fotos = reporteSeleccionado.fotos_urls?.length
-                  ? reporteSeleccionado.fotos_urls
-                  : reporteSeleccionado.foto_url
-                  ? [reporteSeleccionado.foto_url]
-                  : [];
-                if (fotos.length === 0) return null;
+                {(() => {
+                  const fotos = reporteSeleccionado.fotos_urls?.length
+                    ? reporteSeleccionado.fotos_urls
+                    : reporteSeleccionado.foto_url
+                      ? [reporteSeleccionado.foto_url]
+                      : [];
+                  if (fotos.length === 0) return null;
 
-                if (fotos.length === 1) {
-                  return (
-                    <TouchableOpacity
-                      onPress={() => { setCurrentPhotoIndex(0); setShowFullImage(true); }}
-                      activeOpacity={0.85}
-                      style={{ alignItems: 'center', marginBottom: 20 }}
-                    >
-                      <Image
-                        source={{ uri: fotos[0] }}
-                        style={{ width: '100%', maxWidth: 320, height: 220, borderRadius: 18, backgroundColor: '#2E2A26'}}
-                        resizeMode="contain"
-                      />
-                    </TouchableOpacity>
-                  );
-                }
-
-                return (
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    style={{ marginBottom: 20 }}
-                    contentContainerStyle={{ gap: 10, justifyContent: 'center', flexGrow: 1 }}
-                  >
-                    {fotos.map((url, idx) => (
+                  if (fotos.length === 1) {
+                    return (
                       <TouchableOpacity
-                        key={idx}
-                        onPress={() => { setCurrentPhotoIndex(idx); setShowFullImage(true); }}
+                        onPress={() => { setCurrentPhotoIndex(0); setShowFullImage(true); }}
                         activeOpacity={0.85}
+                        style={{ alignItems: 'center', marginBottom: 20 }}
                       >
                         <Image
-                          source={{ uri: url }}
-                          style={{ width: 220, height: 160, borderRadius: 18, backgroundColor: '#2E2A26'}}
+                          source={{ uri: fotos[0] }}
+                          style={{ width: '100%', maxWidth: 320, height: 220, borderRadius: 18, backgroundColor: '#2E2A26' }}
                           resizeMode="contain"
                         />
                       </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                );
-              })()}
+                    );
+                  }
+
+                  return (
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      style={{ marginBottom: 20 }}
+                      contentContainerStyle={{ gap: 10, justifyContent: 'center', flexGrow: 1 }}
+                    >
+                      {fotos.map((url, idx) => (
+                        <TouchableOpacity
+                          key={idx}
+                          onPress={() => { setCurrentPhotoIndex(idx); setShowFullImage(true); }}
+                          activeOpacity={0.85}
+                        >
+                          <Image
+                            source={{ uri: url }}
+                            style={{ width: 220, height: 160, borderRadius: 18, backgroundColor: '#2E2A26' }}
+                            resizeMode="contain"
+                          />
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  );
+                })()}
                 {(() => {
                   const animalesSel = getAnimales(reporteSeleccionado);
                   const totalSel = totalAnimales(animalesSel);
@@ -1895,8 +1909,8 @@ const confirmarReactivar = async () => {
         const fotos = reporteSeleccionado.fotos_urls?.length
           ? reporteSeleccionado.fotos_urls
           : reporteSeleccionado.foto_url
-          ? [reporteSeleccionado.foto_url]
-          : [];
+            ? [reporteSeleccionado.foto_url]
+            : [];
         return (
           <Modal visible={true} transparent animationType="fade">
             <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', justifyContent: 'center', alignItems: 'center' }}>
@@ -2231,20 +2245,20 @@ const confirmarReactivar = async () => {
                   <>
                     {/* Banner condicional */}
                     {modoAsignacion !== 'manual' && (
-                        <View style={{
-                          backgroundColor: 'rgba(102,188,180,0.12)',
-                          borderRadius: 14, padding: 14, flexDirection: 'row',
-                          alignItems: 'flex-start', marginBottom: 14,
-                          borderLeftWidth: 4, borderLeftColor: COLORS.accent,
-                        }}>
-                          <Ionicons name="time-outline" size={20} color={COLORS.accent} style={{ marginRight: 10, marginTop: 1 }} />
-                          <Text style={{ flex: 1, fontSize: 13, color: COLORS.textDark, lineHeight: 19 }}>
-                            {modoAsignacion === 'automatico'
-                              ? 'El sistema asignará al mejor candidato en breve, sin esperar a que elijas.'
-                              : <>Si no asignas en <Text style={{ fontWeight: '700' }}>{timeoutMin} min</Text>, el sistema asignará automáticamente al mejor candidato.</>}
-                          </Text>
-                        </View>
-                      )}
+                      <View style={{
+                        backgroundColor: 'rgba(102,188,180,0.12)',
+                        borderRadius: 14, padding: 14, flexDirection: 'row',
+                        alignItems: 'flex-start', marginBottom: 14,
+                        borderLeftWidth: 4, borderLeftColor: COLORS.accent,
+                      }}>
+                        <Ionicons name="time-outline" size={20} color={COLORS.accent} style={{ marginRight: 10, marginTop: 1 }} />
+                        <Text style={{ flex: 1, fontSize: 13, color: COLORS.textDark, lineHeight: 19 }}>
+                          {modoAsignacion === 'automatico'
+                            ? 'El sistema asignará al mejor candidato en breve, sin esperar a que elijas.'
+                            : <>Si no asignas en <Text style={{ fontWeight: '700' }}>{timeoutMin} min</Text>, el sistema asignará automáticamente al mejor candidato.</>}
+                        </Text>
+                      </View>
+                    )}
 
                     <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
                       <View style={{ marginBottom: 12 }}>
