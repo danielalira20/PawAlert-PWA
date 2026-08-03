@@ -312,13 +312,44 @@ async def crear_reporte(
                             detail=mensaje_rechazo(resultado_vision.get("categoria_rechazo")),
                         )
 
+                    from app.services.image_evidence_service import ImagenEvidenciaInvalida, procesar_imagen_evidencia
+                    from app.services.report_photo_location_service import sanear_sin_exif_de_emergencia, verificar_ubicacion_exif
+
+                    # phash primero: además de su propósito de moderación, ya
+                    # prueba que Pillow puede abrir la imagen — si no pudiera,
+                    # esta línea ya habría abortado el reporte (comportamiento
+                    # preexistente, sin cambios), así que el saneo de abajo
+                    # nunca se enfrenta a un archivo realmente corrupto.
                     phash = calcular_phash(contenido_foto)
-                    extension = foto.filename.rsplit(".", 1)[-1]
+
+                    try:
+                        procesada = procesar_imagen_evidencia(contenido_foto)
+                        contenido_a_subir = procesada.contenido_publico
+                        content_type_subida = procesada.content_type_publico
+                        extension_subida = procesada.extension_publica
+                        exif_latitud = procesada.exif_latitud
+                        exif_longitud = procesada.exif_longitud
+                    except ImagenEvidenciaInvalida:
+                        # procesar_imagen_evidencia rechazó por tamaño/resolución
+                        # (nunca por formato ni corrupción, ver nota arriba).
+                        # Nunca se sube contenido_foto crudo — reabriría el GPS
+                        # embebido públicamente. Se pierde el dato EXIF de esta
+                        # foto puntual, no la garantía de privacidad.
+                        contenido_a_subir = sanear_sin_exif_de_emergencia(contenido_foto)
+                        content_type_subida = "image/jpeg"
+                        extension_subida = "jpg"
+                        exif_latitud = None
+                        exif_longitud = None
+
+                    resultado_ubicacion = verificar_ubicacion_exif(
+                        exif_latitud, exif_longitud, latitud, longitud,
+                    )
+
                     foto_url = await subir_bytes(
-                        contenido_foto,
+                        contenido_a_subir,
                         carpeta="animales/fotos",
-                        content_type=foto.content_type or "application/octet-stream",
-                        extension=extension,
+                        content_type=content_type_subida,
+                        extension=extension_subida,
                     )
                     fotos_urls_subidas.append(foto_url)
 
@@ -326,6 +357,10 @@ async def crear_reporte(
                         "animal_id": animal_id_actual,
                         "foto_url": foto_url,
                         "orden": ordenes[i] if i < len(ordenes) else i + 1,
+                        "exif_latitud": exif_latitud,
+                        "exif_longitud": exif_longitud,
+                        "exif_distancia_declarada_m": resultado_ubicacion["distancia_m"],
+                        "exif_estado_verificacion": resultado_ubicacion["estado"],
                     }
                     es_error_tecnico = resultado_vision.get("estado") == "error_tecnico"
                     if es_error_tecnico:

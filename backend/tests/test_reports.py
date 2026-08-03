@@ -1,25 +1,37 @@
 import json
 import asyncio
+from io import BytesIO
+
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from PIL import Image
 from unittest.mock import AsyncMock, MagicMock, patch
 from app.main import app
 from app.models.report import AnimalInput
 from app.services import report_service
 from app.services.report_service import _clasificar_escenario
+from app.services.image_evidence_service import ImagenEvidenciaInvalida, ImagenEvidenciaProcesada
 
 client = TestClient(app)
+
+
+def _jpeg_real() -> bytes:
+    """JPEG mínimo pero real — procesar_imagen_evidencia (no mockeado en
+    algunos tests) necesita poder decodificarlo de verdad."""
+    salida = BytesIO()
+    Image.new("RGB", (10, 10), "orange").save(salida, format="JPEG")
+    return salida.getvalue()
 
 
 class FakeUploadFile:
     """Sustituto mínimo de UploadFile para probar crear_reporte sin FastAPI:
     solo expone lo que el loop de fotos realmente usa."""
 
-    def __init__(self, filename="foto.jpg", content_type="image/jpeg", contenido=b"fake-bytes"):
+    def __init__(self, filename="foto.jpg", content_type="image/jpeg", contenido=None):
         self.filename = filename
         self.content_type = content_type
-        self._contenido = contenido
+        self._contenido = contenido if contenido is not None else _jpeg_real()
 
     async def read(self):
         return self._contenido
@@ -45,7 +57,7 @@ def _config_catalogos_basica():
     }
 
 
-def _crear_reporte_con_fotos(supabase, fotos, fotos_animal_index):
+def _crear_reporte_con_fotos(supabase, fotos, fotos_animal_index, *, latitud=None, longitud=None):
     with (
         patch.object(report_service, "supabase", supabase),
         patch.object(report_service, "obtener_contactos_emergencia", return_value=[]),
@@ -63,7 +75,7 @@ def _crear_reporte_con_fotos(supabase, fotos, fotos_animal_index):
             nombre="Juan", apellido_paterno="Pérez", apellido_materno=None,
             telefono="5512345678", email=None, usuario_id=None,
             animales=[AnimalInput(condicion="estable", tipo_animal="perro", tamanio="mediano")],
-            latitud=None, longitud=None, calle=None, colonia="Centro", municipio="Puebla",
+            latitud=latitud, longitud=longitud, calle=None, colonia="Centro", municipio="Puebla",
             referencia=None,
             fotos=fotos,
             fotos_ordenes=json.dumps(list(range(1, len(fotos) + 1))),
@@ -72,6 +84,21 @@ def _crear_reporte_con_fotos(supabase, fotos, fotos_animal_index):
             es_duplicado_confirmado=True,
             reporte_original_id=None,
         ))
+
+
+def _procesada(*, exif_latitud=None, exif_longitud=None) -> ImagenEvidenciaProcesada:
+    return ImagenEvidenciaProcesada(
+        contenido_publico=b"saneada",
+        content_type_publico="image/jpeg",
+        extension_publica="jpg",
+        formato_original="JPEG",
+        ancho=800,
+        alto=600,
+        size_bytes_original=12345,
+        exif_latitud=exif_latitud,
+        exif_longitud=exif_longitud,
+        exif_captured_at=None,
+    )
 
 
 def test_crear_reporte_rechaza_foto_y_limpia_storage_de_fotos_previas(make_query):
@@ -159,6 +186,110 @@ def test_crear_reporte_exito_guarda_analisis_y_condicion_estimada(make_query):
     assert "foto_revision_pendiente" not in eventos
 
 
+def test_crear_reporte_exif_discrepancia_no_bloquea(make_query):
+    supabase, tablas = _tablas_mock(make_query, _config_catalogos_basica())
+    fotos = [FakeUploadFile()]
+
+    with (
+        patch(
+            "app.services.report_photo_vision_service.verificar_foto_animal",
+            return_value={"estado": "completado", "es_animal_real": True, "categoria_rechazo": None, "confianza": 0.9, "condicion_estimada": None},
+        ),
+        patch(
+            "app.services.image_evidence_service.procesar_imagen_evidencia",
+            return_value=_procesada(exif_latitud=20.5, exif_longitud=-99.5),
+        ),
+        patch.object(report_service, "subir_bytes", new=AsyncMock(return_value="https://x.supabase.co/storage/v1/object/public/bucket/foto.jpg")) as subir_mock,
+    ):
+        resultado = _crear_reporte_con_fotos(supabase, fotos, [0], latitud=19.0414, longitud=-98.2063)
+
+    assert resultado["estado"] == "pendiente"
+    foto_insert = tablas["animal_fotos"].insert.call_args.args[0]
+    assert foto_insert["exif_estado_verificacion"] == "discrepancia"
+    assert foto_insert["exif_distancia_declarada_m"] > 200
+    assert foto_insert["exif_latitud"] == 20.5
+    assert foto_insert["exif_longitud"] == -99.5
+    # Se sube la copia saneada (sin EXIF), nunca los bytes crudos.
+    assert subir_mock.call_args.args[0] == b"saneada"
+
+
+def test_crear_reporte_exif_coincidente(make_query):
+    supabase, tablas = _tablas_mock(make_query, _config_catalogos_basica())
+    fotos = [FakeUploadFile()]
+
+    with (
+        patch(
+            "app.services.report_photo_vision_service.verificar_foto_animal",
+            return_value={"estado": "completado", "es_animal_real": True, "categoria_rechazo": None, "confianza": 0.9, "condicion_estimada": None},
+        ),
+        patch(
+            "app.services.image_evidence_service.procesar_imagen_evidencia",
+            return_value=_procesada(exif_latitud=19.0415, exif_longitud=-98.2064),
+        ),
+        patch.object(report_service, "subir_bytes", new=AsyncMock(return_value="https://x.supabase.co/storage/v1/object/public/bucket/foto.jpg")),
+    ):
+        resultado = _crear_reporte_con_fotos(supabase, fotos, [0], latitud=19.0414, longitud=-98.2063)
+
+    assert resultado["estado"] == "pendiente"
+    foto_insert = tablas["animal_fotos"].insert.call_args.args[0]
+    assert foto_insert["exif_estado_verificacion"] == "coincidente"
+    assert foto_insert["exif_distancia_declarada_m"] < 200
+
+
+def test_crear_reporte_exif_sin_gps(make_query):
+    supabase, tablas = _tablas_mock(make_query, _config_catalogos_basica())
+    fotos = [FakeUploadFile()]
+
+    with (
+        patch(
+            "app.services.report_photo_vision_service.verificar_foto_animal",
+            return_value={"estado": "completado", "es_animal_real": True, "categoria_rechazo": None, "confianza": 0.9, "condicion_estimada": None},
+        ),
+        patch(
+            "app.services.image_evidence_service.procesar_imagen_evidencia",
+            return_value=_procesada(exif_latitud=None, exif_longitud=None),
+        ),
+        patch.object(report_service, "subir_bytes", new=AsyncMock(return_value="https://x.supabase.co/storage/v1/object/public/bucket/foto.jpg")),
+    ):
+        resultado = _crear_reporte_con_fotos(supabase, fotos, [0], latitud=19.0414, longitud=-98.2063)
+
+    assert resultado["estado"] == "pendiente"
+    foto_insert = tablas["animal_fotos"].insert.call_args.args[0]
+    assert foto_insert["exif_estado_verificacion"] == "sin_gps_exif"
+    assert foto_insert["exif_distancia_declarada_m"] is None
+
+
+def test_crear_reporte_procesar_imagen_evidencia_invalida_usa_saneo_de_emergencia(make_query):
+    supabase, tablas = _tablas_mock(make_query, _config_catalogos_basica())
+    fotos = [FakeUploadFile()]
+
+    with (
+        patch(
+            "app.services.report_photo_vision_service.verificar_foto_animal",
+            return_value={"estado": "completado", "es_animal_real": True, "categoria_rechazo": None, "confianza": 0.9, "condicion_estimada": None},
+        ),
+        patch(
+            "app.services.image_evidence_service.procesar_imagen_evidencia",
+            side_effect=ImagenEvidenciaInvalida("La fotografía supera el límite de 15 MB"),
+        ),
+        patch(
+            "app.services.report_photo_location_service.sanear_sin_exif_de_emergencia",
+            return_value=b"saneada-de-emergencia",
+        ),
+        patch.object(report_service, "subir_bytes", new=AsyncMock(return_value="https://x.supabase.co/storage/v1/object/public/bucket/foto.jpg")) as subir_mock,
+    ):
+        resultado = _crear_reporte_con_fotos(supabase, fotos, [0], latitud=19.0414, longitud=-98.2063)
+
+    assert resultado["estado"] == "pendiente"
+    foto_insert = tablas["animal_fotos"].insert.call_args.args[0]
+    assert foto_insert["exif_latitud"] is None
+    assert foto_insert["exif_longitud"] is None
+    assert foto_insert["exif_estado_verificacion"] == "sin_gps_exif"
+    # Nunca se suben los bytes crudos — ni siquiera en el camino de emergencia.
+    assert subir_mock.call_args.args[0] == b"saneada-de-emergencia"
+    assert subir_mock.call_args.args[0] != fotos[0]._contenido
+
+
 def test_validar_foto_endpoint_valido():
     with patch(
         "app.services.report_photo_vision_service.verificar_foto_animal",
@@ -169,7 +300,7 @@ def test_validar_foto_endpoint_valido():
             files={"foto": ("foto.jpg", b"contenido-fake", "image/jpeg")},
         )
     assert response.status_code == 200
-    assert response.json() == {"valido": True, "mensaje": "", "advertencia": None}
+    assert response.json() == {"valido": True, "mensaje": "", "advertencia": None, "advertencia_ubicacion": None}
 
 
 def test_validar_foto_endpoint_rechazo_imagen_no_clara():
@@ -198,7 +329,7 @@ def test_validar_foto_endpoint_error_tecnico_deja_pasar():
             files={"foto": ("foto.jpg", b"contenido-fake", "image/jpeg")},
         )
     assert response.status_code == 200
-    assert response.json() == {"valido": True, "mensaje": "", "advertencia": None}
+    assert response.json() == {"valido": True, "mensaje": "", "advertencia": None, "advertencia_ubicacion": None}
 
 
 def test_validar_foto_endpoint_advertencia_identificacion_limitada():
@@ -235,6 +366,105 @@ def test_validar_foto_endpoint_sin_advertencia_cuando_calidad_adecuada():
     data = response.json()
     assert data["valido"] is True
     assert data["advertencia"] is None
+
+
+def test_validar_foto_endpoint_advertencia_ubicacion_camara():
+    with (
+        patch(
+            "app.services.report_photo_vision_service.verificar_foto_animal",
+            return_value={"estado": "completado", "es_animal_real": True, "categoria_rechazo": None, "confianza": 0.9},
+        ),
+        patch(
+            "app.services.image_evidence_service.procesar_imagen_evidencia",
+            return_value=_procesada(exif_latitud=20.5, exif_longitud=-99.5),
+        ),
+    ):
+        response = client.post(
+            "/reports/validar-foto",
+            files={"foto": ("foto.jpg", b"contenido-fake", "image/jpeg")},
+            data={"latitud": "19.0414", "longitud": "-98.2063", "from_camera": "true"},
+        )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["valido"] is True
+    assert "Verifica que el pin" in data["advertencia_ubicacion"]
+
+
+def test_validar_foto_endpoint_advertencia_ubicacion_galeria():
+    with (
+        patch(
+            "app.services.report_photo_vision_service.verificar_foto_animal",
+            return_value={"estado": "completado", "es_animal_real": True, "categoria_rechazo": None, "confianza": 0.9},
+        ),
+        patch(
+            "app.services.image_evidence_service.procesar_imagen_evidencia",
+            return_value=_procesada(exif_latitud=20.5, exif_longitud=-99.5),
+        ),
+    ):
+        response = client.post(
+            "/reports/validar-foto",
+            files={"foto": ("foto.jpg", b"contenido-fake", "image/jpeg")},
+            data={"latitud": "19.0414", "longitud": "-98.2063", "from_camera": "false"},
+        )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["valido"] is True
+    assert "puedes revisar tu ubicación" in data["advertencia_ubicacion"]
+
+
+def test_validar_foto_endpoint_sin_advertencia_ubicacion_cuando_coincide():
+    with (
+        patch(
+            "app.services.report_photo_vision_service.verificar_foto_animal",
+            return_value={"estado": "completado", "es_animal_real": True, "categoria_rechazo": None, "confianza": 0.9},
+        ),
+        patch(
+            "app.services.image_evidence_service.procesar_imagen_evidencia",
+            return_value=_procesada(exif_latitud=19.0415, exif_longitud=-98.2064),
+        ),
+    ):
+        response = client.post(
+            "/reports/validar-foto",
+            files={"foto": ("foto.jpg", b"contenido-fake", "image/jpeg")},
+            data={"latitud": "19.0414", "longitud": "-98.2063", "from_camera": "false"},
+        )
+    assert response.status_code == 200
+    assert response.json()["advertencia_ubicacion"] is None
+
+
+def test_validar_foto_endpoint_sin_lat_lng_no_evalua_ubicacion():
+    with patch(
+        "app.services.report_photo_vision_service.verificar_foto_animal",
+        return_value={"estado": "completado", "es_animal_real": True, "categoria_rechazo": None, "confianza": 0.9},
+    ):
+        response = client.post(
+            "/reports/validar-foto",
+            files={"foto": ("foto.jpg", b"contenido-fake", "image/jpeg")},
+        )
+    assert response.status_code == 200
+    assert response.json()["advertencia_ubicacion"] is None
+
+
+def test_validar_foto_endpoint_rechazo_gemini_no_evalua_exif():
+    with (
+        patch(
+            "app.services.report_photo_vision_service.verificar_foto_animal",
+            return_value={"estado": "completado", "es_animal_real": False, "categoria_rechazo": "no_hay_animal", "confianza": 0.2},
+        ),
+        patch(
+            "app.services.image_evidence_service.procesar_imagen_evidencia",
+        ) as procesar_mock,
+    ):
+        response = client.post(
+            "/reports/validar-foto",
+            files={"foto": ("foto.jpg", b"contenido-fake", "image/jpeg")},
+            data={"latitud": "19.0414", "longitud": "-98.2063", "from_camera": "true"},
+        )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["valido"] is False
+    assert data["advertencia_ubicacion"] is None
+    procesar_mock.assert_not_called()
 
 
 def test_validar_foto_endpoint_content_type_invalido():

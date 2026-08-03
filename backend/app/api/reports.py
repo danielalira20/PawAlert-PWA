@@ -276,7 +276,12 @@ async def create_report(
 
 ### Endpoint: pre-check de foto con Gemini Vision antes de armar el reporte
 @router.post("/validar-foto", status_code=200)
-async def validar_foto(foto: UploadFile = File(...)):
+async def validar_foto(
+    foto: UploadFile = File(...),
+    latitud: float | None = Form(None),
+    longitud: float | None = Form(None),
+    from_camera: bool = Form(False),
+):
     """Verifica que la foto muestre un animal real antes de que el usuario
     complete el resto del formulario. No toca Storage ni BD."""
     if foto.content_type not in ["image/jpeg", "image/png", "image/jpg", "image/webp"]:
@@ -292,17 +297,32 @@ async def validar_foto(foto: UploadFile = File(...)):
     resultado = verificar_foto_animal(contenido, foto.content_type)
 
     if resultado.get("estado") == "error_tecnico":
-        return {"valido": True, "mensaje": "", "advertencia": None}
+        return {"valido": True, "mensaje": "", "advertencia": None, "advertencia_ubicacion": None}
 
     if resultado.get("es_animal_real") is False:
-        return {"valido": False, "mensaje": mensaje_rechazo(resultado.get("categoria_rechazo")), "advertencia": None}
+        return {"valido": False, "mensaje": mensaje_rechazo(resultado.get("categoria_rechazo")), "advertencia": None, "advertencia_ubicacion": None}
 
     advertencia = (
         mensaje_advertencia_identificacion()
         if resultado.get("calidad_identificacion") == "limitada"
         else None
     )
-    return {"valido": True, "mensaje": "", "advertencia": advertencia}
+
+    advertencia_ubicacion = None
+    if latitud is not None and longitud is not None:
+        from app.services.image_evidence_service import ImagenEvidenciaInvalida, procesar_imagen_evidencia
+        from app.services.report_photo_location_service import mensaje_advertencia_ubicacion, verificar_ubicacion_exif
+        try:
+            procesada = procesar_imagen_evidencia(contenido)
+            resultado_ubicacion = verificar_ubicacion_exif(
+                procesada.exif_latitud, procesada.exif_longitud, latitud, longitud,
+            )
+            if resultado_ubicacion["estado"] == "discrepancia":
+                advertencia_ubicacion = mensaje_advertencia_ubicacion(from_camera)
+        except ImagenEvidenciaInvalida:
+            pass
+
+    return {"valido": True, "mensaje": "", "advertencia": advertencia, "advertencia_ubicacion": advertencia_ubicacion}
 #### FIN endpoint: pre-check de foto
 
 
