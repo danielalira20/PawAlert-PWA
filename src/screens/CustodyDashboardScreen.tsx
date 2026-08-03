@@ -83,13 +83,29 @@ export interface Custodia {
   } | null;
   aclaraciones?: Aclaracion[];
   solicitud_relevo?: { id: string; motivo: string; estado: string } | null;
+  oferta_relevo?: {
+    id: string;
+    estado: 'pendiente_coordinadora' | 'autorizada' | 'confirmada_transporte';
+    tipo_destino: 'ingreso_asociacion' | 'hogar_temporal';
+    responsable_recepcion: string;
+    direccion_recepcion?: string | null;
+    ventana_inicio: string;
+    ventana_fin: string;
+    asociaciones?: { nombre?: string | null } | null;
+  } | null;
   transferencia_activa?: {
     id: string;
     fecha_programada?: string | null;
     confirma_entrega_at?: string | null;
     confirma_recepcion_at?: string | null;
     estado: string;
+    tipo_destino?: string | null;
+    responsable_recepcion?: string | null;
+    direccion_recepcion?: string | null;
+    ventana_inicio?: string | null;
+    ventana_fin?: string | null;
   } | null;
+  puede_confirmar_recepcion?: boolean;
   pregunta_vencimiento?: {
     id: string;
     fecha_limite_consultada: string;
@@ -98,7 +114,7 @@ export interface Custodia {
   } | null;
 }
 
-type ModalMode = 'seguimiento' | 'relevo' | 'extension' | 'vencimiento' | 'validacion' | 'duda' | 'gestionar_duda' | 'responder_aclaracion' | 'aceptar' | 'transferencia' | 'finalizar' | null;
+type ModalMode = 'seguimiento' | 'relevo' | 'extension' | 'vencimiento' | 'validacion' | 'duda' | 'gestionar_duda' | 'responder_aclaracion' | 'aceptar' | 'autorizar_relevo' | 'transporte_relevo' | 'transferencia' | 'finalizar' | null;
 
 interface Props {
   onClose?: () => void;
@@ -125,6 +141,13 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
     fecha: '',
     comentario: '',
     resolucion: '',
+    tipoDestino: 'ingreso_asociacion' as 'ingreso_asociacion' | 'hogar_temporal',
+    receptorId: '',
+    responsable: '',
+    direccion: '',
+    horaInicio: '10:00',
+    horaFin: '12:00',
+    nuevaFecha: '',
     mismoAnimal: null as boolean | null,
     fotoClara: null as boolean | null,
     entornoAdecuado: null as boolean | null,
@@ -135,6 +158,7 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
   const [fotoEntorno, setFotoEntorno] = useState<string | null>(null);
   const [gps, setGps] = useState<{ latitude: number; longitude: number } | null>(null);
   const [reservandoRevision, setReservandoRevision] = useState<string | null>(null);
+  const [hogares, setHogares] = useState<Array<{ id: string; nombre: string; zona: string; espacios_disponibles: number }>>([]);
 
   const cargar = useCallback(async () => {
     if (!token) return;
@@ -175,6 +199,13 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
       fecha: '',
       comentario: '',
       resolucion: '',
+      tipoDestino: 'ingreso_asociacion',
+      receptorId: '',
+      responsable: '',
+      direccion: '',
+      horaInicio: '10:00',
+      horaFin: '12:00',
+      nuevaFecha: '',
       mismoAnimal: null,
       fotoClara: null,
       entornoAdecuado: null,
@@ -185,6 +216,17 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
     setFotoEntorno(null);
     setGps(null);
   };
+
+  useEffect(() => {
+    if (modal !== 'aceptar' || !seleccionada?.solicitud_relevo || !token) {
+      setHogares([]);
+      return;
+    }
+    axios.get(
+      `${API_URL}/custody/relief/${seleccionada.solicitud_relevo.id}/eligible-homes`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    ).then((response) => setHogares(response.data.hogares || [])).catch(() => setHogares([]));
+  }, [modal, seleccionada?.solicitud_relevo?.id, token]);
 
   const cerrarModal = () => {
     if (submitting) return;
@@ -410,13 +452,59 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
   }, 'La aclaración quedó resuelta.');
 
   const aceptarRelevo = () => ejecutar(async () => {
-    if (!seleccionada?.solicitud_relevo || !form.fecha) throw new Error('Selecciona una fecha para el traslado.');
+    if (!seleccionada?.solicitud_relevo || !form.fecha || !form.responsable || !form.direccion || !gps) {
+      throw new Error('Completa fecha, responsable, dirección y GPS del punto de entrega.');
+    }
+    if (form.tipoDestino === 'hogar_temporal' && (!form.receptorId || !form.nuevaFecha)) {
+      throw new Error('Selecciona el nuevo hogar y la fecha límite de su resguardo.');
+    }
     await axios.post(
       `${API_URL}/custody/relief/${seleccionada.solicitud_relevo.id}/accept`,
-      { fecha_programada: new Date(`${form.fecha}T18:00:00`).toISOString() },
+      {
+        tipo_destino: form.tipoDestino,
+        voluntario_receptor_id: form.tipoDestino === 'hogar_temporal' ? form.receptorId : null,
+        responsable_recepcion: form.responsable.trim(),
+        direccion_recepcion: form.direccion.trim(),
+        latitud_recepcion: gps.latitude,
+        longitud_recepcion: gps.longitude,
+        ventana_inicio: new Date(`${form.fecha}T${form.horaInicio}:00`).toISOString(),
+        ventana_fin: new Date(`${form.fecha}T${form.horaFin}:00`).toISOString(),
+        nueva_fecha_limite: form.tipoDestino === 'hogar_temporal'
+          ? new Date(`${form.nuevaFecha}T18:00:00`).toISOString()
+          : null,
+      },
       { headers: { Authorization: `Bearer ${token}` } },
     );
-  }, 'El traslado quedó reservado; ahora ambas partes deberán confirmarlo.');
+  }, 'La coordinadora revisará el destino antes de consultar el traslado con el hogar actual.');
+
+  const autorizarRelevo = () => ejecutar(async () => {
+    if (!seleccionada?.oferta_relevo) throw new Error('No encontramos la oferta de relevo.');
+    await axios.post(
+      `${API_URL}/custody/relief/offers/${seleccionada.oferta_relevo.id}/authorize`,
+      {},
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+  }, 'El hogar actual ya puede confirmar si realizará el traslado.');
+
+  const responderTransporte = (puede_transportar: boolean) => ejecutar(async () => {
+    if (!seleccionada?.oferta_relevo) throw new Error('No encontramos la oferta autorizada.');
+    await axios.post(
+      `${API_URL}/custody/relief/offers/${seleccionada.oferta_relevo.id}/transport-response`,
+      { puede_transportar },
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+  }, puede_transportar
+    ? 'El traslado quedó programado y ya puedes consultar el punto autorizado.'
+    : 'La coordinadora buscará otra opción segura. La custodia continúa contigo por ahora.');
+
+  const iniciarTraslado = (custodia: Custodia) => ejecutar(async () => {
+    if (!custodia.transferencia_activa) throw new Error('No encontramos el traslado programado.');
+    await axios.post(
+      `${API_URL}/custody/transfers/${custodia.transferencia_activa.id}/start`,
+      {},
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+  }, 'El traslado está en curso. Confirma la entrega cuando llegues al punto autorizado.');
 
   const confirmarTransferencia = () => ejecutar(async () => {
     if (!seleccionada?.transferencia_activa || !fotoAnimal || !gps) {
@@ -584,6 +672,19 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
                   </View>
                 )}
 
+                {custodia.transferencia_activa?.direccion_recepcion && (
+                  <View style={styles.privateLocation}>
+                    <Ionicons name="navigate-outline" size={17} color={Brand.secondary} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.privateLocationTitle}>Punto autorizado de entrega</Text>
+                      <Text style={styles.privateLocationText}>{custodia.transferencia_activa.direccion_recepcion}</Text>
+                      <Text style={styles.privateLocationText}>
+                        {fecha(custodia.transferencia_activa.ventana_inicio)}–{fecha(custodia.transferencia_activa.ventana_fin)} · Recibe {custodia.transferencia_activa.responsable_recepcion}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+
                 <View style={styles.actions}>
                   {!esAsociacion ? (
                     <>
@@ -598,7 +699,13 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
                       {custodia.aclaraciones?.some((a) => a.estado === 'enviada_voluntario') && (
                         <Action icon="chatbubble-ellipses-outline" label="Responder aclaración" primary onPress={() => abrir('responder_aclaracion', custodia)} />
                       )}
-                      {custodia.transferencia_activa && !custodia.transferencia_activa.confirma_entrega_at && (
+                      {custodia.oferta_relevo?.estado === 'autorizada' && !custodia.transferencia_activa && (
+                        <Action icon="car-outline" label="Confirmar traslado" primary onPress={() => abrir('transporte_relevo', custodia)} />
+                      )}
+                      {custodia.transferencia_activa?.estado === 'programada' && (
+                        <Action icon="navigate-outline" label="Iniciar traslado" primary onPress={() => iniciarTraslado(custodia)} />
+                      )}
+                      {['en_traslado', 'en_curso'].includes(custodia.transferencia_activa?.estado || '') && !custodia.transferencia_activa?.confirma_entrega_at && (
                         <Action icon="checkmark-done-outline" label="Confirmar entrega" primary onPress={() => abrir('transferencia', custodia)} />
                       )}
                     </>
@@ -618,7 +725,10 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
                       {custodia.solicitud_relevo?.estado === 'abierta' && !custodia.es_coordinadora && (
                         <Action icon="hand-left-outline" label="Recibir animal" onPress={() => abrir('aceptar', custodia)} />
                       )}
-                      {custodia.transferencia_activa?.confirma_entrega_at && !custodia.transferencia_activa.confirma_recepcion_at && (
+                      {custodia.es_coordinadora && custodia.oferta_relevo?.estado === 'pendiente_coordinadora' && (
+                        <Action icon="shield-checkmark-outline" label="Autorizar relevo" primary onPress={() => abrir('autorizar_relevo', custodia)} />
+                      )}
+                      {custodia.puede_confirmar_recepcion && custodia.transferencia_activa?.confirma_entrega_at && !custodia.transferencia_activa.confirma_recepcion_at && (
                         <Action icon="checkmark-done-outline" label="Confirmar recepción" primary onPress={() => abrir('transferencia', custodia)} />
                       )}
                       {custodia.es_coordinadora && custodia.estado === 'transferido' && (
@@ -673,11 +783,65 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
                   </View>
                 </>
               )}
-              {(modal === 'extension' || modal === 'aceptar') && (
+              {modal === 'extension' && (
                 <>
-                  <Text style={styles.modalCopy}>{modal === 'extension' ? 'Indica hasta qué fecha puedes continuar.' : 'Propón la fecha de entrega. Rafael llevará al animal; tu asociación confirmará la recepción cuando llegue.'}</Text>
+                  <Text style={styles.modalCopy}>Indica hasta qué fecha puedes continuar.</Text>
                   <Field label="Fecha (AAAA-MM-DD)" value={form.fecha} onChangeText={(v) => setForm({ ...form, fecha: v })} placeholder="2026-08-15" />
-                  <Submit label={modal === 'extension' ? 'Confirmar extensión' : 'Reservar traslado'} loading={submitting} onPress={modal === 'extension' ? enviarExtension : aceptarRelevo} />
+                  <Submit label="Confirmar extensión" loading={submitting} onPress={enviarExtension} />
+                </>
+              )}
+              {modal === 'aceptar' && (
+                <>
+                  <Text style={styles.modalCopy}>Define un destino real y una ventana de recepción. La coordinadora lo autorizará antes de mostrar la dirección al hogar actual.</Text>
+                  <View style={styles.validationRow}>
+                    <Action icon="business-outline" label="Ingreso a asociación" primary={form.tipoDestino === 'ingreso_asociacion'} onPress={() => setForm({ ...form, tipoDestino: 'ingreso_asociacion', receptorId: '' })} />
+                    <Action icon="home-outline" label="Otro hogar temporal" primary={form.tipoDestino === 'hogar_temporal'} onPress={() => setForm({ ...form, tipoDestino: 'hogar_temporal' })} />
+                  </View>
+                  {form.tipoDestino === 'hogar_temporal' && (
+                    <>
+                      <Text style={[styles.label, { marginTop: 14 }]}>Hogar receptor verificado</Text>
+                      {hogares.length === 0 ? (
+                        <Text style={styles.modalCopy}>No hay hogares con capacidad disponible en este momento.</Text>
+                      ) : hogares.map((hogar) => (
+                        <TouchableOpacity key={hogar.id} style={[styles.messageCard, form.receptorId === hogar.id && styles.selectedCard]} onPress={() => setForm({ ...form, receptorId: hogar.id })}>
+                          <Text style={styles.messageText}>{hogar.nombre} · {hogar.espacios_disponibles} espacio(s)</Text>
+                          {!!hogar.zona && <Text style={styles.privateLocationText}>{hogar.zona}</Text>}
+                        </TouchableOpacity>
+                      ))}
+                      <Field label="Nueva fecha límite" value={form.nuevaFecha} onChangeText={(v) => setForm({ ...form, nuevaFecha: v })} placeholder="AAAA-MM-DD" />
+                    </>
+                  )}
+                  <Field label="Responsable que recibirá" value={form.responsable} onChangeText={(v) => setForm({ ...form, responsable: v })} placeholder="Nombre completo" />
+                  <Field label="Dirección autorizada" value={form.direccion} onChangeText={(v) => setForm({ ...form, direccion: v })} placeholder="Calle, número, colonia y municipio" multiline />
+                  <Field label="Fecha del traslado" value={form.fecha} onChangeText={(v) => setForm({ ...form, fecha: v })} placeholder="AAAA-MM-DD" />
+                  <View style={styles.timeRow}>
+                    <View style={{ flex: 1 }}><Field label="Desde" value={form.horaInicio} onChangeText={(v) => setForm({ ...form, horaInicio: v })} placeholder="10:00" /></View>
+                    <View style={{ flex: 1 }}><Field label="Hasta" value={form.horaFin} onChangeText={(v) => setForm({ ...form, horaFin: v })} placeholder="12:00" /></View>
+                  </View>
+                  <Action icon={gps ? 'checkmark-circle' : 'locate-outline'} label={gps ? 'Punto GPS listo' : 'Guardar GPS del destino'} onPress={capturarGps} />
+                  <Submit label="Enviar destino a autorización" loading={submitting} onPress={aceptarRelevo} />
+                </>
+              )}
+              {modal === 'autorizar_relevo' && seleccionada?.oferta_relevo && (
+                <>
+                  <Text style={styles.modalCopy}>Verifica que el destino, responsable y horario sean adecuados. La dirección sólo se revelará al hogar actual después de su confirmación de traslado.</Text>
+                  <View style={styles.messageCard}>
+                    <Text style={styles.messageText}>{seleccionada.oferta_relevo.asociaciones?.nombre || 'Asociación receptora'} · {seleccionada.oferta_relevo.tipo_destino === 'hogar_temporal' ? 'Otro hogar temporal' : 'Ingreso formal'}</Text>
+                    <Text style={styles.privateLocationText}>Recibe: {seleccionada.oferta_relevo.responsable_recepcion}</Text>
+                    <Text style={styles.privateLocationText}>{seleccionada.oferta_relevo.direccion_recepcion}</Text>
+                    <Text style={styles.privateLocationText}>{fecha(seleccionada.oferta_relevo.ventana_inicio)}–{fecha(seleccionada.oferta_relevo.ventana_fin)}</Text>
+                  </View>
+                  <Submit label="Autorizar y consultar traslado" loading={submitting} onPress={autorizarRelevo} />
+                </>
+              )}
+              {modal === 'transporte_relevo' && seleccionada?.oferta_relevo && (
+                <>
+                  <Text style={styles.modalCopy}>La coordinadora autorizó que {seleccionada.oferta_relevo.asociaciones?.nombre || 'la asociación receptora'} reciba al animal entre {fecha(seleccionada.oferta_relevo.ventana_inicio)} y {fecha(seleccionada.oferta_relevo.ventana_fin)}.</Text>
+                  <Text style={styles.modalCopy}>¿Puedes llevarlo personalmente? Si respondes que no, se buscará otra opción y el animal continuará contigo hasta una entrega segura.</Text>
+                  <View style={styles.validationRow}>
+                    <Action icon="car-outline" label="Sí, puedo trasladarlo" primary onPress={() => responderTransporte(true)} />
+                    <Action icon="close-circle-outline" label="No puedo trasladarlo" danger onPress={() => responderTransporte(false)} />
+                  </View>
                 </>
               )}
               {modal === 'validacion' && (
@@ -909,6 +1073,8 @@ function modalTitle(mode: ModalMode) {
     gestionar_duda: 'Gestionar aclaración',
     responder_aclaracion: 'Responder aclaración',
     aceptar: 'Recibir al animal',
+    autorizar_relevo: 'Autorizar destino del relevo',
+    transporte_relevo: 'Confirmar traslado',
     transferencia: 'Confirmar transferencia',
     finalizar: 'Finalizar custodia',
   } as any)[mode || ''] || '';
@@ -963,6 +1129,7 @@ const styles = StyleSheet.create({
   modalTitle: { color: Brand.textDark, fontSize: 19, fontWeight: '900' },
   modalCopy: { color: Brand.textMuted, fontSize: 12, lineHeight: 18, marginBottom: 14 },
   messageCard: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E4D3B8', borderRadius: 13, padding: 12, marginBottom: 14 },
+  selectedCard: { borderColor: Brand.secondary, backgroundColor: '#EAF7F5' },
   messageText: { color: Brand.textDark, fontSize: 12, lineHeight: 18 },
   label: { color: Brand.textDark, fontSize: 11, fontWeight: '800', marginBottom: 6 },
   input: { borderWidth: 1.5, borderColor: '#E4D3B8', borderRadius: 12, backgroundColor: '#fff', padding: 11, color: Brand.textDark, fontSize: 12 },
@@ -987,6 +1154,7 @@ const styles = StyleSheet.create({
   inconsistencyActive: { borderColor: '#B84A3A', backgroundColor: '#FFF1EF' },
   inconsistencyText: { color: Brand.textDark, fontSize: 11, fontWeight: '800', flex: 1 },
   validationRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  timeRow: { flexDirection: 'row', gap: 10 },
   submit: { minHeight: 48, borderRadius: 14, backgroundColor: Brand.primary, alignItems: 'center', justifyContent: 'center', marginTop: 14 },
   submitText: { color: '#fff', fontSize: 13, fontWeight: '900' },
 });
