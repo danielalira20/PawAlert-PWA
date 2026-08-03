@@ -21,6 +21,7 @@ from app.models.custody import (
     ProcesoResolucionCustodiaRequest,
 )
 from app.services.report_service import registrar_historial
+from app.services.email_service import email_duda_regional, email_respuesta_voluntario
 from app.utils.animal_shaping import shape_animal_embed, shape_animal_response
 
 
@@ -795,6 +796,24 @@ def formular_duda_regional(
     supabase.table("revisiones_seguimiento").update({
         "estado": "completada", "completada_at": _ahora().isoformat()
     }).eq("seguimiento_id", seguimiento_id).eq("asociacion_id", asociacion["id"]).execute()
+    
+    # Extraer el email de la asociación coordinadora para enviar el correo
+    coordinadora_resultado = supabase.table("asociaciones").select(
+        "nombre, contacto_email"
+    ).eq("id", custodia["asociacion_coordinadora_id"]).limit(1).execute()
+    
+    if coordinadora_resultado.data and coordinadora_resultado.data[0].get("contacto_email"):
+        coordinadora = coordinadora_resultado.data[0]
+        # Disparamos el correo
+        email_duda_regional(
+            email_coordinadora=coordinadora["contacto_email"],
+            nombre_coordinadora=coordinadora["nombre"],
+            reporte_id=custodia["reporte_id"],
+            nombre_regional=asociacion["nombre"],
+            texto_duda=body.pregunta.strip(),
+            fecha_hora=_ahora().strftime("%Y-%m-%d %H:%M:%S UTC")
+        )
+
     return {"aclaracion": creada.data[0]}
 
 
@@ -864,6 +883,22 @@ def responder_aclaracion(
         descripcion="El hogar temporal respondió una solicitud de aclaración",
         datos_extra={"aclaracion_id": aclaracion_id, "foto_url": body.foto_url},
     )
+    
+    # Extraer el email de la asociación coordinadora
+    coordinadora_resultado = supabase.table("asociaciones").select(
+        "nombre, contacto_email"
+    ).eq("id", custodia["asociacion_coordinadora_id"]).limit(1).execute()
+    
+    if coordinadora_resultado.data and coordinadora_resultado.data[0].get("contacto_email"):
+        coordinadora = coordinadora_resultado.data[0]
+        # Disparamos el correo
+        email_respuesta_voluntario(
+            email_coordinadora=coordinadora["contacto_email"],
+            nombre_coordinadora=coordinadora["nombre"],
+            reporte_id=custodia["reporte_id"],
+            fecha_hora=_ahora().strftime("%Y-%m-%d %H:%M:%S UTC")
+        )
+
     return {"estado": "respondida"}
 
 

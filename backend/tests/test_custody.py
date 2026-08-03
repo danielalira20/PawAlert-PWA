@@ -653,6 +653,7 @@ def test_asociacion_regional_envia_duda_a_coordinadora(make_query):
             "estado": "reservada",
             "vence_at": (datetime.now(timezone.utc) + timedelta(minutes=20)).isoformat(),
         }]),
+        "asociaciones": make_query(data=[{"nombre": "Coordinadora Prueba", "contacto_email": "correo@prueba.com"}]),
     }
     supabase = MagicMock()
     supabase.table.side_effect = lambda nombre: tablas[nombre]
@@ -661,9 +662,10 @@ def test_asociacion_regional_envia_duda_a_coordinadora(make_query):
     with (
         patch.object(custody, "supabase", supabase),
         patch.object(custody, "_usuario", return_value=usuario),
-        patch.object(custody, "_asociacion_verificada", return_value={"id": "aso-2"}),
+        patch.object(custody, "_asociacion_verificada", return_value={"id": "aso-2", "nombre": "Asociación Regional"}),
         patch.object(custody, "_en_radio_regional", return_value=True),
         patch.object(custody, "registrar_historial") as historial,
+        patch.object(custody, "email_duda_regional") as mock_email_duda,
     ):
         response = client.post(
             "/custody/followups/seg-1/questions",
@@ -684,6 +686,7 @@ def test_asociacion_regional_envia_duda_a_coordinadora(make_query):
     assert payload["asociacion_origen_id"] == "aso-2"
     assert payload["revision_manual"]["foto_clara"] is False
     assert historial.call_args.kwargs["tipo_evento"] == "duda_regional_formulada"
+    mock_email_duda.assert_called_once()
 
 
 def test_coordinadora_ve_su_custodia_aunque_falte_ubicacion_del_hogar(make_query):
