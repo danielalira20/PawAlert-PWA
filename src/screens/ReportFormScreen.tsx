@@ -13,6 +13,7 @@ import { AnimalThumbnailStrip, DuplicadoAnimal } from '../components/common/Anim
 import { API_URL } from '../constants/api';
 import { petzen } from '../constants/petzenTheme';
 import { useAuth } from '../context/AuthContext';
+import { getDeviceToken } from '../utils/deviceToken';
 import LocationPickerMap from './LocationPickerMap';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -336,11 +337,19 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
         formData.append('latitud', String(pinLocation.latitud));
         formData.append('longitud', String(pinLocation.longitud));
         formData.append('from_camera', String(fromCamera));
+        formData.append('device_token', await getDeviceToken());
         const { data } = await axios.post(`${API_URL}/reports/validar-foto`, formData, {
           headers: { 'Content-Type': 'multipart/form-data' },
         });
         if (!data.valido) {
-          showToast({ type: 'warning', title: 'Foto no válida', message: data.mensaje });
+          showToast(
+            {
+              type: 'warning',
+              title: data.bloqueado ? 'Validación bloqueada' : 'Foto no válida',
+              message: data.mensaje,
+            },
+            data.bloqueado ? 5000 : undefined,
+          );
           return;
         }
         const sugerencias = [data.advertencia, data.advertencia_ubicacion].filter(Boolean);
