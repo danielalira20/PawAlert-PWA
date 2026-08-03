@@ -69,11 +69,6 @@ def test_seguimiento_inicial_programa_siguiente_revision(make_query):
         patch.object(custody, "_usuario", return_value=_usuario_externo()),
         patch.object(custody, "_voluntario_externo", return_value={"id": "vol-1"}),
         patch.object(custody, "registrar_historial") as historial,
-        patch.object(
-            custody,
-            "analizar_evidencia_custodia",
-            return_value={"estado": "no_configurado", "requiere_revision_humana": True},
-        ),
     ):
         response = client.post(
             "/custody/cust-1/followups",
@@ -92,8 +87,7 @@ def test_seguimiento_inicial_programa_siguiente_revision(make_query):
     payload = tablas["seguimientos_resguardo"].insert.call_args.args[0]
     assert payload["tipo"] == "inicial"
     assert payload["estado_validacion"] == "pendiente"
-    assert payload["gemini_analisis"]["estado"] == "procesando"
-    assert tablas["seguimientos_resguardo"].update.call_args.args[0]["gemini_analisis"]["estado"] == "no_configurado"
+    assert payload["gemini_analisis"]["estado"] == "revision_manual"
     assert tablas["custodias_temporales"].update.call_args.args[0]["frecuencia_horas"] == 72
     assert historial.call_args.kwargs["tipo_evento"] == "seguimiento_inicial"
 
@@ -363,6 +357,72 @@ def test_domicilio_solo_se_comparte_con_coordinadora_o_receptora():
     assert custody._puede_ver_ubicacion_hogar(custodia, transferencia, "aso-1")
     assert custody._puede_ver_ubicacion_hogar(custodia, transferencia, "aso-2")
     assert not custody._puede_ver_ubicacion_hogar(custodia, transferencia, "aso-3")
+
+
+def test_revision_regional_se_reserva_por_rpc(make_query):
+    tablas = {
+        "seguimientos_resguardo": make_query(data=[{"id": "seg-1", "custodia_id": "cust-1"}]),
+        "custodias_temporales": make_query(
+            data=[{"asociacion_coordinadora_id": "aso-1", "voluntario_id": "vol-1"}]
+        ),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    supabase_admin = MagicMock()
+    supabase_admin.rpc.return_value.execute.return_value = SimpleNamespace(
+        data={"revision_id": "rev-1", "vence_at": "2026-08-02T21:00:00Z"}
+    )
+    usuario = {"id": "user-aso", "rol": "asociacion", "asociacion_id": "aso-1"}
+
+    with (
+        patch.object(custody, "supabase", supabase),
+        patch.object(custody, "supabase_admin", supabase_admin),
+        patch.object(custody, "_usuario", return_value=usuario),
+        patch.object(custody, "_asociacion_verificada", return_value={"id": "aso-1"}),
+    ):
+        response = client.post(
+            "/custody/followups/seg-1/review/reserve",
+            headers=AUTH,
+        )
+
+    assert response.status_code == 200
+    assert response.json()["revision_id"] == "rev-1"
+    supabase_admin.rpc.assert_called_once_with(
+        "reservar_revision_seguimiento",
+        {
+            "p_seguimiento_id": "seg-1",
+            "p_asociacion_id": "aso-1",
+            "p_usuario_id": "user-aso",
+        },
+    )
+
+
+def test_revision_regional_informa_conflicto_controlado(make_query):
+    tablas = {
+        "seguimientos_resguardo": make_query(data=[{"id": "seg-1", "custodia_id": "cust-1"}]),
+        "custodias_temporales": make_query(
+            data=[{"asociacion_coordinadora_id": "aso-1", "voluntario_id": "vol-1"}]
+        ),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    supabase_admin = MagicMock()
+    supabase_admin.rpc.return_value.execute.side_effect = Exception("revision_reservada")
+    usuario = {"id": "user-aso", "rol": "asociacion", "asociacion_id": "aso-1"}
+
+    with (
+        patch.object(custody, "supabase", supabase),
+        patch.object(custody, "supabase_admin", supabase_admin),
+        patch.object(custody, "_usuario", return_value=usuario),
+        patch.object(custody, "_asociacion_verificada", return_value={"id": "aso-1"}),
+    ):
+        response = client.post(
+            "/custody/followups/seg-1/review/reserve",
+            headers=AUTH,
+        )
+
+    assert response.status_code == 409
+    assert "30 minutos" in response.json()["detail"]
 
 
 def test_coordinadora_resuelve_busqueda_no_localizado_con_rpc():

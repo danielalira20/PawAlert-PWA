@@ -15,7 +15,6 @@ from app.models.custody import (
     FinalizarCustodiaRequest,
 )
 from app.services.report_service import registrar_historial
-from app.services.custody_vision_service import analizar_evidencia_custodia
 from app.utils.animal_shaping import shape_animal_embed, shape_animal_response
 
 
@@ -167,6 +166,17 @@ def _ultimo_seguimiento(custodia_id: str) -> Optional[dict]:
     return resultado.data[0] if resultado.data else None
 
 
+def _seguimientos_recientes(custodia_id: str) -> list[dict]:
+    return (
+        supabase.table("seguimientos_resguardo")
+        .select("*")
+        .eq("custodia_id", custodia_id)
+        .order("creado_at", desc=True)
+        .limit(2)
+        .execute()
+    ).data or []
+
+
 def _transferencia_activa(custodia_id: str) -> Optional[dict]:
     resultado = (
         supabase.table("transferencias_custodia")
@@ -299,7 +309,6 @@ def registrar_seguimiento(
                 detail="Corresponde actualizar la evidencia del entorno",
             )
 
-    seguimiento_anterior = _ultimo_seguimiento(custodia_id)
     frecuencia = _frecuencia_horas(body.condicion_actual, custodia["inicio_at"], es_inicial)
     siguiente = _ahora() + timedelta(hours=frecuencia)
     insertado = (
@@ -318,7 +327,7 @@ def registrar_seguimiento(
                 "entorno_foto_url": body.entorno_foto_url,
                 "latitud": body.latitud,
                 "longitud": body.longitud,
-                "gemini_analisis": {"estado": "procesando"},
+                "gemini_analisis": {"estado": "revision_manual"},
                 "estado_validacion": "pendiente",
                 "proximo_seguimiento_at": siguiente.isoformat(),
             }
@@ -333,21 +342,6 @@ def registrar_seguimiento(
     if es_inicial:
         cambios["seguimiento_inicial_at"] = _ahora().isoformat()
     supabase.table("custodias_temporales").update(cambios).eq("id", custodia_id).execute()
-    try:
-        analisis = analizar_evidencia_custodia(
-            body.foto_url,
-            (seguimiento_anterior or {}).get("foto_url"),
-            body.entorno_foto_url,
-        )
-    except Exception as error:
-        analisis = {
-            "estado": "error",
-            "detalle": str(error)[:200],
-            "requiere_revision_humana": True,
-        }
-    supabase.table("seguimientos_resguardo").update(
-        {"gemini_analisis": analisis}
-    ).eq("id", insertado.data[0]["id"]).execute()
     registrar_historial(
         reporte_id=custodia["reporte_id"],
         usuario_id=usuario["id"],
@@ -365,8 +359,6 @@ def listar_seguimiento_regional(
 ):
     usuario = _usuario(authorization)
     asociacion = _asociacion_verificada(usuario)
-    if asociacion.get("latitud") is None or asociacion.get("longitud") is None:
-        raise HTTPException(status_code=409, detail="La asociación no tiene ubicación configurada")
     custodias = (
         supabase.table("custodias_temporales")
         .select("*")
@@ -401,15 +393,18 @@ def listar_seguimiento_regional(
             .limit(1)
             .execute()
         )
+        es_coordinadora = custodia["asociacion_coordinadora_id"] == asociacion["id"]
         if not perfil.data or perfil.data[0].get("latitud") is None:
             continue
-        distancia = _distancia_km(
-            asociacion["latitud"],
-            asociacion["longitud"],
-            perfil.data[0]["latitud"],
-            perfil.data[0]["longitud"],
-        )
-        if distancia > radio_efectivo:
+        distancia = None
+        if asociacion.get("latitud") is not None and asociacion.get("longitud") is not None:
+            distancia = _distancia_km(
+                asociacion["latitud"],
+                asociacion["longitud"],
+                perfil.data[0]["latitud"],
+                perfil.data[0]["longitud"],
+            )
+        if not es_coordinadora and (distancia is None or distancia > radio_efectivo):
             continue
         voluntario = (
             supabase.table("voluntarios")
@@ -419,7 +414,8 @@ def listar_seguimiento_regional(
             .execute()
         )
         persona = ((voluntario.data[0] if voluntario.data else {}).get("usuarios") or {})
-        ultimo = _ultimo_seguimiento(custodia["id"])
+        seguimientos = _seguimientos_recientes(custodia["id"])
+        ultimo = seguimientos[0] if seguimientos else None
         transferencia = _transferencia_activa(custodia["id"])
         ubicacion_hogar = None
         if _puede_ver_ubicacion_hogar(custodia, transferencia, asociacion["id"]):
@@ -440,15 +436,63 @@ def listar_seguimiento_regional(
                 "voluntario_nombre": " ".join(
                     p for p in (persona.get("nombre"), persona.get("apellido_paterno")) if p
                 ),
-                "distancia_km": round(distancia, 1),
+                "distancia_km": round(distancia, 1) if distancia is not None else None,
                 "ultimo_seguimiento": ultimo,
+                "seguimiento_anterior": seguimientos[1] if len(seguimientos) > 1 else None,
                 "solicitud_relevo": relevo_activo,
                 "transferencia_activa": transferencia,
                 "ubicacion_hogar": ubicacion_hogar,
-                "es_coordinadora": custodia["asociacion_coordinadora_id"] == asociacion["id"],
+                "es_coordinadora": es_coordinadora,
             }
         )
     return {"radio_km": radio_km, "custodias": tarjetas}
+
+
+@router.post("/followups/{seguimiento_id}/review/reserve")
+def reservar_revision(
+    seguimiento_id: str,
+    authorization: Optional[str] = Header(None),
+):
+    usuario = _usuario(authorization)
+    asociacion = _asociacion_verificada(usuario)
+    seguimiento = (
+        supabase.table("seguimientos_resguardo")
+        .select("id, custodia_id")
+        .eq("id", seguimiento_id)
+        .limit(1)
+        .execute()
+    )
+    if not seguimiento.data:
+        raise HTTPException(status_code=404, detail="Seguimiento no encontrado")
+    custodia = (
+        supabase.table("custodias_temporales")
+        .select("asociacion_coordinadora_id, voluntario_id")
+        .eq("id", seguimiento.data[0]["custodia_id"])
+        .limit(1)
+        .execute()
+    ).data[0]
+    if (
+        custodia["asociacion_coordinadora_id"] != asociacion["id"]
+        and not _en_radio_regional(asociacion, custodia["voluntario_id"])
+    ):
+        raise HTTPException(status_code=403, detail="La custodia está fuera de tu región")
+    try:
+        reserva = supabase_admin.rpc(
+            "reservar_revision_seguimiento",
+            {
+                "p_seguimiento_id": seguimiento_id,
+                "p_asociacion_id": asociacion["id"],
+                "p_usuario_id": usuario["id"],
+            },
+        ).execute()
+    except Exception as error:
+        if "revision_reservada" in str(error).lower():
+            raise HTTPException(
+                status_code=409,
+                detail="Otra asociación está revisando esta evidencia. Se liberará en un máximo de 30 minutos.",
+            ) from error
+        raise
+    return reserva.data
 
 
 @router.post("/followups/{seguimiento_id}/validation", status_code=201)
@@ -480,6 +524,23 @@ def validar_seguimiento(
         and not _en_radio_regional(asociacion, custodia["voluntario_id"])
     ):
         raise HTTPException(status_code=403, detail="La custodia está fuera de tu región")
+    revision = (
+        supabase.table("revisiones_seguimiento")
+        .select("id, asociacion_id, estado, vence_at")
+        .eq("seguimiento_id", seguimiento_id)
+        .limit(1)
+        .execute()
+    )
+    if not revision.data:
+        raise HTTPException(status_code=409, detail="Reserva esta revisión antes de responder")
+    revision = revision.data[0]
+    vence_at = datetime.fromisoformat(str(revision["vence_at"]).replace("Z", "+00:00"))
+    if (
+        revision["asociacion_id"] != asociacion["id"]
+        or revision["estado"] != "reservada"
+        or vence_at <= _ahora()
+    ):
+        raise HTTPException(status_code=409, detail="La reserva de revisión ya no está disponible")
     insertado = (
         supabase.table("validaciones_seguimiento")
         .upsert(
@@ -507,6 +568,9 @@ def validar_seguimiento(
     supabase.table("seguimientos_resguardo").update(
         {"estado_validacion": estado}
     ).eq("id", seguimiento_id).execute()
+    supabase.table("revisiones_seguimiento").update(
+        {"estado": "completada", "completada_at": _ahora().isoformat()}
+    ).eq("id", revision["id"]).execute()
     registrar_historial(
         reporte_id=custodia["reporte_id"],
         usuario_id=usuario["id"],
