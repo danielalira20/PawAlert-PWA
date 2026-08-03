@@ -191,10 +191,14 @@ def test_animal_no_localizado_conserva_asignacion_y_registra_busqueda(make_query
         "historial_reporte": make_query(data=[{"id": "llegada-1"}]),
     }
     supabase = _supabase_con_tablas(tablas)
+    supabase_admin = MagicMock()
+    supabase_admin.rpc.return_value.execute.return_value = SimpleNamespace(
+        data={"id": "busqueda-1", "intento": 1, "estado": "pendiente"}
+    )
 
     with (
         patch.object(reports, "supabase", supabase),
-        patch.object(report_service, "registrar_historial") as historial,
+        patch.object(reports, "supabase_admin", supabase_admin),
     ):
         response = client.post(
             "/reports/reporte-1/hitos",
@@ -210,12 +214,11 @@ def test_animal_no_localizado_conserva_asignacion_y_registra_busqueda(make_query
 
     assert response.status_code == 201
     assert response.json()["estado"] is None
+    assert response.json()["intento_busqueda"] == 1
     tablas["reportes"].update.assert_not_called()
-    assert historial.call_args.kwargs["tipo_evento"] == "animal_no_localizado"
-    assert (
-        historial.call_args.kwargs["datos_extra"]["tiempo_busqueda_minutos"]
-        == 35
-    )
+    nombre_rpc, argumentos = supabase_admin.rpc.call_args.args
+    assert nombre_rpc == "registrar_busqueda_no_localizado"
+    assert argumentos["p_tiempo_busqueda_minutos"] == 35
 
 
 def test_animal_no_localizado_exige_tiempo_y_comentario(make_query):

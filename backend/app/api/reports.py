@@ -1,7 +1,7 @@
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Header
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
-from app.models.report import ReportResponse, AnimalInput, ReportListItem, HitoRequest, RechazarReporteRequest, CancelarReporteRequest, DenunciarReporteRequest
+from app.models.report import ReportResponse, AnimalInput, ReportListItem, HitoRequest, RechazarReporteRequest, CancelarReporteRequest, DenunciarReporteRequest, ResolverBusquedaNoLocalizadoRequest
 from app.models.red_aliados import AceptarSugerenciaRequest, AceptarSugerenciaVeterinariaResponse
 from app.services.report_service import crear_reporte, obtener_reportes, cambiar_estado_reporte, obtener_reportes_usuario
 from app.services import coverage_service
@@ -874,14 +874,11 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
                 }
             ).execute()
 
-    # Registrar en historial
+    # Registrar en historial. La búsqueda sin resultado utiliza una función
+    # transaccional porque también abre una decisión para la coordinadora.
     from app.services.report_service import registrar_historial
-    registrar_historial(
-        reporte_id=reporte_id,
-        usuario_id=usuario["id"],
-        tipo_evento=EVENTOS_HISTORIAL_POR_HITO[tipo_hito],
-        descripcion=f"Hito registrado: {tipo_hito}",
-        datos_extra={
+    intento_busqueda = None
+    datos_hito = {
             "condicion_observada": body.condicion_observada,
             "comentario": body.comentario,
             "destino": body.destino,
@@ -898,7 +895,36 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
             ),
             "verificacion_ubicacion": verificacion_ubicacion,
         }
-    )
+    if tipo_hito == "animal_no_localizado":
+        try:
+            busqueda = supabase_admin.rpc(
+                "registrar_busqueda_no_localizado",
+                {
+                    "p_reporte_id": reporte_id,
+                    "p_usuario_id": usuario["id"],
+                    "p_comentario": body.comentario,
+                    "p_tiempo_busqueda_minutos": body.tiempo_busqueda_minutos,
+                    "p_latitud": body.latitud,
+                    "p_longitud": body.longitud,
+                    "p_distancia_reporte_metros": datos_hito["distancia_reporte_metros"],
+                },
+            ).execute()
+        except Exception as error:
+            if "decision_busqueda_pendiente" in str(error).lower():
+                raise HTTPException(
+                    status_code=409,
+                    detail="La asociación debe resolver la búsqueda anterior antes de registrar otro intento",
+                ) from error
+            raise
+        intento_busqueda = (busqueda.data or {}).get("intento") if isinstance(busqueda.data, dict) else None
+    else:
+        registrar_historial(
+            reporte_id=reporte_id,
+            usuario_id=usuario["id"],
+            tipo_evento=EVENTOS_HISTORIAL_POR_HITO[tipo_hito],
+            descripcion=f"Hito registrado: {tipo_hito}",
+            datos_extra=datos_hito,
+        )
 
     # Motor de sugerencias, Ruta 1 (BACK01) — solo para el hito
     # "encontre_animal". Puramente informativo: no reserva capacidad, no
@@ -927,9 +953,75 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
         "estado": nuevo_estado,
         "verificacion_ubicacion": verificacion_ubicacion,
         "sugerencia_aliado": sugerencia_aliado,
+        "intento_busqueda": intento_busqueda,
     }
 
 ### FIN endpoind: staff registra avances del rescate
+
+
+DECISIONES_BUSQUEDA_NO_LOCALIZADO = {
+    "repetir_busqueda",
+    "ampliar_zona",
+    "programar_otro_horario",
+    "reasignar",
+    "solicitar_apoyo_regional",
+    "liberar_voluntario",
+    "cerrar_no_localizado",
+}
+
+
+@router.get("/{reporte_id}/busqueda-no-localizado/pendiente")
+def obtener_busqueda_no_localizado_pendiente(
+    reporte_id: str,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion", "staff"))
+    reporte = supabase.table("reportes").select(
+        "id, asociacion_asignada_id"
+    ).eq("id", reporte_id).limit(1).execute()
+    if not reporte.data:
+        raise HTTPException(status_code=404, detail="Reporte no encontrado")
+    if reporte.data[0].get("asociacion_asignada_id") != usuario.get("asociacion_id"):
+        raise HTTPException(status_code=403, detail="Tu asociación no coordina este caso")
+    busqueda = supabase_admin.table("busquedas_no_localizado").select(
+        "id, intento, comentario, tiempo_busqueda_minutos, creada_at, estado"
+    ).eq("reporte_id", reporte_id).eq("estado", "pendiente").limit(1).execute()
+    return {"busqueda": busqueda.data[0] if busqueda.data else None}
+
+
+@router.post("/{reporte_id}/busqueda-no-localizado/resolver")
+def resolver_busqueda_no_localizado(
+    reporte_id: str,
+    body: ResolverBusquedaNoLocalizadoRequest,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion", "staff"))
+    if body.decision not in DECISIONES_BUSQUEDA_NO_LOCALIZADO:
+        raise HTTPException(status_code=422, detail="Decisión de búsqueda inválida")
+    if body.decision in {"ampliar_zona", "programar_otro_horario", "solicitar_apoyo_regional"} and not (body.instrucciones or "").strip():
+        raise HTTPException(status_code=422, detail="Agrega instrucciones para el siguiente paso")
+    try:
+        resultado = supabase_admin.rpc(
+            "resolver_busqueda_no_localizado",
+            {
+                "p_reporte_id": reporte_id,
+                "p_asociacion_id": usuario.get("asociacion_id"),
+                "p_usuario_id": usuario["id"],
+                "p_decision": body.decision,
+                "p_instrucciones": (body.instrucciones or "").strip() or None,
+                "p_programada_at": body.programada_at,
+            },
+        ).execute()
+    except Exception as error:
+        detalle = str(error).lower()
+        if "busqueda_no_disponible" in detalle:
+            raise HTTPException(status_code=409, detail="La búsqueda ya fue resuelta") from error
+        if "asociacion_no_coordina" in detalle:
+            raise HTTPException(status_code=403, detail="Tu asociación no coordina este caso") from error
+        raise
+    return resultado.data
 
 ### Endpoint: BACK02 — aceptar la sugerencia de Ruta 1 (motor de sugerencias)
 @router.post("/{reporte_id}/hitos/aceptar-sugerencia", status_code=201, response_model=AceptarSugerenciaVeterinariaResponse)

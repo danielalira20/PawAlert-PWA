@@ -121,6 +121,12 @@ class HitoRequest(BaseModel):
     tiempo_busqueda_minutos: Optional[int] = Field(default=None, ge=1, le=1440)
 
 
+class ResolverBusquedaNoLocalizadoRequest(BaseModel):
+    decision: str
+    instrucciones: Optional[str] = Field(default=None, max_length=1000)
+    programada_at: Optional[str] = None
+
+
 ## Cuando el encargado de asociacion RECHACE reporte
 class RechazarReporteRequest(BaseModel):
     motivo: str

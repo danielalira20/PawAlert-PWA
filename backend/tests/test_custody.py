@@ -363,3 +363,58 @@ def test_domicilio_solo_se_comparte_con_coordinadora_o_receptora():
     assert custody._puede_ver_ubicacion_hogar(custodia, transferencia, "aso-1")
     assert custody._puede_ver_ubicacion_hogar(custodia, transferencia, "aso-2")
     assert not custody._puede_ver_ubicacion_hogar(custodia, transferencia, "aso-3")
+
+
+def test_coordinadora_resuelve_busqueda_no_localizado_con_rpc():
+    supabase_admin = MagicMock()
+    supabase_admin.rpc.return_value.execute.return_value = SimpleNamespace(
+        data={"busqueda_id": "bus-1", "decision": "repetir_busqueda"}
+    )
+    usuario = {
+        "id": "user-aso",
+        "rol": "asociacion",
+        "asociacion_id": "aso-1",
+    }
+
+    with (
+        patch.object(reports, "supabase_admin", supabase_admin),
+        patch.object(reports, "_obtener_usuario_autenticado", return_value=usuario),
+    ):
+        response = client.post(
+            "/reports/rep-1/busqueda-no-localizado/resolver",
+            headers=AUTH,
+            json={"decision": "repetir_busqueda"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["decision"] == "repetir_busqueda"
+    supabase_admin.rpc.assert_called_once_with(
+        "resolver_busqueda_no_localizado",
+        {
+            "p_reporte_id": "rep-1",
+            "p_asociacion_id": "aso-1",
+            "p_usuario_id": "user-aso",
+            "p_decision": "repetir_busqueda",
+            "p_instrucciones": None,
+            "p_programada_at": None,
+        },
+    )
+
+
+def test_ampliar_busqueda_exige_instrucciones():
+    usuario = {
+        "id": "user-aso",
+        "rol": "asociacion",
+        "asociacion_id": "aso-1",
+    }
+    with patch.object(
+        reports, "_obtener_usuario_autenticado", return_value=usuario
+    ):
+        response = client.post(
+            "/reports/rep-1/busqueda-no-localizado/resolver",
+            headers=AUTH,
+            json={"decision": "ampliar_zona"},
+        )
+
+    assert response.status_code == 422
+    assert "instrucciones" in response.json()["detail"]
