@@ -57,6 +57,7 @@ export interface Custodia {
     animales?: Array<{ tipo_animal?: string; condicion?: string; tamanio?: string }>;
   };
   ultimo_seguimiento?: Seguimiento | null;
+  seguimiento_anterior?: Seguimiento | null;
   solicitud_relevo?: { id: string; motivo: string; estado: string } | null;
   transferencia_activa?: {
     id: string;
@@ -98,6 +99,7 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
   const [fotoAnimal, setFotoAnimal] = useState<string | null>(null);
   const [fotoEntorno, setFotoEntorno] = useState<string | null>(null);
   const [gps, setGps] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [reservandoRevision, setReservandoRevision] = useState<string | null>(null);
 
   const cargar = useCallback(async () => {
     if (!token) return;
@@ -148,6 +150,27 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
     if (submitting) return;
     setModal(null);
     setSeleccionada(null);
+  };
+
+  const abrirRevision = async (custodia: Custodia) => {
+    if (!custodia.ultimo_seguimiento || reservandoRevision) return;
+    setReservandoRevision(custodia.ultimo_seguimiento.id);
+    try {
+      await axios.post(
+        `${API_URL}/custody/followups/${custodia.ultimo_seguimiento.id}/review/reserve`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      abrir('validacion', custodia);
+    } catch (error: any) {
+      showToast({
+        type: 'info',
+        title: 'Revisión no disponible',
+        message: error?.response?.data?.detail || 'No pudimos reservar esta revisión.',
+      });
+    } finally {
+      setReservandoRevision(null);
+    }
   };
 
   const tomarFoto = async (entorno = false) => {
@@ -378,7 +401,10 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
                       {ficha.tipo_animal || 'Animal'} · {ficha.tamanio || 'Tamaño por confirmar'}
                     </Text>
                     {esAsociacion && (
-                      <Text style={styles.volunteer}>{custodia.voluntario_nombre || 'Hogar verificado'} · {custodia.distancia_km} km</Text>
+                      <Text style={styles.volunteer}>
+                        {custodia.voluntario_nombre || 'Hogar verificado'}
+                        {custodia.distancia_km == null ? ' · Custodia coordinada' : ` · ${custodia.distancia_km} km`}
+                      </Text>
                     )}
                   </View>
                   <View style={styles.statePill}><Text style={styles.stateText}>{custodia.estado.replaceAll('_', ' ')}</Text></View>
@@ -433,7 +459,14 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
                     </>
                   ) : (
                     <>
-                      {custodia.ultimo_seguimiento && <Action icon="shield-checkmark-outline" label="Revisar evidencia" primary onPress={() => abrir('validacion', custodia)} />}
+                      {custodia.ultimo_seguimiento?.estado_validacion === 'pendiente' && (
+                        <Action
+                          icon="shield-checkmark-outline"
+                          label={reservandoRevision === custodia.ultimo_seguimiento.id ? 'Reservando…' : 'Revisar evidencia'}
+                          primary
+                          onPress={() => void abrirRevision(custodia)}
+                        />
+                      )}
                       {custodia.solicitud_relevo?.estado === 'abierta' && !custodia.es_coordinadora && (
                         <Action icon="hand-left-outline" label="Recibir animal" onPress={() => abrir('aceptar', custodia)} />
                       )}
@@ -487,7 +520,21 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
               )}
               {modal === 'validacion' && (
                 <>
-                  {seleccionada?.ultimo_seguimiento?.foto_url && <Image source={{ uri: seleccionada.ultimo_seguimiento.foto_url }} style={styles.evidencePhoto} />}
+                  <Text style={styles.modalCopy}>
+                    La revisión está reservada para tu asociación durante 30 minutos. Compara las fotos y los datos antes de decidir.
+                  </Text>
+                  <View style={[styles.comparison, width < 600 && styles.comparisonMobile]}>
+                    <EvidenceComparison
+                      label="Evidencia actual"
+                      uri={seleccionada?.ultimo_seguimiento?.foto_url}
+                      empty="No hay foto actual"
+                    />
+                    <EvidenceComparison
+                      label="Evidencia anterior"
+                      uri={seleccionada?.seguimiento_anterior?.foto_url}
+                      empty="Es el primer seguimiento"
+                    />
+                  </View>
                   <Field label="Comentario" value={form.comentario} onChangeText={(v) => setForm({ ...form, comentario: v })} placeholder="Observaciones o aclaraciones necesarias" multiline />
                   <View style={styles.validationRow}>
                     <Action icon="checkmark-circle-outline" label="Validar" primary onPress={() => validar('validado')} />
@@ -526,6 +573,22 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
 
 function DateCell({ label, value }: { label: string; value: string }) {
   return <View style={styles.dateCell}><Text style={styles.dateLabel}>{label}</Text><Text style={styles.dateValue}>{value}</Text></View>;
+}
+
+function EvidenceComparison({ label, uri, empty }: { label: string; uri?: string | null; empty: string }) {
+  return (
+    <View style={styles.comparisonCard}>
+      <Text style={styles.comparisonLabel}>{label}</Text>
+      {uri ? (
+        <Image source={{ uri }} style={styles.evidencePhoto} />
+      ) : (
+        <View style={styles.comparisonEmpty}>
+          <Ionicons name="image-outline" size={24} color={Brand.textFaint} />
+          <Text style={styles.comparisonEmptyText}>{empty}</Text>
+        </View>
+      )}
+    </View>
+  );
 }
 
 function Action({ icon, label, onPress, primary, danger }: { icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void; primary?: boolean; danger?: boolean }) {
@@ -616,7 +679,13 @@ const styles = StyleSheet.create({
   input: { borderWidth: 1.5, borderColor: '#E4D3B8', borderRadius: 12, backgroundColor: '#fff', padding: 11, color: Brand.textDark, fontSize: 12 },
   textArea: { minHeight: 70, textAlignVertical: 'top' },
   evidenceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginVertical: 8 },
-  evidencePhoto: { width: '100%', height: 190, borderRadius: 15, marginBottom: 12 },
+  comparison: { flexDirection: 'row', gap: 10, marginBottom: 14 },
+  comparisonMobile: { flexDirection: 'column' },
+  comparisonCard: { flex: 1, minWidth: 0 },
+  comparisonLabel: { color: Brand.textDark, fontSize: 10, fontWeight: '900', marginBottom: 6 },
+  comparisonEmpty: { height: 170, borderRadius: 15, backgroundColor: '#EFE3CD', alignItems: 'center', justifyContent: 'center', padding: 12 },
+  comparisonEmptyText: { color: Brand.textMuted, fontSize: 10, textAlign: 'center', marginTop: 6 },
+  evidencePhoto: { width: '100%', height: 170, borderRadius: 15 },
   validationRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   submit: { minHeight: 48, borderRadius: 14, backgroundColor: Brand.primary, alignItems: 'center', justifyContent: 'center', marginTop: 14 },
   submitText: { color: '#fff', fontSize: 13, fontWeight: '900' },
