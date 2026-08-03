@@ -494,7 +494,7 @@ export default function AdminDashboardScreen({ onClose }: Props) {
                 usuarios: {
                   nombre: apelacionAliadoSeleccionada!.perfil_apoyo.usuarios.nombre,
                   email: apelacionAliadoSeleccionada!.perfil_apoyo.usuarios.email,
-                  telefono: '',
+                  telefono: apelacionAliadoSeleccionada!.perfil_apoyo.usuarios.telefono || '',
                 }
               }}
               extraTop={

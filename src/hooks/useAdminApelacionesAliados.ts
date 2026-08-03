@@ -20,6 +20,7 @@ export interface ApelacionAliado {
       nombre: string;
       apellido_paterno: string;
       email: string;
+      telefono?: string;
     };
   };
 }
