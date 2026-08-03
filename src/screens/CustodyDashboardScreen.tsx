@@ -532,7 +532,7 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
                       {custodia.solicitud_relevo?.estado === 'abierta' && !custodia.es_coordinadora && (
                         <Action icon="hand-left-outline" label="Recibir animal" onPress={() => abrir('aceptar', custodia)} />
                       )}
-                      {custodia.transferencia_activa && !custodia.transferencia_activa.confirma_recepcion_at && (
+                      {custodia.transferencia_activa?.confirma_entrega_at && !custodia.transferencia_activa.confirma_recepcion_at && (
                         <Action icon="checkmark-done-outline" label="Confirmar recepción" primary onPress={() => abrir('transferencia', custodia)} />
                       )}
                       {custodia.es_coordinadora && custodia.estado === 'transferido' && (
@@ -575,7 +575,7 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
               )}
               {(modal === 'extension' || modal === 'aceptar') && (
                 <>
-                  <Text style={styles.modalCopy}>{modal === 'extension' ? 'Indica hasta qué fecha puedes continuar.' : 'Propón la fecha de entrega. La reserva no concluye la transferencia.'}</Text>
+                  <Text style={styles.modalCopy}>{modal === 'extension' ? 'Indica hasta qué fecha puedes continuar.' : 'Propón la fecha de entrega. Rafael llevará al animal; tu asociación confirmará la recepción cuando llegue.'}</Text>
                   <Field label="Fecha (AAAA-MM-DD)" value={form.fecha} onChangeText={(v) => setForm({ ...form, fecha: v })} placeholder="2026-08-15" />
                   <Submit label={modal === 'extension' ? 'Confirmar extensión' : 'Reservar traslado'} loading={submitting} onPress={modal === 'extension' ? enviarExtension : aceptarRelevo} />
                 </>
@@ -654,7 +654,11 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
               )}
               {modal === 'transferencia' && (
                 <>
-                  <Text style={styles.modalCopy}>Tu confirmación no finaliza el traslado por sí sola. Ambas partes deben confirmar con foto y GPS.</Text>
+                  <Text style={styles.modalCopy}>
+                    {esAsociacion
+                      ? 'Confirma la recepción cuando Rafael llegue. Tu foto y GPS deben estar a menos de 200 metros de su confirmación.'
+                      : 'Tú realizas el traslado. Confirma la entrega al llegar; después la asociación receptora confirmará con foto y GPS.'}
+                  </Text>
                   <EvidenceButtons animal={fotoAnimal} entorno={null} gps={gps} initial={false} onAnimal={() => tomarFoto()} onEntorno={() => undefined} onGps={capturarGps} />
                   <Submit label={esAsociacion ? 'Confirmar recepción' : 'Confirmar entrega'} loading={submitting} onPress={confirmarTransferencia} />
                 </>
