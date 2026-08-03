@@ -22,7 +22,7 @@ def base_reporte():
     }
 
 
-def ejecutar_rechazo(supabase, asignar, contactos):
+def ejecutar_rechazo(supabase, asignar, contactos, *, motivo_clave=None):
     with (
         patch.object(reports, "_obtener_usuario_autenticado", return_value={
             "id": "user-aso-1", "rol": "asociacion", "asociacion_id": "aso-1",
@@ -33,7 +33,9 @@ def ejecutar_rechazo(supabase, asignar, contactos):
         patch("app.services.report_service.registrar_historial") as historial,
     ):
         resultado = asyncio.run(reports.rechazar_reporte(
-            "rep-1", RechazarReporteRequest(motivo="Sin espacio", comentario="Caso grande"), "Bearer token"
+            "rep-1",
+            RechazarReporteRequest(motivo="Sin espacio", comentario="Caso grande", motivo_clave=motivo_clave),
+            "Bearer token",
         ))
     return resultado, asignar_mock, contactos_mock, historial
 
@@ -113,3 +115,40 @@ def test_sin_cobertura_busca_contactos_por_especie_y_deduplica(make_query):
         "contacto-compartido", "contacto-perro",
     ]
     assert resultado["estado"] == "sin_cobertura"
+
+
+def test_motivo_foto_no_es_animal_cierra_sin_reasignar(make_query):
+    reportes = make_query(execute_results=[
+        SimpleNamespace(data=[base_reporte()], count=None),
+        SimpleNamespace(data=[{"id": "rep-1"}], count=None),
+    ])
+    asignaciones_q = make_query(data=[])
+    tablas = {
+        "reportes": reportes,
+        "reporte_asignaciones": asignaciones_q,
+        "asignacion_estados": make_query(data=[{"id": "rechazada-id"}]),
+        "reporte_estados": make_query(data=[{"id": "cerrado-id"}]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+
+    resultado, asignar, contactos, _ = ejecutar_rechazo(
+        supabase,
+        asignar=lambda *args, **kwargs: {"id": "aso-2", "nombre": "Huellitas"},
+        contactos=lambda **kwargs: [],
+        motivo_clave="foto_no_es_animal",
+    )
+
+    # No se busca ni se reasigna a otra asociación por este motivo.
+    asignar.assert_not_called()
+    contactos.assert_not_called()
+    asignaciones_q.insert.assert_not_called()
+
+    assert resultado == {
+        "mensaje": "Reporte rechazado y cerrado — la fotografía no corresponde a un animal real.",
+        "estado": "cerrado",
+    }
+    actualizacion = reportes.update.call_args.args[0]
+    assert actualizacion["estado_reporte"] == "cerrado"
+    assert actualizacion["estado_cobertura"] == "finalizado"
+    assert "asociacion_asignada_id" not in actualizacion

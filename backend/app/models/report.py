@@ -135,6 +135,7 @@ class ResolverBusquedaNoLocalizadoRequest(BaseModel):
 class RechazarReporteRequest(BaseModel):
     motivo: str
     comentario: Optional[str] = None
+    motivo_clave: Optional[str] = None
 
 
 class CancelarReporteRequest(BaseModel):

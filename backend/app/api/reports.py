@@ -1209,7 +1209,12 @@ async def rechazar_reporte(reporte_id: str, body: RechazarReporteRequest, author
         usuario_id=usuario["id"],
         tipo_evento="reporte_rechazado",
         descripcion=f"Reporte rechazado por la asociación. Motivo: {body.motivo}",
-        datos_extra={"motivo": body.motivo, "comentario": body.comentario, "asociacion_id": asociacion_id}
+        datos_extra={
+            "motivo": body.motivo,
+            "comentario": body.comentario,
+            "motivo_clave": body.motivo_clave,
+            "asociacion_id": asociacion_id,
+        }
     )
 
     # Actualizar estado de asignación actual a rechazada
@@ -1223,110 +1228,142 @@ async def rechazar_reporte(reporte_id: str, body: RechazarReporteRequest, author
             "estado": "rechazada",
         }).eq("reporte_id", reporte_id).eq("asociacion_id", asociacion_id).execute()
 
-    # Buscar siguiente asociación más cercana excluyendo las que ya rechazaron
-    asociaciones_rechazadas = supabase.table("reporte_asignaciones").select(
-        "asociacion_id"
-    ).eq("reporte_id", reporte_id).execute()
-
-    ids_rechazadas = [r["asociacion_id"] for r in (asociaciones_rechazadas.data or [])]
-
-    # Intentar reasignar
-    from app.services.assignment_service import asignar_asociacion, obtener_contactos_emergencia
-    nueva_asociacion = None
-
-    if reporte.get("latitud") and reporte.get("longitud"):
-        candidata = asignar_asociacion(
-            reporte["latitud"], reporte["longitud"],
-            excluir_ids=ids_rechazadas,
-            tipos_animales=especies_del_caso or None,
-        )
-        if candidata:
-            nueva_asociacion = candidata
-
-    if nueva_asociacion:
-        # Asignar a nueva asociación
-        estado_asignado_id = supabase.table("reporte_estados").select(
+    if body.motivo_clave == "foto_no_es_animal":
+        # No se busca otra asociación — ninguna otra la va a querer
+        # tampoco. Se reusa el estado genérico 'cerrado', siguiendo la
+        # misma convención que busquedas_no_localizado
+        # (resolver_busqueda_no_localizado, decision='cerrar_no_localizado').
+        # asociacion_asignada_id NO se toca — queda como rastro de
+        # auditoría de quién identificó la foto como inválida.
+        estado_cerrado_id = supabase.table("reporte_estados").select(
             "id"
-        ).eq("clave", "asignado").execute()
+        ).eq("clave", "cerrado").execute()
 
         supabase.table("reportes").update({
-            "asociacion_asignada_id": nueva_asociacion["id"],
-            "estado_reporte": "asignado",
-            "estado_cobertura": "abierto",
-            "estado_id": estado_asignado_id.data[0]["id"],
+            "estado_reporte": "cerrado",
+            "estado_cobertura": "finalizado",
+            "estado_id": estado_cerrado_id.data[0]["id"],
             "staff_asignado_id": None,
         }).eq("id", reporte_id).execute()
-
-        # Crear nueva asignación
-        estado_notificada_id = supabase.table("asignacion_estados").select(
-            "id"
-        ).eq("clave", "notificada").execute()
-
-        supabase.table("reporte_asignaciones").insert({
-            "reporte_id": reporte_id,
-            "asociacion_id": nueva_asociacion["id"],
-            "estado_id": estado_notificada_id.data[0]["id"],
-            "estado": "notificada",
-        }).execute()
 
         registrar_historial(
             reporte_id=reporte_id,
             usuario_id=None,
-            tipo_evento="reasignacion_automatica",
-            descripcion=f"Reasignado automáticamente a {nueva_asociacion['nombre']}",
-            datos_extra={"nueva_asociacion_id": nueva_asociacion["id"], "nueva_asociacion_nombre": nueva_asociacion["nombre"]}
+            tipo_evento="reporte_cerrado_foto_invalida",
+            descripcion="Reporte cerrado: la fotografía no muestra un animal real, no se reasigna.",
+            datos_extra={"motivo_clave": body.motivo_clave}
         )
 
         return {
-            "mensaje": "Reporte rechazado y reasignado automáticamente.",
-            "nueva_asociacion": nueva_asociacion["nombre"],
-            "estado": "asignado"
+            "mensaje": "Reporte rechazado y cerrado — la fotografía no corresponde a un animal real.",
+            "estado": "cerrado"
         }
 
     else:
-        # Sin cobertura
-        estado_sin_cobertura_id = supabase.table("reporte_estados").select(
-            "id"
-        ).eq("clave", "sin_cobertura").execute()
+        # Buscar siguiente asociación más cercana excluyendo las que ya rechazaron
+        asociaciones_rechazadas = supabase.table("reporte_asignaciones").select(
+            "asociacion_id"
+        ).eq("reporte_id", reporte_id).execute()
 
-        supabase.table("reportes").update({
-            "asociacion_asignada_id": None,
-            "estado_reporte": "sin_cobertura",
-            "estado_cobertura": None,
-            "estado_id": estado_sin_cobertura_id.data[0]["id"],
-            "staff_asignado_id": None,
-        }).eq("id", reporte_id).execute()
+        ids_rechazadas = [r["asociacion_id"] for r in (asociaciones_rechazadas.data or [])]
 
-        registrar_historial(
-            reporte_id=reporte_id,
-            usuario_id=None,
-            tipo_evento="sin_cobertura",
-            descripcion="No hay más asociaciones disponibles en la zona",
-            datos_extra={"motivo_rechazo": body.motivo}
-        )
-        try:
-            supabase.table("casos_administrativos").insert({
+        # Intentar reasignar
+        from app.services.assignment_service import asignar_asociacion, obtener_contactos_emergencia
+        nueva_asociacion = None
+
+        if reporte.get("latitud") and reporte.get("longitud"):
+            candidata = asignar_asociacion(
+                reporte["latitud"], reporte["longitud"],
+                excluir_ids=ids_rechazadas,
+                tipos_animales=especies_del_caso or None,
+            )
+            if candidata:
+                nueva_asociacion = candidata
+
+        if nueva_asociacion:
+            # Asignar a nueva asociación
+            estado_asignado_id = supabase.table("reporte_estados").select(
+                "id"
+            ).eq("clave", "asignado").execute()
+
+            supabase.table("reportes").update({
+                "asociacion_asignada_id": nueva_asociacion["id"],
+                "estado_reporte": "asignado",
+                "estado_cobertura": "abierto",
+                "estado_id": estado_asignado_id.data[0]["id"],
+                "staff_asignado_id": None,
+            }).eq("id", reporte_id).execute()
+
+            # Crear nueva asignación
+            estado_notificada_id = supabase.table("asignacion_estados").select(
+                "id"
+            ).eq("clave", "notificada").execute()
+
+            supabase.table("reporte_asignaciones").insert({
                 "reporte_id": reporte_id,
-                "tipo": "reporte_sin_coordinadora",
-                "prioridad": "alta",
-                "detalle": "Las asociaciones compatibles rechazaron el caso.",
+                "asociacion_id": nueva_asociacion["id"],
+                "estado_id": estado_notificada_id.data[0]["id"],
+                "estado": "notificada",
             }).execute()
-        except Exception:
-            pass
 
-        contactos_vistos = set()
-        contactos = []
-        for especie in especies_del_caso:
-            for c in obtener_contactos_emergencia(tipo_animal=especie, municipio=reporte.get("municipio")):
-                if c.get("id") not in contactos_vistos:
-                    contactos_vistos.add(c.get("id"))
-                    contactos.append(c)
+            registrar_historial(
+                reporte_id=reporte_id,
+                usuario_id=None,
+                tipo_evento="reasignacion_automatica",
+                descripcion=f"Reasignado automáticamente a {nueva_asociacion['nombre']}",
+                datos_extra={"nueva_asociacion_id": nueva_asociacion["id"], "nueva_asociacion_nombre": nueva_asociacion["nombre"]}
+            )
 
-        return {
-            "mensaje": "Reporte rechazado. No hay más asociaciones disponibles en la zona.",
-            "contactos_emergencia": contactos,
-            "estado": "sin_cobertura"
-        }
+            return {
+                "mensaje": "Reporte rechazado y reasignado automáticamente.",
+                "nueva_asociacion": nueva_asociacion["nombre"],
+                "estado": "asignado"
+            }
+
+        else:
+            # Sin cobertura
+            estado_sin_cobertura_id = supabase.table("reporte_estados").select(
+                "id"
+            ).eq("clave", "sin_cobertura").execute()
+
+            supabase.table("reportes").update({
+                "asociacion_asignada_id": None,
+                "estado_reporte": "sin_cobertura",
+                "estado_cobertura": None,
+                "estado_id": estado_sin_cobertura_id.data[0]["id"],
+                "staff_asignado_id": None,
+            }).eq("id", reporte_id).execute()
+
+            registrar_historial(
+                reporte_id=reporte_id,
+                usuario_id=None,
+                tipo_evento="sin_cobertura",
+                descripcion="No hay más asociaciones disponibles en la zona",
+                datos_extra={"motivo_rechazo": body.motivo}
+            )
+            try:
+                supabase.table("casos_administrativos").insert({
+                    "reporte_id": reporte_id,
+                    "tipo": "reporte_sin_coordinadora",
+                    "prioridad": "alta",
+                    "detalle": "Las asociaciones compatibles rechazaron el caso.",
+                }).execute()
+            except Exception:
+                pass
+
+            contactos_vistos = set()
+            contactos = []
+            for especie in especies_del_caso:
+                for c in obtener_contactos_emergencia(tipo_animal=especie, municipio=reporte.get("municipio")):
+                    if c.get("id") not in contactos_vistos:
+                        contactos_vistos.add(c.get("id"))
+                        contactos.append(c)
+
+            return {
+                "mensaje": "Reporte rechazado. No hay más asociaciones disponibles en la zona.",
+                "contactos_emergencia": contactos,
+                "estado": "sin_cobertura"
+            }
 ### FIN: postrechazo de reportes
 
 MOTIVOS_DENUNCIA = {
