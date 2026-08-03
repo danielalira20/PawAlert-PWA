@@ -19,6 +19,22 @@ type FotoHitoSubida = {
   exif_gps_disponible?: boolean;
 };
 
+const fechaLimiteIso = (valor: string): string | null => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(valor)) return null;
+  const fecha = new Date(`${valor}T23:59:59`);
+  if (Number.isNaN(fecha.getTime())) return null;
+  const componentes = valor.split('-').map(Number);
+  if (
+    fecha.getFullYear() !== componentes[0] ||
+    fecha.getMonth() + 1 !== componentes[1] ||
+    fecha.getDate() !== componentes[2] ||
+    fecha.getTime() <= Date.now() + 24 * 60 * 60 * 1000
+  ) {
+    return null;
+  }
+  return fecha.toISOString();
+};
+
 export const OPCIONES_ENCONTRE = [
   'Igual que en el reporte',
   'Peor de lo esperado',
@@ -325,12 +341,14 @@ export function useStaffReports(showToast: ShowToastFn) {
   // ── Hito: animal bajo resguardo ─────────────────────────────────────
   const [condicionResguardo, setCondicionResguardo] = useState('');
   const [destinoResguardo, setDestinoResguardo] = useState('');
+  const [fechaLimiteResguardo, setFechaLimiteResguardo] = useState('');
   const [notasResguardo, setNotasResguardo] = useState('');
   const [fotoResguardo, setFotoResguardo] = useState<string | null>(null);
 
   const resetResguardo = useCallback(() => {
     setCondicionResguardo('');
     setDestinoResguardo('');
+    setFechaLimiteResguardo('');
     setNotasResguardo('');
     setFotoResguardo(null);
     setUbicacionActual(null);
@@ -339,11 +357,12 @@ export function useStaffReports(showToast: ShowToastFn) {
 
   const registrarAnimalBajoResguardo = useCallback(
     async (reporteId: string): Promise<boolean> => {
-      if (!condicionResguardo || !destinoResguardo.trim() || !fotoResguardo || !ubicacionActual) {
+      const fechaIso = fechaLimiteIso(fechaLimiteResguardo);
+      if (!condicionResguardo || !destinoResguardo || !fechaIso || !fotoResguardo || !ubicacionActual) {
         showToast({
           type: 'warning',
-          title: 'Falta evidencia',
-          message: 'Completa la condición, el destino, la foto y la ubicación.',
+          title: 'Faltan datos del resguardo',
+          message: 'Selecciona la ruta y una fecha válida con al menos un día de margen, además de la evidencia.',
         });
         return false;
       }
@@ -363,7 +382,12 @@ export function useStaffReports(showToast: ShowToastFn) {
           {
             tipo_hito: 'animal_bajo_resguardo',
             condicion_observada: condicionResguardo,
-            destino: destinoResguardo.trim(),
+            destino:
+              destinoResguardo === 'veterinaria_y_hogar'
+                ? 'Veterinaria y después hogar temporal verificado'
+                : 'Hogar temporal verificado',
+            ruta_resguardo: destinoResguardo,
+            fecha_limite_resguardo: fechaIso,
             comentario: notasResguardo.trim() || null,
             foto_url: fotoSubida.foto_url,
             evidencia_id: fotoSubida.evidencia_id || null,
@@ -377,7 +401,12 @@ export function useStaffReports(showToast: ShowToastFn) {
           title: 'Animal bajo resguardo',
           message: 'La asociación ya conoce su condición y destino.',
         });
-        resetResguardo();
+        setCondicionResguardo('');
+        setDestinoResguardo('');
+        setNotasResguardo('');
+        setFotoResguardo(null);
+        setUbicacionActual(null);
+        setPermisoDenegado(false);
         await cargarReportesAsignados();
         return true;
       } catch (error: any) {
@@ -394,13 +423,13 @@ export function useStaffReports(showToast: ShowToastFn) {
     [
       condicionResguardo,
       destinoResguardo,
+      fechaLimiteResguardo,
       notasResguardo,
       fotoResguardo,
       ubicacionActual,
       token,
       showToast,
       subirFotoHito,
-      resetResguardo,
       cargarReportesAsignados,
     ],
   );
@@ -555,6 +584,7 @@ const rechazarAsignacionVoluntario = useCallback(
     setNotasRefugio('');
     setFotoRefugio(null);
     setFotoEntornoRefugio(null);
+    setFechaLimiteResguardo('');
     setUbicacionActual(null);
     setPermisoDenegado(false);
   }, []);
@@ -593,6 +623,15 @@ const rechazarAsignacionVoluntario = useCallback(
         });
         return false;
       }
+      const fechaIso = fechaLimiteIso(fechaLimiteResguardo);
+      if (user?.rol === 'voluntario_externo' && !fechaIso) {
+        showToast({
+          type: 'warning',
+          title: 'Confirma la fecha límite',
+          message: 'Usa el formato AAAA-MM-DD y deja al menos un día completo de margen.',
+        });
+        return false;
+      }
       setIsSubmitting(true);
       try {
         const fotoSubida = await subirFotoHito(reporteId, fotoRefugio);
@@ -624,6 +663,8 @@ const rechazarAsignacionVoluntario = useCallback(
             foto_url: fotoSubida.foto_url,
             evidencia_id: fotoSubida.evidencia_id || null,
             foto_entorno_url: fotoEntornoSubida?.foto_url || null,
+            fecha_limite_resguardo:
+              user?.rol === 'voluntario_externo' ? fechaIso : null,
             latitud: ubicacionActual.latitude,
             longitud: ubicacionActual.longitude,
           },
@@ -656,6 +697,7 @@ const rechazarAsignacionVoluntario = useCallback(
       notasRefugio,
       fotoRefugio,
       fotoEntornoRefugio,
+      fechaLimiteResguardo,
       ubicacionActual,
       token,
       showToast,
@@ -795,6 +837,8 @@ const rechazarAsignacionVoluntario = useCallback(
     setCondicionResguardo,
     destinoResguardo,
     setDestinoResguardo,
+    fechaLimiteResguardo,
+    setFechaLimiteResguardo,
     notasResguardo,
     setNotasResguardo,
     fotoResguardo,
