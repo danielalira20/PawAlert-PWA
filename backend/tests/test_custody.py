@@ -190,6 +190,39 @@ def test_transferencia_no_finaliza_con_una_sola_confirmacion(make_query):
     assert response.json() == {"estado": "en_curso", "confirmacion": "entrega"}
 
 
+def test_recepcion_rechaza_confirmaciones_gps_distantes(make_query):
+    tablas = {
+        "transferencias_custodia": make_query(data=[{
+            "id": "transfer-1",
+            "asociacion_receptora_id": "aso-2",
+            "custodias_temporales": {"voluntario_id": "vol-1", "reporte_id": "rep-1"},
+        }])
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    supabase.rpc.return_value.execute.side_effect = Exception("confirmaciones_distantes")
+    usuario = {"id": "user-aso", "rol": "asociacion", "asociacion_id": "aso-2"}
+
+    with (
+        patch.object(custody, "supabase", supabase),
+        patch.object(custody, "supabase_admin", supabase),
+        patch.object(custody, "_usuario", return_value=usuario),
+        patch.object(custody, "_asociacion_verificada", return_value={"id": "aso-2"}),
+    ):
+        response = client.post(
+            "/custody/transfers/transfer-1/confirm",
+            headers=AUTH,
+            json={
+                "foto_url": "https://pawalert.test/recepcion.jpg",
+                "latitud": 19.5,
+                "longitud": -99.2,
+            },
+        )
+
+    assert response.status_code == 409
+    assert "200 metros" in response.json()["detail"]
+
+
 def test_reportante_recibe_estado_general_sin_datos_del_hogar(make_query):
     tablas = {
         "reportes": make_query(data=[{

@@ -960,8 +960,16 @@ def confirmar_transferencia(
             },
         ).execute()
     except Exception as error:
-        if "transferencia_no_disponible" in str(error):
+        detalle_error = str(error).lower()
+        if "transferencia_no_disponible" in detalle_error:
             raise HTTPException(status_code=409, detail="La transferencia ya no está disponible")
+        if "entrega_pendiente" in detalle_error:
+            raise HTTPException(status_code=409, detail="El hogar temporal debe confirmar primero que realizó la entrega")
+        if "confirmaciones_distantes" in detalle_error:
+            raise HTTPException(
+                status_code=409,
+                detail="Las dos confirmaciones están a más de 200 metros. Verifiquen que ambos estén en el mismo punto de entrega.",
+            )
         raise
     estado = resultado.data
     registrar_historial(
