@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
+from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
 
@@ -245,9 +246,12 @@ def test_animal_no_localizado_exige_tiempo_y_comentario(make_query):
 
 
 def test_animal_bajo_resguardo_registra_destino_y_evidencia(make_query):
+    fecha_limite = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
     tablas = {
         "usuarios": make_query(data=[_usuario_externo()]),
         "reportes": make_query(data=[_reporte_en_atencion()]),
+        "voluntarios": make_query(data=[{"id": "voluntario-1"}]),
+        "planes_custodia_temporal": make_query(data=[]),
     }
     supabase = _supabase_con_tablas(tablas)
 
@@ -261,6 +265,8 @@ def test_animal_bajo_resguardo_registra_destino_y_evidencia(make_query):
                 "tipo_hito": "animal_bajo_resguardo",
                 "condicion_observada": "Estable",
                 "destino": "Mi hogar temporal",
+                "ruta_resguardo": "directo_hogar",
+                "fecha_limite_resguardo": fecha_limite,
                 "comentario": "Se mantiene tranquilo.",
                 "foto_url": "https://pawalert.test/resguardo.jpg",
                 "latitud": 19.4327,
@@ -274,6 +280,50 @@ def test_animal_bajo_resguardo_registra_destino_y_evidencia(make_query):
     tablas["reportes"].update.assert_not_called()
     assert historial.call_args.kwargs["tipo_evento"] == "animal_bajo_resguardo"
     assert historial.call_args.kwargs["datos_extra"]["destino"] == "Mi hogar temporal"
+    plan = tablas["planes_custodia_temporal"].upsert.call_args.args[0]
+    assert plan["ruta_resguardo"] == "directo_hogar"
+    assert plan["fecha_limite_propuesta"] == fecha_limite
+
+
+def test_animal_bajo_resguardo_exige_ruta_y_fecha_concretas(make_query):
+    tablas = {
+        "usuarios": make_query(data=[_usuario_externo()]),
+        "reportes": make_query(data=[_reporte_en_atencion()]),
+    }
+    supabase = _supabase_con_tablas(tablas)
+
+    with patch.object(reports, "supabase", supabase):
+        response = client.post(
+            "/reports/reporte-1/hitos",
+            json={
+                "tipo_hito": "animal_bajo_resguardo",
+                "condicion_observada": "Estable",
+                "foto_url": "https://pawalert.test/resguardo.jpg",
+                "latitud": 19.4327,
+                "longitud": -99.1333,
+            },
+            headers=AUTH_HEADERS,
+        )
+
+    assert response.status_code == 422
+    assert "Selecciona si irás directo" in response.json()["detail"]
+
+    with patch.object(reports, "supabase", supabase):
+        response_sin_fecha = client.post(
+            "/reports/reporte-1/hitos",
+            json={
+                "tipo_hito": "animal_bajo_resguardo",
+                "condicion_observada": "Estable",
+                "ruta_resguardo": "directo_hogar",
+                "foto_url": "https://pawalert.test/resguardo.jpg",
+                "latitud": 19.4327,
+                "longitud": -99.1333,
+            },
+            headers=AUTH_HEADERS,
+        )
+
+    assert response_sin_fecha.status_code == 422
+    assert "hasta qué fecha" in response_sin_fecha.json()["detail"]
 
 
 def test_llegada_hogar_exige_resguardo_y_foto_entorno(make_query):
@@ -300,6 +350,7 @@ def test_llegada_hogar_exige_resguardo_y_foto_entorno(make_query):
 
 
 def test_llegada_hogar_inicia_custodia_y_programa_seguimiento(make_query):
+    fecha_limite = (datetime.now(timezone.utc) + timedelta(days=9)).isoformat()
     tablas = {
         "usuarios": make_query(data=[_usuario_externo()]),
         "reportes": make_query(data=[_reporte_en_atencion()]),
@@ -310,7 +361,15 @@ def test_llegada_hogar_inicia_custodia_y_programa_seguimiento(make_query):
                 {
                     "latitud": 19.4327,
                     "longitud": -99.1333,
-                    "tiempo_resguardo_dias": 14,
+                }
+            ]
+        ),
+        "planes_custodia_temporal": make_query(
+            data=[
+                {
+                    "id": "plan-1",
+                    "ruta_resguardo": "directo_hogar",
+                    "fecha_limite_propuesta": fecha_limite,
                 }
             ]
         ),
@@ -330,6 +389,7 @@ def test_llegada_hogar_inicia_custodia_y_programa_seguimiento(make_query):
                 "condicion_observada": "Estable",
                 "foto_url": "https://pawalert.test/animal.jpg",
                 "foto_entorno_url": "https://pawalert.test/entorno.jpg",
+                "fecha_limite_resguardo": fecha_limite,
                 "latitud": 19.4327,
                 "longitud": -99.1333,
             },
@@ -347,6 +407,51 @@ def test_llegada_hogar_inicia_custodia_y_programa_seguimiento(make_query):
     payload = tablas["custodias_temporales"].insert.call_args.args[0]
     assert payload["estado"] == "activo"
     assert payload["frecuencia_horas"] == 72
-    assert payload["fecha_limite"]
+    assert payload["fecha_limite"] == fecha_limite
+    assert payload["ruta_ingreso"] == "directo_hogar"
     assert payload["proximo_seguimiento_at"]
     assert historial.call_args.kwargs["tipo_evento"] == "llegada_hogar_temporal"
+
+
+def test_llegada_hogar_exige_paso_veterinario_si_fue_la_ruta_elegida(make_query):
+    fecha_limite = (datetime.now(timezone.utc) + timedelta(days=5)).isoformat()
+    historial = make_query(
+        execute_results=[
+            SimpleNamespace(data=[{"id": "resguardo-1"}], count=None),
+            SimpleNamespace(data=[], count=None),
+        ]
+    )
+    tablas = {
+        "usuarios": make_query(data=[_usuario_externo()]),
+        "reportes": make_query(data=[_reporte_en_atencion()]),
+        "historial_reporte": historial,
+        "voluntarios": make_query(data=[{"id": "voluntario-1"}]),
+        "perfil_casa_temporal": make_query(
+            data=[{"latitud": 19.4327, "longitud": -99.1333}]
+        ),
+        "planes_custodia_temporal": make_query(
+            data=[{
+                "id": "plan-1",
+                "ruta_resguardo": "veterinaria_y_hogar",
+                "fecha_limite_propuesta": fecha_limite,
+            }]
+        ),
+    }
+    supabase = _supabase_con_tablas(tablas)
+
+    with patch.object(reports, "supabase", supabase):
+        response = client.post(
+            "/reports/reporte-1/hitos",
+            json={
+                "tipo_hito": "llegada_hogar_temporal",
+                "foto_url": "https://pawalert.test/animal.jpg",
+                "foto_entorno_url": "https://pawalert.test/entorno.jpg",
+                "fecha_limite_resguardo": fecha_limite,
+                "latitud": 19.4327,
+                "longitud": -99.1333,
+            },
+            headers=AUTH_HEADERS,
+        )
+
+    assert response.status_code == 409
+    assert "llegada a la veterinaria" in response.json()["detail"]
