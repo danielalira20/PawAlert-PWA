@@ -23,7 +23,6 @@ import { useFonts } from 'expo-font';
 import {
   Fraunces_800ExtraBold,
 } from '@expo-google-fonts/fraunces';
-import heroImage from '../assets/images/imagen_hero.png';
 import {
   Poppins_400Regular,
   Poppins_500Medium,
@@ -31,6 +30,8 @@ import {
 } from '@expo-google-fonts/poppins';
 import { useAuth } from '../context/AuthContext';
 import NotificationBell from '../components/red-aliados/NotificationBell';
+
+const heroImage = require('../assets/images/imagen_hero.png');
 
 // IMPORTANTE: Importamos el formulario de forma "perezosa" (Lazy Load)
 const AssociationFormScreen = lazy(() => import('./AssociationFormScreen'));
@@ -1139,11 +1140,7 @@ export default function LandingScreen() {
                     borderWidth: 1, borderColor: `${item.color}30`,
                     ...(isWeb ? { boxShadow: `0 4px 15px ${item.color}15` } : { elevation: 3 }),
                   }}>
-                    {item.isEmoji ? (
-                      <Text style={{ fontSize: 28 }}>{item.icon}</Text>
-                    ) : (
-                      <Ionicons name={item.icon as any} size={28} color={item.color} />
-                    )}
+                    <Ionicons name={item.icon as any} size={28} color={item.color} />
                   </View>
                   <View style={{ flex: 1, alignItems: item.align === 'left' ? 'flex-start' : 'flex-end' }}>
                     <Text style={{ fontSize: 18, fontFamily: F.displayBold, color: C.text, textAlign: item.align === 'left' ? 'left' : 'right' }}>{item.title}</Text>
@@ -1182,11 +1179,7 @@ export default function LandingScreen() {
                       width: 50, height: 50, borderRadius: 25, backgroundColor: `${item.color}15`,
                       alignItems: 'center', justifyContent: 'center',
                     }}>
-                      {item.isEmoji ? (
-                        <Text style={{ fontSize: 24 }}>{item.icon}</Text>
-                      ) : (
-                        <Ionicons name={item.icon as any} size={24} color={item.color} />
-                      )}
+                      <Ionicons name={item.icon as any} size={24} color={item.color} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: 16, fontFamily: F.displayBold, color: C.text, marginBottom: 4 }}>{item.title}</Text>

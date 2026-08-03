@@ -193,9 +193,9 @@ async def register(body: RegisterRequest):
     # mostrando el dashboard de reportante por defecto mientras se 
     # hace una petición extra para averiguar el tipo de aliado.
     perfil_apoyo_result = supabase.table("perfil_apoyo").select("id, tipo").eq("usuario_id", nuevo_usuario_id).execute()
-    if perfil_apoyo_result.data:
+    if perfil_apoyo_result.data and perfil_apoyo_result.data[0].get("tipo"):
         tiene_perfil_apoyo = True
-        tipo_perfil_apoyo = perfil_apoyo_result.data[0]["tipo"]
+        tipo_perfil_apoyo = perfil_apoyo_result.data[0].get("tipo")
     else:
         tiene_perfil_apoyo = False
         tipo_perfil_apoyo = None
@@ -246,9 +246,9 @@ async def login(body: LoginRequest):
     # mostrando el dashboard de reportante por defecto mientras se 
     # hace una petición extra para averiguar el tipo de aliado.
     perfil_apoyo_result = supabase.table("perfil_apoyo").select("id, tipo").eq("usuario_id", usuario_data["id"]).execute()
-    if perfil_apoyo_result.data:
+    if perfil_apoyo_result.data and perfil_apoyo_result.data[0].get("tipo"):
         usuario_data["tiene_perfil_apoyo"] = True
-        usuario_data["tipo_perfil_apoyo"] = perfil_apoyo_result.data[0]["tipo"]
+        usuario_data["tipo_perfil_apoyo"] = perfil_apoyo_result.data[0].get("tipo")
     else:
         usuario_data["tiene_perfil_apoyo"] = False
         usuario_data["tipo_perfil_apoyo"] = None

@@ -2,6 +2,7 @@ import React, { Suspense, lazy, useState } from 'react';
 import { View, LayoutChangeEvent, ActivityIndicator } from 'react-native';
 import { CondicionColors, normalizeCondicion } from '../../constants/theme';
 import type { ReporteStaff } from '../../types/reportestaff';
+import type { Reporte } from '../../types/reporte';
 
 // IMPORTANTE: no se importa LeafletMap directo arriba del archivo — Leaflet
 // toca `window`/DOM al momento de importarse, lo cual truena cuando Expo
@@ -16,7 +17,8 @@ interface Props {
   onSelectReporte?: (reporte: ReporteStaff) => void;
 }
 
-function getMarkerColor(condicion: string) {
+function getMarkerColor(reporte: Reporte) {
+  const condicion = reporte.condicion || reporte.animales?.[0]?.condicion || '';
   const cond = normalizeCondicion(condicion);
   return cond ? CondicionColors[cond] : '#9B8B7E';
 }

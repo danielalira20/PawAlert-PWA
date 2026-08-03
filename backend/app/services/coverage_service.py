@@ -7,7 +7,7 @@ del rescate. La selección definitiva siempre se delega a la función SQL
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from math import asin, cos, radians, sin, sqrt
 
 from fastapi import HTTPException
@@ -17,6 +17,7 @@ from app.utils.animal_shaping import shape_animal_embed, shape_animal_response
 
 
 ESTADOS_VOLUNTARIO_ACTIVO = ("activo_nivel_1", "activo_nivel_2")
+PROPUESTA_COBERTURA_MINUTOS = 10
 
 
 def obtener_perfil_externo(usuario_id: str) -> dict:
@@ -279,6 +280,9 @@ def reservar_cobertura(
     actor_id: str,
     origen: str,
 ) -> str:
+    vence_at = datetime.now(timezone.utc) + timedelta(
+        minutes=PROPUESTA_COBERTURA_MINUTOS
+    )
     try:
         resultado = supabase_admin.rpc(
             "reservar_cobertura_reporte",
@@ -289,6 +293,7 @@ def reservar_cobertura(
                 "p_asociacion_id": asociacion_id,
                 "p_actor_id": actor_id,
                 "p_origen": origen,
+                "p_vence_at": vence_at.isoformat(),
             },
         ).execute()
     except Exception as exc:
@@ -314,6 +319,12 @@ def reservar_cobertura(
             ) from exc
         raise
     return str(resultado.data)
+
+
+def expirar_propuestas_vencidas() -> int:
+    """Libera de forma transaccional las propuestas que agotaron su plazo."""
+    resultado = supabase_admin.rpc("expirar_propuestas_cobertura").execute()
+    return int(resultado.data or 0)
 
 
 def responder_propuesta(

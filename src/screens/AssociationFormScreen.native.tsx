@@ -248,8 +248,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
       setTiposAnimales(tiposAnimales.filter((t) => t !== tipo));
       if (tipo === 'otro') {
         setSubcategoriaOtro(null);
-        setEspecieDescripcionOtro('');
-        setErrors((prev) => { const { subcategoriaOtro, especieDescripcionOtro, ...rest } = prev; return rest; });
+        setErrors((prev) => { const { subcategoriaOtro, ...rest } = prev; return rest; });
       }
     } else {
       setTiposAnimales([...tiposAnimales, tipo]);
@@ -677,19 +676,19 @@ export default function AssociationFormScreen({ onClose }: Props) {
                 </View>
               )}
 
-              <View style={styles.rowContainer}>
-                <View style={styles.halfWidth}>
+              <View style={{ flexDirection: 'row', gap: 12 }}>
+                <View style={{ flex: 1 }}>
                   <Input label="Calle" placeholder="Ej. Av. Reforma" value={calle} onChangeText={setCalle} />
                 </View>
-                <View style={styles.halfWidth}>
+                <View style={{ flex: 1 }}>
                   <Input label="Número" placeholder="Ej. 123" value={numero} onChangeText={setNumero} />
                 </View>
               </View>
               <View style={{ flexDirection: 'column' }}>
                  <View style={{ flex: 1 }}><Input label="Colonia" placeholder="Ej. Centro Histórico" value={colonia} onChangeText={setColonia} /></View>
-                 <View style={styles.rowContainer}>
-                   <View style={styles.halfWidth}><Input label="Municipio / Ciudad" placeholder="Ej. Puebla" value={municipio} onChangeText={setMunicipio} /></View>
-                   <View style={styles.halfWidth}><Input label="Estado" placeholder="Ej. Puebla" value={estado} onChangeText={setEstado} /></View>
+                 <View style={{ flexDirection: 'row', gap: 12 }}>
+                   <View style={{ flex: 1 }}><Input label="Municipio / Ciudad" placeholder="Ej. Puebla" value={municipio} onChangeText={setMunicipio} /></View>
+                   <View style={{ flex: 1 }}><Input label="Estado" placeholder="Ej. Puebla" value={estado} onChangeText={setEstado} /></View>
                  </View>
               </View>
               <Input label="Referencia (Opcional)" placeholder="Ej. Casa azul" value={referencia} onChangeText={setReferencia} />

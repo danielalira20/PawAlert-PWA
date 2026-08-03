@@ -415,12 +415,13 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
     }
   }, [info]);
 
-  // Refresco automático cada minuto — igual que en el panel de asociación.
+  // Refresco frecuente para retirar casos reservados de ambos paneles con
+  // una demora máxima breve, incluso cuando el transporte pierde conexión.
   useEffect(() => {
     if (info?.estado !== 'aprobada') return;
     const interval = setInterval(() => {
       cargarReportes();
-    }, 60000);
+    }, 10000);
     return () => clearInterval(interval);
   }, [info?.estado, token]);
 

@@ -17,6 +17,7 @@ interface Props {
   visible: boolean;
   condicion: string;
   destino: string;
+  fechaLimite: string;
   notas: string;
   foto: string | null;
   ubicacionLista: boolean;
@@ -24,6 +25,7 @@ interface Props {
   isSubmitting: boolean;
   onChangeCondicion: (valor: string) => void;
   onChangeDestino: (valor: string) => void;
+  onChangeFechaLimite: (valor: string) => void;
   onChangeNotas: (valor: string) => void;
   onCapturarFoto: () => void;
   onCapturarUbicacion: () => void;
@@ -37,6 +39,7 @@ export function ResguardoModal({
   visible,
   condicion,
   destino,
+  fechaLimite,
   notas,
   foto,
   ubicacionLista,
@@ -44,6 +47,7 @@ export function ResguardoModal({
   isSubmitting,
   onChangeCondicion,
   onChangeDestino,
+  onChangeFechaLimite,
   onChangeNotas,
   onCapturarFoto,
   onCapturarUbicacion,
@@ -51,7 +55,7 @@ export function ResguardoModal({
   onConfirm,
 }: Props) {
   const puedeConfirmar =
-    !!condicion && !!destino.trim() && !!foto && ubicacionLista && !isSubmitting;
+    !!condicion && !!destino && /^\d{4}-\d{2}-\d{2}$/.test(fechaLimite) && !!foto && ubicacionLista && !isSubmitting;
 
   return (
     <Modal visible={visible} transparent animationType="fade">
@@ -92,14 +96,57 @@ export function ResguardoModal({
               ))}
             </View>
 
-            <Text style={styles.label}>Destino inmediato</Text>
+            <Text style={styles.label}>Ruta hacia tu hogar temporal</Text>
+            <Text style={styles.fieldHint}>
+              Como voluntario externo, el destino final siempre es tu hogar verificado.
+            </Text>
+            {[
+              {
+                value: 'directo_hogar',
+                icon: 'home-outline' as const,
+                title: 'Directo a mi hogar temporal',
+                subtitle: 'El animal no requiere una parada veterinaria previa.',
+              },
+              {
+                value: 'veterinaria_y_hogar',
+                icon: 'medkit-outline' as const,
+                title: 'Veterinaria y después mi hogar',
+                subtitle: 'Primero registrarás la llegada a la veterinaria.',
+              },
+            ].map((ruta) => (
+              <TouchableOpacity
+                key={ruta.value}
+                onPress={() => onChangeDestino(ruta.value)}
+                style={[styles.routeCard, destino === ruta.value && styles.routeCardActive]}
+              >
+                <Ionicons
+                  name={ruta.icon}
+                  size={20}
+                  color={destino === ruta.value ? Brand.secondary : Brand.textMuted}
+                />
+                <View style={styles.routeCopy}>
+                  <Text style={[styles.routeTitle, destino === ruta.value && styles.routeTitleActive]}>
+                    {ruta.title}
+                  </Text>
+                  <Text style={styles.routeSubtitle}>{ruta.subtitle}</Text>
+                </View>
+                <Ionicons
+                  name={destino === ruta.value ? 'radio-button-on' : 'radio-button-off'}
+                  size={20}
+                  color={destino === ruta.value ? Brand.secondary : Brand.textFaint}
+                />
+              </TouchableOpacity>
+            ))}
+
+            <Text style={styles.label}>¿Hasta qué fecha puedes cuidarlo?</Text>
             <TextInput
-              value={destino}
-              onChangeText={onChangeDestino}
-              placeholder="Ej. Mi hogar temporal o Clínica San José"
+              value={fechaLimite}
+              onChangeText={onChangeFechaLimite}
+              placeholder="AAAA-MM-DD"
               placeholderTextColor={Brand.textFaint}
               style={styles.input}
-              maxLength={200}
+              maxLength={10}
+              keyboardType="numbers-and-punctuation"
             />
 
             <Text style={styles.label}>Observaciones</Text>
@@ -208,6 +255,7 @@ const styles = StyleSheet.create({
   title: { color: Brand.textDark, fontSize: 20, fontWeight: '900', marginTop: 2 },
   helper: { color: Brand.textMuted, fontSize: 12, lineHeight: 18, marginBottom: 16 },
   label: { color: Brand.textDark, fontSize: 12, fontWeight: '800', marginBottom: 7 },
+  fieldHint: { color: Brand.textMuted, fontSize: 11, lineHeight: 16, marginBottom: 8 },
   optionRow: { gap: 7, marginBottom: 14 },
   option: {
     borderWidth: 1.5,
@@ -219,6 +267,22 @@ const styles = StyleSheet.create({
   optionActive: { borderColor: Brand.secondary, backgroundColor: `${Brand.secondary}12` },
   optionText: { color: Brand.textMuted, fontSize: 12, fontWeight: '700' },
   optionTextActive: { color: Brand.secondary, fontWeight: '900' },
+  routeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1.5,
+    borderColor: '#E4D3B8',
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
+    padding: 11,
+    marginBottom: 8,
+  },
+  routeCardActive: { borderColor: Brand.secondary, backgroundColor: `${Brand.secondary}10` },
+  routeCopy: { flex: 1 },
+  routeTitle: { color: Brand.textDark, fontSize: 12, fontWeight: '800' },
+  routeTitleActive: { color: Brand.secondary },
+  routeSubtitle: { color: Brand.textMuted, fontSize: 10, lineHeight: 15, marginTop: 2 },
   input: {
     borderWidth: 1.5,
     borderColor: '#E4D3B8',

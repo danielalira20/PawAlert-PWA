@@ -29,6 +29,16 @@ interface Seguimiento {
   foto_url: string;
   estado_validacion: string;
   creado_at: string;
+  entorno_foto_url?: string | null;
+}
+
+interface Aclaracion {
+  id: string;
+  estado: 'pendiente_coordinadora' | 'enviada_voluntario' | 'respondida';
+  pregunta_regional: string;
+  mensaje_coordinadora?: string | null;
+  respuesta_voluntario?: string | null;
+  foto_respuesta_url?: string | null;
 }
 
 export interface Custodia {
@@ -57,17 +67,54 @@ export interface Custodia {
     animales?: Array<{ tipo_animal?: string; condicion?: string; tamanio?: string }>;
   };
   ultimo_seguimiento?: Seguimiento | null;
+  seguimiento_anterior?: Seguimiento | null;
+  seguimiento_inicial?: { id: string; foto_url?: string | null; entorno_foto_url?: string | null; creado_at: string } | null;
+  ultima_evidencia_entorno?: { id: string; entorno_foto_url?: string | null; creado_at: string } | null;
+  revision_activa?: {
+    id: string;
+    reservada_at: string;
+    vence_at: string;
+    asociaciones?: { nombre?: string | null } | null;
+  } | null;
+  ultima_validacion?: {
+    decision: string;
+    creado_at: string;
+    asociaciones?: { nombre?: string | null } | null;
+  } | null;
+  aclaraciones?: Aclaracion[];
   solicitud_relevo?: { id: string; motivo: string; estado: string } | null;
+  oferta_relevo?: {
+    id: string;
+    estado: 'pendiente_coordinadora' | 'autorizada' | 'confirmada_transporte';
+    tipo_destino: 'ingreso_asociacion' | 'hogar_temporal';
+    responsable_recepcion: string;
+    direccion_recepcion?: string | null;
+    ventana_inicio: string;
+    ventana_fin: string;
+    asociaciones?: { nombre?: string | null } | null;
+  } | null;
   transferencia_activa?: {
     id: string;
     fecha_programada?: string | null;
     confirma_entrega_at?: string | null;
     confirma_recepcion_at?: string | null;
     estado: string;
+    tipo_destino?: string | null;
+    responsable_recepcion?: string | null;
+    direccion_recepcion?: string | null;
+    ventana_inicio?: string | null;
+    ventana_fin?: string | null;
+  } | null;
+  puede_confirmar_recepcion?: boolean;
+  pregunta_vencimiento?: {
+    id: string;
+    fecha_limite_consultada: string;
+    respuesta?: 'no_seguro' | null;
+    respondida_at?: string | null;
   } | null;
 }
 
-type ModalMode = 'seguimiento' | 'relevo' | 'extension' | 'validacion' | 'aceptar' | 'transferencia' | 'finalizar' | null;
+type ModalMode = 'seguimiento' | 'relevo' | 'extension' | 'vencimiento' | 'validacion' | 'duda' | 'gestionar_duda' | 'responder_aclaracion' | 'aceptar' | 'autorizar_relevo' | 'transporte_relevo' | 'transferencia' | 'finalizar' | null;
 
 interface Props {
   onClose?: () => void;
@@ -94,10 +141,27 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
     fecha: '',
     comentario: '',
     resolucion: '',
+    tipoDestino: 'ingreso_asociacion' as 'ingreso_asociacion' | 'hogar_temporal',
+    receptorId: '',
+    responsable: '',
+    direccion: '',
+    horaInicio: '10:00',
+    horaFin: '12:00',
+    nuevaFecha: '',
+    mismoAnimal: null as boolean | null,
+    fotoClara: null as boolean | null,
+    entornoAdecuado: null as boolean | null,
+    condicionEvolucion: '',
+    posiblesInconsistencias: false,
+    revisionMedica: false,
+    revisionLegal: false,
+    idoneidadAdoptante: false,
   });
   const [fotoAnimal, setFotoAnimal] = useState<string | null>(null);
   const [fotoEntorno, setFotoEntorno] = useState<string | null>(null);
   const [gps, setGps] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [reservandoRevision, setReservandoRevision] = useState<string | null>(null);
+  const [hogares, setHogares] = useState<Array<{ id: string; nombre: string; zona: string; espacios_disponibles: number }>>([]);
 
   const cargar = useCallback(async () => {
     if (!token) return;
@@ -121,7 +185,7 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
 
   useEffect(() => {
     void cargar();
-    const timer = setInterval(() => void cargar(), 30000);
+    const timer = setInterval(() => void cargar(), 10000);
     return () => clearInterval(timer);
   }, [cargar]);
 
@@ -138,16 +202,63 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
       fecha: '',
       comentario: '',
       resolucion: '',
+      tipoDestino: 'ingreso_asociacion',
+      receptorId: '',
+      responsable: '',
+      direccion: '',
+      horaInicio: '10:00',
+      horaFin: '12:00',
+      nuevaFecha: '',
+      mismoAnimal: null,
+      fotoClara: null,
+      entornoAdecuado: null,
+      condicionEvolucion: '',
+      posiblesInconsistencias: false,
+      revisionMedica: false,
+      revisionLegal: false,
+      idoneidadAdoptante: false,
     });
     setFotoAnimal(null);
     setFotoEntorno(null);
     setGps(null);
   };
 
+  useEffect(() => {
+    if (modal !== 'aceptar' || !seleccionada?.solicitud_relevo || !token) {
+      setHogares([]);
+      return;
+    }
+    axios.get(
+      `${API_URL}/custody/relief/${seleccionada.solicitud_relevo.id}/eligible-homes`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    ).then((response) => setHogares(response.data.hogares || [])).catch(() => setHogares([]));
+  }, [modal, seleccionada?.solicitud_relevo?.id, token]);
+
   const cerrarModal = () => {
     if (submitting) return;
     setModal(null);
     setSeleccionada(null);
+  };
+
+  const abrirRevision = async (custodia: Custodia) => {
+    if (!custodia.ultimo_seguimiento || reservandoRevision) return;
+    setReservandoRevision(custodia.ultimo_seguimiento.id);
+    try {
+      await axios.post(
+        `${API_URL}/custody/followups/${custodia.ultimo_seguimiento.id}/review/reserve`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      abrir('validacion', custodia);
+    } catch (error: any) {
+      showToast({
+        type: 'info',
+        title: 'Revisión no disponible',
+        message: error?.response?.data?.detail || 'No pudimos reservar esta revisión.',
+      });
+    } finally {
+      setReservandoRevision(null);
+    }
   };
 
   const tomarFoto = async (entorno = false) => {
@@ -253,23 +364,153 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
     );
   }, 'La fecha límite del resguardo fue actualizada.');
 
+  const responderVencimiento = (respuesta: 'puede_continuar' | 'no_puede' | 'no_seguro') => ejecutar(async () => {
+    if (!seleccionada) throw new Error('No encontramos la custodia seleccionada.');
+    if (respuesta === 'puede_continuar' && !form.fecha) {
+      throw new Error('Indica hasta qué fecha puedes continuar.');
+    }
+    await axios.post(
+      `${API_URL}/custody/${seleccionada.id}/expiry-response`,
+      {
+        respuesta,
+        nueva_fecha_limite: respuesta === 'puede_continuar'
+          ? new Date(`${form.fecha}T18:00:00`).toISOString()
+          : null,
+      },
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+  }, 'Guardamos tu respuesta y la asociación coordinadora podrá darle seguimiento.');
+
   const validar = (decision: 'validado' | 'aclaracion_solicitada' | 'alerta') => ejecutar(async () => {
     if (!seleccionada?.ultimo_seguimiento) throw new Error('No hay seguimiento para validar.');
+    if (form.mismoAnimal === null || form.fotoClara === null || form.entornoAdecuado === null || !form.condicionEvolucion) {
+      throw new Error('Completa todos los puntos de la revisión manual.');
+    }
     await axios.post(
       `${API_URL}/custody/followups/${seleccionada.ultimo_seguimiento.id}/validation`,
-      { decision, comentario: form.comentario || null },
+      {
+        decision,
+        comentario: form.comentario || null,
+        mismo_animal: form.mismoAnimal,
+        foto_clara: form.fotoClara,
+        entorno_adecuado: form.entornoAdecuado,
+        condicion_evolucion: form.condicionEvolucion,
+        posibles_inconsistencias: form.posiblesInconsistencias,
+      },
       { headers: { Authorization: `Bearer ${token}` } },
     );
   }, 'La revisión quedó registrada.');
 
-  const aceptarRelevo = () => ejecutar(async () => {
-    if (!seleccionada?.solicitud_relevo || !form.fecha) throw new Error('Selecciona una fecha para el traslado.');
+  const enviarDuda = () => ejecutar(async () => {
+    if (!seleccionada?.ultimo_seguimiento || form.comentario.trim().length < 5) {
+      throw new Error('Explica claramente la duda para la asociación coordinadora.');
+    }
+    if (form.mismoAnimal === null || form.fotoClara === null || form.entornoAdecuado === null || !form.condicionEvolucion) {
+      throw new Error('Completa todos los puntos de la revisión manual.');
+    }
     await axios.post(
-      `${API_URL}/custody/relief/${seleccionada.solicitud_relevo.id}/accept`,
-      { fecha_programada: new Date(`${form.fecha}T18:00:00`).toISOString() },
+      `${API_URL}/custody/followups/${seleccionada.ultimo_seguimiento.id}/questions`,
+      {
+        pregunta: form.comentario.trim(),
+        mismo_animal: form.mismoAnimal,
+        foto_clara: form.fotoClara,
+        entorno_adecuado: form.entornoAdecuado,
+        condicion_evolucion: form.condicionEvolucion,
+        posibles_inconsistencias: form.posiblesInconsistencias,
+      },
       { headers: { Authorization: `Bearer ${token}` } },
     );
-  }, 'El traslado quedó reservado; ahora ambas partes deberán confirmarlo.');
+  }, 'La duda fue enviada a la asociación coordinadora.');
+
+  const enviarAclaracion = () => ejecutar(async () => {
+    const aclaracion = seleccionada?.aclaraciones?.[0];
+    if (!aclaracion || form.comentario.trim().length < 5) {
+      throw new Error('Redacta el mensaje que recibirá el hogar temporal.');
+    }
+    await axios.post(
+      `${API_URL}/custody/clarifications/${aclaracion.id}/forward`,
+      { mensaje: form.comentario.trim() },
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+  }, 'La solicitud de aclaración fue enviada al hogar temporal.');
+
+  const responderAclaracion = () => ejecutar(async () => {
+    const aclaracion = seleccionada?.aclaraciones?.find((a) => a.estado === 'enviada_voluntario');
+    if (!aclaracion || form.comentario.trim().length < 5) {
+      throw new Error('Describe la aclaración antes de enviarla.');
+    }
+    const foto_url = fotoAnimal ? await subirFoto(fotoAnimal) : null;
+    await axios.post(
+      `${API_URL}/custody/clarifications/${aclaracion.id}/respond`,
+      { respuesta: form.comentario.trim(), foto_url },
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+  }, 'La respuesta llegó a la asociación coordinadora.');
+
+  const resolverAclaracion = () => ejecutar(async () => {
+    const aclaracion = seleccionada?.aclaraciones?.find((a) => a.estado === 'respondida');
+    if (!aclaracion) throw new Error('Aún no hay una respuesta para resolver.');
+    await axios.post(
+      `${API_URL}/custody/clarifications/${aclaracion.id}/resolve`,
+      {},
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+  }, 'La aclaración quedó resuelta.');
+
+  const aceptarRelevo = () => ejecutar(async () => {
+    if (!seleccionada?.solicitud_relevo || !form.fecha || !form.responsable || !form.direccion || !gps) {
+      throw new Error('Completa fecha, responsable, dirección y GPS del punto de entrega.');
+    }
+    if (form.tipoDestino === 'hogar_temporal' && (!form.receptorId || !form.nuevaFecha)) {
+      throw new Error('Selecciona el nuevo hogar y la fecha límite de su resguardo.');
+    }
+    await axios.post(
+      `${API_URL}/custody/relief/${seleccionada.solicitud_relevo.id}/accept`,
+      {
+        tipo_destino: form.tipoDestino,
+        voluntario_receptor_id: form.tipoDestino === 'hogar_temporal' ? form.receptorId : null,
+        responsable_recepcion: form.responsable.trim(),
+        direccion_recepcion: form.direccion.trim(),
+        latitud_recepcion: gps.latitude,
+        longitud_recepcion: gps.longitude,
+        ventana_inicio: new Date(`${form.fecha}T${form.horaInicio}:00`).toISOString(),
+        ventana_fin: new Date(`${form.fecha}T${form.horaFin}:00`).toISOString(),
+        nueva_fecha_limite: form.tipoDestino === 'hogar_temporal'
+          ? new Date(`${form.nuevaFecha}T18:00:00`).toISOString()
+          : null,
+      },
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+  }, 'La coordinadora revisará el destino antes de consultar el traslado con el hogar actual.');
+
+  const autorizarRelevo = () => ejecutar(async () => {
+    if (!seleccionada?.oferta_relevo) throw new Error('No encontramos la oferta de relevo.');
+    await axios.post(
+      `${API_URL}/custody/relief/offers/${seleccionada.oferta_relevo.id}/authorize`,
+      {},
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+  }, 'El hogar actual ya puede confirmar si realizará el traslado.');
+
+  const responderTransporte = (puede_transportar: boolean) => ejecutar(async () => {
+    if (!seleccionada?.oferta_relevo) throw new Error('No encontramos la oferta autorizada.');
+    await axios.post(
+      `${API_URL}/custody/relief/offers/${seleccionada.oferta_relevo.id}/transport-response`,
+      { puede_transportar },
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+  }, puede_transportar
+    ? 'El traslado quedó programado y ya puedes consultar el punto autorizado.'
+    : 'La coordinadora buscará otra opción segura. La custodia continúa contigo por ahora.');
+
+  const iniciarTraslado = (custodia: Custodia) => ejecutar(async () => {
+    if (!custodia.transferencia_activa) throw new Error('No encontramos el traslado programado.');
+    await axios.post(
+      `${API_URL}/custody/transfers/${custodia.transferencia_activa.id}/start`,
+      {},
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+  }, 'El traslado está en curso. Confirma la entrega cuando llegues al punto autorizado.');
 
   const confirmarTransferencia = () => ejecutar(async () => {
     if (!seleccionada?.transferencia_activa || !fotoAnimal || !gps) {
@@ -286,6 +527,25 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
   const finalizarCustodia = () => ejecutar(async () => {
     if (!seleccionada || !form.resolucion || form.comentario.trim().length < 3) {
       throw new Error('Selecciona la resolución e indica la referencia del proceso.');
+    }
+    if (form.resolucion !== 'transferencia_confirmada') {
+      if (!form.revisionMedica || !form.revisionLegal) {
+        throw new Error('Confirma la revisión médica y legal del proceso.');
+      }
+      if (form.resolucion === 'adopcion_aprobada' && !form.idoneidadAdoptante) {
+        throw new Error('La adopción requiere confirmar la idoneidad del adoptante.');
+      }
+      await axios.post(
+        `${API_URL}/custody/${seleccionada.id}/resolution-processes`,
+        {
+          tipo: form.resolucion,
+          referencia: form.comentario.trim(),
+          revision_medica: form.revisionMedica,
+          revision_legal: form.revisionLegal,
+          idoneidad_adoptante: form.resolucion === 'adopcion_aprobada' ? form.idoneidadAdoptante : null,
+        },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
     }
     await axios.post(
       `${API_URL}/custody/${seleccionada.id}/finish`,
@@ -310,7 +570,7 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
     );
     try {
       await axios.patch(
-        `${API_URL}/custody/notifications/${avisoActivo.id}/read`,
+        `${API_URL}/custody/${avisoActivo.origen === 'coordinacion' ? 'coordination-notifications' : 'notifications'}/${avisoActivo.id}/read`,
         {},
         { headers: { Authorization: `Bearer ${token}` } },
       );
@@ -340,7 +600,7 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
         )}
       </View>
 
-      {!esAsociacion && avisoActivo && (
+      {avisoActivo && (
         <View style={styles.notification}>
           <Ionicons name="notifications-outline" size={20} color="#9A6700" />
           <Text style={styles.notificationText}>{avisoActivo.mensaje}</Text>
@@ -378,7 +638,10 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
                       {ficha.tipo_animal || 'Animal'} · {ficha.tamanio || 'Tamaño por confirmar'}
                     </Text>
                     {esAsociacion && (
-                      <Text style={styles.volunteer}>{custodia.voluntario_nombre || 'Hogar verificado'} · {custodia.distancia_km} km</Text>
+                      <Text style={styles.volunteer}>
+                        {custodia.voluntario_nombre || 'Hogar verificado'}
+                        {custodia.distancia_km == null ? ' · Custodia coordinada' : ` · ${custodia.distancia_km} km`}
+                      </Text>
                     )}
                   </View>
                   <View style={styles.statePill}><Text style={styles.stateText}>{custodia.estado.replaceAll('_', ' ')}</Text></View>
@@ -400,6 +663,21 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
                   </View>
                 )}
 
+                {esAsociacion && custodia.revision_activa && (
+                  <View style={styles.reviewStatus}>
+                    <Ionicons name="time-outline" size={16} color="#8A6500" />
+                    <Text style={styles.reviewStatusText}>
+                      En revisión por {custodia.revision_activa.asociaciones?.nombre || 'una asociación'} hasta {fecha(custodia.revision_activa.vence_at)}
+                    </Text>
+                  </View>
+                )}
+
+                {esAsociacion && custodia.ultima_validacion && (
+                  <Text style={styles.reviewedBy}>
+                    Última revisión: {custodia.ultima_validacion.asociaciones?.nombre || 'Asociación verificada'} · {fecha(custodia.ultima_validacion.creado_at)}
+                  </Text>
+                )}
+
                 {esAsociacion && custodia.ubicacion_hogar && (
                   <View style={styles.privateLocation}>
                     <Ionicons name="lock-closed-outline" size={17} color={Brand.secondary} />
@@ -419,28 +697,66 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
                   </View>
                 )}
 
+                {custodia.transferencia_activa?.direccion_recepcion && (
+                  <View style={styles.privateLocation}>
+                    <Ionicons name="navigate-outline" size={17} color={Brand.secondary} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.privateLocationTitle}>Punto autorizado de entrega</Text>
+                      <Text style={styles.privateLocationText}>{custodia.transferencia_activa.direccion_recepcion}</Text>
+                      <Text style={styles.privateLocationText}>
+                        {fecha(custodia.transferencia_activa.ventana_inicio)}–{fecha(custodia.transferencia_activa.ventana_fin)} · Recibe {custodia.transferencia_activa.responsable_recepcion}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+
                 <View style={styles.actions}>
                   {!esAsociacion ? (
                     <>
+                      {custodia.pregunta_vencimiento && (
+                        <Action icon="time-outline" label="Confirmar disponibilidad" primary onPress={() => abrir('vencimiento', custodia)} />
+                      )}
                       {custodia.estado === 'activo' && (
                         <Action icon="camera-outline" label={custodia.seguimiento_inicial_pendiente ? 'Seguimiento inicial' : 'Nuevo seguimiento'} primary onPress={() => abrir('seguimiento', custodia)} />
                       )}
                       {custodia.estado === 'activo' && <Action icon="calendar-outline" label="Extender" onPress={() => abrir('extension', custodia)} />}
                       {custodia.estado === 'activo' && <Action icon="swap-horizontal-outline" label="Necesito relevo" onPress={() => abrir('relevo', custodia)} />}
-                      {custodia.transferencia_activa && !custodia.transferencia_activa.confirma_entrega_at && (
+                      {custodia.aclaraciones?.some((a) => a.estado === 'enviada_voluntario') && (
+                        <Action icon="chatbubble-ellipses-outline" label="Responder aclaración" primary onPress={() => abrir('responder_aclaracion', custodia)} />
+                      )}
+                      {custodia.oferta_relevo?.estado === 'autorizada' && !custodia.transferencia_activa && (
+                        <Action icon="car-outline" label="Confirmar traslado" primary onPress={() => abrir('transporte_relevo', custodia)} />
+                      )}
+                      {custodia.transferencia_activa?.estado === 'programada' && (
+                        <Action icon="navigate-outline" label="Iniciar traslado" primary onPress={() => iniciarTraslado(custodia)} />
+                      )}
+                      {['en_traslado', 'en_curso'].includes(custodia.transferencia_activa?.estado || '') && !custodia.transferencia_activa?.confirma_entrega_at && (
                         <Action icon="checkmark-done-outline" label="Confirmar entrega" primary onPress={() => abrir('transferencia', custodia)} />
                       )}
                     </>
                   ) : (
                     <>
-                      {custodia.ultimo_seguimiento && <Action icon="shield-checkmark-outline" label="Revisar evidencia" primary onPress={() => abrir('validacion', custodia)} />}
+                      {custodia.ultimo_seguimiento?.estado_validacion === 'pendiente' && (
+                        <Action
+                          icon="shield-checkmark-outline"
+                          label={reservandoRevision === custodia.ultimo_seguimiento.id ? 'Reservando…' : 'Revisar evidencia'}
+                          primary
+                          onPress={() => void abrirRevision(custodia)}
+                        />
+                      )}
+                      {custodia.es_coordinadora && !!custodia.aclaraciones?.length && (
+                        <Action icon="chatbubbles-outline" label="Gestionar dudas" onPress={() => abrir('gestionar_duda', custodia)} />
+                      )}
                       {custodia.solicitud_relevo?.estado === 'abierta' && !custodia.es_coordinadora && (
                         <Action icon="hand-left-outline" label="Recibir animal" onPress={() => abrir('aceptar', custodia)} />
                       )}
-                      {custodia.transferencia_activa && !custodia.transferencia_activa.confirma_recepcion_at && (
+                      {custodia.es_coordinadora && custodia.oferta_relevo?.estado === 'pendiente_coordinadora' && (
+                        <Action icon="shield-checkmark-outline" label="Autorizar relevo" primary onPress={() => abrir('autorizar_relevo', custodia)} />
+                      )}
+                      {custodia.puede_confirmar_recepcion && custodia.transferencia_activa?.confirma_entrega_at && !custodia.transferencia_activa.confirma_recepcion_at && (
                         <Action icon="checkmark-done-outline" label="Confirmar recepción" primary onPress={() => abrir('transferencia', custodia)} />
                       )}
-                      {custodia.es_coordinadora && custodia.estado === 'transferido' && (
+                      {custodia.es_coordinadora && custodia.estado !== 'finalizado' && (
                         <Action icon="flag-outline" label="Finalizar custodia" primary onPress={() => abrir('finalizar', custodia)} />
                       )}
                     </>
@@ -478,27 +794,208 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
                   <Submit label="Solicitar relevo" loading={submitting} onPress={enviarRelevo} />
                 </>
               )}
-              {(modal === 'extension' || modal === 'aceptar') && (
+              {modal === 'vencimiento' && (
                 <>
-                  <Text style={styles.modalCopy}>{modal === 'extension' ? 'Indica hasta qué fecha puedes continuar.' : 'Propón la fecha de entrega. La reserva no concluye la transferencia.'}</Text>
+                  <Text style={styles.modalCopy}>
+                    Tu resguardo llega a su fecha límite el {fecha(seleccionada?.fecha_limite)}. El animal seguirá bajo tu cuidado hasta una entrega segura.
+                  </Text>
+                  <Text style={styles.checklistTitle}>¿Podrás continuar después de esa fecha?</Text>
+                  <Field label="Nueva fecha (si puedes continuar)" value={form.fecha} onChangeText={(v) => setForm({ ...form, fecha: v })} placeholder="AAAA-MM-DD" />
+                  <View style={styles.validationRow}>
+                    <Action icon="checkmark-circle-outline" label="Sí, puedo continuar" primary onPress={() => responderVencimiento('puede_continuar')} />
+                    <Action icon="swap-horizontal-outline" label="No, necesito relevo" danger onPress={() => responderVencimiento('no_puede')} />
+                    <Action icon="help-circle-outline" label="Todavía no lo sé" onPress={() => responderVencimiento('no_seguro')} />
+                  </View>
+                </>
+              )}
+              {modal === 'extension' && (
+                <>
+                  <Text style={styles.modalCopy}>Indica hasta qué fecha puedes continuar.</Text>
                   <Field label="Fecha (AAAA-MM-DD)" value={form.fecha} onChangeText={(v) => setForm({ ...form, fecha: v })} placeholder="2026-08-15" />
-                  <Submit label={modal === 'extension' ? 'Confirmar extensión' : 'Reservar traslado'} loading={submitting} onPress={modal === 'extension' ? enviarExtension : aceptarRelevo} />
+                  <Submit label="Confirmar extensión" loading={submitting} onPress={enviarExtension} />
+                </>
+              )}
+              {modal === 'aceptar' && (
+                <>
+                  <Text style={styles.modalCopy}>Define un destino real y una ventana de recepción. La coordinadora lo autorizará antes de mostrar la dirección al hogar actual.</Text>
+                  <View style={styles.validationRow}>
+                    <Action icon="business-outline" label="Ingreso a asociación" primary={form.tipoDestino === 'ingreso_asociacion'} onPress={() => setForm({ ...form, tipoDestino: 'ingreso_asociacion', receptorId: '' })} />
+                    <Action icon="home-outline" label="Otro hogar temporal" primary={form.tipoDestino === 'hogar_temporal'} onPress={() => setForm({ ...form, tipoDestino: 'hogar_temporal' })} />
+                  </View>
+                  {form.tipoDestino === 'hogar_temporal' && (
+                    <>
+                      <Text style={[styles.label, { marginTop: 14 }]}>Hogar receptor verificado</Text>
+                      {hogares.length === 0 ? (
+                        <Text style={styles.modalCopy}>No hay hogares con capacidad disponible en este momento.</Text>
+                      ) : hogares.map((hogar) => (
+                        <TouchableOpacity key={hogar.id} style={[styles.messageCard, form.receptorId === hogar.id && styles.selectedCard]} onPress={() => setForm({ ...form, receptorId: hogar.id })}>
+                          <Text style={styles.messageText}>{hogar.nombre} · {hogar.espacios_disponibles} espacio(s)</Text>
+                          {!!hogar.zona && <Text style={styles.privateLocationText}>{hogar.zona}</Text>}
+                        </TouchableOpacity>
+                      ))}
+                      <Field label="Nueva fecha límite" value={form.nuevaFecha} onChangeText={(v) => setForm({ ...form, nuevaFecha: v })} placeholder="AAAA-MM-DD" />
+                    </>
+                  )}
+                  <Field label="Responsable que recibirá" value={form.responsable} onChangeText={(v) => setForm({ ...form, responsable: v })} placeholder="Nombre completo" />
+                  <Field label="Dirección autorizada" value={form.direccion} onChangeText={(v) => setForm({ ...form, direccion: v })} placeholder="Calle, número, colonia y municipio" multiline />
+                  <Field label="Fecha del traslado" value={form.fecha} onChangeText={(v) => setForm({ ...form, fecha: v })} placeholder="AAAA-MM-DD" />
+                  <View style={styles.timeRow}>
+                    <View style={{ flex: 1 }}><Field label="Desde" value={form.horaInicio} onChangeText={(v) => setForm({ ...form, horaInicio: v })} placeholder="10:00" /></View>
+                    <View style={{ flex: 1 }}><Field label="Hasta" value={form.horaFin} onChangeText={(v) => setForm({ ...form, horaFin: v })} placeholder="12:00" /></View>
+                  </View>
+                  <Action icon={gps ? 'checkmark-circle' : 'locate-outline'} label={gps ? 'Punto GPS listo' : 'Guardar GPS del destino'} onPress={capturarGps} />
+                  <Submit label="Enviar destino a autorización" loading={submitting} onPress={aceptarRelevo} />
+                </>
+              )}
+              {modal === 'autorizar_relevo' && seleccionada?.oferta_relevo && (
+                <>
+                  <Text style={styles.modalCopy}>Verifica que el destino, responsable y horario sean adecuados. La dirección sólo se revelará al hogar actual después de su confirmación de traslado.</Text>
+                  <View style={styles.messageCard}>
+                    <Text style={styles.messageText}>{seleccionada.oferta_relevo.asociaciones?.nombre || 'Asociación receptora'} · {seleccionada.oferta_relevo.tipo_destino === 'hogar_temporal' ? 'Otro hogar temporal' : 'Ingreso formal'}</Text>
+                    <Text style={styles.privateLocationText}>Recibe: {seleccionada.oferta_relevo.responsable_recepcion}</Text>
+                    <Text style={styles.privateLocationText}>{seleccionada.oferta_relevo.direccion_recepcion}</Text>
+                    <Text style={styles.privateLocationText}>{fecha(seleccionada.oferta_relevo.ventana_inicio)}–{fecha(seleccionada.oferta_relevo.ventana_fin)}</Text>
+                  </View>
+                  <Submit label="Autorizar y consultar traslado" loading={submitting} onPress={autorizarRelevo} />
+                </>
+              )}
+              {modal === 'transporte_relevo' && seleccionada?.oferta_relevo && (
+                <>
+                  <Text style={styles.modalCopy}>La coordinadora autorizó que {seleccionada.oferta_relevo.asociaciones?.nombre || 'la asociación receptora'} reciba al animal entre {fecha(seleccionada.oferta_relevo.ventana_inicio)} y {fecha(seleccionada.oferta_relevo.ventana_fin)}.</Text>
+                  <Text style={styles.modalCopy}>¿Puedes llevarlo personalmente? Si respondes que no, se buscará otra opción y el animal continuará contigo hasta una entrega segura.</Text>
+                  <View style={styles.validationRow}>
+                    <Action icon="car-outline" label="Sí, puedo trasladarlo" primary onPress={() => responderTransporte(true)} />
+                    <Action icon="close-circle-outline" label="No puedo trasladarlo" danger onPress={() => responderTransporte(false)} />
+                  </View>
                 </>
               )}
               {modal === 'validacion' && (
                 <>
-                  {seleccionada?.ultimo_seguimiento?.foto_url && <Image source={{ uri: seleccionada.ultimo_seguimiento.foto_url }} style={styles.evidencePhoto} />}
+                  <Text style={styles.modalCopy}>
+                    La revisión está reservada para tu asociación durante 30 minutos. Compara las fotos y los datos antes de decidir.
+                  </Text>
+                  <View style={[styles.comparison, width < 600 && styles.comparisonMobile]}>
+                    <EvidenceComparison
+                      label="Foto inicial"
+                      uri={seleccionada?.seguimiento_inicial?.foto_url}
+                      empty="Sin foto inicial"
+                    />
+                    <EvidenceComparison
+                      label="Foto anterior"
+                      uri={seleccionada?.seguimiento_anterior?.foto_url}
+                      empty="Es el primer seguimiento"
+                    />
+                    <EvidenceComparison
+                      label="Evidencia actual"
+                      uri={seleccionada?.ultimo_seguimiento?.foto_url}
+                      empty="No hay foto actual"
+                    />
+                    <EvidenceComparison
+                      label="Último entorno"
+                      uri={seleccionada?.ultima_evidencia_entorno?.entorno_foto_url}
+                      empty="Sin evidencia del entorno"
+                    />
+                  </View>
+                  <Text style={styles.checklistTitle}>Checklist de revisión</Text>
+                  <ReviewBoolean
+                    label="¿Parece ser el mismo animal?"
+                    value={form.mismoAnimal}
+                    onChange={(value) => setForm({ ...form, mismoAnimal: value })}
+                  />
+                  <ReviewBoolean
+                    label="¿La fotografía es suficientemente clara?"
+                    value={form.fotoClara}
+                    onChange={(value) => setForm({ ...form, fotoClara: value })}
+                  />
+                  <ReviewBoolean
+                    label="¿El entorno parece adecuado?"
+                    value={form.entornoAdecuado}
+                    onChange={(value) => setForm({ ...form, entornoAdecuado: value })}
+                  />
+                  <Text style={styles.label}>Cambio visible en la condición</Text>
+                  <View style={styles.reviewChoices}>
+                    {[
+                      ['mejor', 'Mejor'], ['igual', 'Igual'], ['peor', 'Peor'],
+                      ['no_determinable', 'No determinable'],
+                    ].map(([value, label]) => (
+                      <TouchableOpacity
+                        key={value}
+                        onPress={() => setForm({ ...form, condicionEvolucion: value })}
+                        style={[styles.reviewChoice, form.condicionEvolucion === value && styles.reviewChoiceActive]}
+                      >
+                        <Text style={[styles.reviewChoiceText, form.condicionEvolucion === value && styles.reviewChoiceTextActive]}>{label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.inconsistency, form.posiblesInconsistencias && styles.inconsistencyActive]}
+                    onPress={() => setForm({ ...form, posiblesInconsistencias: !form.posiblesInconsistencias })}
+                  >
+                    <Ionicons name={form.posiblesInconsistencias ? 'checkbox' : 'square-outline'} size={19} color={form.posiblesInconsistencias ? '#B84A3A' : Brand.textMuted} />
+                    <Text style={styles.inconsistencyText}>Detecté posibles inconsistencias</Text>
+                  </TouchableOpacity>
                   <Field label="Comentario" value={form.comentario} onChangeText={(v) => setForm({ ...form, comentario: v })} placeholder="Observaciones o aclaraciones necesarias" multiline />
                   <View style={styles.validationRow}>
                     <Action icon="checkmark-circle-outline" label="Validar" primary onPress={() => validar('validado')} />
-                    <Action icon="help-circle-outline" label="Aclaración" onPress={() => validar('aclaracion_solicitada')} />
-                    <Action icon="warning-outline" label="Alerta" danger onPress={() => validar('alerta')} />
+                    {seleccionada?.es_coordinadora ? (
+                      <>
+                        <Action icon="help-circle-outline" label="Pedir aclaración" onPress={() => validar('aclaracion_solicitada')} />
+                        <Action icon="warning-outline" label="Alerta" danger onPress={() => validar('alerta')} />
+                      </>
+                    ) : (
+                      <Action icon="chatbubble-ellipses-outline" label="Enviar duda" onPress={enviarDuda} />
+                    )}
                   </View>
+                </>
+              )}
+              {modal === 'gestionar_duda' && seleccionada?.aclaraciones?.[0] && (
+                <>
+                  <Text style={styles.label}>Duda regional</Text>
+                  <View style={styles.messageCard}><Text style={styles.messageText}>{seleccionada.aclaraciones[0].pregunta_regional}</Text></View>
+                  {seleccionada.aclaraciones[0].respuesta_voluntario && (
+                    <>
+                      <Text style={styles.label}>Respuesta del hogar temporal</Text>
+                      <View style={styles.messageCard}><Text style={styles.messageText}>{seleccionada.aclaraciones[0].respuesta_voluntario}</Text></View>
+                      {seleccionada.aclaraciones[0].foto_respuesta_url && <Image source={{ uri: seleccionada.aclaraciones[0].foto_respuesta_url }} style={styles.evidencePhoto} />}
+                    </>
+                  )}
+                  {seleccionada.aclaraciones[0].estado === 'respondida' ? (
+                    <>
+                      <Field label="Mensaje adicional (si hace falta)" value={form.comentario} onChangeText={(v) => setForm({ ...form, comentario: v })} placeholder="Indica qué información sigue pendiente" multiline />
+                      <View style={styles.validationRow}>
+                        <Action icon="checkmark-circle-outline" label="Resolver" primary onPress={resolverAclaracion} />
+                        <Action icon="refresh-outline" label="Pedir más información" onPress={enviarAclaracion} />
+                      </View>
+                    </>
+                  ) : seleccionada.aclaraciones[0].estado === 'pendiente_coordinadora' ? (
+                    <>
+                      <Field label="Mensaje para el hogar temporal" value={form.comentario} onChangeText={(v) => setForm({ ...form, comentario: v })} placeholder="Reformula la duda con instrucciones claras" multiline />
+                      <Submit label="Solicitar aclaración" loading={submitting} onPress={enviarAclaracion} />
+                    </>
+                  ) : (
+                    <Text style={styles.modalCopy}>Esperando respuesta del hogar temporal.</Text>
+                  )}
+                </>
+              )}
+              {modal === 'responder_aclaracion' && seleccionada?.aclaraciones?.find((a) => a.estado === 'enviada_voluntario') && (
+                <>
+                  <Text style={styles.label}>Solicitud de la asociación coordinadora</Text>
+                  <View style={styles.messageCard}>
+                    <Text style={styles.messageText}>{seleccionada.aclaraciones.find((a) => a.estado === 'enviada_voluntario')?.mensaje_coordinadora}</Text>
+                  </View>
+                  <Field label="Tu respuesta" value={form.comentario} onChangeText={(v) => setForm({ ...form, comentario: v })} placeholder="Explica lo ocurrido o los cambios observados" multiline />
+                  <Text style={styles.modalCopy}>Puedes adjuntar una foto nueva si ayuda a aclarar la evidencia.</Text>
+                  <Action icon={fotoAnimal ? 'checkmark-circle' : 'camera-outline'} label={fotoAnimal ? 'Foto lista' : 'Adjuntar foto'} onPress={() => tomarFoto()} />
+                  <Submit label="Enviar aclaración" loading={submitting} onPress={responderAclaracion} />
                 </>
               )}
               {modal === 'transferencia' && (
                 <>
-                  <Text style={styles.modalCopy}>Tu confirmación no finaliza el traslado por sí sola. Ambas partes deben confirmar con foto y GPS.</Text>
+                  <Text style={styles.modalCopy}>
+                    {esAsociacion
+                      ? 'Confirma la recepción cuando Rafael llegue. Tu foto y GPS deben estar a menos de 200 metros de su confirmación.'
+                      : 'Tú realizas el traslado. Confirma la entrega al llegar; después la asociación receptora confirmará con foto y GPS.'}
+                  </Text>
                   <EvidenceButtons animal={fotoAnimal} entorno={null} gps={gps} initial={false} onAnimal={() => tomarFoto()} onEntorno={() => undefined} onGps={capturarGps} />
                   <Submit label={esAsociacion ? 'Confirmar recepción' : 'Confirmar entrega'} loading={submitting} onPress={confirmarTransferencia} />
                 </>
@@ -512,6 +1009,24 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
                     <Action icon="heart-outline" label="Adopción aprobada" primary={form.resolucion === 'adopcion_aprobada'} onPress={() => setForm({ ...form, resolucion: 'adopcion_aprobada' })} />
                   </View>
                   <Field label="Folio o referencia del proceso" value={form.comentario} onChangeText={(v) => setForm({ ...form, comentario: v })} placeholder="Ej. expediente de ingreso o adopción aprobada" />
+                  {form.resolucion !== 'transferencia_confirmada' && !!form.resolucion && (
+                    <>
+                      <TouchableOpacity style={[styles.inconsistency, form.revisionMedica && styles.selectedCard]} onPress={() => setForm({ ...form, revisionMedica: !form.revisionMedica })}>
+                        <Ionicons name={form.revisionMedica ? 'checkbox' : 'square-outline'} size={19} color={Brand.secondary} />
+                        <Text style={styles.inconsistencyText}>Expediente médico revisado</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[styles.inconsistency, form.revisionLegal && styles.selectedCard]} onPress={() => setForm({ ...form, revisionLegal: !form.revisionLegal })}>
+                        <Ionicons name={form.revisionLegal ? 'checkbox' : 'square-outline'} size={19} color={Brand.secondary} />
+                        <Text style={styles.inconsistencyText}>Documentación legal revisada</Text>
+                      </TouchableOpacity>
+                      {form.resolucion === 'adopcion_aprobada' && (
+                        <TouchableOpacity style={[styles.inconsistency, form.idoneidadAdoptante && styles.selectedCard]} onPress={() => setForm({ ...form, idoneidadAdoptante: !form.idoneidadAdoptante })}>
+                          <Ionicons name={form.idoneidadAdoptante ? 'checkbox' : 'square-outline'} size={19} color={Brand.secondary} />
+                          <Text style={styles.inconsistencyText}>Idoneidad del adoptante validada</Text>
+                        </TouchableOpacity>
+                      )}
+                    </>
+                  )}
                   <Submit label="Finalizar custodia" loading={submitting} onPress={finalizarCustodia} />
                 </>
               )}
@@ -526,6 +1041,41 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
 
 function DateCell({ label, value }: { label: string; value: string }) {
   return <View style={styles.dateCell}><Text style={styles.dateLabel}>{label}</Text><Text style={styles.dateValue}>{value}</Text></View>;
+}
+
+function EvidenceComparison({ label, uri, empty }: { label: string; uri?: string | null; empty: string }) {
+  return (
+    <View style={styles.comparisonCard}>
+      <Text style={styles.comparisonLabel}>{label}</Text>
+      {uri ? (
+        <Image source={{ uri }} style={styles.evidencePhoto} />
+      ) : (
+        <View style={styles.comparisonEmpty}>
+          <Ionicons name="image-outline" size={24} color={Brand.textFaint} />
+          <Text style={styles.comparisonEmptyText}>{empty}</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+function ReviewBoolean({ label, value, onChange }: { label: string; value: boolean | null; onChange: (value: boolean) => void }) {
+  return (
+    <View style={styles.reviewQuestion}>
+      <Text style={styles.reviewQuestionText}>{label}</Text>
+      <View style={styles.reviewChoices}>
+        {[{ value: true, label: 'Sí' }, { value: false, label: 'No' }].map((option) => (
+          <TouchableOpacity
+            key={option.label}
+            onPress={() => onChange(option.value)}
+            style={[styles.reviewChoice, value === option.value && styles.reviewChoiceActive]}
+          >
+            <Text style={[styles.reviewChoiceText, value === option.value && styles.reviewChoiceTextActive]}>{option.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
 }
 
 function Action({ icon, label, onPress, primary, danger }: { icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void; primary?: boolean; danger?: boolean }) {
@@ -560,8 +1110,14 @@ function modalTitle(mode: ModalMode) {
     seguimiento: 'Registrar seguimiento',
     relevo: 'Solicitar relevo',
     extension: 'Extender resguardo',
+    vencimiento: 'Confirmar disponibilidad',
     validacion: 'Revisar evidencia',
+    duda: 'Enviar duda',
+    gestionar_duda: 'Gestionar aclaración',
+    responder_aclaracion: 'Responder aclaración',
     aceptar: 'Recibir al animal',
+    autorizar_relevo: 'Autorizar destino del relevo',
+    transporte_relevo: 'Confirmar traslado',
     transferencia: 'Confirmar transferencia',
     finalizar: 'Finalizar custodia',
   } as any)[mode || ''] || '';
@@ -595,6 +1151,9 @@ const styles = StyleSheet.create({
   followup: { marginTop: 12, borderRadius: 13, padding: 11, backgroundColor: `${Brand.secondary}10`, flexDirection: 'row', gap: 8, alignItems: 'center' },
   followupTitle: { color: Brand.textDark, fontSize: 12, fontWeight: '800' },
   followupState: { color: Brand.textMuted, fontSize: 10, marginTop: 2, textTransform: 'capitalize' },
+  reviewStatus: { flexDirection: 'row', gap: 7, alignItems: 'center', padding: 10, borderRadius: 12, backgroundColor: '#FFF4D6', marginTop: 10 },
+  reviewStatusText: { color: '#795500', fontSize: 10, lineHeight: 15, fontWeight: '700', flex: 1 },
+  reviewedBy: { color: Brand.textMuted, fontSize: 9, lineHeight: 14, marginTop: 8 },
   privateLocation: { flexDirection: 'row', gap: 10, padding: 12, borderRadius: 14, backgroundColor: '#EAF7F5', borderWidth: 1, borderColor: '#C3E8E4', marginTop: 12 },
   privateLocationTitle: { color: Brand.textDark, fontWeight: '800', fontSize: 11 },
   privateLocationText: { color: Brand.textMuted, fontSize: 11, lineHeight: 16, marginTop: 2 },
@@ -612,12 +1171,33 @@ const styles = StyleSheet.create({
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
   modalTitle: { color: Brand.textDark, fontSize: 19, fontWeight: '900' },
   modalCopy: { color: Brand.textMuted, fontSize: 12, lineHeight: 18, marginBottom: 14 },
+  messageCard: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E4D3B8', borderRadius: 13, padding: 12, marginBottom: 14 },
+  selectedCard: { borderColor: Brand.secondary, backgroundColor: '#EAF7F5' },
+  messageText: { color: Brand.textDark, fontSize: 12, lineHeight: 18 },
   label: { color: Brand.textDark, fontSize: 11, fontWeight: '800', marginBottom: 6 },
   input: { borderWidth: 1.5, borderColor: '#E4D3B8', borderRadius: 12, backgroundColor: '#fff', padding: 11, color: Brand.textDark, fontSize: 12 },
   textArea: { minHeight: 70, textAlignVertical: 'top' },
   evidenceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginVertical: 8 },
-  evidencePhoto: { width: '100%', height: 190, borderRadius: 15, marginBottom: 12 },
+  comparison: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 14 },
+  comparisonMobile: { flexDirection: 'column' },
+  comparisonCard: { flexGrow: 1, flexBasis: '46%', minWidth: 0 },
+  comparisonLabel: { color: Brand.textDark, fontSize: 10, fontWeight: '900', marginBottom: 6 },
+  comparisonEmpty: { height: 170, borderRadius: 15, backgroundColor: '#EFE3CD', alignItems: 'center', justifyContent: 'center', padding: 12 },
+  comparisonEmptyText: { color: Brand.textMuted, fontSize: 10, textAlign: 'center', marginTop: 6 },
+  evidencePhoto: { width: '100%', height: 170, borderRadius: 15 },
+  checklistTitle: { color: Brand.textDark, fontSize: 14, fontWeight: '900', marginBottom: 10 },
+  reviewQuestion: { borderRadius: 12, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E4D3B8', padding: 10, marginBottom: 8 },
+  reviewQuestionText: { color: Brand.textDark, fontSize: 11, fontWeight: '800', marginBottom: 8 },
+  reviewChoices: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginBottom: 10 },
+  reviewChoice: { paddingHorizontal: 11, paddingVertical: 8, borderRadius: 10, backgroundColor: '#EFE3CD', borderWidth: 1, borderColor: 'transparent' },
+  reviewChoiceActive: { backgroundColor: `${Brand.secondary}16`, borderColor: Brand.secondary },
+  reviewChoiceText: { color: Brand.textMuted, fontSize: 10, fontWeight: '800' },
+  reviewChoiceTextActive: { color: Brand.secondary },
+  inconsistency: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 11, borderRadius: 12, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E4D3B8', marginBottom: 12 },
+  inconsistencyActive: { borderColor: '#B84A3A', backgroundColor: '#FFF1EF' },
+  inconsistencyText: { color: Brand.textDark, fontSize: 11, fontWeight: '800', flex: 1 },
   validationRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  timeRow: { flexDirection: 'row', gap: 10 },
   submit: { minHeight: 48, borderRadius: 14, backgroundColor: Brand.primary, alignItems: 'center', justifyContent: 'center', marginTop: 14 },
   submitText: { color: '#fff', fontSize: 13, fontWeight: '900' },
 });

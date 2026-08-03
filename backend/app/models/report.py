@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 from typing import Optional
 from enum import Enum
@@ -119,6 +121,14 @@ class HitoRequest(BaseModel):
     latitud: Optional[float] = None
     longitud: Optional[float] = None
     tiempo_busqueda_minutos: Optional[int] = Field(default=None, ge=1, le=1440)
+    ruta_resguardo: Optional[str] = None
+    fecha_limite_resguardo: Optional[datetime] = None
+
+
+class ResolverBusquedaNoLocalizadoRequest(BaseModel):
+    decision: str
+    instrucciones: Optional[str] = Field(default=None, max_length=1000)
+    programada_at: Optional[str] = None
 
 
 ## Cuando el encargado de asociacion RECHACE reporte

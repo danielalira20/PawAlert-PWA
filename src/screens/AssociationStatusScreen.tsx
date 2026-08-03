@@ -9,6 +9,7 @@ import { es } from 'date-fns/locale';
 import { ActivityIndicator, Dimensions, Image, Linking, Modal, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Toast, useToast } from '../components/Toast';
+import { BusquedaNoLocalizadoPanel } from '../components/association-dashboard/BusquedaNoLocalizadoPanel';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
@@ -1774,6 +1775,17 @@ const confirmarReactivar = async () => {
 
                 <Text style={{ fontSize: 18, fontWeight: '800', color: COLORS.textDark, marginBottom: 8 }}>Ubicación</Text>
                 <Text style={{ fontSize: 15, color: COLORS.textLight, lineHeight: 22 }}>{[reporteSeleccionado.calle, reporteSeleccionado.colonia, reporteSeleccionado.municipio].filter(Boolean).join(', ')}</Text>
+
+                <BusquedaNoLocalizadoPanel
+                  reporteId={reporteSeleccionado.reporte_id}
+                  token={token}
+                  onResolved={(message) => {
+                    showToast({ type: 'success', title: 'Siguiente paso definido', message });
+                    setReporteSeleccionado(null);
+                    void cargarReportes();
+                  }}
+                  onError={(message) => showToast({ type: 'warning', title: 'Revisa la decisión', message })}
+                />
 
                 {/* ── Línea de tiempo: sub-filtros "Por cerrar" y "Completados" ── */}
                 {(subFiltroAceptadas === 'por_cerrar' || subFiltroAceptadas === 'completados') && (

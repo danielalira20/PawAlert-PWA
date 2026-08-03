@@ -40,7 +40,7 @@ export default function NotificationBell() {
 
   return (
     <TouchableOpacity 
-      onPress={() => router.push('/notificaciones')}
+      onPress={() => router.push('/notificaciones' as never)}
       style={{ padding: 8, position: 'relative' }}
     >
       <Ionicons name="notifications-outline" size={26} color="#2E2A26" />

@@ -109,7 +109,7 @@ export function useAdminAssociations(showToast: ShowToastFn) {
         );
         setAsociaciones((prev) => prev.filter((a) => a.id !== asociacionId));
         showToast({
-          type: 'info',
+          type: 'warning',
           title: 'Rechazada',
           message: 'La asociación fue rechazada. El motivo quedó guardado para que lo vea.',
         });

@@ -36,6 +36,8 @@ interface Props {
   onCancel: () => void;
   onConfirm: () => void;
   esHogarTemporal?: boolean;
+  fechaLimite?: string;
+  onChangeFechaLimite?: (valor: string) => void;
 }
 
 // Morado intencionalmente distinto a la paleta cálida principal — marca
@@ -61,11 +63,14 @@ export function RefugioModal({
   onCancel,
   onConfirm,
   esHogarTemporal = false,
+  fechaLimite = '',
+  onChangeFechaLimite,
 }: Props) {
   const puedeConfirmar =
     !!ubicacionActual &&
     !!foto &&
     (!esHogarTemporal || !!fotoEntorno) &&
+    (!esHogarTemporal || /^\d{4}-\d{2}-\d{2}$/.test(fechaLimite)) &&
     !isSubmitting;
 
   return (
@@ -105,6 +110,27 @@ export function RefugioModal({
               value={notas}
               onChangeText={onChangeNotas}
             />
+
+            {esHogarTemporal && (
+              <View style={[styles.section, styles.sectionFecha]}>
+                <View style={styles.sectionHeader}>
+                  <Ionicons name="calendar-outline" size={18} color={Brand.secondary} />
+                  <Text style={[styles.sectionTitle, { color: Brand.secondary }]}>Fecha límite de custodia</Text>
+                </View>
+                <Text style={styles.sectionHint}>
+                  Confirma o ajusta la fecha que propusiste al tomar al animal bajo resguardo.
+                </Text>
+                <TextInput
+                  value={fechaLimite}
+                  onChangeText={onChangeFechaLimite}
+                  placeholder="AAAA-MM-DD"
+                  placeholderTextColor={Brand.textFaint}
+                  keyboardType="numbers-and-punctuation"
+                  maxLength={10}
+                  style={styles.fechaInput}
+                />
+              </View>
+            )}
 
             {/* Ubicación GPS — obligatoria */}
             <View style={[styles.section, styles.sectionGps]}>
@@ -221,7 +247,7 @@ export function RefugioModal({
                 <ActivityIndicator color="#fff" />
               ) : (
                 <Text style={styles.confirmText}>
-                  {!ubicacionActual || !foto || (esHogarTemporal && !fotoEntorno)
+                  {!ubicacionActual || !foto || (esHogarTemporal && (!fotoEntorno || !fechaLimite))
                     ? 'Faltan datos'
                     : esHogarTemporal
                       ? 'Iniciar custodia'
@@ -290,6 +316,16 @@ const styles = StyleSheet.create({
   sectionGps: { backgroundColor: `${Brand.secondary}1A`, borderWidth: 1, borderColor: `${Brand.secondary}55` },
   sectionFoto: { backgroundColor: `${Brand.primary}14`, borderWidth: 1, borderColor: `${Brand.primary}55` },
   sectionEntorno: { backgroundColor: `${Brand.secondary}14`, borderWidth: 1, borderColor: `${Brand.secondary}55` },
+  sectionFecha: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E4D3B8' },
+  fechaInput: {
+    borderWidth: 1.5,
+    borderColor: '#E4D3B8',
+    borderRadius: 11,
+    padding: 11,
+    color: Brand.textDark,
+    backgroundColor: Brand.cardWarm,
+    fontSize: 13,
+  },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
   sectionTitle: { fontSize: 13, fontWeight: '800' },
   sectionResult: { backgroundColor: '#FFFFFF', borderRadius: 8, padding: 8, marginBottom: 10 },

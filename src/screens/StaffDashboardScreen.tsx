@@ -81,6 +81,8 @@ export default function StaffDashboardScreen({ onClose }: Props) {
     setCondicionResguardo,
     destinoResguardo,
     setDestinoResguardo,
+    fechaLimiteResguardo,
+    setFechaLimiteResguardo,
     notasResguardo,
     setNotasResguardo,
     fotoResguardo,
@@ -667,6 +669,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
         visible={showResguardoModal}
         condicion={condicionResguardo}
         destino={destinoResguardo}
+        fechaLimite={fechaLimiteResguardo}
         notas={notasResguardo}
         foto={fotoResguardo}
         ubicacionLista={!!ubicacionActual}
@@ -674,6 +677,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
         isSubmitting={isSubmitting}
         onChangeCondicion={setCondicionResguardo}
         onChangeDestino={setDestinoResguardo}
+        onChangeFechaLimite={setFechaLimiteResguardo}
         onChangeNotas={setNotasResguardo}
         onCapturarFoto={capturarFotoResguardo}
         onCapturarUbicacion={obtenerUbicacionGPS}
@@ -703,6 +707,8 @@ export default function StaffDashboardScreen({ onClose }: Props) {
         onCancel={cancelarRefugio}
         onConfirm={confirmarRefugio}
         esHogarTemporal={esHogarTemporal}
+        fechaLimite={fechaLimiteResguardo}
+        onChangeFechaLimite={setFechaLimiteResguardo}
       />
 
       <VeterinariaModal

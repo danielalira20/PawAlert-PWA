@@ -40,8 +40,19 @@ interface Props {
   onClose?: () => void;
 }
 
-type Tab = 'solicitudes' | 'apelaciones' | 'apelaciones-aliados' | 'aliados' | 'moderacion';
+type Tab = 'solicitudes' | 'apelaciones' | 'apelaciones-aliados' | 'aliados' | 'operativos' | 'moderacion';
 type DetailScreenState = 'list' | 'detail';
+
+interface CasoOperativo {
+  id: string;
+  reporte_id?: string | null;
+  tipo: 'reporte_sin_coordinadora' | 'relevo_sin_respuesta' | 'cancelacion_en_atencion';
+  prioridad: string;
+  detalle?: string | null;
+  estado: string;
+  creado_at: string;
+  reportes?: { estado_reporte?: string; municipio?: string; colonia?: string } | null;
+}
 
 const DESKTOP_BREAKPOINT = 900;
 
@@ -101,6 +112,26 @@ export default function AdminDashboardScreen({ onClose }: Props) {
 
   const [tab, setTab] = useState<Tab>('solicitudes');
   const [moderacionPendiente, setModeracionPendiente] = useState(0);
+  const [casosOperativos, setCasosOperativos] = useState<CasoOperativo[]>([]);
+  const [asociacionesOperativas, setAsociacionesOperativas] = useState<Array<{ id: string; nombre: string }>>([]);
+
+  const cargarCasosOperativos = async () => {
+    try {
+      const headers = { Authorization: `Bearer ${token}` };
+      const [casos, asociacionesDisponibles] = await Promise.all([
+        axios.get(`${API_URL}/admin/casos-operativos`, { headers }),
+        axios.get(`${API_URL}/admin/casos-operativos/asociaciones`, { headers }),
+      ]);
+      setCasosOperativos(casos.data || []);
+      setAsociacionesOperativas(asociacionesDisponibles.data || []);
+    } catch {
+      showToast({ type: 'error', title: 'No pudimos cargar la bandeja', message: 'Inténtalo nuevamente.' });
+    }
+  };
+
+  useEffect(() => {
+    if (tab === 'operativos') void cargarCasosOperativos();
+  }, [tab]);
 
   // ── Datos compartidos: lista/detalle de asociaciones + aprobar/rechazar ─
   // Tanto "Solicitudes" como el detalle dentro de "Apelaciones" usan el
@@ -211,7 +242,7 @@ export default function AdminDashboardScreen({ onClose }: Props) {
 
   // ── Aliados (FRONT06): lista ↔ detalle ──────
   const { pendientes: aliadosPendientes, isLoading: isLoadingAliados, cargarPendientes: cargarAliados, resolverPerfil } = useAdminAliados(showToast);
-  
+
   // ── Apelaciones Aliados ──────────────────────────────────────
   const { apelaciones: apelacionesAliados, loading: loadingApelacionesAliados, fetchApelaciones: cargarApelacionesAliados, resolverApelacion: resolverApelacionAliado } = useAdminApelacionesAliados();
   const [apelacionAliadoScreen, setApelacionAliadoScreen] = useState<DetailScreenState>('list');
@@ -285,7 +316,7 @@ export default function AdminDashboardScreen({ onClose }: Props) {
         <Text style={styles.headerTitle}>Revisión de Asociaciones</Text>
       </View>
 
-      <View style={styles.tabsRow}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsRow}>
         <TouchableOpacity
           onPress={() => {
             setTab('solicitudes');
@@ -355,6 +386,20 @@ export default function AdminDashboardScreen({ onClose }: Props) {
         </TouchableOpacity>
 
         <TouchableOpacity
+          onPress={() => setTab('operativos')}
+          style={[styles.tab, tab === 'operativos' && styles.tabActiva]}
+        >
+          <Text style={[styles.tabText, tab === 'operativos' && styles.tabTextActiva]}>
+            Casos operativos
+          </Text>
+          {casosOperativos.length > 0 && (
+            <View style={styles.tabBadge}>
+              <Text style={styles.tabBadgeText}>{casosOperativos.length}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
           onPress={() => setTab('moderacion')}
           style={[styles.tab, tab === 'moderacion' && styles.tabActiva]}
         >
@@ -367,7 +412,7 @@ export default function AdminDashboardScreen({ onClose }: Props) {
             </View>
           )}
         </TouchableOpacity>
-      </View>
+      </ScrollView>
 
       {tab === 'solicitudes' ? (
         solicitudScreen === 'list' ? (
@@ -422,7 +467,7 @@ export default function AdminDashboardScreen({ onClose }: Props) {
         )
       ) : tab === 'apelaciones-aliados' ? (
         apelacionAliadoScreen === 'list' ? (
-          <ApelacionesAliadosListScreen apelaciones={apelacionesAliados} isLoading={loadingApelacionesAliados} onSelect={abrirApelacionAliado} />        ) : (
+          <ApelacionesAliadosListScreen apelaciones={apelacionesAliados} isLoading={loadingApelacionesAliados} onSelect={abrirApelacionAliado} />) : (
           <View style={{ flex: 1, backgroundColor: Brand.backgroundWarm }}>
             <View style={{ paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#E4D3B8', backgroundColor: Brand.cardWarm }}>
               <TouchableOpacity onPress={volverAApelacionesAliados} style={styles.backButton}>
@@ -430,20 +475,26 @@ export default function AdminDashboardScreen({ onClose }: Props) {
                 <Text style={styles.backText}>Apelación de Aliado</Text>
               </TouchableOpacity>
             </View>
-            
-            <AliadoDetailBody 
+
+            <AliadoDetailBody
               aliado={{
                 id: apelacionAliadoSeleccionada!.perfil_apoyo.id,
                 usuario_id: apelacionAliadoSeleccionada!.perfil_apoyo.usuario_id,
                 tipo: apelacionAliadoSeleccionada!.perfil_apoyo.tipo as any,
                 datos_extra: apelacionAliadoSeleccionada!.perfil_apoyo.datos_extra,
                 categorias: apelacionAliadoSeleccionada!.perfil_apoyo.categorias || [],
+                zona_cobertura: null,
+                disponibilidad: '',
                 especies_atendidas: apelacionAliadoSeleccionada!.perfil_apoyo.especies_atendidas || [],
                 niveles_urgencia_atendida: apelacionAliadoSeleccionada!.perfil_apoyo.niveles_urgencia_atendida || [],
                 created_at: apelacionAliadoSeleccionada!.created_at,
                 verificado_admin: false,
-                usuarios: apelacionAliadoSeleccionada!.perfil_apoyo.usuarios
-              }} 
+                usuarios: {
+                  nombre: apelacionAliadoSeleccionada!.perfil_apoyo.usuarios.nombre,
+                  email: apelacionAliadoSeleccionada!.perfil_apoyo.usuarios.email,
+                  telefono: '',
+                }
+              }}
               extraTop={
                 <ApelacionAliadoContextBlock apelacion={apelacionAliadoSeleccionada!} showToast={showToast} />
               }
@@ -455,6 +506,7 @@ export default function AdminDashboardScreen({ onClose }: Props) {
               onAprobar={() => handleResolverApelacionAliado('aprobar')}
               onRechazar={() => handleResolverApelacionAliado('rechazar')}
               isResolviendo={isResolviendoApelacionAliado}
+              targetName="el aliado"
             />
           </View>
         )
@@ -472,6 +524,14 @@ export default function AdminDashboardScreen({ onClose }: Props) {
             isResolviendo={isResolviendoAliado}
           />
         )
+      ) : tab === 'operativos' ? (
+        <CasosOperativosPanel
+          casos={casosOperativos}
+          asociaciones={asociacionesOperativas}
+          token={token || ''}
+          onUpdated={cargarCasosOperativos}
+          showToast={showToast}
+        />
       ) : (
         <ReportModerationPanel
           onCountChange={setModeracionPendiente}
@@ -481,6 +541,97 @@ export default function AdminDashboardScreen({ onClose }: Props) {
 
       <Toast toast={toast} translateY={translateY} />
     </View>
+  );
+}
+
+function CasosOperativosPanel({
+  casos,
+  asociaciones,
+  token,
+  onUpdated,
+  showToast,
+}: {
+  casos: CasoOperativo[];
+  asociaciones: Array<{ id: string; nombre: string }>;
+  token: string;
+  onUpdated: () => Promise<void>;
+  showToast: ShowToastFn;
+}) {
+  const [selecciones, setSelecciones] = useState<Record<string, string>>({});
+  const [resoluciones, setResoluciones] = useState<Record<string, string>>({});
+  const [enviando, setEnviando] = useState<string | null>(null);
+
+  const resolver = async (caso: CasoOperativo) => {
+    const asignacion = selecciones[caso.id];
+    const resolucion = (resoluciones[caso.id] || '').trim();
+    if (caso.tipo === 'reporte_sin_coordinadora' && !asignacion) {
+      showToast({ type: 'warning', title: 'Selecciona una coordinadora', message: 'El reporte necesita una asociación verificada.' });
+      return;
+    }
+    if (!resolucion) {
+      showToast({ type: 'warning', title: 'Falta la resolución', message: 'Describe brevemente la acción aplicada.' });
+      return;
+    }
+    setEnviando(caso.id);
+    try {
+      await axios.patch(
+        `${API_URL}/admin/casos-operativos/${caso.id}`,
+        {
+          accion: caso.tipo === 'reporte_sin_coordinadora' ? 'asignar_asociacion' : 'resolver',
+          asociacion_id: asignacion || null,
+          resolucion,
+        },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      showToast({ type: 'success', title: 'Caso resuelto', message: 'La bandeja y el reporte fueron actualizados.' });
+      await onUpdated();
+    } catch (error: any) {
+      showToast({ type: 'error', title: 'No pudimos resolverlo', message: error?.response?.data?.detail || 'Inténtalo nuevamente.' });
+    } finally {
+      setEnviando(null);
+    }
+  };
+
+  if (casos.length === 0) {
+    return <View style={styles.centered}><Text style={styles.emptyText}>No hay casos operativos pendientes.</Text></View>;
+  }
+  return (
+    <ScrollView contentContainerStyle={styles.listScrollContent}>
+      <View style={styles.listCentered}>
+        {casos.map((caso) => (
+          <View key={caso.id} style={styles.apelacionCard}>
+            <Text style={styles.apelacionNombre}>{caso.tipo.replaceAll('_', ' ')}</Text>
+            <Text style={styles.apelacionMeta}>Prioridad {caso.prioridad} · {new Date(caso.creado_at).toLocaleString('es-MX')}</Text>
+            <Text style={styles.apelacionMotivo}>{caso.detalle || 'Requiere seguimiento administrativo.'}</Text>
+            {!!caso.reportes && <Text style={styles.apelacionMeta}>Zona: {[caso.reportes.colonia, caso.reportes.municipio].filter(Boolean).join(', ') || 'Sin zona confirmada'}</Text>}
+            {caso.tipo === 'reporte_sin_coordinadora' && (
+              <View style={styles.caseChoices}>
+                {asociaciones.map((asociacion) => (
+                  <TouchableOpacity
+                    key={asociacion.id}
+                    onPress={() => setSelecciones((actual) => ({ ...actual, [caso.id]: asociacion.id }))}
+                    style={[styles.caseChoice, selecciones[caso.id] === asociacion.id && styles.caseChoiceActive]}
+                  >
+                    <Text style={styles.apelacionMeta}>{asociacion.nombre}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+            <TextInput
+              style={styles.adminTextArea}
+              value={resoluciones[caso.id] || ''}
+              onChangeText={(valor) => setResoluciones((actual) => ({ ...actual, [caso.id]: valor }))}
+              placeholder="Describe la resolución aplicada"
+              placeholderTextColor={Brand.textFaint}
+              multiline
+            />
+            <TouchableOpacity style={styles.apelacionRevisarButton} disabled={enviando === caso.id} onPress={() => void resolver(caso)}>
+              <Text style={styles.apelacionRevisarText}>{enviando === caso.id ? 'Guardando…' : 'Resolver caso'}</Text>
+            </TouchableOpacity>
+          </View>
+        ))}
+      </View>
+    </ScrollView>
   );
 }
 
@@ -626,6 +777,7 @@ function ApelacionResolverBar({
   onAprobar,
   onRechazar,
   isResolviendo,
+  targetName = 'la asociación',
 }: {
   respuesta: string;
   onChangeRespuesta: (v: string) => void;
@@ -633,10 +785,11 @@ function ApelacionResolverBar({
   onRechazar: () => void;
   isResolviendo: boolean;
   hideButtons?: boolean;
+  targetName?: string;
 }) {
   return (
     <View style={styles.resolverBarContainer}>
-      <Text style={styles.resolverBarLabel}>Respuesta para la asociación (opcional)</Text>
+      <Text style={styles.resolverBarLabel}>Respuesta para {targetName} (opcional)</Text>
       <TextInput
         style={styles.resolverBarInput}
         multiline
@@ -999,6 +1152,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   apelacionRevisarText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  caseChoices: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginVertical: 12 },
+  caseChoice: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 10, backgroundColor: Brand.cardWarm, borderWidth: 1, borderColor: '#E4D3B8' },
+  caseChoiceActive: { borderColor: Brand.secondary, backgroundColor: '#EAF7F5' },
+  adminTextArea: { minHeight: 70, borderRadius: 11, borderWidth: 1, borderColor: '#E4D3B8', backgroundColor: '#fff', color: Brand.textDark, padding: 10, marginVertical: 10, textAlignVertical: 'top' },
 
   // Bloque de contexto de apelación, inyectado arriba del expediente
   apelacionContextBlock: {
@@ -1218,141 +1375,141 @@ function AliadoDetailBody({ aliado, extraTop }: { aliado: PerfilAliadoAdmin, ext
   const datosExtra = aliado.datos_extra || {};
   return (
 
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 18, maxWidth: 800, alignSelf: 'center', width: '100%' }}>
+    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 18, maxWidth: 800, alignSelf: 'center', width: '100%' }}>
       {extraTop}
-        <View style={styles.detailHeaderBlock}>
-          <View style={[styles.detailHeaderBlockDesktop, { width: '100%' }]}>
-            <View style={{ width: 60, height: 60, borderRadius: 30, backgroundColor: Brand.primary, alignItems: 'center', justifyContent: 'center' }}>
-              <Ionicons name="person" size={32} color="#FFF" />
+      <View style={styles.detailHeaderBlock}>
+        <View style={[styles.detailHeaderBlockDesktop, { width: '100%' }]}>
+          <View style={{ width: 60, height: 60, borderRadius: 30, backgroundColor: Brand.primary, alignItems: 'center', justifyContent: 'center' }}>
+            <Ionicons name="person" size={32} color="#FFF" />
+          </View>
+          <View style={styles.detailHeaderTextCol}>
+            <Text style={styles.detailNombreDesktop}>{aliado.usuarios?.nombre}</Text>
+            <Text style={styles.detailResponsable}>{aliado.tipo.replace('_', ' ').toUpperCase()}</Text>
+          </View>
+        </View>
+      </View>
+
+      <View style={styles.cardsGrid}>
+        {/* Card de Contacto */}
+        <View style={styles.infoCard}>
+          <View style={styles.infoCardHeader}>
+            <Ionicons name="mail" size={20} color={Brand.primary} />
+            <Text style={styles.infoCardTitle}>Contacto</Text>
+          </View>
+          <View style={styles.infoCardBody}>
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Correo Electrónico</Text>
+              <Text style={styles.infoValue}>{aliado.usuarios?.email}</Text>
             </View>
-            <View style={styles.detailHeaderTextCol}>
-              <Text style={styles.detailNombreDesktop}>{aliado.usuarios?.nombre}</Text>
-              <Text style={styles.detailResponsable}>{aliado.tipo.replace('_', ' ').toUpperCase()}</Text>
-            </View>
+            {aliado.usuarios?.telefono && (
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Teléfono</Text>
+                <Text style={styles.infoValue}>{aliado.usuarios?.telefono}</Text>
+              </View>
+            )}
           </View>
         </View>
 
-        <View style={styles.cardsGrid}>
-          {/* Card de Contacto */}
-          <View style={styles.infoCard}>
-            <View style={styles.infoCardHeader}>
-              <Ionicons name="mail" size={20} color={Brand.primary} />
-              <Text style={styles.infoCardTitle}>Contacto</Text>
-            </View>
-            <View style={styles.infoCardBody}>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Correo Electrónico</Text>
-                <Text style={styles.infoValue}>{aliado.usuarios?.email}</Text>
-              </View>
-              {aliado.usuarios?.telefono && (
-                <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>Teléfono</Text>
-                  <Text style={styles.infoValue}>{aliado.usuarios?.telefono}</Text>
-                </View>
-              )}
-            </View>
+        {/* Card de Cobertura y Servicios */}
+        <View style={styles.infoCard}>
+          <View style={styles.infoCardHeader}>
+            <Ionicons name="paw" size={20} color={Brand.primary} />
+            <Text style={styles.infoCardTitle}>Servicios y Cobertura</Text>
           </View>
-
-          {/* Card de Cobertura y Servicios */}
-          <View style={styles.infoCard}>
-            <View style={styles.infoCardHeader}>
-              <Ionicons name="paw" size={20} color={Brand.primary} />
-              <Text style={styles.infoCardTitle}>Servicios y Cobertura</Text>
+          <View style={styles.infoCardBody}>
+            <View style={styles.infoBlock}>
+              <Text style={styles.infoLabel}>Categorías que ofrece</Text>
+              <View style={styles.chipContainer}>
+                {aliado.categorias?.map((cat, idx) => (
+                  <View key={idx} style={styles.chip}>
+                    <Text style={styles.chipText}>{cat}</Text>
+                  </View>
+                ))}
+              </View>
             </View>
-            <View style={styles.infoCardBody}>
+
+            {aliado.especies_atendidas && aliado.especies_atendidas.length > 0 && (
               <View style={styles.infoBlock}>
-                <Text style={styles.infoLabel}>Categorías que ofrece</Text>
+                <Text style={styles.infoLabel}>Especies atendidas</Text>
                 <View style={styles.chipContainer}>
-                  {aliado.categorias?.map((cat, idx) => (
+                  {aliado.especies_atendidas.map((esp, idx) => (
                     <View key={idx} style={styles.chip}>
-                      <Text style={styles.chipText}>{cat}</Text>
+                      <Text style={styles.chipText}>{esp}</Text>
                     </View>
                   ))}
                 </View>
               </View>
-              
-              {aliado.especies_atendidas && aliado.especies_atendidas.length > 0 && (
-                <View style={styles.infoBlock}>
-                  <Text style={styles.infoLabel}>Especies atendidas</Text>
-                  <View style={styles.chipContainer}>
-                    {aliado.especies_atendidas.map((esp, idx) => (
-                      <View key={idx} style={styles.chip}>
-                        <Text style={styles.chipText}>{esp}</Text>
-                      </View>
-                    ))}
-                  </View>
+            )}
+
+            {aliado.niveles_urgencia_atendida && aliado.niveles_urgencia_atendida.length > 0 && (
+              <View style={styles.infoBlock}>
+                <Text style={styles.infoLabel}>Niveles de Urgencia</Text>
+                <View style={styles.chipContainer}>
+                  {aliado.niveles_urgencia_atendida.map((urg, idx) => (
+                    <View key={idx} style={styles.chipUrgencia}>
+                      <Text style={styles.chipTextUrgencia}>{urg}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+          </View>
+        </View>
+
+        {/* Card de Datos Legales / Profesionales */}
+        {(datosExtra.razon_social || datosExtra.rfc || datosExtra.medico_responsable || datosExtra.cedula_profesional || datosExtra.documento_verificacion_url) && (
+          <View style={styles.infoCard}>
+            <View style={styles.infoCardHeader}>
+              <Ionicons name="business" size={20} color={Brand.primary} />
+              <Text style={styles.infoCardTitle}>Datos Legales y Profesionales</Text>
+            </View>
+            <View style={styles.infoCardBody}>
+              {datosExtra.razon_social && (
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Razón Social</Text>
+                  <Text style={styles.infoValue}>{datosExtra.razon_social}</Text>
                 </View>
               )}
-              
-              {aliado.niveles_urgencia_atendida && aliado.niveles_urgencia_atendida.length > 0 && (
-                <View style={styles.infoBlock}>
-                  <Text style={styles.infoLabel}>Niveles de Urgencia</Text>
-                  <View style={styles.chipContainer}>
-                    {aliado.niveles_urgencia_atendida.map((urg, idx) => (
-                      <View key={idx} style={styles.chipUrgencia}>
-                        <Text style={styles.chipTextUrgencia}>{urg}</Text>
-                      </View>
-                    ))}
-                  </View>
+              {datosExtra.rfc && (
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>RFC</Text>
+                  <Text style={styles.infoValue}>{datosExtra.rfc}</Text>
                 </View>
               )}
+              {datosExtra.medico_responsable && (
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Médico Responsable</Text>
+                  <Text style={styles.infoValue}>{datosExtra.medico_responsable}</Text>
+                </View>
+              )}
+              {datosExtra.cedula_profesional && (
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Cédula Profesional</Text>
+                  <Text style={styles.infoValue}>{datosExtra.cedula_profesional}</Text>
+                </View>
+              )}
+
+              <View style={{ marginTop: 12 }}>
+                <Text style={[styles.infoLabel, { marginBottom: 8 }]}>Documento de verificación adjunto</Text>
+                {typeof datosExtra.documento_verificacion_url === 'string' && datosExtra.documento_verificacion_url.startsWith('http') ? (
+                  <TouchableOpacity
+                    onPress={() => Linking.openURL(datosExtra.documento_verificacion_url)}
+                    style={styles.apelacionDocRow}
+                  >
+                    <Ionicons name="document-text" size={20} color={Brand.primary} />
+                    <Text style={styles.apelacionDocText}>Ver documento de verificación</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <Text style={[styles.infoValue, { color: Brand.textFaint, fontStyle: 'italic' }]}>
+                    No se adjuntó ningún documento o el formato es inválido.
+                  </Text>
+                )}
+              </View>
             </View>
           </View>
-
-          {/* Card de Datos Legales / Profesionales */}
-          {(datosExtra.razon_social || datosExtra.rfc || datosExtra.medico_responsable || datosExtra.cedula_profesional || datosExtra.documento_verificacion_url) && (
-            <View style={styles.infoCard}>
-              <View style={styles.infoCardHeader}>
-                <Ionicons name="business" size={20} color={Brand.primary} />
-                <Text style={styles.infoCardTitle}>Datos Legales y Profesionales</Text>
-              </View>
-              <View style={styles.infoCardBody}>
-                {datosExtra.razon_social && (
-                  <View style={styles.infoRow}>
-                    <Text style={styles.infoLabel}>Razón Social</Text>
-                    <Text style={styles.infoValue}>{datosExtra.razon_social}</Text>
-                  </View>
-                )}
-                {datosExtra.rfc && (
-                  <View style={styles.infoRow}>
-                    <Text style={styles.infoLabel}>RFC</Text>
-                    <Text style={styles.infoValue}>{datosExtra.rfc}</Text>
-                  </View>
-                )}
-                {datosExtra.medico_responsable && (
-                  <View style={styles.infoRow}>
-                    <Text style={styles.infoLabel}>Médico Responsable</Text>
-                    <Text style={styles.infoValue}>{datosExtra.medico_responsable}</Text>
-                  </View>
-                )}
-                {datosExtra.cedula_profesional && (
-                  <View style={styles.infoRow}>
-                    <Text style={styles.infoLabel}>Cédula Profesional</Text>
-                    <Text style={styles.infoValue}>{datosExtra.cedula_profesional}</Text>
-                  </View>
-                )}
-
-                <View style={{ marginTop: 12 }}>
-                  <Text style={[styles.infoLabel, { marginBottom: 8 }]}>Documento de verificación adjunto</Text>
-                  {typeof datosExtra.documento_verificacion_url === 'string' && datosExtra.documento_verificacion_url.startsWith('http') ? (
-                    <TouchableOpacity
-                      onPress={() => Linking.openURL(datosExtra.documento_verificacion_url)}
-                      style={styles.apelacionDocRow}
-                    >
-                      <Ionicons name="document-text" size={20} color={Brand.primary} />
-                      <Text style={styles.apelacionDocText}>Ver documento de verificación</Text>
-                    </TouchableOpacity>
-                  ) : (
-                    <Text style={[styles.infoValue, { color: Brand.textFaint, fontStyle: 'italic' }]}>
-                      No se adjuntó ningún documento o el formato es inválido.
-                    </Text>
-                  )}
-                </View>
-              </View>
-            </View>
-          )}
-        </View>
-      </ScrollView>);
+        )}
+      </View>
+    </ScrollView>);
 }
 
 // ─── Pantalla: Detalle del Aliado ────────────────────────────────

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Header
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
-from app.models.report import ReportResponse, AnimalInput, ReportListItem, HitoRequest, RechazarReporteRequest, CancelarReporteRequest, DenunciarReporteRequest
+from app.models.report import ReportResponse, AnimalInput, ReportListItem, HitoRequest, RechazarReporteRequest, CancelarReporteRequest, DenunciarReporteRequest, ResolverBusquedaNoLocalizadoRequest
 from app.models.red_aliados import AceptarSugerenciaRequest, AceptarSugerenciaVeterinariaResponse
 from app.services.report_service import crear_reporte, obtener_reportes, cambiar_estado_reporte, obtener_reportes_usuario
 from app.services import coverage_service
@@ -54,6 +54,13 @@ def _distancia_metros(
         + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
     )
     return radio_tierra * 2 * math.asin(math.sqrt(haversine))
+
+
+def _fecha_utc(fecha: datetime) -> datetime:
+    """Normaliza fechas del cliente sin depender de la zona horaria del servidor."""
+    if fecha.tzinfo is None:
+        return fecha.replace(tzinfo=timezone.utc)
+    return fecha.astimezone(timezone.utc)
 
 
 def _vincular_y_verificar_evidencia(
@@ -695,10 +702,26 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
                 status_code=422,
                 detail="La foto del animal y la ubicación GPS son obligatorias",
             )
-        if not body.condicion_observada or not body.destino:
+        if not body.condicion_observada:
             raise HTTPException(
                 status_code=422,
-                detail="Indica la condición del animal y el destino del resguardo",
+                detail="Indica la condición actual del animal",
+            )
+        if body.ruta_resguardo not in ("directo_hogar", "veterinaria_y_hogar"):
+            raise HTTPException(
+                status_code=422,
+                detail="Selecciona si irás directo al hogar o pasarás antes por veterinaria",
+            )
+        if body.fecha_limite_resguardo is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Indica hasta qué fecha puedes cuidar a este animal",
+            )
+        fecha_propuesta = _fecha_utc(body.fecha_limite_resguardo)
+        if fecha_propuesta <= datetime.now(timezone.utc) + timedelta(hours=24):
+            raise HTTPException(
+                status_code=422,
+                detail="La fecha de resguardo debe permitir al menos un día completo",
             )
 
     if tipo_hito == "llegada_hogar_temporal":
@@ -716,6 +739,18 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
             raise HTTPException(
                 status_code=422,
                 detail="Las fotos del animal y del entorno, además del GPS, son obligatorias",
+            )
+
+        if body.fecha_limite_resguardo is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Confirma hasta qué fecha puedes mantener esta custodia",
+            )
+        fecha_confirmada = _fecha_utc(body.fecha_limite_resguardo)
+        if fecha_confirmada <= datetime.now(timezone.utc) + timedelta(hours=24):
+            raise HTTPException(
+                status_code=422,
+                detail="La fecha límite debe permitir al menos un día completo de custodia",
             )
 
         resguardo = (
@@ -744,7 +779,7 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
             raise HTTPException(status_code=404, detail="Perfil externo no encontrado")
         hogar = (
             supabase.table("perfil_casa_temporal")
-            .select("latitud, longitud, tiempo_resguardo_dias")
+            .select("latitud, longitud")
             .eq("voluntario_id", voluntario.data[0]["id"])
             .limit(1)
             .execute()
@@ -773,6 +808,35 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
                     f"Estás a {round(distancia_hogar)} metros."
                 ),
             )
+
+        plan_custodia = (
+            supabase.table("planes_custodia_temporal")
+            .select("id, ruta_resguardo, fecha_limite_propuesta")
+            .eq("reporte_id", reporte_id)
+            .eq("voluntario_id", voluntario.data[0]["id"])
+            .limit(1)
+            .execute()
+        )
+        if not plan_custodia.data:
+            raise HTTPException(
+                status_code=409,
+                detail="Primero registra la ruta y fecha propuesta del resguardo",
+            )
+        if plan_custodia.data[0]["ruta_resguardo"] == "veterinaria_y_hogar":
+            llegada_veterinaria = (
+                supabase.table("historial_reporte")
+                .select("id")
+                .eq("reporte_id", reporte_id)
+                .eq("usuario_id", usuario["id"])
+                .eq("tipo_evento", "llegada_veterinaria")
+                .limit(1)
+                .execute()
+            )
+            if not llegada_veterinaria.data:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Primero registra la llegada a la veterinaria indicada en tu ruta",
+                )
 
     # Validación GPS obligatoria para llego_veterinaria — Ruta 1
     # (BACK01/BACK02): solo se puede registrar si existe una contribución
@@ -879,29 +943,31 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
         )
         if not existente.data:
             ahora_custodia = datetime.now(timezone.utc)
-            dias_resguardo = hogar.data[0].get("tiempo_resguardo_dias")
             supabase.table("custodias_temporales").insert(
                 {
                     "reporte_id": reporte_id,
                     "voluntario_id": voluntario.data[0]["id"],
                     "asociacion_coordinadora_id": reporte["asociacion_asignada_id"],
                     "estado": "activo",
-                    "fecha_limite": (
-                        ahora_custodia + timedelta(days=int(dias_resguardo))
-                    ).isoformat() if dias_resguardo else None,
+                    "fecha_limite": fecha_confirmada.isoformat(),
+                    "ruta_ingreso": plan_custodia.data[0]["ruta_resguardo"],
+                    "fecha_limite_confirmada_at": ahora_custodia.isoformat(),
                     "proximo_seguimiento_at": (ahora_custodia + timedelta(hours=3)).isoformat(),
                     "frecuencia_horas": 72,
                 }
             ).execute()
+        supabase.table("planes_custodia_temporal").update(
+            {
+                "fecha_limite_confirmada": fecha_confirmada.isoformat(),
+                "confirmada_at": datetime.now(timezone.utc).isoformat(),
+            }
+        ).eq("id", plan_custodia.data[0]["id"]).execute()
 
-    # Registrar en historial
+    # Registrar en historial. La búsqueda sin resultado utiliza una función
+    # transaccional porque también abre una decisión para la coordinadora.
     from app.services.report_service import registrar_historial
-    registrar_historial(
-        reporte_id=reporte_id,
-        usuario_id=usuario["id"],
-        tipo_evento=EVENTOS_HISTORIAL_POR_HITO[tipo_hito],
-        descripcion=f"Hito registrado: {tipo_hito}",
-        datos_extra={
+    intento_busqueda = None
+    datos_hito = {
             "condicion_observada": body.condicion_observada,
             "comentario": body.comentario,
             "destino": body.destino,
@@ -917,8 +983,63 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
                 else None
             ),
             "verificacion_ubicacion": verificacion_ubicacion,
+            "ruta_resguardo": body.ruta_resguardo,
+            "fecha_limite_resguardo": (
+                _fecha_utc(body.fecha_limite_resguardo).isoformat()
+                if body.fecha_limite_resguardo
+                else None
+            ),
         }
-    )
+    if tipo_hito == "animal_bajo_resguardo":
+        voluntario_plan = (
+            supabase.table("voluntarios")
+            .select("id")
+            .eq("usuario_id", usuario["id"])
+            .limit(1)
+            .execute()
+        )
+        if not voluntario_plan.data:
+            raise HTTPException(status_code=404, detail="Perfil externo no encontrado")
+        supabase.table("planes_custodia_temporal").upsert(
+            {
+                "reporte_id": reporte_id,
+                "voluntario_id": voluntario_plan.data[0]["id"],
+                "ruta_resguardo": body.ruta_resguardo,
+                "fecha_limite_propuesta": _fecha_utc(body.fecha_limite_resguardo).isoformat(),
+                "actualizado_at": datetime.now(timezone.utc).isoformat(),
+            },
+            on_conflict="reporte_id",
+        ).execute()
+    if tipo_hito == "animal_no_localizado":
+        try:
+            busqueda = supabase_admin.rpc(
+                "registrar_busqueda_no_localizado",
+                {
+                    "p_reporte_id": reporte_id,
+                    "p_usuario_id": usuario["id"],
+                    "p_comentario": body.comentario,
+                    "p_tiempo_busqueda_minutos": body.tiempo_busqueda_minutos,
+                    "p_latitud": body.latitud,
+                    "p_longitud": body.longitud,
+                    "p_distancia_reporte_metros": datos_hito["distancia_reporte_metros"],
+                },
+            ).execute()
+        except Exception as error:
+            if "decision_busqueda_pendiente" in str(error).lower():
+                raise HTTPException(
+                    status_code=409,
+                    detail="La asociación debe resolver la búsqueda anterior antes de registrar otro intento",
+                ) from error
+            raise
+        intento_busqueda = (busqueda.data or {}).get("intento") if isinstance(busqueda.data, dict) else None
+    else:
+        registrar_historial(
+            reporte_id=reporte_id,
+            usuario_id=usuario["id"],
+            tipo_evento=EVENTOS_HISTORIAL_POR_HITO[tipo_hito],
+            descripcion=f"Hito registrado: {tipo_hito}",
+            datos_extra=datos_hito,
+        )
 
     # Motor de sugerencias, Ruta 1 (BACK01) — solo para el hito
     # "encontre_animal". Puramente informativo: no reserva capacidad, no
@@ -947,9 +1068,75 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
         "estado": nuevo_estado,
         "verificacion_ubicacion": verificacion_ubicacion,
         "sugerencia_aliado": sugerencia_aliado,
+        "intento_busqueda": intento_busqueda,
     }
 
 ### FIN endpoind: staff registra avances del rescate
+
+
+DECISIONES_BUSQUEDA_NO_LOCALIZADO = {
+    "repetir_busqueda",
+    "ampliar_zona",
+    "programar_otro_horario",
+    "reasignar",
+    "solicitar_apoyo_regional",
+    "liberar_voluntario",
+    "cerrar_no_localizado",
+}
+
+
+@router.get("/{reporte_id}/busqueda-no-localizado/pendiente")
+def obtener_busqueda_no_localizado_pendiente(
+    reporte_id: str,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion", "staff"))
+    reporte = supabase.table("reportes").select(
+        "id, asociacion_asignada_id"
+    ).eq("id", reporte_id).limit(1).execute()
+    if not reporte.data:
+        raise HTTPException(status_code=404, detail="Reporte no encontrado")
+    if reporte.data[0].get("asociacion_asignada_id") != usuario.get("asociacion_id"):
+        raise HTTPException(status_code=403, detail="Tu asociación no coordina este caso")
+    busqueda = supabase_admin.table("busquedas_no_localizado").select(
+        "id, intento, comentario, tiempo_busqueda_minutos, creada_at, estado"
+    ).eq("reporte_id", reporte_id).eq("estado", "pendiente").limit(1).execute()
+    return {"busqueda": busqueda.data[0] if busqueda.data else None}
+
+
+@router.post("/{reporte_id}/busqueda-no-localizado/resolver")
+def resolver_busqueda_no_localizado(
+    reporte_id: str,
+    body: ResolverBusquedaNoLocalizadoRequest,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion", "staff"))
+    if body.decision not in DECISIONES_BUSQUEDA_NO_LOCALIZADO:
+        raise HTTPException(status_code=422, detail="Decisión de búsqueda inválida")
+    if body.decision in {"ampliar_zona", "programar_otro_horario", "solicitar_apoyo_regional"} and not (body.instrucciones or "").strip():
+        raise HTTPException(status_code=422, detail="Agrega instrucciones para el siguiente paso")
+    try:
+        resultado = supabase_admin.rpc(
+            "resolver_busqueda_no_localizado",
+            {
+                "p_reporte_id": reporte_id,
+                "p_asociacion_id": usuario.get("asociacion_id"),
+                "p_usuario_id": usuario["id"],
+                "p_decision": body.decision,
+                "p_instrucciones": (body.instrucciones or "").strip() or None,
+                "p_programada_at": body.programada_at,
+            },
+        ).execute()
+    except Exception as error:
+        detalle = str(error).lower()
+        if "busqueda_no_disponible" in detalle:
+            raise HTTPException(status_code=409, detail="La búsqueda ya fue resuelta") from error
+        if "asociacion_no_coordina" in detalle:
+            raise HTTPException(status_code=403, detail="Tu asociación no coordina este caso") from error
+        raise
+    return resultado.data
 
 ### Endpoint: BACK02 — aceptar la sugerencia de Ruta 1 (motor de sugerencias)
 @router.post("/{reporte_id}/hitos/aceptar-sugerencia", status_code=201, response_model=AceptarSugerenciaVeterinariaResponse)
@@ -1117,6 +1304,15 @@ async def rechazar_reporte(reporte_id: str, body: RechazarReporteRequest, author
             descripcion="No hay más asociaciones disponibles en la zona",
             datos_extra={"motivo_rechazo": body.motivo}
         )
+        try:
+            supabase.table("casos_administrativos").insert({
+                "reporte_id": reporte_id,
+                "tipo": "reporte_sin_coordinadora",
+                "prioridad": "alta",
+                "detalle": "Las asociaciones compatibles rechazaron el caso.",
+            }).execute()
+        except Exception:
+            pass
 
         contactos_vistos = set()
         contactos = []
@@ -1283,7 +1479,10 @@ def cancelar_reporte_por_reportante(
     usuario = _obtener_usuario_autenticado(authorization)
     reporte = (
         supabase.table("reportes")
-        .select("id, usuario_id, estado_reporte, estado_cobertura, staff_asignado_id")
+        .select(
+            "id, usuario_id, estado_reporte, estado_cobertura, staff_asignado_id, "
+            "asociacion_asignada_id"
+        )
         .eq("id", reporte_id)
         .limit(1)
         .execute()
@@ -1305,6 +1504,22 @@ def cancelar_reporte_por_reportante(
             descripcion="El reportante solicitó cancelar con atención en curso",
             datos_extra={"motivo": body.motivo},
         )
+        if fila.get("asociacion_asignada_id"):
+            supabase.table("notificaciones_coordinacion").insert({
+                "asociacion_id": fila["asociacion_asignada_id"],
+                "reporte_id": reporte_id,
+                "tipo": "cancelacion_reportante",
+                "mensaje": "El reportante solicitó cancelar mientras la atención está en curso. Revisa el caso antes de decidir.",
+            }).execute()
+        try:
+            supabase.table("casos_administrativos").insert({
+                "reporte_id": reporte_id,
+                "tipo": "cancelacion_en_atencion",
+                "prioridad": "media",
+                "detalle": body.motivo,
+            }).execute()
+        except Exception:
+            pass
         return {
             "estado": fila["estado_reporte"],
             "cancelado": False,

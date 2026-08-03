@@ -200,17 +200,28 @@ def test_reserva_usa_una_sola_funcion_transaccional():
         )
 
     assert propuesta == "propuesta-1"
-    supabase_admin.rpc.assert_called_once_with(
-        "reservar_cobertura_reporte",
-        {
-            "p_reporte_id": "rep-1",
-            "p_usuario_asignado_id": "user-1",
-            "p_voluntario_id": "vol-1",
-            "p_asociacion_id": "aso-1",
-            "p_actor_id": "actor-1",
-            "p_origen": "equipo_interno",
-        },
-    )
+    nombre_rpc, argumentos = supabase_admin.rpc.call_args.args
+    assert nombre_rpc == "reservar_cobertura_reporte"
+    assert argumentos["p_reporte_id"] == "rep-1"
+    assert argumentos["p_usuario_asignado_id"] == "user-1"
+    assert argumentos["p_voluntario_id"] == "vol-1"
+    assert argumentos["p_asociacion_id"] == "aso-1"
+    assert argumentos["p_actor_id"] == "actor-1"
+    assert argumentos["p_origen"] == "equipo_interno"
+    assert argumentos["p_vence_at"]
+
+
+def test_expira_propuestas_mediante_funcion_transaccional():
+    ejecucion = MagicMock()
+    ejecucion.execute.return_value = SimpleNamespace(data=2)
+    supabase_admin = MagicMock()
+    supabase_admin.rpc.return_value = ejecucion
+
+    with patch.object(coverage_service, "supabase_admin", supabase_admin):
+        total = coverage_service.expirar_propuestas_vencidas()
+
+    assert total == 2
+    supabase_admin.rpc.assert_called_once_with("expirar_propuestas_cobertura")
 
 
 def test_reserva_concurrente_devuelve_conflicto_controlado():
