@@ -13,6 +13,9 @@ from app.models.custody import (
     SolicitudRelevoRequest,
     ValidacionSeguimientoRequest,
     FinalizarCustodiaRequest,
+    DudaRegionalRequest,
+    EnviarAclaracionRequest,
+    ResponderAclaracionRequest,
 )
 from app.services.report_service import registrar_historial
 from app.utils.animal_shaping import shape_animal_embed, shape_animal_response
@@ -192,6 +195,17 @@ def _transferencia_activa(custodia_id: str) -> Optional[dict]:
     return resultado.data[0] if resultado.data else None
 
 
+def _aclaraciones_activas(custodia_id: str) -> list[dict]:
+    return (
+        supabase.table("aclaraciones_seguimiento")
+        .select("*")
+        .eq("custodia_id", custodia_id)
+        .in_("estado", ["pendiente_coordinadora", "enviada_voluntario", "respondida"])
+        .order("creada_at", desc=True)
+        .execute()
+    ).data or []
+
+
 def _puede_ver_ubicacion_hogar(
     custodia: dict,
     transferencia: Optional[dict],
@@ -233,6 +247,10 @@ def listar_mis_custodias(authorization: Optional[str] = Header(None)):
                 "ultimo_seguimiento": _ultimo_seguimiento(c["id"]),
                 "transferencia_activa": _transferencia_activa(c["id"]),
                 "seguimiento_inicial_pendiente": not bool(c.get("seguimiento_inicial_at")),
+                "aclaraciones": [
+                    a for a in _aclaraciones_activas(c["id"])
+                    if a["estado"] in ("enviada_voluntario", "respondida")
+                ],
             }
             for c in custodias
         ],
@@ -443,6 +461,14 @@ def listar_seguimiento_regional(
                 "transferencia_activa": transferencia,
                 "ubicacion_hogar": ubicacion_hogar,
                 "es_coordinadora": es_coordinadora,
+                "aclaraciones": (
+                    _aclaraciones_activas(custodia["id"])
+                    if es_coordinadora
+                    else [
+                        a for a in _aclaraciones_activas(custodia["id"])
+                        if a["asociacion_origen_id"] == asociacion["id"]
+                    ]
+                ),
             }
         )
     return {"radio_km": radio_km, "custodias": tarjetas}
@@ -495,6 +521,157 @@ def reservar_revision(
     return reserva.data
 
 
+@router.post("/followups/{seguimiento_id}/questions", status_code=201)
+def formular_duda_regional(
+    seguimiento_id: str,
+    body: DudaRegionalRequest,
+    authorization: Optional[str] = Header(None),
+):
+    usuario = _usuario(authorization)
+    asociacion = _asociacion_verificada(usuario)
+    seguimiento = (
+        supabase.table("seguimientos_resguardo").select("id, custodia_id")
+        .eq("id", seguimiento_id).limit(1).execute()
+    )
+    if not seguimiento.data:
+        raise HTTPException(status_code=404, detail="Seguimiento no encontrado")
+    custodia = (
+        supabase.table("custodias_temporales")
+        .select("reporte_id, asociacion_coordinadora_id, voluntario_id")
+        .eq("id", seguimiento.data[0]["custodia_id"]).limit(1).execute()
+    ).data[0]
+    if custodia["asociacion_coordinadora_id"] == asociacion["id"]:
+        raise HTTPException(status_code=409, detail="La coordinadora puede solicitar la aclaración directamente")
+    if not _en_radio_regional(asociacion, custodia["voluntario_id"]):
+        raise HTTPException(status_code=403, detail="La custodia está fuera de tu región")
+    try:
+        creada = supabase.table("aclaraciones_seguimiento").insert({
+            "seguimiento_id": seguimiento_id,
+            "custodia_id": seguimiento.data[0]["custodia_id"],
+            "asociacion_origen_id": asociacion["id"],
+            "creada_por_id": usuario["id"],
+            "pregunta_regional": body.pregunta.strip(),
+            "estado": "pendiente_coordinadora",
+        }).execute()
+    except Exception as error:
+        if "aclaracion_activa_por_origen" in str(error).lower() or "duplicate" in str(error).lower():
+            raise HTTPException(status_code=409, detail="Tu asociación ya tiene una duda activa sobre esta evidencia") from error
+        raise
+    registrar_historial(
+        reporte_id=custodia["reporte_id"], usuario_id=usuario["id"],
+        tipo_evento="duda_regional_formulada",
+        descripcion="Una asociación regional envió una duda a la coordinadora",
+        datos_extra={"aclaracion_id": creada.data[0]["id"]},
+    )
+    supabase.table("revisiones_seguimiento").update({
+        "estado": "completada", "completada_at": _ahora().isoformat()
+    }).eq("seguimiento_id", seguimiento_id).eq("asociacion_id", asociacion["id"]).execute()
+    return {"aclaracion": creada.data[0]}
+
+
+@router.post("/clarifications/{aclaracion_id}/forward")
+def enviar_aclaracion_al_voluntario(
+    aclaracion_id: str,
+    body: EnviarAclaracionRequest,
+    authorization: Optional[str] = Header(None),
+):
+    usuario = _usuario(authorization)
+    asociacion = _asociacion_verificada(usuario)
+    aclaracion = (
+        supabase.table("aclaraciones_seguimiento")
+        .select("*, custodias_temporales(reporte_id, asociacion_coordinadora_id)")
+        .eq("id", aclaracion_id).limit(1).execute()
+    )
+    if not aclaracion.data:
+        raise HTTPException(status_code=404, detail="Aclaración no encontrada")
+    fila = aclaracion.data[0]
+    custodia = fila.get("custodias_temporales") or {}
+    if custodia.get("asociacion_coordinadora_id") != asociacion["id"]:
+        raise HTTPException(status_code=403, detail="Solo la coordinadora puede contactar al hogar temporal")
+    if fila["estado"] not in ("pendiente_coordinadora", "respondida"):
+        raise HTTPException(status_code=409, detail="La aclaración no puede enviarse en su estado actual")
+    supabase.table("aclaraciones_seguimiento").update({
+        "mensaje_coordinadora": body.mensaje.strip(),
+        "estado": "enviada_voluntario",
+        "enviada_at": _ahora().isoformat(),
+    }).eq("id", aclaracion_id).execute()
+    registrar_historial(
+        reporte_id=custodia["reporte_id"], usuario_id=usuario["id"],
+        tipo_evento="aclaracion_solicitada",
+        descripcion="La asociación coordinadora solicitó una aclaración al hogar temporal",
+        datos_extra={"aclaracion_id": aclaracion_id},
+    )
+    return {"estado": "enviada_voluntario"}
+
+
+@router.post("/clarifications/{aclaracion_id}/respond")
+def responder_aclaracion(
+    aclaracion_id: str,
+    body: ResponderAclaracionRequest,
+    authorization: Optional[str] = Header(None),
+):
+    usuario = _usuario(authorization)
+    voluntario = _voluntario_externo(usuario)
+    aclaracion = (
+        supabase.table("aclaraciones_seguimiento")
+        .select("*, custodias_temporales(reporte_id, voluntario_id)")
+        .eq("id", aclaracion_id).limit(1).execute()
+    )
+    if not aclaracion.data:
+        raise HTTPException(status_code=404, detail="Aclaración no encontrada")
+    fila = aclaracion.data[0]
+    custodia = fila.get("custodias_temporales") or {}
+    if custodia.get("voluntario_id") != voluntario["id"] or fila["estado"] != "enviada_voluntario":
+        raise HTTPException(status_code=403, detail="No puedes responder esta aclaración")
+    supabase.table("aclaraciones_seguimiento").update({
+        "respuesta_voluntario": body.respuesta.strip(),
+        "foto_respuesta_url": body.foto_url,
+        "estado": "respondida",
+        "respondida_at": _ahora().isoformat(),
+    }).eq("id", aclaracion_id).execute()
+    registrar_historial(
+        reporte_id=custodia["reporte_id"], usuario_id=usuario["id"],
+        tipo_evento="aclaracion_respondida",
+        descripcion="El hogar temporal respondió una solicitud de aclaración",
+        datos_extra={"aclaracion_id": aclaracion_id, "foto_url": body.foto_url},
+    )
+    return {"estado": "respondida"}
+
+
+@router.post("/clarifications/{aclaracion_id}/resolve")
+def resolver_aclaracion(
+    aclaracion_id: str,
+    authorization: Optional[str] = Header(None),
+):
+    usuario = _usuario(authorization)
+    asociacion = _asociacion_verificada(usuario)
+    aclaracion = (
+        supabase.table("aclaraciones_seguimiento")
+        .select("id, estado, custodias_temporales(reporte_id, asociacion_coordinadora_id)")
+        .eq("id", aclaracion_id).limit(1).execute()
+    )
+    if not aclaracion.data:
+        raise HTTPException(status_code=404, detail="Aclaración no encontrada")
+    fila = aclaracion.data[0]
+    custodia = fila.get("custodias_temporales") or {}
+    if custodia.get("asociacion_coordinadora_id") != asociacion["id"]:
+        raise HTTPException(status_code=403, detail="Solo la coordinadora puede resolver la aclaración")
+    if fila["estado"] != "respondida":
+        raise HTTPException(status_code=409, detail="Espera la respuesta del hogar temporal")
+    supabase.table("aclaraciones_seguimiento").update({
+        "estado": "resuelta",
+        "resuelta_at": _ahora().isoformat(),
+        "resuelta_por_id": usuario["id"],
+    }).eq("id", aclaracion_id).execute()
+    registrar_historial(
+        reporte_id=custodia["reporte_id"], usuario_id=usuario["id"],
+        tipo_evento="aclaracion_resuelta",
+        descripcion="La asociación coordinadora cerró la aclaración",
+        datos_extra={"aclaracion_id": aclaracion_id},
+    )
+    return {"estado": "resuelta"}
+
+
 @router.post("/followups/{seguimiento_id}/validation", status_code=201)
 def validar_seguimiento(
     seguimiento_id: str,
@@ -524,6 +701,14 @@ def validar_seguimiento(
         and not _en_radio_regional(asociacion, custodia["voluntario_id"])
     ):
         raise HTTPException(status_code=403, detail="La custodia está fuera de tu región")
+    es_coordinadora = custodia["asociacion_coordinadora_id"] == asociacion["id"]
+    if body.decision in ("aclaracion_solicitada", "alerta") and not es_coordinadora:
+        raise HTTPException(
+            status_code=403,
+            detail="Envía una duda a la coordinadora; solo ella puede contactar al hogar temporal",
+        )
+    if body.decision == "aclaracion_solicitada" and not (body.comentario or "").strip():
+        raise HTTPException(status_code=422, detail="Escribe la aclaración que recibirá el hogar temporal")
     revision = (
         supabase.table("revisiones_seguimiento")
         .select("id, asociacion_id, estado, vence_at")
@@ -571,6 +756,17 @@ def validar_seguimiento(
     supabase.table("revisiones_seguimiento").update(
         {"estado": "completada", "completada_at": _ahora().isoformat()}
     ).eq("id", revision["id"]).execute()
+    if body.decision == "aclaracion_solicitada":
+        supabase.table("aclaraciones_seguimiento").insert({
+            "seguimiento_id": seguimiento_id,
+            "custodia_id": seguimiento.data[0]["custodia_id"],
+            "asociacion_origen_id": asociacion["id"],
+            "creada_por_id": usuario["id"],
+            "pregunta_regional": body.comentario.strip(),
+            "mensaje_coordinadora": body.comentario.strip(),
+            "estado": "enviada_voluntario",
+            "enviada_at": _ahora().isoformat(),
+        }).execute()
     registrar_historial(
         reporte_id=custodia["reporte_id"],
         usuario_id=usuario["id"],

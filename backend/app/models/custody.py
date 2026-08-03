@@ -21,6 +21,19 @@ class ValidacionSeguimientoRequest(BaseModel):
     comentario: Optional[str] = Field(default=None, max_length=500)
 
 
+class DudaRegionalRequest(BaseModel):
+    pregunta: str = Field(min_length=5, max_length=700)
+
+
+class EnviarAclaracionRequest(BaseModel):
+    mensaje: str = Field(min_length=5, max_length=700)
+
+
+class ResponderAclaracionRequest(BaseModel):
+    respuesta: str = Field(min_length=5, max_length=1000)
+    foto_url: Optional[str] = None
+
+
 class ExtensionCustodiaRequest(BaseModel):
     nueva_fecha_limite: datetime
 

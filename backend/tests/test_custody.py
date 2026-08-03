@@ -425,6 +425,66 @@ def test_revision_regional_informa_conflicto_controlado(make_query):
     assert "30 minutos" in response.json()["detail"]
 
 
+def test_asociacion_regional_envia_duda_a_coordinadora(make_query):
+    tablas = {
+        "seguimientos_resguardo": make_query(data=[{"id": "seg-1", "custodia_id": "cust-1"}]),
+        "custodias_temporales": make_query(data=[{
+            "reporte_id": "rep-1", "asociacion_coordinadora_id": "aso-1", "voluntario_id": "vol-1"
+        }]),
+        "aclaraciones_seguimiento": make_query(data=[{"id": "acl-1"}]),
+        "revisiones_seguimiento": make_query(data=[]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    usuario = {"id": "user-aso-2", "rol": "asociacion", "asociacion_id": "aso-2"}
+
+    with (
+        patch.object(custody, "supabase", supabase),
+        patch.object(custody, "_usuario", return_value=usuario),
+        patch.object(custody, "_asociacion_verificada", return_value={"id": "aso-2"}),
+        patch.object(custody, "_en_radio_regional", return_value=True),
+        patch.object(custody, "registrar_historial") as historial,
+    ):
+        response = client.post(
+            "/custody/followups/seg-1/questions",
+            headers=AUTH,
+            json={"pregunta": "La herida parece distinta, ¿pueden solicitar otra fotografía?"},
+        )
+
+    assert response.status_code == 201
+    payload = tablas["aclaraciones_seguimiento"].insert.call_args.args[0]
+    assert payload["estado"] == "pendiente_coordinadora"
+    assert payload["asociacion_origen_id"] == "aso-2"
+    assert historial.call_args.kwargs["tipo_evento"] == "duda_regional_formulada"
+
+
+def test_solo_coordinadora_puede_solicitar_aclaracion_directa(make_query):
+    tablas = {
+        "seguimientos_resguardo": make_query(data=[{"id": "seg-1", "custodia_id": "cust-1"}]),
+        "custodias_temporales": make_query(data=[{
+            "reporte_id": "rep-1", "asociacion_coordinadora_id": "aso-1", "voluntario_id": "vol-1"
+        }]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    usuario = {"id": "user-aso-2", "rol": "asociacion", "asociacion_id": "aso-2"}
+
+    with (
+        patch.object(custody, "supabase", supabase),
+        patch.object(custody, "_usuario", return_value=usuario),
+        patch.object(custody, "_asociacion_verificada", return_value={"id": "aso-2"}),
+        patch.object(custody, "_en_radio_regional", return_value=True),
+    ):
+        response = client.post(
+            "/custody/followups/seg-1/validation",
+            headers=AUTH,
+            json={"decision": "aclaracion_solicitada", "comentario": "Envía otra foto"},
+        )
+
+    assert response.status_code == 403
+    assert "coordinadora" in response.json()["detail"]
+
+
 def test_coordinadora_resuelve_busqueda_no_localizado_con_rpc():
     supabase_admin = MagicMock()
     supabase_admin.rpc.return_value.execute.return_value = SimpleNamespace(
