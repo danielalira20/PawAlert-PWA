@@ -29,6 +29,7 @@ interface Seguimiento {
   foto_url: string;
   estado_validacion: string;
   creado_at: string;
+  entorno_foto_url?: string | null;
 }
 
 interface Aclaracion {
@@ -67,6 +68,19 @@ export interface Custodia {
   };
   ultimo_seguimiento?: Seguimiento | null;
   seguimiento_anterior?: Seguimiento | null;
+  seguimiento_inicial?: { id: string; foto_url?: string | null; entorno_foto_url?: string | null; creado_at: string } | null;
+  ultima_evidencia_entorno?: { id: string; entorno_foto_url?: string | null; creado_at: string } | null;
+  revision_activa?: {
+    id: string;
+    reservada_at: string;
+    vence_at: string;
+    asociaciones?: { nombre?: string | null } | null;
+  } | null;
+  ultima_validacion?: {
+    decision: string;
+    creado_at: string;
+    asociaciones?: { nombre?: string | null } | null;
+  } | null;
   aclaraciones?: Aclaracion[];
   solicitud_relevo?: { id: string; motivo: string; estado: string } | null;
   transferencia_activa?: {
@@ -105,6 +119,11 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
     fecha: '',
     comentario: '',
     resolucion: '',
+    mismoAnimal: null as boolean | null,
+    fotoClara: null as boolean | null,
+    entornoAdecuado: null as boolean | null,
+    condicionEvolucion: '',
+    posiblesInconsistencias: false,
   });
   const [fotoAnimal, setFotoAnimal] = useState<string | null>(null);
   const [fotoEntorno, setFotoEntorno] = useState<string | null>(null);
@@ -150,6 +169,11 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
       fecha: '',
       comentario: '',
       resolucion: '',
+      mismoAnimal: null,
+      fotoClara: null,
+      entornoAdecuado: null,
+      condicionEvolucion: '',
+      posiblesInconsistencias: false,
     });
     setFotoAnimal(null);
     setFotoEntorno(null);
@@ -288,9 +312,20 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
 
   const validar = (decision: 'validado' | 'aclaracion_solicitada' | 'alerta') => ejecutar(async () => {
     if (!seleccionada?.ultimo_seguimiento) throw new Error('No hay seguimiento para validar.');
+    if (form.mismoAnimal === null || form.fotoClara === null || form.entornoAdecuado === null || !form.condicionEvolucion) {
+      throw new Error('Completa todos los puntos de la revisión manual.');
+    }
     await axios.post(
       `${API_URL}/custody/followups/${seleccionada.ultimo_seguimiento.id}/validation`,
-      { decision, comentario: form.comentario || null },
+      {
+        decision,
+        comentario: form.comentario || null,
+        mismo_animal: form.mismoAnimal,
+        foto_clara: form.fotoClara,
+        entorno_adecuado: form.entornoAdecuado,
+        condicion_evolucion: form.condicionEvolucion,
+        posibles_inconsistencias: form.posiblesInconsistencias,
+      },
       { headers: { Authorization: `Bearer ${token}` } },
     );
   }, 'La revisión quedó registrada.');
@@ -299,9 +334,19 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
     if (!seleccionada?.ultimo_seguimiento || form.comentario.trim().length < 5) {
       throw new Error('Explica claramente la duda para la asociación coordinadora.');
     }
+    if (form.mismoAnimal === null || form.fotoClara === null || form.entornoAdecuado === null || !form.condicionEvolucion) {
+      throw new Error('Completa todos los puntos de la revisión manual.');
+    }
     await axios.post(
       `${API_URL}/custody/followups/${seleccionada.ultimo_seguimiento.id}/questions`,
-      { pregunta: form.comentario.trim() },
+      {
+        pregunta: form.comentario.trim(),
+        mismo_animal: form.mismoAnimal,
+        foto_clara: form.fotoClara,
+        entorno_adecuado: form.entornoAdecuado,
+        condicion_evolucion: form.condicionEvolucion,
+        posibles_inconsistencias: form.posiblesInconsistencias,
+      },
       { headers: { Authorization: `Bearer ${token}` } },
     );
   }, 'La duda fue enviada a la asociación coordinadora.');
@@ -482,6 +527,21 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
                   </View>
                 )}
 
+                {esAsociacion && custodia.revision_activa && (
+                  <View style={styles.reviewStatus}>
+                    <Ionicons name="time-outline" size={16} color="#8A6500" />
+                    <Text style={styles.reviewStatusText}>
+                      En revisión por {custodia.revision_activa.asociaciones?.nombre || 'una asociación'} hasta {fecha(custodia.revision_activa.vence_at)}
+                    </Text>
+                  </View>
+                )}
+
+                {esAsociacion && custodia.ultima_validacion && (
+                  <Text style={styles.reviewedBy}>
+                    Última revisión: {custodia.ultima_validacion.asociaciones?.nombre || 'Asociación verificada'} · {fecha(custodia.ultima_validacion.creado_at)}
+                  </Text>
+                )}
+
                 {esAsociacion && custodia.ubicacion_hogar && (
                   <View style={styles.privateLocation}>
                     <Ionicons name="lock-closed-outline" size={17} color={Brand.secondary} />
@@ -587,16 +647,64 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
                   </Text>
                   <View style={[styles.comparison, width < 600 && styles.comparisonMobile]}>
                     <EvidenceComparison
+                      label="Foto inicial"
+                      uri={seleccionada?.seguimiento_inicial?.foto_url}
+                      empty="Sin foto inicial"
+                    />
+                    <EvidenceComparison
+                      label="Foto anterior"
+                      uri={seleccionada?.seguimiento_anterior?.foto_url}
+                      empty="Es el primer seguimiento"
+                    />
+                    <EvidenceComparison
                       label="Evidencia actual"
                       uri={seleccionada?.ultimo_seguimiento?.foto_url}
                       empty="No hay foto actual"
                     />
                     <EvidenceComparison
-                      label="Evidencia anterior"
-                      uri={seleccionada?.seguimiento_anterior?.foto_url}
-                      empty="Es el primer seguimiento"
+                      label="Último entorno"
+                      uri={seleccionada?.ultima_evidencia_entorno?.entorno_foto_url}
+                      empty="Sin evidencia del entorno"
                     />
                   </View>
+                  <Text style={styles.checklistTitle}>Checklist de revisión</Text>
+                  <ReviewBoolean
+                    label="¿Parece ser el mismo animal?"
+                    value={form.mismoAnimal}
+                    onChange={(value) => setForm({ ...form, mismoAnimal: value })}
+                  />
+                  <ReviewBoolean
+                    label="¿La fotografía es suficientemente clara?"
+                    value={form.fotoClara}
+                    onChange={(value) => setForm({ ...form, fotoClara: value })}
+                  />
+                  <ReviewBoolean
+                    label="¿El entorno parece adecuado?"
+                    value={form.entornoAdecuado}
+                    onChange={(value) => setForm({ ...form, entornoAdecuado: value })}
+                  />
+                  <Text style={styles.label}>Cambio visible en la condición</Text>
+                  <View style={styles.reviewChoices}>
+                    {[
+                      ['mejor', 'Mejor'], ['igual', 'Igual'], ['peor', 'Peor'],
+                      ['no_determinable', 'No determinable'],
+                    ].map(([value, label]) => (
+                      <TouchableOpacity
+                        key={value}
+                        onPress={() => setForm({ ...form, condicionEvolucion: value })}
+                        style={[styles.reviewChoice, form.condicionEvolucion === value && styles.reviewChoiceActive]}
+                      >
+                        <Text style={[styles.reviewChoiceText, form.condicionEvolucion === value && styles.reviewChoiceTextActive]}>{label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.inconsistency, form.posiblesInconsistencias && styles.inconsistencyActive]}
+                    onPress={() => setForm({ ...form, posiblesInconsistencias: !form.posiblesInconsistencias })}
+                  >
+                    <Ionicons name={form.posiblesInconsistencias ? 'checkbox' : 'square-outline'} size={19} color={form.posiblesInconsistencias ? '#B84A3A' : Brand.textMuted} />
+                    <Text style={styles.inconsistencyText}>Detecté posibles inconsistencias</Text>
+                  </TouchableOpacity>
                   <Field label="Comentario" value={form.comentario} onChangeText={(v) => setForm({ ...form, comentario: v })} placeholder="Observaciones o aclaraciones necesarias" multiline />
                   <View style={styles.validationRow}>
                     <Action icon="checkmark-circle-outline" label="Validar" primary onPress={() => validar('validado')} />
@@ -704,6 +812,25 @@ function EvidenceComparison({ label, uri, empty }: { label: string; uri?: string
   );
 }
 
+function ReviewBoolean({ label, value, onChange }: { label: string; value: boolean | null; onChange: (value: boolean) => void }) {
+  return (
+    <View style={styles.reviewQuestion}>
+      <Text style={styles.reviewQuestionText}>{label}</Text>
+      <View style={styles.reviewChoices}>
+        {[{ value: true, label: 'Sí' }, { value: false, label: 'No' }].map((option) => (
+          <TouchableOpacity
+            key={option.label}
+            onPress={() => onChange(option.value)}
+            style={[styles.reviewChoice, value === option.value && styles.reviewChoiceActive]}
+          >
+            <Text style={[styles.reviewChoiceText, value === option.value && styles.reviewChoiceTextActive]}>{option.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 function Action({ icon, label, onPress, primary, danger }: { icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void; primary?: boolean; danger?: boolean }) {
   return (
     <TouchableOpacity style={[styles.action, primary && styles.actionPrimary, danger && styles.actionDanger]} onPress={onPress}>
@@ -774,6 +901,9 @@ const styles = StyleSheet.create({
   followup: { marginTop: 12, borderRadius: 13, padding: 11, backgroundColor: `${Brand.secondary}10`, flexDirection: 'row', gap: 8, alignItems: 'center' },
   followupTitle: { color: Brand.textDark, fontSize: 12, fontWeight: '800' },
   followupState: { color: Brand.textMuted, fontSize: 10, marginTop: 2, textTransform: 'capitalize' },
+  reviewStatus: { flexDirection: 'row', gap: 7, alignItems: 'center', padding: 10, borderRadius: 12, backgroundColor: '#FFF4D6', marginTop: 10 },
+  reviewStatusText: { color: '#795500', fontSize: 10, lineHeight: 15, fontWeight: '700', flex: 1 },
+  reviewedBy: { color: Brand.textMuted, fontSize: 9, lineHeight: 14, marginTop: 8 },
   privateLocation: { flexDirection: 'row', gap: 10, padding: 12, borderRadius: 14, backgroundColor: '#EAF7F5', borderWidth: 1, borderColor: '#C3E8E4', marginTop: 12 },
   privateLocationTitle: { color: Brand.textDark, fontWeight: '800', fontSize: 11 },
   privateLocationText: { color: Brand.textMuted, fontSize: 11, lineHeight: 16, marginTop: 2 },
@@ -797,13 +927,24 @@ const styles = StyleSheet.create({
   input: { borderWidth: 1.5, borderColor: '#E4D3B8', borderRadius: 12, backgroundColor: '#fff', padding: 11, color: Brand.textDark, fontSize: 12 },
   textArea: { minHeight: 70, textAlignVertical: 'top' },
   evidenceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginVertical: 8 },
-  comparison: { flexDirection: 'row', gap: 10, marginBottom: 14 },
+  comparison: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 14 },
   comparisonMobile: { flexDirection: 'column' },
-  comparisonCard: { flex: 1, minWidth: 0 },
+  comparisonCard: { flexGrow: 1, flexBasis: '46%', minWidth: 0 },
   comparisonLabel: { color: Brand.textDark, fontSize: 10, fontWeight: '900', marginBottom: 6 },
   comparisonEmpty: { height: 170, borderRadius: 15, backgroundColor: '#EFE3CD', alignItems: 'center', justifyContent: 'center', padding: 12 },
   comparisonEmptyText: { color: Brand.textMuted, fontSize: 10, textAlign: 'center', marginTop: 6 },
   evidencePhoto: { width: '100%', height: 170, borderRadius: 15 },
+  checklistTitle: { color: Brand.textDark, fontSize: 14, fontWeight: '900', marginBottom: 10 },
+  reviewQuestion: { borderRadius: 12, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E4D3B8', padding: 10, marginBottom: 8 },
+  reviewQuestionText: { color: Brand.textDark, fontSize: 11, fontWeight: '800', marginBottom: 8 },
+  reviewChoices: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginBottom: 10 },
+  reviewChoice: { paddingHorizontal: 11, paddingVertical: 8, borderRadius: 10, backgroundColor: '#EFE3CD', borderWidth: 1, borderColor: 'transparent' },
+  reviewChoiceActive: { backgroundColor: `${Brand.secondary}16`, borderColor: Brand.secondary },
+  reviewChoiceText: { color: Brand.textMuted, fontSize: 10, fontWeight: '800' },
+  reviewChoiceTextActive: { color: Brand.secondary },
+  inconsistency: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 11, borderRadius: 12, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E4D3B8', marginBottom: 12 },
+  inconsistencyActive: { borderColor: '#B84A3A', backgroundColor: '#FFF1EF' },
+  inconsistencyText: { color: Brand.textDark, fontSize: 11, fontWeight: '800', flex: 1 },
   validationRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   submit: { minHeight: 48, borderRadius: 14, backgroundColor: Brand.primary, alignItems: 'center', justifyContent: 'center', marginTop: 14 },
   submitText: { color: '#fff', fontSize: 13, fontWeight: '900' },
