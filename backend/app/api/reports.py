@@ -1284,6 +1284,15 @@ async def rechazar_reporte(reporte_id: str, body: RechazarReporteRequest, author
             descripcion="No hay más asociaciones disponibles en la zona",
             datos_extra={"motivo_rechazo": body.motivo}
         )
+        try:
+            supabase.table("casos_administrativos").insert({
+                "reporte_id": reporte_id,
+                "tipo": "reporte_sin_coordinadora",
+                "prioridad": "alta",
+                "detalle": "Las asociaciones compatibles rechazaron el caso.",
+            }).execute()
+        except Exception:
+            pass
 
         contactos_vistos = set()
         contactos = []
@@ -1450,7 +1459,10 @@ def cancelar_reporte_por_reportante(
     usuario = _obtener_usuario_autenticado(authorization)
     reporte = (
         supabase.table("reportes")
-        .select("id, usuario_id, estado_reporte, estado_cobertura, staff_asignado_id")
+        .select(
+            "id, usuario_id, estado_reporte, estado_cobertura, staff_asignado_id, "
+            "asociacion_asignada_id"
+        )
         .eq("id", reporte_id)
         .limit(1)
         .execute()
@@ -1472,6 +1484,22 @@ def cancelar_reporte_por_reportante(
             descripcion="El reportante solicitó cancelar con atención en curso",
             datos_extra={"motivo": body.motivo},
         )
+        if fila.get("asociacion_asignada_id"):
+            supabase.table("notificaciones_coordinacion").insert({
+                "asociacion_id": fila["asociacion_asignada_id"],
+                "reporte_id": reporte_id,
+                "tipo": "cancelacion_reportante",
+                "mensaje": "El reportante solicitó cancelar mientras la atención está en curso. Revisa el caso antes de decidir.",
+            }).execute()
+        try:
+            supabase.table("casos_administrativos").insert({
+                "reporte_id": reporte_id,
+                "tipo": "cancelacion_en_atencion",
+                "prioridad": "media",
+                "detalle": body.motivo,
+            }).execute()
+        except Exception:
+            pass
         return {
             "estado": fila["estado_reporte"],
             "cancelado": False,

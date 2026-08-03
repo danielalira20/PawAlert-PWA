@@ -18,6 +18,7 @@ from app.models.custody import (
     ResponderAclaracionRequest,
     RespuestaVencimientoRequest,
     RespuestaTransporteRelevoRequest,
+    ProcesoResolucionCustodiaRequest,
 )
 from app.services.report_service import registrar_historial
 from app.utils.animal_shaping import shape_animal_embed, shape_animal_response
@@ -653,7 +654,33 @@ def listar_seguimiento_regional(
                 ),
             }
         )
-    return {"radio_km": radio_km, "custodias": tarjetas}
+    notificaciones = (
+        supabase.table("notificaciones_coordinacion")
+        .select("id, tipo, mensaje, leida, creada_at")
+        .eq("asociacion_id", asociacion["id"])
+        .order("creada_at", desc=True).limit(20).execute()
+    ).data or []
+    return {
+        "radio_km": radio_km,
+        "custodias": tarjetas,
+        "notificaciones": [{**n, "origen": "coordinacion"} for n in notificaciones],
+    }
+
+
+@router.patch("/coordination-notifications/{notificacion_id}/read")
+def marcar_notificacion_coordinacion_leida(
+    notificacion_id: str,
+    authorization: Optional[str] = Header(None),
+):
+    usuario = _usuario(authorization)
+    asociacion = _asociacion_verificada(usuario)
+    resultado = (
+        supabase.table("notificaciones_coordinacion").update({"leida": True})
+        .eq("id", notificacion_id).eq("asociacion_id", asociacion["id"]).execute()
+    )
+    if not resultado.data:
+        raise HTTPException(status_code=404, detail="Notificación no encontrada")
+    return {"leida": True}
 
 
 @router.post("/followups/{seguimiento_id}/review/reserve")
@@ -1534,6 +1561,50 @@ def confirmar_transferencia(
     return {"estado": estado, "confirmacion": modo}
 
 
+@router.post("/{custodia_id}/resolution-processes", status_code=201)
+def registrar_proceso_resolucion(
+    custodia_id: str,
+    body: ProcesoResolucionCustodiaRequest,
+    authorization: Optional[str] = Header(None),
+):
+    usuario = _usuario(authorization)
+    asociacion = _asociacion_verificada(usuario)
+    resultado = (
+        supabase.table("custodias_temporales")
+        .select("id, reporte_id, asociacion_coordinadora_id, estado")
+        .eq("id", custodia_id).limit(1).execute()
+    )
+    if not resultado.data:
+        raise HTTPException(status_code=404, detail="Custodia no encontrada")
+    custodia = resultado.data[0]
+    if custodia["asociacion_coordinadora_id"] != asociacion["id"]:
+        raise HTTPException(status_code=403, detail="Sólo la coordinadora puede formalizar la resolución")
+    if not body.revision_medica or not body.revision_legal:
+        raise HTTPException(status_code=422, detail="Confirma la revisión médica y legal antes de cerrar")
+    if body.tipo == "adopcion_aprobada" and body.idoneidad_adoptante is not True:
+        raise HTTPException(status_code=422, detail="La adopción requiere validar la idoneidad del adoptante")
+    creado = supabase.table("procesos_resolucion_custodia").upsert({
+        "custodia_id": custodia_id,
+        "tipo": body.tipo,
+        "referencia": body.referencia.strip(),
+        "evidencia_url": body.evidencia_url,
+        "revision_medica": body.revision_medica,
+        "revision_legal": body.revision_legal,
+        "idoneidad_adoptante": body.idoneidad_adoptante,
+        "estado": "aprobado",
+        "creado_por_id": usuario["id"],
+        "aprobado_por_id": usuario["id"],
+        "aprobado_at": _ahora().isoformat(),
+    }, on_conflict="custodia_id,tipo,referencia").execute()
+    registrar_historial(
+        reporte_id=custodia["reporte_id"], usuario_id=usuario["id"],
+        tipo_evento="proceso_resolucion_aprobado",
+        descripcion="La coordinadora formalizó el proceso de resolución de la custodia",
+        datos_extra={"proceso_id": creado.data[0]["id"], "tipo": body.tipo},
+    )
+    return {"proceso": creado.data[0]}
+
+
 @router.post("/{custodia_id}/finish")
 def finalizar_custodia(
     custodia_id: str,
@@ -1556,6 +1627,20 @@ def finalizar_custodia(
         raise HTTPException(status_code=403, detail="Sólo la asociación coordinadora puede finalizar")
     if body.resolucion == "transferencia_confirmada" and custodia["estado"] != "transferido":
         raise HTTPException(status_code=409, detail="La transferencia todavía no ha sido confirmada por ambas partes")
+    if body.resolucion in ("ingreso_formal_asociacion", "adopcion_aprobada"):
+        proceso = (
+            supabase.table("procesos_resolucion_custodia")
+            .select("id")
+            .eq("custodia_id", custodia_id)
+            .eq("tipo", body.resolucion)
+            .eq("referencia", body.referencia_proceso.strip())
+            .eq("estado", "aprobado").limit(1).execute()
+        )
+        if not proceso.data:
+            raise HTTPException(
+                status_code=409,
+                detail="Primero formaliza y aprueba el proceso médico/legal de esta resolución",
+            )
     estado_cerrado = (
         supabase.table("reporte_estados")
         .select("id")
@@ -1649,26 +1734,17 @@ def generar_notificaciones_vencimiento() -> dict:
         except Exception:
             pass
         if horas <= 24 and custodia.get("asociacion_coordinadora_id"):
-            coordinadores = (
-                supabase.table("usuarios")
-                .select("id")
-                .eq("asociacion_id", custodia["asociacion_coordinadora_id"])
-                .execute()
-            ).data or []
-            for coordinador in coordinadores:
-                try:
-                    supabase.table("notificaciones_custodia").insert({
-                        "custodia_id": custodia["id"],
-                        "usuario_id": coordinador["id"],
-                        "tipo": "vencimiento_sin_respuesta",
-                        "mensaje": "El hogar temporal no ha confirmado si podrá continuar. Revisa el caso antes del vencimiento.",
-                        "leida": False,
-                        "creada_at": _ahora().isoformat(),
-                        "fecha_referencia": fecha_referencia,
-                    }).execute()
-                    creadas += 1
-                except Exception:
-                    pass
+            try:
+                supabase.table("notificaciones_coordinacion").insert({
+                    "asociacion_id": custodia["asociacion_coordinadora_id"],
+                    "custodia_id": custodia["id"],
+                    "tipo": "vencimiento_sin_respuesta",
+                    "mensaje": "El hogar temporal no ha confirmado si podrá continuar. Revisa el caso antes del vencimiento.",
+                    "fecha_referencia": fecha_referencia,
+                }).execute()
+                creadas += 1
+            except Exception:
+                pass
     proximos = (
         supabase.table("custodias_temporales")
         .select("id, voluntario_id, proximo_seguimiento_at")
@@ -1720,7 +1796,10 @@ def generar_notificaciones_vencimiento() -> dict:
 def escalar_relevos_sin_respuesta() -> dict:
     solicitudes = (
         supabase.table("solicitudes_relevo")
-        .select("id, radio_actual_km, solicitada_at, ultima_ampliacion_at")
+        .select(
+            "id, custodia_id, radio_actual_km, solicitada_at, ultima_ampliacion_at, "
+            "custodias_temporales(reporte_id, asociacion_coordinadora_id)"
+        )
         .eq("estado", "abierta")
         .execute()
     ).data or []
@@ -1745,5 +1824,28 @@ def escalar_relevos_sin_respuesta() -> dict:
             supabase.table("solicitudes_relevo").update(
                 {"escalada_admin_at": ahora.isoformat()}
             ).eq("id", solicitud["id"]).execute()
+            custodia = solicitud.get("custodias_temporales") or {}
+            try:
+                supabase.table("casos_administrativos").insert({
+                    "reporte_id": custodia.get("reporte_id"),
+                    "custodia_id": solicitud.get("custodia_id"),
+                    "solicitud_relevo_id": solicitud["id"],
+                    "tipo": "relevo_sin_respuesta",
+                    "prioridad": "alta",
+                    "detalle": "El radio de búsqueda alcanzó 300 km sin una recepción válida.",
+                }).execute()
+            except Exception:
+                pass
+            if custodia.get("asociacion_coordinadora_id"):
+                try:
+                    supabase.table("notificaciones_coordinacion").insert({
+                        "asociacion_id": custodia["asociacion_coordinadora_id"],
+                        "reporte_id": custodia.get("reporte_id"),
+                        "custodia_id": solicitud.get("custodia_id"),
+                        "tipo": "relevo_escalado",
+                        "mensaje": "El relevo no encontró recepción en 300 km y fue escalado a administración.",
+                    }).execute()
+                except Exception:
+                    pass
             escaladas += 1
     return {"radios_ampliados": ampliadas, "escaladas_administracion": escaladas}

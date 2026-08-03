@@ -255,6 +255,17 @@ async def crear_reporte(
     reporte = supabase.table("reportes").insert(reporte_data).execute()
     reporte_id = reporte.data[0]["id"]
     created_at = reporte.data[0]["created_at"]
+    if not asociacion_id:
+        try:
+            supabase.table("casos_administrativos").insert({
+                "reporte_id": reporte_id,
+                "tipo": "reporte_sin_coordinadora",
+                "prioridad": "alta",
+                "detalle": "No se encontró una asociación compatible y cercana al crear el reporte.",
+            }).execute()
+        except Exception:
+            # El índice parcial evita duplicar el mismo caso si la creación se reintenta.
+            pass
 
     # Inserta cada animal y sus fotos. Sin transacción real (Supabase REST no
     # la soporta sin una función SQL dedicada, fuera de alcance de esta

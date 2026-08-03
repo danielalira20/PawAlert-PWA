@@ -88,3 +88,12 @@ class FinalizarCustodiaRequest(BaseModel):
         "adopcion_aprobada",
     ]
     referencia_proceso: str = Field(min_length=3, max_length=300)
+
+
+class ProcesoResolucionCustodiaRequest(BaseModel):
+    tipo: Literal["ingreso_formal_asociacion", "adopcion_aprobada"]
+    referencia: str = Field(min_length=3, max_length=300)
+    evidencia_url: Optional[str] = None
+    revision_medica: bool
+    revision_legal: bool
+    idoneidad_adoptante: Optional[bool] = None

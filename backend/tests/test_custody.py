@@ -513,6 +513,35 @@ def test_coordinadora_finaliza_custodia_transferida(make_query):
     assert historial.call_args.kwargs["tipo_evento"] == "custodia_finalizada"
 
 
+def test_adopcion_no_cierra_sin_proceso_medico_legal(make_query):
+    tablas = {
+        "custodias_temporales": make_query(data=[{
+            "id": "cust-1",
+            "reporte_id": "rep-1",
+            "estado": "activo",
+            "asociacion_coordinadora_id": "aso-1",
+        }]),
+        "procesos_resolucion_custodia": make_query(data=[]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    usuario = {"id": "user-aso", "rol": "asociacion", "asociacion_id": "aso-1"}
+
+    with (
+        patch.object(custody, "supabase", supabase),
+        patch.object(custody, "_usuario", return_value=usuario),
+        patch.object(custody, "_asociacion_verificada", return_value={"id": "aso-1"}),
+    ):
+        response = client.post(
+            "/custody/cust-1/finish",
+            headers=AUTH,
+            json={"resolucion": "adopcion_aprobada", "referencia_proceso": "ADOP-2026-18"},
+        )
+
+    assert response.status_code == 409
+    assert "médico/legal" in response.json()["detail"]
+
+
 def test_escalamiento_amplia_radio_sin_interrumpir_custodia(make_query):
     fecha_antigua = (datetime.now(timezone.utc) - timedelta(hours=25)).isoformat()
     tablas = {
@@ -669,6 +698,7 @@ def test_coordinadora_ve_su_custodia_aunque_falte_ubicacion_del_hogar(make_query
         "perfil_casa_temporal": make_query(data=[]),
         "voluntarios": make_query(data=[{"usuarios": {"nombre": "Rafael", "apellido_paterno": "Jude"}}]),
         "aclaraciones_seguimiento": make_query(data=[]),
+        "notificaciones_coordinacion": make_query(data=[]),
     }
     supabase = MagicMock()
     supabase.table.side_effect = lambda nombre: tablas[nombre]
