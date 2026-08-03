@@ -17,6 +17,7 @@ from app.models.custody import (
     EnviarAclaracionRequest,
     ResponderAclaracionRequest,
     RespuestaVencimientoRequest,
+    RespuestaTransporteRelevoRequest,
 )
 from app.services.report_service import registrar_historial
 from app.utils.animal_shaping import shape_animal_embed, shape_animal_response
@@ -185,17 +186,44 @@ def _seguimientos_recientes(custodia_id: str) -> list[dict]:
     ).data or []
 
 
-def _transferencia_activa(custodia_id: str) -> Optional[dict]:
+def _transferencia_activa(custodia_id: str, incluir_destino: bool = False) -> Optional[dict]:
+    campos = (
+        "id, asociacion_origen_id, asociacion_receptora_id, fecha_programada, "
+        "confirma_entrega_at, confirma_recepcion_at, estado, tipo_destino, "
+        "ventana_inicio, ventana_fin, traslado_iniciado_at"
+    )
+    if incluir_destino:
+        campos += (
+            ", responsable_recepcion, direccion_recepcion, latitud_destino, "
+            "longitud_destino"
+        )
     resultado = (
         supabase.table("transferencias_custodia")
-        .select(
-            "id, asociacion_origen_id, asociacion_receptora_id, fecha_programada, "
-            "confirma_entrega_at, confirma_recepcion_at, estado"
-        )
+        .select(campos)
         .eq("custodia_id", custodia_id)
-        .in_("estado", ["programada", "en_curso"])
+        .in_("estado", ["programada", "en_traslado", "en_curso"])
         .limit(1)
         .execute()
+    )
+    return resultado.data[0] if resultado.data else None
+
+
+def _oferta_relevo_para_voluntario(custodia_id: str) -> Optional[dict]:
+    solicitud = (
+        supabase.table("solicitudes_relevo").select("id")
+        .eq("custodia_id", custodia_id).eq("estado", "reservada")
+        .limit(1).execute()
+    )
+    if not solicitud.data:
+        return None
+    resultado = (
+        supabase.table("ofertas_relevo_custodia")
+        .select(
+            "id, tipo_destino, responsable_recepcion, ventana_inicio, "
+            "ventana_fin, estado, asociaciones(nombre)"
+        )
+        .eq("solicitud_relevo_id", solicitud.data[0]["id"])
+        .eq("estado", "autorizada").limit(1).execute()
     )
     return resultado.data[0] if resultado.data else None
 
@@ -334,7 +362,8 @@ def listar_mis_custodias(authorization: Optional[str] = Header(None)):
                 **c,
                 "reporte": _reporte_resumen(c["reporte_id"]),
                 "ultimo_seguimiento": _ultimo_seguimiento(c["id"]),
-                "transferencia_activa": _transferencia_activa(c["id"]),
+                "transferencia_activa": _transferencia_activa(c["id"], incluir_destino=True),
+                "oferta_relevo": _oferta_relevo_para_voluntario(c["id"]),
                 "seguimiento_inicial_pendiente": not bool(c.get("seguimiento_inicial_at")),
                 "aclaraciones": [
                     a for a in _aclaraciones_activas(c["id"])
@@ -479,7 +508,15 @@ def listar_seguimiento_regional(
         .execute()
     ).data or []
     tarjetas = []
+    reportes_con_custodia_activa = {
+        c["reporte_id"] for c in custodias if c["estado"] in ESTADOS_CUSTODIA_ACTIVA
+    }
     for custodia in custodias:
+        if (
+            custodia["estado"] == "transferido"
+            and custodia["reporte_id"] in reportes_con_custodia_activa
+        ):
+            continue
         relevo = (
             supabase.table("solicitudes_relevo")
             .select(
@@ -539,6 +576,30 @@ def listar_seguimiento_regional(
         revision = _revision_activa(ultimo["id"]) if ultimo else None
         validacion = _ultima_validacion(ultimo["id"]) if ultimo else None
         transferencia = _transferencia_activa(custodia["id"])
+        oferta_relevo = None
+        if relevo_activo:
+            oferta = (
+                supabase.table("ofertas_relevo_custodia")
+                .select(
+                    "id, asociacion_receptora_id, tipo_destino, voluntario_receptor_id, "
+                    "responsable_recepcion, direccion_recepcion, latitud_recepcion, "
+                    "longitud_recepcion, ventana_inicio, ventana_fin, nueva_fecha_limite, "
+                    "estado, asociaciones(nombre)"
+                )
+                .eq("solicitud_relevo_id", relevo_activo["id"])
+                .in_("estado", ["pendiente_coordinadora", "autorizada", "confirmada_transporte"])
+                .limit(1).execute()
+            )
+            if oferta.data and (
+                es_coordinadora
+                or oferta.data[0].get("asociacion_receptora_id") == asociacion["id"]
+            ):
+                oferta_relevo = oferta.data[0]
+        if transferencia and (
+            es_coordinadora
+            or transferencia.get("asociacion_receptora_id") == asociacion["id"]
+        ):
+            transferencia = _transferencia_activa(custodia["id"], incluir_destino=True)
         ubicacion_hogar = None
         if perfil_hogar and _puede_ver_ubicacion_hogar(custodia, transferencia, asociacion["id"]):
             hogar = perfil_hogar
@@ -574,7 +635,12 @@ def listar_seguimiento_regional(
                 "revision_activa": revision,
                 "ultima_validacion": validacion,
                 "solicitud_relevo": relevo_activo,
+                "oferta_relevo": oferta_relevo,
                 "transferencia_activa": transferencia,
+                "puede_confirmar_recepcion": bool(
+                    transferencia
+                    and transferencia.get("asociacion_receptora_id") == asociacion["id"]
+                ),
                 "ubicacion_hogar": ubicacion_hogar,
                 "es_coordinadora": es_coordinadora,
                 "aclaraciones": (
@@ -1143,13 +1209,57 @@ def aceptar_relevo(
         asociacion, voluntario_id, radio_relevo
     ):
         raise HTTPException(status_code=403, detail="El relevo está fuera de tu región")
+    inicio = body.ventana_inicio.astimezone(timezone.utc)
+    fin = body.ventana_fin.astimezone(timezone.utc)
+    if inicio <= _ahora() or fin <= inicio or fin - inicio > timedelta(hours=8):
+        raise HTTPException(status_code=422, detail="Indica una ventana futura de hasta 8 horas")
+    if body.tipo_destino == "hogar_temporal":
+        if not body.voluntario_receptor_id or not body.nueva_fecha_limite:
+            raise HTTPException(status_code=422, detail="Selecciona el nuevo hogar y su fecha límite")
+        receptor = (
+            supabase.table("voluntarios")
+            .select("id, estado, disponible_operativamente, capacidades(capacidad_animales)")
+            .eq("id", body.voluntario_receptor_id).limit(1).execute()
+        )
+        if not receptor.data or receptor.data[0].get("estado") != "activo_nivel_2":
+            raise HTTPException(status_code=409, detail="El hogar receptor ya no es elegible")
+        if body.voluntario_receptor_id == voluntario_id:
+            raise HTTPException(status_code=422, detail="Selecciona un hogar distinto al actual")
+        capacidad = receptor.data[0].get("capacidades") or {}
+        if isinstance(capacidad, list):
+            capacidad = capacidad[0] if capacidad else {}
+        limite = int(capacidad.get("capacidad_animales") or 1)
+        carga = (
+            supabase.table("custodias_temporales")
+            .select("id", count="exact")
+            .eq("voluntario_id", body.voluntario_receptor_id)
+            .in_("estado", list(ESTADOS_CUSTODIA_ACTIVA)).execute()
+        )
+        if (carga.count or len(carga.data or [])) >= limite:
+            raise HTTPException(status_code=409, detail="El hogar receptor ya alcanzó su capacidad")
+        if body.nueva_fecha_limite.astimezone(timezone.utc) <= fin + timedelta(days=1):
+            raise HTTPException(status_code=422, detail="El nuevo hogar debe cubrir al menos un día completo")
+    elif body.voluntario_receptor_id:
+        raise HTTPException(status_code=422, detail="Un ingreso formal no debe asignar otro hogar temporal")
     try:
         resultado = supabase_admin.rpc(
-            "reservar_relevo_custodia",
+            "ofrecer_relevo_custodia",
             {
                 "p_solicitud_id": solicitud_id,
-                "p_asociacion_receptora_id": asociacion["id"],
-                "p_fecha_programada": body.fecha_programada.astimezone(timezone.utc).isoformat(),
+                "p_asociacion_id": asociacion["id"],
+                "p_usuario_id": usuario["id"],
+                "p_tipo_destino": body.tipo_destino,
+                "p_voluntario_receptor_id": body.voluntario_receptor_id,
+                "p_responsable": body.responsable_recepcion.strip(),
+                "p_direccion": body.direccion_recepcion.strip(),
+                "p_latitud": body.latitud_recepcion,
+                "p_longitud": body.longitud_recepcion,
+                "p_ventana_inicio": inicio.isoformat(),
+                "p_ventana_fin": fin.isoformat(),
+                "p_nueva_fecha_limite": (
+                    body.nueva_fecha_limite.astimezone(timezone.utc).isoformat()
+                    if body.nueva_fecha_limite else None
+                ),
             },
         ).execute()
     except Exception as error:
@@ -1159,15 +1269,196 @@ def aceptar_relevo(
     registrar_historial(
         reporte_id=(solicitud.data[0].get("custodias_temporales") or {})["reporte_id"],
         usuario_id=usuario["id"],
-        tipo_evento="traslado_programado",
-        descripcion="Una asociación regional reservó el relevo",
+        tipo_evento="relevo_ofrecido",
+        descripcion="Una asociación regional ofreció recibir al animal",
         datos_extra={
-            "transferencia_id": resultado.data,
+            "oferta_id": resultado.data,
             "asociacion_receptora_id": asociacion["id"],
-            "fecha_programada": body.fecha_programada.astimezone(timezone.utc).isoformat(),
+            "tipo_destino": body.tipo_destino,
+            "ventana_inicio": inicio.isoformat(),
+            "ventana_fin": fin.isoformat(),
         },
     )
-    return {"transferencia_id": resultado.data, "estado": "traslado_programado"}
+    return {"oferta_id": resultado.data, "estado": "pendiente_coordinadora"}
+
+
+@router.get("/relief/{solicitud_id}/eligible-homes")
+def listar_hogares_para_relevo(
+    solicitud_id: str,
+    authorization: Optional[str] = Header(None),
+):
+    usuario = _usuario(authorization)
+    _asociacion_verificada(usuario)
+    solicitud = (
+        supabase.table("solicitudes_relevo")
+        .select("id, custodias_temporales(voluntario_id)")
+        .eq("id", solicitud_id).limit(1).execute()
+    )
+    if not solicitud.data:
+        raise HTTPException(status_code=404, detail="Solicitud de relevo no encontrada")
+    actual_id = (solicitud.data[0].get("custodias_temporales") or {}).get("voluntario_id")
+    candidatos = (
+        supabase.table("voluntarios")
+        .select(
+            "id, estado, disponible_operativamente, usuarios(nombre, apellido_paterno), "
+            "capacidades(capacidad_animales, max_casos_simultaneos), "
+            "perfil_casa_temporal(municipio, estado_ubicacion)"
+        )
+        .eq("estado", "activo_nivel_2")
+        .eq("disponible_operativamente", True)
+        .execute()
+    ).data or []
+    disponibles = []
+    for candidato in candidatos:
+        if candidato["id"] == actual_id:
+            continue
+        capacidad = candidato.get("capacidades") or {}
+        if isinstance(capacidad, list):
+            capacidad = capacidad[0] if capacidad else {}
+        limite = int(
+            capacidad.get("capacidad_animales")
+            or capacidad.get("max_casos_simultaneos")
+            or 1
+        )
+        carga = (
+            supabase.table("custodias_temporales")
+            .select("id", count="exact")
+            .eq("voluntario_id", candidato["id"])
+            .in_("estado", list(ESTADOS_CUSTODIA_ACTIVA)).execute()
+        )
+        if (carga.count or len(carga.data or [])) >= limite:
+            continue
+        persona = candidato.get("usuarios") or {}
+        hogar = candidato.get("perfil_casa_temporal") or {}
+        if isinstance(hogar, list):
+            hogar = hogar[0] if hogar else {}
+        disponibles.append({
+            "id": candidato["id"],
+            "nombre": " ".join(
+                valor for valor in (persona.get("nombre"), persona.get("apellido_paterno")) if valor
+            ) or "Hogar verificado",
+            "zona": ", ".join(
+                valor for valor in (hogar.get("municipio"), hogar.get("estado_ubicacion")) if valor
+            ),
+            "espacios_disponibles": max(0, limite - (carga.count or len(carga.data or []))),
+        })
+    return {"hogares": disponibles[:20]}
+
+
+@router.post("/relief/offers/{oferta_id}/authorize")
+def autorizar_oferta_relevo(
+    oferta_id: str,
+    authorization: Optional[str] = Header(None),
+):
+    usuario = _usuario(authorization)
+    asociacion = _asociacion_verificada(usuario)
+    resultado = (
+        supabase.table("ofertas_relevo_custodia")
+        .select(
+            "id, estado, solicitud_relevo_id, "
+            "solicitudes_relevo(custodias_temporales(reporte_id, asociacion_coordinadora_id))"
+        )
+        .eq("id", oferta_id).limit(1).execute()
+    )
+    if not resultado.data:
+        raise HTTPException(status_code=404, detail="Oferta de relevo no encontrada")
+    oferta = resultado.data[0]
+    custodia = ((oferta.get("solicitudes_relevo") or {}).get("custodias_temporales") or {})
+    if custodia.get("asociacion_coordinadora_id") != asociacion["id"]:
+        raise HTTPException(status_code=403, detail="Sólo la coordinadora puede autorizar el destino")
+    if oferta["estado"] != "pendiente_coordinadora":
+        raise HTTPException(status_code=409, detail="La oferta ya fue procesada")
+    supabase.table("ofertas_relevo_custodia").update({
+        "estado": "autorizada",
+        "autorizada_por_id": usuario["id"],
+        "autorizada_at": _ahora().isoformat(),
+    }).eq("id", oferta_id).eq("estado", "pendiente_coordinadora").execute()
+    registrar_historial(
+        reporte_id=custodia["reporte_id"], usuario_id=usuario["id"],
+        tipo_evento="relevo_autorizado",
+        descripcion="La coordinadora autorizó el destino del relevo",
+        datos_extra={"oferta_id": oferta_id},
+    )
+    return {"estado": "autorizada"}
+
+
+@router.post("/relief/offers/{oferta_id}/transport-response")
+def responder_transporte_relevo(
+    oferta_id: str,
+    body: RespuestaTransporteRelevoRequest,
+    authorization: Optional[str] = Header(None),
+):
+    usuario = _usuario(authorization)
+    voluntario = _voluntario_externo(usuario)
+    oferta = (
+        supabase.table("ofertas_relevo_custodia")
+        .select(
+            "id, solicitud_relevo_id, solicitudes_relevo("
+            "custodias_temporales(reporte_id, voluntario_id))"
+        )
+        .eq("id", oferta_id).limit(1).execute()
+    )
+    if not oferta.data:
+        raise HTTPException(status_code=404, detail="Oferta de relevo no encontrada")
+    custodia = ((oferta.data[0].get("solicitudes_relevo") or {}).get("custodias_temporales") or {})
+    if custodia.get("voluntario_id") != voluntario["id"]:
+        raise HTTPException(status_code=403, detail="Esta confirmación corresponde al hogar actual")
+    try:
+        rpc = supabase_admin.rpc(
+            "confirmar_transporte_relevo",
+            {"p_oferta_id": oferta_id, "p_puede_transportar": body.puede_transportar},
+        ).execute()
+    except Exception as error:
+        if "oferta_no_disponible" in str(error).lower():
+            raise HTTPException(status_code=409, detail="La oferta ya no está disponible") from error
+        raise
+    registrar_historial(
+        reporte_id=custodia["reporte_id"], usuario_id=usuario["id"],
+        tipo_evento="traslado_programado" if body.puede_transportar else "relevo_transporte_rechazado",
+        descripcion=(
+            "El hogar actual confirmó que realizará el traslado"
+            if body.puede_transportar else "El hogar actual indicó que no puede realizar el traslado"
+        ),
+        datos_extra={"oferta_id": oferta_id, "transferencia_id": rpc.data},
+    )
+    return {
+        "estado": "traslado_programado" if body.puede_transportar else "buscando_relevo",
+        "transferencia_id": rpc.data,
+    }
+
+
+@router.post("/transfers/{transferencia_id}/start")
+def iniciar_traslado(
+    transferencia_id: str,
+    authorization: Optional[str] = Header(None),
+):
+    usuario = _usuario(authorization)
+    voluntario = _voluntario_externo(usuario)
+    resultado = (
+        supabase.table("transferencias_custodia")
+        .select("id, estado, ventana_inicio, custodias_temporales(reporte_id, voluntario_id)")
+        .eq("id", transferencia_id).limit(1).execute()
+    )
+    if not resultado.data:
+        raise HTTPException(status_code=404, detail="Transferencia no encontrada")
+    transferencia = resultado.data[0]
+    custodia = transferencia.get("custodias_temporales") or {}
+    if custodia.get("voluntario_id") != voluntario["id"]:
+        raise HTTPException(status_code=403, detail="Sólo el hogar actual puede iniciar el traslado")
+    if transferencia["estado"] != "programada":
+        raise HTTPException(status_code=409, detail="El traslado no puede iniciarse en su estado actual")
+    inicio = datetime.fromisoformat(str(transferencia["ventana_inicio"]).replace("Z", "+00:00"))
+    if _ahora() < inicio - timedelta(hours=2):
+        raise HTTPException(status_code=409, detail="El traslado se habilita dos horas antes de la ventana acordada")
+    supabase.table("transferencias_custodia").update({
+        "estado": "en_traslado", "traslado_iniciado_at": _ahora().isoformat()
+    }).eq("id", transferencia_id).eq("estado", "programada").execute()
+    registrar_historial(
+        reporte_id=custodia["reporte_id"], usuario_id=usuario["id"],
+        tipo_evento="traslado_iniciado", descripcion="El hogar actual inició el traslado del animal",
+        datos_extra={"transferencia_id": transferencia_id},
+    )
+    return {"estado": "en_traslado"}
 
 
 @router.post("/transfers/{transferencia_id}/confirm")
@@ -1220,6 +1511,16 @@ def confirmar_transferencia(
             raise HTTPException(
                 status_code=409,
                 detail="Las dos confirmaciones están a más de 200 metros. Verifiquen que ambos estén en el mismo punto de entrega.",
+            )
+        if "fuera_destino" in detalle_error:
+            raise HTTPException(
+                status_code=409,
+                detail="La confirmación está a más de 200 metros del punto autorizado de entrega.",
+            )
+        if "fuera_ventana" in detalle_error:
+            raise HTTPException(
+                status_code=409,
+                detail="La confirmación está fuera de la ventana acordada. Contacta a la coordinadora para reprogramar.",
             )
         raise
     estado = resultado.data

@@ -60,7 +60,19 @@ class SolicitudRelevoRequest(BaseModel):
 
 
 class AceptarRelevoRequest(BaseModel):
-    fecha_programada: datetime
+    tipo_destino: Literal["ingreso_asociacion", "hogar_temporal"]
+    voluntario_receptor_id: Optional[str] = None
+    responsable_recepcion: str = Field(min_length=3, max_length=160)
+    direccion_recepcion: str = Field(min_length=8, max_length=500)
+    latitud_recepcion: float
+    longitud_recepcion: float
+    ventana_inicio: datetime
+    ventana_fin: datetime
+    nueva_fecha_limite: Optional[datetime] = None
+
+
+class RespuestaTransporteRelevoRequest(BaseModel):
+    puede_transportar: bool
 
 
 class ConfirmarTransferenciaRequest(BaseModel):

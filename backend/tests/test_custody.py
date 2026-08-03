@@ -207,7 +207,7 @@ def test_aceptar_relevo_usa_reserva_transaccional():
             "custodias_temporales": {"voluntario_id": "vol-1", "reporte_id": "rep-1"},
         }]
     )
-    supabase.rpc.return_value.execute.return_value = SimpleNamespace(data="transfer-1")
+    supabase.rpc.return_value.execute.return_value = SimpleNamespace(data="oferta-1")
     usuario = {"id": "user-aso", "rol": "asociacion", "asociacion_id": "aso-2"}
 
     with (
@@ -221,12 +221,90 @@ def test_aceptar_relevo_usa_reserva_transaccional():
         response = client.post(
             "/custody/relief/sol-1/accept",
             headers=AUTH,
-            json={"fecha_programada": "2026-08-05T18:00:00Z"},
+            json={
+                "tipo_destino": "ingreso_asociacion",
+                "responsable_recepcion": "María López",
+                "direccion_recepcion": "Calle Refugio 25, Centro",
+                "latitud_recepcion": 19.43,
+                "longitud_recepcion": -99.13,
+                "ventana_inicio": (datetime.now(timezone.utc) + timedelta(days=3)).isoformat(),
+                "ventana_fin": (datetime.now(timezone.utc) + timedelta(days=3, hours=2)).isoformat(),
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["oferta_id"] == "oferta-1"
+    assert response.json()["estado"] == "pendiente_coordinadora"
+    supabase.rpc.assert_called_once()
+
+
+def test_coordinadora_autoriza_destino_antes_del_traslado(make_query):
+    tablas = {
+        "ofertas_relevo_custodia": make_query(data=[{
+            "id": "oferta-1",
+            "estado": "pendiente_coordinadora",
+            "solicitud_relevo_id": "sol-1",
+            "solicitudes_relevo": {
+                "custodias_temporales": {
+                    "reporte_id": "rep-1",
+                    "asociacion_coordinadora_id": "aso-1",
+                }
+            },
+        }]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    usuario = {"id": "user-aso", "rol": "asociacion", "asociacion_id": "aso-1"}
+
+    with (
+        patch.object(custody, "supabase", supabase),
+        patch.object(custody, "_usuario", return_value=usuario),
+        patch.object(custody, "_asociacion_verificada", return_value={"id": "aso-1"}),
+        patch.object(custody, "registrar_historial") as historial,
+    ):
+        response = client.post("/custody/relief/offers/oferta-1/authorize", headers=AUTH)
+
+    assert response.status_code == 200
+    assert response.json()["estado"] == "autorizada"
+    assert tablas["ofertas_relevo_custodia"].update.call_args.args[0]["estado"] == "autorizada"
+    assert historial.call_args.kwargs["tipo_evento"] == "relevo_autorizado"
+
+
+def test_hogar_actual_confirma_que_realizara_traslado(make_query):
+    tablas = {
+        "ofertas_relevo_custodia": make_query(data=[{
+            "id": "oferta-1",
+            "solicitud_relevo_id": "sol-1",
+            "solicitudes_relevo": {
+                "custodias_temporales": {"reporte_id": "rep-1", "voluntario_id": "vol-1"}
+            },
+        }]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    supabase_admin = MagicMock()
+    supabase_admin.rpc.return_value.execute.return_value = SimpleNamespace(data="transfer-1")
+
+    with (
+        patch.object(custody, "supabase", supabase),
+        patch.object(custody, "supabase_admin", supabase_admin),
+        patch.object(custody, "_usuario", return_value=_usuario_externo()),
+        patch.object(custody, "_voluntario_externo", return_value={"id": "vol-1"}),
+        patch.object(custody, "registrar_historial") as historial,
+    ):
+        response = client.post(
+            "/custody/relief/offers/oferta-1/transport-response",
+            headers=AUTH,
+            json={"puede_transportar": True},
         )
 
     assert response.status_code == 200
     assert response.json()["transferencia_id"] == "transfer-1"
-    supabase.rpc.assert_called_once()
+    supabase_admin.rpc.assert_called_once_with(
+        "confirmar_transporte_relevo",
+        {"p_oferta_id": "oferta-1", "p_puede_transportar": True},
+    )
+    assert historial.call_args.kwargs["tipo_evento"] == "traslado_programado"
 
 
 def test_transferencia_no_finaliza_con_una_sola_confirmacion(make_query):
