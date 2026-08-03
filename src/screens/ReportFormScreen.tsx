@@ -1,6 +1,5 @@
 import { Feather, Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
-import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
@@ -320,21 +319,23 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
       return;
     }
     const launchMethod = fromCamera ? ImagePicker.launchCameraAsync : ImagePicker.launchImageLibraryAsync;
-    const result = await launchMethod({ mediaTypes: ['images'], allowsEditing: false, quality: 1 });
+    const result = await launchMethod({ mediaTypes: ['images'], allowsEditing: false, quality: 0.8 });
     if (!result.canceled) {
       const asset = result.assets[0];
-      const manipulated = await manipulateAsync(asset.uri, [], { compress: 0.8, format: SaveFormat.JPEG });
 
       setIsValidatingFoto(true);
       try {
         const formData = new FormData();
         if (Platform.OS === 'web') {
-          const res = await fetch(manipulated.uri);
+          const res = await fetch(asset.uri);
           const blob = await res.blob();
           formData.append('foto', blob, `check_${Date.now()}.jpg`);
         } else {
-          formData.append('foto', { uri: manipulated.uri, name: `check_${Date.now()}.jpg`, type: 'image/jpeg' } as any);
+          formData.append('foto', { uri: asset.uri, name: `check_${Date.now()}.jpg`, type: 'image/jpeg' } as any);
         }
+        formData.append('latitud', String(pinLocation.latitud));
+        formData.append('longitud', String(pinLocation.longitud));
+        formData.append('from_camera', String(fromCamera));
         const { data } = await axios.post(`${API_URL}/reports/validar-foto`, formData, {
           headers: { 'Content-Type': 'multipart/form-data' },
         });
@@ -342,8 +343,14 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
           showToast({ type: 'warning', title: 'Foto no válida', message: data.mensaje });
           return;
         }
-        if (data.advertencia) {
-          showToast({ type: 'info', title: 'Sugerencia', message: data.advertencia });
+        const sugerencias = [data.advertencia, data.advertencia_ubicacion].filter(Boolean);
+        if (sugerencias.length > 0) {
+          // El aviso de ubicación en su variante "cámara" es más directo/
+          // urgente que una simple sugerencia — se refleja en el título,
+          // sin importar si va solo o combinado con calidad_identificacion.
+          const esAvisoCamara = !!data.advertencia_ubicacion && fromCamera;
+          const titulo = esAvisoCamara ? 'Antes de continuar' : (sugerencias.length > 1 ? 'Sugerencias' : 'Sugerencia');
+          showToast({ type: 'info', title: titulo, message: sugerencias.join('\n') }, 5000);
         }
       } catch {
         // Fallo de red del pre-check: no bloquea (fail-open), igual que el
@@ -356,7 +363,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
         const ordenSiguiente = prev.filter((f) => f.animalLocalId === animalLocalId).length + 1;
         const newFoto: AnimalFoto = {
           id: Math.random().toString(36).substring(2, 9),
-          foto_url: manipulated.uri,
+          foto_url: asset.uri,
           descripcion: '',
           orden: ordenSiguiente,
           animalLocalId,
