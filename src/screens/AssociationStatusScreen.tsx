@@ -205,7 +205,7 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
   const [candidatoAConfirmar, setCandidatoAConfirmar] = useState<Candidato | null>(null);
   const [pollingRef, setPollingRef] = useState<ReturnType<typeof setInterval> | null>(null);
 
-  const [motivoRechazo, setMotivoRechazo] = useState('');
+  const [motivoRechazo, setMotivoRechazo] = useState<{ texto: string; clave: string } | null>(null);
   const [notasRechazo, setNotasRechazo] = useState('');
   const [estadoEncontre, setEstadoEncontre] = useState('');
   const [estadoCierre, setEstadoCierre] = useState('');
@@ -241,11 +241,12 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
 
   const { width: screenWidth } = useWindowDimensions();
 
-  const MOTIVOS_RECHAZO = [
-    'No tenemos capacidad disponible ahora mismo',
-    'El animal ya no está en el lugar reportado',
-    'El caso requiere atención veterinaria especializada que no tenemos',
-    'Ya estamos atendiendo una emergencia mayor'
+  const MOTIVOS_RECHAZO: { texto: string; clave: string }[] = [
+    { texto: 'No tenemos capacidad disponible ahora mismo', clave: 'sin_capacidad' },
+    { texto: 'El animal ya no está en el lugar reportado', clave: 'animal_no_esta' },
+    { texto: 'El caso requiere atención veterinaria especializada que no tenemos', clave: 'requiere_veterinaria' },
+    { texto: 'Ya estamos atendiendo una emergencia mayor', clave: 'emergencia_mayor' },
+    { texto: 'La fotografía no muestra un animal real', clave: 'foto_no_es_animal' },
   ];
 
   const OPCIONES_ENCONTRE = [
@@ -659,7 +660,7 @@ const confirmarReactivar = async () => {
   };
 
   const resetModales = () => {
-    setMotivoRechazo(''); setNotasRechazo(''); setEstadoEncontre(''); setEstadoCierre('');
+    setMotivoRechazo(null); setNotasRechazo(''); setEstadoEncontre(''); setEstadoCierre('');
     setNotasHito(''); setFotoHito(null); setReporteAccionId(null);
     setTabAsignacion('staff');
     setCandidatosList([]);
@@ -789,9 +790,17 @@ const confirmarReactivar = async () => {
     }
     setIsSubmittingAccion(true);
     try {
-      await axios.patch(`${API_URL}/reports/${reporteAccionId}/rechazar`, { motivo: motivoRechazo, notas: notasRechazo.trim() }, { headers: { Authorization: `Bearer ${token}` } });
+      await axios.patch(
+        `${API_URL}/reports/${reporteAccionId}/rechazar`,
+        { motivo: motivoRechazo.texto, motivo_clave: motivoRechazo.clave, comentario: notasRechazo.trim() },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
       await cargarReportes();
-      showToast({ type: 'info', title: 'Reporte rechazado', message: 'El caso será reasignado.' });
+      showToast({
+        type: 'info',
+        title: 'Reporte rechazado',
+        message: motivoRechazo.clave === 'foto_no_es_animal' ? 'El reporte fue cerrado.' : 'El caso será reasignado.',
+      });
     } catch (error: any) {
       showToast({ type: 'error', title: 'Error al rechazar', message: error?.response?.data?.detail || 'No pudimos procesar el rechazo.' });
     } finally {
@@ -1961,8 +1970,8 @@ const confirmarReactivar = async () => {
           <View style={{ backgroundColor: COLORS.cardBg, borderRadius: 32, padding: 32, width: '100%', maxWidth: 450 }}>
             <Text style={{ fontSize: 22, fontWeight: '800', color: COLORS.textDark, marginBottom: 20 }}>¿Por qué rechazas este caso?</Text>
             {MOTIVOS_RECHAZO.map((motivo) => (
-              <TouchableOpacity key={motivo} onPress={() => setMotivoRechazo(motivo)} style={{ padding: 16, borderWidth: 2, borderColor: motivoRechazo === motivo ? COLORS.danger : 'transparent', borderRadius: 16, marginBottom: 10, backgroundColor: motivoRechazo === motivo ? 'rgba(231, 76, 60, 0.05)' : COLORS.white }}>
-                <Text style={{ fontSize: 14, color: COLORS.textDark, fontWeight: motivoRechazo === motivo ? '700' : '500' }}>{motivo}</Text>
+              <TouchableOpacity key={motivo.clave} onPress={() => setMotivoRechazo(motivo)} style={{ padding: 16, borderWidth: 2, borderColor: motivoRechazo?.clave === motivo.clave ? COLORS.danger : 'transparent', borderRadius: 16, marginBottom: 10, backgroundColor: motivoRechazo?.clave === motivo.clave ? 'rgba(231, 76, 60, 0.05)' : COLORS.white }}>
+                <Text style={{ fontSize: 14, color: COLORS.textDark, fontWeight: motivoRechazo?.clave === motivo.clave ? '700' : '500' }}>{motivo.texto}</Text>
               </TouchableOpacity>
             ))}
             <TextInput style={{ backgroundColor: COLORS.white, borderRadius: 16, padding: 16, fontSize: 14, marginTop: 12, marginBottom: 24, minHeight: 80, textAlignVertical: 'top' }} multiline placeholder="Comentarios adicionales (Opcional)" maxLength={150} value={notasRechazo} onChangeText={setNotasRechazo} />
