@@ -17,6 +17,12 @@ import math
 router = APIRouter()
 RADIO_LLEGADA_ZONA_METROS = 500
 LIMITE_DISCREPANCIA_EXIF_METROS = 200
+LIMITE_RECHAZOS_VALIDACION_FOTO = 3
+MINUTOS_BLOQUEO_VALIDACION_FOTO = 5
+MENSAJE_BLOQUEO_VALIDACION_FOTO = (
+    "Bloqueamos la validación de fotos por 5 minutos por múltiples "
+    "intentos fallidos. Intenta de nuevo en unos minutos."
+)
 
 HITOS_CANONICOS = {
     "encontre_animal": "animal_encontrado",
@@ -288,11 +294,42 @@ async def validar_foto(
     latitud: float | None = Form(None),
     longitud: float | None = Form(None),
     from_camera: bool = Form(False),
+    device_token: str = Form(...),
 ):
     """Verifica que la foto muestre un animal real antes de que el usuario
-    complete el resto del formulario. No toca Storage ni BD."""
+    complete el resto del formulario. No toca Storage ni BD (salvo el
+    contador de intentos por dispositivo)."""
     if foto.content_type not in ["image/jpeg", "image/png", "image/jpg", "image/webp"]:
         raise HTTPException(status_code=422, detail="La foto debe ser JPG, PNG o WEBP")
+
+    ahora = datetime.now(timezone.utc)
+    intento = supabase.table("intentos_validacion_foto").select(
+        "contador_rechazos, bloqueado_hasta"
+    ).eq("device_token", device_token).limit(1).execute()
+    fila_intento = intento.data[0] if intento.data else None
+    contador_actual = fila_intento["contador_rechazos"] if fila_intento else 0
+
+    if fila_intento and fila_intento.get("bloqueado_hasta"):
+        bloqueado_hasta = datetime.fromisoformat(fila_intento["bloqueado_hasta"].replace("Z", "+00:00"))
+        if bloqueado_hasta > ahora:
+            return {
+                "valido": False,
+                "mensaje": MENSAJE_BLOQUEO_VALIDACION_FOTO,
+                "advertencia": None,
+                "advertencia_ubicacion": None,
+                "bloqueado": True,
+            }
+        # El bloqueo ya venció: reinicia antes de continuar.
+        contador_actual = 0
+        supabase.table("intentos_validacion_foto").upsert(
+            {
+                "device_token": device_token,
+                "contador_rechazos": 0,
+                "bloqueado_hasta": None,
+                "actualizado_at": ahora.isoformat(),
+            },
+            on_conflict="device_token",
+        ).execute()
 
     from app.services.report_photo_vision_service import (
         mensaje_advertencia_identificacion,
@@ -304,10 +341,48 @@ async def validar_foto(
     resultado = verificar_foto_animal(contenido, foto.content_type)
 
     if resultado.get("estado") == "error_tecnico":
-        return {"valido": True, "mensaje": "", "advertencia": None, "advertencia_ubicacion": None}
+        return {"valido": True, "mensaje": "", "advertencia": None, "advertencia_ubicacion": None, "bloqueado": False}
 
     if resultado.get("es_animal_real") is False:
-        return {"valido": False, "mensaje": mensaje_rechazo(resultado.get("categoria_rechazo")), "advertencia": None, "advertencia_ubicacion": None}
+        contador_nuevo = contador_actual + 1
+        bloquear = contador_nuevo >= LIMITE_RECHAZOS_VALIDACION_FOTO
+        supabase.table("intentos_validacion_foto").upsert(
+            {
+                "device_token": device_token,
+                "contador_rechazos": contador_nuevo,
+                "bloqueado_hasta": (
+                    (ahora + timedelta(minutes=MINUTOS_BLOQUEO_VALIDACION_FOTO)).isoformat()
+                    if bloquear else None
+                ),
+                "actualizado_at": ahora.isoformat(),
+            },
+            on_conflict="device_token",
+        ).execute()
+
+        if bloquear:
+            return {
+                "valido": False,
+                "mensaje": MENSAJE_BLOQUEO_VALIDACION_FOTO,
+                "advertencia": None,
+                "advertencia_ubicacion": None,
+                "bloqueado": True,
+            }
+
+        restantes = LIMITE_RECHAZOS_VALIDACION_FOTO - contador_nuevo
+        mensaje = f"{mensaje_rechazo(resultado.get('categoria_rechazo'))} Te queda{'n' if restantes != 1 else ''} {restantes} intento{'s' if restantes != 1 else ''}."
+        return {"valido": False, "mensaje": mensaje, "advertencia": None, "advertencia_ubicacion": None, "bloqueado": False}
+
+    # es_animal_real is True: éxito, reinicia el contador si hacía falta.
+    if contador_actual > 0:
+        supabase.table("intentos_validacion_foto").upsert(
+            {
+                "device_token": device_token,
+                "contador_rechazos": 0,
+                "bloqueado_hasta": None,
+                "actualizado_at": ahora.isoformat(),
+            },
+            on_conflict="device_token",
+        ).execute()
 
     advertencia = (
         mensaje_advertencia_identificacion()
@@ -329,7 +404,7 @@ async def validar_foto(
         except ImagenEvidenciaInvalida:
             pass
 
-    return {"valido": True, "mensaje": "", "advertencia": advertencia, "advertencia_ubicacion": advertencia_ubicacion}
+    return {"valido": True, "mensaje": "", "advertencia": advertencia, "advertencia_ubicacion": advertencia_ubicacion, "bloqueado": False}
 #### FIN endpoint: pre-check de foto
 
 

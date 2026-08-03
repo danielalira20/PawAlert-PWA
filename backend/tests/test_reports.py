@@ -1,5 +1,6 @@
 import json
 import asyncio
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
 
 import pytest
@@ -7,6 +8,7 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from PIL import Image
 from unittest.mock import AsyncMock, MagicMock, patch
+from app.api import reports
 from app.main import app
 from app.models.report import AnimalInput
 from app.services import report_service
@@ -14,6 +16,19 @@ from app.services.report_service import _clasificar_escenario
 from app.services.image_evidence_service import ImagenEvidenciaInvalida, ImagenEvidenciaProcesada
 
 client = TestClient(app)
+
+
+def _mock_supabase_intentos(make_query, *, fila=None):
+    """Mock mínimo de supabase para /reports/validar-foto: solo
+    intentos_validacion_foto. `fila=None` = dispositivo nunca visto."""
+    tablas = {"intentos_validacion_foto": make_query(data=[fila] if fila else [])}
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    return supabase, tablas
+
+
+def _mock_supabase_sin_bloqueo(make_query):
+    return _mock_supabase_intentos(make_query, fila=None)
 
 
 def _jpeg_real() -> bytes:
@@ -290,59 +305,80 @@ def test_crear_reporte_procesar_imagen_evidencia_invalida_usa_saneo_de_emergenci
     assert subir_mock.call_args.args[0] != fotos[0]._contenido
 
 
-def test_validar_foto_endpoint_valido():
-    with patch(
-        "app.services.report_photo_vision_service.verificar_foto_animal",
-        return_value={"estado": "completado", "es_animal_real": True, "categoria_rechazo": None, "confianza": 0.9},
+def test_validar_foto_endpoint_valido(make_query):
+    supabase, _ = _mock_supabase_sin_bloqueo(make_query)
+    with (
+        patch.object(reports, "supabase", supabase),
+        patch(
+            "app.services.report_photo_vision_service.verificar_foto_animal",
+            return_value={"estado": "completado", "es_animal_real": True, "categoria_rechazo": None, "confianza": 0.9},
+        ),
     ):
         response = client.post(
             "/reports/validar-foto",
             files={"foto": ("foto.jpg", b"contenido-fake", "image/jpeg")},
+            data={"device_token": "device-test"},
         )
     assert response.status_code == 200
-    assert response.json() == {"valido": True, "mensaje": "", "advertencia": None, "advertencia_ubicacion": None}
+    assert response.json() == {"valido": True, "mensaje": "", "advertencia": None, "advertencia_ubicacion": None, "bloqueado": False}
 
 
-def test_validar_foto_endpoint_rechazo_imagen_no_clara():
-    with patch(
-        "app.services.report_photo_vision_service.verificar_foto_animal",
-        return_value={"estado": "completado", "es_animal_real": False, "categoria_rechazo": "imagen_no_clara", "confianza": 0.4},
+def test_validar_foto_endpoint_rechazo_imagen_no_clara(make_query):
+    supabase, _ = _mock_supabase_sin_bloqueo(make_query)
+    with (
+        patch.object(reports, "supabase", supabase),
+        patch(
+            "app.services.report_photo_vision_service.verificar_foto_animal",
+            return_value={"estado": "completado", "es_animal_real": False, "categoria_rechazo": "imagen_no_clara", "confianza": 0.4},
+        ),
     ):
         response = client.post(
             "/reports/validar-foto",
             files={"foto": ("foto.jpg", b"contenido-fake", "image/jpeg")},
+            data={"device_token": "device-test"},
         )
     assert response.status_code == 200
     data = response.json()
     assert data["valido"] is False
     assert "no se ve clara" in data["mensaje"]
     assert data["advertencia"] is None
+    assert data["bloqueado"] is False
 
 
-def test_validar_foto_endpoint_error_tecnico_deja_pasar():
-    with patch(
-        "app.services.report_photo_vision_service.verificar_foto_animal",
-        return_value={"estado": "error_tecnico", "detalle": "timeout"},
+def test_validar_foto_endpoint_error_tecnico_deja_pasar(make_query):
+    supabase, _ = _mock_supabase_sin_bloqueo(make_query)
+    with (
+        patch.object(reports, "supabase", supabase),
+        patch(
+            "app.services.report_photo_vision_service.verificar_foto_animal",
+            return_value={"estado": "error_tecnico", "detalle": "timeout"},
+        ),
     ):
         response = client.post(
             "/reports/validar-foto",
             files={"foto": ("foto.jpg", b"contenido-fake", "image/jpeg")},
+            data={"device_token": "device-test"},
         )
     assert response.status_code == 200
-    assert response.json() == {"valido": True, "mensaje": "", "advertencia": None, "advertencia_ubicacion": None}
+    assert response.json() == {"valido": True, "mensaje": "", "advertencia": None, "advertencia_ubicacion": None, "bloqueado": False}
 
 
-def test_validar_foto_endpoint_advertencia_identificacion_limitada():
-    with patch(
-        "app.services.report_photo_vision_service.verificar_foto_animal",
-        return_value={
-            "estado": "completado", "es_animal_real": True, "categoria_rechazo": None,
-            "confianza": 0.9, "calidad_identificacion": "limitada",
-        },
+def test_validar_foto_endpoint_advertencia_identificacion_limitada(make_query):
+    supabase, _ = _mock_supabase_sin_bloqueo(make_query)
+    with (
+        patch.object(reports, "supabase", supabase),
+        patch(
+            "app.services.report_photo_vision_service.verificar_foto_animal",
+            return_value={
+                "estado": "completado", "es_animal_real": True, "categoria_rechazo": None,
+                "confianza": 0.9, "calidad_identificacion": "limitada",
+            },
+        ),
     ):
         response = client.post(
             "/reports/validar-foto",
             files={"foto": ("foto.jpg", b"contenido-fake", "image/jpeg")},
+            data={"device_token": "device-test"},
         )
     assert response.status_code == 200
     data = response.json()
@@ -350,17 +386,22 @@ def test_validar_foto_endpoint_advertencia_identificacion_limitada():
     assert "otro ángulo" in data["advertencia"]
 
 
-def test_validar_foto_endpoint_sin_advertencia_cuando_calidad_adecuada():
-    with patch(
-        "app.services.report_photo_vision_service.verificar_foto_animal",
-        return_value={
-            "estado": "completado", "es_animal_real": True, "categoria_rechazo": None,
-            "confianza": 0.9, "calidad_identificacion": "adecuada",
-        },
+def test_validar_foto_endpoint_sin_advertencia_cuando_calidad_adecuada(make_query):
+    supabase, _ = _mock_supabase_sin_bloqueo(make_query)
+    with (
+        patch.object(reports, "supabase", supabase),
+        patch(
+            "app.services.report_photo_vision_service.verificar_foto_animal",
+            return_value={
+                "estado": "completado", "es_animal_real": True, "categoria_rechazo": None,
+                "confianza": 0.9, "calidad_identificacion": "adecuada",
+            },
+        ),
     ):
         response = client.post(
             "/reports/validar-foto",
             files={"foto": ("foto.jpg", b"contenido-fake", "image/jpeg")},
+            data={"device_token": "device-test"},
         )
     assert response.status_code == 200
     data = response.json()
@@ -368,8 +409,10 @@ def test_validar_foto_endpoint_sin_advertencia_cuando_calidad_adecuada():
     assert data["advertencia"] is None
 
 
-def test_validar_foto_endpoint_advertencia_ubicacion_camara():
+def test_validar_foto_endpoint_advertencia_ubicacion_camara(make_query):
+    supabase, _ = _mock_supabase_sin_bloqueo(make_query)
     with (
+        patch.object(reports, "supabase", supabase),
         patch(
             "app.services.report_photo_vision_service.verificar_foto_animal",
             return_value={"estado": "completado", "es_animal_real": True, "categoria_rechazo": None, "confianza": 0.9},
@@ -382,7 +425,7 @@ def test_validar_foto_endpoint_advertencia_ubicacion_camara():
         response = client.post(
             "/reports/validar-foto",
             files={"foto": ("foto.jpg", b"contenido-fake", "image/jpeg")},
-            data={"latitud": "19.0414", "longitud": "-98.2063", "from_camera": "true"},
+            data={"latitud": "19.0414", "longitud": "-98.2063", "from_camera": "true", "device_token": "device-test"},
         )
     assert response.status_code == 200
     data = response.json()
@@ -390,8 +433,10 @@ def test_validar_foto_endpoint_advertencia_ubicacion_camara():
     assert "Verifica que el pin" in data["advertencia_ubicacion"]
 
 
-def test_validar_foto_endpoint_advertencia_ubicacion_galeria():
+def test_validar_foto_endpoint_advertencia_ubicacion_galeria(make_query):
+    supabase, _ = _mock_supabase_sin_bloqueo(make_query)
     with (
+        patch.object(reports, "supabase", supabase),
         patch(
             "app.services.report_photo_vision_service.verificar_foto_animal",
             return_value={"estado": "completado", "es_animal_real": True, "categoria_rechazo": None, "confianza": 0.9},
@@ -404,7 +449,7 @@ def test_validar_foto_endpoint_advertencia_ubicacion_galeria():
         response = client.post(
             "/reports/validar-foto",
             files={"foto": ("foto.jpg", b"contenido-fake", "image/jpeg")},
-            data={"latitud": "19.0414", "longitud": "-98.2063", "from_camera": "false"},
+            data={"latitud": "19.0414", "longitud": "-98.2063", "from_camera": "false", "device_token": "device-test"},
         )
     assert response.status_code == 200
     data = response.json()
@@ -412,8 +457,10 @@ def test_validar_foto_endpoint_advertencia_ubicacion_galeria():
     assert "puedes revisar tu ubicación" in data["advertencia_ubicacion"]
 
 
-def test_validar_foto_endpoint_sin_advertencia_ubicacion_cuando_coincide():
+def test_validar_foto_endpoint_sin_advertencia_ubicacion_cuando_coincide(make_query):
+    supabase, _ = _mock_supabase_sin_bloqueo(make_query)
     with (
+        patch.object(reports, "supabase", supabase),
         patch(
             "app.services.report_photo_vision_service.verificar_foto_animal",
             return_value={"estado": "completado", "es_animal_real": True, "categoria_rechazo": None, "confianza": 0.9},
@@ -426,27 +473,34 @@ def test_validar_foto_endpoint_sin_advertencia_ubicacion_cuando_coincide():
         response = client.post(
             "/reports/validar-foto",
             files={"foto": ("foto.jpg", b"contenido-fake", "image/jpeg")},
-            data={"latitud": "19.0414", "longitud": "-98.2063", "from_camera": "false"},
+            data={"latitud": "19.0414", "longitud": "-98.2063", "from_camera": "false", "device_token": "device-test"},
         )
     assert response.status_code == 200
     assert response.json()["advertencia_ubicacion"] is None
 
 
-def test_validar_foto_endpoint_sin_lat_lng_no_evalua_ubicacion():
-    with patch(
-        "app.services.report_photo_vision_service.verificar_foto_animal",
-        return_value={"estado": "completado", "es_animal_real": True, "categoria_rechazo": None, "confianza": 0.9},
+def test_validar_foto_endpoint_sin_lat_lng_no_evalua_ubicacion(make_query):
+    supabase, _ = _mock_supabase_sin_bloqueo(make_query)
+    with (
+        patch.object(reports, "supabase", supabase),
+        patch(
+            "app.services.report_photo_vision_service.verificar_foto_animal",
+            return_value={"estado": "completado", "es_animal_real": True, "categoria_rechazo": None, "confianza": 0.9},
+        ),
     ):
         response = client.post(
             "/reports/validar-foto",
             files={"foto": ("foto.jpg", b"contenido-fake", "image/jpeg")},
+            data={"device_token": "device-test"},
         )
     assert response.status_code == 200
     assert response.json()["advertencia_ubicacion"] is None
 
 
-def test_validar_foto_endpoint_rechazo_gemini_no_evalua_exif():
+def test_validar_foto_endpoint_rechazo_gemini_no_evalua_exif(make_query):
+    supabase, _ = _mock_supabase_sin_bloqueo(make_query)
     with (
+        patch.object(reports, "supabase", supabase),
         patch(
             "app.services.report_photo_vision_service.verificar_foto_animal",
             return_value={"estado": "completado", "es_animal_real": False, "categoria_rechazo": "no_hay_animal", "confianza": 0.2},
@@ -458,7 +512,7 @@ def test_validar_foto_endpoint_rechazo_gemini_no_evalua_exif():
         response = client.post(
             "/reports/validar-foto",
             files={"foto": ("foto.jpg", b"contenido-fake", "image/jpeg")},
-            data={"latitud": "19.0414", "longitud": "-98.2063", "from_camera": "true"},
+            data={"latitud": "19.0414", "longitud": "-98.2063", "from_camera": "true", "device_token": "device-test"},
         )
     assert response.status_code == 200
     data = response.json()
@@ -467,12 +521,163 @@ def test_validar_foto_endpoint_rechazo_gemini_no_evalua_exif():
     procesar_mock.assert_not_called()
 
 
-def test_validar_foto_endpoint_content_type_invalido():
-    response = client.post(
-        "/reports/validar-foto",
-        files={"foto": ("foto.gif", b"contenido-fake", "image/gif")},
-    )
+def test_validar_foto_endpoint_content_type_invalido(make_query):
+    supabase, _ = _mock_supabase_sin_bloqueo(make_query)
+    with patch.object(reports, "supabase", supabase):
+        response = client.post(
+            "/reports/validar-foto",
+            files={"foto": ("foto.gif", b"contenido-fake", "image/gif")},
+            data={"device_token": "device-test"},
+        )
     assert response.status_code == 422
+
+
+# ── Límite de intentos / bloqueo de 5 min (device_token) ──────────────
+
+def test_validar_foto_1er_rechazo_muestra_intentos_restantes(make_query):
+    supabase, tablas = _mock_supabase_intentos(make_query, fila={"contador_rechazos": 0, "bloqueado_hasta": None})
+    with (
+        patch.object(reports, "supabase", supabase),
+        patch(
+            "app.services.report_photo_vision_service.verificar_foto_animal",
+            return_value={"estado": "completado", "es_animal_real": False, "categoria_rechazo": "no_hay_animal", "confianza": 0.3},
+        ),
+    ):
+        response = client.post(
+            "/reports/validar-foto",
+            files={"foto": ("foto.jpg", b"contenido-fake", "image/jpeg")},
+            data={"device_token": "device-test"},
+        )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["valido"] is False
+    assert data["bloqueado"] is False
+    assert "Te quedan 2 intentos." in data["mensaje"]
+    upsert_payload = tablas["intentos_validacion_foto"].upsert.call_args.args[0]
+    assert upsert_payload["contador_rechazos"] == 1
+    assert upsert_payload["bloqueado_hasta"] is None
+
+
+def test_validar_foto_2do_rechazo_muestra_un_intento_restante(make_query):
+    supabase, tablas = _mock_supabase_intentos(make_query, fila={"contador_rechazos": 1, "bloqueado_hasta": None})
+    with (
+        patch.object(reports, "supabase", supabase),
+        patch(
+            "app.services.report_photo_vision_service.verificar_foto_animal",
+            return_value={"estado": "completado", "es_animal_real": False, "categoria_rechazo": "no_hay_animal", "confianza": 0.3},
+        ),
+    ):
+        response = client.post(
+            "/reports/validar-foto",
+            files={"foto": ("foto.jpg", b"contenido-fake", "image/jpeg")},
+            data={"device_token": "device-test"},
+        )
+    data = response.json()
+    assert "Te queda 1 intento." in data["mensaje"]
+    assert tablas["intentos_validacion_foto"].upsert.call_args.args[0]["contador_rechazos"] == 2
+
+
+def test_validar_foto_3er_rechazo_bloquea(make_query):
+    supabase, tablas = _mock_supabase_intentos(make_query, fila={"contador_rechazos": 2, "bloqueado_hasta": None})
+    with (
+        patch.object(reports, "supabase", supabase),
+        patch(
+            "app.services.report_photo_vision_service.verificar_foto_animal",
+            return_value={"estado": "completado", "es_animal_real": False, "categoria_rechazo": "no_hay_animal", "confianza": 0.3},
+        ),
+    ):
+        response = client.post(
+            "/reports/validar-foto",
+            files={"foto": ("foto.jpg", b"contenido-fake", "image/jpeg")},
+            data={"device_token": "device-test"},
+        )
+    data = response.json()
+    assert data["bloqueado"] is True
+    assert "Bloqueamos la validación" in data["mensaje"]
+    upsert_payload = tablas["intentos_validacion_foto"].upsert.call_args.args[0]
+    assert upsert_payload["contador_rechazos"] == 3
+    assert upsert_payload["bloqueado_hasta"] is not None
+
+
+def test_validar_foto_bloqueado_no_llama_a_gemini(make_query):
+    bloqueado_hasta = (datetime.now(timezone.utc) + timedelta(minutes=3)).isoformat()
+    supabase, tablas = _mock_supabase_intentos(make_query, fila={"contador_rechazos": 3, "bloqueado_hasta": bloqueado_hasta})
+    with (
+        patch.object(reports, "supabase", supabase),
+        patch("app.services.report_photo_vision_service.verificar_foto_animal") as gemini_mock,
+    ):
+        response = client.post(
+            "/reports/validar-foto",
+            files={"foto": ("foto.jpg", b"contenido-fake", "image/jpeg")},
+            data={"device_token": "device-test"},
+        )
+    data = response.json()
+    assert data["valido"] is False
+    assert data["bloqueado"] is True
+    gemini_mock.assert_not_called()
+    tablas["intentos_validacion_foto"].upsert.assert_not_called()
+
+
+def test_validar_foto_bloqueo_vencido_reinicia_contador(make_query):
+    bloqueado_hasta_pasado = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+    supabase, tablas = _mock_supabase_intentos(make_query, fila={"contador_rechazos": 3, "bloqueado_hasta": bloqueado_hasta_pasado})
+    with (
+        patch.object(reports, "supabase", supabase),
+        patch(
+            "app.services.report_photo_vision_service.verificar_foto_animal",
+            return_value={"estado": "completado", "es_animal_real": True, "categoria_rechazo": None, "confianza": 0.9},
+        ) as gemini_mock,
+    ):
+        response = client.post(
+            "/reports/validar-foto",
+            files={"foto": ("foto.jpg", b"contenido-fake", "image/jpeg")},
+            data={"device_token": "device-test"},
+        )
+    data = response.json()
+    assert data["valido"] is True
+    assert data["bloqueado"] is False
+    gemini_mock.assert_called_once()
+    primer_upsert = tablas["intentos_validacion_foto"].upsert.call_args_list[0].args[0]
+    assert primer_upsert["contador_rechazos"] == 0
+    assert primer_upsert["bloqueado_hasta"] is None
+
+
+def test_validar_foto_exito_resetea_contador(make_query):
+    supabase, tablas = _mock_supabase_intentos(make_query, fila={"contador_rechazos": 2, "bloqueado_hasta": None})
+    with (
+        patch.object(reports, "supabase", supabase),
+        patch(
+            "app.services.report_photo_vision_service.verificar_foto_animal",
+            return_value={"estado": "completado", "es_animal_real": True, "categoria_rechazo": None, "confianza": 0.9},
+        ),
+    ):
+        response = client.post(
+            "/reports/validar-foto",
+            files={"foto": ("foto.jpg", b"contenido-fake", "image/jpeg")},
+            data={"device_token": "device-test"},
+        )
+    assert response.json()["valido"] is True
+    upsert_payload = tablas["intentos_validacion_foto"].upsert.call_args.args[0]
+    assert upsert_payload["contador_rechazos"] == 0
+    assert upsert_payload["bloqueado_hasta"] is None
+
+
+def test_validar_foto_error_tecnico_no_escribe_tabla(make_query):
+    supabase, tablas = _mock_supabase_sin_bloqueo(make_query)
+    with (
+        patch.object(reports, "supabase", supabase),
+        patch(
+            "app.services.report_photo_vision_service.verificar_foto_animal",
+            return_value={"estado": "error_tecnico", "detalle": "timeout"},
+        ),
+    ):
+        response = client.post(
+            "/reports/validar-foto",
+            files={"foto": ("foto.jpg", b"contenido-fake", "image/jpeg")},
+            data={"device_token": "device-test"},
+        )
+    assert response.json()["bloqueado"] is False
+    tablas["intentos_validacion_foto"].upsert.assert_not_called()
 
 
 def test_report_sin_nombre_ni_usuario_id(animal_payload):
