@@ -438,11 +438,17 @@ export default function AdminDashboardScreen({ onClose }: Props) {
                 tipo: apelacionAliadoSeleccionada!.perfil_apoyo.tipo as any,
                 datos_extra: apelacionAliadoSeleccionada!.perfil_apoyo.datos_extra,
                 categorias: apelacionAliadoSeleccionada!.perfil_apoyo.categorias || [],
+                zona_cobertura: null,
+                disponibilidad: '',
                 especies_atendidas: apelacionAliadoSeleccionada!.perfil_apoyo.especies_atendidas || [],
                 niveles_urgencia_atendida: apelacionAliadoSeleccionada!.perfil_apoyo.niveles_urgencia_atendida || [],
                 created_at: apelacionAliadoSeleccionada!.created_at,
                 verificado_admin: false,
-                usuarios: apelacionAliadoSeleccionada!.perfil_apoyo.usuarios
+                usuarios: {
+                  nombre: apelacionAliadoSeleccionada!.perfil_apoyo.usuarios.nombre,
+                  email: apelacionAliadoSeleccionada!.perfil_apoyo.usuarios.email,
+                  telefono: '',
+                }
               }}
               extraTop={
                 <ApelacionAliadoContextBlock apelacion={apelacionAliadoSeleccionada!} showToast={showToast} />

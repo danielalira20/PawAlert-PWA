@@ -264,11 +264,11 @@ export function PostulacionesPanel({ visible }: Props) {
         { accion: 'aceptar' },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      showToast({ title: '¡Listo!', description: 'Postulación aceptada', type: 'success' });
+      showToast({ title: '¡Listo!', message: 'Postulación aceptada', type: 'success' });
       refetch();
     } catch (err: any) {
       const message = err.response?.data?.detail || 'Error al aceptar postulación';
-      showToast({ title: 'Error', description: message, type: 'error' });
+      showToast({ title: 'Error', message, type: 'error' });
     } finally {
       setIsSubmitting(false);
     }
@@ -277,7 +277,7 @@ export function PostulacionesPanel({ visible }: Props) {
   const handleRechazar = async () => {
     if (!token || !postulacionAccion) return;
     if (!motivoRechazo.trim()) {
-      showToast({ title: 'Error', description: 'El motivo es obligatorio', type: 'error' });
+      showToast({ title: 'Error', message: 'El motivo es obligatorio', type: 'error' });
       return;
     }
 
@@ -288,7 +288,7 @@ export function PostulacionesPanel({ visible }: Props) {
         { accion: 'rechazar', motivo: motivoRechazo },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      showToast({ title: '¡Listo!', description: 'Postulación rechazada', type: 'success' });
+      showToast({ title: '¡Listo!', message: 'Postulación rechazada', type: 'success' });
       setShowRejectModal(false);
       setMotivoRechazo('');
       setPostulacionAccion(null);
@@ -296,7 +296,7 @@ export function PostulacionesPanel({ visible }: Props) {
       refetch();
     } catch (err: any) {
       const message = err.response?.data?.detail || 'Error al rechazar postulación';
-      showToast({ title: 'Error', description: message, type: 'error' });
+      showToast({ title: 'Error', message, type: 'error' });
     } finally {
       setIsSubmitting(false);
     }

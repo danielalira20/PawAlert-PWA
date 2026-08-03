@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Marker, MarkerProps } from 'react-native-maps';
+import { Marker, type MapMarkerProps } from 'react-native-maps';
 
 /**
  * Envuelve <Marker> para resolver un bug conocido de Android: si el marcador
@@ -16,7 +16,7 @@ import { Marker, MarkerProps } from 'react-native-maps';
  * polling) también obtienen su propia ventana de tiempo, no solo los que
  * ya estaban al montar la pantalla.
  */
-export function TrackedMarker(props: MarkerProps & { children?: React.ReactNode }) {
+export function TrackedMarker(props: MapMarkerProps & { children?: React.ReactNode }) {
   const [tracksViewChanges, setTracksViewChanges] = useState(true);
 
   useEffect(() => {

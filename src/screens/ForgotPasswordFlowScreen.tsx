@@ -296,7 +296,6 @@ export default function ForgotPasswordFlowScreen({ visible = true, onClose }: Pr
             </View>
 
             <Image
-              pointerEvents="none"
               source={{ uri: 'https://cdn-icons-png.flaticon.com/512/3047/3047928.png' }}
               style={{ width: 80, height: 80, position: 'absolute', bottom: -16, right: 24, opacity: 0.35, zIndex: 0 }}
               resizeMode="contain"
