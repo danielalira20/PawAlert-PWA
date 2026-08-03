@@ -90,9 +90,15 @@ export interface Custodia {
     confirma_recepcion_at?: string | null;
     estado: string;
   } | null;
+  pregunta_vencimiento?: {
+    id: string;
+    fecha_limite_consultada: string;
+    respuesta?: 'no_seguro' | null;
+    respondida_at?: string | null;
+  } | null;
 }
 
-type ModalMode = 'seguimiento' | 'relevo' | 'extension' | 'validacion' | 'duda' | 'gestionar_duda' | 'responder_aclaracion' | 'aceptar' | 'transferencia' | 'finalizar' | null;
+type ModalMode = 'seguimiento' | 'relevo' | 'extension' | 'vencimiento' | 'validacion' | 'duda' | 'gestionar_duda' | 'responder_aclaracion' | 'aceptar' | 'transferencia' | 'finalizar' | null;
 
 interface Props {
   onClose?: () => void;
@@ -309,6 +315,23 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
       { headers: { Authorization: `Bearer ${token}` } },
     );
   }, 'La fecha límite del resguardo fue actualizada.');
+
+  const responderVencimiento = (respuesta: 'puede_continuar' | 'no_puede' | 'no_seguro') => ejecutar(async () => {
+    if (!seleccionada) throw new Error('No encontramos la custodia seleccionada.');
+    if (respuesta === 'puede_continuar' && !form.fecha) {
+      throw new Error('Indica hasta qué fecha puedes continuar.');
+    }
+    await axios.post(
+      `${API_URL}/custody/${seleccionada.id}/expiry-response`,
+      {
+        respuesta,
+        nueva_fecha_limite: respuesta === 'puede_continuar'
+          ? new Date(`${form.fecha}T18:00:00`).toISOString()
+          : null,
+      },
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+  }, 'Guardamos tu respuesta y la asociación coordinadora podrá darle seguimiento.');
 
   const validar = (decision: 'validado' | 'aclaracion_solicitada' | 'alerta') => ejecutar(async () => {
     if (!seleccionada?.ultimo_seguimiento) throw new Error('No hay seguimiento para validar.');
@@ -564,6 +587,9 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
                 <View style={styles.actions}>
                   {!esAsociacion ? (
                     <>
+                      {custodia.pregunta_vencimiento && (
+                        <Action icon="time-outline" label="Confirmar disponibilidad" primary onPress={() => abrir('vencimiento', custodia)} />
+                      )}
                       {custodia.estado === 'activo' && (
                         <Action icon="camera-outline" label={custodia.seguimiento_inicial_pendiente ? 'Seguimiento inicial' : 'Nuevo seguimiento'} primary onPress={() => abrir('seguimiento', custodia)} />
                       )}
@@ -631,6 +657,20 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
                   <Text style={styles.modalCopy}>La custodia continuará contigo hasta realizar una entrega segura.</Text>
                   <Field label="Motivo" value={form.motivo} onChangeText={(v) => setForm({ ...form, motivo: v })} placeholder="Explica desde cuándo necesitas el relevo" multiline />
                   <Submit label="Solicitar relevo" loading={submitting} onPress={enviarRelevo} />
+                </>
+              )}
+              {modal === 'vencimiento' && (
+                <>
+                  <Text style={styles.modalCopy}>
+                    Tu resguardo llega a su fecha límite el {fecha(seleccionada?.fecha_limite)}. El animal seguirá bajo tu cuidado hasta una entrega segura.
+                  </Text>
+                  <Text style={styles.checklistTitle}>¿Podrás continuar después de esa fecha?</Text>
+                  <Field label="Nueva fecha (si puedes continuar)" value={form.fecha} onChangeText={(v) => setForm({ ...form, fecha: v })} placeholder="AAAA-MM-DD" />
+                  <View style={styles.validationRow}>
+                    <Action icon="checkmark-circle-outline" label="Sí, puedo continuar" primary onPress={() => responderVencimiento('puede_continuar')} />
+                    <Action icon="swap-horizontal-outline" label="No, necesito relevo" danger onPress={() => responderVencimiento('no_puede')} />
+                    <Action icon="help-circle-outline" label="Todavía no lo sé" onPress={() => responderVencimiento('no_seguro')} />
+                  </View>
                 </>
               )}
               {(modal === 'extension' || modal === 'aceptar') && (
@@ -863,6 +903,7 @@ function modalTitle(mode: ModalMode) {
     seguimiento: 'Registrar seguimiento',
     relevo: 'Solicitar relevo',
     extension: 'Extender resguardo',
+    vencimiento: 'Confirmar disponibilidad',
     validacion: 'Revisar evidencia',
     duda: 'Enviar duda',
     gestionar_duda: 'Gestionar aclaración',
