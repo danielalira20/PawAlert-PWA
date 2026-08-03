@@ -426,6 +426,7 @@ def test_revision_regional_se_reserva_por_rpc(make_query):
             "p_seguimiento_id": "seg-1",
             "p_asociacion_id": "aso-1",
             "p_usuario_id": "user-aso",
+            "p_es_coordinadora": True,
         },
     )
 
@@ -486,13 +487,21 @@ def test_asociacion_regional_envia_duda_a_coordinadora(make_query):
         response = client.post(
             "/custody/followups/seg-1/questions",
             headers=AUTH,
-            json={"pregunta": "La herida parece distinta, ¿pueden solicitar otra fotografía?"},
+            json={
+                "pregunta": "La herida parece distinta, ¿pueden solicitar otra fotografía?",
+                "mismo_animal": True,
+                "foto_clara": False,
+                "entorno_adecuado": True,
+                "condicion_evolucion": "no_determinable",
+                "posibles_inconsistencias": True,
+            },
         )
 
     assert response.status_code == 201
     payload = tablas["aclaraciones_seguimiento"].insert.call_args.args[0]
     assert payload["estado"] == "pendiente_coordinadora"
     assert payload["asociacion_origen_id"] == "aso-2"
+    assert payload["revision_manual"]["foto_clara"] is False
     assert historial.call_args.kwargs["tipo_evento"] == "duda_regional_formulada"
 
 
@@ -518,6 +527,8 @@ def test_coordinadora_ve_su_custodia_aunque_falte_ubicacion_del_hogar(make_query
         patch.object(custody, "_usuario", return_value=usuario),
         patch.object(custody, "_asociacion_verificada", return_value={"id": "aso-1", "latitud": None, "longitud": None}),
         patch.object(custody, "_seguimientos_recientes", return_value=[]),
+        patch.object(custody, "_seguimiento_inicial", return_value=None),
+        patch.object(custody, "_ultima_evidencia_entorno", return_value=None),
         patch.object(custody, "_transferencia_activa", return_value=None),
         patch.object(custody, "_reporte_resumen", return_value={"id": "rep-1", "animales": []}),
     ):
@@ -525,8 +536,11 @@ def test_coordinadora_ve_su_custodia_aunque_falte_ubicacion_del_hogar(make_query
 
     assert response.status_code == 200
     assert len(response.json()["custodias"]) == 1
-    assert response.json()["custodias"][0]["es_coordinadora"] is True
-    assert response.json()["custodias"][0]["distancia_km"] is None
+    tarjeta = response.json()["custodias"][0]
+    assert tarjeta["es_coordinadora"] is True
+    assert tarjeta["distancia_km"] is None
+    assert "voluntario_id" not in tarjeta
+    assert "asociacion_coordinadora_id" not in tarjeta
 
 
 def test_solo_coordinadora_puede_solicitar_aclaracion_directa(make_query):

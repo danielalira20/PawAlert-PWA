@@ -172,7 +172,11 @@ def _ultimo_seguimiento(custodia_id: str) -> Optional[dict]:
 def _seguimientos_recientes(custodia_id: str) -> list[dict]:
     return (
         supabase.table("seguimientos_resguardo")
-        .select("*")
+        .select(
+            "id, tipo, condicion_actual, salud, alimentacion, tratamiento, "
+            "comportamiento, foto_url, entorno_foto_url, estado_validacion, "
+            "creado_at, proximo_seguimiento_at"
+        )
         .eq("custodia_id", custodia_id)
         .order("creado_at", desc=True)
         .limit(2)
@@ -198,12 +202,69 @@ def _transferencia_activa(custodia_id: str) -> Optional[dict]:
 def _aclaraciones_activas(custodia_id: str) -> list[dict]:
     return (
         supabase.table("aclaraciones_seguimiento")
-        .select("*")
+        .select(
+            "id, seguimiento_id, asociacion_origen_id, pregunta_regional, "
+            "mensaje_coordinadora, respuesta_voluntario, foto_respuesta_url, "
+            "estado, creada_at, enviada_at, respondida_at, revision_manual"
+        )
         .eq("custodia_id", custodia_id)
         .in_("estado", ["pendiente_coordinadora", "enviada_voluntario", "respondida"])
         .order("creada_at", desc=True)
         .execute()
     ).data or []
+
+
+def _seguimiento_inicial(custodia_id: str) -> Optional[dict]:
+    resultado = (
+        supabase.table("seguimientos_resguardo")
+        .select("id, foto_url, entorno_foto_url, creado_at")
+        .eq("custodia_id", custodia_id)
+        .order("creado_at")
+        .limit(1)
+        .execute()
+    )
+    return resultado.data[0] if resultado.data else None
+
+
+def _ultima_evidencia_entorno(custodia_id: str) -> Optional[dict]:
+    resultado = (
+        supabase.table("seguimientos_resguardo")
+        .select("id, entorno_foto_url, creado_at")
+        .eq("custodia_id", custodia_id)
+        .not_.is_("entorno_foto_url", "null")
+        .order("creado_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    return resultado.data[0] if resultado.data else None
+
+
+def _revision_activa(seguimiento_id: str) -> Optional[dict]:
+    resultado = (
+        supabase.table("revisiones_seguimiento")
+        .select("id, asociacion_id, estado, reservada_at, vence_at, asociaciones(nombre)")
+        .eq("seguimiento_id", seguimiento_id)
+        .eq("estado", "reservada")
+        .gt("vence_at", _ahora().isoformat())
+        .limit(1)
+        .execute()
+    )
+    return resultado.data[0] if resultado.data else None
+
+
+def _ultima_validacion(seguimiento_id: str) -> Optional[dict]:
+    resultado = (
+        supabase.table("validaciones_seguimiento")
+        .select(
+            "id, decision, comentario, mismo_animal, foto_clara, entorno_adecuado, "
+            "condicion_evolucion, posibles_inconsistencias, creado_at, asociaciones(nombre)"
+        )
+        .eq("seguimiento_id", seguimiento_id)
+        .order("creado_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    return resultado.data[0] if resultado.data else None
 
 
 def _puede_ver_ubicacion_hogar(
@@ -226,7 +287,11 @@ def listar_mis_custodias(authorization: Optional[str] = Header(None)):
     voluntario = _voluntario_externo(usuario)
     custodias = (
         supabase.table("custodias_temporales")
-        .select("*")
+        .select(
+            "id, reporte_id, voluntario_id, asociacion_coordinadora_id, estado, "
+            "inicio_at, fecha_limite, proximo_seguimiento_at, ultimo_seguimiento_at, "
+            "seguimiento_inicial_at, frecuencia_horas, ruta_ingreso"
+        )
         .eq("voluntario_id", voluntario["id"])
         .order("inicio_at", desc=True)
         .execute()
@@ -379,7 +444,11 @@ def listar_seguimiento_regional(
     asociacion = _asociacion_verificada(usuario)
     custodias = (
         supabase.table("custodias_temporales")
-        .select("*")
+        .select(
+            "id, reporte_id, voluntario_id, asociacion_coordinadora_id, estado, "
+            "inicio_at, fecha_limite, proximo_seguimiento_at, ultimo_seguimiento_at, "
+            "seguimiento_inicial_at, frecuencia_horas, ruta_ingreso"
+        )
         .in_("estado", list(ESTADOS_CUSTODIA_REGIONAL))
         .order("proximo_seguimiento_at")
         .execute()
@@ -440,6 +509,10 @@ def listar_seguimiento_regional(
         persona = ((voluntario.data[0] if voluntario.data else {}).get("usuarios") or {})
         seguimientos = _seguimientos_recientes(custodia["id"])
         ultimo = seguimientos[0] if seguimientos else None
+        inicial = _seguimiento_inicial(custodia["id"])
+        ultimo_entorno = _ultima_evidencia_entorno(custodia["id"])
+        revision = _revision_activa(ultimo["id"]) if ultimo else None
+        validacion = _ultima_validacion(ultimo["id"]) if ultimo else None
         transferencia = _transferencia_activa(custodia["id"])
         ubicacion_hogar = None
         if perfil_hogar and _puede_ver_ubicacion_hogar(custodia, transferencia, asociacion["id"]):
@@ -455,7 +528,15 @@ def listar_seguimiento_regional(
             }
         tarjetas.append(
             {
-                **custodia,
+                "id": custodia["id"],
+                "reporte_id": custodia["reporte_id"],
+                "estado": custodia["estado"],
+                "inicio_at": custodia.get("inicio_at"),
+                "fecha_limite": custodia.get("fecha_limite"),
+                "proximo_seguimiento_at": custodia.get("proximo_seguimiento_at"),
+                "ultimo_seguimiento_at": custodia.get("ultimo_seguimiento_at"),
+                "frecuencia_horas": custodia.get("frecuencia_horas"),
+                "ruta_ingreso": custodia.get("ruta_ingreso"),
                 "reporte": _reporte_resumen(custodia["reporte_id"]),
                 "voluntario_nombre": " ".join(
                     p for p in (persona.get("nombre"), persona.get("apellido_paterno")) if p
@@ -463,6 +544,10 @@ def listar_seguimiento_regional(
                 "distancia_km": round(distancia, 1) if distancia is not None else None,
                 "ultimo_seguimiento": ultimo,
                 "seguimiento_anterior": seguimientos[1] if len(seguimientos) > 1 else None,
+                "seguimiento_inicial": inicial,
+                "ultima_evidencia_entorno": ultimo_entorno,
+                "revision_activa": revision,
+                "ultima_validacion": validacion,
                 "solicitud_relevo": relevo_activo,
                 "transferencia_activa": transferencia,
                 "ubicacion_hogar": ubicacion_hogar,
@@ -503,6 +588,7 @@ def reservar_revision(
         .limit(1)
         .execute()
     ).data[0]
+    es_coordinadora = custodia["asociacion_coordinadora_id"] == asociacion["id"]
     if (
         custodia["asociacion_coordinadora_id"] != asociacion["id"]
         and not _en_radio_regional(asociacion, custodia["voluntario_id"])
@@ -515,6 +601,7 @@ def reservar_revision(
                 "p_seguimiento_id": seguimiento_id,
                 "p_asociacion_id": asociacion["id"],
                 "p_usuario_id": usuario["id"],
+                "p_es_coordinadora": es_coordinadora,
             },
         ).execute()
     except Exception as error:
@@ -568,6 +655,13 @@ def formular_duda_regional(
             "asociacion_origen_id": asociacion["id"],
             "creada_por_id": usuario["id"],
             "pregunta_regional": body.pregunta.strip(),
+            "revision_manual": {
+                "mismo_animal": body.mismo_animal,
+                "foto_clara": body.foto_clara,
+                "entorno_adecuado": body.entorno_adecuado,
+                "condicion_evolucion": body.condicion_evolucion,
+                "posibles_inconsistencias": body.posibles_inconsistencias,
+            },
             "estado": "pendiente_coordinadora",
         }).execute()
     except Exception as error:
@@ -726,6 +820,8 @@ def validar_seguimiento(
         )
     if body.decision == "aclaracion_solicitada" and not (body.comentario or "").strip():
         raise HTTPException(status_code=422, detail="Escribe la aclaración que recibirá el hogar temporal")
+    if None in (body.mismo_animal, body.foto_clara, body.entorno_adecuado) or not body.condicion_evolucion:
+        raise HTTPException(status_code=422, detail="Completa la revisión manual de la evidencia")
     revision = (
         supabase.table("revisiones_seguimiento")
         .select("id, asociacion_id, estado, vence_at")
@@ -752,6 +848,11 @@ def validar_seguimiento(
                 "usuario_id": usuario["id"],
                 "decision": body.decision,
                 "comentario": body.comentario,
+                "mismo_animal": body.mismo_animal,
+                "foto_clara": body.foto_clara,
+                "entorno_adecuado": body.entorno_adecuado,
+                "condicion_evolucion": body.condicion_evolucion,
+                "posibles_inconsistencias": body.posibles_inconsistencias,
             },
             on_conflict="seguimiento_id,asociacion_id",
         )

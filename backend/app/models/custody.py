@@ -19,10 +19,22 @@ class SeguimientoCustodiaRequest(BaseModel):
 class ValidacionSeguimientoRequest(BaseModel):
     decision: Literal["validado", "aclaracion_solicitada", "alerta"]
     comentario: Optional[str] = Field(default=None, max_length=500)
+    mismo_animal: Optional[bool] = None
+    foto_clara: Optional[bool] = None
+    entorno_adecuado: Optional[bool] = None
+    condicion_evolucion: Optional[
+        Literal["mejor", "igual", "peor", "no_determinable"]
+    ] = None
+    posibles_inconsistencias: bool = False
 
 
 class DudaRegionalRequest(BaseModel):
     pregunta: str = Field(min_length=5, max_length=700)
+    mismo_animal: bool
+    foto_clara: bool
+    entorno_adecuado: bool
+    condicion_evolucion: Literal["mejor", "igual", "peor", "no_determinable"]
+    posibles_inconsistencias: bool = False
 
 
 class EnviarAclaracionRequest(BaseModel):
