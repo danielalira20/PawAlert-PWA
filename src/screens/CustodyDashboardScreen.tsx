@@ -185,7 +185,7 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
 
   useEffect(() => {
     void cargar();
-    const timer = setInterval(() => void cargar(), 30000);
+    const timer = setInterval(() => void cargar(), 10000);
     return () => clearInterval(timer);
   }, [cargar]);
 
