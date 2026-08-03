@@ -316,103 +316,105 @@ export default function AdminDashboardScreen({ onClose }: Props) {
         <Text style={styles.headerTitle}>Revisión de Asociaciones</Text>
       </View>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsRow}>
-        <TouchableOpacity
-          onPress={() => {
-            setTab('solicitudes');
-            setSolicitudScreen('list');
-          }}
-          style={[styles.tab, tab === 'solicitudes' && styles.tabActiva]}
-        >
-          <Text style={[styles.tabText, tab === 'solicitudes' && styles.tabTextActiva]}>
-            Solicitudes
-          </Text>
-          {asociaciones.length > 0 && (
-            <View style={styles.tabBadge}>
-              <Text style={styles.tabBadgeText}>{asociaciones.length}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
+      <View style={styles.tabsContainer}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsScrollContent}>
+          <TouchableOpacity
+            onPress={() => {
+              setTab('solicitudes');
+              setSolicitudScreen('list');
+            }}
+            style={[styles.tab, tab === 'solicitudes' && styles.tabActiva]}
+          >
+            <Text style={[styles.tabText, tab === 'solicitudes' && styles.tabTextActiva]}>
+              Solicitudes
+            </Text>
+            {asociaciones.length > 0 && (
+              <View style={styles.tabBadge}>
+                <Text style={styles.tabBadgeText}>{asociaciones.length}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          onPress={() => {
-            setTab('apelaciones');
-            setApelacionScreen('list');
-          }}
-          style={[styles.tab, tab === 'apelaciones' && styles.tabActiva]}
-        >
-          <Text style={[styles.tabText, tab === 'apelaciones' && styles.tabTextActiva]}>
-            Apelaciones
-          </Text>
-          {apelaciones.length > 0 && (
-            <View style={styles.tabBadge}>
-              <Text style={styles.tabBadgeText}>{apelaciones.length}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => {
+              setTab('apelaciones');
+              setApelacionScreen('list');
+            }}
+            style={[styles.tab, tab === 'apelaciones' && styles.tabActiva]}
+          >
+            <Text style={[styles.tabText, tab === 'apelaciones' && styles.tabTextActiva]}>
+              Apelaciones
+            </Text>
+            {apelaciones.length > 0 && (
+              <View style={styles.tabBadge}>
+                <Text style={styles.tabBadgeText}>{apelaciones.length}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          onPress={() => {
-            setTab('apelaciones-aliados');
-            setApelacionAliadoScreen('list');
-          }}
-          style={[styles.tab, tab === 'apelaciones-aliados' && styles.tabActiva]}
-        >
-          <Text style={[styles.tabText, tab === 'apelaciones-aliados' && styles.tabTextActiva]}>
-            Apelaciones Aliados
-          </Text>
-          {apelacionesAliados.length > 0 && (
-            <View style={styles.tabBadge}>
-              <Text style={styles.tabBadgeText}>{apelacionesAliados.length}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => {
+              setTab('apelaciones-aliados');
+              setApelacionAliadoScreen('list');
+            }}
+            style={[styles.tab, tab === 'apelaciones-aliados' && styles.tabActiva]}
+          >
+            <Text style={[styles.tabText, tab === 'apelaciones-aliados' && styles.tabTextActiva]}>
+              Apelaciones Aliados
+            </Text>
+            {apelacionesAliados.length > 0 && (
+              <View style={styles.tabBadge}>
+                <Text style={styles.tabBadgeText}>{apelacionesAliados.length}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          onPress={() => {
-            setTab('aliados');
-            setAliadosScreen('list');
-          }}
-          style={[styles.tab, tab === 'aliados' && styles.tabActiva]}
-        >
-          <Text style={[styles.tabText, tab === 'aliados' && styles.tabTextActiva]}>
-            Nuevos Aliados
-          </Text>
-          {aliadosPendientes.length > 0 && (
-            <View style={styles.tabBadge}>
-              <Text style={styles.tabBadgeText}>{aliadosPendientes.length}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => {
+              setTab('aliados');
+              setAliadosScreen('list');
+            }}
+            style={[styles.tab, tab === 'aliados' && styles.tabActiva]}
+          >
+            <Text style={[styles.tabText, tab === 'aliados' && styles.tabTextActiva]}>
+              Nuevos Aliados
+            </Text>
+            {aliadosPendientes.length > 0 && (
+              <View style={styles.tabBadge}>
+                <Text style={styles.tabBadgeText}>{aliadosPendientes.length}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          onPress={() => setTab('operativos')}
-          style={[styles.tab, tab === 'operativos' && styles.tabActiva]}
-        >
-          <Text style={[styles.tabText, tab === 'operativos' && styles.tabTextActiva]}>
-            Casos operativos
-          </Text>
-          {casosOperativos.length > 0 && (
-            <View style={styles.tabBadge}>
-              <Text style={styles.tabBadgeText}>{casosOperativos.length}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setTab('operativos')}
+            style={[styles.tab, tab === 'operativos' && styles.tabActiva]}
+          >
+            <Text style={[styles.tabText, tab === 'operativos' && styles.tabTextActiva]}>
+              Casos operativos
+            </Text>
+            {casosOperativos.length > 0 && (
+              <View style={styles.tabBadge}>
+                <Text style={styles.tabBadgeText}>{casosOperativos.length}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          onPress={() => setTab('moderacion')}
-          style={[styles.tab, tab === 'moderacion' && styles.tabActiva]}
-        >
-          <Text style={[styles.tabText, tab === 'moderacion' && styles.tabTextActiva]}>
-            Reportes
-          </Text>
-          {moderacionPendiente > 0 && (
-            <View style={styles.tabBadge}>
-              <Text style={styles.tabBadgeText}>{moderacionPendiente}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
-      </ScrollView>
+          <TouchableOpacity
+            onPress={() => setTab('moderacion')}
+            style={[styles.tab, tab === 'moderacion' && styles.tabActiva]}
+          >
+            <Text style={[styles.tabText, tab === 'moderacion' && styles.tabTextActiva]}>
+              Reportes
+            </Text>
+            {moderacionPendiente > 0 && (
+              <View style={styles.tabBadge}>
+                <Text style={styles.tabBadgeText}>{moderacionPendiente}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </ScrollView>
+      </View>
 
       {tab === 'solicitudes' ? (
         solicitudScreen === 'list' ? (
@@ -1042,14 +1044,16 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   headerTitle: { color: '#fff', fontSize: 18, fontWeight: '800', marginTop: 2 },
-  tabsRow: {
+  tabsContainer: {
+    backgroundColor: Brand.cardWarm,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E4D3B8',
+  },
+  tabsScrollContent: {
     flexDirection: 'row',
     gap: 4,
     paddingHorizontal: 16,
     paddingTop: 10,
-    backgroundColor: Brand.cardWarm,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E4D3B8',
   },
   tab: {
     flexDirection: 'row',
