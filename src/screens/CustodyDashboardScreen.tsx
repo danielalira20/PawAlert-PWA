@@ -31,6 +31,15 @@ interface Seguimiento {
   creado_at: string;
 }
 
+interface Aclaracion {
+  id: string;
+  estado: 'pendiente_coordinadora' | 'enviada_voluntario' | 'respondida';
+  pregunta_regional: string;
+  mensaje_coordinadora?: string | null;
+  respuesta_voluntario?: string | null;
+  foto_respuesta_url?: string | null;
+}
+
 export interface Custodia {
   id: string;
   reporte_id: string;
@@ -58,6 +67,7 @@ export interface Custodia {
   };
   ultimo_seguimiento?: Seguimiento | null;
   seguimiento_anterior?: Seguimiento | null;
+  aclaraciones?: Aclaracion[];
   solicitud_relevo?: { id: string; motivo: string; estado: string } | null;
   transferencia_activa?: {
     id: string;
@@ -68,7 +78,7 @@ export interface Custodia {
   } | null;
 }
 
-type ModalMode = 'seguimiento' | 'relevo' | 'extension' | 'validacion' | 'aceptar' | 'transferencia' | 'finalizar' | null;
+type ModalMode = 'seguimiento' | 'relevo' | 'extension' | 'validacion' | 'duda' | 'gestionar_duda' | 'responder_aclaracion' | 'aceptar' | 'transferencia' | 'finalizar' | null;
 
 interface Props {
   onClose?: () => void;
@@ -285,6 +295,52 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
     );
   }, 'La revisión quedó registrada.');
 
+  const enviarDuda = () => ejecutar(async () => {
+    if (!seleccionada?.ultimo_seguimiento || form.comentario.trim().length < 5) {
+      throw new Error('Explica claramente la duda para la asociación coordinadora.');
+    }
+    await axios.post(
+      `${API_URL}/custody/followups/${seleccionada.ultimo_seguimiento.id}/questions`,
+      { pregunta: form.comentario.trim() },
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+  }, 'La duda fue enviada a la asociación coordinadora.');
+
+  const enviarAclaracion = () => ejecutar(async () => {
+    const aclaracion = seleccionada?.aclaraciones?.[0];
+    if (!aclaracion || form.comentario.trim().length < 5) {
+      throw new Error('Redacta el mensaje que recibirá el hogar temporal.');
+    }
+    await axios.post(
+      `${API_URL}/custody/clarifications/${aclaracion.id}/forward`,
+      { mensaje: form.comentario.trim() },
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+  }, 'La solicitud de aclaración fue enviada al hogar temporal.');
+
+  const responderAclaracion = () => ejecutar(async () => {
+    const aclaracion = seleccionada?.aclaraciones?.find((a) => a.estado === 'enviada_voluntario');
+    if (!aclaracion || form.comentario.trim().length < 5) {
+      throw new Error('Describe la aclaración antes de enviarla.');
+    }
+    const foto_url = fotoAnimal ? await subirFoto(fotoAnimal) : null;
+    await axios.post(
+      `${API_URL}/custody/clarifications/${aclaracion.id}/respond`,
+      { respuesta: form.comentario.trim(), foto_url },
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+  }, 'La respuesta llegó a la asociación coordinadora.');
+
+  const resolverAclaracion = () => ejecutar(async () => {
+    const aclaracion = seleccionada?.aclaraciones?.find((a) => a.estado === 'respondida');
+    if (!aclaracion) throw new Error('Aún no hay una respuesta para resolver.');
+    await axios.post(
+      `${API_URL}/custody/clarifications/${aclaracion.id}/resolve`,
+      {},
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+  }, 'La aclaración quedó resuelta.');
+
   const aceptarRelevo = () => ejecutar(async () => {
     if (!seleccionada?.solicitud_relevo || !form.fecha) throw new Error('Selecciona una fecha para el traslado.');
     await axios.post(
@@ -453,6 +509,9 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
                       )}
                       {custodia.estado === 'activo' && <Action icon="calendar-outline" label="Extender" onPress={() => abrir('extension', custodia)} />}
                       {custodia.estado === 'activo' && <Action icon="swap-horizontal-outline" label="Necesito relevo" onPress={() => abrir('relevo', custodia)} />}
+                      {custodia.aclaraciones?.some((a) => a.estado === 'enviada_voluntario') && (
+                        <Action icon="chatbubble-ellipses-outline" label="Responder aclaración" primary onPress={() => abrir('responder_aclaracion', custodia)} />
+                      )}
                       {custodia.transferencia_activa && !custodia.transferencia_activa.confirma_entrega_at && (
                         <Action icon="checkmark-done-outline" label="Confirmar entrega" primary onPress={() => abrir('transferencia', custodia)} />
                       )}
@@ -466,6 +525,9 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
                           primary
                           onPress={() => void abrirRevision(custodia)}
                         />
+                      )}
+                      {custodia.es_coordinadora && !!custodia.aclaraciones?.length && (
+                        <Action icon="chatbubbles-outline" label="Gestionar dudas" onPress={() => abrir('gestionar_duda', custodia)} />
                       )}
                       {custodia.solicitud_relevo?.estado === 'abierta' && !custodia.es_coordinadora && (
                         <Action icon="hand-left-outline" label="Recibir animal" onPress={() => abrir('aceptar', custodia)} />
@@ -538,9 +600,56 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
                   <Field label="Comentario" value={form.comentario} onChangeText={(v) => setForm({ ...form, comentario: v })} placeholder="Observaciones o aclaraciones necesarias" multiline />
                   <View style={styles.validationRow}>
                     <Action icon="checkmark-circle-outline" label="Validar" primary onPress={() => validar('validado')} />
-                    <Action icon="help-circle-outline" label="Aclaración" onPress={() => validar('aclaracion_solicitada')} />
-                    <Action icon="warning-outline" label="Alerta" danger onPress={() => validar('alerta')} />
+                    {seleccionada?.es_coordinadora ? (
+                      <>
+                        <Action icon="help-circle-outline" label="Pedir aclaración" onPress={() => validar('aclaracion_solicitada')} />
+                        <Action icon="warning-outline" label="Alerta" danger onPress={() => validar('alerta')} />
+                      </>
+                    ) : (
+                      <Action icon="chatbubble-ellipses-outline" label="Enviar duda" onPress={enviarDuda} />
+                    )}
                   </View>
+                </>
+              )}
+              {modal === 'gestionar_duda' && seleccionada?.aclaraciones?.[0] && (
+                <>
+                  <Text style={styles.label}>Duda regional</Text>
+                  <View style={styles.messageCard}><Text style={styles.messageText}>{seleccionada.aclaraciones[0].pregunta_regional}</Text></View>
+                  {seleccionada.aclaraciones[0].respuesta_voluntario && (
+                    <>
+                      <Text style={styles.label}>Respuesta del hogar temporal</Text>
+                      <View style={styles.messageCard}><Text style={styles.messageText}>{seleccionada.aclaraciones[0].respuesta_voluntario}</Text></View>
+                      {seleccionada.aclaraciones[0].foto_respuesta_url && <Image source={{ uri: seleccionada.aclaraciones[0].foto_respuesta_url }} style={styles.evidencePhoto} />}
+                    </>
+                  )}
+                  {seleccionada.aclaraciones[0].estado === 'respondida' ? (
+                    <>
+                      <Field label="Mensaje adicional (si hace falta)" value={form.comentario} onChangeText={(v) => setForm({ ...form, comentario: v })} placeholder="Indica qué información sigue pendiente" multiline />
+                      <View style={styles.validationRow}>
+                        <Action icon="checkmark-circle-outline" label="Resolver" primary onPress={resolverAclaracion} />
+                        <Action icon="refresh-outline" label="Pedir más información" onPress={enviarAclaracion} />
+                      </View>
+                    </>
+                  ) : seleccionada.aclaraciones[0].estado === 'pendiente_coordinadora' ? (
+                    <>
+                      <Field label="Mensaje para el hogar temporal" value={form.comentario} onChangeText={(v) => setForm({ ...form, comentario: v })} placeholder="Reformula la duda con instrucciones claras" multiline />
+                      <Submit label="Solicitar aclaración" loading={submitting} onPress={enviarAclaracion} />
+                    </>
+                  ) : (
+                    <Text style={styles.modalCopy}>Esperando respuesta del hogar temporal.</Text>
+                  )}
+                </>
+              )}
+              {modal === 'responder_aclaracion' && seleccionada?.aclaraciones?.find((a) => a.estado === 'enviada_voluntario') && (
+                <>
+                  <Text style={styles.label}>Solicitud de la asociación coordinadora</Text>
+                  <View style={styles.messageCard}>
+                    <Text style={styles.messageText}>{seleccionada.aclaraciones.find((a) => a.estado === 'enviada_voluntario')?.mensaje_coordinadora}</Text>
+                  </View>
+                  <Field label="Tu respuesta" value={form.comentario} onChangeText={(v) => setForm({ ...form, comentario: v })} placeholder="Explica lo ocurrido o los cambios observados" multiline />
+                  <Text style={styles.modalCopy}>Puedes adjuntar una foto nueva si ayuda a aclarar la evidencia.</Text>
+                  <Action icon={fotoAnimal ? 'checkmark-circle' : 'camera-outline'} label={fotoAnimal ? 'Foto lista' : 'Adjuntar foto'} onPress={() => tomarFoto()} />
+                  <Submit label="Enviar aclaración" loading={submitting} onPress={responderAclaracion} />
                 </>
               )}
               {modal === 'transferencia' && (
@@ -624,6 +733,9 @@ function modalTitle(mode: ModalMode) {
     relevo: 'Solicitar relevo',
     extension: 'Extender resguardo',
     validacion: 'Revisar evidencia',
+    duda: 'Enviar duda',
+    gestionar_duda: 'Gestionar aclaración',
+    responder_aclaracion: 'Responder aclaración',
     aceptar: 'Recibir al animal',
     transferencia: 'Confirmar transferencia',
     finalizar: 'Finalizar custodia',
@@ -675,6 +787,8 @@ const styles = StyleSheet.create({
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
   modalTitle: { color: Brand.textDark, fontSize: 19, fontWeight: '900' },
   modalCopy: { color: Brand.textMuted, fontSize: 12, lineHeight: 18, marginBottom: 14 },
+  messageCard: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E4D3B8', borderRadius: 13, padding: 12, marginBottom: 14 },
+  messageText: { color: Brand.textDark, fontSize: 12, lineHeight: 18 },
   label: { color: Brand.textDark, fontSize: 11, fontWeight: '800', marginBottom: 6 },
   input: { borderWidth: 1.5, borderColor: '#E4D3B8', borderRadius: 12, backgroundColor: '#fff', padding: 11, color: Brand.textDark, fontSize: 12 },
   textArea: { minHeight: 70, textAlignVertical: 'top' },
