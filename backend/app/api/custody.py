@@ -412,15 +412,21 @@ def listar_seguimiento_regional(
             .execute()
         )
         es_coordinadora = custodia["asociacion_coordinadora_id"] == asociacion["id"]
-        if not perfil.data or perfil.data[0].get("latitud") is None:
+        perfil_hogar = perfil.data[0] if perfil.data else {}
+        if perfil_hogar.get("latitud") is None and not es_coordinadora:
             continue
         distancia = None
-        if asociacion.get("latitud") is not None and asociacion.get("longitud") is not None:
+        if (
+            asociacion.get("latitud") is not None
+            and asociacion.get("longitud") is not None
+            and perfil_hogar.get("latitud") is not None
+            and perfil_hogar.get("longitud") is not None
+        ):
             distancia = _distancia_km(
                 asociacion["latitud"],
                 asociacion["longitud"],
-                perfil.data[0]["latitud"],
-                perfil.data[0]["longitud"],
+                perfil_hogar["latitud"],
+                perfil_hogar["longitud"],
             )
         if not es_coordinadora and (distancia is None or distancia > radio_efectivo):
             continue
@@ -436,8 +442,8 @@ def listar_seguimiento_regional(
         ultimo = seguimientos[0] if seguimientos else None
         transferencia = _transferencia_activa(custodia["id"])
         ubicacion_hogar = None
-        if _puede_ver_ubicacion_hogar(custodia, transferencia, asociacion["id"]):
-            hogar = perfil.data[0]
+        if perfil_hogar and _puede_ver_ubicacion_hogar(custodia, transferencia, asociacion["id"]):
+            hogar = perfil_hogar
             ubicacion_hogar = {
                 "calle": hogar.get("calle"),
                 "numero": hogar.get("numero"),
@@ -544,6 +550,17 @@ def formular_duda_regional(
         raise HTTPException(status_code=409, detail="La coordinadora puede solicitar la aclaración directamente")
     if not _en_radio_regional(asociacion, custodia["voluntario_id"]):
         raise HTTPException(status_code=403, detail="La custodia está fuera de tu región")
+    revision = (
+        supabase.table("revisiones_seguimiento")
+        .select("id, asociacion_id, estado, vence_at")
+        .eq("seguimiento_id", seguimiento_id).limit(1).execute()
+    )
+    if not revision.data:
+        raise HTTPException(status_code=409, detail="Reserva esta revisión antes de enviar una duda")
+    reserva = revision.data[0]
+    vence_at = datetime.fromisoformat(str(reserva["vence_at"]).replace("Z", "+00:00"))
+    if reserva["asociacion_id"] != asociacion["id"] or reserva["estado"] != "reservada" or vence_at <= _ahora():
+        raise HTTPException(status_code=409, detail="La reserva de revisión ya no está disponible")
     try:
         creada = supabase.table("aclaraciones_seguimiento").insert({
             "seguimiento_id": seguimiento_id,

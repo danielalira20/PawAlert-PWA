@@ -465,7 +465,12 @@ def test_asociacion_regional_envia_duda_a_coordinadora(make_query):
             "reporte_id": "rep-1", "asociacion_coordinadora_id": "aso-1", "voluntario_id": "vol-1"
         }]),
         "aclaraciones_seguimiento": make_query(data=[{"id": "acl-1"}]),
-        "revisiones_seguimiento": make_query(data=[]),
+        "revisiones_seguimiento": make_query(data=[{
+            "id": "rev-1",
+            "asociacion_id": "aso-2",
+            "estado": "reservada",
+            "vence_at": (datetime.now(timezone.utc) + timedelta(minutes=20)).isoformat(),
+        }]),
     }
     supabase = MagicMock()
     supabase.table.side_effect = lambda nombre: tablas[nombre]
@@ -489,6 +494,39 @@ def test_asociacion_regional_envia_duda_a_coordinadora(make_query):
     assert payload["estado"] == "pendiente_coordinadora"
     assert payload["asociacion_origen_id"] == "aso-2"
     assert historial.call_args.kwargs["tipo_evento"] == "duda_regional_formulada"
+
+
+def test_coordinadora_ve_su_custodia_aunque_falte_ubicacion_del_hogar(make_query):
+    custodia_fila = {
+        **_custodia(),
+        "asociacion_coordinadora_id": "aso-1",
+        "proximo_seguimiento_at": datetime.now(timezone.utc).isoformat(),
+    }
+    tablas = {
+        "custodias_temporales": make_query(data=[custodia_fila]),
+        "solicitudes_relevo": make_query(data=[]),
+        "perfil_casa_temporal": make_query(data=[]),
+        "voluntarios": make_query(data=[{"usuarios": {"nombre": "Rafael", "apellido_paterno": "Jude"}}]),
+        "aclaraciones_seguimiento": make_query(data=[]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    usuario = {"id": "user-aso-1", "rol": "asociacion", "asociacion_id": "aso-1"}
+
+    with (
+        patch.object(custody, "supabase", supabase),
+        patch.object(custody, "_usuario", return_value=usuario),
+        patch.object(custody, "_asociacion_verificada", return_value={"id": "aso-1", "latitud": None, "longitud": None}),
+        patch.object(custody, "_seguimientos_recientes", return_value=[]),
+        patch.object(custody, "_transferencia_activa", return_value=None),
+        patch.object(custody, "_reporte_resumen", return_value={"id": "rep-1", "animales": []}),
+    ):
+        response = client.get("/custody/regional", headers=AUTH)
+
+    assert response.status_code == 200
+    assert len(response.json()["custodias"]) == 1
+    assert response.json()["custodias"][0]["es_coordinadora"] is True
+    assert response.json()["custodias"][0]["distancia_km"] is None
 
 
 def test_solo_coordinadora_puede_solicitar_aclaracion_directa(make_query):
