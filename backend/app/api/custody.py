@@ -340,7 +340,7 @@ def listar_mis_custodias(authorization: Optional[str] = Header(None)):
     usuario = _usuario(authorization)
     voluntario = _voluntario_externo(usuario)
     custodias = (
-        supabase.table("custodias_temporales")
+        supabase_admin.table("custodias_temporales")
         .select(
             "id, reporte_id, voluntario_id, asociacion_coordinadora_id, estado, "
             "inicio_at, fecha_limite, proximo_seguimiento_at, ultimo_seguimiento_at, "

@@ -853,7 +853,7 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
         if not voluntario.data:
             raise HTTPException(status_code=404, detail="Perfil externo no encontrado")
         hogar = (
-            supabase.table("perfil_casa_temporal")
+            supabase_admin.table("perfil_casa_temporal")
             .select("latitud, longitud")
             .eq("voluntario_id", voluntario.data[0]["id"])
             .limit(1)
@@ -885,7 +885,7 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
             )
 
         plan_custodia = (
-            supabase.table("planes_custodia_temporal")
+            supabase_admin.table("planes_custodia_temporal")
             .select("id, ruta_resguardo, fecha_limite_propuesta")
             .eq("reporte_id", reporte_id)
             .eq("voluntario_id", voluntario.data[0]["id"])
@@ -1018,7 +1018,7 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
         )
         if not existente.data:
             ahora_custodia = datetime.now(timezone.utc)
-            supabase.table("custodias_temporales").insert(
+            supabase_admin.table("custodias_temporales").insert(
                 {
                     "reporte_id": reporte_id,
                     "voluntario_id": voluntario.data[0]["id"],
@@ -1075,7 +1075,7 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
         )
         if not voluntario_plan.data:
             raise HTTPException(status_code=404, detail="Perfil externo no encontrado")
-        supabase.table("planes_custodia_temporal").upsert(
+        supabase_admin.table("planes_custodia_temporal").upsert(
             {
                 "reporte_id": reporte_id,
                 "voluntario_id": voluntario_plan.data[0]["id"],
