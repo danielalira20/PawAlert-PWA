@@ -530,7 +530,31 @@ async def subir_foto_hito(
         usuario.get("rol") == "asociacion"
         and usuario.get("asociacion_id") == fila_reporte.get("asociacion_asignada_id")
     )
-    if not es_staff_asignado and not es_representante_asignado:
+    
+    # Validación limpia de asociación receptora a través de la custodia vinculada al reporte
+    es_asociacion_receptora = False
+    if usuario.get("rol") == "asociacion" and usuario.get("asociacion_id"):
+        custodia_asociada = (
+            supabase_admin.table("custodias_temporales")
+            .select("id")
+            .eq("reporte_id", reporte_id)
+            .limit(1)
+            .execute()
+        )
+        if custodia_asociada.data:
+            trans_receptora = (
+                supabase_admin.table("transferencias_custodia")
+                .select("id")
+                .eq("custodia_id", custodia_asociada.data[0]["id"])
+                .eq("asociacion_receptora_id", usuario.get("asociacion_id"))
+                .in_("estado", ["programada", "en_traslado", "en_curso"])
+                .limit(1)
+                .execute()
+            )
+            if trans_receptora.data:
+                es_asociacion_receptora = True
+
+    if not es_staff_asignado and not es_representante_asignado and not es_asociacion_receptora:
         raise HTTPException(status_code=403, detail="No puedes agregar evidencias a este reporte")
 
     if foto.content_type not in ["image/jpeg", "image/png", "image/jpg", "image/webp"]:

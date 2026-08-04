@@ -294,8 +294,8 @@ async def listar_apelaciones_aliados(authorization: str = Header(None)):
 
     resultado = supabase.table("apelaciones_aliados").select(
         "id, mensaje, documentos_urls, created_at, "
-        "perfil_apoyo(id, datos_extra, tipo, usuario_id, "
-        "usuarios(nombre, apellido_paterno, email))"
+        "perfil_apoyo(id, datos_extra, tipo, usuario_id, categorias, especies_atendidas, niveles_urgencia_atendida, "
+        "usuarios(nombre, apellido_paterno, email, telefono))"
     ).eq("estado", "pendiente").order("created_at").execute()
 
     return resultado.data

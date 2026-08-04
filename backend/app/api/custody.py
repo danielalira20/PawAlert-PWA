@@ -106,7 +106,7 @@ def _en_radio_regional(asociacion: dict, voluntario_id: str, radio_km: float = 5
     if asociacion.get("latitud") is None or asociacion.get("longitud") is None:
         return False
     perfil = (
-        supabase.table("perfil_casa_temporal")
+        supabase_admin.table("perfil_casa_temporal")
         .select("latitud, longitud")
         .eq("voluntario_id", voluntario_id)
         .limit(1)
@@ -163,7 +163,7 @@ def _reporte_resumen(reporte_id: str) -> dict:
 
 def _ultimo_seguimiento(custodia_id: str) -> Optional[dict]:
     resultado = (
-        supabase.table("seguimientos_resguardo")
+        supabase_admin.table("seguimientos_resguardo")
         .select("*")
         .eq("custodia_id", custodia_id)
         .order("creado_at", desc=True)
@@ -175,7 +175,7 @@ def _ultimo_seguimiento(custodia_id: str) -> Optional[dict]:
 
 def _seguimientos_recientes(custodia_id: str) -> list[dict]:
     return (
-        supabase.table("seguimientos_resguardo")
+        supabase_admin.table("seguimientos_resguardo")
         .select(
             "id, tipo, condicion_actual, salud, alimentacion, tratamiento, "
             "comportamiento, foto_url, entorno_foto_url, estado_validacion, "
@@ -200,7 +200,7 @@ def _transferencia_activa(custodia_id: str, incluir_destino: bool = False) -> Op
             "longitud_destino"
         )
     resultado = (
-        supabase.table("transferencias_custodia")
+        supabase_admin.table("transferencias_custodia")
         .select(campos)
         .eq("custodia_id", custodia_id)
         .in_("estado", ["programada", "en_traslado", "en_curso"])
@@ -212,14 +212,14 @@ def _transferencia_activa(custodia_id: str, incluir_destino: bool = False) -> Op
 
 def _oferta_relevo_para_voluntario(custodia_id: str) -> Optional[dict]:
     solicitud = (
-        supabase.table("solicitudes_relevo").select("id")
+        supabase_admin.table("solicitudes_relevo").select("id")
         .eq("custodia_id", custodia_id).eq("estado", "reservada")
         .limit(1).execute()
     )
     if not solicitud.data:
         return None
     resultado = (
-        supabase.table("ofertas_relevo_custodia")
+        supabase_admin.table("ofertas_relevo_custodia")
         .select(
             "id, tipo_destino, responsable_recepcion, ventana_inicio, "
             "ventana_fin, estado, asociaciones(nombre)"
@@ -232,7 +232,7 @@ def _oferta_relevo_para_voluntario(custodia_id: str) -> Optional[dict]:
 
 def _aclaraciones_activas(custodia_id: str) -> list[dict]:
     return (
-        supabase.table("aclaraciones_seguimiento")
+        supabase_admin.table("aclaraciones_seguimiento")
         .select(
             "id, seguimiento_id, asociacion_origen_id, pregunta_regional, "
             "mensaje_coordinadora, respuesta_voluntario, foto_respuesta_url, "
@@ -252,7 +252,7 @@ def _pregunta_vencimiento(
     if not fecha_limite:
         return None
     resultado = (
-        supabase.table("respuestas_vencimiento_custodia")
+        supabase_admin.table("respuestas_vencimiento_custodia")
         .select(
             "id, fecha_limite_consultada, respuesta, nueva_fecha_limite, "
             "respondida_at, creada_at"
@@ -270,7 +270,7 @@ def _pregunta_vencimiento(
 
 def _seguimiento_inicial(custodia_id: str) -> Optional[dict]:
     resultado = (
-        supabase.table("seguimientos_resguardo")
+        supabase_admin.table("seguimientos_resguardo")
         .select("id, foto_url, entorno_foto_url, creado_at")
         .eq("custodia_id", custodia_id)
         .order("creado_at")
@@ -282,7 +282,7 @@ def _seguimiento_inicial(custodia_id: str) -> Optional[dict]:
 
 def _ultima_evidencia_entorno(custodia_id: str) -> Optional[dict]:
     resultado = (
-        supabase.table("seguimientos_resguardo")
+        supabase_admin.table("seguimientos_resguardo")
         .select("id, entorno_foto_url, creado_at")
         .eq("custodia_id", custodia_id)
         .not_.is_("entorno_foto_url", "null")
@@ -295,7 +295,7 @@ def _ultima_evidencia_entorno(custodia_id: str) -> Optional[dict]:
 
 def _revision_activa(seguimiento_id: str) -> Optional[dict]:
     resultado = (
-        supabase.table("revisiones_seguimiento")
+        supabase_admin.table("revisiones_seguimiento")
         .select("id, asociacion_id, estado, reservada_at, vence_at, asociaciones(nombre)")
         .eq("seguimiento_id", seguimiento_id)
         .eq("estado", "reservada")
@@ -308,7 +308,7 @@ def _revision_activa(seguimiento_id: str) -> Optional[dict]:
 
 def _ultima_validacion(seguimiento_id: str) -> Optional[dict]:
     resultado = (
-        supabase.table("validaciones_seguimiento")
+        supabase_admin.table("validaciones_seguimiento")
         .select(
             "id, decision, comentario, mismo_animal, foto_clara, entorno_adecuado, "
             "condicion_evolucion, posibles_inconsistencias, creado_at, asociaciones(nombre)"
@@ -351,7 +351,7 @@ def listar_mis_custodias(authorization: Optional[str] = Header(None)):
         .execute()
     ).data or []
     notificaciones = (
-        supabase.table("notificaciones_custodia")
+        supabase_admin.table("notificaciones_custodia")
         .select("id, custodia_id, tipo, mensaje, leida, creada_at")
         .eq("usuario_id", usuario["id"])
         .order("creada_at", desc=True)
@@ -386,7 +386,7 @@ def marcar_notificacion_leida(
 ):
     usuario = _usuario(authorization)
     resultado = (
-        supabase.table("notificaciones_custodia")
+        supabase_admin.table("notificaciones_custodia")
         .update({"leida": True})
         .eq("id", notificacion_id)
         .eq("usuario_id", usuario["id"])
@@ -406,7 +406,7 @@ def registrar_seguimiento(
     usuario = _usuario(authorization)
     voluntario = _voluntario_externo(usuario)
     resultado = (
-        supabase.table("custodias_temporales")
+        supabase_admin.table("custodias_temporales")
         .select("*")
         .eq("id", custodia_id)
         .limit(1)
@@ -451,7 +451,7 @@ def registrar_seguimiento(
     frecuencia = _frecuencia_horas(body.condicion_actual, custodia["inicio_at"], es_inicial)
     siguiente = _ahora() + timedelta(hours=frecuencia)
     insertado = (
-        supabase.table("seguimientos_resguardo")
+        supabase_admin.table("seguimientos_resguardo")
         .insert(
             {
                 "custodia_id": custodia_id,
@@ -499,7 +499,7 @@ def listar_seguimiento_regional(
     usuario = _usuario(authorization)
     asociacion = _asociacion_verificada(usuario)
     custodias = (
-        supabase.table("custodias_temporales")
+        supabase_admin.table("custodias_temporales")
         .select(
             "id, reporte_id, voluntario_id, asociacion_coordinadora_id, estado, "
             "inicio_at, fecha_limite, proximo_seguimiento_at, ultimo_seguimiento_at, "
@@ -520,7 +520,7 @@ def listar_seguimiento_regional(
         ):
             continue
         relevo = (
-            supabase.table("solicitudes_relevo")
+            supabase_admin.table("solicitudes_relevo")
             .select(
                 "id, motivo, estado, solicitada_at, radio_actual_km, escalada_admin_at"
             )
@@ -535,7 +535,7 @@ def listar_seguimiento_regional(
             float((relevo_activo or {}).get("radio_actual_km") or 0),
         )
         perfil = (
-            supabase.table("perfil_casa_temporal")
+            supabase_admin.table("perfil_casa_temporal")
             .select(
                 "latitud, longitud, calle, numero, colonia, municipio, "
                 "estado_ubicacion"
@@ -564,7 +564,7 @@ def listar_seguimiento_regional(
         if not es_coordinadora and (distancia is None or distancia > radio_efectivo):
             continue
         voluntario = (
-            supabase.table("voluntarios")
+            supabase_admin.table("voluntarios")
             .select("usuarios(nombre, apellido_paterno)")
             .eq("id", custodia["voluntario_id"])
             .limit(1)
@@ -581,7 +581,7 @@ def listar_seguimiento_regional(
         oferta_relevo = None
         if relevo_activo:
             oferta = (
-                supabase.table("ofertas_relevo_custodia")
+                supabase_admin.table("ofertas_relevo_custodia")
                 .select(
                     "id, asociacion_receptora_id, tipo_destino, voluntario_receptor_id, "
                     "responsable_recepcion, direccion_recepcion, latitud_recepcion, "
@@ -656,7 +656,7 @@ def listar_seguimiento_regional(
             }
         )
     notificaciones = (
-        supabase.table("notificaciones_coordinacion")
+        supabase_admin.table("notificaciones_coordinacion")
         .select("id, tipo, mensaje, leida, creada_at")
         .eq("asociacion_id", asociacion["id"])
         .order("creada_at", desc=True).limit(20).execute()
@@ -676,7 +676,7 @@ def marcar_notificacion_coordinacion_leida(
     usuario = _usuario(authorization)
     asociacion = _asociacion_verificada(usuario)
     resultado = (
-        supabase.table("notificaciones_coordinacion").update({"leida": True})
+        supabase_admin.table("notificaciones_coordinacion").update({"leida": True})
         .eq("id", notificacion_id).eq("asociacion_id", asociacion["id"]).execute()
     )
     if not resultado.data:
@@ -692,7 +692,7 @@ def reservar_revision(
     usuario = _usuario(authorization)
     asociacion = _asociacion_verificada(usuario)
     seguimiento = (
-        supabase.table("seguimientos_resguardo")
+        supabase_admin.table("seguimientos_resguardo")
         .select("id, custodia_id")
         .eq("id", seguimiento_id)
         .limit(1)
@@ -701,7 +701,7 @@ def reservar_revision(
     if not seguimiento.data:
         raise HTTPException(status_code=404, detail="Seguimiento no encontrado")
     custodia = (
-        supabase.table("custodias_temporales")
+        supabase_admin.table("custodias_temporales")
         .select("asociacion_coordinadora_id, voluntario_id")
         .eq("id", seguimiento.data[0]["custodia_id"])
         .limit(1)
@@ -742,13 +742,13 @@ def formular_duda_regional(
     usuario = _usuario(authorization)
     asociacion = _asociacion_verificada(usuario)
     seguimiento = (
-        supabase.table("seguimientos_resguardo").select("id, custodia_id")
+        supabase_admin.table("seguimientos_resguardo").select("id, custodia_id")
         .eq("id", seguimiento_id).limit(1).execute()
     )
     if not seguimiento.data:
         raise HTTPException(status_code=404, detail="Seguimiento no encontrado")
     custodia = (
-        supabase.table("custodias_temporales")
+        supabase_admin.table("custodias_temporales")
         .select("reporte_id, asociacion_coordinadora_id, voluntario_id")
         .eq("id", seguimiento.data[0]["custodia_id"]).limit(1).execute()
     ).data[0]
@@ -757,7 +757,7 @@ def formular_duda_regional(
     if not _en_radio_regional(asociacion, custodia["voluntario_id"]):
         raise HTTPException(status_code=403, detail="La custodia está fuera de tu región")
     revision = (
-        supabase.table("revisiones_seguimiento")
+        supabase_admin.table("revisiones_seguimiento")
         .select("id, asociacion_id, estado, vence_at")
         .eq("seguimiento_id", seguimiento_id).limit(1).execute()
     )
@@ -768,7 +768,7 @@ def formular_duda_regional(
     if reserva["asociacion_id"] != asociacion["id"] or reserva["estado"] != "reservada" or vence_at <= _ahora():
         raise HTTPException(status_code=409, detail="La reserva de revisión ya no está disponible")
     try:
-        creada = supabase.table("aclaraciones_seguimiento").insert({
+        creada = supabase_admin.table("aclaraciones_seguimiento").insert({
             "seguimiento_id": seguimiento_id,
             "custodia_id": seguimiento.data[0]["custodia_id"],
             "asociacion_origen_id": asociacion["id"],
@@ -793,12 +793,12 @@ def formular_duda_regional(
         descripcion="Una asociación regional envió una duda a la coordinadora",
         datos_extra={"aclaracion_id": creada.data[0]["id"]},
     )
-    supabase.table("revisiones_seguimiento").update({
+    supabase_admin.table("revisiones_seguimiento").update({
         "estado": "completada", "completada_at": _ahora().isoformat()
     }).eq("seguimiento_id", seguimiento_id).eq("asociacion_id", asociacion["id"]).execute()
     
     # Extraer el email de la asociación coordinadora para enviar el correo
-    coordinadora_resultado = supabase.table("asociaciones").select(
+    coordinadora_resultado = supabase_admin.table("asociaciones").select(
         "nombre, contacto_email"
     ).eq("id", custodia["asociacion_coordinadora_id"]).limit(1).execute()
     
@@ -826,7 +826,7 @@ def enviar_aclaracion_al_voluntario(
     usuario = _usuario(authorization)
     asociacion = _asociacion_verificada(usuario)
     aclaracion = (
-        supabase.table("aclaraciones_seguimiento")
+        supabase_admin.table("aclaraciones_seguimiento")
         .select("*, custodias_temporales(reporte_id, asociacion_coordinadora_id)")
         .eq("id", aclaracion_id).limit(1).execute()
     )
@@ -838,7 +838,7 @@ def enviar_aclaracion_al_voluntario(
         raise HTTPException(status_code=403, detail="Solo la coordinadora puede contactar al hogar temporal")
     if fila["estado"] not in ("pendiente_coordinadora", "respondida"):
         raise HTTPException(status_code=409, detail="La aclaración no puede enviarse en su estado actual")
-    supabase.table("aclaraciones_seguimiento").update({
+    supabase_admin.table("aclaraciones_seguimiento").update({
         "mensaje_coordinadora": body.mensaje.strip(),
         "estado": "enviada_voluntario",
         "enviada_at": _ahora().isoformat(),
@@ -861,8 +861,8 @@ def responder_aclaracion(
     usuario = _usuario(authorization)
     voluntario = _voluntario_externo(usuario)
     aclaracion = (
-        supabase.table("aclaraciones_seguimiento")
-        .select("*, custodias_temporales(reporte_id, voluntario_id)")
+        supabase_admin.table("aclaraciones_seguimiento")
+        .select("*, custodias_temporales(reporte_id, voluntario_id, asociacion_coordinadora_id)")
         .eq("id", aclaracion_id).limit(1).execute()
     )
     if not aclaracion.data:
@@ -871,27 +871,29 @@ def responder_aclaracion(
     custodia = fila.get("custodias_temporales") or {}
     if custodia.get("voluntario_id") != voluntario["id"] or fila["estado"] != "enviada_voluntario":
         raise HTTPException(status_code=403, detail="No puedes responder esta aclaración")
-    supabase.table("aclaraciones_seguimiento").update({
+    
+    # Usamos supabase_admin para evitar el bloqueo de RLS al actualizar
+    supabase_admin.table("aclaraciones_seguimiento").update({
         "respuesta_voluntario": body.respuesta.strip(),
         "foto_respuesta_url": body.foto_url,
         "estado": "respondida",
         "respondida_at": _ahora().isoformat(),
     }).eq("id", aclaracion_id).execute()
+    
     registrar_historial(
-        reporte_id=custodia["reporte_id"], usuario_id=usuario["id"],
+        reporte_id=custodia["reporte_id"],
+        usuario_id=usuario["id"],
         tipo_evento="aclaracion_respondida",
         descripcion="El hogar temporal respondió una solicitud de aclaración",
         datos_extra={"aclaracion_id": aclaracion_id, "foto_url": body.foto_url},
     )
     
-    # Extraer el email de la asociación coordinadora
-    coordinadora_resultado = supabase.table("asociaciones").select(
+    coordinadora_resultado = supabase_admin.table("asociaciones").select(
         "nombre, contacto_email"
     ).eq("id", custodia["asociacion_coordinadora_id"]).limit(1).execute()
     
     if coordinadora_resultado.data and coordinadora_resultado.data[0].get("contacto_email"):
         coordinadora = coordinadora_resultado.data[0]
-        # Disparamos el correo
         email_respuesta_voluntario(
             email_coordinadora=coordinadora["contacto_email"],
             nombre_coordinadora=coordinadora["nombre"],
@@ -910,7 +912,7 @@ def resolver_aclaracion(
     usuario = _usuario(authorization)
     asociacion = _asociacion_verificada(usuario)
     aclaracion = (
-        supabase.table("aclaraciones_seguimiento")
+        supabase_admin.table("aclaraciones_seguimiento")
         .select("id, estado, custodias_temporales(reporte_id, asociacion_coordinadora_id)")
         .eq("id", aclaracion_id).limit(1).execute()
     )
@@ -922,7 +924,7 @@ def resolver_aclaracion(
         raise HTTPException(status_code=403, detail="Solo la coordinadora puede resolver la aclaración")
     if fila["estado"] != "respondida":
         raise HTTPException(status_code=409, detail="Espera la respuesta del hogar temporal")
-    supabase.table("aclaraciones_seguimiento").update({
+    supabase_admin.table("aclaraciones_seguimiento").update({
         "estado": "resuelta",
         "resuelta_at": _ahora().isoformat(),
         "resuelta_por_id": usuario["id"],
@@ -945,7 +947,7 @@ def validar_seguimiento(
     usuario = _usuario(authorization)
     asociacion = _asociacion_verificada(usuario)
     seguimiento = (
-        supabase.table("seguimientos_resguardo")
+        supabase_admin.table("seguimientos_resguardo")
         .select("id, custodia_id")
         .eq("id", seguimiento_id)
         .limit(1)
@@ -954,7 +956,7 @@ def validar_seguimiento(
     if not seguimiento.data:
         raise HTTPException(status_code=404, detail="Seguimiento no encontrado")
     custodia = (
-        supabase.table("custodias_temporales")
+        supabase_admin.table("custodias_temporales")
         .select("reporte_id, asociacion_coordinadora_id, voluntario_id")
         .eq("id", seguimiento.data[0]["custodia_id"])
         .limit(1)
@@ -976,7 +978,7 @@ def validar_seguimiento(
     if None in (body.mismo_animal, body.foto_clara, body.entorno_adecuado) or not body.condicion_evolucion:
         raise HTTPException(status_code=422, detail="Completa la revisión manual de la evidencia")
     revision = (
-        supabase.table("revisiones_seguimiento")
+        supabase_admin.table("revisiones_seguimiento")
         .select("id, asociacion_id, estado, vence_at")
         .eq("seguimiento_id", seguimiento_id)
         .limit(1)
@@ -993,7 +995,7 @@ def validar_seguimiento(
     ):
         raise HTTPException(status_code=409, detail="La reserva de revisión ya no está disponible")
     insertado = (
-        supabase.table("validaciones_seguimiento")
+        supabase_admin.table("validaciones_seguimiento")
         .upsert(
             {
                 "seguimiento_id": seguimiento_id,
@@ -1013,7 +1015,7 @@ def validar_seguimiento(
     )
     estado = body.decision
     existentes = (
-        supabase.table("validaciones_seguimiento")
+        supabase_admin.table("validaciones_seguimiento")
         .select("decision")
         .eq("seguimiento_id", seguimiento_id)
         .execute()
@@ -1021,14 +1023,14 @@ def validar_seguimiento(
     decisiones = {v["decision"] for v in existentes}
     if len(decisiones) > 1 and custodia["asociacion_coordinadora_id"] != asociacion["id"]:
         estado = "alerta"
-    supabase.table("seguimientos_resguardo").update(
+    supabase_admin.table("seguimientos_resguardo").update(
         {"estado_validacion": estado}
     ).eq("id", seguimiento_id).execute()
-    supabase.table("revisiones_seguimiento").update(
+    supabase_admin.table("revisiones_seguimiento").update(
         {"estado": "completada", "completada_at": _ahora().isoformat()}
     ).eq("id", revision["id"]).execute()
     if body.decision == "aclaracion_solicitada":
-        supabase.table("aclaraciones_seguimiento").insert({
+        supabase_admin.table("aclaraciones_seguimiento").insert({
             "seguimiento_id": seguimiento_id,
             "custodia_id": seguimiento.data[0]["custodia_id"],
             "asociacion_origen_id": asociacion["id"],
@@ -1102,8 +1104,10 @@ def responder_vencimiento_custodia(
 ):
     usuario = _usuario(authorization)
     voluntario = _voluntario_externo(usuario)
+    
+    # Cambio 1: Lectura con admin
     resultado = (
-        supabase.table("custodias_temporales")
+        supabase_admin.table("custodias_temporales")
         .select("id, reporte_id, voluntario_id, estado, fecha_limite")
         .eq("id", custodia_id)
         .limit(1)
@@ -1125,6 +1129,7 @@ def responder_vencimiento_custodia(
         "respondida_at": _ahora().isoformat(),
         "nueva_fecha_limite": None,
     }
+    
     if body.respuesta == "puede_continuar":
         if not body.nueva_fecha_limite:
             raise HTTPException(status_code=422, detail="Indica hasta qué fecha puedes continuar")
@@ -1132,14 +1137,14 @@ def responder_vencimiento_custodia(
         if nueva_fecha <= _ahora() + timedelta(days=1):
             raise HTTPException(status_code=422, detail="La nueva fecha debe ampliar el resguardo al menos un día")
         capacidad = (
-            supabase.table("capacidades")
+            supabase_admin.table("capacidades")
             .select("capacidad_animales")
             .eq("voluntario_id", voluntario["id"])
             .limit(1)
             .execute()
         )
         activas = (
-            supabase.table("custodias_temporales")
+            supabase_admin.table("custodias_temporales")
             .select("id", count="exact")
             .eq("voluntario_id", voluntario["id"])
             .in_("estado", list(ESTADOS_CUSTODIA_ACTIVA))
@@ -1149,15 +1154,18 @@ def responder_vencimiento_custodia(
         if limite and (activas.count or len(activas.data or [])) > limite:
             raise HTTPException(status_code=409, detail="Tu capacidad actual necesita revisión")
         respuesta["nueva_fecha_limite"] = nueva_fecha.isoformat()
-        supabase.table("custodias_temporales").update(
+        
+        # Cambio 2: Update con admin
+        supabase_admin.table("custodias_temporales").update(
             {"fecha_limite": nueva_fecha.isoformat(), "estado": "activo"}
         ).eq("id", custodia_id).execute()
         evento = "extension_resguardo"
         descripcion = "El hogar temporal confirmó que puede continuar"
         datos_extra = {"nueva_fecha_limite": nueva_fecha.isoformat()}
+        
     elif body.respuesta == "no_puede":
         existente = (
-            supabase.table("solicitudes_relevo")
+            supabase_admin.table("solicitudes_relevo")
             .select("id")
             .eq("custodia_id", custodia_id)
             .in_("estado", ["abierta", "reservada"])
@@ -1167,13 +1175,15 @@ def responder_vencimiento_custodia(
         if existente.data:
             solicitud_id = existente.data[0]["id"]
         else:
-            creada = supabase.table("solicitudes_relevo").insert({
+            creada = supabase_admin.table("solicitudes_relevo").insert({
                 "custodia_id": custodia_id,
                 "solicitada_por_id": usuario["id"],
                 "motivo": "El hogar temporal indicó que no puede continuar al vencer el plazo.",
             }).execute()
             solicitud_id = creada.data[0]["id"]
-        supabase.table("custodias_temporales").update(
+            
+        # Cambio 3: Update con admin
+        supabase_admin.table("custodias_temporales").update(
             {"estado": "buscando_relevo"}
         ).eq("id", custodia_id).execute()
         evento = "relevo_solicitado"
@@ -1184,7 +1194,8 @@ def responder_vencimiento_custodia(
         descripcion = "El hogar temporal todavía no sabe si podrá continuar"
         datos_extra = {}
 
-    supabase.table("respuestas_vencimiento_custodia").upsert(
+    # Cambio 4: Upsert con admin
+    supabase_admin.table("respuestas_vencimiento_custodia").upsert(
         {
             "custodia_id": custodia_id,
             "fecha_limite_consultada": fecha_consultada,
@@ -1192,6 +1203,7 @@ def responder_vencimiento_custodia(
         },
         on_conflict="custodia_id,fecha_limite_consultada",
     ).execute()
+    
     registrar_historial(
         reporte_id=custodia["reporte_id"],
         usuario_id=usuario["id"],
@@ -1211,12 +1223,12 @@ def solicitar_relevo(
     usuario = _usuario(authorization)
     voluntario = _voluntario_externo(usuario)
     custodia = (
-        supabase.table("custodias_temporales").select("*").eq("id", custodia_id).limit(1).execute()
+        supabase_admin.table("custodias_temporales").select("*").eq("id", custodia_id).limit(1).execute()
     )
     if not custodia.data or custodia.data[0]["voluntario_id"] != voluntario["id"]:
         raise HTTPException(status_code=403, detail="No puedes solicitar relevo para esta custodia")
     existente = (
-        supabase.table("solicitudes_relevo")
+        supabase_admin.table("solicitudes_relevo")
         .select("id")
         .eq("custodia_id", custodia_id)
         .in_("estado", ["abierta", "reservada"])
@@ -1226,11 +1238,11 @@ def solicitar_relevo(
     if existente.data:
         raise HTTPException(status_code=409, detail="Ya existe una solicitud de relevo activa")
     creado = (
-        supabase.table("solicitudes_relevo")
+        supabase_admin.table("solicitudes_relevo")
         .insert({"custodia_id": custodia_id, "solicitada_por_id": usuario["id"], "motivo": body.motivo})
         .execute()
     )
-    supabase.table("custodias_temporales").update(
+    supabase_admin.table("custodias_temporales").update(
         {"estado": "buscando_relevo"}
     ).eq("id", custodia_id).execute()
     registrar_historial(
@@ -1252,7 +1264,7 @@ def aceptar_relevo(
     usuario = _usuario(authorization)
     asociacion = _asociacion_verificada(usuario)
     solicitud = (
-        supabase.table("solicitudes_relevo")
+        supabase_admin.table("solicitudes_relevo")
         .select(
             "custodia_id, radio_actual_km, "
             "custodias_temporales(voluntario_id, reporte_id)"
@@ -1279,7 +1291,7 @@ def aceptar_relevo(
         if not body.voluntario_receptor_id or not body.nueva_fecha_limite:
             raise HTTPException(status_code=422, detail="Selecciona el nuevo hogar y su fecha límite")
         receptor = (
-            supabase.table("voluntarios")
+            supabase_admin.table("voluntarios")
             .select("id, estado, disponible_operativamente, capacidades(capacidad_animales)")
             .eq("id", body.voluntario_receptor_id).limit(1).execute()
         )
@@ -1292,7 +1304,7 @@ def aceptar_relevo(
             capacidad = capacidad[0] if capacidad else {}
         limite = int(capacidad.get("capacidad_animales") or 1)
         carga = (
-            supabase.table("custodias_temporales")
+            supabase_admin.table("custodias_temporales")
             .select("id", count="exact")
             .eq("voluntario_id", body.voluntario_receptor_id)
             .in_("estado", list(ESTADOS_CUSTODIA_ACTIVA)).execute()
@@ -1352,7 +1364,7 @@ def listar_hogares_para_relevo(
     usuario = _usuario(authorization)
     _asociacion_verificada(usuario)
     solicitud = (
-        supabase.table("solicitudes_relevo")
+        supabase_admin.table("solicitudes_relevo")
         .select("id, custodias_temporales(voluntario_id)")
         .eq("id", solicitud_id).limit(1).execute()
     )
@@ -1360,7 +1372,7 @@ def listar_hogares_para_relevo(
         raise HTTPException(status_code=404, detail="Solicitud de relevo no encontrada")
     actual_id = (solicitud.data[0].get("custodias_temporales") or {}).get("voluntario_id")
     candidatos = (
-        supabase.table("voluntarios")
+        supabase_admin.table("voluntarios")
         .select(
             "id, estado, disponible_operativamente, usuarios(nombre, apellido_paterno), "
             "capacidades(capacidad_animales, max_casos_simultaneos), "
@@ -1383,7 +1395,7 @@ def listar_hogares_para_relevo(
             or 1
         )
         carga = (
-            supabase.table("custodias_temporales")
+            supabase_admin.table("custodias_temporales")
             .select("id", count="exact")
             .eq("voluntario_id", candidato["id"])
             .in_("estado", list(ESTADOS_CUSTODIA_ACTIVA)).execute()
@@ -1415,7 +1427,7 @@ def autorizar_oferta_relevo(
     usuario = _usuario(authorization)
     asociacion = _asociacion_verificada(usuario)
     resultado = (
-        supabase.table("ofertas_relevo_custodia")
+        supabase_admin.table("ofertas_relevo_custodia")
         .select(
             "id, estado, solicitud_relevo_id, "
             "solicitudes_relevo(custodias_temporales(reporte_id, asociacion_coordinadora_id))"
@@ -1430,7 +1442,7 @@ def autorizar_oferta_relevo(
         raise HTTPException(status_code=403, detail="Sólo la coordinadora puede autorizar el destino")
     if oferta["estado"] != "pendiente_coordinadora":
         raise HTTPException(status_code=409, detail="La oferta ya fue procesada")
-    supabase.table("ofertas_relevo_custodia").update({
+    supabase_admin.table("ofertas_relevo_custodia").update({
         "estado": "autorizada",
         "autorizada_por_id": usuario["id"],
         "autorizada_at": _ahora().isoformat(),
@@ -1453,7 +1465,7 @@ def responder_transporte_relevo(
     usuario = _usuario(authorization)
     voluntario = _voluntario_externo(usuario)
     oferta = (
-        supabase.table("ofertas_relevo_custodia")
+        supabase_admin.table("ofertas_relevo_custodia")
         .select(
             "id, solicitud_relevo_id, solicitudes_relevo("
             "custodias_temporales(reporte_id, voluntario_id))"
@@ -1497,7 +1509,7 @@ def iniciar_traslado(
     usuario = _usuario(authorization)
     voluntario = _voluntario_externo(usuario)
     resultado = (
-        supabase.table("transferencias_custodia")
+        supabase_admin.table("transferencias_custodia")
         .select("id, estado, ventana_inicio, custodias_temporales(reporte_id, voluntario_id)")
         .eq("id", transferencia_id).limit(1).execute()
     )
@@ -1512,7 +1524,7 @@ def iniciar_traslado(
     inicio = datetime.fromisoformat(str(transferencia["ventana_inicio"]).replace("Z", "+00:00"))
     if _ahora() < inicio - timedelta(hours=2):
         raise HTTPException(status_code=409, detail="El traslado se habilita dos horas antes de la ventana acordada")
-    supabase.table("transferencias_custodia").update({
+    supabase_admin.table("transferencias_custodia").update({
         "estado": "en_traslado", "traslado_iniciado_at": _ahora().isoformat()
     }).eq("id", transferencia_id).eq("estado", "programada").execute()
     registrar_historial(
@@ -1531,7 +1543,7 @@ def confirmar_transferencia(
 ):
     usuario = _usuario(authorization)
     transferencia = (
-        supabase.table("transferencias_custodia")
+        supabase_admin.table("transferencias_custodia")
         .select("*, custodias_temporales(voluntario_id, reporte_id)")
         .eq("id", transferencia_id)
         .limit(1)
@@ -1605,7 +1617,7 @@ def registrar_proceso_resolucion(
     usuario = _usuario(authorization)
     asociacion = _asociacion_verificada(usuario)
     resultado = (
-        supabase.table("custodias_temporales")
+        supabase_admin.table("custodias_temporales")
         .select("id, reporte_id, asociacion_coordinadora_id, estado")
         .eq("id", custodia_id).limit(1).execute()
     )
@@ -1618,7 +1630,7 @@ def registrar_proceso_resolucion(
         raise HTTPException(status_code=422, detail="Confirma la revisión médica y legal antes de cerrar")
     if body.tipo == "adopcion_aprobada" and body.idoneidad_adoptante is not True:
         raise HTTPException(status_code=422, detail="La adopción requiere validar la idoneidad del adoptante")
-    creado = supabase.table("procesos_resolucion_custodia").upsert({
+    creado = supabase_admin.table("procesos_resolucion_custodia").upsert({
         "custodia_id": custodia_id,
         "tipo": body.tipo,
         "referencia": body.referencia.strip(),
@@ -1649,7 +1661,7 @@ def finalizar_custodia(
     usuario = _usuario(authorization)
     asociacion = _asociacion_verificada(usuario)
     resultado = (
-        supabase.table("custodias_temporales")
+        supabase_admin.table("custodias_temporales")
         .select("id, reporte_id, estado, asociacion_coordinadora_id")
         .eq("id", custodia_id)
         .limit(1)
@@ -1664,7 +1676,7 @@ def finalizar_custodia(
         raise HTTPException(status_code=409, detail="La transferencia todavía no ha sido confirmada por ambas partes")
     if body.resolucion in ("ingreso_formal_asociacion", "adopcion_aprobada"):
         proceso = (
-            supabase.table("procesos_resolucion_custodia")
+            supabase_admin.table("procesos_resolucion_custodia")
             .select("id")
             .eq("custodia_id", custodia_id)
             .eq("tipo", body.resolucion)
@@ -1677,7 +1689,7 @@ def finalizar_custodia(
                 detail="Primero formaliza y aprueba el proceso médico/legal de esta resolución",
             )
     estado_cerrado = (
-        supabase.table("reporte_estados")
+        supabase_admin.table("reporte_estados")
         .select("id")
         .eq("clave", "cerrado")
         .limit(1)
@@ -1685,10 +1697,10 @@ def finalizar_custodia(
     )
     if not estado_cerrado.data:
         raise HTTPException(status_code=500, detail="No se pudo resolver el estado de cierre")
-    supabase.table("custodias_temporales").update(
+    supabase_admin.table("custodias_temporales").update(
         {"estado": "finalizado", "finalizada_at": _ahora().isoformat()}
     ).eq("id", custodia_id).execute()
-    supabase.table("reportes").update(
+    supabase_admin.table("reportes").update(
         {
             "estado_reporte": "cerrado",
             "estado_id": estado_cerrado.data[0]["id"],
@@ -1711,7 +1723,7 @@ def finalizar_custodia(
 def generar_notificaciones_vencimiento() -> dict:
     limite = (_ahora() + timedelta(hours=72)).isoformat()
     custodias = (
-        supabase.table("custodias_temporales")
+        supabase_admin.table("custodias_temporales")
         .select(
             "id, voluntario_id, asociacion_coordinadora_id, fecha_limite, "
             "proximo_seguimiento_at"
@@ -1723,7 +1735,7 @@ def generar_notificaciones_vencimiento() -> dict:
     creadas = 0
     for custodia in custodias:
         voluntario = (
-            supabase.table("voluntarios")
+            supabase_admin.table("voluntarios")
             .select("usuario_id")
             .eq("id", custodia["voluntario_id"])
             .limit(1)
@@ -1733,14 +1745,14 @@ def generar_notificaciones_vencimiento() -> dict:
             continue
         fecha_referencia = custodia["fecha_limite"]
         try:
-            supabase.table("respuestas_vencimiento_custodia").insert({
+            supabase_admin.table("respuestas_vencimiento_custodia").insert({
                 "custodia_id": custodia["id"],
                 "fecha_limite_consultada": fecha_referencia,
             }).execute()
         except Exception:
             pass
         respuesta_resultado = (
-            supabase.table("respuestas_vencimiento_custodia")
+            supabase_admin.table("respuestas_vencimiento_custodia")
             .select("respuesta")
             .eq("custodia_id", custodia["id"])
             .eq("fecha_limite_consultada", fecha_referencia)
@@ -1754,7 +1766,7 @@ def generar_notificaciones_vencimiento() -> dict:
         horas = (fecha - _ahora()).total_seconds() / 3600
         tipo = "vencimiento_24h" if horas <= 24 else "vencimiento_48h" if horas <= 48 else "vencimiento_72h"
         try:
-            supabase.table("notificaciones_custodia").insert(
+            supabase_admin.table("notificaciones_custodia").insert(
                 {
                     "custodia_id": custodia["id"],
                     "usuario_id": voluntario.data[0]["usuario_id"],
@@ -1770,7 +1782,7 @@ def generar_notificaciones_vencimiento() -> dict:
             pass
         if horas <= 24 and custodia.get("asociacion_coordinadora_id"):
             try:
-                supabase.table("notificaciones_coordinacion").insert({
+                supabase_admin.table("notificaciones_coordinacion").insert({
                     "asociacion_id": custodia["asociacion_coordinadora_id"],
                     "custodia_id": custodia["id"],
                     "tipo": "vencimiento_sin_respuesta",
@@ -1781,7 +1793,7 @@ def generar_notificaciones_vencimiento() -> dict:
             except Exception:
                 pass
     proximos = (
-        supabase.table("custodias_temporales")
+        supabase_admin.table("custodias_temporales")
         .select("id, voluntario_id, proximo_seguimiento_at")
         .in_("estado", list(ESTADOS_CUSTODIA_ACTIVA))
         .lte("proximo_seguimiento_at", (_ahora() + timedelta(hours=4)).isoformat())
@@ -1789,7 +1801,7 @@ def generar_notificaciones_vencimiento() -> dict:
     ).data or []
     for custodia in proximos:
         voluntario = (
-            supabase.table("voluntarios")
+            supabase_admin.table("voluntarios")
             .select("usuario_id")
             .eq("id", custodia["voluntario_id"])
             .limit(1)
@@ -1808,7 +1820,7 @@ def generar_notificaciones_vencimiento() -> dict:
             else "Tu próximo seguimiento se habilitará dentro de las siguientes 4 horas."
         )
         try:
-            supabase.table("notificaciones_custodia").insert(
+            supabase_admin.table("notificaciones_custodia").insert(
                 {
                     "custodia_id": custodia["id"],
                     "usuario_id": voluntario.data[0]["usuario_id"],
