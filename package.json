@@ -55,6 +55,7 @@
     "tailwindcss": "^3.4.19"
   },
   "devDependencies": {
+    "@playwright/test": "1.55.1",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/react-native": "^14.0.1",
@@ -65,6 +66,7 @@
     "jest-environment-jsdom": "^30.4.1",
     "jest-expo": "^54.0.17",
     "react-test-renderer": "19.1.0",
+    "test-renderer": "1.2.0",
     "ts-jest": "^29.4.11",
     "typescript": "~5.9.2"
   },
@@ -76,16 +78,30 @@
     "web": "expo start --web",
     "build": "expo export --platform web",
     "lint": "expo lint",
-    "test": "jest"
+    "test": "jest",
+    "test:coverage": "jest --coverage --runInBand",
+    "test:e2e": "playwright test",
+    "test:e2e:report": "playwright show-report"
   },
   "jest": {
     "preset": "jest-expo",
     "setupFiles": [
       "./jest.setup.js"
     ],
-    "moduleNameMapper": {
-      "^test-renderer$": "<rootDir>/node_modules/react-test-renderer"
-    }
+    "collectCoverageFrom": [
+      "src/**/*.{ts,tsx}",
+      "!src/**/*.d.ts",
+      "!src/**/__tests__/**",
+      "!src/**/*.test.{ts,tsx}",
+      "!src/**/index.{ts,tsx}"
+    ],
+    "coverageDirectory": "coverage",
+    "coverageReporters": [
+      "text",
+      "text-summary",
+      "html",
+      "lcov"
+    ]
   },
   "private": true
 }

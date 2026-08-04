@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from datetime import datetime, timedelta, timezone
@@ -11,6 +12,16 @@ from app.services import red_aliados_service, report_service
 
 client = TestClient(app)
 AUTH_HEADERS = {"Authorization": "Bearer token-externo"}
+
+
+@contextmanager
+def patched_supabase_clients(module, supabase):
+    """Evita llamadas reales sustituyendo clientes público y administrativo."""
+    with (
+        patch.object(module, "supabase", supabase),
+        patch.object(module, "supabase_admin", supabase),
+    ):
+        yield
 
 
 def _usuario_externo():
@@ -58,7 +69,7 @@ def test_llegada_zona_registra_gps_sin_cambiar_estado(make_query):
     supabase = _supabase_con_tablas(tablas)
 
     with (
-        patch.object(reports, "supabase", supabase),
+        patched_supabase_clients(reports, supabase),
         patch.object(report_service, "registrar_historial") as historial,
     ):
         response = client.post(
@@ -86,7 +97,7 @@ def test_llegada_zona_rechaza_gps_fuera_del_radio(make_query):
     }
     supabase = _supabase_con_tablas(tablas)
 
-    with patch.object(reports, "supabase", supabase):
+    with patched_supabase_clients(reports, supabase):
         response = client.post(
             "/reports/reporte-1/hitos",
             json={
@@ -109,7 +120,7 @@ def test_animal_encontrado_exige_llegada_previa(make_query):
     }
     supabase = _supabase_con_tablas(tablas)
 
-    with patch.object(reports, "supabase", supabase):
+    with patched_supabase_clients(reports, supabase):
         response = client.post(
             "/reports/reporte-1/hitos",
             json={
@@ -153,7 +164,7 @@ def test_animal_encontrado_avanza_a_atencion_y_usa_evento_canonico(make_query):
     supabase = _supabase_con_tablas(tablas)
 
     with (
-        patch.object(reports, "supabase", supabase),
+        patched_supabase_clients(reports, supabase),
         patch.object(report_service, "registrar_historial") as historial,
         patch.object(
             red_aliados_service,
@@ -198,7 +209,7 @@ def test_animal_no_localizado_conserva_asignacion_y_registra_busqueda(make_query
     )
 
     with (
-        patch.object(reports, "supabase", supabase),
+        patched_supabase_clients(reports, supabase),
         patch.object(reports, "supabase_admin", supabase_admin),
     ):
         response = client.post(
@@ -230,7 +241,7 @@ def test_animal_no_localizado_exige_tiempo_y_comentario(make_query):
     }
     supabase = _supabase_con_tablas(tablas)
 
-    with patch.object(reports, "supabase", supabase):
+    with patched_supabase_clients(reports, supabase):
         response = client.post(
             "/reports/reporte-1/hitos",
             json={
@@ -256,7 +267,7 @@ def test_animal_bajo_resguardo_registra_destino_y_evidencia(make_query):
     supabase = _supabase_con_tablas(tablas)
 
     with (
-        patch.object(reports, "supabase", supabase),
+        patched_supabase_clients(reports, supabase),
         patch.object(report_service, "registrar_historial") as historial,
     ):
         response = client.post(
@@ -292,7 +303,7 @@ def test_animal_bajo_resguardo_exige_ruta_y_fecha_concretas(make_query):
     }
     supabase = _supabase_con_tablas(tablas)
 
-    with patch.object(reports, "supabase", supabase):
+    with patched_supabase_clients(reports, supabase):
         response = client.post(
             "/reports/reporte-1/hitos",
             json={
@@ -308,7 +319,7 @@ def test_animal_bajo_resguardo_exige_ruta_y_fecha_concretas(make_query):
     assert response.status_code == 422
     assert "Selecciona si irás directo" in response.json()["detail"]
 
-    with patch.object(reports, "supabase", supabase):
+    with patched_supabase_clients(reports, supabase):
         response_sin_fecha = client.post(
             "/reports/reporte-1/hitos",
             json={
@@ -333,7 +344,7 @@ def test_llegada_hogar_exige_resguardo_y_foto_entorno(make_query):
     }
     supabase = _supabase_con_tablas(tablas)
 
-    with patch.object(reports, "supabase", supabase):
+    with patched_supabase_clients(reports, supabase):
         response = client.post(
             "/reports/reporte-1/hitos",
             json={
@@ -379,7 +390,7 @@ def test_llegada_hogar_inicia_custodia_y_programa_seguimiento(make_query):
     supabase = _supabase_con_tablas(tablas)
 
     with (
-        patch.object(reports, "supabase", supabase),
+        patched_supabase_clients(reports, supabase),
         patch.object(report_service, "registrar_historial") as historial,
     ):
         response = client.post(
@@ -439,7 +450,7 @@ def test_llegada_hogar_exige_paso_veterinario_si_fue_la_ruta_elegida(make_query)
     }
     supabase = _supabase_con_tablas(tablas)
 
-    with patch.object(reports, "supabase", supabase):
+    with patched_supabase_clients(reports, supabase):
         response = client.post(
             "/reports/reporte-1/hitos",
             json={

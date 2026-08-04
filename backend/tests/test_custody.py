@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -12,6 +13,16 @@ from app.services import report_service
 
 client = TestClient(app)
 AUTH = {"Authorization": "Bearer token"}
+
+
+@contextmanager
+def patched_supabase_clients(module, supabase):
+    """Evita llamadas reales sustituyendo clientes público y administrativo."""
+    with (
+        patch.object(module, "supabase", supabase),
+        patch.object(module, "supabase_admin", supabase),
+    ):
+        yield
 
 
 def _usuario_externo():
@@ -36,7 +47,7 @@ def test_seguimiento_inicial_exige_foto_entorno(make_query):
     supabase.table.side_effect = lambda nombre: tablas[nombre]
 
     with (
-        patch.object(custody, "supabase", supabase),
+        patched_supabase_clients(custody, supabase),
         patch.object(custody, "_usuario", return_value=_usuario_externo()),
         patch.object(custody, "_voluntario_externo", return_value={"id": "vol-1"}),
     ):
@@ -65,7 +76,7 @@ def test_seguimiento_inicial_programa_siguiente_revision(make_query):
     supabase.table.side_effect = lambda nombre: tablas[nombre]
 
     with (
-        patch.object(custody, "supabase", supabase),
+        patched_supabase_clients(custody, supabase),
         patch.object(custody, "_usuario", return_value=_usuario_externo()),
         patch.object(custody, "_voluntario_externo", return_value={"id": "vol-1"}),
         patch.object(custody, "registrar_historial") as historial,
@@ -107,7 +118,7 @@ def test_solicitud_relevo_no_transfiere_custodia(make_query):
     supabase.table.side_effect = lambda nombre: tablas[nombre]
 
     with (
-        patch.object(custody, "supabase", supabase),
+        patched_supabase_clients(custody, supabase),
         patch.object(custody, "_usuario", return_value=_usuario_externo()),
         patch.object(custody, "_voluntario_externo", return_value={"id": "vol-1"}),
         patch.object(custody, "registrar_historial"),
@@ -140,7 +151,7 @@ def test_respuesta_vencimiento_no_puede_abre_relevo(make_query):
     supabase.table.side_effect = lambda nombre: tablas[nombre]
 
     with (
-        patch.object(custody, "supabase", supabase),
+        patched_supabase_clients(custody, supabase),
         patch.object(custody, "_usuario", return_value=_usuario_externo()),
         patch.object(custody, "_voluntario_externo", return_value={"id": "vol-1"}),
         patch.object(custody, "registrar_historial") as historial,
@@ -190,7 +201,7 @@ def test_avisos_vencimiento_duplicados_no_reactivan_notificacion(make_query):
     supabase = MagicMock()
     supabase.table.side_effect = lambda nombre: tablas[nombre]
 
-    with patch.object(custody, "supabase", supabase):
+    with patched_supabase_clients(custody, supabase):
         resultado = custody.generar_notificaciones_vencimiento()
 
     assert resultado["notificaciones_generadas"] == 0
@@ -211,8 +222,7 @@ def test_aceptar_relevo_usa_reserva_transaccional():
     usuario = {"id": "user-aso", "rol": "asociacion", "asociacion_id": "aso-2"}
 
     with (
-        patch.object(custody, "supabase", supabase),
-        patch.object(custody, "supabase_admin", supabase),
+        patched_supabase_clients(custody, supabase),
         patch.object(custody, "_usuario", return_value=usuario),
         patch.object(custody, "_asociacion_verificada", return_value={"id": "aso-2"}),
         patch.object(custody, "_en_radio_regional", return_value=True),
@@ -257,7 +267,7 @@ def test_coordinadora_autoriza_destino_antes_del_traslado(make_query):
     usuario = {"id": "user-aso", "rol": "asociacion", "asociacion_id": "aso-1"}
 
     with (
-        patch.object(custody, "supabase", supabase),
+        patched_supabase_clients(custody, supabase),
         patch.object(custody, "_usuario", return_value=usuario),
         patch.object(custody, "_asociacion_verificada", return_value={"id": "aso-1"}),
         patch.object(custody, "registrar_historial") as historial,
@@ -283,10 +293,11 @@ def test_hogar_actual_confirma_que_realizara_traslado(make_query):
     supabase = MagicMock()
     supabase.table.side_effect = lambda nombre: tablas[nombre]
     supabase_admin = MagicMock()
+    supabase_admin.table.side_effect = lambda nombre: tablas[nombre]
     supabase_admin.rpc.return_value.execute.return_value = SimpleNamespace(data="transfer-1")
 
     with (
-        patch.object(custody, "supabase", supabase),
+        patched_supabase_clients(custody, supabase),
         patch.object(custody, "supabase_admin", supabase_admin),
         patch.object(custody, "_usuario", return_value=_usuario_externo()),
         patch.object(custody, "_voluntario_externo", return_value={"id": "vol-1"}),
@@ -322,7 +333,7 @@ def test_transferencia_no_finaliza_con_una_sola_confirmacion(make_query):
     supabase.rpc.return_value.execute.return_value = SimpleNamespace(data="en_curso")
 
     with (
-        patch.object(custody, "supabase", supabase),
+        patched_supabase_clients(custody, supabase),
         patch.object(custody, "supabase_admin", supabase),
         patch.object(custody, "_usuario", return_value=_usuario_externo()),
         patch.object(custody, "_voluntario_externo", return_value={"id": "vol-1"}),
@@ -356,7 +367,7 @@ def test_recepcion_rechaza_confirmaciones_gps_distantes(make_query):
     usuario = {"id": "user-aso", "rol": "asociacion", "asociacion_id": "aso-2"}
 
     with (
-        patch.object(custody, "supabase", supabase),
+        patched_supabase_clients(custody, supabase),
         patch.object(custody, "supabase_admin", supabase),
         patch.object(custody, "_usuario", return_value=usuario),
         patch.object(custody, "_asociacion_verificada", return_value={"id": "aso-2"}),
@@ -423,7 +434,7 @@ def test_reportante_cancela_antes_de_confirmacion_y_expira_interes(make_query):
     supabase.table.side_effect = lambda nombre: tablas[nombre]
 
     with (
-        patch.object(reports, "supabase", supabase),
+        patched_supabase_clients(reports, supabase),
         patch.object(
             reports,
             "_obtener_usuario_autenticado",
@@ -455,7 +466,7 @@ def test_cancelacion_con_voluntario_en_camino_solo_avisa(make_query):
     supabase.table.side_effect = lambda nombre: tablas[nombre]
 
     with (
-        patch.object(reports, "supabase", supabase),
+        patched_supabase_clients(reports, supabase),
         patch.object(
             reports,
             "_obtener_usuario_autenticado",
@@ -488,7 +499,7 @@ def test_coordinadora_finaliza_custodia_transferida(make_query):
     supabase.table.side_effect = lambda nombre: tablas[nombre]
 
     with (
-        patch.object(custody, "supabase", supabase),
+        patched_supabase_clients(custody, supabase),
         patch.object(
             custody,
             "_usuario",
@@ -528,7 +539,7 @@ def test_adopcion_no_cierra_sin_proceso_medico_legal(make_query):
     usuario = {"id": "user-aso", "rol": "asociacion", "asociacion_id": "aso-1"}
 
     with (
-        patch.object(custody, "supabase", supabase),
+        patched_supabase_clients(custody, supabase),
         patch.object(custody, "_usuario", return_value=usuario),
         patch.object(custody, "_asociacion_verificada", return_value={"id": "aso-1"}),
     ):
@@ -557,7 +568,7 @@ def test_escalamiento_amplia_radio_sin_interrumpir_custodia(make_query):
     supabase = MagicMock()
     supabase.table.side_effect = lambda nombre: tablas[nombre]
 
-    with patch.object(custody, "supabase", supabase):
+    with patched_supabase_clients(custody, supabase):
         resultado = custody.escalar_relevos_sin_respuesta()
 
     assert resultado == {"radios_ampliados": 1, "escaladas_administracion": 0}
@@ -583,13 +594,14 @@ def test_revision_regional_se_reserva_por_rpc(make_query):
     supabase = MagicMock()
     supabase.table.side_effect = lambda nombre: tablas[nombre]
     supabase_admin = MagicMock()
+    supabase_admin.table.side_effect = lambda nombre: tablas[nombre]
     supabase_admin.rpc.return_value.execute.return_value = SimpleNamespace(
         data={"revision_id": "rev-1", "vence_at": "2026-08-02T21:00:00Z"}
     )
     usuario = {"id": "user-aso", "rol": "asociacion", "asociacion_id": "aso-1"}
 
     with (
-        patch.object(custody, "supabase", supabase),
+        patched_supabase_clients(custody, supabase),
         patch.object(custody, "supabase_admin", supabase_admin),
         patch.object(custody, "_usuario", return_value=usuario),
         patch.object(custody, "_asociacion_verificada", return_value={"id": "aso-1"}),
@@ -622,11 +634,12 @@ def test_revision_regional_informa_conflicto_controlado(make_query):
     supabase = MagicMock()
     supabase.table.side_effect = lambda nombre: tablas[nombre]
     supabase_admin = MagicMock()
+    supabase_admin.table.side_effect = lambda nombre: tablas[nombre]
     supabase_admin.rpc.return_value.execute.side_effect = Exception("revision_reservada")
     usuario = {"id": "user-aso", "rol": "asociacion", "asociacion_id": "aso-1"}
 
     with (
-        patch.object(custody, "supabase", supabase),
+        patched_supabase_clients(custody, supabase),
         patch.object(custody, "supabase_admin", supabase_admin),
         patch.object(custody, "_usuario", return_value=usuario),
         patch.object(custody, "_asociacion_verificada", return_value={"id": "aso-1"}),
@@ -660,7 +673,7 @@ def test_asociacion_regional_envia_duda_a_coordinadora(make_query):
     usuario = {"id": "user-aso-2", "rol": "asociacion", "asociacion_id": "aso-2"}
 
     with (
-        patch.object(custody, "supabase", supabase),
+        patched_supabase_clients(custody, supabase),
         patch.object(custody, "_usuario", return_value=usuario),
         patch.object(custody, "_asociacion_verificada", return_value={"id": "aso-2", "nombre": "Asociación Regional"}),
         patch.object(custody, "_en_radio_regional", return_value=True),
@@ -708,7 +721,7 @@ def test_coordinadora_ve_su_custodia_aunque_falte_ubicacion_del_hogar(make_query
     usuario = {"id": "user-aso-1", "rol": "asociacion", "asociacion_id": "aso-1"}
 
     with (
-        patch.object(custody, "supabase", supabase),
+        patched_supabase_clients(custody, supabase),
         patch.object(custody, "_usuario", return_value=usuario),
         patch.object(custody, "_asociacion_verificada", return_value={"id": "aso-1", "latitud": None, "longitud": None}),
         patch.object(custody, "_seguimientos_recientes", return_value=[]),
@@ -740,7 +753,7 @@ def test_solo_coordinadora_puede_solicitar_aclaracion_directa(make_query):
     usuario = {"id": "user-aso-2", "rol": "asociacion", "asociacion_id": "aso-2"}
 
     with (
-        patch.object(custody, "supabase", supabase),
+        patched_supabase_clients(custody, supabase),
         patch.object(custody, "_usuario", return_value=usuario),
         patch.object(custody, "_asociacion_verificada", return_value={"id": "aso-2"}),
         patch.object(custody, "_en_radio_regional", return_value=True),
