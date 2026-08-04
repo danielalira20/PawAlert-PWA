@@ -536,25 +536,51 @@ async def subir_foto_hito(
     if usuario.get("rol") == "asociacion" and usuario.get("asociacion_id"):
         custodia_asociada = (
             supabase_admin.table("custodias_temporales")
-            .select("id")
+            .select("id, asociacion_coordinadora_id")
             .eq("reporte_id", reporte_id)
+            .order("inicio_at", desc=True)  # <--- ¡EL CAMBIO ESTÁ AQUÍ!
             .limit(1)
             .execute()
         )
         if custodia_asociada.data:
+            # Si es la coordinadora de la custodia más reciente, tiene permiso
+            if custodia_asociada.data[0].get("asociacion_coordinadora_id") == usuario.get("asociacion_id"):
+                es_asociacion_receptora = True
+                
             trans_receptora = (
                 supabase_admin.table("transferencias_custodia")
                 .select("id")
                 .eq("custodia_id", custodia_asociada.data[0]["id"])
                 .eq("asociacion_receptora_id", usuario.get("asociacion_id"))
-                .in_("estado", ["programada", "en_traslado", "en_curso"])
+                .in_("estado", ["programada", "en_traslado", "en_curso", "entrega_confirmada", "recepcion_confirmada"])
                 .limit(1)
                 .execute()
             )
             if trans_receptora.data:
                 es_asociacion_receptora = True
 
-    if not es_staff_asignado and not es_representante_asignado and not es_asociacion_receptora:
+    es_voluntario_custodia = False
+    if usuario.get("rol") == "voluntario_externo":
+        vol = (
+            supabase_admin.table("voluntarios")
+            .select("id")
+            .eq("usuario_id", usuario["id"])
+            .limit(1)
+            .execute()
+        )
+        if vol.data:
+            custodia_activa = (
+                supabase_admin.table("custodias_temporales")
+                .select("id")
+                .eq("reporte_id", reporte_id)
+                .eq("voluntario_id", vol.data[0]["id"])
+                .limit(1)
+                .execute()
+            )
+            if custodia_activa.data:
+                es_voluntario_custodia = True
+
+    if not es_staff_asignado and not es_representante_asignado and not es_asociacion_receptora and not es_voluntario_custodia:
         raise HTTPException(status_code=403, detail="No puedes agregar evidencias a este reporte")
 
     if foto.content_type not in ["image/jpeg", "image/png", "image/jpg", "image/webp"]:
