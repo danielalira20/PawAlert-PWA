@@ -129,9 +129,16 @@ interface OfrecimientoExterno {
   tipo: 'voluntario_externo';
   etiqueta: 'Se ofreció';
   distancia_km: number;
-  compatibilidad: number;
+  compatibilidad?: number;
   capacidad_disponible: number;
   capacidad_resumen: string;
+  radio_max_km: number;
+  carga_actual: number;
+  max_casos_simultaneos: number;
+  medios_transporte: string[];
+  coincidencias: string[];
+  alertas: string[];
+  score: ScoreCandidato;
   ofrecido_at: string;
   foto_url?: string | null;
 }
@@ -1647,7 +1654,7 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
                               Voluntarios externos que se ofrecieron
                             </Text>
                             <Text style={{ color: COLORS.textLight, fontSize: 11, marginTop: 2 }}>
-                              Interés voluntario; ninguno está asignado todavía.
+                              Misma escala de evaluación; no forman parte del top 3 interno.
                             </Text>
                           </View>
                           <View style={{
@@ -1675,6 +1682,13 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
                       ) : ofrecimientosExternos.map((oferta) => {
                         const iniciales = oferta.nombre.split(' ').slice(0, 2)
                           .map((parte) => parte[0]).join('').toUpperCase();
+                        const barras = [
+                          { label: 'Proximidad', valor: oferta.score.proximidad, max: 30 },
+                          { label: 'Disponibilidad', valor: oferta.score.disponibilidad, max: 25 },
+                          { label: 'Experiencia declarada', valor: oferta.score.experiencia, max: 20 },
+                          { label: 'Movilidad y equipo', valor: oferta.score.movilidad, max: 15 },
+                          { label: 'Carga', valor: oferta.score.carga, max: 10 },
+                        ];
                         return (
                           <View
                             key={oferta.id}
@@ -1719,12 +1733,53 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
                                   </View>
                                 </View>
                                 <Text style={{ color: COLORS.textLight, fontSize: 11, marginTop: 4 }}>
-                                  A {oferta.distancia_km} km · {oferta.capacidad_resumen}
+                                  A {oferta.distancia_km} km · radio de {oferta.radio_max_km} km
                                 </Text>
-                                <Text style={{ color: COLORS.accent, fontSize: 10, fontWeight: '700', marginTop: 3 }}>
-                                  Compatibilidad {Math.round(oferta.compatibilidad || 0)}% · {formatDistanceToNow(new Date(oferta.ofrecido_at), { addSuffix: true, locale: es })}
+                                <Text style={{ color: COLORS.textLight, fontSize: 10, marginTop: 3 }}>
+                                  {oferta.capacidad_resumen} · se ofreció {formatDistanceToNow(new Date(oferta.ofrecido_at), { addSuffix: true, locale: es })}
                                 </Text>
                               </View>
+                              <View style={{ alignItems: 'center', marginLeft: 8 }}>
+                                <Text style={{ color: COLORS.accent, fontSize: 26, fontWeight: '900' }}>
+                                  {oferta.score.total}
+                                </Text>
+                                <Text style={{ color: COLORS.textLight, fontSize: 9, fontWeight: '700' }}>SCORE</Text>
+                              </View>
+                            </View>
+
+                            {!!oferta.coincidencias?.length && (
+                              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
+                                {oferta.coincidencias.map((texto) => (
+                                  <View key={texto} style={{ backgroundColor: 'rgba(102,188,180,0.16)', borderRadius: 10, paddingHorizontal: 9, paddingVertical: 5 }}>
+                                    <Text style={{ color: COLORS.accent, fontSize: 10, fontWeight: '700' }}>{texto}</Text>
+                                  </View>
+                                ))}
+                              </View>
+                            )}
+
+                            {!!oferta.alertas?.length && (
+                              <View style={{ backgroundColor: '#FFF6E8', borderRadius: 12, padding: 9, marginTop: 10 }}>
+                                {oferta.alertas.map((texto) => (
+                                  <Text key={texto} style={{ color: COLORS.textDark, fontSize: 10, lineHeight: 15 }}>• {texto}</Text>
+                                ))}
+                              </View>
+                            )}
+
+                            <View style={{ marginTop: 12 }}>
+                              {barras.map((barra) => {
+                                const pct = Math.min(1, barra.valor / barra.max);
+                                return (
+                                  <View key={barra.label} style={{ marginBottom: 6 }}>
+                                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
+                                      <Text style={{ color: COLORS.textLight, fontSize: 11, fontWeight: '600' }}>{barra.label}</Text>
+                                      <Text style={{ color: COLORS.textDark, fontSize: 11, fontWeight: '700' }}>{barra.valor}/{barra.max}</Text>
+                                    </View>
+                                    <View style={{ backgroundColor: '#DCEFEB', borderRadius: 6, height: 6, overflow: 'hidden' }}>
+                                      <View style={{ width: `${Math.round(pct * 100)}%`, backgroundColor: COLORS.accent, height: 6, borderRadius: 6 }} />
+                                    </View>
+                                  </View>
+                                );
+                              })}
                             </View>
                             <TouchableOpacity
                               onPress={() => {
@@ -1734,18 +1789,15 @@ export default function StaffAsignacionScreen({ onClose }: Props) {
                                   tipo: oferta.tipo,
                                   etiqueta: oferta.etiqueta,
                                   distancia_km: oferta.distancia_km,
-                                  radio_max_km: 0,
-                                  carga_actual: 0,
-                                  max_casos_simultaneos: oferta.capacidad_disponible,
-                                  medios_transporte: [],
-                                  coincidencias: [],
-                                  alertas: [],
+                                  radio_max_km: oferta.radio_max_km,
+                                  carga_actual: oferta.carga_actual,
+                                  max_casos_simultaneos: oferta.max_casos_simultaneos,
+                                  medios_transporte: oferta.medios_transporte,
+                                  coincidencias: oferta.coincidencias,
+                                  alertas: oferta.alertas,
                                   capacidad_resumen: oferta.capacidad_resumen,
                                   foto_url: oferta.foto_url,
-                                  score: {
-                                    total: 0, proximidad: 0, disponibilidad: 0,
-                                    experiencia: 0, movilidad: 0, carga: 0,
-                                  },
+                                  score: oferta.score,
                                 });
                                 setShowConfirmVoluntarioModal(true);
                               }}
