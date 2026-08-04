@@ -52,6 +52,11 @@ def test_ofrecimiento_usa_funcion_transaccional_e_idempotente():
         patch.object(coverage_service, "obtener_perfil_externo", return_value=perfil),
         patch.object(coverage_service, "obtener_casos_cercanos", return_value=[caso]),
         patch.object(coverage_service, "_carga_activa", return_value=0),
+        patch.object(
+            coverage_service.matching,
+            "evaluar_candidato_externo",
+            return_value={"score": {"total": 73}},
+        ),
     ):
         oferta = coverage_service.crear_ofrecimiento("user-1", "rep-1")
 
@@ -62,7 +67,7 @@ def test_ofrecimiento_usa_funcion_transaccional_e_idempotente():
             "p_reporte_id": "rep-1",
             "p_voluntario_id": "vol-1",
             "p_usuario_id": "user-1",
-            "p_compatibilidad": 100,
+            "p_compatibilidad": 73,
             "p_distancia_km": 3.4,
             "p_capacidad_disponible": 2,
         },
@@ -88,6 +93,11 @@ def test_ofrecimiento_devuelve_conflicto_cuando_el_caso_cambio():
         patch.object(coverage_service, "obtener_perfil_externo", return_value=perfil),
         patch.object(coverage_service, "obtener_casos_cercanos", return_value=[caso]),
         patch.object(coverage_service, "_carga_activa", return_value=0),
+        patch.object(
+            coverage_service.matching,
+            "evaluar_candidato_externo",
+            return_value={"score": {"total": 73}},
+        ),
         pytest.raises(HTTPException) as error,
     ):
         coverage_service.crear_ofrecimiento("user-1", "rep-1")
@@ -142,13 +152,36 @@ def test_asociacion_recibe_datos_del_externo_con_cliente_administrativo():
     with (
         patch.object(coverage_service, "supabase_admin", supabase_admin),
         patch.object(coverage_service, "supabase", supabase_publico),
+        patch.object(coverage_service, "_carga_activa", return_value=0),
+        patch.object(
+            coverage_service.matching,
+            "evaluar_candidato_externo",
+            return_value={
+                "radio_max_km": 10,
+                "carga_actual": 0,
+                "max_casos_simultaneos": 2,
+                "medios_transporte": ["automovil"],
+                "score": {
+                    "total": 78,
+                    "proximidad": 26,
+                    "disponibilidad": 18,
+                    "experiencia": 14,
+                    "movilidad": 10,
+                    "carga": 10,
+                },
+                "coincidencias": ["Manejo de animales dóciles o estables"],
+                "alertas": [],
+                "capacidad_resumen": "0 de 2 casos activos",
+            },
+        ),
     ):
         ofertas = coverage_service.obtener_ofrecimientos_reporte("rep-1")
 
     assert ofertas[0]["nombre"] == "Rafael Jude"
     assert ofertas[0]["etiqueta"] == "Se ofreció"
     assert ofertas[0]["tipo"] == "voluntario_externo"
-    assert ofertas[0]["capacidad_resumen"] == "2 espacios disponibles"
+    assert ofertas[0]["score"]["total"] == 78
+    assert ofertas[0]["capacidad_resumen"] == "0 de 2 casos activos"
     assert supabase_admin.table.call_count == 2
     supabase_publico.table.assert_not_called()
 

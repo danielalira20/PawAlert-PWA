@@ -50,7 +50,6 @@ def obtener_candidatos(reporte_id: str) -> dict:
         animal.get("condicion") == "grave"
         for animal in reporte["animales"]
     )
-
     crudos = supabase.rpc(
         "candidatos_para_reporte", {"p_reporte_id": reporte_id}
     ).execute().data or []
@@ -97,24 +96,8 @@ def obtener_candidatos(reporte_id: str) -> dict:
         if carga_actual >= max_casos:
             continue
 
-        puntajes_crudos = {
-            "proximidad": _score_proximidad(distancia, radio),
-            "disponibilidad": _score_disponibilidad(
-                candidato.get("disponibilidad") or {},
-                candidato.get("tiempo_reaccion"),
-                candidato.get("disponibilidad_urgencias"),
-                critico,
-            ),
-            "experiencia": _score_experiencia(reporte, candidato),
-            "movilidad": _score_movilidad(reporte, candidato),
-            "carga": _score_carga(max_casos, carga_actual),
-        }
-        desglose = {
-            clave: round(valor * PESOS[clave])
-            for clave, valor in puntajes_crudos.items()
-        }
-        detalles = _detalles_candidato(
-            reporte, candidato, carga_actual, max_casos
+        evaluacion = _evaluar_candidato(
+            reporte, candidato, distancia, radio, carga_actual, max_casos
         )
 
         candidatos.append({
@@ -128,8 +111,7 @@ def obtener_candidatos(reporte_id: str) -> dict:
             "carga_actual": carga_actual,
             "max_casos_simultaneos": max_casos,
             "medios_transporte": candidato.get("medios_transporte") or [],
-            "score": {"total": sum(desglose.values()), **desglose},
-            **detalles,
+            **evaluacion,
         })
 
     candidatos.sort(
@@ -140,6 +122,74 @@ def obtener_candidatos(reporte_id: str) -> dict:
         reverse=True,
     )
     return {"candidatos": candidatos[:3]}
+
+
+def evaluar_candidato_externo(
+    reporte_id: str,
+    candidato: dict,
+    distancia_km: float,
+    carga_actual: int,
+    max_casos: int,
+) -> dict:
+    """Evalúa un ofrecimiento externo con la misma escala del top interno.
+
+    El resultado es explicativo y no incorpora al externo al ranking de la
+    asociación ni le reserva el caso.
+    """
+    reporte = _obtener_reporte(reporte_id)
+    radio = min(
+        float(candidato.get("radio_max_km") or MAX_RADIO_KM),
+        MAX_RADIO_KM,
+    )
+    return {
+        "radio_max_km": int(radio),
+        "carga_actual": carga_actual,
+        "max_casos_simultaneos": max_casos,
+        "medios_transporte": candidato.get("medios_transporte") or [],
+        **_evaluar_candidato(
+            reporte,
+            candidato,
+            float(distancia_km),
+            radio,
+            carga_actual,
+            max_casos,
+        ),
+    }
+
+
+def _evaluar_candidato(
+    reporte: dict,
+    candidato: dict,
+    distancia: float,
+    radio: float,
+    carga_actual: int,
+    max_casos: int,
+) -> dict:
+    """Construye el score ponderado y sus razones para cualquier candidato."""
+    critico = any(
+        animal.get("condicion") == "grave"
+        for animal in reporte["animales"]
+    )
+    puntajes_crudos = {
+        "proximidad": _score_proximidad(distancia, radio),
+        "disponibilidad": _score_disponibilidad(
+            candidato.get("disponibilidad") or {},
+            candidato.get("tiempo_reaccion"),
+            candidato.get("disponibilidad_urgencias"),
+            critico,
+        ),
+        "experiencia": _score_experiencia(reporte, candidato),
+        "movilidad": _score_movilidad(reporte, candidato),
+        "carga": _score_carga(max_casos, carga_actual),
+    }
+    desglose = {
+        clave: round(valor * PESOS[clave])
+        for clave, valor in puntajes_crudos.items()
+    }
+    return {
+        "score": {"total": sum(desglose.values()), **desglose},
+        **_detalles_candidato(reporte, candidato, carga_actual, max_casos),
+    }
 
 
 def _score_proximidad(distancia_km, radio_max_km=10) -> float:

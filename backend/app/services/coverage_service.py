@@ -13,6 +13,7 @@ from math import asin, cos, radians, sin, sqrt
 from fastapi import HTTPException
 
 from app.db.supabase import supabase, supabase_admin
+from app.services import matching
 from app.utils.animal_shaping import shape_animal_embed, shape_animal_response
 
 
@@ -27,7 +28,11 @@ def obtener_perfil_externo(usuario_id: str) -> dict:
             "id, usuario_id, estado, disponible_operativamente, "
             "pausa_operativa_hasta, capacidades("
             "latitud, longitud, radio_max_km, max_casos_simultaneos, "
-            "especies_manejo, especies, tamanios_manejo, tamanios)"
+            "especies_manejo, especies, tamanios_manejo, tamanios, "
+            "disponibilidad, tiempo_reaccion, disponibilidad_urgencias, "
+            "experiencias_campo, primeros_auxilios_nivel, experiencia_anios, "
+            "trayectoria_tipos, medios_transporte, vehiculo_apto_traslado, "
+            "equipamiento)"
         )
         .eq("usuario_id", usuario_id)
         .limit(1)
@@ -146,6 +151,13 @@ def crear_ofrecimiento(usuario_id: str, reporte_id: str) -> dict:
     capacidades = perfil["capacidades"]
     carga_actual = _carga_activa(usuario_id)
     max_casos = int(capacidades.get("max_casos_simultaneos") or 1)
+    evaluacion = matching.evaluar_candidato_externo(
+        reporte_id,
+        capacidades,
+        caso["distancia_precisa_km"],
+        carga_actual,
+        max_casos,
+    )
     try:
         resultado = supabase_admin.rpc(
             "crear_ofrecimiento_externo",
@@ -153,7 +165,7 @@ def crear_ofrecimiento(usuario_id: str, reporte_id: str) -> dict:
                 "p_reporte_id": reporte_id,
                 "p_voluntario_id": perfil["id"],
                 "p_usuario_id": usuario_id,
-                "p_compatibilidad": 100,
+                "p_compatibilidad": evaluacion["score"]["total"],
                 "p_distancia_km": caso["distancia_precisa_km"],
                 "p_capacidad_disponible": max(0, max_casos - carga_actual),
             },
@@ -225,7 +237,11 @@ def obtener_ofrecimientos_reporte(reporte_id: str) -> list[dict]:
             .select(
                 "id, usuario_id, estado, usuarios("
                 "nombre, apellido_paterno), "
-                "capacidades(max_casos_simultaneos)"
+                "capacidades(radio_max_km, max_casos_simultaneos, "
+                "disponibilidad, tiempo_reaccion, disponibilidad_urgencias, "
+                "experiencias_campo, primeros_auxilios_nivel, experiencia_anios, "
+                "trayectoria_tipos, medios_transporte, vehiculo_apto_traslado, "
+                "equipamiento)"
             )
             .eq("id", oferta["voluntario_id"])
             .limit(1)
@@ -235,6 +251,18 @@ def obtener_ofrecimientos_reporte(reporte_id: str) -> list[dict]:
             continue
         voluntario = perfil.data[0]
         usuario = voluntario.get("usuarios") or {}
+        capacidades = voluntario.get("capacidades") or {}
+        if isinstance(capacidades, list):
+            capacidades = capacidades[0] if capacidades else {}
+        max_casos = int(capacidades.get("max_casos_simultaneos") or 1)
+        carga_actual = _carga_activa(voluntario["usuario_id"])
+        evaluacion = matching.evaluar_candidato_externo(
+            reporte_id,
+            capacidades,
+            float(oferta.get("distancia_km") or 0),
+            carga_actual,
+            max_casos,
+        )
         ofrecimientos.append(
             {
                 **oferta,
@@ -250,10 +278,7 @@ def obtener_ofrecimientos_reporte(reporte_id: str) -> list[dict]:
                 "foto_url": None,
                 "etiqueta": "Se ofreció",
                 "tipo": "voluntario_externo",
-                "capacidad_resumen": (
-                    f"{oferta.get('capacidad_disponible') or 0} "
-                    "espacios disponibles"
-                ),
+                **evaluacion,
             }
         )
     return ofrecimientos
