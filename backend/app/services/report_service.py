@@ -1,6 +1,6 @@
 import uuid
 from fastapi import UploadFile, HTTPException
-from app.db.supabase import supabase
+from app.db.supabase import supabase, supabase_admin
 from app.services.storage_service import subir_bytes, eliminar_por_url
 from app.services.assignment_service import asignar_asociacion, obtener_contactos_emergencia
 from datetime import datetime, timezone, timedelta
@@ -230,6 +230,7 @@ async def crear_reporte(
             asociacion_id = asociacion["id"]
 
     estado_asignado_id = obtener_id_catalogo("reporte_estados", "asignado") if asociacion_id else None
+    estado_sin_cobertura_id = obtener_id_catalogo("reporte_estados", "sin_cobertura") # Obtenemos el ID correcto
 
     reporte_data = {
         "usuario_id": usuario_id,
@@ -237,8 +238,8 @@ async def crear_reporte(
         "reportante_apellido_paterno": apellido_paterno if not usuario_id else None,
         "reportante_apellido_materno": apellido_materno if not usuario_id else None,
         "reportante_telefono": telefono if not usuario_id else None,
-        "estado_id": estado_asignado_id if asociacion_id else estado_id,
-        "estado_reporte": "asignado" if asociacion_id else "pendiente",
+        "estado_id": estado_asignado_id if asociacion_id else estado_sin_cobertura_id, 
+        "estado_reporte": "asignado" if asociacion_id else "sin_cobertura", 
         "estado_cobertura": "abierto" if asociacion_id else None,
         "asociacion_asignada_id": asociacion_id,
         "latitud": latitud,
@@ -256,16 +257,25 @@ async def crear_reporte(
     reporte_id = reporte.data[0]["id"]
     created_at = reporte.data[0]["created_at"]
     if not asociacion_id:
+        estado_sin_cobertura_id = obtener_id_catalogo("reporte_estados", "sin_cobertura")
+        
+        # 1. Aseguramos de raíz que el reporte nazca con estado sin_cobertura
+        supabase.table("reportes").update({
+            "estado_reporte": "sin_cobertura",
+            "estado_id": estado_sin_cobertura_id
+        }).eq("id", reporte_id).execute()
+
+        # 2. Creamos de forma explícita el caso administrativo para la bandeja
         try:
-            supabase.table("casos_administrativos").insert({
+            supabase_admin.table("casos_administrativos").insert({
                 "reporte_id": reporte_id,
                 "tipo": "reporte_sin_coordinadora",
                 "prioridad": "alta",
+                "estado": "pendiente",
                 "detalle": "No se encontró una asociación compatible y cercana al crear el reporte.",
             }).execute()
-        except Exception:
-            # El índice parcial evita duplicar el mismo caso si la creación se reintenta.
-            pass
+        except Exception as e:
+            print(f"[ERROR] No se pudo crear el caso administrativo para el reporte {reporte_id}: {e}")
 
     # Inserta cada animal y sus fotos. Sin transacción real (Supabase REST no
     # la soporta sin una función SQL dedicada, fuera de alcance de esta

@@ -106,7 +106,7 @@ async def rechazar_asociacion(asociacion_id: str, body: RechazoBody, authorizati
 def listar_casos_operativos(authorization: str = Header(None)):
     _verificar_admin(authorization)
     resultado = (
-        supabase.table("casos_administrativos")
+        supabase_admin.table("casos_administrativos")
         .select(
             "id, reporte_id, custodia_id, solicitud_relevo_id, tipo, prioridad, "
             "detalle, estado, creado_at, actualizado_at, "
@@ -122,7 +122,7 @@ def listar_casos_operativos(authorization: str = Header(None)):
 def listar_asociaciones_para_casos(authorization: str = Header(None)):
     _verificar_admin(authorization)
     resultado = (
-        supabase.table("asociaciones").select("id, nombre, municipio, estado_ubicacion")
+        supabase.table("asociaciones").select("id, nombre, municipio")
         .eq("verificado", True).order("nombre").execute()
     )
     return resultado.data or []
@@ -136,7 +136,7 @@ def resolver_caso_operativo(
 ):
     admin = _verificar_admin(authorization)
     resultado = (
-        supabase.table("casos_administrativos")
+        supabase_admin.table("casos_administrativos")
         .select("id, reporte_id, tipo, estado")
         .eq("id", caso_id).limit(1).execute()
     )
@@ -146,7 +146,7 @@ def resolver_caso_operativo(
     if caso["estado"] == "resuelto":
         raise HTTPException(status_code=409, detail="El caso ya fue resuelto")
     if body.accion == "tomar":
-        supabase.table("casos_administrativos").update({
+        supabase_admin.table("casos_administrativos").update({
             "estado": "en_revision", "atendido_por_id": admin["id"],
             "actualizado_at": datetime.now(timezone.utc).isoformat(),
         }).eq("id", caso_id).execute()
@@ -155,31 +155,31 @@ def resolver_caso_operativo(
         if caso["tipo"] != "reporte_sin_coordinadora" or not body.asociacion_id:
             raise HTTPException(status_code=422, detail="Este caso no admite asignación de coordinadora")
         asociacion = (
-            supabase.table("asociaciones").select("id, nombre, verificado")
+            supabase_admin.table("asociaciones").select("id, nombre, verificado")
             .eq("id", body.asociacion_id).limit(1).execute()
         )
         if not asociacion.data or not asociacion.data[0].get("verificado"):
             raise HTTPException(status_code=409, detail="Selecciona una asociación verificada")
         estado = (
-            supabase.table("reporte_estados").select("id")
+            supabase_admin.table("reporte_estados").select("id")
             .eq("clave", "asignado").limit(1).execute()
         )
-        supabase.table("reportes").update({
+        supabase_admin.table("reportes").update({
             "asociacion_asignada_id": body.asociacion_id,
             "estado_reporte": "asignado", "estado_cobertura": "abierto",
             "estado_id": estado.data[0]["id"],
         }).eq("id", caso["reporte_id"]).execute()
         estado_asignacion = (
-            supabase.table("asignacion_estados").select("id")
+            supabase_admin.table("asignacion_estados").select("id")
             .eq("clave", "notificada").limit(1).execute()
         )
-        supabase.table("reporte_asignaciones").insert({
+        supabase_admin.table("reporte_asignaciones").insert({
             "reporte_id": caso["reporte_id"],
             "asociacion_id": body.asociacion_id,
             "estado_id": estado_asignacion.data[0]["id"],
             "estado": "notificada",
         }).execute()
-        supabase.table("notificaciones_coordinacion").insert({
+        supabase_admin.table("notificaciones_coordinacion").insert({
             "asociacion_id": body.asociacion_id,
             "reporte_id": caso["reporte_id"],
             "tipo": "caso_asignado_admin",
@@ -196,7 +196,7 @@ def resolver_caso_operativo(
         raise HTTPException(status_code=422, detail="Acción administrativa inválida")
     if not (body.resolucion or "").strip():
         raise HTTPException(status_code=422, detail="Describe la resolución aplicada")
-    supabase.table("casos_administrativos").update({
+    supabase_admin.table("casos_administrativos").update({
         "estado": "resuelto", "atendido_por_id": admin["id"],
         "resolucion": body.resolucion.strip(),
         "actualizado_at": datetime.now(timezone.utc).isoformat(),
