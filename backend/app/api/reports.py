@@ -1640,7 +1640,7 @@ def cancelar_reporte_por_reportante(
 ):
     usuario = _obtener_usuario_autenticado(authorization)
     reporte = (
-        supabase.table("reportes")
+        supabase_admin.table("reportes")
         .select(
             "id, usuario_id, estado_reporte, estado_cobertura, staff_asignado_id, "
             "asociacion_asignada_id"
@@ -1667,14 +1667,14 @@ def cancelar_reporte_por_reportante(
             datos_extra={"motivo": body.motivo},
         )
         if fila.get("asociacion_asignada_id"):
-            supabase.table("notificaciones_coordinacion").insert({
+            supabase_admin.table("notificaciones_coordinacion").insert({
                 "asociacion_id": fila["asociacion_asignada_id"],
                 "reporte_id": reporte_id,
                 "tipo": "cancelacion_reportante",
                 "mensaje": "El reportante solicitó cancelar mientras la atención está en curso. Revisa el caso antes de decidir.",
             }).execute()
         try:
-            supabase.table("casos_administrativos").insert({
+            supabase_admin.table("casos_administrativos").insert({
                 "reporte_id": reporte_id,
                 "tipo": "cancelacion_en_atencion",
                 "prioridad": "media",
@@ -1688,13 +1688,13 @@ def cancelar_reporte_por_reportante(
             "mensaje": "La asociación fue avisada; el caso no se cerrará mientras haya atención en curso.",
         }
 
-    supabase.table("propuestas_asignacion").update(
+    supabase_admin.table("propuestas_asignacion").update(
         {"estado": "cancelada", "respondida_at": datetime.now(timezone.utc).isoformat()}
     ).eq("reporte_id", reporte_id).eq("estado", "activa").execute()
-    supabase.table("voluntario_ofrecimientos").update(
+    supabase_admin.table("voluntario_ofrecimientos").update(
         {"estado": "expirado", "actualizado_at": datetime.now(timezone.utc).isoformat()}
     ).eq("reporte_id", reporte_id).in_("estado", ["vigente", "seleccionado"]).execute()
-    supabase.table("reportes").update(
+    supabase_admin.table("reportes").update(
         {
             "estado_reporte": "cancelado_por_reportante",
             "estado_cobertura": "finalizado",

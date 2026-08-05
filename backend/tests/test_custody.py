@@ -430,11 +430,13 @@ def test_reportante_cancela_antes_de_confirmacion_y_expira_interes(make_query):
         "propuestas_asignacion": make_query(data=[]),
         "voluntario_ofrecimientos": make_query(data=[]),
     }
-    supabase = MagicMock()
-    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    supabase_admin = MagicMock()
+    supabase_admin.table.side_effect = lambda nombre: tablas[nombre]
+    supabase_publico = MagicMock()
 
     with (
-        patched_supabase_clients(reports, supabase),
+        patch.object(reports, "supabase", supabase_publico),
+        patch.object(reports, "supabase_admin", supabase_admin),
         patch.object(
             reports,
             "_obtener_usuario_autenticado",
@@ -450,6 +452,7 @@ def test_reportante_cancela_antes_de_confirmacion_y_expira_interes(make_query):
     tablas["voluntario_ofrecimientos"].update.assert_called_once()
     assert tablas["reportes"].update.call_args.args[0]["estado_cobertura"] == "finalizado"
     assert historial.call_args.kwargs["tipo_evento"] == "reporte_cancelado"
+    supabase_publico.table.assert_not_called()
 
 
 def test_cancelacion_con_voluntario_en_camino_solo_avisa(make_query):
