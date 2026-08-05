@@ -55,7 +55,7 @@ interface MisReportesScreenProps {
 }
 
 // ─── Filtros de estado ─────────────────────────────────────────────────────
-const FILTROS = ['todos', 'pendiente', 'asignado', 'en_atencion', 'cerrado'] as const;
+const FILTROS = ['todos', 'pendiente', 'asignado', 'en_atencion', 'cerrado', 'cancelado_por_reportante'] as const;
 type Filtro = typeof FILTROS[number];
 
 const FILTRO_LABELS: Record<Filtro, string> = {
@@ -64,6 +64,15 @@ const FILTRO_LABELS: Record<Filtro, string> = {
   asignado: 'Asignado',
   en_atencion: 'En atención',
   cerrado: 'Cerrado',
+  cancelado_por_reportante: 'Cancelados',
+};
+
+const ESTADO_LABELS: Record<string, string> = {
+  pendiente: 'Pendiente',
+  asignado: 'Asignado',
+  en_atencion: 'En atención',
+  cerrado: 'Cerrado',
+  cancelado_por_reportante: 'Cancelado',
 };
 
 const ESTADO_COLORES: Record<string, string> = {
@@ -72,6 +81,7 @@ const ESTADO_COLORES: Record<string, string> = {
   en_atencion: '#9B59B6',
   rescatado: '#27AE60',
   cerrado: '#64748B',
+  cancelado_por_reportante: '#A84335',
 };
 
 // ─── Filtros rápidos de tiempo ──────────────────────────────────────────────
@@ -377,6 +387,7 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
   // ─── Card de un reporte ──────────────────────────────────────────────────
   const renderCard = (reporte: ReporteItem, isLast: boolean) => {
     const isExpanded = expandedId === reporte.id;
+    const estaCancelado = reporte.estado_reporte === 'cancelado_por_reportante';
     const estadoColor = getEstadoColor(reporte.estado_reporte);
     const animales = getAnimales(reporte);
     const grave = animalMasGrave(animales);
@@ -391,6 +402,7 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
     const fotos = reporte.fotos && reporte.fotos.length > 0
       ? reporte.fotos
       : reporte.foto_url ? [reporte.foto_url] : [];
+    const cardColor = estaCancelado ? estadoColor : condCfg.color;
 
     return (
       <View key={reporte.id} style={{ flexDirection: 'row' }}>
@@ -398,10 +410,10 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
         <View style={{ width: 22, alignItems: 'center' }}>
           <View style={{
             width: 11, height: 11, borderRadius: 5.5,
-            backgroundColor: condCfg.color,
+            backgroundColor: cardColor,
             borderWidth: 2, borderColor: '#FFFFFF',
             marginTop: 6,
-            shadowColor: condCfg.color, shadowOffset: { width: 0, height: 0 },
+            shadowColor: cardColor, shadowOffset: { width: 0, height: 0 },
             shadowOpacity: 0.4, shadowRadius: 4,
           }} />
           {!isLast && (
@@ -417,19 +429,19 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
 
           <TouchableOpacity onPress={() => toggleExpand(reporte.id)} activeOpacity={0.85}>
             <View style={{
-              backgroundColor: petzen.colors.white,
+              backgroundColor: estaCancelado ? '#FCF8F7' : petzen.colors.white,
               borderWidth: isExpanded ? 2 : 1.5,
-              borderColor: isExpanded ? condCfg.color : condCfg.color + '80',
+              borderColor: isExpanded ? cardColor : cardColor + '80',
               borderRadius: 16,
               overflow: 'hidden',
-              shadowColor: condCfg.color,
+              shadowColor: cardColor,
               shadowOffset: { width: 0, height: 2 },
               shadowOpacity: isExpanded ? 0.3 : 0.16,
               shadowRadius: isExpanded ? 12 : 6,
               elevation: isExpanded ? 4 : 2,
             }}>
               {/* Franja superior de color — refuerza el estado de salud de un vistazo */}
-              <View style={{ height: 4, backgroundColor: condCfg.color }} />
+              <View style={{ height: 4, backgroundColor: cardColor }} />
 
               <View style={{ flexDirection: 'row', padding: 13, gap: 12, alignItems: 'center' }}>
                 {/* Foto o ícono */}
@@ -479,9 +491,10 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
                         </Text>
                       </View>
                     )}
-                    <View style={{ backgroundColor: estadoColor + '18', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 100 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: estadoColor + '18', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 100, borderWidth: estaCancelado ? 1 : 0, borderColor: estadoColor + '40' }}>
+                      {estaCancelado && <Ionicons name="close-circle-outline" size={11} color={estadoColor} />}
                       <Text style={{ fontSize: 9, fontFamily: petzen.fonts.bold, color: estadoColor, textTransform: 'uppercase', letterSpacing: 0.4 }}>
-                        {FILTRO_LABELS[reporte.estado_reporte as Filtro] || reporte.estado_reporte}
+                        {ESTADO_LABELS[reporte.estado_reporte] || reporte.estado_reporte}
                       </Text>
                     </View>
                     {fotos.length > 1 && (
@@ -575,10 +588,10 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
                       gap: 9,
                       padding: 11,
                       borderRadius: 12,
-                      backgroundColor: petzen.colors.teal + '12',
+                      backgroundColor: estaCancelado ? estadoColor + '0F' : petzen.colors.teal + '12',
                       marginBottom: 12,
                     }}>
-                      <Ionicons name="pulse-outline" size={17} color={petzen.colors.tealDark} />
+                      <Ionicons name={estaCancelado ? 'close-circle-outline' : 'pulse-outline'} size={17} color={estaCancelado ? estadoColor : petzen.colors.tealDark} />
                       <View style={{ flex: 1 }}>
                         <Text style={{ fontSize: 9, color: petzen.colors.textSecondary, fontWeight: '700', textTransform: 'uppercase' }}>
                           Avance del rescate

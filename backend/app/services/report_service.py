@@ -742,7 +742,9 @@ async def obtener_reportes_usuario(usuario_id: str) -> list:
         eventos = eventos_por_reporte.get(r["id"], set())
         estado = r.get("estado_reporte")
         cobertura = r.get("estado_cobertura")
-        if estado == "cerrado":
+        if estado == "cancelado_por_reportante":
+            estado_publico = "Reporte cancelado"
+        elif estado == "cerrado":
             estado_publico = "Resolución final"
         elif estado == "rescatado" or eventos.intersection(
             {"llegada_hogar_temporal", "seguimiento_inicial", "seguimiento_resguardo"}

@@ -418,6 +418,35 @@ def test_reportante_recibe_estado_general_sin_datos_del_hogar(make_query):
     assert "direccion_hogar" not in resultado[0]
 
 
+def test_reportante_recibe_estado_publico_de_cancelacion(make_query):
+    tablas = {
+        "reportes": make_query(data=[{
+            "id": "rep-cancelado",
+            "estado_reporte": "cancelado_por_reportante",
+            "estado_cobertura": "finalizado",
+            "latitud": 19.43,
+            "longitud": -99.13,
+            "municipio": "Puebla",
+            "colonia": "Centro",
+            "calle": "Calle del reporte",
+            "created_at": "2026-08-01T10:00:00Z",
+            "asociacion_asignada_id": "aso-1",
+            "staff_asignado_id": None,
+            "animal": [],
+            "asociaciones": {"nombre": "Patitas"},
+        }]),
+        "historial_reporte": make_query(data=[]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+
+    with patch.object(report_service, "supabase", supabase):
+        resultado = asyncio.run(report_service.obtener_reportes_usuario("reportante-1"))
+
+    assert resultado[0]["estado_publico"] == "Reporte cancelado"
+    assert resultado[0]["puede_cancelar"] is False
+
+
 def test_reportante_cancela_antes_de_confirmacion_y_expira_interes(make_query):
     tablas = {
         "reportes": make_query(data=[{
