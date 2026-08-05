@@ -1628,8 +1628,6 @@ def registrar_proceso_resolucion(
         raise HTTPException(status_code=403, detail="Sólo la coordinadora puede formalizar la resolución")
     if not body.revision_medica or not body.revision_legal:
         raise HTTPException(status_code=422, detail="Confirma la revisión médica y legal antes de cerrar")
-    if body.tipo == "adopcion_aprobada" and body.idoneidad_adoptante is not True:
-        raise HTTPException(status_code=422, detail="La adopción requiere validar la idoneidad del adoptante")
     creado = supabase_admin.table("procesos_resolucion_custodia").upsert({
         "custodia_id": custodia_id,
         "tipo": body.tipo,
@@ -1637,7 +1635,6 @@ def registrar_proceso_resolucion(
         "evidencia_url": body.evidencia_url,
         "revision_medica": body.revision_medica,
         "revision_legal": body.revision_legal,
-        "idoneidad_adoptante": body.idoneidad_adoptante,
         "estado": "aprobado",
         "creado_por_id": usuario["id"],
         "aprobado_por_id": usuario["id"],
@@ -1674,7 +1671,7 @@ def finalizar_custodia(
         raise HTTPException(status_code=403, detail="Sólo la asociación coordinadora puede finalizar")
     if body.resolucion == "transferencia_confirmada" and custodia["estado"] != "transferido":
         raise HTTPException(status_code=409, detail="La transferencia todavía no ha sido confirmada por ambas partes")
-    if body.resolucion in ("ingreso_formal_asociacion", "adopcion_aprobada"):
+    if body.resolucion == "ingreso_formal_asociacion":
         proceso = (
             supabase_admin.table("procesos_resolucion_custodia")
             .select("id")
