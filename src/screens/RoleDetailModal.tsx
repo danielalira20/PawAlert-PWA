@@ -43,17 +43,17 @@ const ROLE_DETAILS: Record<string, { tagline: string; description: string; steps
   },
   'voluntario-externo': {
     tagline: 'Tu hogar, su refugio temporal.',
-    description: 'Como Voluntario Externo ofreces tu hogar como espacio de resguardo para animales rescatados que esperan adopcion o atencion veterinaria. Es una de las formas mas valiosas de ayudar.',
+    description: 'Como Voluntario Externo ofreces tu hogar como espacio de resguardo para animales rescatados que necesitan cuidado y seguimiento. Es una de las formas mas valiosas de ayudar.',
     steps: [
       { icon: 'document-text-outline', title: 'Completa el formulario', desc: 'Describe tu espacio, que tipo de animales podes alojar y cuanto tiempo maximo.' },
       { icon: 'checkmark-circle-outline', title: 'Validacion basica', desc: 'Un voluntario de PawAlert revisara tu postulacion sin necesidad de visita domiciliaria inicial.' },
       { icon: 'home-outline', title: 'Recibi animales', desc: 'Cuando una asociacion necesite casa temporal, podran contactarte directamente desde la plataforma.' },
-      { icon: 'heart-outline', title: 'Acompana el proceso', desc: 'Cuidas al animal y lo llevas a controles veterinarios coordinados por la asociacion, hasta su adopcion.' },
+      { icon: 'heart-outline', title: 'Acompana el proceso', desc: 'Cuidas al animal y lo llevas a controles veterinarios coordinados hasta una transferencia segura o su ingreso formal a una asociacion.' },
     ],
     faq: [
       { q: 'Puedo tener mascotas propias?', a: 'Si, pero debes indicarlo en el formulario para evaluar la compatibilidad con los animales que podrias recibir.' },
       { q: 'Quien cubre los gastos veterinarios?', a: 'Los gastos los cubre la asociacion responsable del animal. Vos solo aportas el espacio y los cuidados cotidianos.' },
-      { q: 'Puedo adoptar al animal que aloje?', a: 'Si! Muchas casas temporales terminan en adopcion definitiva. Solo coordinalo con la asociacion a cargo.' },
+      { q: 'Que pasa cuando termina mi tiempo de resguardo?', a: 'La asociacion coordinadora organiza una transferencia segura o un ingreso formal. El animal permanece contigo hasta confirmar la entrega.' },
     ],
   },
   asociacion: {

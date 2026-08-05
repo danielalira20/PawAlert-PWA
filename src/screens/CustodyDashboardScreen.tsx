@@ -155,7 +155,6 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
     posiblesInconsistencias: false,
     revisionMedica: false,
     revisionLegal: false,
-    idoneidadAdoptante: false,
   });
   const [fotoAnimal, setFotoAnimal] = useState<string | null>(null);
   const [fotoEntorno, setFotoEntorno] = useState<string | null>(null);
@@ -216,7 +215,6 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
       posiblesInconsistencias: false,
       revisionMedica: false,
       revisionLegal: false,
-      idoneidadAdoptante: false,
     });
     setFotoAnimal(null);
     setFotoEntorno(null);
@@ -532,9 +530,6 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
       if (!form.revisionMedica || !form.revisionLegal) {
         throw new Error('Confirma la revisión médica y legal del proceso.');
       }
-      if (form.resolucion === 'adopcion_aprobada' && !form.idoneidadAdoptante) {
-        throw new Error('La adopción requiere confirmar la idoneidad del adoptante.');
-      }
       await axios.post(
         `${API_URL}/custody/${seleccionada.id}/resolution-processes`,
         {
@@ -542,7 +537,6 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
           referencia: form.comentario.trim(),
           revision_medica: form.revisionMedica,
           revision_legal: form.revisionLegal,
-          idoneidad_adoptante: form.resolucion === 'adopcion_aprobada' ? form.idoneidadAdoptante : null,
         },
         { headers: { Authorization: `Bearer ${token}` } },
       );
@@ -1002,13 +996,12 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
               )}
               {modal === 'finalizar' && (
                 <>
-                  <Text style={styles.modalCopy}>Elige únicamente una resolución ya formalizada. La adopción nunca se genera automáticamente.</Text>
+                  <Text style={styles.modalCopy}>Elige únicamente una resolución ya formalizada: transferencia confirmada o ingreso formal a una asociación.</Text>
                   <View style={styles.validationRow}>
                     <Action icon="swap-horizontal-outline" label="Transferencia confirmada" primary={form.resolucion === 'transferencia_confirmada'} onPress={() => setForm({ ...form, resolucion: 'transferencia_confirmada' })} />
                     <Action icon="business-outline" label="Ingreso formal" primary={form.resolucion === 'ingreso_formal_asociacion'} onPress={() => setForm({ ...form, resolucion: 'ingreso_formal_asociacion' })} />
-                    <Action icon="heart-outline" label="Adopción aprobada" primary={form.resolucion === 'adopcion_aprobada'} onPress={() => setForm({ ...form, resolucion: 'adopcion_aprobada' })} />
                   </View>
-                  <Field label="Folio o referencia del proceso" value={form.comentario} onChangeText={(v) => setForm({ ...form, comentario: v })} placeholder="Ej. expediente de ingreso o adopción aprobada" />
+                  <Field label="Folio o referencia del proceso" value={form.comentario} onChangeText={(v) => setForm({ ...form, comentario: v })} placeholder="Ej. expediente de ingreso formal" />
                   {form.resolucion !== 'transferencia_confirmada' && !!form.resolucion && (
                     <>
                       <TouchableOpacity style={[styles.inconsistency, form.revisionMedica && styles.selectedCard]} onPress={() => setForm({ ...form, revisionMedica: !form.revisionMedica })}>
@@ -1019,12 +1012,6 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
                         <Ionicons name={form.revisionLegal ? 'checkbox' : 'square-outline'} size={19} color={Brand.secondary} />
                         <Text style={styles.inconsistencyText}>Documentación legal revisada</Text>
                       </TouchableOpacity>
-                      {form.resolucion === 'adopcion_aprobada' && (
-                        <TouchableOpacity style={[styles.inconsistency, form.idoneidadAdoptante && styles.selectedCard]} onPress={() => setForm({ ...form, idoneidadAdoptante: !form.idoneidadAdoptante })}>
-                          <Ionicons name={form.idoneidadAdoptante ? 'checkbox' : 'square-outline'} size={19} color={Brand.secondary} />
-                          <Text style={styles.inconsistencyText}>Idoneidad del adoptante validada</Text>
-                        </TouchableOpacity>
-                      )}
                     </>
                   )}
                   <Submit label="Finalizar custodia" loading={submitting} onPress={finalizarCustodia} />
