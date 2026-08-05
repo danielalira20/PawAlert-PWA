@@ -19,7 +19,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Dimensions,
   Image,
   Modal,
@@ -204,6 +203,13 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(new Date());
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [reporteACancelar, setReporteACancelar] = useState<ReporteItem | null>(null);
+  const [cancelandoReporte, setCancelandoReporte] = useState(false);
+  const [errorCancelacion, setErrorCancelacion] = useState<string | null>(null);
+  const [resultadoCancelacion, setResultadoCancelacion] = useState<{
+    titulo: string;
+    mensaje: string;
+  } | null>(null);
 
   const isWeb = Platform.OS === 'web';
 
@@ -334,36 +340,38 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
   };
 
   const cancelarReporte = (reporte: ReporteItem) => {
-    Alert.alert(
-      '¿Cancelar este reporte?',
-      'Si ya hay una persona en camino, la asociación recibirá un aviso y el caso continuará abierto por seguridad.',
-      [
-        { text: 'Volver', style: 'cancel' },
-        {
-          text: 'Solicitar cancelación',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const response = await axios.post(
-                `${API_URL}/reports/${reporte.id}/cancel`,
-                {},
-                { headers: { Authorization: `Bearer ${token}` } },
-              );
-              Alert.alert(
-                response.data.cancelado ? 'Reporte cancelado' : 'Asociación avisada',
-                response.data.mensaje || 'La actualización quedó registrada.',
-              );
-              await cargarReportes();
-            } catch (error: any) {
-              Alert.alert(
-                'No pudimos cancelar',
-                error?.response?.data?.detail || 'Inténtalo nuevamente.',
-              );
-            }
-          },
-        },
-      ],
-    );
+    setErrorCancelacion(null);
+    setResultadoCancelacion(null);
+    setReporteACancelar(reporte);
+  };
+
+  const confirmarCancelacion = async () => {
+    if (!reporteACancelar || cancelandoReporte) return;
+    setCancelandoReporte(true);
+    setErrorCancelacion(null);
+    try {
+      const response = await axios.post(
+        `${API_URL}/reports/${reporteACancelar.id}/cancel`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      setReporteACancelar(null);
+      setResultadoCancelacion({
+        titulo: response.data.cancelado ? 'Reporte cancelado' : 'Asociación avisada',
+        mensaje: response.data.mensaje || (
+          response.data.cancelado
+            ? 'El reporte dejó de estar activo.'
+            : 'El caso seguirá abierto por seguridad mientras se revisa la atención.'
+        ),
+      });
+      await cargarReportes();
+    } catch (error: any) {
+      setErrorCancelacion(
+        error?.response?.data?.detail || 'No pudimos completar la solicitud. Inténtalo nuevamente.',
+      );
+    } finally {
+      setCancelandoReporte(false);
+    }
   };
 
   // ─── Card de un reporte ──────────────────────────────────────────────────
@@ -878,6 +886,7 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
   // del árbol de la app — así se escapa de raíz cualquier stacking context
   // problemático, sin depender de números de z-index.
   return (
+    <>
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
       {showAsCenteredModal ? (
         // Desktop / web ancho: tarjeta centrada con fondo oscuro
@@ -911,5 +920,129 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
         </View>
       )}
     </Modal>
+
+    <Modal
+      visible={!!reporteACancelar || !!resultadoCancelacion}
+      transparent
+      animationType="fade"
+      onRequestClose={() => {
+        if (!cancelandoReporte) {
+          setReporteACancelar(null);
+          setResultadoCancelacion(null);
+          setErrorCancelacion(null);
+        }
+      }}
+    >
+      <View style={{
+        flex: 1,
+        backgroundColor: 'rgba(34,25,18,0.58)',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 20,
+      }}>
+        <View style={{
+          width: '100%',
+          maxWidth: 410,
+          backgroundColor: petzen.colors.white,
+          borderRadius: 24,
+          padding: 22,
+          borderWidth: 1,
+          borderColor: '#EDE3D7',
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 12 },
+          shadowOpacity: 0.22,
+          shadowRadius: 28,
+          elevation: 18,
+        }}>
+          {resultadoCancelacion ? (
+            <View style={{ alignItems: 'center' }}>
+              <View style={{
+                width: 58, height: 58, borderRadius: 29,
+                backgroundColor: petzen.colors.teal + '1F',
+                alignItems: 'center', justifyContent: 'center', marginBottom: 14,
+              }}>
+                <Ionicons name="checkmark-circle" size={36} color={petzen.colors.tealDark} />
+              </View>
+              <Text style={{ fontSize: 20, fontFamily: petzen.fonts.extraBold, color: petzen.colors.textDark, textAlign: 'center' }}>
+                {resultadoCancelacion.titulo}
+              </Text>
+              <Text style={{ fontSize: 13, color: petzen.colors.textSecondary, lineHeight: 20, textAlign: 'center', marginTop: 8 }}>
+                {resultadoCancelacion.mensaje}
+              </Text>
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Cerrar resultado de cancelación"
+                onPress={() => setResultadoCancelacion(null)}
+                style={{ width: '100%', backgroundColor: petzen.colors.tealDark, borderRadius: 14, paddingVertical: 13, alignItems: 'center', marginTop: 20 }}
+              >
+                <Text style={{ color: '#FFFFFF', fontSize: 14, fontFamily: petzen.fonts.bold }}>Entendido</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <>
+              <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+                <View style={{
+                  width: 46, height: 46, borderRadius: 15,
+                  backgroundColor: '#A8433517', alignItems: 'center', justifyContent: 'center', marginRight: 12,
+                }}>
+                  <Ionicons name="alert-circle-outline" size={25} color="#A84335" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 19, fontFamily: petzen.fonts.extraBold, color: petzen.colors.textDark }}>
+                    ¿Cancelar este reporte?
+                  </Text>
+                  <Text style={{ fontSize: 11, color: petzen.colors.textSecondary, marginTop: 3 }}>
+                    Caso {reporteACancelar?.id.slice(0, 8).toUpperCase()}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={{ backgroundColor: '#FFF7ED', borderRadius: 14, padding: 13, marginTop: 17, flexDirection: 'row', alignItems: 'flex-start' }}>
+                <Ionicons name="shield-checkmark-outline" size={19} color="#C56C25" style={{ marginRight: 9, marginTop: 1 }} />
+                <Text style={{ flex: 1, color: petzen.colors.textDark, fontSize: 12, lineHeight: 18 }}>
+                  Si ya hay una persona en camino, la asociación recibirá un aviso y el caso continuará abierto por seguridad.
+                </Text>
+              </View>
+
+              {!!errorCancelacion && (
+                <View style={{ backgroundColor: '#FDEDEC', borderRadius: 12, padding: 11, marginTop: 12 }}>
+                  <Text style={{ color: '#A84335', fontSize: 12, lineHeight: 17, fontWeight: '600' }}>{errorCancelacion}</Text>
+                </View>
+              )}
+
+              <View style={{ flexDirection: windowWidth < 390 ? 'column-reverse' : 'row', gap: 10, marginTop: 20 }}>
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Volver sin cancelar"
+                  disabled={cancelandoReporte}
+                  onPress={() => { setReporteACancelar(null); setErrorCancelacion(null); }}
+                  style={{ flex: windowWidth < 390 ? undefined : 1, borderWidth: 1, borderColor: '#DDD1C4', borderRadius: 14, paddingVertical: 13, alignItems: 'center' }}
+                >
+                  <Text style={{ color: petzen.colors.textDark, fontSize: 13, fontFamily: petzen.fonts.bold }}>Volver</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Confirmar cancelación del reporte"
+                  disabled={cancelandoReporte}
+                  onPress={confirmarCancelacion}
+                  style={{
+                    flex: windowWidth < 390 ? undefined : 1.35,
+                    backgroundColor: cancelandoReporte ? '#C98A80' : '#A84335',
+                    borderRadius: 14, paddingVertical: 13, alignItems: 'center',
+                    flexDirection: 'row', justifyContent: 'center', gap: 7,
+                  }}
+                >
+                  {cancelandoReporte && <ActivityIndicator size="small" color="#FFFFFF" />}
+                  <Text style={{ color: '#FFFFFF', fontSize: 13, fontFamily: petzen.fonts.bold }}>
+                    {cancelandoReporte ? 'Procesando…' : 'Sí, solicitar cancelación'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
+        </View>
+      </View>
+    </Modal>
+    </>
   );
 }
