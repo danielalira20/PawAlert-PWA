@@ -361,7 +361,7 @@ useFocusEffect(
               <View style={styles.desktopLeft}>
                 <View style={styles.unifiedCard}>
                   <View style={styles.avatarSection}>
-                    <View style={styles.avatarWrap}>
+                    <View style={[styles.avatarWrap, esVoluntarioExterno && styles.avatarWrapVoluntarioExterno]}>
                       <AssocAvatar nombre={nombreCompleto || 'Usuario'} logoUrl={null} size="lg" />
                       {rolBadgeElement && (
                         <View style={styles.badgeFloating}>
@@ -548,6 +548,7 @@ const styles = StyleSheet.create({
   },
   avatarSection: { alignItems: 'center', paddingHorizontal: 24, paddingTop: 28, paddingBottom: 24 },
   avatarWrap: { position: 'relative', marginBottom: 20 },
+  avatarWrapVoluntarioExterno: { marginBottom: 34 },
   badgeFloating: {
     position: 'absolute',
     bottom: -10,
