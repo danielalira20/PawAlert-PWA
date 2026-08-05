@@ -415,6 +415,7 @@ def test_reportante_recibe_estado_general_sin_datos_del_hogar(make_query):
 
     assert resultado[0]["estado_publico"] == "En seguimiento"
     assert resultado[0]["asociacion_nombre"] == "Patitas"
+    assert resultado[0]["calle"] == "Calle del reporte"
     assert "direccion_hogar" not in resultado[0]
 
 

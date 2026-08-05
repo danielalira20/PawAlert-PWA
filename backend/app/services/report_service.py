@@ -772,6 +772,7 @@ async def obtener_reportes_usuario(usuario_id: str) -> list:
             "longitud": r.get("longitud"),
             "municipio": r.get("municipio"),
             "colonia": r.get("colonia"),
+            "calle": r.get("calle"),
             "created_at": str(r["created_at"]),
             "foto_url": foto_url,
             "fotos": fotos_urls,

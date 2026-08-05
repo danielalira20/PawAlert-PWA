@@ -403,6 +403,9 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
       ? reporte.fotos
       : reporte.foto_url ? [reporte.foto_url] : [];
     const cardColor = estaCancelado ? estadoColor : condCfg.color;
+    const ubicacionCompleta = [reporte.calle, reporte.colonia, reporte.municipio]
+      .filter((parte, indice, partes) => parte && partes.indexOf(parte) === indice)
+      .join(', ');
 
     return (
       <View key={reporte.id} style={{ flexDirection: 'row' }}>
@@ -478,7 +481,7 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 8 }}>
                     <Ionicons name="location-outline" size={11} color={petzen.colors.textSecondary} />
                     <Text style={{ fontSize: 11, color: petzen.colors.textSecondary, flexShrink: 1 }} numberOfLines={1}>
-                      {reporte.colonia || reporte.municipio || 'Sin ubicación'}
+                      {ubicacionCompleta || 'Sin ubicación'}
                     </Text>
                   </View>
                   {/* Badges: estado de salud + estado del reporte */}
@@ -542,7 +545,7 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
                         <View style={{ flex: 1, minWidth: 0 }}>
                           <Text style={{ fontSize: 10, color: petzen.colors.textSecondary, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.4 }}>Ubicación</Text>
                           <Text style={{ fontSize: 13, color: petzen.colors.textDark }}>
-                            {[reporte.calle, reporte.colonia, reporte.municipio].filter(Boolean).join(', ')}
+                            {ubicacionCompleta}
                           </Text>
                         </View>
                       </View>
