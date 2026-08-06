@@ -31,6 +31,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import NotificationBell from '../components/red-aliados/NotificationBell';
 import type { PostAuthFlow } from '../utils/postAuthNavigation';
+import { getBlockingIdentity, type TargetAction } from '../utils/roleGuard';
 
 const heroImage = require('../assets/images/imagen_hero.png');
 
@@ -55,6 +56,58 @@ const C = {
   bgSoft: '#FDF8F4',
   muted: '#9E8C7E',
   danger: '#E85D4B',
+};
+
+// ─── COPY DEL GUARD DE ROLES (modal de conflicto) ──────────────────────────
+// Etiquetas legibles para armar el mensaje dinámico del modal de conflicto —
+// la lógica de bloqueo en sí vive en utils/roleGuard.ts (BLOCKED_BY /
+// getBlockingIdentity), esto es solo redacción.
+const IDENTITY_LABEL: Record<string, string> = {
+  reportante: 'reportante',
+  voluntario_interno: 'voluntario de una asociación',
+  voluntario_externo: 'voluntario de casa temporal',
+  asociacion: 'asociación',
+  staff: 'staff de una asociación',
+  aliado_local: 'aliado local',
+  patrocinador_institucional: 'patrocinador institucional',
+};
+
+const TARGET_LABEL: Record<TargetAction, string> = {
+  voluntario_interno: 'postularte como voluntario de una asociación',
+  voluntario_externo: 'postularte como casa temporal',
+  donante_comunitario: 'registrarte como donante comunitario',
+  aliado_local: 'registrarte como aliado local',
+  patrocinador_institucional: 'registrarte como patrocinador institucional',
+  asociacion: 'registrar una asociación',
+};
+
+function buildRoleConflictMessage(target: TargetAction, identidad: string, incluirSugerenciaDonante: boolean): string {
+  const etiquetaIdentidad = IDENTITY_LABEL[identidad] ?? identidad;
+  // Cuando la identidad bloqueante es la misma categoría que el target (ej.
+  // ya eres voluntario_interno e intentas postularte otra vez como
+  // voluntario_interno), la redacción genérica repite la misma frase dos
+  // veces ("estás registrado como X, no puedes hacer X"). Este caso usa
+  // copy distinto, más natural.
+  const esMismaCategoria = identidad === target;
+  const base = esMismaCategoria
+    ? `Ya estás registrado como ${etiquetaIdentidad} con esta cuenta.`
+    : `Actualmente estás registrado como ${etiquetaIdentidad}, por lo que no puedes ${TARGET_LABEL[target]} con esta cuenta.`;
+  if (!incluirSugerenciaDonante) {
+    return base;
+  }
+  return `${base} Si quieres apoyar, puedes hacerlo como donante comunitario.`;
+}
+// Mapea cada una de las 6 rutas/acciones de rol de la landing a su
+// TargetAction — usado por handleCustomRouting para saber contra qué fila
+// de BLOCKED_BY (utils/roleGuard.ts) evaluar al usuario logueado, antes de
+// decidir a dónde navegar o qué formulario abrir.
+const ROUTE_TARGET_ACTION: Record<string, TargetAction> = {
+  '/join-association': 'voluntario_interno',
+  '/external-volunteer-register': 'voluntario_externo',
+  '/association-register': 'asociacion',
+  custom_donante_comunitario: 'donante_comunitario',
+  custom_registro_aliado_local: 'aliado_local',
+  custom_registro_patrocinador: 'patrocinador_institucional',
 };
 
 // ─── FONT FAMILY HELPERS ────────────────────────────────────────────────────
@@ -249,8 +302,8 @@ export default function LandingScreen() {
 
   const [isAuthRequiredModalVisible, setIsAuthRequiredModalVisible] = useState(false);
   const [isRegistroAliadoModalVisible, setIsRegistroAliadoModalVisible] = useState(false);
-  const [isAssociationConflictModalVisible, setIsAssociationConflictModalVisible] = useState(false);
-  const [isVoluntarioConflictModalVisible, setIsVoluntarioConflictModalVisible] = useState(false);
+  const [isRoleConflictModalVisible, setIsRoleConflictModalVisible] = useState(false);
+  const [roleConflictInfo, setRoleConflictInfo] = useState<{ target: TargetAction; identidad: string } | null>(null);
   const [volunteerAuthFlow, setVolunteerAuthFlow] = useState<PostAuthFlow | null>(null);
   const [selectedAliadoTipo, setSelectedAliadoTipo] = useState<'aliado_local' | 'patrocinador_institucional'>('aliado_local');
 
@@ -304,16 +357,17 @@ export default function LandingScreen() {
   };
 
   const handleCustomRouting = (route: string) => {
-    if (['custom_donante_comunitario', 'custom_registro_aliado_local', 'custom_registro_patrocinador'].includes(route)) {
-      if (isLoggedIn && user?.rol === 'asociacion') {
-        setIsAssociationConflictModalVisible(true);
-        return;
-      }
-    }
+    const target = ROUTE_TARGET_ACTION[route];
+    const esMismoTipoDeAliadoYaRegistrado =
+      (target === 'donante_comunitario' || target === 'aliado_local' || target === 'patrocinador_institucional') &&
+      isLoggedIn &&
+      user?.tipo_perfil_apoyo === target;
 
-    if (['custom_registro_aliado_local', 'custom_registro_patrocinador'].includes(route)) {
-      if (isLoggedIn && ['reportante', 'voluntario_interno', 'voluntario_externo'].includes(user?.rol as string)) {
-        setIsVoluntarioConflictModalVisible(true);
+    if (target && isLoggedIn && !esMismoTipoDeAliadoYaRegistrado) {
+      const identidadBloqueante = getBlockingIdentity(target, user);
+      if (identidadBloqueante) {
+        setRoleConflictInfo({ target, identidad: identidadBloqueante });
+        setIsRoleConflictModalVisible(true);
         return;
       }
     }
@@ -352,6 +406,16 @@ export default function LandingScreen() {
         setSelectedAliadoTipo('patrocinador_institucional');
         setIsRegistroAliadoModalVisible(true);
       }
+    } else if (route === '/association-register') {
+      setIsAssociationFormVisible(true);
+    } else if (route === '/external-volunteer-register') {
+      if (isLoggedIn) {
+        setIsExternalVolunteerFormVisible(true);
+      } else {
+        setVolunteerAuthFlow('external-volunteer');
+      }
+    } else if (route === '/join-association' && !isLoggedIn) {
+      setVolunteerAuthFlow('join-association');
     } else {
       router.push(route as any);
     }
@@ -450,10 +514,20 @@ export default function LandingScreen() {
     );
   }
 
-  return (
-    <View style={{ flex: 1, backgroundColor: C.bgSoft }}>
-      <PawPatternBackground />
-      <ScrollView style={{ flex: 1, zIndex: 1 }} showsVerticalScrollIndicator={false}>
+  // El atajo "Ir a Donante Comunitario" del modal de conflicto solo debe
+  // ofrecerse cuando esa ruta en sí no está bloqueada para la identidad
+  // actual del usuario — de lo contrario le mostramos una salida que es
+  // otra pared (ver caso aliado_local/patrocinador_institucional, que
+  // también están en BLOCKED_BY.donante_comunitario).
+    const puedeOfrecerAtajoDonante =
+      !!roleConflictInfo &&
+      roleConflictInfo.target !== 'donante_comunitario' &&
+      getBlockingIdentity('donante_comunitario', user) === null;
+
+    return (
+      <View style={{ flex: 1, backgroundColor: C.bgSoft }}>
+        <PawPatternBackground />
+        <ScrollView style={{ flex: 1, zIndex: 1 }} showsVerticalScrollIndicator={false}>
 
         {/* ══════════════════════════════════════════════════════════════════
             SECCIÓN 1 — NAVBAR  (sticky-like header)
@@ -1056,18 +1130,13 @@ export default function LandingScreen() {
                                         {/* Botones CTA + Leer más */}
                                         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
                                           <AnimatedButton onPress={() => {
+                                            // Las 6 rutas de rol/aliado (más '/map' de Reportante, que
+                                            // no tiene target y pasa de largo) se resuelven todas dentro
+                                            // de handleCustomRouting, que evalúa el guard de identidad
+                                            // (getBlockingIdentity) antes de navegar o abrir cualquier
+                                            // formulario — ver ROUTE_TARGET_ACTION más arriba.
                                             const ar = activeRole as any;
-                                            if (ar.ctaRoute === '/association-register') {
-                                              setIsAssociationFormVisible(true);
-                                            } else if (ar.ctaRoute === '/external-volunteer-register') {
-                                              if (isLoggedIn) {
-                                                setIsExternalVolunteerFormVisible(true);
-                                              } else {
-                                                setVolunteerAuthFlow('external-volunteer');
-                                              }
-                                            } else if (ar.ctaRoute === '/join-association' && !isLoggedIn) {
-                                              setVolunteerAuthFlow('join-association');
-                                            } else if (ar.ctaRoute) {
+                                            if (ar.ctaRoute) {
                                               handleCustomRouting(ar.ctaRoute);
                                             }
                                           }}>
@@ -1711,8 +1780,8 @@ export default function LandingScreen() {
             >
               <Text style={{ color: C.primary, fontFamily: F.bodySemiBold, fontSize: 15 }}>Crear cuenta</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => setVolunteerAuthFlow(null)} style={{ paddingVertical: 10, alignItems: 'center' }}>
-              <Text style={{ color: C.muted, fontFamily: F.bodyMedium, fontSize: 14 }}>Cancelar</Text>
+            <TouchableOpacity onPress={() => setVolunteerAuthFlow(null)} style={{flex: 1, paddingVertical: 10, paddingHorizontal: 10, borderRadius: 20, backgroundColor: C.primary, alignItems: 'center' }}>
+              <Text style={{ color: C.muted, fontFamily: F.bodyMedium, fontSize: 14, textAlign: 'center'}}>Cancelar</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1777,52 +1846,43 @@ export default function LandingScreen() {
         </View>
       </Modal>
 
-      {/* ── MODAL CONFLICTO DE ASOCIACIÓN ── */}
-      <Modal
-        visible={isAssociationConflictModalVisible}
+      {/* ── MODAL CONFLICTO DE ROL/IDENTIDAD (genérico para las 6 rutas) ── */}
+       <Modal
+        visible={isRoleConflictModalVisible}
         animationType="fade"
         transparent={true}
-        onRequestClose={() => setIsAssociationConflictModalVisible(false)}
+        onRequestClose={() => setIsRoleConflictModalVisible(false)}
       >
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 16 }}>
           <View style={{ backgroundColor: C.bg, borderRadius: 32, padding: 32, width: '100%', maxWidth: 400 }}>
             <Text style={{ fontSize: 22, fontFamily: F.displayBold, color: C.text, textAlign: 'center', marginBottom: 12 }}>
               Acción no permitida
             </Text>
-            <Text style={{ fontSize: 15, fontFamily: F.bodyMedium, color: C.muted, textAlign: 'center', marginBottom: 24, lineHeight: 22 }}>
-              Actualmente estás registrado como asociación, por lo que no puedes formar parte de la red de aliados con esta cuenta. Si deseas apoyar, crea una cuenta desde cero según el rol de aliado que más se adapte a ti.
-            </Text>
+            {roleConflictInfo && (
+              <Text style={{ fontSize: 15, fontFamily: F.bodyMedium, color: C.muted, textAlign: 'center', marginBottom: 24, lineHeight: 22 }}>
+                {buildRoleConflictMessage(roleConflictInfo.target, roleConflictInfo.identidad, puedeOfrecerAtajoDonante)}
+              </Text>
+            )}
             <View style={{ flexDirection: 'row', gap: 12 }}>
-              <TouchableOpacity onPress={() => setIsAssociationConflictModalVisible(false)} style={{ flex: 1, paddingVertical: 16, borderRadius: 20, backgroundColor: C.primary, alignItems: 'center' }}>
-                <Text style={{ color: '#FFF', fontFamily: F.bodySemiBold }}>Entendido</Text>
+              <TouchableOpacity
+                onPress={() => setIsRoleConflictModalVisible(false)}
+                style={{
+                  flex: 1, paddingVertical: 16, borderRadius: 20, alignItems: 'center',
+                  backgroundColor: puedeOfrecerAtajoDonante ? C.neutralLight : C.primary,
+                }}
+              >
+                <Text style={{ color: puedeOfrecerAtajoDonante ? C.text : '#FFF', fontFamily: F.bodySemiBold }}>
+                  {puedeOfrecerAtajoDonante ? 'Cancelar' : 'Entendido'}
+                </Text>
               </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* ── MODAL CONFLICTO DE VOLUNTARIO/REPORTANTE ── */}
-      <Modal
-        visible={isVoluntarioConflictModalVisible}
-        animationType="fade"
-        transparent={true}
-        onRequestClose={() => setIsVoluntarioConflictModalVisible(false)}
-      >
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 16 }}>
-          <View style={{ backgroundColor: C.bg, borderRadius: 32, padding: 32, width: '100%', maxWidth: 400 }}>
-            <Text style={{ fontSize: 22, fontFamily: F.displayBold, color: C.text, textAlign: 'center', marginBottom: 12 }}>
-              Acción no permitida
-            </Text>
-            <Text style={{ fontSize: 15, fontFamily: F.bodyMedium, color: C.muted, textAlign: 'center', marginBottom: 24, lineHeight: 22 }}>
-              Actualmente eres voluntario o reportante, si quieres apoyar puedes formar parte de los aliados como donante comunitario.
-            </Text>
-            <View style={{ flexDirection: 'row', gap: 12 }}>
-              <TouchableOpacity onPress={() => setIsVoluntarioConflictModalVisible(false)} style={{ flex: 1, paddingVertical: 16, borderRadius: 20, backgroundColor: C.neutralLight, alignItems: 'center' }}>
-                <Text style={{ color: C.text, fontFamily: F.bodySemiBold }}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => { setIsVoluntarioConflictModalVisible(false); handleCustomRouting('custom_donante_comunitario'); }} style={{ flex: 1, paddingVertical: 16, paddingLeft: 16, borderRadius: 20, backgroundColor: C.primary, alignItems: 'center' }}>
-                <Text style={{ color: '#FFF', fontFamily: F.bodySemiBold }}>Ir a Donante Comunitario</Text>
-              </TouchableOpacity>
+              {puedeOfrecerAtajoDonante && (
+                <TouchableOpacity
+                  onPress={() => { setIsRoleConflictModalVisible(false); handleCustomRouting('custom_donante_comunitario'); }}
+                  style={{ flex: 1, paddingVertical: 16, paddingHorizontal: 16, borderRadius: 20, backgroundColor: C.primary, alignItems: 'center' }}
+                >
+                  <Text style={{ color: '#FFF', fontFamily: F.bodySemiBold, textAlign: 'center' }}>Ir a Donante Comunitario</Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
         </View>
