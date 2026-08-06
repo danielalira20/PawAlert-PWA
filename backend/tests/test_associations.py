@@ -42,6 +42,54 @@ def test_association_password_corta():
     assert "6 caracteres" in response.json()["detail"]
 
 
+def test_association_nombre_responsable_invalido_devuelve_422():
+    data = {**BASE_DATA, "nombre_responsable": "An2"}
+    response = client.post("/associations", data=data)
+    assert response.status_code == 422
+    assert response.json()["detail"] == "El nombre del responsable solo puede contener letras y espacios."
+
+
+def test_association_apellido_responsable_muy_corto_devuelve_422():
+    data = {**BASE_DATA, "apellido_responsable": "Lo"}
+    response = client.post("/associations", data=data)
+    assert response.status_code == 422
+    assert response.json()["detail"] == "El apellido del responsable debe tener al menos 3 caracteres."
+
+
+def test_association_nombre_responsable_valido_pasa_el_chequeo_y_llega_a_auth(make_query):
+    tablas = {
+        "asociaciones": make_query(data=[{"id": "aso-1"}]),
+        "roles": make_query(data=[{"id": "rol-asociacion"}]),
+        "usuarios": make_query(execute_results=[
+            SimpleNamespace(data=[], count=None),  # select por teléfono: no existe
+            SimpleNamespace(data=[], count=None),  # select por correo: no existe
+            SimpleNamespace(data=[{"id": "user-aso-valido"}], count=None),  # insert
+        ]),
+        "asociacion_tipo_animal": make_query(data=[]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+
+    auth_creado = SimpleNamespace(user=SimpleNamespace(id="auth-user-valido"))
+    login = SimpleNamespace(session=SimpleNamespace(
+        access_token="access-valido",
+        refresh_token="refresh-valido",
+    ))
+
+    with (
+        patch("app.api.associations.supabase", supabase),
+        patch("app.api.associations.supabase_admin") as admin,
+        patch("app.api.associations.get_fresh_client") as fresh_client,
+        patch("app.api.associations.obtener_id_catalogo", return_value="tipo-perro-id"),
+    ):
+        admin.auth.admin.create_user.return_value = auth_creado
+        fresh_client.return_value.auth.sign_in_with_password.return_value = login
+        response = client.post("/associations", data={**BASE_DATA, "nombre_responsable": "María José"})
+
+    assert response.status_code == 201
+    admin.auth.admin.create_user.assert_called_once()
+
+
 def test_associations_me_reportes_sin_token():
     response = client.get("/associations/me/reportes")
     assert response.status_code == 401
