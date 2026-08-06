@@ -1780,8 +1780,8 @@ export default function LandingScreen() {
             >
               <Text style={{ color: C.primary, fontFamily: F.bodySemiBold, fontSize: 15 }}>Crear cuenta</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => setVolunteerAuthFlow(null)} style={{flex: 1, paddingVertical: 10, paddingHorizontal: 10, borderRadius: 20, backgroundColor: C.primary, alignItems: 'center' }}>
-              <Text style={{ color: C.muted, fontFamily: F.bodyMedium, fontSize: 14, textAlign: 'center'}}>Cancelar</Text>
+             <TouchableOpacity onPress={() => setVolunteerAuthFlow(null)} style={{ paddingVertical: 10, alignItems: 'center' }}>
+              <Text style={{ color: C.muted, fontFamily: F.bodyMedium, fontSize: 14 }}>Cancelar</Text>
             </TouchableOpacity>
           </View>
         </View>
