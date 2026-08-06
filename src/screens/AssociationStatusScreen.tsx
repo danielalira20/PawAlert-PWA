@@ -15,6 +15,7 @@ import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
 import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
+import { validarNombre } from '../utils/validators';
 import { useWindowDimensions } from 'react-native';
 import { PostulacionesPanel } from '../components/association-dashboard/PostulacionesPanel';
 import { LotesInvitacionesPanel } from '../components/association-dashboard/LotesInvitacionesPanel';
@@ -307,16 +308,12 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
   // 2. Funciones de validación en tiempo real para el formulario de miembro
   const handleNombreRepChange = (val: string) => {
     setNombreRep(val);
-    if (!val.trim()) setErrorsRep(prev => ({ ...prev, nombreRep: 'El nombre es obligatorio.' }));
-    else if (/\d/.test(val)) setErrorsRep(prev => ({ ...prev, nombreRep: 'El nombre no debe contener números.' }));
-    else setErrorsRep(prev => ({ ...prev, nombreRep: '' }));
+    setErrorsRep(prev => ({ ...prev, nombreRep: validarNombre(val, { etiqueta: 'nombre' }).mensaje }));
   };
 
   const handleApellidoRepChange = (val: string) => {
     setApellidoRep(val);
-    if (!val.trim()) setErrorsRep(prev => ({ ...prev, apellidoRep: 'El apellido es obligatorio.' }));
-    else if (/\d/.test(val)) setErrorsRep(prev => ({ ...prev, apellidoRep: 'El apellido no debe contener números.' }));
-    else setErrorsRep(prev => ({ ...prev, apellidoRep: '' }));
+    setErrorsRep(prev => ({ ...prev, apellidoRep: validarNombre(val, { etiqueta: 'apellido' }).mensaje }));
   };
 
   const handleTelefonoRepChange = (val: string) => {
@@ -620,11 +617,11 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
     let hasErrors = false;
     const newErrors: Record<string, string> = {};
 
-    if (!nombreRep.trim()) { newErrors.nombreRep = 'El nombre es obligatorio.'; hasErrors = true; }
-    else if (/\d/.test(nombreRep)) { newErrors.nombreRep = 'El nombre no debe contener números.'; hasErrors = true; }
+    const nombreRepCheck = validarNombre(nombreRep, { etiqueta: 'nombre' });
+    if (!nombreRepCheck.valido) { newErrors.nombreRep = nombreRepCheck.mensaje; hasErrors = true; }
 
-    if (!apellidoRep.trim()) { newErrors.apellidoRep = 'El apellido es obligatorio.'; hasErrors = true; }
-    else if (/\d/.test(apellidoRep)) { newErrors.apellidoRep = 'El apellido no debe contener números.'; hasErrors = true; }
+    const apellidoRepCheck = validarNombre(apellidoRep, { etiqueta: 'apellido' });
+    if (!apellidoRepCheck.valido) { newErrors.apellidoRep = apellidoRepCheck.mensaje; hasErrors = true; }
 
     if (!telefonoRep.trim()) { newErrors.telefonoRep = 'El teléfono es obligatorio.'; hasErrors = true; }
     else if (/[a-zA-Z]/.test(telefonoRep)) { newErrors.telefonoRep = 'El teléfono no puede contener letras.'; hasErrors = true; }

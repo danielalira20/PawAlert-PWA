@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { ActivityIndicator, SafeAreaView, ScrollView, Text, TextInput, TouchableOpacity, View, Platform, KeyboardAvoidingView } from 'react-native';
 import { Toast, useToast } from '../components/Toast';
 import { useAuth } from '../context/AuthContext';
-import { validarPassword } from '../utils/validators';
+import { validarPassword, validarNombre } from '../utils/validators';
 import { getPostAuthDestination, getPostAuthExplanation } from '../utils/postAuthNavigation';
 
 // ─── FONTS & TOKENS ───────────────────────────────────────────────────────────
@@ -87,22 +87,20 @@ export default function LoginScreen() {
 
   const handleNombreChange = (val: string) => {
     setNombre(val);
-    if (!val.trim()) setErrors(prev => ({ ...prev, nombre: 'El nombre es obligatorio.' }));
-    else if (/\d/.test(val)) setErrors(prev => ({ ...prev, nombre: 'El nombre no debe contener números.' }));
-    else setErrors(prev => ({ ...prev, nombre: '' }));
+    setErrors(prev => ({ ...prev, nombre: validarNombre(val, { etiqueta: 'nombre' }).mensaje }));
   };
 
   const handleApellidoPaternoChange = (val: string) => {
     setApellidoPaterno(val);
-    if (!val.trim()) setErrors(prev => ({ ...prev, apellidoPaterno: 'El apellido paterno es obligatorio.' }));
-    else if (/\d/.test(val)) setErrors(prev => ({ ...prev, apellidoPaterno: 'El apellido no debe contener números.' }));
-    else setErrors(prev => ({ ...prev, apellidoPaterno: '' }));
+    setErrors(prev => ({ ...prev, apellidoPaterno: validarNombre(val, { etiqueta: 'apellido paterno' }).mensaje }));
   };
 
   const handleApellidoMaternoChange = (val: string) => {
     setApellidoMaterno(val);
-    if (/\d/.test(val)) setErrors(prev => ({ ...prev, apellidoMaterno: 'El apellido no debe contener números.' }));
-    else setErrors(prev => ({ ...prev, apellidoMaterno: '' }));
+    setErrors(prev => ({
+      ...prev,
+      apellidoMaterno: validarNombre(val, { requerido: false, etiqueta: 'apellido materno' }).mensaje,
+    }));
   };
 
   const handleTelefonoChange = (val: string) => {
@@ -204,13 +202,14 @@ export default function LoginScreen() {
     let hasErrors = false;
     const newErrors: Record<string, string> = {};
 
-    if (!nombre.trim()) { newErrors.nombre = 'El nombre es obligatorio.'; hasErrors = true; }
-    else if (/\d/.test(nombre)) { newErrors.nombre = 'El nombre no debe contener números.'; hasErrors = true; }
+    const nombreCheck = validarNombre(nombre, { etiqueta: 'nombre' });
+    if (!nombreCheck.valido) { newErrors.nombre = nombreCheck.mensaje; hasErrors = true; }
 
-    if (!apellidoPaterno.trim()) { newErrors.apellidoPaterno = 'El apellido paterno es obligatorio.'; hasErrors = true; }
-    else if (/\d/.test(apellidoPaterno)) { newErrors.apellidoPaterno = 'El apellido no debe contener números.'; hasErrors = true; }
+    const apellidoPaternoCheck = validarNombre(apellidoPaterno, { etiqueta: 'apellido paterno' });
+    if (!apellidoPaternoCheck.valido) { newErrors.apellidoPaterno = apellidoPaternoCheck.mensaje; hasErrors = true; }
 
-    if (/\d/.test(apellidoMaterno)) { newErrors.apellidoMaterno = 'El apellido no debe contener números.'; hasErrors = true; }
+    const apellidoMaternoCheck = validarNombre(apellidoMaterno, { requerido: false, etiqueta: 'apellido materno' });
+    if (!apellidoMaternoCheck.valido) { newErrors.apellidoMaterno = apellidoMaternoCheck.mensaje; hasErrors = true; }
 
     if (!telefono.trim()) { newErrors.telefono = 'El teléfono es obligatorio.'; hasErrors = true; }
     else if (/[a-zA-Z]/.test(telefono)) { newErrors.telefono = 'El teléfono no puede contener letras.'; hasErrors = true; }

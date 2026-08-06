@@ -10,6 +10,7 @@ import LocationPickerMap from '../LocationPickerMap';
 import * as Location from 'expo-location';
 import * as DocumentPicker from 'expo-document-picker';
 import { useRouter } from 'expo-router';
+import { validarNombre } from '../../utils/validators';
 
 const COLORS = {
   bgTeal: '#66BCB4',
@@ -326,24 +327,15 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
 
   const handleNombreContactoChange = (val: string) => {
     setNombreContacto(val);
-    if (!val.trim()) {
-      setErrors(prev => ({ ...prev, nombreContacto: 'Obligatorio.' }));
-    } else if (/\d/.test(val)) {
-      setErrors(prev => ({ ...prev, nombreContacto: 'No debe contener números.' }));
-    } else {
-      setErrors(prev => ({ ...prev, nombreContacto: '' }));
-    }
+    setErrors(prev => ({ ...prev, nombreContacto: validarNombre(val, { etiqueta: 'nombre de contacto' }).mensaje }));
   };
 
   const handleNombreRepresentanteChange = (val: string) => {
     setNombreRepresentante(val);
-    if (!val.trim()) {
-      setErrors(prev => ({ ...prev, nombreRepresentante: 'Obligatorio.' }));
-    } else if (/\d/.test(val)) {
-      setErrors(prev => ({ ...prev, nombreRepresentante: 'No debe contener números.' }));
-    } else {
-      setErrors(prev => ({ ...prev, nombreRepresentante: '' }));
-    }
+    setErrors(prev => ({
+      ...prev,
+      nombreRepresentante: validarNombre(val, { etiqueta: 'nombre del representante' }).mensaje,
+    }));
   };
 
   const handleCedulaProfesionalChange = (val: string) => {
@@ -372,11 +364,10 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
 
   const handleNombreContactoCampanaChange = (val: string) => {
     setNombreContactoCampana(val);
-    if (val.trim() && /\d/.test(val)) {
-      setErrors(prev => ({ ...prev, nombreContactoCampana: 'No debe contener números.' }));
-    } else {
-      setErrors(prev => ({ ...prev, nombreContactoCampana: '' }));
-    }
+    setErrors(prev => ({
+      ...prev,
+      nombreContactoCampana: validarNombre(val, { requerido: false, etiqueta: 'nombre del responsable de campaña' }).mensaje,
+    }));
   };
 
   const handleRfcChange = (val: string) => {
@@ -428,8 +419,8 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
     if (!password.trim() || password.length < 6) newErrors.password = 'Mínimo 6 caracteres.';
     if (password !== passwordConfirm) newErrors.passwordConfirm = 'Las contraseñas no coinciden.';
     if (!telefono.trim() || telefono.length !== 10 || /[a-zA-Z]/.test(telefono)) newErrors.telefono = 'Debe tener 10 dígitos numéricos.';
-    if (!nombreContacto.trim()) newErrors.nombreContacto = 'Obligatorio.';
-    else if (/\d/.test(nombreContacto)) newErrors.nombreContacto = 'No debe contener números.';
+    const nombreContactoCheck = validarNombre(nombreContacto, { etiqueta: 'nombre de contacto' });
+    if (!nombreContactoCheck.valido) newErrors.nombreContacto = nombreContactoCheck.mensaje;
     if (!nombreNegocio.trim()) newErrors.nombreNegocio = 'Obligatorio.';
 
     if (Object.keys(newErrors).length > 0) {
@@ -457,8 +448,8 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
       if (!razonSocial) newErrors.razonSocial = 'Obligatorio.';
       if (!tipoInstitucion) newErrors.tipoInstitucion = 'Selecciona una institución.';
       if (tipoInstitucion === 'Otro' && !otroInstitucion) newErrors.otroInstitucion = 'Especifica la institución.';
-      if (!nombreRepresentante) newErrors.nombreRepresentante = 'Obligatorio.';
-      else if (/\d/.test(nombreRepresentante)) newErrors.nombreRepresentante = 'No debe contener números.';
+      const nombreRepresentanteCheck = validarNombre(nombreRepresentante, { etiqueta: 'nombre del representante' });
+      if (!nombreRepresentanteCheck.valido) newErrors.nombreRepresentante = nombreRepresentanteCheck.mensaje;
       if (!cargoRepresentante) newErrors.cargoRepresentante = 'Obligatorio.';
     }
 

@@ -10,7 +10,7 @@ import { Input } from '../components/ui/Input';
 import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
 import LocationPickerMap from './LocationPickerMap';
-import { validarPassword } from '../utils/validators';
+import { validarPassword, validarNombre } from '../utils/validators';
 import AssociationStatusScreen from './AssociationStatusScreen';
 
 const COLORS = {
@@ -142,8 +142,10 @@ export default function AssociationFormScreen({ onClose }: Props) {
       newErrors.acercaDe = 'Debe contener al menos una letra minúscula.';
     }
 
-    if (!nombreResponsable.trim()) newErrors.nombreResponsable = 'Obligatorio.';
-    if (!apellidoResponsable.trim()) newErrors.apellidoResponsable = 'Obligatorio.';
+    const nombreResponsableCheck = validarNombre(nombreResponsable, { etiqueta: 'nombre del responsable' });
+    if (!nombreResponsableCheck.valido) newErrors.nombreResponsable = nombreResponsableCheck.mensaje;
+    const apellidoResponsableCheck = validarNombre(apellidoResponsable, { etiqueta: 'apellido del responsable' });
+    if (!apellidoResponsableCheck.valido) newErrors.apellidoResponsable = apellidoResponsableCheck.mensaje;
     if (!telefono.trim()) { newErrors.telefono = 'Obligatorio.'; } else if (!/^\d{10}$/.test(telefono.trim())) { newErrors.telefono = '10 dígitos numéricos.'; }
     if (!email.trim()) { newErrors.email = 'Obligatorio.'; } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { newErrors.email = 'Correo inválido.'; }
     if (!password.trim()) { newErrors.password = 'Obligatorio.'; } else {
@@ -210,16 +212,18 @@ export default function AssociationFormScreen({ onClose }: Props) {
 
   const handleNombreResponsableChange = (val: string) => {
     setNombreResponsable(val);
-    if (!val.trim()) setErrors(prev => ({ ...prev, nombreResponsable: 'El nombre del responsable es obligatorio.' }));
-    else if (/\d/.test(val)) setErrors(prev => ({ ...prev, nombreResponsable: 'El nombre no debe contener números.' }));
-    else setErrors(prev => ({ ...prev, nombreResponsable: '' }));
+    setErrors(prev => ({
+      ...prev,
+      nombreResponsable: validarNombre(val, { etiqueta: 'nombre del responsable' }).mensaje,
+    }));
   };
 
   const handleApellidoResponsableChange = (val: string) => {
     setApellidoResponsable(val);
-    if (!val.trim()) setErrors(prev => ({ ...prev, apellidoResponsable: 'El apellido del responsable es obligatorio.' }));
-    else if (/\d/.test(val)) setErrors(prev => ({ ...prev, apellidoResponsable: 'El apellido no debe contener números.' }));
-    else setErrors(prev => ({ ...prev, apellidoResponsable: '' }));
+    setErrors(prev => ({
+      ...prev,
+      apellidoResponsable: validarNombre(val, { etiqueta: 'apellido del responsable' }).mensaje,
+    }));
   };
 
   const handleTelefonoChange = (val: string) => {

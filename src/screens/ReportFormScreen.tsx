@@ -13,6 +13,7 @@ import { AnimalThumbnailStrip, DuplicadoAnimal } from '../components/common/Anim
 import { API_URL } from '../constants/api';
 import { petzen } from '../constants/petzenTheme';
 import { useAuth } from '../context/AuthContext';
+import { validarNombre } from '../utils/validators';
 import { getDeviceToken } from '../utils/deviceToken';
 import LocationPickerMap from './LocationPickerMap';
 import { BlurView } from 'expo-blur';
@@ -539,8 +540,12 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
   const validarPaso3 = () => {
     if (isLoggedIn && user) return true;
     const newErrors: { [key: string]: string } = {};
-    if (!nombre.trim()) newErrors.nombre = 'El nombre es obligatorio.';
-    if (!apellidoPaterno.trim()) newErrors.apellidoPaterno = 'El apellido paterno es obligatorio.';
+    const nombreCheck = validarNombre(nombre, { etiqueta: 'nombre' });
+    if (!nombreCheck.valido) newErrors.nombre = nombreCheck.mensaje;
+    const apellidoPaternoCheck = validarNombre(apellidoPaterno, { etiqueta: 'apellido paterno' });
+    if (!apellidoPaternoCheck.valido) newErrors.apellidoPaterno = apellidoPaternoCheck.mensaje;
+    const apellidoMaternoCheck = validarNombre(apellidoMaterno, { requerido: false, etiqueta: 'apellido materno' });
+    if (!apellidoMaternoCheck.valido) newErrors.apellidoMaterno = apellidoMaternoCheck.mensaje;
     if (!telefono.trim()) {
       newErrors.telefono = 'El teléfono es obligatorio.';
     } else if (!/^\d{10}$/.test(telefono.trim())) {
@@ -1487,9 +1492,9 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
                 <Text style={{ fontSize: 12, color: '#27AE60', fontWeight: '600' }}>✓ Datos encontrados y autorellenados</Text>
               </View>
             )}
-            <Input label="Nombre(s)" placeholder="Ej. Ana" value={nombre} onChangeText={(val) => { setNombre(val); if (!val.trim()) setErrors(prev => ({ ...prev, nombre: 'El nombre es obligatorio.' })); else if (/\d/.test(val)) setErrors(prev => ({ ...prev, nombre: 'El nombre no debe contener números.' })); else setErrors(prev => ({ ...prev, nombre: '' })); }} error={errors.nombre} maxLength={30} required />
-            <Input label="Apellido Paterno" placeholder="Ej. Pérez" value={apellidoPaterno} onChangeText={(val) => { setApellidoPaterno(val); if (!val.trim()) setErrors(prev => ({ ...prev, apellidoPaterno: 'El apellido paterno es obligatorio.' })); else if (/\d/.test(val)) setErrors(prev => ({ ...prev, apellidoPaterno: 'El apellido no debe contener números.' })); else setErrors(prev => ({ ...prev, apellidoPaterno: '' })); }} error={errors.apellidoPaterno} maxLength={30} required />
-            <Input label="Apellido Materno (Opcional)" placeholder="Ej. López" value={apellidoMaterno} onChangeText={(val) => { setApellidoMaterno(val); if (/\d/.test(val)) setErrors(prev => ({ ...prev, apellidoMaterno: 'El apellido no debe contener números.' })); else setErrors(prev => ({ ...prev, apellidoMaterno: '' })); }} error={errors.apellidoMaterno} maxLength={30} />
+            <Input label="Nombre(s)" placeholder="Ej. Ana" value={nombre} onChangeText={(val) => { setNombre(val); setErrors(prev => ({ ...prev, nombre: validarNombre(val, { etiqueta: 'nombre' }).mensaje })); }} error={errors.nombre} maxLength={30} required />
+            <Input label="Apellido Paterno" placeholder="Ej. Pérez" value={apellidoPaterno} onChangeText={(val) => { setApellidoPaterno(val); setErrors(prev => ({ ...prev, apellidoPaterno: validarNombre(val, { etiqueta: 'apellido paterno' }).mensaje })); }} error={errors.apellidoPaterno} maxLength={30} required />
+            <Input label="Apellido Materno (Opcional)" placeholder="Ej. López" value={apellidoMaterno} onChangeText={(val) => { setApellidoMaterno(val); setErrors(prev => ({ ...prev, apellidoMaterno: validarNombre(val, { requerido: false, etiqueta: 'apellido materno' }).mensaje })); }} error={errors.apellidoMaterno} maxLength={30} />
             <Input label="Correo Electrónico (Opcional)" placeholder="Ej. correo@ejemplo.com" value={email} onChangeText={(val) => { setEmail(val); if (val.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val.trim())) setErrors(prev => ({ ...prev, email: 'Ingresa un correo electrónico válido.' })); else setErrors(prev => ({ ...prev, email: '' })); }} error={errors.email} keyboardType="email-address" autoCapitalize="none" maxLength={50} />
             <TouchableOpacity
               onPress={() => setShowLoginModal(true)}
