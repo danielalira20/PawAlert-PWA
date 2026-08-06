@@ -41,6 +41,10 @@ class EstadoReporteEnum(str, Enum):
     sin_cobertura = "sin_cobertura"
     duplicado = "duplicado"
     muerto = "muerto"
+    cancelado_por_reportante = "cancelado_por_reportante"
+    duplicado_vinculable = "duplicado_vinculable"
+    duplicado_informativo = "duplicado_informativo"
+    
 
 class ContactoEmergencia(BaseModel):
     nombre: str
