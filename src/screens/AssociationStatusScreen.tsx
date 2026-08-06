@@ -23,6 +23,7 @@ import { BlurView } from 'expo-blur';
 import { Animal, getAnimales, totalAnimales, animalMasGrave } from '../types/reporte';
 import { AnimalCarousel } from '../components/common/AnimalCarousel';
 import { ImageLightbox } from '../components/common/ImageLightbox';
+import { getPaginationWindow, getReportsPerPage } from '../utils/reportPagination';
 
 // ─── PALETA DE COLORES PETZEN ───
 const COLORS = {
@@ -88,7 +89,7 @@ interface HistorialEvento {
 }
 
 type FiltroAsignacion = 'todas' | 'pendientes' | 'aceptadas' | 'rechazadas';
-type ActiveTab = 'reportes' | 'postulaciones' | 'voluntarios' | 'lotes';
+type ActiveTab = 'reportes' | 'postulaciones' | 'voluntarios' | 'lotes' | 'configuracion';
 
 type TabAsignacion = 'staff' | 'voluntarios';
 type EstadoVoluntarios = 'cargando' | 'candidatos' | 'esperando_confirmacion' | 'confirmado' | 'rechazado_mostrando_siguiente' | 'sin_candidatos';
@@ -177,6 +178,7 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
   const [reportes, setReportes] = useState<ReporteAsignado[]>([]);
   const [isLoadingReportes, setIsLoadingReportes] = useState(false);
   const [filtro, setFiltro] = useState<FiltroAsignacion>('pendientes');
+  const [paginaReportes, setPaginaReportes] = useState(1);
   const [nuevosReportes, setNuevosReportes] = useState(0);
 
   const [reporteSeleccionado, setReporteSeleccionado] = useState<ReporteAsignado | null>(null);
@@ -247,6 +249,10 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
 
 
   const { width: screenWidth } = useWindowDimensions();
+
+  useEffect(() => {
+    setPaginaReportes(1);
+  }, [filtro, subFiltroAceptadas, screenWidth, reportes.length]);
 
   const MOTIVOS_RECHAZO: { texto: string; clave: string }[] = [
     { texto: 'No tenemos capacidad disponible ahora mismo', clave: 'sin_capacidad' },
@@ -949,6 +955,15 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
     return true;
   });
 
+  const reportesPorPagina = getReportsPerPage(screenWidth);
+  const {
+    page: paginaReportesVisible,
+    totalPages: totalPaginasReportes,
+    startIndex: indiceInicialReportes,
+    endIndex: indiceFinalReportes,
+  } = getPaginationWindow(reportesFiltrados.length, paginaReportes, reportesPorPagina);
+  const reportesPaginados = reportesFiltrados.slice(indiceInicialReportes, indiceFinalReportes);
+
   const tiempoTotalTranscurrido = historialTimeline && historialTimeline.length > 1
     ? formatDistanceStrict(
       new Date(historialTimeline[historialTimeline.length - 1].created_at),
@@ -1279,6 +1294,7 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                   onPress={() => setActiveTab('lotes')}
                   style={{
                     paddingBottom: 12,
+                    marginRight: 24,
                     flexShrink: 0,
                     borderBottomWidth: activeTab === 'lotes' ? 3 : 0,
                     borderBottomColor: COLORS.primary
@@ -1292,12 +1308,38 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                     Lotes de aliados
                   </Text>
                 </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => setActiveTab('configuracion')}
+                  style={{
+                    paddingBottom: 12,
+                    flexShrink: 0,
+                    borderBottomWidth: activeTab === 'configuracion' ? 3 : 0,
+                    borderBottomColor: COLORS.primary
+                  }}
+                >
+                  <Text style={{
+                    fontSize: 16,
+                    fontWeight: activeTab === 'configuracion' ? '800' : '600',
+                    color: activeTab === 'configuracion' ? COLORS.primary : COLORS.textLight
+                  }}>
+                    Configuración
+                  </Text>
+                </TouchableOpacity>
               </ScrollView>
 
               {/* Título de sección */}
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                 <Text style={{ fontSize: 22, fontWeight: 'bold', color: COLORS.textDark }}>
-                  {activeTab === 'reportes' ? 'Reportes asignados' : activeTab === 'postulaciones' ? 'Postulaciones de voluntarios' : activeTab === 'lotes' ? 'Lotes de aliados' : 'Mis voluntarios'}
+                  {activeTab === 'reportes'
+                    ? 'Reportes asignados'
+                    : activeTab === 'postulaciones'
+                      ? 'Postulaciones de voluntarios'
+                      : activeTab === 'lotes'
+                        ? 'Lotes de aliados'
+                        : activeTab === 'configuracion'
+                          ? 'Configuración de casos'
+                          : 'Mis voluntarios'}
                 </Text>
                 {activeTab === 'reportes' && nuevosReportes > 0 && (
                   <View style={{ backgroundColor: COLORS.danger, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
@@ -1312,7 +1354,7 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                     <View style={{ flexDirection: 'row', gap: 10 }}>
                       {(['pendientes', 'aceptadas', 'rechazadas', 'todas'] as FiltroAsignacion[]).map((f) => (
                         <TouchableOpacity
-                          key={f} onPress={() => setFiltro(f)}
+                          key={f} onPress={() => { setFiltro(f); setPaginaReportes(1); }}
                           style={{
                             paddingHorizontal: 20, paddingVertical: 10, borderRadius: 24,
                             backgroundColor: filtro === f ? COLORS.primary : COLORS.cardBg,
@@ -1335,7 +1377,7 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                       ] as const).map((s) => (
                         <TouchableOpacity
                           key={s.key}
-                          onPress={() => setSubFiltroAceptadas(s.key)}
+                          onPress={() => { setSubFiltroAceptadas(s.key); setPaginaReportes(1); }}
                           style={{
                             paddingHorizontal: 14, paddingVertical: 8, borderRadius: 16,
                             backgroundColor: subFiltroAceptadas === s.key ? COLORS.secondary : COLORS.white,
@@ -1362,7 +1404,7 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                         </Text>
                       </View>
                     ) : (
-                      reportesFiltrados.map((reporte) => {
+                      reportesPaginados.map((reporte) => {
                         const enProceso = ['en_camino', 'en_atencion'].includes(reporte.estado_reporte);
                         const esperandoConfirmacion = reporte.confirmacion_voluntario === 'esperando';
                         const yaRescatado = reporte.estado_reporte === 'rescatado';
@@ -1518,13 +1560,75 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                       })
                     )}
                   </View>
+
+                  {reportesFiltrados.length > reportesPorPagina && (
+                    <View style={{
+                      backgroundColor: COLORS.cardBg,
+                      borderRadius: 18,
+                      paddingHorizontal: 16,
+                      paddingVertical: 14,
+                      marginTop: 16,
+                      ...SHADOW_SM,
+                    }}>
+                      <Text style={{ color: COLORS.textLight, fontSize: 12, fontWeight: '600', textAlign: 'center' }}>
+                        Mostrando {indiceInicialReportes + 1}–{indiceFinalReportes} de {reportesFiltrados.length} casos
+                      </Text>
+                      <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginTop: 12 }}>
+                        <TouchableOpacity
+                          accessibilityRole="button"
+                          accessibilityLabel="Página anterior de reportes"
+                          disabled={paginaReportesVisible === 1}
+                          onPress={() => setPaginaReportes((pagina) => Math.max(1, pagina - 1))}
+                          style={{
+                            minWidth: 108,
+                            paddingHorizontal: 16,
+                            paddingVertical: 10,
+                            borderRadius: 16,
+                            backgroundColor: paginaReportesVisible === 1 ? 'rgba(140,122,107,0.12)' : COLORS.white,
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            opacity: paginaReportesVisible === 1 ? 0.55 : 1,
+                          }}
+                        >
+                          <Ionicons name="chevron-back" size={16} color={COLORS.textDark} />
+                          <Text style={{ color: COLORS.textDark, fontSize: 12, fontWeight: '700', marginLeft: 4 }}>Anterior</Text>
+                        </TouchableOpacity>
+
+                        <Text style={{ color: COLORS.textDark, fontSize: 12, fontWeight: '800', minWidth: 92, textAlign: 'center' }}>
+                          Página {paginaReportesVisible} de {totalPaginasReportes}
+                        </Text>
+
+                        <TouchableOpacity
+                          accessibilityRole="button"
+                          accessibilityLabel="Página siguiente de reportes"
+                          disabled={paginaReportesVisible === totalPaginasReportes}
+                          onPress={() => setPaginaReportes((pagina) => Math.min(totalPaginasReportes, pagina + 1))}
+                          style={{
+                            minWidth: 108,
+                            paddingHorizontal: 16,
+                            paddingVertical: 10,
+                            borderRadius: 16,
+                            backgroundColor: paginaReportesVisible === totalPaginasReportes ? 'rgba(140,122,107,0.12)' : COLORS.primary,
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            opacity: paginaReportesVisible === totalPaginasReportes ? 0.55 : 1,
+                          }}
+                        >
+                          <Text style={{ color: paginaReportesVisible === totalPaginasReportes ? COLORS.textDark : COLORS.white, fontSize: 12, fontWeight: '700', marginRight: 4 }}>Siguiente</Text>
+                          <Ionicons name="chevron-forward" size={16} color={paginaReportesVisible === totalPaginasReportes ? COLORS.textDark : COLORS.white} />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
                 </>
 
               ) : activeTab === 'postulaciones' ? (
                 <PostulacionesPanel visible={activeTab === 'postulaciones'} />
               ) : activeTab === 'lotes' ? (
                 <LotesInvitacionesPanel visible={activeTab === 'lotes'} />
-              ) : (
+              ) : activeTab === 'voluntarios' ? (
                 <>
                   <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
                     {([
@@ -1620,11 +1724,13 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                     </View>
                   )}
                 </>
-              )}
+              ) : null}
 
 
 
-              <View style={{ backgroundColor: COLORS.cardBg, padding: 28, borderRadius: 32, marginTop: 32, ...SHADOW_MD }}>
+              {activeTab === 'configuracion' && (
+              <>
+              <View style={{ backgroundColor: COLORS.cardBg, padding: 28, borderRadius: 32, ...SHADOW_MD }}>
                 <Text style={{ fontSize: 22, fontWeight: '800', color: COLORS.textDark, marginBottom: 6 }}>Modo de asignación de casos</Text>
                 <Text style={{ fontSize: 13, color: COLORS.textLight, marginBottom: 20 }}>Define cómo se le asigna un voluntario a cada reporte que reciben.</Text>
 
@@ -1722,6 +1828,8 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                   <Button label={esStaff ? "Agregar staff" : "Agregar representante"} onPress={handleAgregarRepresentante} isLoading={isAdding} />
                 </View>
               </View>
+              </>
+              )}
             </>
           )}
         </ScrollView>
