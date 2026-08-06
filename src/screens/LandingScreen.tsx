@@ -13,7 +13,7 @@ import {
   ActivityIndicator,
   useWindowDimensions,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
 import { API_URL } from '../constants/api';
@@ -30,6 +30,7 @@ import {
 } from '@expo-google-fonts/poppins';
 import { useAuth } from '../context/AuthContext';
 import NotificationBell from '../components/red-aliados/NotificationBell';
+import type { PostAuthFlow } from '../utils/postAuthNavigation';
 
 const heroImage = require('../assets/images/imagen_hero.png');
 
@@ -237,6 +238,7 @@ export default function LandingScreen() {
   const isCompactHeader = width < 600;
 
   const router = useRouter();
+  const params = useLocalSearchParams<{ abrirPostulacionExterna?: string }>();
   const { isLoggedIn, user } = useAuth(); // Obtener si está logueado y datos del usuario
   const [isAssociationFormVisible, setIsAssociationFormVisible] = useState(false);
   const [isReportGuideVisible, setIsReportGuideVisible] = useState(false);
@@ -249,6 +251,7 @@ export default function LandingScreen() {
   const [isRegistroAliadoModalVisible, setIsRegistroAliadoModalVisible] = useState(false);
   const [isAssociationConflictModalVisible, setIsAssociationConflictModalVisible] = useState(false);
   const [isVoluntarioConflictModalVisible, setIsVoluntarioConflictModalVisible] = useState(false);
+  const [volunteerAuthFlow, setVolunteerAuthFlow] = useState<PostAuthFlow | null>(null);
   const [selectedAliadoTipo, setSelectedAliadoTipo] = useState<'aliado_local' | 'patrocinador_institucional'>('aliado_local');
 
   const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
@@ -353,6 +356,20 @@ export default function LandingScreen() {
       router.push(route as any);
     }
   };
+
+  const continueVolunteerAuth = (tab: 'login' | 'register') => {
+    if (!volunteerAuthFlow) return;
+    const returnTo = volunteerAuthFlow;
+    setVolunteerAuthFlow(null);
+    router.push({ pathname: '/login', params: { tab, returnTo } } as any);
+  };
+
+  useEffect(() => {
+    if (isLoggedIn && params.abrirPostulacionExterna === 'true') {
+      setIsExternalVolunteerFormVisible(true);
+      router.setParams({ abrirPostulacionExterna: undefined });
+    }
+  }, [isLoggedIn, params.abrirPostulacionExterna, router]);
 
   useEffect(() => {
     if (selectedRoleId) {
@@ -1024,8 +1041,10 @@ export default function LandingScreen() {
                                               if (isLoggedIn) {
                                                 setIsExternalVolunteerFormVisible(true);
                                               } else {
-                                                router.push('/login');
+                                                setVolunteerAuthFlow('external-volunteer');
                                               }
+                                            } else if (ar.ctaRoute === '/join-association' && !isLoggedIn) {
+                                              setVolunteerAuthFlow('join-association');
                                             } else if (ar.ctaRoute) {
                                               handleCustomRouting(ar.ctaRoute);
                                             }
@@ -1634,6 +1653,45 @@ export default function LandingScreen() {
                 <ReportGuideScreen onClose={() => setIsReportGuideVisible(false)} />
               </Suspense>
             )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── MODAL DE CUENTA REQUERIDA PARA VOLUNTARIADO ───────────────── */}
+      <Modal
+        visible={volunteerAuthFlow !== null}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setVolunteerAuthFlow(null)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(46,42,38,0.62)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <View style={{ backgroundColor: C.bg, borderRadius: 30, padding: 30, width: '100%', maxWidth: 430 }}>
+            <View style={{ width: 54, height: 54, borderRadius: 27, backgroundColor: '#FFF4E8', alignSelf: 'center', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+              <Ionicons name="person-circle-outline" size={32} color={C.primary} />
+            </View>
+            <Text style={{ fontSize: 24, fontFamily: F.displayBold, color: C.text, textAlign: 'center', marginBottom: 10 }}>
+              Necesitas una cuenta
+            </Text>
+            <Text style={{ fontSize: 14, fontFamily: F.bodyMedium, color: C.muted, textAlign: 'center', lineHeight: 22, marginBottom: 24 }}>
+              {volunteerAuthFlow === 'join-association'
+                ? 'Para unirte a una asociación debes iniciar sesión o crear una cuenta. Después continuarás eligiendo la asociación a la que deseas postularte.'
+                : 'Para postularte como casa temporal debes iniciar sesión o crear una cuenta. Después abriremos automáticamente el formulario correspondiente.'}
+            </Text>
+            <TouchableOpacity
+              onPress={() => continueVolunteerAuth('login')}
+              style={{ backgroundColor: C.primary, paddingVertical: 15, borderRadius: 22, alignItems: 'center', marginBottom: 10 }}
+            >
+              <Text style={{ color: '#FFF', fontFamily: F.bodySemiBold, fontSize: 15 }}>Iniciar sesión</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => continueVolunteerAuth('register')}
+              style={{ backgroundColor: C.bg, borderWidth: 2, borderColor: C.primary, paddingVertical: 13, borderRadius: 22, alignItems: 'center', marginBottom: 10 }}
+            >
+              <Text style={{ color: C.primary, fontFamily: F.bodySemiBold, fontSize: 15 }}>Crear cuenta</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setVolunteerAuthFlow(null)} style={{ paddingVertical: 10, alignItems: 'center' }}>
+              <Text style={{ color: C.muted, fontFamily: F.bodyMedium, fontSize: 14 }}>Cancelar</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>

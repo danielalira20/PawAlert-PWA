@@ -4,6 +4,7 @@ import { ActivityIndicator, SafeAreaView, ScrollView, Text, TextInput, Touchable
 import { Toast, useToast } from '../components/Toast';
 import { useAuth } from '../context/AuthContext';
 import { validarPassword } from '../utils/validators';
+import { getPostAuthDestination, getPostAuthExplanation } from '../utils/postAuthNavigation';
 
 // ─── FONTS & TOKENS ───────────────────────────────────────────────────────────
 import { useFonts } from 'expo-font';
@@ -37,7 +38,7 @@ type Tab = 'login' | 'register';
 export default function LoginScreen() {
   const { login, register } = useAuth();
   const { toast, translateY, showToast } = useToast();
-  const params = useLocalSearchParams<{ tab?: string }>();
+  const params = useLocalSearchParams<{ tab?: string; returnTo?: string }>();
   const [tab, setTab] = useState<Tab>(params.tab === 'register' ? 'register' : 'login');
   const [isLoading, setIsLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -61,6 +62,7 @@ export default function LoginScreen() {
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [regPassword2, setRegPassword2] = useState('');
+  const postAuthExplanation = getPostAuthExplanation(params.returnTo);
 
   // ─── Real-time validation handlers ──────────────────────────────────────
   const handleLoginEmailChange = (val: string) => {
@@ -188,7 +190,8 @@ export default function LoginScreen() {
     try {
       const usuario = await login(email.trim(), password);
       // ✅ CAMBIO: Tanto admin como asociación van a /profile
-      const destino = usuario.es_admin || usuario.asociacion_id ? '/profile' : '/';
+      const fallback = usuario.es_admin || usuario.asociacion_id ? '/profile' : '/';
+      const destino = getPostAuthDestination(params.returnTo, fallback);
       showSuccessAndRedirect('¡Bienvenida de vuelta! Redirigiendo...', destino);
     } catch (error: any) {
       showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'Error al iniciar sesión' });
@@ -238,7 +241,8 @@ export default function LoginScreen() {
         telefono: telefono.replace(/\s|-/g, ''),
       });
       // ✅ CAMBIO: Tanto admin como asociación van a /profile
-      const destino = usuario.es_admin || usuario.asociacion_id ? '/profile' : '/';
+      const fallback = usuario.es_admin || usuario.asociacion_id ? '/profile' : '/';
+      const destino = getPostAuthDestination(params.returnTo, fallback);
       showSuccessAndRedirect('¡Cuenta creada! Redirigiendo...', destino);
     } catch (error: any) {
       showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'Error al crear la cuenta' });
@@ -276,6 +280,18 @@ export default function LoginScreen() {
         <ScrollView contentContainerStyle={{ padding: 24, flexGrow: 1, justifyContent: 'center', alignItems: 'center' }} showsVerticalScrollIndicator={false}>
 
           <View style={{ width: '100%', maxWidth: 440 }}>
+            {postAuthExplanation && (
+              <View style={{
+                flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+                backgroundColor: '#FFF4E8', borderWidth: 1, borderColor: '#F1D5B6',
+                borderRadius: 18, padding: 16, marginBottom: 20,
+              }}>
+                <Ionicons name="information-circle-outline" size={22} color={C.primary} />
+                <Text style={{ flex: 1, color: C.text, fontFamily: F.bodyMedium, fontSize: 13, lineHeight: 20 }}>
+                  {postAuthExplanation}
+                </Text>
+              </View>
+            )}
             <View style={{ alignItems: 'center', marginBottom: 40 }}>
               <Ionicons name="paw" size={48} color={C.primary} style={{ marginBottom: 16, opacity: 0.9 }} />
               <Text style={{ color: C.primary, fontFamily: F.displayBold, fontSize: 42, marginBottom: 8, letterSpacing: -1 }}>PawAlert</Text>

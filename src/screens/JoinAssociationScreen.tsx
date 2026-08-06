@@ -151,12 +151,10 @@ export default function JoinAssociationScreen() {
   // 1. Verificación de Autenticación
   useEffect(() => {
     if (!isAuthLoading && !isLoggedIn) {
-      showToast({
-        type: 'warning',
-        title: 'Requiere cuenta',
-        message: 'Regístrate para unirte a una asociación.',
-      });
-      setTimeout(() => router.replace('/login?tab=register' as any), 1000);
+      router.replace({
+        pathname: '/login',
+        params: { tab: 'register', returnTo: 'join-association' },
+      } as any);
     }
   }, [isAuthLoading, isLoggedIn]);
 
