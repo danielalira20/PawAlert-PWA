@@ -68,14 +68,28 @@ def _obtener_usuario_autenticado(authorization: str | None) -> dict:
     except Exception:
         raise HTTPException(status_code=401, detail="Token inválido o expirado")
 
-    resultado = supabase.table("usuarios").select("id, asociacion_id").eq(
+    resultado = supabase.table("usuarios").select("id, asociacion_id, roles(nombre)").eq(
         "auth_user_id", auth_response.user.id
     ).execute()
 
     if not resultado.data:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
-    return resultado.data[0]
+    fila = resultado.data[0]
+    fila["rol"] = fila["roles"]["nombre"] if fila.get("roles") else None
+    return fila
+
+
+def _verificar_rol(usuario: dict, roles_permitidos: tuple[str, ...]) -> None:
+    """Bloquea el acceso si el rol del usuario no está entre los permitidos.
+    Necesario desde que voluntario_interno/externo también reciben
+    asociacion_id al ser aceptados — sin este check, cualquier voluntario
+    pasaría la validación de 'está vinculado a una asociación'."""
+    if usuario.get("rol") not in roles_permitidos:
+        raise HTTPException(
+            status_code=403,
+            detail="No tienes permiso para realizar esta acción"
+        )
 
 
 @router.post("/postulaciones", status_code=201)
@@ -86,6 +100,7 @@ async def postularse_como_voluntario(body: PostulacionRequest, authorization: st
     al terminar ese formulario, en POST /voluntarios/interno/finalizar, para
     no dejar una postulación sin capacidades si el usuario abandona a medias."""
     usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("reportante",))
     resultado = await asegurar_perfil_voluntario_interno(usuario["id"])
     return {**resultado, "asociacion_id": body.asociacion_id}
 
@@ -432,8 +447,9 @@ async def postular_voluntario_externo(
     authorization: str = Header(None)
 ):
     """Crea o actualiza el formulario de casa temporal y sus evidencias."""
-    
+
     usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("reportante",))
 
     # 1. Asegurar que el usuario tenga un registro base en "voluntarios"
     resultado = supabase.table("voluntarios").select("id").eq("usuario_id", usuario["id"]).execute()

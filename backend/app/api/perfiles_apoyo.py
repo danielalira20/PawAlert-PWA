@@ -16,11 +16,25 @@ def _obtener_usuario_autenticado(authorization: str | None) -> dict:
     except Exception:
         raise HTTPException(status_code=401, detail="Token inválido o expirado")
 
-    resultado = supabase.table("usuarios").select("id, telefono").eq("auth_user_id", auth_response.user.id).execute()
+    resultado = supabase.table("usuarios").select("id, telefono, roles(nombre)").eq("auth_user_id", auth_response.user.id).execute()
     if not resultado.data:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
-    return resultado.data[0]
+    fila = resultado.data[0]
+    fila["rol"] = fila["roles"]["nombre"] if fila.get("roles") else None
+    return fila
+
+
+def _verificar_rol(usuario: dict, roles_permitidos: tuple[str, ...]) -> None:
+    """Bloquea el acceso si el rol del usuario no está entre los permitidos.
+    Necesario desde que voluntario_interno/externo también reciben
+    asociacion_id al ser aceptados — sin este check, cualquier voluntario
+    pasaría la validación de 'está vinculado a una asociación'."""
+    if usuario.get("rol") not in roles_permitidos:
+        raise HTTPException(
+            status_code=403,
+            detail="No tienes permiso para realizar esta acción"
+        )
 
 class DonanteComunitarioRequest(BaseModel):
     categorias: List[str]
@@ -36,6 +50,7 @@ class DonanteComunitarioRequest(BaseModel):
 @router.post("/donante-comunitario", status_code=201)
 async def crear_donante_comunitario(body: DonanteComunitarioRequest, authorization: str = Header(None)):
     usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("reportante", "voluntario_interno", "voluntario_externo", "staff"))
     usuario_id = usuario["id"]
 
     # Verificar si ya tiene un perfil
@@ -117,6 +132,7 @@ async def registro_directo_aliado(
     authorization: str = Header(None)
 ):
     usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, (None,))
     usuario_id = usuario["id"]
 
     body = RegistroAliadoDirectoRequest.parse_raw(payload)
