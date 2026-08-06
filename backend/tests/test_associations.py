@@ -57,6 +57,108 @@ def test_associations_me_reportes_token_invalido():
     assert response.status_code == 401
 
 
+# ---------------------------------------------------------------------------
+# Duplicados de teléfono/correo en create_association — la fusión con una
+# fila `usuarios` sin auth_user_id (guest) quedó eliminada: cualquier
+# coincidencia de teléfono, tenga o no auth_user_id, ahora se rechaza.
+# ---------------------------------------------------------------------------
+
+def test_association_telefono_ya_existe_con_auth_user_id(make_query):
+    tablas = {
+        "asociaciones": make_query(data=[{"id": "aso-1"}]),
+        "usuarios": make_query(execute_results=[
+            SimpleNamespace(data=[{"id": "user-1", "auth_user_id": "auth-existente"}], count=None),
+        ]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+
+    with patch("app.api.associations.supabase", supabase):
+        response = client.post("/associations", data=BASE_DATA)
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Ese teléfono ya está registrado en otra cuenta."
+    # se revierte la asociación recién creada, no debe quedar huérfana
+    tablas["asociaciones"].delete.assert_called_once()
+
+
+def test_association_telefono_ya_existe_sin_auth_user_id_ya_no_se_fusiona(make_query):
+    """Caso guest: antes esta fila se reusaba (update + auth_user_id nuevo);
+    ahora debe rechazarse igual que si ya tuviera cuenta con acceso."""
+    tablas = {
+        "asociaciones": make_query(data=[{"id": "aso-1"}]),
+        "usuarios": make_query(execute_results=[
+            SimpleNamespace(data=[{"id": "user-guest-1", "auth_user_id": None}], count=None),
+        ]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+
+    with patch("app.api.associations.supabase", supabase):
+        response = client.post("/associations", data=BASE_DATA)
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Ese teléfono ya está registrado en otra cuenta."
+    # nunca se debe haber intentado actualizar/fusionar esa fila
+    tablas["usuarios"].update.assert_not_called()
+
+
+def test_association_correo_ya_existe(make_query):
+    tablas = {
+        "asociaciones": make_query(data=[{"id": "aso-1"}]),
+        "usuarios": make_query(execute_results=[
+            SimpleNamespace(data=[], count=None),  # teléfono: no existe
+            SimpleNamespace(data=[{"id": "user-otro"}], count=None),  # correo: sí existe
+        ]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+
+    with patch("app.api.associations.supabase", supabase):
+        response = client.post("/associations", data=BASE_DATA)
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Ese correo ya está registrado en otra cuenta."
+    tablas["asociaciones"].delete.assert_called_once()
+
+
+def test_association_sin_duplicados_llega_hasta_crear_usuario_de_auth(make_query):
+    tablas = {
+        "asociaciones": make_query(data=[{"id": "aso-1"}]),
+        "roles": make_query(data=[{"id": "rol-asociacion"}]),
+        "usuarios": make_query(execute_results=[
+            SimpleNamespace(data=[], count=None),  # teléfono: no existe
+            SimpleNamespace(data=[], count=None),  # correo: no existe
+            SimpleNamespace(data=[{"id": "user-aso-nuevo"}], count=None),  # insert
+        ]),
+        "asociacion_tipo_animal": make_query(data=[]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+
+    auth_creado = SimpleNamespace(user=SimpleNamespace(id="auth-user-nuevo"))
+    login = SimpleNamespace(session=SimpleNamespace(
+        access_token="access-nueva",
+        refresh_token="refresh-nueva",
+    ))
+
+    with (
+        patch("app.api.associations.supabase", supabase),
+        patch("app.api.associations.supabase_admin") as admin,
+        patch("app.api.associations.get_fresh_client") as fresh_client,
+        patch("app.api.associations.obtener_id_catalogo", return_value="tipo-perro-id"),
+    ):
+        admin.auth.admin.create_user.return_value = auth_creado
+        fresh_client.return_value.auth.sign_in_with_password.return_value = login
+        response = client.post("/associations", data=BASE_DATA)
+
+    assert response.status_code == 201
+    admin.auth.admin.create_user.assert_called_once()
+    body = response.json()
+    assert body["usuario"]["id"] == "user-aso-nuevo"
+    assert body["access_token"] == "access-nueva"
+
+
 def _mock_reporte_asignado(make_query, *, fotos: list[dict]) -> dict:
     """Arma el mínimo de tablas para que get_reportes_asignados llegue al
     happy path con un solo reporte, animal y las fotos dadas."""
@@ -144,8 +246,9 @@ def test_registro_asociacion_devuelve_access_y_refresh_token(make_query):
         "asociaciones": make_query(data=[{"id": "aso-1"}]),
         "roles": make_query(data=[{"id": "rol-asociacion"}]),
         "usuarios": make_query(execute_results=[
-            SimpleNamespace(data=[], count=None),
-            SimpleNamespace(data=[{"id": "user-aso-1"}], count=None),
+            SimpleNamespace(data=[], count=None),  # select por teléfono: no existe
+            SimpleNamespace(data=[], count=None),  # select por correo: no existe
+            SimpleNamespace(data=[{"id": "user-aso-1"}], count=None),  # insert
         ]),
         "asociacion_tipo_animal": make_query(data=[]),
     }
