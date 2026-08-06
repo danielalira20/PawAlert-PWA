@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 from app.db.supabase import supabase
 from app.services.storage_service import subir_foto
+from app.utils.validators import validar_nombre
 
 router = APIRouter()
 
@@ -136,6 +137,23 @@ async def registro_directo_aliado(
     usuario_id = usuario["id"]
 
     body = RegistroAliadoDirectoRequest.parse_raw(payload)
+
+    # nombre_representante solo es obligatorio para patrocinador_institucional
+    # (aliado_local no lo captura en el formulario — ver RegistroAliadoLocalScreen.tsx
+    # validarPaso2, rama institucional).
+    nombre_representante_valido, nombre_representante_mensaje = validar_nombre(
+        body.nombre_representante or "",
+        requerido=(body.tipo == "patrocinador_institucional"),
+        campo="nombre del representante",
+    )
+    if not nombre_representante_valido:
+        raise HTTPException(status_code=422, detail=nombre_representante_mensaje)
+
+    nombre_contacto_campana_valido, nombre_contacto_campana_mensaje = validar_nombre(
+        body.nombre_contacto_campana or "", requerido=False, campo="nombre del responsable de campaña"
+    )
+    if not nombre_contacto_campana_valido:
+        raise HTTPException(status_code=422, detail=nombre_contacto_campana_mensaje)
 
     # Verificar si ya tiene un perfil
     existente = supabase.table("perfil_apoyo").select("id").eq("usuario_id", usuario_id).execute()

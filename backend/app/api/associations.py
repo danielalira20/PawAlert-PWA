@@ -14,7 +14,7 @@ from typing import Optional, List
 from app.db.supabase import supabase, supabase_admin, get_fresh_client
 from app.services.storage_service import subir_foto
 from app.services.report_service import obtener_id_catalogo, registrar_historial
-from app.utils.validators import validar_telefono, validar_email
+from app.utils.validators import validar_telefono, validar_email, validar_nombre
 from app.models.voluntario import (
     AsignarVerificadorRequest,
     ChecklistRemotoRequest,
@@ -144,6 +144,18 @@ async def create_association(
             status_code=422,
             detail="La contraseña debe tener al menos 6 caracteres."
         )
+
+    nombre_responsable_valido, nombre_responsable_mensaje = validar_nombre(
+        nombre_responsable, campo="nombre del responsable"
+    )
+    if not nombre_responsable_valido:
+        raise HTTPException(status_code=422, detail=nombre_responsable_mensaje)
+
+    apellido_responsable_valido, apellido_responsable_mensaje = validar_nombre(
+        apellido_responsable, campo="apellido del responsable"
+    )
+    if not apellido_responsable_valido:
+        raise HTTPException(status_code=422, detail=apellido_responsable_mensaje)
 
     # Subir logo si existe
     logo_url = None
@@ -373,6 +385,20 @@ async def agregar_representante(asociacion_id: str, body: NuevoRepresentante, au
         raise HTTPException(status_code=422, detail="El teléfono debe tener exactamente 10 dígitos numéricos.")
     if not validar_email(body.email):
         raise HTTPException(status_code=422, detail="Ingresa un correo electrónico válido.")
+
+    nombre_valido, nombre_mensaje = validar_nombre(body.nombre, campo="nombre")
+    if not nombre_valido:
+        raise HTTPException(status_code=422, detail=nombre_mensaje)
+    apellido_paterno_valido, apellido_paterno_mensaje = validar_nombre(
+        body.apellido_paterno, campo="apellido paterno"
+    )
+    if not apellido_paterno_valido:
+        raise HTTPException(status_code=422, detail=apellido_paterno_mensaje)
+    apellido_materno_valido, apellido_materno_mensaje = validar_nombre(
+        body.apellido_materno or "", requerido=False, campo="apellido materno"
+    )
+    if not apellido_materno_valido:
+        raise HTTPException(status_code=422, detail=apellido_materno_mensaje)
 
     rol_nombre = "staff" if body.es_staff else "asociacion"
     rol_result = supabase.table("roles").select("id").eq("nombre", rol_nombre).execute()

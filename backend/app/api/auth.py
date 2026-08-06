@@ -2,7 +2,7 @@ import re
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, EmailStr
 from app.db.supabase import supabase, supabase_admin, get_fresh_client
-from app.utils.validators import validar_telefono, validar_password, validar_email
+from app.utils.validators import validar_telefono, validar_password, validar_email, validar_nombre
 from app.config import settings
 import random
 from datetime import datetime, timedelta, timezone
@@ -90,6 +90,22 @@ async def register(body: RegisterRequest):
     password_valida, password_mensaje = validar_password(body.password)
     if not password_valida:
         raise HTTPException(status_code=422, detail=password_mensaje)
+
+    nombre_valido, nombre_mensaje = validar_nombre(body.nombre, campo="nombre")
+    if not nombre_valido:
+        raise HTTPException(status_code=422, detail=nombre_mensaje)
+
+    apellido_paterno_valido, apellido_paterno_mensaje = validar_nombre(
+        body.apellido_paterno, campo="apellido paterno"
+    )
+    if not apellido_paterno_valido:
+        raise HTTPException(status_code=422, detail=apellido_paterno_mensaje)
+
+    apellido_materno_valido, apellido_materno_mensaje = validar_nombre(
+        body.apellido_materno or "", requerido=False, campo="apellido materno"
+    )
+    if not apellido_materno_valido:
+        raise HTTPException(status_code=422, detail=apellido_materno_mensaje)
 
     existe = supabase.table("usuarios").select("id, auth_user_id").eq("telefono", telefono_limpio).execute()
 

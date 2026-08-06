@@ -12,6 +12,26 @@ def validar_email(email: str) -> bool:
     return bool(re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email.strip()))
 
 
+def validar_nombre(valor: str, requerido: bool = True, campo: str = "nombre") -> tuple[bool, str]:
+    """Valida nombre/apellido: solo letras (incluye acentos y ñ/Ñ) y
+    espacios, entre 3 y 30 caracteres. Mismas reglas que validarNombre en
+    src/utils/validators.ts (frontend). `campo` solo cambia la redacción
+    del mensaje (ej. "apellido paterno") — se reusa esta misma función
+    para nombre, apellido_paterno, nombre_responsable, etc."""
+    val = valor.strip()
+    if not val:
+        if requerido:
+            return False, f"El {campo} es obligatorio."
+        return True, ""
+    if len(val) < 3:
+        return False, f"El {campo} debe tener al menos 3 caracteres."
+    if len(val) > 30:
+        return False, f"El {campo} no puede tener más de 30 caracteres."
+    if not re.fullmatch(r"[A-Za-zÁÉÍÓÚÜáéíóúüÑñ\s]+", val):
+        return False, f"El {campo} solo puede contener letras y espacios."
+    return True, ""
+
+
 def validar_password(password: str) -> tuple[bool, str]:
     """Valida la fortaleza de la contraseña: mínimo 8 caracteres, al menos
     una mayúscula, una minúscula y un número. Regresa (es_valida, mensaje)."""

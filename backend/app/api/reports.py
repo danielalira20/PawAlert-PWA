@@ -5,7 +5,7 @@ from app.models.report import ReportResponse, AnimalInput, ReportListItem, HitoR
 from app.models.red_aliados import AceptarSugerenciaRequest, AceptarSugerenciaVeterinariaResponse
 from app.services.report_service import crear_reporte, obtener_reportes, cambiar_estado_reporte, obtener_reportes_usuario
 from app.services import coverage_service
-from app.utils.validators import validar_telefono, validar_email
+from app.utils.validators import validar_telefono, validar_email, validar_nombre
 from app.utils.animal_shaping import shape_animal_embed, condicion_mas_grave
 from typing import Optional, List
 from app.db.supabase import supabase, supabase_admin
@@ -231,6 +231,28 @@ async def create_report(
             status_code=422,
             detail="Ingresa un correo electrónico válido."
         )
+
+    # nombre/apellidos son del reportante invitado (guest) — cuando hay
+    # sesión activa el frontend no los manda (ver arriba), así que solo se
+    # validan cuando sí vienen informados en el form.
+    if nombre is not None:
+        nombre_valido, nombre_mensaje = validar_nombre(nombre, campo="nombre")
+        if not nombre_valido:
+            raise HTTPException(status_code=422, detail=nombre_mensaje)
+
+    if apellido_paterno is not None:
+        apellido_paterno_valido, apellido_paterno_mensaje = validar_nombre(
+            apellido_paterno, campo="apellido paterno"
+        )
+        if not apellido_paterno_valido:
+            raise HTTPException(status_code=422, detail=apellido_paterno_mensaje)
+
+    if apellido_materno is not None:
+        apellido_materno_valido, apellido_materno_mensaje = validar_nombre(
+            apellido_materno, requerido=False, campo="apellido materno"
+        )
+        if not apellido_materno_valido:
+            raise HTTPException(status_code=422, detail=apellido_materno_mensaje)
 
     if not latitud and not longitud and not municipio:
         raise HTTPException(
