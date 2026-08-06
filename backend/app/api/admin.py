@@ -151,6 +151,11 @@ def resolver_caso_operativo(
             "actualizado_at": datetime.now(timezone.utc).isoformat(),
         }).eq("id", caso_id).execute()
         return {"estado": "en_revision"}
+    if body.accion not in ("asignar_asociacion", "resolver"):
+        raise HTTPException(status_code=422, detail="Acción administrativa inválida")
+    if not (body.resolucion or "").strip():
+        raise HTTPException(status_code=422, detail="Describe la resolución aplicada")
+    resolucion = body.resolucion.strip()
     if body.accion == "asignar_asociacion":
         if caso["tipo"] != "reporte_sin_coordinadora" or not body.asociacion_id:
             raise HTTPException(status_code=422, detail="Este caso no admite asignación de coordinadora")
@@ -183,22 +188,21 @@ def resolver_caso_operativo(
             "asociacion_id": body.asociacion_id,
             "reporte_id": caso["reporte_id"],
             "tipo": "caso_asignado_admin",
-            "mensaje": "Administración asignó un reporte sin cobertura a tu asociación para coordinación.",
+            "mensaje": (
+                "Administración asignó un reporte sin cobertura a tu asociación para coordinación.\n\n"
+                f"Nota de administración: {resolucion}"
+            ),
         }).execute()
         from app.services.report_service import registrar_historial
         registrar_historial(
             reporte_id=caso["reporte_id"], usuario_id=admin["id"],
             tipo_evento="asignacion_administrativa",
             descripcion="Administración asignó una asociación coordinadora",
-            datos_extra={"asociacion_id": body.asociacion_id},
+            datos_extra={"asociacion_id": body.asociacion_id, "resolucion": resolucion},
         )
-    elif body.accion != "resolver":
-        raise HTTPException(status_code=422, detail="Acción administrativa inválida")
-    if not (body.resolucion or "").strip():
-        raise HTTPException(status_code=422, detail="Describe la resolución aplicada")
     supabase_admin.table("casos_administrativos").update({
         "estado": "resuelto", "atendido_por_id": admin["id"],
-        "resolucion": body.resolucion.strip(),
+        "resolucion": resolucion,
         "actualizado_at": datetime.now(timezone.utc).isoformat(),
         "resuelto_at": datetime.now(timezone.utc).isoformat(),
     }).eq("id", caso_id).execute()

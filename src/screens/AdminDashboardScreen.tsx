@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Image,
   Linking,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -546,6 +547,102 @@ export default function AdminDashboardScreen({ onClose }: Props) {
   );
 }
 
+const PRIORIDAD_STYLE: Record<string, { bg: string; text: string; label: string }> = {
+  alta: { bg: '#FBE2DC', text: Brand.danger, label: 'Prioridad alta' },
+  media: { bg: '#FBEFD6', text: '#B4790E', label: 'Prioridad media' },
+  baja: { bg: '#E4F3EF', text: Brand.secondary, label: 'Prioridad baja' },
+};
+
+function formatCasoTitulo(tipo: string): string {
+  const texto = tipo.replaceAll('_', ' ');
+  return texto.charAt(0).toUpperCase() + texto.slice(1);
+}
+
+function AsociacionSelector({
+  asociaciones,
+  value,
+  onChange,
+}: {
+  asociaciones: Array<{ id: string; nombre: string }>;
+  value: string | undefined;
+  onChange: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const seleccionada = asociaciones.find((a) => a.id === value);
+  const filtradas = query.trim()
+    ? asociaciones.filter((a) => a.nombre.toLowerCase().includes(query.trim().toLowerCase()))
+    : asociaciones;
+
+  const cerrar = () => {
+    setOpen(false);
+    setQuery('');
+  };
+
+  return (
+    <>
+      <TouchableOpacity style={styles.casoSelector} onPress={() => setOpen(true)}>
+        <Ionicons name="business-outline" size={16} color={seleccionada ? Brand.secondary : Brand.textFaint} />
+        <Text
+          style={[styles.casoSelectorText, !seleccionada && styles.casoSelectorPlaceholder]}
+          numberOfLines={1}
+        >
+          {seleccionada ? seleccionada.nombre : 'Toca para elegir una asociación'}
+        </Text>
+        <Ionicons name="chevron-down" size={16} color={Brand.textFaint} />
+      </TouchableOpacity>
+
+      <Modal visible={open} transparent animationType="fade" onRequestClose={cerrar}>
+        <View style={styles.casoModalOverlay}>
+          <View style={styles.casoModalSheet}>
+            <View style={styles.casoModalHeader}>
+              <Text style={styles.casoModalTitle}>Asociación coordinadora</Text>
+              <TouchableOpacity onPress={cerrar} hitSlop={10}>
+                <Ionicons name="close" size={22} color={Brand.textFaint} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.casoModalSearchBox}>
+              <Ionicons name="search-outline" size={16} color={Brand.textFaint} />
+              <TextInput
+                style={styles.casoModalSearchInput}
+                value={query}
+                onChangeText={setQuery}
+                placeholder="Buscar asociación…"
+                placeholderTextColor={Brand.textFaint}
+                autoFocus={Platform.OS === 'web'}
+              />
+            </View>
+            <ScrollView style={styles.casoModalList} showsVerticalScrollIndicator={false}>
+              {filtradas.length === 0 ? (
+                <Text style={styles.casoModalEmpty}>Sin resultados para “{query}”.</Text>
+              ) : (
+                filtradas.map((asociacion) => {
+                  const activa = asociacion.id === value;
+                  return (
+                    <TouchableOpacity
+                      key={asociacion.id}
+                      style={styles.casoModalRow}
+                      onPress={() => {
+                        onChange(asociacion.id);
+                        cerrar();
+                      }}
+                    >
+                      <Text style={[styles.casoModalRowText, activa && styles.casoModalRowTextActive]} numberOfLines={1}>
+                        {asociacion.nombre}
+                      </Text>
+                      {activa && <Ionicons name="checkmark" size={18} color={Brand.secondary} />}
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </>
+  );
+}
+
 function CasosOperativosPanel({
   casos,
   asociaciones,
@@ -585,7 +682,7 @@ function CasosOperativosPanel({
         },
         { headers: { Authorization: `Bearer ${token}` } },
       );
-      showToast({ type: 'success', title: 'Caso resuelto', message: 'La bandeja y el reporte fueron actualizados.' });
+      showToast({ type: 'success', title: 'Caso resuelto', message: 'La bandeja, el reporte y la asociación fueron actualizados.' });
       await onUpdated();
     } catch (error: any) {
       showToast({ type: 'error', title: 'No pudimos resolverlo', message: error?.response?.data?.detail || 'Inténtalo nuevamente.' });
@@ -595,45 +692,110 @@ function CasosOperativosPanel({
   };
 
   if (casos.length === 0) {
-    return <View style={styles.centered}><Text style={styles.emptyText}>No hay casos operativos pendientes.</Text></View>;
+    return (
+      <View style={styles.centered}>
+        <AlDiaMascota
+          titulo="Vas al día"
+          subtitulo="No hay casos operativos pendientes por revisar."
+        />
+      </View>
+    );
   }
   return (
     <ScrollView contentContainerStyle={styles.listScrollContent}>
       <View style={styles.listCentered}>
-        {casos.map((caso) => (
-          <View key={caso.id} style={styles.apelacionCard}>
-            <Text style={styles.apelacionNombre}>{caso.tipo.replaceAll('_', ' ')}</Text>
-            <Text style={styles.apelacionMeta}>Prioridad {caso.prioridad} · {new Date(caso.creado_at).toLocaleString('es-MX')}</Text>
-            <Text style={styles.apelacionMotivo}>{caso.detalle || 'Requiere seguimiento administrativo.'}</Text>
-            {!!caso.reportes && <Text style={styles.apelacionMeta}>Zona: {[caso.reportes.colonia, caso.reportes.municipio].filter(Boolean).join(', ') || 'Sin zona confirmada'}</Text>}
-            {caso.tipo === 'reporte_sin_coordinadora' && (
-              <View style={styles.caseChoices}>
-                {asociaciones.map((asociacion) => (
-                  <TouchableOpacity
-                    key={asociacion.id}
-                    onPress={() => setSelecciones((actual) => ({ ...actual, [caso.id]: asociacion.id }))}
-                    style={[styles.caseChoice, selecciones[caso.id] === asociacion.id && styles.caseChoiceActive]}
-                  >
-                    <Text style={styles.apelacionMeta}>{asociacion.nombre}</Text>
-                  </TouchableOpacity>
-                ))}
+        {casos.map((caso) => {
+          const prioridad = PRIORIDAD_STYLE[caso.prioridad] || PRIORIDAD_STYLE.media;
+          const seleccionActual = selecciones[caso.id];
+          return (
+            <View key={caso.id} style={styles.casoCard}>
+              <View style={styles.casoHeaderRow}>
+                <Text style={styles.casoTitulo}>{formatCasoTitulo(caso.tipo)}</Text>
+                <View style={[styles.casoBadge, { backgroundColor: prioridad.bg }]}>
+                  <Text style={[styles.casoBadgeText, { color: prioridad.text }]}>{prioridad.label}</Text>
+                </View>
               </View>
-            )}
-            <TextInput
-              style={styles.adminTextArea}
-              value={resoluciones[caso.id] || ''}
-              onChangeText={(valor) => setResoluciones((actual) => ({ ...actual, [caso.id]: valor }))}
-              placeholder="Describe la resolución aplicada"
-              placeholderTextColor={Brand.textFaint}
-              multiline
-            />
-            <TouchableOpacity style={styles.apelacionRevisarButton} disabled={enviando === caso.id} onPress={() => void resolver(caso)}>
-              <Text style={styles.apelacionRevisarText}>{enviando === caso.id ? 'Guardando…' : 'Resolver caso'}</Text>
-            </TouchableOpacity>
-          </View>
-        ))}
+              <Text style={styles.apelacionMeta}>{new Date(caso.creado_at).toLocaleString('es-MX')}</Text>
+
+              <View style={styles.casoAlerta}>
+                <Ionicons name="alert-circle-outline" size={16} color={Brand.danger} />
+                <Text style={styles.casoAlertaTexto}>{caso.detalle || 'Requiere seguimiento administrativo.'}</Text>
+              </View>
+
+              {!!caso.reportes && (
+                <View style={styles.casoZonaRow}>
+                  <Ionicons name="location-outline" size={14} color={Brand.textMuted} />
+                  <Text style={styles.apelacionMeta}>
+                    {[caso.reportes.colonia, caso.reportes.municipio].filter(Boolean).join(', ') || 'Sin zona confirmada'}
+                  </Text>
+                </View>
+              )}
+
+              {caso.tipo === 'reporte_sin_coordinadora' && (
+                <View style={styles.casoSection}>
+                  <Text style={styles.casoSectionLabel}>Asociación coordinadora</Text>
+                  <AsociacionSelector
+                    asociaciones={asociaciones}
+                    value={seleccionActual}
+                    onChange={(id) => setSelecciones((actual) => ({ ...actual, [caso.id]: id }))}
+                  />
+                </View>
+              )}
+
+              <View style={styles.casoSection}>
+                <Text style={styles.casoSectionLabel}>Describe la resolución aplicada</Text>
+                <TextInput
+                  style={styles.adminTextArea}
+                  value={resoluciones[caso.id] || ''}
+                  onChangeText={(valor) => setResoluciones((actual) => ({ ...actual, [caso.id]: valor }))}
+                  placeholder="Ej. Se asignó por cercanía y disponibilidad de la asociación…"
+                  placeholderTextColor={Brand.textFaint}
+                  multiline
+                />
+                {caso.tipo === 'reporte_sin_coordinadora' && (
+                  <Text style={styles.casoHint}>Esta nota se enviará a la asociación junto con la asignación.</Text>
+                )}
+              </View>
+
+              <TouchableOpacity
+                style={[styles.apelacionRevisarButton, styles.casoResolverButton]}
+                disabled={enviando === caso.id}
+                onPress={() => void resolver(caso)}
+              >
+                <Ionicons name="checkmark-done-outline" size={16} color="#fff" style={{ marginRight: 6 }} />
+                <Text style={styles.apelacionRevisarText}>{enviando === caso.id ? 'Guardando…' : 'Resolver caso'}</Text>
+              </TouchableOpacity>
+            </View>
+          );
+        })}
+        <View style={styles.casoListaFooter}>
+          <AlDiaMascota compact titulo="Eso es todo por ahora" subtitulo="No hay más casos operativos pendientes." />
+        </View>
       </View>
     </ScrollView>
+  );
+}
+
+function AlDiaMascota({
+  titulo,
+  subtitulo,
+  compact,
+}: {
+  titulo: string;
+  subtitulo: string;
+  compact?: boolean;
+}) {
+  const size = compact ? 120 : 180;
+  return (
+    <View style={styles.mascotaWrap}>
+      <Image
+        source={require('../assets/images/gato_img.png')}
+        style={{ width: size, height: size }}
+        resizeMode="contain"
+      />
+      <Text style={styles.mascotaTitulo}>{titulo}</Text>
+      <Text style={styles.mascotaSubtitulo}>{subtitulo}</Text>
+    </View>
   );
 }
 
@@ -1154,12 +1316,105 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 10,
     alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
   },
   apelacionRevisarText: { color: '#fff', fontWeight: '700', fontSize: 13 },
-  caseChoices: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginVertical: 12 },
-  caseChoice: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 10, backgroundColor: Brand.cardWarm, borderWidth: 1, borderColor: '#E4D3B8' },
-  caseChoiceActive: { borderColor: Brand.secondary, backgroundColor: '#EAF7F5' },
-  adminTextArea: { minHeight: 70, borderRadius: 11, borderWidth: 1, borderColor: '#E4D3B8', backgroundColor: '#fff', color: Brand.textDark, padding: 10, marginVertical: 10, textAlignVertical: 'top' },
+
+  // Card de casos operativos
+  casoCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 18,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(60,35,16,0.09)',
+    shadowColor: '#3C2310',
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 1,
+  },
+  casoHeaderRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 4 },
+  casoTitulo: { flex: 1, fontSize: 16, fontWeight: '700', color: Brand.textDark },
+  casoBadge: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999 },
+  casoBadgeText: { fontSize: 11, fontWeight: '700' },
+  casoAlerta: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    backgroundColor: '#FBEAE6',
+    borderRadius: 10,
+    padding: 10,
+    marginTop: 10,
+  },
+  casoAlertaTexto: { flex: 1, fontSize: 12, color: Brand.danger, lineHeight: 17 },
+  casoZonaRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 8 },
+  casoSection: { marginTop: 14 },
+  casoSectionLabel: { fontSize: 12, fontWeight: '700', color: Brand.textMuted, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.3 },
+  casoHint: { fontSize: 11, color: Brand.textFaint, marginTop: 6 },
+  casoSelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    paddingHorizontal: 13,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: Brand.cardWarm,
+    borderWidth: 1,
+    borderColor: '#E4D3B8',
+  },
+  casoSelectorText: { flex: 1, fontSize: 13, fontWeight: '600', color: Brand.textDark },
+  casoSelectorPlaceholder: { fontWeight: '400', color: Brand.textFaint },
+  casoModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(46,42,38,0.58)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  casoModalSheet: {
+    width: '100%',
+    maxWidth: 420,
+    maxHeight: '80%',
+    borderRadius: 22,
+    padding: 18,
+    backgroundColor: '#fff',
+  },
+  casoModalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  casoModalTitle: { fontSize: 16, fontWeight: '700', color: Brand.textDark },
+  casoModalSearchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 11,
+    borderWidth: 1,
+    borderColor: '#E4D3B8',
+    backgroundColor: Brand.cardWarm,
+    paddingHorizontal: 11,
+    marginBottom: 10,
+  },
+  casoModalSearchInput: { flex: 1, paddingVertical: 10, fontSize: 13, color: Brand.textDark },
+  casoModalList: { maxHeight: 340 },
+  casoModalEmpty: { fontSize: 12, color: Brand.textFaint, textAlign: 'center', paddingVertical: 16 },
+  casoModalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(60,35,16,0.07)',
+  },
+  casoModalRowText: { flex: 1, fontSize: 13, color: Brand.textDark },
+  casoModalRowTextActive: { color: Brand.secondary, fontWeight: '700' },
+  adminTextArea: { minHeight: 70, borderRadius: 11, borderWidth: 1, borderColor: '#E4D3B8', backgroundColor: '#fff', color: Brand.textDark, padding: 10, textAlignVertical: 'top' },
+  casoResolverButton: { marginTop: 16 },
+  casoListaFooter: { alignItems: 'center', paddingTop: 12, paddingBottom: 32 },
+  mascotaWrap: { alignItems: 'center', gap: 10 },
+  mascotaTitulo: { fontSize: 15, fontWeight: '800', color: Brand.textDark, textAlign: 'center' },
+  mascotaSubtitulo: { fontSize: 12, color: Brand.textFaint, textAlign: 'center', maxWidth: 260 },
 
   // Bloque de contexto de apelación, inyectado arriba del expediente
   apelacionContextBlock: {
