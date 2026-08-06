@@ -665,13 +665,35 @@ export default function LandingScreen() {
         {/* ══════════════════════════════════════════════════════════════════
             BOTÓN MURAL: HUELLAS QUE AYUDAN
         ══════════════════════════════════════════════════════════════════ */}
-        <View style={{ alignItems: 'center', marginTop: 10, marginBottom: 30, zIndex: 10 }}>
+         <View style={{ alignItems: 'center', marginTop: 10, marginBottom: 30, zIndex: 10 }}>
           <AnimatedButton onPress={() => setIsMuralVisible(true)}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 16 }}>
-              <Ionicons name="sparkles" size={20} color={C.primary} />
-              <Text style={{ fontSize: 18, fontFamily: F.displayBold, color: C.primary, letterSpacing: -0.3 }}>
+            <View style={{
+              flexDirection: 'row', alignItems: 'center', gap: 8,
+              paddingVertical: 12, paddingHorizontal: 22,
+              borderRadius: 999,
+              backgroundColor: C.bg,
+              borderWidth: 1.5, borderColor: `${C.primary}30`,
+              ...(Platform.OS === 'web'
+                ? { boxShadow: `0 6px 18px rgba(245,132,43,0.18)` }
+                : {
+                    shadowColor: C.primary,
+                    shadowOpacity: 0.18,
+                    shadowRadius: 10,
+                    shadowOffset: { width: 0, height: 4 },
+                    elevation: 3,
+                  }),
+            }}>
+              <View style={{
+                width: 26, height: 26, borderRadius: 13,
+                backgroundColor: `${C.primary}18`,
+                alignItems: 'center', justifyContent: 'center',
+              }}>
+                <Ionicons name="sparkles" size={15} color={C.primary} />
+              </View>
+              <Text style={{ fontSize: 16, fontFamily: F.displayBold, color: C.primary, letterSpacing: -0.2 }}>
                 Huellas que ayudan
               </Text>
+              <Ionicons name="chevron-forward" size={16} color={C.primary} style={{ marginLeft: 2 }} />
             </View>
           </AnimatedButton>
         </View>
