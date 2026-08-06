@@ -189,6 +189,26 @@ async def create_association(
     # Crear la cuenta del primer representante (el responsable que registra
     # la asociación), vinculada vía usuarios.asociacion_id. Si falla, se
     # revierte la creación de la asociación para no dejar datos huérfanos.
+    telefono_limpio = contacto_telefono.replace(" ", "").replace("-", "")
+
+    # Teléfono y correo deben ser únicos — a diferencia de otros flujos de
+    # este archivo (ver agregar_representante), aquí NO se reutiliza una
+    # fila `usuarios` existente sin auth_user_id (esa fusión permitía que
+    # una cuenta invitada/guest terminara convertida en "asociación" solo
+    # por compartir teléfono, sin vincular sus reportes previos). Cualquier
+    # coincidencia, tenga o no auth_user_id, se rechaza.
+    existente_telefono = supabase.table("usuarios").select("id, auth_user_id").eq(
+        "telefono", telefono_limpio
+    ).execute()
+    if existente_telefono.data:
+        supabase.table("asociaciones").delete().eq("id", asociacion_id).execute()
+        raise HTTPException(status_code=409, detail="Ese teléfono ya está registrado en otra cuenta.")
+
+    existente_email = supabase.table("usuarios").select("id").eq("email", contacto_email).execute()
+    if existente_email.data:
+        supabase.table("asociaciones").delete().eq("id", asociacion_id).execute()
+        raise HTTPException(status_code=409, detail="Ese correo ya está registrado en otra cuenta.")
+
     try:
         auth_response = supabase_admin.auth.admin.create_user({
             "email": contacto_email,
@@ -203,38 +223,22 @@ async def create_association(
         raise HTTPException(status_code=400, detail=f"Error al crear cuenta del responsable: {e}")
 
     auth_user_id = auth_response.user.id
-    telefono_limpio = contacto_telefono.replace(" ", "").replace("-", "")
 
     # Obtener rol de asociacion
     rol_asociacion = supabase.table("roles").select("id").eq("nombre", "asociacion").execute()
     rol_asociacion_id = rol_asociacion.data[0]["id"] if rol_asociacion.data else None
-    
-    try:
-        existente = supabase.table("usuarios").select("id, auth_user_id").eq(
-            "telefono", telefono_limpio
-        ).execute()
 
-        if existente.data and not existente.data[0].get("auth_user_id"):
-            usuario_id = existente.data[0]["id"]
-            supabase.table("usuarios").update({
-                "auth_user_id": auth_user_id,
-                "nombre": nombre_responsable,
-                "apellido_paterno": apellido_responsable,
-                "email": contacto_email,
-                "asociacion_id": asociacion_id,
-                "rol_id": rol_asociacion_id,
-            }).eq("id", usuario_id).execute()
-        else:
-            usuario_insertado = supabase.table("usuarios").insert({
-                "auth_user_id": auth_user_id,
-                "nombre": nombre_responsable,
-                "apellido_paterno": apellido_responsable,
-                "email": contacto_email,
-                "telefono": telefono_limpio,
-                "asociacion_id": asociacion_id,
-                "rol_id": rol_asociacion_id,
-            }).execute()
-            usuario_id = usuario_insertado.data[0]["id"]
+    try:
+        usuario_insertado = supabase.table("usuarios").insert({
+            "auth_user_id": auth_user_id,
+            "nombre": nombre_responsable,
+            "apellido_paterno": apellido_responsable,
+            "email": contacto_email,
+            "telefono": telefono_limpio,
+            "asociacion_id": asociacion_id,
+            "rol_id": rol_asociacion_id,
+        }).execute()
+        usuario_id = usuario_insertado.data[0]["id"]
     except Exception:
         supabase_admin.auth.admin.delete_user(auth_user_id)
         supabase.table("asociaciones").delete().eq("id", asociacion_id).execute()
