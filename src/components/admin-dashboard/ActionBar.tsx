@@ -48,11 +48,18 @@ export function ActionBar({ onAprobar, onRechazar, isSubmitting }: Props) {
 
       <View style={[styles.buttonsRow, isDesktop && styles.buttonsRowDesktop]}>
         <AdminActionButton
-          variant="aprobar"
-          label="Aprobar"
-          icon="checkmark"
-          onPress={onAprobar}
-          disabled={isSubmitting || rechazando}
+          variant={rechazando ? 'secundario' : 'aprobar'}
+          label={rechazando ? 'Cancelar' : 'Aprobar'}
+          icon={rechazando ? 'close-circle' : 'checkmark'}
+          onPress={() => {
+            if (rechazando) {
+              setRechazando(false);
+              setMotivo('');
+            } else {
+              onAprobar();
+            }
+          }}
+          disabled={isSubmitting}
           loading={isSubmitting && !rechazando}
         />
         <AdminActionButton

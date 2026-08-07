@@ -6,7 +6,7 @@ import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-na
 import { Brand } from '../../constants/theme';
 
 interface Props {
-  variant: 'aprobar' | 'rechazar';
+  variant: 'aprobar' | 'rechazar' | 'secundario';
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
   onPress: () => void;
@@ -39,6 +39,7 @@ export function AdminActionButton({
   };
 
   const esAprobar = variant === 'aprobar';
+  const esSecundario = variant === 'secundario';
   const rechazarActivo = variant === 'rechazar' && enfatizado;
 
   return (
@@ -59,6 +60,15 @@ export function AdminActionButton({
           >
             <ButtonContent icon={icon} label={label} loading={loading} color="#fff" />
           </LinearGradient>
+        ) : esSecundario ? (
+          <View style={[styles.fill, styles.secundario]}>
+            <ButtonContent
+              icon={icon}
+              label={label}
+              loading={loading}
+              color={Brand.textLight}
+            />
+          </View>
         ) : (
           <View style={[styles.fill, rechazarActivo ? styles.rechazarActivo : styles.rechazarTenue]}>
             <ButtonContent
@@ -128,6 +138,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(217,64,37,0.08)',
     borderWidth: 1.5,
     borderColor: Brand.danger,
+  },
+  secundario: {
+    backgroundColor: '#F7F4F0',
+    borderWidth: 1.5,
+    borderColor: '#E4D3B8',
   },
   rechazarActivo: { backgroundColor: Brand.danger },
   iconBubble: {

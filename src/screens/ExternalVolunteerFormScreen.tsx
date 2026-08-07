@@ -1017,7 +1017,11 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
              <TouchableOpacity 
                onPress={() => {
                  if (onClose) onClose(); 
-                 if (!correccionActiva) router.push('/capacidades' as any);
+                 if (!correccionActiva) {
+                   setTimeout(() => {
+                     router.push('/capacidades' as any);
+                   }, 150);
+                 }
                }} 
                style={[styles.submitButton, { width: '100%' }]}
              >
