@@ -1,19 +1,19 @@
 import React from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, Image } from 'react-native';
 import { router } from 'expo-router';
 import CapacidadesFormScreen from '../screens/CapacidadesFormScreen'; 
 
+const heroImage = require('../assets/images/imagen_hero.png');
+
 export default function CapacidadesRoute() {
-  
-  // Función que se ejecutará si el usuario decide presionar "Descartar" o salir
   const handleClose = () => {
-    // router.back() lo regresa a la pantalla anterior (LandingScreen o Perfil)
-    // Si prefieres mandarlo al inicio forzosamente, usa router.replace('/')
     router.replace('/'); 
   };
 
   return (
     <View style={styles.container}>
+      <Image source={heroImage} style={styles.backgroundImage} resizeMode="cover" />
+      <View style={styles.overlay} />
       <CapacidadesFormScreen 
         esPostulacionNueva={true} 
         esPostulacionExterna={true}
@@ -26,6 +26,16 @@ export default function CapacidadesRoute() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: 'transparent',
+    backgroundColor: '#FDF8F4',
   },
+  backgroundImage: {
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: '100%',
+    opacity: 0.15,
+  },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(253, 248, 244, 0.85)',
+  }
 });

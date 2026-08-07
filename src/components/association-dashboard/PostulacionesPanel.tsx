@@ -453,11 +453,16 @@ export function PostulacionesPanel({ visible }: Props) {
                     const especies = postulacion.capacidades.especies_final ?? postulacion.capacidades.especies;
                     return (
                       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
-                        {postulacion.capacidades.ofrece_casa_hogar && (
+                        {/*
+                          Se ocultó temporalmente la etiqueta "Mi Casa Temporal" porque se decidió
+                          que un voluntario de asociación no puede ofrecer sus servicios como casa temporal.
+                          (Legacy code)
+                        */}
+                        {/* {postulacion.capacidades.ofrece_casa_hogar && (
                           <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, backgroundColor: 'rgba(102, 188, 180, 0.15)' }}>
                             <Text style={{ fontSize: 10, fontWeight: '700', color: COLORS.accent }}>Mi Casa Temporal</Text>
                           </View>
-                        )}
+                        )} */}
                         {!!especies?.length && (
                           <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, backgroundColor: 'rgba(236, 128, 43, 0.1)' }}>
                             <Text style={{ fontSize: 10, fontWeight: '700', color: COLORS.primary, textTransform: 'capitalize' }}>

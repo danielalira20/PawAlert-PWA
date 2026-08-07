@@ -571,10 +571,8 @@ export default function CapacidadesFormScreen({
           setPostulacionCompletada(true);
           return;
         }
-        // Interno: antes de crear la postulación, se ofrece el modal
-        // opcional de casa hogar (ver finalizarPostulacionInterno más abajo,
-        // que es quien de verdad llama a /interno/finalizar).
-        setShowCasaHogarModal(true);
+        // Interno: crear la postulación directamente
+        await finalizarPostulacionInterno();
         return;
       }
       showToast({
@@ -1036,39 +1034,6 @@ export default function CapacidadesFormScreen({
         </View>
       </Modal>
 
-      <Modal visible={showCasaHogarModal} transparent animationType="fade">
-        <View style={styles.modalBackdrop}>
-          <View style={styles.confirmCard}>
-            <View style={styles.casaHogarIconWrap}>
-              <Ionicons name="home-outline" size={32} color={COLORS.bgTeal} />
-            </View>
-            <Text style={styles.confirmTitle}>¿Quieres registrar tu casa hogar?</Text>
-            <Text style={styles.confirmText}>
-              Es opcional — podrás hacerlo más adelante desde tu perfil si lo prefieres.
-            </Text>
-            <View style={styles.confirmActions}>
-              <TouchableOpacity
-                style={styles.secondaryButton}
-                onPress={handleCancelarCasaHogar}
-                disabled={isSubmitting}
-              >
-                <Text style={styles.secondaryButtonText}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.primaryButton, isSubmitting && { opacity: 0.7 }]}
-                onPress={handleAceptarCasaHogar}
-                disabled={isSubmitting}
-              >
-                {isSubmitting ? (
-                  <ActivityIndicator color={COLORS.bgWhite} />
-                ) : (
-                  <Text style={styles.primaryButtonText}>Aceptar</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -1238,7 +1203,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: Platform.OS === 'web' ? 24 : 0,
-    backgroundColor: 'rgba(28, 20, 14, 0.52)',
+    backgroundColor: 'transparent',
   },
   centeredContent: {
     width: '100%',

@@ -112,7 +112,6 @@ export default function TabsLayout() {
         name="join-association"
         options={{
           href: null,
-          tabBarStyle: { display: 'none' },
         }}
       />
     </Tabs>
