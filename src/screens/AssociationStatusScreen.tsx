@@ -161,7 +161,7 @@ interface Props {
 }
 
 export default function AssociationStatusScreen({ onClose, standalone = true }: Props) {
-  const { token, logout, isLoading } = useAuth();
+  const { user, token, logout, isLoading } = useAuth();
   const { toast, translateY, showToast } = useToast();
   const [info, setInfo] = useState<AsociacionInfo | null>(null);
   const [isLoadingInfo, setIsLoadingInfo] = useState(true);
@@ -521,8 +521,10 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
   useEffect(() => {
     if (info?.estado === 'aprobada') {
       cargarReportes();
-      cargarConfiguracionAsignacion();
-      cargarVoluntarios();
+      if (user?.rol !== 'staff') {
+        cargarConfiguracionAsignacion();
+        cargarVoluntarios();
+      }
     } else if (info?.estado === 'rechazada') {
       verificarApelacion();
     }
@@ -1167,54 +1169,56 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
               </View>
 
               {/* ─── BOTONES DE ACCIÓN (NECESIDADES Y OFERTAS) ─── */}
-              <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginBottom: 24 }}>
+              {user?.rol !== 'staff' && (
+                <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginBottom: 24 }}>
 
-                {/* NUEVO BOTÓN: VER OFERTAS */}
-                <TouchableOpacity
-                  onPress={() => { if (onClose) onClose(); router.push('/ofertas-asociacion' as any); }}
-                  style={{
-                    backgroundColor: COLORS.secondary,
-                    paddingHorizontal: 20,
-                    paddingVertical: 12,
-                    borderRadius: 20,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    shadowColor: '#000',
-                    shadowOffset: { width: 0, height: 4 },
-                    shadowOpacity: 0.15,
-                    shadowRadius: 10,
-                    elevation: 4,
-                  }}
-                >
-                  <Ionicons name="gift-outline" size={20} color={COLORS.textDark} style={{ marginRight: 8 }} />
-                  <Text style={{ color: COLORS.textDark, fontWeight: '800', fontSize: 14 }}>
-                    Ver Ofertas
-                  </Text>
-                </TouchableOpacity>
+                  {/* NUEVO BOTÓN: VER OFERTAS */}
+                  <TouchableOpacity
+                    onPress={() => { if (onClose) onClose(); router.push('/ofertas-asociacion' as any); }}
+                    style={{
+                      backgroundColor: COLORS.secondary,
+                      paddingHorizontal: 20,
+                      paddingVertical: 12,
+                      borderRadius: 20,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      shadowColor: '#000',
+                      shadowOffset: { width: 0, height: 4 },
+                      shadowOpacity: 0.15,
+                      shadowRadius: 10,
+                      elevation: 4,
+                    }}
+                  >
+                    <Ionicons name="gift-outline" size={20} color={COLORS.textDark} style={{ marginRight: 8 }} />
+                    <Text style={{ color: COLORS.textDark, fontWeight: '800', fontSize: 14 }}>
+                      Ver Ofertas
+                    </Text>
+                  </TouchableOpacity>
 
-                {/* BOTÓN : CREAR NECESIDAD */}
-                <TouchableOpacity
-                  onPress={() => { if (onClose) onClose(); router.push('/crear-necesidad'); }}
-                  style={{
-                    backgroundColor: COLORS.accent,
-                    paddingHorizontal: 20,
-                    paddingVertical: 12,
-                    borderRadius: 20,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    shadowColor: '#000',
-                    shadowOffset: { width: 0, height: 4 },
-                    shadowOpacity: 0.15,
-                    shadowRadius: 10,
-                    elevation: 4,
-                  }}
-                >
-                  <Ionicons name="add-circle" size={20} color={COLORS.white} style={{ marginRight: 8 }} />
-                  <Text style={{ color: COLORS.white, fontWeight: '800', fontSize: 14 }}>
-                    Publicar Necesidad
-                  </Text>
-                </TouchableOpacity>
-              </View>
+                  {/* BOTÓN : CREAR NECESIDAD */}
+                  <TouchableOpacity
+                    onPress={() => { if (onClose) onClose(); router.push('/crear-necesidad'); }}
+                    style={{
+                      backgroundColor: COLORS.accent,
+                      paddingHorizontal: 20,
+                      paddingVertical: 12,
+                      borderRadius: 20,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      shadowColor: '#000',
+                      shadowOffset: { width: 0, height: 4 },
+                      shadowOpacity: 0.15,
+                      shadowRadius: 10,
+                      elevation: 4,
+                    }}
+                  >
+                    <Ionicons name="add-circle" size={20} color={COLORS.white} style={{ marginRight: 8 }} />
+                    <Text style={{ color: COLORS.white, fontWeight: '800', fontSize: 14 }}>
+                      Publicar Necesidad
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
 
               {/* Tabs de navegación: desplazables en pantallas angostas */}
               <ScrollView
@@ -1268,24 +1272,26 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                   </Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity
-                  onPress={() => setActiveTab('voluntarios')}
-                  style={{
-                    paddingBottom: 12,
-                    marginRight: 24,
-                    flexShrink: 0,
-                    borderBottomWidth: activeTab === 'voluntarios' ? 3 : 0,
-                    borderBottomColor: COLORS.primary
-                  }}
-                >
-                  <Text style={{
-                    fontSize: 16,
-                    fontWeight: activeTab === 'voluntarios' ? '800' : '600',
-                    color: activeTab === 'voluntarios' ? COLORS.primary : COLORS.textLight
-                  }}>
-                    Mis voluntarios
-                  </Text>
-                </TouchableOpacity>
+                {user?.rol !== 'staff' && (
+                  <TouchableOpacity
+                    onPress={() => setActiveTab('voluntarios')}
+                    style={{
+                      paddingBottom: 12,
+                      marginRight: 24,
+                      flexShrink: 0,
+                      borderBottomWidth: activeTab === 'voluntarios' ? 3 : 0,
+                      borderBottomColor: COLORS.primary
+                    }}
+                  >
+                    <Text style={{
+                      fontSize: 16,
+                      fontWeight: activeTab === 'voluntarios' ? '800' : '600',
+                      color: activeTab === 'voluntarios' ? COLORS.primary : COLORS.textLight
+                    }}>
+                      Mis voluntarios
+                    </Text>
+                  </TouchableOpacity>
+                )}
 
                 <TouchableOpacity
                   onPress={() => setActiveTab('lotes')}
@@ -1306,23 +1312,25 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                   </Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity
-                  onPress={() => setActiveTab('configuracion')}
-                  style={{
-                    paddingBottom: 12,
-                    flexShrink: 0,
-                    borderBottomWidth: activeTab === 'configuracion' ? 3 : 0,
-                    borderBottomColor: COLORS.primary
-                  }}
-                >
-                  <Text style={{
-                    fontSize: 16,
-                    fontWeight: activeTab === 'configuracion' ? '800' : '600',
-                    color: activeTab === 'configuracion' ? COLORS.primary : COLORS.textLight
-                  }}>
-                    Configuración
-                  </Text>
-                </TouchableOpacity>
+                {user?.rol !== 'staff' && (
+                  <TouchableOpacity
+                    onPress={() => setActiveTab('configuracion')}
+                    style={{
+                      paddingBottom: 12,
+                      flexShrink: 0,
+                      borderBottomWidth: activeTab === 'configuracion' ? 3 : 0,
+                      borderBottomColor: COLORS.primary
+                    }}
+                  >
+                    <Text style={{
+                      fontSize: 16,
+                      fontWeight: activeTab === 'configuracion' ? '800' : '600',
+                      color: activeTab === 'configuracion' ? COLORS.primary : COLORS.textLight
+                    }}>
+                      Configuración
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </ScrollView>
 
               {/* Título de sección */}
@@ -1725,7 +1733,7 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
 
 
 
-              {activeTab === 'configuracion' && (
+              {activeTab === 'configuracion' && user?.rol !== 'staff' && (
               <>
               <View style={{ backgroundColor: COLORS.cardBg, padding: 28, borderRadius: 32, ...SHADOW_MD }}>
                 <Text style={{ fontSize: 22, fontWeight: '800', color: COLORS.textDark, marginBottom: 6 }}>Modo de asignación de casos</Text>

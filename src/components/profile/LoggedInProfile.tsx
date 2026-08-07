@@ -272,7 +272,8 @@ useFocusEffect(
       )}
       {esStaff && (
         <>
-          <AccessRow icon="briefcase-outline" label="Panel de staff" onPress={onOpenStaffAsignacion} />
+          <AccessRow icon="briefcase-outline" label="Panel de staff" onPress={onOpenAssociationPanel} />
+          <AccessRow icon="list-outline" label="Mis casos" onPress={onOpenStaffPanel} />
           <AccessRow icon="pulse-outline" label="Seguimiento regional" onPress={onOpenCustodyDashboard} isLast />
         </>
       )}
