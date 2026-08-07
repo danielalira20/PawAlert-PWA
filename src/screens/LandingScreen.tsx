@@ -425,7 +425,7 @@ export default function LandingScreen() {
     if (!volunteerAuthFlow) return;
     const returnTo = volunteerAuthFlow;
     setVolunteerAuthFlow(null);
-    router.push({ pathname: '/login', params: { tab, returnTo } } as any);
+    router.push({ pathname: '/profile', params: { tab, returnTo } } as any);
   };
 
   useEffect(() => {

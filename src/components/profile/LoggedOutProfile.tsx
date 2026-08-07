@@ -4,7 +4,7 @@ import {
   useWindowDimensions, TextInput, ActivityIndicator, Platform,
   Modal,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useFonts } from 'expo-font';
 import { Fraunces_800ExtraBold } from '@expo-google-fonts/fraunces';
@@ -15,6 +15,7 @@ import { BenefitsRow } from './BenefitsRow';
 import { useAuth } from '../../context/AuthContext';
 import { Toast, useToast } from '../Toast';
 import { consumeAuthIntent } from '../../utils/authIntent';
+import { getPostAuthDestination, getPostAuthExplanation } from '../../utils/postAuthNavigation';
 import { validarNombre } from '../../utils/validators';
 import ForgotPasswordFlowScreen from '../../screens/ForgotPasswordFlowScreen';
 
@@ -74,14 +75,18 @@ export function LoggedOutProfile() {
     Poppins_600SemiBold,
   });
 
+  const params = useLocalSearchParams<{ tab?: string; returnTo?: string }>();
   const intent = consumeAuthIntent();
 
+  const requestedTab = params.tab || intent;
+
   const [view, setView] = useState<AuthView>(
-    intent === 'login' || intent === 'register' ? 'auth' : 'landing'
+    requestedTab === 'login' || requestedTab === 'register' ? 'auth' : 'landing'
   );
   const [tab, setTab] = useState<Tab>(
-    intent === 'register' ? 'register' : 'login'
+    requestedTab === 'register' ? 'register' : 'login'
   );
+  const postAuthExplanation = getPostAuthExplanation(params.returnTo);
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -181,7 +186,12 @@ export function LoggedOutProfile() {
     setIsLoading(true);
     try {
       await login(email.trim(), password);
-      setSuccessMessage('¡Bienvenida de vuelta!');
+      if (params.returnTo) {
+        const destino = getPostAuthDestination(params.returnTo, '/profile');
+        router.replace(destino as any);
+      } else {
+        setSuccessMessage('¡Bienvenida de vuelta!');
+      }
     } catch (error: any) {
       showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'Correo o contraseña incorrectos' });
     } finally {
@@ -222,7 +232,12 @@ export function LoggedOutProfile() {
         apellido_materno: apellidoMaterno.trim() || undefined,
         telefono: telefono.replace(/\s|-/g, ''),
       });
-      setSuccessMessage('¡Cuenta creada!');
+      if (params.returnTo) {
+        const destino = getPostAuthDestination(params.returnTo, '/profile');
+        router.replace(destino as any);
+      } else {
+        setSuccessMessage('¡Cuenta creada!');
+      }
     } catch (error: any) {
       const detalle = error?.response?.data?.detail || '';
       if (error?.response?.status === 409) {
@@ -294,6 +309,19 @@ export function LoggedOutProfile() {
       )}
 
       <View style={{ width: '100%', maxWidth: 440 }}>
+
+        {postAuthExplanation && (
+          <View style={{
+            flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+            backgroundColor: '#FFF4E8', borderWidth: 1, borderColor: '#F1D5B6',
+            borderRadius: 18, padding: 16, marginBottom: 20,
+          }}>
+            <Ionicons name="information-circle-outline" size={22} color={C.primary} />
+            <Text style={{ flex: 1, color: C.text, fontFamily: F.bodyMedium, fontSize: 13, lineHeight: 20 }}>
+              {postAuthExplanation}
+            </Text>
+          </View>
+        )}
 
         {/* Encabezado con botón volver */}
         <View style={{ alignItems: 'center', marginBottom: 32 }}>
