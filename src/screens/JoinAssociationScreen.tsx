@@ -23,6 +23,7 @@ import { API_URL } from '../constants/api';
 import LocationPickerMap from './LocationPickerMap';
 import CapacidadesFormScreen from './CapacidadesFormScreen';
 
+
 // ─── PALETA PETZEN ────────────────────────────────────────────────────────
 const COLORS = {
   bgTeal: '#66BCB4',
@@ -422,13 +423,16 @@ const fetchStatus = async () => {
   return (
     // CONTENEDOR PRINCIPAL FONDO
     <View
-      style={{
-        flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.6)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: Platform.OS === 'web' ? 20 : 0,
-      }}
+      style={[
+        {
+          flex: 1,
+          backgroundColor: 'rgba(0,0,0,0.6)',
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: Platform.OS === 'web' ? 20 : 0,
+        },
+        Platform.OS === 'web' ? { backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' } as any : {}
+      ]}
     >
       <Toast toast={toast} translateY={translateY} />
 
