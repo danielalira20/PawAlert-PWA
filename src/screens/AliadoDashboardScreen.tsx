@@ -3,7 +3,9 @@ import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert } from 'rea
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AliadoImpactStats } from '../components/profile/AliadoImpactStats';
+import { AliadoInsigniasCard } from '../components/profile/AliadoInsigniasCard';
 import { useAliadoImpact } from '../hooks/useAliadoImpact';
+import { useAliadoInsignias } from '../hooks/useAliadoInsignias';
 import { useApelacionAliado } from '../hooks/useApelacionAliado';
 import ApelacionAliadoModal from '../components/red-aliados/ApelacionAliadoModal';
 import MisLotesScreen from './red-aliados/MisLotesScreen';
@@ -35,6 +37,7 @@ interface Props {
 
 export default function AliadoDashboardScreen({ onClose, onOpenContribution }: Props) {
   const { impacto, isLoading } = useAliadoImpact(true);
+  const { insignias, isLoading: isLoadingInsignias } = useAliadoInsignias(true);
   const { apelacionActiva, loading: loadingApelacion, checkApelacionActiva } = useApelacionAliado();
   const [activeTab, setActiveTab] = useState<ActiveTab>('lotes');
   const [showApelacionModal, setShowApelacionModal] = useState(false);
@@ -73,6 +76,7 @@ export default function AliadoDashboardScreen({ onClose, onOpenContribution }: P
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           <View style={styles.horizontalSection}>
             <AliadoImpactStats impacto={impacto} isLoading={isLoading} />
+            <AliadoInsigniasCard insignias={insignias} isLoading={isLoadingInsignias} />
           </View>
 
           {/* BANNER DE ESTADO */}
