@@ -47,6 +47,14 @@ REGLA_TRUST_DESENLACE = "trust_desenlace_confirmado"
 REGLA_TRUST_RACHA_10 = "trust_racha_10_validos"
 REGLA_REPORTE_VALIDO_REVERTIDO = "reporte_valido_revertido"
 REGLA_TRUST_REPORTE_FALSO = "trust_reporte_falso_confirmado"
+# Regla real que confirmar_incidente_atomico escribe desde 0051 cuando
+# se confirma un incidente tipo 'reporte_falso' para rol reportante
+# ('incidente_confirmado_<clave>'). REGLA_TRUST_REPORTE_FALSO de arriba
+# quedo sin uso tras migrar procesar_reporte_falso_confirmado al
+# sistema de Incidentes (era la regla de la reduccion directa vieja,
+# bloqueada por 0050) -- se conserva solo por si algun movimiento
+# historico previo a la migracion todavia la referencia.
+REGLA_INCIDENTE_REPORTE_FALSO = "incidente_confirmado_reporte_falso"
 
 # Bono único de bienvenida/primer aporte: +30. Antes eran dos reglas
 # separadas (bono_bienvenida + primer_aporte_verificado, 30+30=60) según
@@ -62,6 +70,11 @@ TRUST_INCREMENTO_VALIDADO = 3
 TRUST_INCREMENTO_DESENLACE = 2
 TRUST_INCREMENTO_RACHA = 10
 TRUST_LIMITE_INCREMENTO_MES_REPORTANTE = 15
+# Sin uso funcional desde la migracion a incidentes_service (el valor
+# real ahora vive en incidente_tipos_catalogo, clave='reporte_falso',
+# rol='reportante'). Se conserva como referencia -- si algun dia no
+# coincide con el catalogo, es señal de que uno de los dos quedo
+# desactualizado.
 TRUST_REDUCCION_FALSO_CONFIRMADO = 25
 
 # conclusion es texto libre de UI (OPCIONES_CIERRE en AssociationStatusScreen.tsx
@@ -201,6 +214,21 @@ def ajustar_trust_score(
     responsable_confirmacion_id: str | None = None,
     limite_incremento_mes: int | None = None,
 ) -> dict | None:
+    """IMPORTANTE (desde 0050_bloquear_reduccion_directa.sql): si
+    tipo='reduccion', la RPC ahora RECHAZA la llamada a menos que
+    tipo_origen sea exactamente 'incidente'. La unica via legitima para
+    restar trust score es incidentes_service.registrar_incidente ->
+    incidentes_service.confirmar_incidente -- ese flujo ya llama a esta
+    misma funcion internamente con tipo_origen='incidente'. NO llames
+    esta funcion directo con tipo='reduccion' desde Persona 2/3: la RPC
+    va a fallar (el error queda atrapado por el try/except de abajo y
+    se loguea con [WARN], no rompe el flujo llamador, pero tampoco
+    aplica la reduccion -- si ves ese warning en logs, es señal de que
+    alguien esta usando el camino viejo por error).
+
+    Los incrementos (tipo='incremento') no tienen esta restriccion y
+    siguen siendo directos, como siempre.
+    """
     try:
         resultado = supabase.rpc("ajustar_trust_score_atomico", {
             "p_usuario_id": usuario_id,
@@ -381,7 +409,23 @@ def procesar_reporte_falso_confirmado(reporte_id: str, usuario_id: str | None, a
     estado == 'rechazado'. Revierte los puntos ya pagados (si los hubo —
     revertir_puntos no falla si nunca se pagaron, simplemente no hay nada
     que revertir porque el evento_origen_id de REGLA_REPORTE_VALIDO_REVERTIDO
-    nunca choca con nada), reduce Trust Score, y rompe la racha."""
+    nunca choca con nada), reduce Trust Score vía el sistema de
+    Incidentes (0050 bloquea la reduccion directa: ajustar_trust_score
+    con tipo='reduccion' ahora exige tipo_origen='incidente'), y rompe
+    la racha.
+
+    HISTORIAL DEL BUG: esta funcion originalmente llamaba
+    ajustar_trust_score(..., "reduccion", ..., TIPO_ORIGEN_MODERACION, ...)
+    directo. Cuando 0050 cerro esa puerta, la reduccion empezo a
+    fallar en silencio (atrapada por el try/except de ajustar_trust_score,
+    solo un [WARN] en logs) sin que ningun test lo detectara, porque el
+    suite mockea la RPC y nunca ejecuta el CHECK real de Postgres.
+    Corregido migrando a incidentes_service: la decision del admin al
+    marcar el reporte como falso ES la confirmacion humana que el
+    sistema de Incidentes exige, asi que se crea Y confirma el
+    incidente en el mismo momento, usando al admin como registrado_por
+    y confirmado_por (nunca requiere un segundo paso manual separado).
+    """
     if not usuario_id:
         return
 
@@ -389,11 +433,19 @@ def procesar_reporte_falso_confirmado(reporte_id: str, usuario_id: str | None, a
         usuario_id, ROL_REPORTANTE, REGLA_REPORTE_VALIDO_REVERTIDO,
         TIPO_ORIGEN_MODERACION, reporte_id, PUNTOS_REPORTE_VALIDO,
     )
-    ajustar_trust_score(
-        usuario_id, ROL_REPORTANTE, "reduccion", TRUST_REDUCCION_FALSO_CONFIRMADO,
-        REGLA_TRUST_REPORTE_FALSO, "Reporte falso confirmado por moderacion",
-        TIPO_ORIGEN_MODERACION, reporte_id, responsable_confirmacion_id=admin_id,
-    )
+
+    try:
+        from app.services import incidentes_service
+        incidente = incidentes_service.registrar_incidente(
+            usuario_id=usuario_id, rol=ROL_REPORTANTE, tipo_incidente="reporte_falso",
+            descripcion="Reporte falso confirmado por moderacion",
+            registrado_por=admin_id, actor_tipo="admin", reporte_id=reporte_id,
+        )
+        incidentes_service.confirmar_incidente(
+            incidente["id"], confirmado_por=admin_id, actor_tipo="admin",
+        )
+    except Exception as e:
+        print(f"[WARN] no se pudo crear/confirmar incidente de reporte falso (reporte={reporte_id}): {e}")
 
 
 def _evaluar_racha_reportante(usuario_id: str) -> None:
@@ -401,14 +453,23 @@ def _evaluar_racha_reportante(usuario_id: str) -> None:
     sin ningún falso entre ellos. Se calcula mirando los últimos eventos
     de trust_score_movimientos del usuario en orden cronológico: cuenta
     consecutivos de REGLA_TRUST_REPORTE_VALIDADO desde el final hasta el
-    primer REGLA_TRUST_REPORTE_FALSO (o el inicio del historial)."""
+    primer REGLA_INCIDENTE_REPORTE_FALSO (o el inicio del historial).
+
+    Nota: antes de 0050/0051 esta funcion buscaba
+    REGLA_TRUST_REPORTE_FALSO (la regla que escribia la reduccion
+    directa vieja). Desde que procesar_reporte_falso_confirmado migro a
+    incidentes_service, la reduccion real llega con
+    REGLA_INCIDENTE_REPORTE_FALSO -- si se deja la regla vieja aqui, la
+    racha nunca detecta un reporte falso y sigue sumando de forma
+    incorrecta. Corregido en el mismo cambio que migro la reduccion.
+    """
     try:
         historial = (
             supabase.table("trust_score_movimientos")
             .select("regla, creado_at")
             .eq("usuario_id", usuario_id)
             .eq("rol", ROL_REPORTANTE)
-            .in_("regla", [REGLA_TRUST_REPORTE_VALIDADO, REGLA_TRUST_REPORTE_FALSO])
+            .in_("regla", [REGLA_TRUST_REPORTE_VALIDADO, REGLA_INCIDENTE_REPORTE_FALSO])
             .order("creado_at", desc=True)
             .limit(10)
             .execute()
@@ -416,7 +477,7 @@ def _evaluar_racha_reportante(usuario_id: str) -> None:
         filas = historial.data or []
         if len(filas) < 10:
             return
-        if any(f["regla"] == REGLA_TRUST_REPORTE_FALSO for f in filas):
+        if any(f["regla"] == REGLA_INCIDENTE_REPORTE_FALSO for f in filas):
             return
 
         # evento_origen_id de la racha: no hay un solo reporte que la
