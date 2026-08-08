@@ -79,11 +79,43 @@ def test_crear_recompensa_perfil_no_verificado_rechazado(make_query):
     assert "no está verificado" in response.json()["detail"].lower() or "todavía" in response.json()["detail"].lower()
 
 
+def test_asociacion_no_puede_crear_desde_panel_institucional(make_query):
+    tablas = {
+        "usuarios": make_query(data=[{
+            "id": "user-1", "asociacion_id": "asoc-1", "roles": {"nombre": "asociacion"},
+        }]),
+    }
+    supabase = _supabase_con_tablas(tablas)
+    with patch.object(recompensas_api, "supabase", supabase):
+        response = client.post("/recompensas", json=RECOMPENSA_BODY, headers=AUTH_HEADERS)
+    assert response.status_code == 403
+    assert "asociaciones" in response.json()["detail"].lower()
+
+
+def test_categoria_no_declarada_es_rechazada(make_query):
+    tablas = {
+        "perfil_apoyo": make_query(data=[{
+            "id": "perfil-1", "tipo": "aliado_local", "verificado_admin": True,
+            "categorias": ["insumos"], "datos_extra": {"subcategorias": []},
+        }]),
+    }
+    _mock_usuario_autenticado(tablas, make_query)
+    supabase = _supabase_con_tablas(tablas)
+    patches = _patch_supabase(supabase)
+    with patches[0], patches[1]:
+        response = client.post("/recompensas", json=RECOMPENSA_BODY, headers=AUTH_HEADERS)
+    assert response.status_code == 422
+    assert "no fue declarada" in response.json()["detail"].lower()
+
+
 # ─── El costo lo determina el backend ─────────────────────────────────────
 
 def test_costo_lo_calcula_el_backend_segun_nivel(make_query):
     tablas = {
-        "perfil_apoyo": make_query(data=[{"id": "perfil-1", "tipo": "aliado_local", "verificado_admin": True}]),
+        "perfil_apoyo": make_query(data=[{
+            "id": "perfil-1", "tipo": "aliado_local", "verificado_admin": True,
+            "categorias": [RECOMPENSA_BODY["categoria"]], "datos_extra": {"subcategorias": []},
+        }]),
         "recompensas": make_query(data=[{**RECOMPENSA_BODY, "id": "rec-1", "propietario_id": "perfil-1", "costo": 250, "unidades_disponibles": 10, "estado": "borrador", "creado_at": "2026-08-01T00:00:00+00:00"}]),
     }
     _mock_usuario_autenticado(tablas, make_query)
@@ -149,14 +181,29 @@ def test_pausar_no_modifica_unidades_disponibles(make_query):
 
 # ─── No existe forma de eliminar una recompensa ───────────────────────────
 
-def test_no_existe_endpoint_para_eliminar_recompensas():
+def test_existe_endpoint_para_eliminar_solo_si_no_hay_canjes():
     metodos_por_ruta = [
         (getattr(route, "path", ""), getattr(route, "methods", set()))
         for route in app.routes
         if getattr(route, "path", "").startswith("/recompensas")
     ]
     assert metodos_por_ruta, "se esperaban rutas registradas bajo /recompensas"
-    assert not any("DELETE" in methods for _, methods in metodos_por_ruta)
+    assert any("DELETE" in methods for _, methods in metodos_por_ruta)
+
+
+def test_no_elimina_recompensa_con_canjes(make_query):
+    tablas = {
+        "perfil_apoyo": make_query(data=[{"id": "perfil-1"}]),
+        "recompensas": make_query(data=[{"id": "rec-1", "propietario_id": "perfil-1", "estado": "borrador"}]),
+        "canjes_recompensa": make_query(data=[{"id": "canje-1"}]),
+    }
+    _mock_usuario_autenticado(tablas, make_query)
+    supabase = _supabase_con_tablas(tablas)
+    patches = _patch_supabase(supabase)
+    with patches[0], patches[1]:
+        response = client.delete("/recompensas/rec-1", headers=AUTH_HEADERS)
+    assert response.status_code == 409
+    tablas["recompensas"].delete.assert_not_called()
 
 
 # ─── Inventario cero cambia a agotada ──────────────────────────────────────

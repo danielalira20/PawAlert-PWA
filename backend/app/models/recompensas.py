@@ -104,3 +104,32 @@ class RecompensaResponse(BaseModel):
     estado: str
     inventario_separado_confirmado: bool
     creado_at: str
+    canjes_confirmados: int = 0
+    personas_beneficiadas: int = 0
+
+
+class CategoriaRecompensaResponse(BaseModel):
+    clave: str
+    descripcion: str
+    subcategorias: list[dict] = []
+
+
+class CanjeEmitirRequest(BaseModel):
+    recompensa_id: str
+
+
+class CanjeConfirmarRequest(BaseModel):
+    codigo: str = Field(min_length=8, max_length=64)
+
+
+class CanjeResponse(BaseModel):
+    id: str
+    recompensa_id: str
+    beneficiario_id: str
+    codigo: str
+    estado: str
+    condiciones_snapshot: Optional[str] = None
+    forma_entrega_snapshot: str
+    costo_snapshot: int
+    emitido_at: str
+    confirmado_at: Optional[str] = None

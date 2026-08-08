@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import axios from 'axios';
 import { Ionicons } from '@expo/vector-icons';
 import { API_URL } from '../../constants/api';
@@ -93,6 +93,8 @@ interface Recompensa {
   condiciones: string | null;
   estado: string;
   creado_at: string;
+  canjes_confirmados: number;
+  personas_beneficiadas: number;
 }
 
 interface Props {
@@ -117,6 +119,7 @@ export default function MisRecompensasScreen({ onClose, embedded }: Props) {
   const [accionPendiente, setAccionPendiente] = useState<string | null>(null);
   const [isActualizando, setIsActualizando] = useState(false);
   const [accionError, setAccionError] = useState('');
+  const [codigoCanje, setCodigoCanje] = useState('');
 
   const cargarRecompensas = async (estado: string) => {
     setIsLoading(true);
@@ -161,6 +164,24 @@ export default function MisRecompensasScreen({ onClose, embedded }: Props) {
       setAccionPendiente(null);
     } catch (error: any) {
       setAccionError(error?.response?.data?.detail || 'No se pudo actualizar la recompensa. Intenta de nuevo.');
+    } finally {
+      setIsActualizando(false);
+    }
+  };
+
+  const confirmarCodigo = async () => {
+    if (!codigoCanje.trim()) return;
+    setIsActualizando(true);
+    setAccionError('');
+    try {
+      await axios.post(`${API_URL}/recompensas/canjes/confirmar`, { codigo: codigoCanje.trim() }, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setCodigoCanje('');
+      await cargarRecompensas(filtro);
+      setSeleccionada(null);
+    } catch (error: any) {
+      setAccionError(error?.response?.data?.detail || 'No se pudo confirmar el código.');
     } finally {
       setIsActualizando(false);
     }
@@ -308,23 +329,36 @@ export default function MisRecompensasScreen({ onClose, embedded }: Props) {
                     </View>
                   </View>
 
+                  <View style={styles.statusConfirmBox}>
+                    <Text style={styles.dataLabel}>Confirmar código de canje</Text>
+                    <TextInput
+                      value={codigoCanje}
+                      onChangeText={setCodigoCanje}
+                      autoCapitalize="characters"
+                      placeholder="Ej. A1B2C3D4E5F6"
+                      style={{ borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, padding: 10, marginTop: 8 }}
+                    />
+                    <TouchableOpacity
+                      style={[styles.statusConfirmButton, { backgroundColor: COLORS.success, marginTop: 8 }]}
+                      onPress={confirmarCodigo}
+                      disabled={isActualizando || !codigoCanje.trim()}
+                    >
+                      <Text style={styles.statusConfirmButtonText}>Confirmar canje</Text>
+                    </TouchableOpacity>
+                  </View>
+
                   {seleccionada.condiciones ? (
                     <Text style={styles.modalCondiciones}>Condiciones: {seleccionada.condiciones}</Text>
                   ) : null}
 
-                  {/* Canjes confirmados / personas beneficiadas dependen de la
-                      tabla de canjes (flujo de Magui, Persona 5) — hoy son 0
-                      porque ese flujo todavía no existe, no es un placeholder
-                      inventado. Se reemplaza por datos reales cuando ese
-                      endpoint exista. */}
                   <View style={styles.modalDataGrid}>
                     <View style={styles.modalDataItem}>
                       <Text style={styles.dataLabel}>Canjes confirmados</Text>
-                      <Text style={styles.modalDataValue}>0</Text>
+                      <Text style={styles.modalDataValue}>{seleccionada.canjes_confirmados ?? 0}</Text>
                     </View>
                     <View style={styles.modalDataItem}>
                       <Text style={styles.dataLabel}>Personas beneficiadas</Text>
-                      <Text style={styles.modalDataValue}>0</Text>
+                      <Text style={styles.modalDataValue}>{seleccionada.personas_beneficiadas ?? 0}</Text>
                     </View>
                   </View>
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
@@ -31,6 +31,7 @@ const COLORS = {
 
 type Option = { value: string; label: string; description?: string };
 type Errors = Record<string, string>;
+type CategoriaPermitida = { clave: string; descripcion: string; subcategorias: { clave: string; descripcion: string }[] };
 
 const TIPO_OPTIONS: Option[] = [
   { value: 'descuento', label: 'Descuento' },
@@ -71,9 +72,24 @@ export default function CrearRecompensaScreen({ onClose }: Props) {
   const [formaEntrega, setFormaEntrega] = useState('');
   const [condiciones, setCondiciones] = useState('');
   const [inventarioSeparado, setInventarioSeparado] = useState<boolean | null>(null);
+  const [categoriasPermitidas, setCategoriasPermitidas] = useState<CategoriaPermitida[]>([]);
 
   const [errors, setErrors] = useState<Errors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    let vigente = true;
+    axios.get<CategoriaPermitida[]>(`${API_URL}/recompensas/categorias`, {
+      headers: { Authorization: `Bearer ${token}` },
+    }).then((res) => {
+      if (vigente) setCategoriasPermitidas(res.data || []);
+    }).catch(() => {
+      if (vigente) setCategoriasPermitidas([]);
+    });
+    return () => { vigente = false; };
+  }, [token]);
+
+  const categoriaSeleccionada = categoriasPermitidas.find((c) => c.clave === categoria);
 
   const terminarFlujo = () => {
     if (onClose) onClose();
@@ -171,12 +187,23 @@ export default function CrearRecompensaScreen({ onClose }: Props) {
               <SingleOptions options={TIPO_OPTIONS} selected={tipo} onSelect={setTipo} error={errors.tipo} />
             </FormSection>
 
-            <FormSection title="Categoría y subcategoría" subtitle="Describe brevemente de qué se trata.">
-              <TextInputField value={categoria} onChangeText={setCategoria} placeholder="Ej. Alimento para mascotas" />
+            <FormSection title="Categoría y subcategoría" subtitle="Solo puedes usar lo declarado en tu perfil.">
+              <SingleOptions
+                options={categoriasPermitidas.map((c) => ({ value: c.clave, label: c.descripcion }))}
+                selected={categoria}
+                onSelect={(valor) => { setCategoria(valor); setSubcategoria(''); }}
+                error={errors.categoria}
+              />
               {errors.categoria ? <ErrorText text={errors.categoria} /> : null}
-              <View style={styles.inputGroup}>
-                <TextInputField value={subcategoria} onChangeText={setSubcategoria} placeholder="Subcategoría (opcional)" />
-              </View>
+              {!!categoriaSeleccionada?.subcategorias.length && (
+                <View style={styles.inputGroup}>
+                  <SingleOptions
+                    options={categoriaSeleccionada.subcategorias.map((s) => ({ value: s.clave, label: s.descripcion }))}
+                    selected={subcategoria}
+                    onSelect={setSubcategoria}
+                  />
+                </View>
+              )}
             </FormSection>
 
             <FormSection title="Nombre y descripción">

@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from app.db.supabase import supabase
+from app.db.supabase import supabase_admin as supabase
 
 # "Apoyo crítico", "Recurso multiplicado" y "Comunidad que recompensa" son
 # exclusivas de estos dos tipos (regla de negocio de Persona 4) — donante_
@@ -15,6 +15,7 @@ NIVEL_ORDEN = {"cobre": 1, "plata": 2, "oro": 3}
 UMBRAL_APOYO_CRITICO = 3
 UMBRAL_MESES_CONSTANCIA = 3
 UMBRAL_LOTE_MULTI_ASOCIACION = 2
+UMBRAL_CANJES_COMUNIDAD = 10
 
 
 def _contribuciones_entregadas(usuario_id: str) -> list[dict]:
@@ -47,6 +48,19 @@ def _tiene_lote_multi_asociacion_confirmado(perfil_apoyo_id: str) -> bool:
         conteo_por_lote[fila["lote_id"]] = conteo_por_lote.get(fila["lote_id"], 0) + 1
 
     return any(cuenta >= UMBRAL_LOTE_MULTI_ASOCIACION for cuenta in conteo_por_lote.values())
+
+
+def _canjes_confirmados(perfil_apoyo_id: str) -> int:
+    recompensas = supabase.table("recompensas").select("id").eq(
+        "propietario_id", perfil_apoyo_id
+    ).execute()
+    recompensa_ids = [r["id"] for r in (recompensas.data or [])]
+    if not recompensa_ids:
+        return 0
+    canjes = supabase.table("canjes_recompensa").select("id").in_(
+        "recompensa_id", recompensa_ids
+    ).eq("estado", "confirmado").execute()
+    return len(canjes.data or [])
 
 
 def _alcanza_meses_consecutivos(fechas_iso: list[str]) -> bool:
@@ -135,10 +149,12 @@ def evaluar_insignias_aliado(usuario_id: str) -> list[dict]:
     if tipo in TIPOS_ALIADO_LOCAL_INSTITUCIONAL and _tiene_lote_multi_asociacion_confirmado(perfil_apoyo_id):
         resultados.append(_upsert_insignia(usuario_id, tipo, "recurso_multiplicado", None, 1, ahora))
 
-    # "Comunidad que recompensa" (10 canjes confirmados) depende de la
-    # tabla `canjes`, que todavía no existe (flujo de Persona 5). No hay
-    # forma honesta de evaluarla sin esa tabla, así que se omite en vez de
-    # simular un conteo en cero — se agrega aquí en cuanto exista.
+    if tipo in TIPOS_ALIADO_LOCAL_INSTITUCIONAL:
+        total_canjes = _canjes_confirmados(perfil_apoyo_id)
+        if total_canjes >= UMBRAL_CANJES_COMUNIDAD:
+            resultados.append(_upsert_insignia(
+                usuario_id, tipo, "comunidad_que_recompensa", None, total_canjes, ahora
+            ))
 
     return resultados
 

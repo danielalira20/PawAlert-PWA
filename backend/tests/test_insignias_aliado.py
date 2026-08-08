@@ -4,7 +4,8 @@ from unittest.mock import MagicMock, patch
 from app.services import insignias_aliado_service
 
 
-def _tablas(make_query, *, perfil, contribuciones, lotes=None, lote_asociaciones=None, insignias=None):
+def _tablas(make_query, *, perfil, contribuciones, lotes=None, lote_asociaciones=None,
+            insignias=None, recompensas=None, canjes=None):
     if insignias:
         # Ya existe una fila: select la encuentra -> rama update. Select y
         # update comparten el mismo `data` fijo, las pruebas que llegan
@@ -26,6 +27,8 @@ def _tablas(make_query, *, perfil, contribuciones, lotes=None, lote_asociaciones
         "lotes": make_query(data=lotes or []),
         "lote_asociaciones": make_query(data=lote_asociaciones or []),
         "insignias": insignias_query,
+        "recompensas": make_query(data=recompensas or []),
+        "canjes_recompensa": make_query(data=canjes or []),
     }
     # .not_.is_(...) no lo configura make_query por defecto (ver
     # test_whatsapp_notifications.py) — hay que apuntarlo a la misma query.
@@ -155,3 +158,19 @@ def test_donante_comunitario_no_obtiene_apoyo_critico_ni_recurso_multiplicado(ma
     assert "recurso_multiplicado" not in codigos_insertados
     # Pero sí puede ganar las 2 insignias que "aplican a todos los aliados".
     assert "aliado_de_impacto" in codigos_insertados
+
+
+def test_diez_canjes_confirmados_otorgan_comunidad_que_recompensa(make_query):
+    tablas = _tablas(
+        make_query,
+        perfil=PERFIL_ALIADO,
+        contribuciones=[],
+        recompensas=[{"id": "rec-1"}],
+        canjes=[{"id": f"canje-{i}"} for i in range(10)],
+        insignias=[],
+    )
+    with patch.object(insignias_aliado_service, "supabase", _supabase(tablas)):
+        insignias_aliado_service.evaluar_insignias_aliado("user-1")
+    insertado = tablas["insignias"].insert.call_args[0][0]
+    assert insertado["codigo_insignia"] == "comunidad_que_recompensa"
+    assert insertado["progreso"] == 10
