@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 
 from app.api import associations, reports
 from app.main import app
-from app.services import report_service, voluntario_service
+from app.services import report_service, reputacion_service, voluntario_service
 
 
 client = TestClient(app)
@@ -76,10 +76,17 @@ def test_cerrar_caso_registra_conclusion_notas_y_usuario(make_query):
     }
     supabase = MagicMock()
     supabase.table.side_effect = lambda nombre: tablas[nombre]
+    # cambiar_estado_reporte ahora engancha reputacion_service.procesar_cierre_reporte
+    # al cerrar un caso -- sin este patch, la llamada real a
+    # reputacion_service.supabase (supabase_admin, sin mockear aquí) saldría
+    # a la red contra el Supabase configurado en .env en vez de quedarse en
+    # el proceso de la prueba.
+    reputacion_supabase = MagicMock()
 
     with (
         patch.object(report_service, "supabase", supabase),
         patch.object(report_service, "registrar_historial") as historial,
+        patch.object(reputacion_service, "supabase", reputacion_supabase),
     ):
         import asyncio
         resultado = asyncio.run(report_service.cambiar_estado_reporte(
@@ -104,6 +111,23 @@ def test_cerrar_caso_registra_conclusion_notas_y_usuario(make_query):
             "foto_url": "https://x/foto-cierre.jpg",
         },
     )
+    # El enganche de reputación se disparó (RPC de ajustar_trust_score),
+    # sin tocar la red real gracias al patch de arriba.
+    reputacion_supabase.rpc.assert_called_once_with(
+        "ajustar_trust_score_atomico",
+        {
+            "p_usuario_id": "user-aso-1",
+            "p_rol": "reportante",
+            "p_tipo": "incremento",
+            "p_valor": reputacion_service.TRUST_INCREMENTO_DESENLACE,
+            "p_regla": reputacion_service.REGLA_TRUST_DESENLACE,
+            "p_motivo": "Desenlace confirmado: Animal rescatado y estable",
+            "p_tipo_origen": "reporte",
+            "p_evento_origen_id": "rep-1",
+            "p_responsable_confirmacion_id": None,
+            "p_limite_incremento_mes": reputacion_service.TRUST_LIMITE_INCREMENTO_MES_REPORTANTE,
+        },
+    )
 
 
 def test_cerrar_caso_sin_foto_no_incluye_foto_url(make_query):
@@ -124,6 +148,7 @@ def test_cerrar_caso_sin_foto_no_incluye_foto_url(make_query):
     with (
         patch.object(report_service, "supabase", supabase),
         patch.object(report_service, "registrar_historial") as historial,
+        patch.object(reputacion_service, "supabase", MagicMock()),
     ):
         import asyncio
         resultado = asyncio.run(report_service.cambiar_estado_reporte(
