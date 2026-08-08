@@ -669,6 +669,11 @@ async def cambiar_estado_reporte(
                 "foto_url": foto_url,
             }
         )
+        try:
+            from app.services.reputacion_service import procesar_cierre_reporte
+            procesar_cierre_reporte(reporte_id, usuario_id, conclusion)
+        except Exception as e:
+            print(f"[WARN] reputacion fallo en cambiar_estado_reporte (reporte={reporte_id}): {e}")
     else:
         registrar_historial(
             reporte_id=reporte_id,

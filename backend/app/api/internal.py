@@ -61,3 +61,11 @@ def correr_vencimiento_recompensas(x_cron_secret: Optional[str] = Header(None)):
     if not settings.cron_secret or x_cron_secret != settings.cron_secret:
         raise HTTPException(status_code=401, detail="No autorizado")
     return {"recompensas_vencidas": expirar_recompensas_vencidas()}
+
+
+@router.post("/gamificacion/run")
+def correr_reputacion(x_cron_secret: Optional[str] = Header(None)):
+    if not settings.cron_secret or x_cron_secret != settings.cron_secret:
+        raise HTTPException(status_code=401, detail="No autorizado")
+    from app.services.reputacion_service import evaluar_reportes_validados_por_tiempo
+    return {"reportes_validados_por_tiempo": evaluar_reportes_validados_por_tiempo()}
