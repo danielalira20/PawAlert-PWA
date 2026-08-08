@@ -776,10 +776,10 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
             )
 
     if tipo_hito == "animal_no_localizado":
-        if rol_usuario != "voluntario_externo":
+        if rol_usuario not in ("voluntario_interno", "voluntario_externo"):
             raise HTTPException(
                 status_code=403,
-                detail="Este hito corresponde a un voluntario externo",
+                detail="Este hito corresponde a un voluntario asignado",
             )
         if body.latitud is None or body.longitud is None:
             raise HTTPException(
@@ -796,6 +796,27 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
                 status_code=422,
                 detail="Describe brevemente dónde y cómo realizaste la búsqueda",
             )
+        if rol_usuario == "voluntario_interno":
+            if reporte.get("latitud") is None or reporte.get("longitud") is None:
+                raise HTTPException(
+                    status_code=409,
+                    detail="El reporte no tiene coordenadas para validar la búsqueda",
+                )
+            distancia_reporte_metros = _distancia_metros(
+                body.latitud,
+                body.longitud,
+                reporte["latitud"],
+                reporte["longitud"],
+            )
+            if distancia_reporte_metros > RADIO_LLEGADA_ZONA_METROS:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Aún estás lejos de la zona del reporte. "
+                        f"Estás a {round(distancia_reporte_metros)} metros; "
+                        f"acércate a menos de {RADIO_LLEGADA_ZONA_METROS} metros."
+                    ),
+                )
 
     # Validación GPS obligatoria para llegue_refugio
     if tipo_hito == "llegue_refugio":
