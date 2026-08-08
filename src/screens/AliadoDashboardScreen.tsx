@@ -10,6 +10,7 @@ import MisLotesScreen from './red-aliados/MisLotesScreen';
 import MisAportacionesScreen from './red-aliados/MisAportacionesScreen';
 import NotificacionesAliadoScreen from './NotificacionesAliadoScreen';
 import MisOfertasProactivasScreen from './red-aliados/MisOfertasProactivasScreen';
+import MisRecompensasScreen from './red-aliados/MisRecompensasScreen';
 
 // Misma paleta que StaffAsignacionScreen.tsx (COLORS/SHADOW_SM), reusada
 // literalmente — no se inventa un estilo nuevo para este dashboard.
@@ -25,7 +26,7 @@ const COLORS = {
   cardBg: '#FAF3EA',
 };
 
-type ActiveTab = 'lotes' | 'aportaciones' | 'notificaciones' | 'ofertas';
+type ActiveTab = 'lotes' | 'aportaciones' | 'notificaciones' | 'ofertas' | 'recompensas';
 
 interface Props {
   onClose?: () => void;
@@ -147,6 +148,25 @@ export default function AliadoDashboardScreen({ onClose, onOpenContribution }: P
             </View>
           )}
 
+          {/* Crear recompensas — solo aliado_local/patrocinador_institucional
+              verificados (regla de negocio de Persona 4); a diferencia del CTA
+              de arriba, donante_comunitario nunca lo ve, aunque no tenga
+              perfil_apoyo todavía. */}
+          {impacto?.verificado_admin && impacto.tipo !== 'donante_comunitario' && (
+            <View style={[styles.horizontalSection, { marginBottom: 20 }]}>
+              <TouchableOpacity
+                onPress={() => {
+                  if (onClose) onClose();
+                  router.push('/crear-recompensa' as any);
+                }}
+                style={styles.secondaryAction}
+              >
+                <Ionicons name="gift-outline" size={18} color={COLORS.primary} style={{ marginRight: 8 }} />
+                <Text style={{ color: COLORS.primary, fontWeight: '700', fontSize: 14 }}>Crear recompensa</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           {/* Tabs de navegación — mismo patrón/tokens que StaffAsignacionScreen.tsx */}
           <View style={styles.tabs}>
             {([
@@ -154,6 +174,9 @@ export default function AliadoDashboardScreen({ onClose, onOpenContribution }: P
               { key: 'aportaciones', label: 'Mis aportaciones', icon: 'heart-outline' },
               { key: 'ofertas', label: 'Mis ofertas', icon: 'pricetag-outline' },
               { key: 'notificaciones', label: 'Notificaciones', icon: 'notifications-outline' },
+              ...(impacto?.verificado_admin && impacto.tipo !== 'donante_comunitario'
+                ? [{ key: 'recompensas' as ActiveTab, label: 'Mis recompensas', icon: 'gift-outline' as const }]
+                : []),
             ] as { key: ActiveTab; label: string; icon: React.ComponentProps<typeof Ionicons>['name'] }[]).map((tab) => (
               <TouchableOpacity
                 key={tab.key}
@@ -175,6 +198,7 @@ export default function AliadoDashboardScreen({ onClose, onOpenContribution }: P
           {activeTab === 'lotes' && <MisLotesScreen embedded />}
           {activeTab === 'aportaciones' && <MisAportacionesScreen embedded />}
           {activeTab === 'ofertas' && <MisOfertasProactivasScreen embedded />}
+          {activeTab === 'recompensas' && <MisRecompensasScreen embedded />}
           {activeTab === 'notificaciones' && <NotificacionesAliadoScreen embedded />}
         </ScrollView>
       </View>
@@ -240,6 +264,17 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 5 },
     elevation: 2,
+  },
+  secondaryAction: {
+    minHeight: 50,
+    paddingHorizontal: 18,
+    borderRadius: 16,
+    backgroundColor: COLORS.white,
+    borderWidth: 1.5,
+    borderColor: COLORS.primary,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
   },
   tabs: {
     flexDirection: 'row',

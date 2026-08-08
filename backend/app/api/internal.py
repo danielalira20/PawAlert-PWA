@@ -17,6 +17,7 @@ from app.services.whatsapp_notification_service import (
 )
 from app.api.custody import generar_notificaciones_vencimiento, escalar_relevos_sin_respuesta
 from app.services import coverage_service
+from app.services.recompensas_service import expirar_recompensas_vencidas
 
 router = APIRouter()
 
@@ -53,3 +54,10 @@ def correr_notificaciones_custodia(
         "notificaciones": generar_notificaciones_vencimiento(),
         "relevos": escalar_relevos_sin_respuesta(),
     }
+
+
+@router.post("/recompensas/run")
+def correr_vencimiento_recompensas(x_cron_secret: Optional[str] = Header(None)):
+    if not settings.cron_secret or x_cron_secret != settings.cron_secret:
+        raise HTTPException(status_code=401, detail="No autorizado")
+    return {"recompensas_vencidas": expirar_recompensas_vencidas()}
