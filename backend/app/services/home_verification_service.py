@@ -5,6 +5,7 @@ from fastapi import HTTPException
 from app.db.supabase import supabase_admin
 from app.services import storage_service
 from app.services.video_evidence_service import distancia_metros
+from app.services.reputacion_service import otorgar_puntos, ajustar_trust_score
 
 
 TIPOS_EVIDENCIA = {
@@ -1065,6 +1066,19 @@ def resolver_verificacion_remota(
         actor_usuario_id=usuario_staff_id,
         actor_tipo="asociacion",
     )
+
+    # --- GAMIFICACIÓN: Puntos para el voluntario externo ---
+    usuario_id_postulante = voluntario.data[0]["usuario_id"]
+    otorgar_puntos(
+        usuario_id=usuario_id_postulante,
+        rol="voluntario_externo",
+        regla="postulacion_externa_aprobada",
+        tipo_origen="verificacion_hogar",
+        evento_origen_id=verificacion_id,
+        puntos=30,
+    )
+    # TODO: Aquí llamaremos a tu evaluador de insignias para "Casa segura" más adelante
+
     return {
         "estado": "aprobada",
         "nivel_voluntario": "activo_nivel_2",
@@ -2428,6 +2442,45 @@ def resolver_resultado_visita(
         actor_tipo="verificador",
         datos={"asignacion_id": asignacion_id},
     )
+
+    # --- GAMIFICACIÓN ---
+    usuario_id_postulante = voluntario.data[0]["usuario_id"]
+    usuario_id_verificador = _usuario_id_voluntario(verificador_voluntario_id)
+
+    # 1. +30 Puntos para el Voluntario Externo (nuevo hogar temporal)
+    otorgar_puntos(
+        usuario_id=usuario_id_postulante,
+        rol="voluntario_externo",
+        regla="postulacion_externa_aprobada",
+        tipo_origen="verificacion_hogar",
+        evento_origen_id=verificacion["id"],
+        puntos=30,
+    )
+    # TODO: Aquí llamaremos a tu evaluador de insignias para "Casa segura"
+
+    # 2. +25 Puntos y +3 Trust Score para el Verificador (Voluntario Interno)
+    if usuario_id_verificador:
+        otorgar_puntos(
+            usuario_id=usuario_id_verificador,
+            rol="voluntario_interno",
+            regla="verificacion_hogar_completada",
+            tipo_origen="asignacion_verificacion",
+            evento_origen_id=asignacion_id,
+            puntos=25,
+        )
+        ajustar_trust_score(
+            usuario_id=usuario_id_verificador,
+            rol="voluntario_interno",
+            tipo="incremento",
+            valor=3,
+            regla="trust_verificacion_completada",
+            motivo="Verificación de hogar completada y aprobada",
+            tipo_origen="asignacion_verificacion",
+            evento_origen_id=asignacion_id,
+            limite_incremento_mes=20,
+        )
+        # TODO: Evaluar insignia "Verificador de confianza"
+
     return {
         "estado": "aprobada",
         "nivel_voluntario": "activo_nivel_2",
