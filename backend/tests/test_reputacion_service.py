@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.services import reputacion_service
+from app.services import incidentes_service, reputacion_service
 
 
 # ─── Helpers ────────────────────────────────────────────────────────────
@@ -187,6 +187,224 @@ def test_ajustar_trust_score_reduccion_sin_evento_exige_responsable_no_propaga(c
 
     assert resultado is None
     assert "[WARN]" in capsys.readouterr().out
+
+
+def test_ajustar_trust_score_reduccion_con_tipo_origen_no_incidente_es_rechazada_no_propaga(capsys):
+    """0050_bloquear_reduccion_directa.sql (CREATE OR REPLACE sobre
+    ajustar_trust_score_atomico) ahora levanta P0006 para CUALQUIER
+    tipo='reduccion' cuyo tipo_origen no sea exactamente 'incidente' --
+    la única vía legítima pasa a ser registrar_incidente ->
+    confirmar_incidente. Se simula aquí ese rechazo (Postgres real, no
+    mockeado) y se confirma que el wrapper lo traga igual que cualquier
+    otro fallo de RPC: [WARN] + None, sin propagar."""
+    supabase, rpc = _rpc_supabase(
+        raises=Exception(
+            "Las reducciones de trust score solo pueden aplicarse a traves del "
+            "sistema de Incidentes (registrar_incidente -> confirmar_incidente). "
+            "tipo_origen recibido: moderacion"
+        )
+    )
+
+    with patch.object(reputacion_service, "supabase", supabase):
+        resultado = reputacion_service.ajustar_trust_score(
+            "user-1", "reportante", "reduccion", reputacion_service.TRUST_REDUCCION_FALSO_CONFIRMADO,
+            reputacion_service.REGLA_TRUST_REPORTE_FALSO, "Reporte falso confirmado por moderacion",
+            reputacion_service.TIPO_ORIGEN_MODERACION, "reporte-1",
+            responsable_confirmacion_id="admin-1",
+        )
+
+    assert resultado is None
+    assert "[WARN]" in capsys.readouterr().out
+
+
+def test_ajustar_trust_score_reduccion_con_tipo_origen_incidente_funciona_normal():
+    """La única vía que 0050 deja abierta para reducir trust score:
+    tipo_origen='incidente' (como lo manda confirmar_incidente_atomico
+    en 0049) sigue funcionando sin cambios."""
+    fila_reducida = {"usuario_id": "user-1", "rol": "reportante", "puntaje": 45, "estado_interno": "en_observacion"}
+    supabase, rpc = _rpc_supabase(data=fila_reducida)
+
+    with patch.object(reputacion_service, "supabase", supabase):
+        resultado = reputacion_service.ajustar_trust_score(
+            "user-1", "reportante", "reduccion", 15, "incidente_confirmado",
+            "Evidencia manipulada", "incidente", "incidente-1",
+            responsable_confirmacion_id="admin-1",
+        )
+
+    assert resultado == fila_reducida
+    supabase.rpc.assert_called_once_with("ajustar_trust_score_atomico", {
+        "p_usuario_id": "user-1",
+        "p_rol": "reportante",
+        "p_tipo": "reduccion",
+        "p_valor": 15,
+        "p_regla": "incidente_confirmado",
+        "p_motivo": "Evidencia manipulada",
+        "p_tipo_origen": "incidente",
+        "p_evento_origen_id": "incidente-1",
+        "p_responsable_confirmacion_id": "admin-1",
+        "p_limite_incremento_mes": None,
+    })
+
+
+def test_procesar_reporte_falso_confirmado_reduce_trust_score_via_incidente():
+    """Reemplaza al canario del turno anterior (test_..._ya_no_reduce_
+    trust_score_tras_0050): ese test documentaba el bug de 0050 a
+    propósito y ahora está corregido -- procesar_reporte_falso_confirmado
+    ya no llama ajustar_trust_score, crea Y confirma un incidente
+    (tipo_incidente='reporte_falso') usando al admin como
+    registrado_por/confirmado_por.
+
+    Se mockean directamente incidentes_service.registrar_incidente /
+    confirmar_incidente (probadas por su cuenta en
+    test_incidentes_service.py) y se verifican los argumentos EXACTOS
+    que este hook les manda -- no basta con "la cadena no truena": ese
+    fue justo el error de la ronda anterior (el mock viejo respondía
+    éxito genérico sin validar parámetros y dejó pasar el bug de 0050
+    sin que nadie lo notara)."""
+    supabase, rpc = _rpc_supabase(data=[{"id": "mov-1"}])  # respalda revertir_puntos
+
+    with (
+        patch.object(reputacion_service, "supabase", supabase),
+        patch.object(incidentes_service, "registrar_incidente", return_value={"id": "incidente-1"}) as mock_registrar,
+        patch.object(
+            incidentes_service, "confirmar_incidente",
+            return_value={"id": "incidente-1", "estado": "confirmado"},
+        ) as mock_confirmar,
+    ):
+        reputacion_service.procesar_reporte_falso_confirmado("reporte-1", "user-1", "admin-1")
+
+    mock_registrar.assert_called_once_with(
+        usuario_id="user-1",
+        rol=reputacion_service.ROL_REPORTANTE,
+        tipo_incidente="reporte_falso",
+        descripcion="Reporte falso confirmado por moderacion",
+        registrado_por="admin-1",
+        actor_tipo="admin",
+        reporte_id="reporte-1",
+    )
+    # confirmar_incidente recibe el id que registrar_incidente acaba de
+    # devolver -- no un valor hardcodeado -- probando que están cableados
+    # entre sí, no solo llamados por separado.
+    mock_confirmar.assert_called_once_with("incidente-1", confirmado_por="admin-1", actor_tipo="admin")
+
+    # revertir_puntos (movimientos_puntos, ajeno a 0050/incidentes) sigue
+    # intentándose igual que antes de esta migración.
+    supabase.rpc.assert_called_once_with("revertir_puntos_atomico", {
+        "p_usuario_id": "user-1",
+        "p_rol": reputacion_service.ROL_REPORTANTE,
+        "p_regla": reputacion_service.REGLA_REPORTE_VALIDO_REVERTIDO,
+        "p_tipo_origen": reputacion_service.TIPO_ORIGEN_MODERACION,
+        "p_evento_origen_id": "reporte-1",
+        "p_puntos": reputacion_service.PUNTOS_REPORTE_VALIDO,
+    })
+
+
+def test_procesar_reporte_falso_confirmado_no_propaga_si_incidentes_service_falla(capsys):
+    """Mismo criterio que el resto de funciones secundarias: si
+    incidentes_service falla (catálogo desactualizado, RPC rechazada,
+    lo que sea), procesar_reporte_falso_confirmado no debe tumbar la
+    resolución de moderación que lo llamó."""
+    supabase, rpc = _rpc_supabase(data=[{"id": "mov-1"}])
+
+    with (
+        patch.object(reputacion_service, "supabase", supabase),
+        patch.object(
+            incidentes_service, "registrar_incidente",
+            side_effect=Exception("fallo simulado de incidentes_service"),
+        ),
+        patch.object(incidentes_service, "confirmar_incidente") as mock_confirmar,
+    ):
+        reputacion_service.procesar_reporte_falso_confirmado("reporte-1", "user-1", "admin-1")  # no debe lanzar
+
+    # registrar_incidente ya falló -- nunca se llega a intentar confirmar.
+    mock_confirmar.assert_not_called()
+    assert "[WARN] no se pudo crear/confirmar incidente de reporte falso" in capsys.readouterr().out
+
+
+# ─── _evaluar_racha_reportante ──────────────────────────────────────────
+#
+# Se mockea reputacion_service.ajustar_trust_score directamente (en vez
+# de reconstruir una respuesta de RPC realista) porque lo que estas
+# pruebas verifican es SI la racha se otorga y con qué regla -- ya hay
+# pruebas propias de ajustar_trust_score más arriba que cubren su propio
+# contrato con la RPC.
+
+def test_evaluar_racha_reportante_otorga_mas_10_con_ventana_limpia(make_query):
+    filas = [{"regla": reputacion_service.REGLA_TRUST_REPORTE_VALIDADO} for _ in range(10)]
+    tabla = make_query(execute_results=[
+        SimpleNamespace(data=filas),
+        SimpleNamespace(data=None, count=10),
+    ])
+    supabase = MagicMock()
+    supabase.table.return_value = tabla
+
+    with (
+        patch.object(reputacion_service, "supabase", supabase),
+        patch.object(reputacion_service, "ajustar_trust_score") as mock_ajustar,
+    ):
+        reputacion_service._evaluar_racha_reportante("user-1")
+
+    mock_ajustar.assert_called_once()
+    args = mock_ajustar.call_args.args
+    assert args[0] == "user-1"
+    assert args[2] == "incremento"
+    assert args[3] == reputacion_service.TRUST_INCREMENTO_RACHA
+    assert args[4] == reputacion_service.REGLA_TRUST_RACHA_10
+
+
+def test_evaluar_racha_reportante_incidente_reporte_falso_en_ventana_rompe_racha(make_query):
+    """Una fila con REGLA_INCIDENTE_REPORTE_FALSO (la regla real que
+    confirmar_incidente_atomico escribe desde 0051) en los últimos 10
+    eventos debe cortar la racha -- return temprano, sin otorgar el +10."""
+    filas = [{"regla": reputacion_service.REGLA_TRUST_REPORTE_VALIDADO} for _ in range(9)] + [
+        {"regla": reputacion_service.REGLA_INCIDENTE_REPORTE_FALSO},
+    ]
+    tabla = make_query(data=filas)  # nunca se llega a la segunda consulta (conteo_total)
+    supabase = MagicMock()
+    supabase.table.return_value = tabla
+
+    with (
+        patch.object(reputacion_service, "supabase", supabase),
+        patch.object(reputacion_service, "ajustar_trust_score") as mock_ajustar,
+    ):
+        reputacion_service._evaluar_racha_reportante("user-1")
+
+    mock_ajustar.assert_not_called()
+
+
+def test_evaluar_racha_reportante_regla_vieja_ya_no_se_reconoce_como_ruptura(make_query):
+    """Limitación conocida, documentada aquí a propósito -- no es un bug
+    activo: la consulta real filtra con
+    .in_('regla', [REGLA_TRUST_REPORTE_VALIDADO, REGLA_INCIDENTE_REPORTE_FALSO]),
+    así que una fila con la regla vieja REGLA_TRUST_REPORTE_FALSO
+    ('trust_reporte_falso_confirmado', sin uso desde que
+    procesar_reporte_falso_confirmado migró a incidentes_service) ni
+    siquiera llegaría en `historial.data` de un Supabase real -- el
+    propio filtro la excluye antes de que Python la vea. Esta prueba
+    solo fija, a nivel de la función Python, que SI una fila así llegara
+    de todos modos (ej. inspección manual de datos históricos previos a
+    0051), _evaluar_racha_reportante no la reconoce como ruptura: los
+    datos históricos previos a la migración no se re-interpretan."""
+    filas = [{"regla": reputacion_service.REGLA_TRUST_REPORTE_VALIDADO} for _ in range(9)] + [
+        {"regla": reputacion_service.REGLA_TRUST_REPORTE_FALSO},  # regla vieja, ya sin uso
+    ]
+    tabla = make_query(execute_results=[
+        SimpleNamespace(data=filas),
+        SimpleNamespace(data=None, count=10),
+    ])
+    supabase = MagicMock()
+    supabase.table.return_value = tabla
+
+    with (
+        patch.object(reputacion_service, "supabase", supabase),
+        patch.object(reputacion_service, "ajustar_trust_score") as mock_ajustar,
+    ):
+        reputacion_service._evaluar_racha_reportante("user-1")
+
+    # La regla vieja no se detecta -- la racha se otorga igual, como si
+    # esa fila fuera un reporte válido más. Comportamiento aceptado, no
+    # deseado activamente: no hay forma de que ocurra con datos nuevos.
+    mock_ajustar.assert_called_once()
 
 
 # ─── procesar_reporte_valido ───────────────────────────────────────────
