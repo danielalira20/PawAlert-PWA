@@ -77,6 +77,18 @@ TRUST_LIMITE_INCREMENTO_MES_REPORTANTE = 15
 # desactualizado.
 TRUST_REDUCCION_FALSO_CONFIRMADO = 25
 
+# Reglas del voluntario interno (Persona 2). Estos valores provienen de
+# la propuesta aprobada por el equipo. Los puntos de enganche se mantienen
+# aquí para que los endpoints solo notifiquen el evento confirmado y no
+# dupliquen reglas de gamificación.
+REGLA_BUSQUEDA_DOCUMENTADA_INTERNA = "busqueda_documentada_interna"
+REGLA_TRUST_BUSQUEDA_DOCUMENTADA_INTERNA = "trust_busqueda_documentada_interna"
+REGLA_LLEGADA_REFUGIO_INTERNA = "llegada_refugio_interna"
+PUNTOS_BUSQUEDA_DOCUMENTADA_INTERNA = 15
+TRUST_BUSQUEDA_DOCUMENTADA_INTERNA = 2
+PUNTOS_LLEGADA_REFUGIO_INTERNA = 5
+TRUST_LIMITE_INCREMENTO_MES_VOLUNTARIO = 20
+
 # conclusion es texto libre de UI (OPCIONES_CIERRE en AssociationStatusScreen.tsx
 # / StaffAsignacionScreen.tsx), sin catálogo en backend. Comparar contra esto
 # es un riesgo aceptado temporalmente — ver TODO arriba.
@@ -89,6 +101,8 @@ CONCLUSIONES_VALIDAS = {
 
 TIPO_ORIGEN_REPORTE = "reporte"
 TIPO_ORIGEN_MODERACION = "moderacion"
+TIPO_ORIGEN_BUSQUEDA = "busqueda_no_localizado"
+TIPO_ORIGEN_HITO_RESCATE = "hito_rescate"
 
 
 # ============================================================
@@ -351,8 +365,42 @@ def _upsert_insignia(usuario_id: str, rol: str, codigo: str, nivel: str | None, 
 
 
 # ============================================================
-# Reglas específicas del reportante — puntos de enganche reales.
+# Reglas específicas por rol — puntos de enganche reales.
 # ============================================================
+
+def procesar_busqueda_documentada_interna(busqueda_id: str, usuario_id: str | None) -> None:
+    """Premia una búsqueda documentada de voluntario interno una vez que
+    la asociación o staff resolvió el registro pendiente. La búsqueda es
+    el evento idempotente, por lo que reintentar la resolución no duplica
+    puntos ni Trust Score."""
+    if not usuario_id:
+        return
+
+    otorgar_puntos(
+        usuario_id, ROL_VOLUNTARIO_INTERNO, REGLA_BUSQUEDA_DOCUMENTADA_INTERNA,
+        TIPO_ORIGEN_BUSQUEDA, busqueda_id, PUNTOS_BUSQUEDA_DOCUMENTADA_INTERNA,
+    )
+    ajustar_trust_score(
+        usuario_id, ROL_VOLUNTARIO_INTERNO, "incremento",
+        TRUST_BUSQUEDA_DOCUMENTADA_INTERNA,
+        REGLA_TRUST_BUSQUEDA_DOCUMENTADA_INTERNA,
+        "Búsqueda documentada validada por la asociación",
+        TIPO_ORIGEN_BUSQUEDA, busqueda_id,
+        limite_incremento_mes=TRUST_LIMITE_INCREMENTO_MES_VOLUNTARIO,
+    )
+
+
+def procesar_llegada_refugio_interna(reporte_id: str, usuario_id: str | None) -> None:
+    """Otorga el incentivo por una llegada al refugio ya comprobada por
+    las validaciones operativas del hito (foto, GPS y cercanía). No cambia
+    Trust Score porque la propuesta aprobada solo asigna puntos aquí."""
+    if not usuario_id:
+        return
+
+    otorgar_puntos(
+        usuario_id, ROL_VOLUNTARIO_INTERNO, REGLA_LLEGADA_REFUGIO_INTERNA,
+        TIPO_ORIGEN_HITO_RESCATE, reporte_id, PUNTOS_LLEGADA_REFUGIO_INTERNA,
+    )
 
 def procesar_reporte_valido(reporte_id: str, usuario_id: str | None) -> None:
     """Punto de enganche: aceptación temprana (_aceptar_asignacion en

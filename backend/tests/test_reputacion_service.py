@@ -456,6 +456,72 @@ def test_procesar_reporte_valido_no_otorga_nada_si_usuario_id_es_none():
     supabase.table.assert_not_called()
 
 
+# ─── reglas de voluntario interno ───────────────────────────────────────
+
+def test_procesar_busqueda_documentada_interna_otorga_puntos_y_trust():
+    with (
+        patch.object(reputacion_service, "otorgar_puntos") as mock_otorgar,
+        patch.object(reputacion_service, "ajustar_trust_score") as mock_ajustar,
+    ):
+        reputacion_service.procesar_busqueda_documentada_interna("busqueda-1", "user-1")
+
+    mock_otorgar.assert_called_once_with(
+        "user-1",
+        reputacion_service.ROL_VOLUNTARIO_INTERNO,
+        reputacion_service.REGLA_BUSQUEDA_DOCUMENTADA_INTERNA,
+        reputacion_service.TIPO_ORIGEN_BUSQUEDA,
+        "busqueda-1",
+        reputacion_service.PUNTOS_BUSQUEDA_DOCUMENTADA_INTERNA,
+    )
+    mock_ajustar.assert_called_once_with(
+        "user-1",
+        reputacion_service.ROL_VOLUNTARIO_INTERNO,
+        "incremento",
+        reputacion_service.TRUST_BUSQUEDA_DOCUMENTADA_INTERNA,
+        reputacion_service.REGLA_TRUST_BUSQUEDA_DOCUMENTADA_INTERNA,
+        "Búsqueda documentada validada por la asociación",
+        reputacion_service.TIPO_ORIGEN_BUSQUEDA,
+        "busqueda-1",
+        limite_incremento_mes=reputacion_service.TRUST_LIMITE_INCREMENTO_MES_VOLUNTARIO,
+    )
+
+
+def test_procesar_busqueda_documentada_interna_ignora_usuario_ausente():
+    with (
+        patch.object(reputacion_service, "otorgar_puntos") as mock_otorgar,
+        patch.object(reputacion_service, "ajustar_trust_score") as mock_ajustar,
+    ):
+        reputacion_service.procesar_busqueda_documentada_interna("busqueda-1", None)
+
+    mock_otorgar.assert_not_called()
+    mock_ajustar.assert_not_called()
+
+
+def test_procesar_llegada_refugio_interna_solo_otorga_puntos():
+    with (
+        patch.object(reputacion_service, "otorgar_puntos") as mock_otorgar,
+        patch.object(reputacion_service, "ajustar_trust_score") as mock_ajustar,
+    ):
+        reputacion_service.procesar_llegada_refugio_interna("reporte-1", "user-1")
+
+    mock_otorgar.assert_called_once_with(
+        "user-1",
+        reputacion_service.ROL_VOLUNTARIO_INTERNO,
+        reputacion_service.REGLA_LLEGADA_REFUGIO_INTERNA,
+        reputacion_service.TIPO_ORIGEN_HITO_RESCATE,
+        "reporte-1",
+        reputacion_service.PUNTOS_LLEGADA_REFUGIO_INTERNA,
+    )
+    mock_ajustar.assert_not_called()
+
+
+def test_procesar_llegada_refugio_interna_ignora_usuario_ausente():
+    with patch.object(reputacion_service, "otorgar_puntos") as mock_otorgar:
+        reputacion_service.procesar_llegada_refugio_interna("reporte-1", None)
+
+    mock_otorgar.assert_not_called()
+
+
 # ─── procesar_cierre_reporte ────────────────────────────────────────────
 
 def test_procesar_cierre_reporte_no_ajusta_trust_score_si_conclusion_invalida():
