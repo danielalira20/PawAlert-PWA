@@ -23,6 +23,7 @@ from app.models.custody import (
 from app.services.report_service import registrar_historial
 from app.services.email_service import email_duda_regional, email_respuesta_voluntario
 from app.utils.animal_shaping import shape_animal_embed, shape_animal_response
+from app.services.reputacion_service import otorgar_puntos, ajustar_trust_score
 
 
 router = APIRouter()
@@ -1047,6 +1048,61 @@ def validar_seguimiento(
         descripcion="Asociación revisó evidencia de custodia",
         datos_extra={"seguimiento_id": seguimiento_id, "decision": body.decision},
     )
+
+    # --- GAMIFICACIÓN: Puntos por seguimiento de custodia ---
+    if estado == "validado":
+        # 1. Obtener al voluntario externo dueño de esta custodia
+        voluntario_query = supabase_admin.table("voluntarios").select(
+            "usuario_id"
+        ).eq("id", custodia["voluntario_id"]).limit(1).execute()
+        
+        if voluntario_query.data:
+            usuario_id_postulante = voluntario_query.data[0]["usuario_id"]
+
+            try:
+                # 2. Otorgar +10 puntos (Máximo 4 por custodia al mes)
+                otorgar_puntos(
+                    usuario_id=usuario_id_postulante,
+                    rol="voluntario_externo",
+                    regla=f"seguimiento_custodia_{custodia.get('reporte_id', 'desconocido')}",
+                    tipo_origen="seguimiento_resguardo",
+                    evento_origen_id=seguimiento_id,
+                    puntos=10,
+                    limite_ocurrencias_mes=4,
+                )
+
+                # 3. Otorgar +1 Trust Score si se entregó a tiempo
+                seguimiento_data = supabase_admin.table("seguimientos_resguardo").select(
+                    "creado_at, proximo_seguimiento_at"
+                ).eq("id", seguimiento_id).limit(1).execute()
+                
+                if seguimiento_data.data:
+                    creado_at_str = seguimiento_data.data[0].get("creado_at")
+                    proximo_at_str = seguimiento_data.data[0].get("proximo_seguimiento_at")
+                    
+                    if creado_at_str and proximo_at_str:
+                        creado_at = datetime.fromisoformat(str(creado_at_str).replace("Z", "+00:00"))
+                        proximo_at = datetime.fromisoformat(str(proximo_at_str).replace("Z", "+00:00"))
+                        
+                        # Si se entregó antes de que venciera, premia la puntualidad
+                        if creado_at <= proximo_at:
+                            ajustar_trust_score(
+                                usuario_id=usuario_id_postulante,
+                                rol="voluntario_externo",
+                                tipo="incremento",
+                                valor=1,
+                                regla="trust_seguimiento_puntual",
+                                motivo="Seguimiento entregado a tiempo",
+                                tipo_origen="seguimiento_resguardo",
+                                evento_origen_id=seguimiento_id,
+                                limite_incremento_mes=20,
+                            )
+                
+                # TODO: Aquí evaluaremos la insignia "Hogar protector"
+
+            except Exception as e:
+                print(f"[WARN] Error en gamificación de seguimiento {seguimiento_id}: {e}")
+
     return {"validacion": insertado.data[0], "estado_validacion": estado}
 
 
