@@ -67,7 +67,8 @@ def test_cambio_estado_permite_a_asociacion_duena(make_query):
 def test_cerrar_caso_registra_conclusion_notas_y_usuario(make_query):
     tablas = {
         "reportes": make_query(data=[{
-            "id": "rep-1", "estado_reporte": "rescatado", "usuario_id": None,
+            "id": "rep-1", "estado_reporte": "rescatado",
+            "usuario_id": "user-reportante-1",
             "updated_at": "2026-07-23T12:00:00+00:00",
         }]),
         "reporte_estados": make_query(data=[{"id": "estado-cerrado"}]),
@@ -116,7 +117,7 @@ def test_cerrar_caso_registra_conclusion_notas_y_usuario(make_query):
     reputacion_supabase.rpc.assert_called_once_with(
         "ajustar_trust_score_atomico",
         {
-            "p_usuario_id": "user-aso-1",
+            "p_usuario_id": "user-reportante-1",
             "p_rol": "reportante",
             "p_tipo": "incremento",
             "p_valor": reputacion_service.TRUST_INCREMENTO_DESENLACE,

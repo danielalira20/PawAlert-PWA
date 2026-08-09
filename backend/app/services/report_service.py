@@ -618,7 +618,8 @@ async def cambiar_estado_reporte(
     if not resultado.data:
         raise HTTPException(status_code=404, detail="Reporte no encontrado")
 
-    estado_actual = resultado.data[0]["estado_reporte"]
+    reporte_actual = resultado.data[0]
+    estado_actual = reporte_actual["estado_reporte"]
 
     if nuevo_estado not in ESTADOS_VALIDOS:
         raise HTTPException(status_code=400, detail="Estado no válido")
@@ -671,7 +672,9 @@ async def cambiar_estado_reporte(
         )
         try:
             from app.services.reputacion_service import procesar_cierre_reporte
-            procesar_cierre_reporte(reporte_id, usuario_id, conclusion)
+            procesar_cierre_reporte(
+                reporte_id, reporte_actual.get("usuario_id"), conclusion,
+            )
         except Exception as e:
             print(f"[WARN] reputacion fallo en cambiar_estado_reporte (reporte={reporte_id}): {e}")
     else:
