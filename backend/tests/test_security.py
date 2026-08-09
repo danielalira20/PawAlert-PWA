@@ -163,6 +163,92 @@ def test_cerrar_caso_sin_foto_no_incluye_foto_url(make_query):
     assert kwargs["datos_extra"]["foto_url"] is None
 
 
+def test_cerrar_caso_premia_al_voluntario_interno_asignado(make_query):
+    tablas = {
+        "reportes": make_query(data=[{
+            "id": "rep-1",
+            "estado_reporte": "rescatado",
+            "usuario_id": "user-reportante-1",
+            "staff_asignado_id": "user-voluntario-1",
+            "updated_at": "2026-07-23T12:00:00+00:00",
+        }]),
+        "reporte_estados": make_query(data=[{"id": "estado-cerrado"}]),
+        "asignacion_estados": make_query(data=[{"id": "asignacion-completada"}]),
+        "reporte_asignaciones": make_query(data=[]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    usuarios = make_query(data=[{
+        "id": "user-voluntario-1",
+        "roles": {"nombre": "voluntario_interno"},
+    }])
+    supabase_admin = MagicMock()
+    supabase_admin.table.return_value = usuarios
+
+    with (
+        patch.object(report_service, "supabase", supabase),
+        patch.object(report_service, "supabase_admin", supabase_admin),
+        patch.object(report_service, "registrar_historial"),
+        patch.object(reputacion_service, "procesar_cierre_reporte"),
+        patch.object(
+            reputacion_service, "procesar_rescate_completado_interno"
+        ) as mock_rescate,
+    ):
+        import asyncio
+        resultado = asyncio.run(report_service.cambiar_estado_reporte(
+            "rep-1",
+            "cerrado",
+            conclusion="Animal rescatado y estable",
+            usuario_id="user-aso-1",
+        ))
+
+    assert resultado["estado"] == "cerrado"
+    mock_rescate.assert_called_once_with(
+        "rep-1", "user-voluntario-1", "Animal rescatado y estable"
+    )
+
+
+def test_cerrar_caso_de_staff_no_usa_regla_de_voluntario_interno(make_query):
+    tablas = {
+        "reportes": make_query(data=[{
+            "id": "rep-1",
+            "estado_reporte": "rescatado",
+            "usuario_id": None,
+            "staff_asignado_id": "user-staff-1",
+            "updated_at": "2026-07-23T12:00:00+00:00",
+        }]),
+        "reporte_estados": make_query(data=[{"id": "estado-cerrado"}]),
+        "asignacion_estados": make_query(data=[{"id": "asignacion-completada"}]),
+        "reporte_asignaciones": make_query(data=[]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    supabase_admin = MagicMock()
+    supabase_admin.table.return_value = make_query(data=[{
+        "id": "user-staff-1",
+        "roles": {"nombre": "staff"},
+    }])
+
+    with (
+        patch.object(report_service, "supabase", supabase),
+        patch.object(report_service, "supabase_admin", supabase_admin),
+        patch.object(report_service, "registrar_historial"),
+        patch.object(reputacion_service, "procesar_cierre_reporte"),
+        patch.object(
+            reputacion_service, "procesar_rescate_completado_interno"
+        ) as mock_rescate,
+    ):
+        import asyncio
+        asyncio.run(report_service.cambiar_estado_reporte(
+            "rep-1",
+            "cerrado",
+            conclusion="Animal rescatado y estable",
+            usuario_id="user-aso-1",
+        ))
+
+    mock_rescate.assert_not_called()
+
+
 def test_transicion_no_cerrado_mantiene_historial_generico(make_query):
     # Cualquier transición que no sea el cierre del caso debe seguir
     # exactamente igual que antes: tipo_evento genérico y usuario_id=None,

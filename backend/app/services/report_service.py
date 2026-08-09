@@ -612,7 +612,7 @@ async def cambiar_estado_reporte(
     foto_url: str | None = None,
 ) -> dict:
     resultado = supabase.table("reportes").select(
-        "id, estado_reporte, usuario_id"
+        "id, estado_reporte, usuario_id, staff_asignado_id"
     ).eq("id", reporte_id).execute()
 
     if not resultado.data:
@@ -677,6 +677,29 @@ async def cambiar_estado_reporte(
             )
         except Exception as e:
             print(f"[WARN] reputacion fallo en cambiar_estado_reporte (reporte={reporte_id}): {e}")
+
+        voluntario_id = reporte_actual.get("staff_asignado_id")
+        if voluntario_id:
+            try:
+                responsable = supabase_admin.table("usuarios").select(
+                    "id, roles(nombre)"
+                ).eq("id", voluntario_id).limit(1).execute()
+                rol_responsable = (
+                    (responsable.data[0].get("roles") or {}).get("nombre")
+                    if responsable.data else None
+                )
+                if rol_responsable == "voluntario_interno":
+                    from app.services.reputacion_service import (
+                        procesar_rescate_completado_interno,
+                    )
+                    procesar_rescate_completado_interno(
+                        reporte_id, voluntario_id, conclusion,
+                    )
+            except Exception as e:
+                print(
+                    "[WARN] reputacion del rescate interno fallo "
+                    f"(reporte={reporte_id}): {e}"
+                )
     else:
         registrar_historial(
             reporte_id=reporte_id,

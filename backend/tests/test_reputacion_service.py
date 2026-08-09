@@ -586,7 +586,7 @@ def test_rescate_completado_interno_otorga_cuarenta_puntos_y_cinco_trust():
         patch.object(reputacion_service, "ajustar_trust_score") as mock_ajustar,
     ):
         reputacion_service.procesar_rescate_completado_interno(
-            "reporte-1", "user-1"
+            "reporte-1", "user-1", "Animal rescatado y estable"
         )
 
     mock_otorgar.assert_called_once_with(
@@ -608,6 +608,19 @@ def test_rescate_completado_interno_otorga_cuarenta_puntos_y_cinco_trust():
         "reporte-1",
         limite_incremento_mes=reputacion_service.TRUST_LIMITE_INCREMENTO_MES_VOLUNTARIO,
     )
+
+
+def test_rescate_interno_sin_conclusion_valida_no_otorga_reputacion():
+    with (
+        patch.object(reputacion_service, "otorgar_puntos") as mock_otorgar,
+        patch.object(reputacion_service, "ajustar_trust_score") as mock_ajustar,
+    ):
+        reputacion_service.procesar_rescate_completado_interno(
+            "reporte-1", "user-1", None
+        )
+
+    mock_otorgar.assert_not_called()
+    mock_ajustar.assert_not_called()
 
 
 # ─── procesar_cierre_reporte ────────────────────────────────────────────

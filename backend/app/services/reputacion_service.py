@@ -464,10 +464,11 @@ def procesar_respuesta_propuesta_interna(
 def procesar_rescate_completado_interno(
     reporte_id: str,
     usuario_id: str | None,
+    conclusion: str | None,
 ) -> None:
     """Premia al voluntario interno originalmente asignado cuando la
     asociación cierra un caso real y documentado."""
-    if not usuario_id:
+    if not usuario_id or conclusion not in CONCLUSIONES_VALIDAS:
         return
 
     otorgar_puntos(
