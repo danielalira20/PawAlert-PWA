@@ -24,6 +24,8 @@ import { AdminSupervisionCard } from './AdminSupervisionCard';
 import { StaffImpactStats } from './StaffImpactStats';
 import { AliadoImpactStats } from './AliadoImpactStats';
 import { OperationalAvailabilityCard } from './OperationalAvailabilityCard';
+import { SaldoReputacionCard } from './SaldoReputacionCard';
+import { ImpactoInsigniasToggle } from './ImpactoInsigniasToggle';
 
 const DESKTOP_BREAKPOINT = 900;
 
@@ -79,6 +81,18 @@ export function LoggedInProfile({
   const esVoluntarioInterno = user?.rol === 'voluntario_interno';
   const esVoluntarioExterno = user?.rol === 'voluntario_externo';
   const esVoluntarioActivo = esVoluntarioInterno || esVoluntarioExterno;
+
+  // Reputación (Persona 1): solo reportante y voluntario activo participan
+  // del sistema de puntos/trust score -- asociación/admin/staff no tienen
+  // rol de gamificación (ver reputacion_service.py: ROL_REPORTANTE /
+  // ROL_VOLUNTARIO_INTERNO / ROL_VOLUNTARIO_EXTERNO, sin equivalente para
+  // esos tres), así que el bloque de saldo no se les muestra.
+  const rolParaSaldo = esVoluntarioInterno
+    ? 'voluntario_interno'
+    : esVoluntarioExterno
+      ? 'voluntario_externo'
+      : 'reportante';
+  const muestraSaldoReputacion = !esAdmin && !esAsociacion && !esStaff;
 
   const [tieneCapacidades, setTieneCapacidades] = useState<boolean | null>(null);
   const [tienePerfilVoluntario, setTienePerfilVoluntario] = useState<boolean | null>(null);
@@ -196,8 +210,17 @@ useFocusEffect(
     />
   ) : esStaff ? (
     <StaffImpactStats impacto={impactoStaff} isLoading={isLoadingStaff} />
-  ) : (
+  ) : esVoluntarioActivo ? (
+    // esVoluntarioActivo aún no tiene su propia tarjeta de impacto, cae al
+    // default (ReporterImpactStats) -- pero SIN el toggle de insignias,
+    // porque ReportanteInsigniasCard/insignias de 'reportante' no le
+    // pertenecen a un voluntario interno/externo (rol de gamificación
+    // distinto, ver reputacion_service.py).
     <ReporterImpactStats impacto={impacto} isLoading={isLoadingReportes} />
+  ) : (
+    <ImpactoInsigniasToggle
+      impactoElement={<ReporterImpactStats impacto={impacto} isLoading={isLoadingReportes} />}
+    />
   );
 
   // Segundo bloque INDEPENDIENTE del ternario de arriba — se muestra ADEMÁS
@@ -374,6 +397,12 @@ useFocusEffect(
                     <Text style={styles.emailOnWhite}>{user.email}</Text>
                   </View>
 
+                  {muestraSaldoReputacion && (
+                    <View style={styles.sectionPadding}>
+                      <SaldoReputacionCard rol={rolParaSaldo} />
+                    </View>
+                  )}
+
                   <View style={styles.divider} />
 
                   <View style={styles.sectionPadding}>
@@ -445,6 +474,12 @@ useFocusEffect(
       </LinearGradient>
 
       <View style={styles.mobileCentered}>
+        {muestraSaldoReputacion && (
+          <View style={styles.section}>
+            <SaldoReputacionCard rol={rolParaSaldo} />
+          </View>
+        )}
+
         <View style={styles.section}>
           <AccountDataCard telefono={user.telefono} email={user.email} />
         </View>
