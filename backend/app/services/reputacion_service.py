@@ -110,6 +110,36 @@ CONCLUSIONES_VALIDAS = {
 
 TIPO_ORIGEN_REPORTE = "reporte"
 TIPO_ORIGEN_MODERACION = "moderacion"
+
+# Fuente única de verdad para "reporte NO válido" — usada por el job
+# de 7 días y por el conteo de insignias (en vivo y en el backfill
+# histórico).
+#
+# BUG 1 CORREGIDO (esta revisión): la lista original incluía
+# "cancelado" (nombre viejo) en vez de "cancelado_por_reportante".
+#
+# BUG 2 CORREGIDO (esta revisión, más grave): la lista también incluía
+# "rechazado" — valor que NUNCA existió en el enum real
+# estado_reporte_enum de Postgres (confirmado contra la base real:
+# valores válidos son pendiente/asignado/en_atencion/cerrado/en_camino/
+# sin_cobertura/rescatado/duplicado/muerto/duplicado_vinculable/
+# duplicado_informativo/cancelado_por_reportante). Como es un enum
+# tipado, un literal invalido no "no hace match" — revienta la query
+# completa con 22P02 para CUALQUIER usuario, siempre. Esto dejó
+# evaluar_reportes_validados_por_tiempo() (el job de 7 dias, ya
+# conectado a /internal/gamificacion/run) fallando con 500 desde que se
+# desplegó — confirmado: cero filas con regla='reporte_valido' en todo
+# movimientos_puntos.
+#
+# El concepto de "reporte rechazado por moderación" nunca vivió en
+# estado_reporte — vive en estado_moderacion (columna de texto libre
+# aparte, ver admin.py::resolver_moderacion_reporte). Por eso ya NO
+# está en esta lista: se filtra aparte, con un .neq("estado_moderacion",
+# "rechazado") adicional en cada consulta que use esta constante — dos
+# columnas, dos condiciones, nunca mezcladas en un solo NOT IN.
+ESTADOS_EXCLUIDOS_REPORTE_VALIDO = [
+    "duplicado", "duplicado_vinculable", "duplicado_informativo", "cancelado_por_reportante",
+]
 TIPO_ORIGEN_BUSQUEDA = "busqueda_no_localizado"
 TIPO_ORIGEN_HITO_RESCATE = "hito_rescate"
 TIPO_ORIGEN_POSTULACION = "postulacion"
@@ -191,7 +221,7 @@ def devolver_puntos(
     saldo disponible. Para "confirmar" (la reserva se vuelve
     definitiva), usar confirmar_puntos_reservados en su lugar, nunca
     esta funcion."""
-
+    
     try:
         resultado = supabase.rpc("devolver_puntos_atomico", {
             "p_usuario_id": usuario_id,
@@ -302,14 +332,14 @@ def confirmar_puntos_reservados(
     con exito). No resta saldo de nuevo -- ya se resto al reservar, esto
     solo deja constancia de auditoria (tipo_movimiento='confirmado',
     puntos=0).
- 
+
     Pasa la MISMA `regla` y el MISMO `evento_origen_id` que usaste en
     reservar_puntos para esta reserva -- la RPC internamente le agrega
     un sufijo fijo antes de guardarla (desde 0053), asi que nunca choca
     con la fila de la reserva original. No hace falta que inventes una
     regla distinta ni que la recuerdes despues; es imposible
     equivocarse en este punto por diseño.
- 
+
     "Liberar puntos reservados" (el otro caso, cuando el QR expira o se
     cancela sin usarse) NO es esta funcion -- es devolver_puntos, ya
     existente: revierte la reserva y el monto regresa al saldo
@@ -346,18 +376,27 @@ def evaluar_insignias_reportante(usuario_id: str) -> list[dict]:
     """Vigía comunitario (1/5/15 reportes válidos), Impacto real (3
     reportes propios con desenlace válido). Sigue el mismo patrón que
     evaluar_insignias_aliado (Miguel): calcula desde las tablas de
-    origen, no desde movimientos_puntos, y hace upsert solo de lo que
-    cambió. Evidencia confiable queda pendiente (ver nota abajo)."""
+    origen, no desde un ledger derivado, y hace upsert solo de lo que
+    cambió. Evidencia confiable queda pendiente (ver nota abajo).
+
+    Cuenta directo de `reportes`/`historial_reporte`, NO de
+    movimientos_puntos/trust_score_movimientos como antes. Motivo: los
+    puntos solo se generan desde el lanzamiento de la gamificación
+    (regla ya acordada), pero las insignias sí deben reflejar el
+    historial completo del usuario, incluyendo reportes de antes de que
+    el motor de puntos existiera. Contar desde el ledger derivado dejaba
+    "atrasadas" a las cuentas viejas — este cambio, junto con
+    reevaluar_insignias_historicas_reportante() (backfill de una sola
+    vez), lo corrige."""
     try:
         actualizadas: list[dict] = []
 
         conteo_validos = (
-            supabase.table("movimientos_puntos")
+            supabase.table("reportes")
             .select("id", count="exact")
             .eq("usuario_id", usuario_id)
-            .eq("rol", ROL_REPORTANTE)
-            .eq("regla", REGLA_REPORTE_VALIDO)
-            .eq("tipo_movimiento", "otorgado")
+            .not_.in_("estado_reporte", ESTADOS_EXCLUIDOS_REPORTE_VALIDO)
+            .neq("estado_moderacion", "rechazado")
             .execute()
         )
         total_validos = conteo_validos.count or 0
@@ -371,17 +410,12 @@ def evaluar_insignias_reportante(usuario_id: str) -> list[dict]:
             if fila:
                 actualizadas.append(fila)
 
-        conteo_desenlace = (
-            supabase.table("trust_score_movimientos")
-            .select("id", count="exact")
-            .eq("usuario_id", usuario_id)
-            .eq("rol", ROL_REPORTANTE)
-            .eq("regla", REGLA_TRUST_DESENLACE)
-            .execute()
-        )
-        total_desenlaces = conteo_desenlace.count or 0
+        total_desenlaces = _contar_desenlaces_validos(usuario_id)
         if total_desenlaces >= 3:
-            fila = _upsert_insignia(usuario_id, ROL_REPORTANTE, "impacto_real", "oro", total_desenlaces)
+            # Insignia fija: nivel=None, no cobre/plata/oro. (Antes tenía
+            # "oro" hardcodeado por error — mezclaba el concepto de
+            # insignia fija con el de insignia dinámica.)
+            fila = _upsert_insignia(usuario_id, ROL_REPORTANTE, "impacto_real", None, total_desenlaces)
             if fila:
                 actualizadas.append(fila)
 
@@ -397,7 +431,41 @@ def evaluar_insignias_reportante(usuario_id: str) -> list[dict]:
         return []
 
 
-def _upsert_insignia(usuario_id: str, rol: str, codigo: str, nivel: str | None, progreso: int) -> dict | None:
+def _contar_desenlaces_validos(usuario_id: str) -> int:
+    """Cuenta reportes PROPIOS de este usuario que llegaron a un
+    desenlace válido (evento historial_reporte tipo_evento='caso_cerrado'
+    con datos_extra.conclusion en CONCLUSIONES_VALIDAS). La conclusión
+    vive en historial_reporte, no en una columna de reportes."""
+    reportes_propios = (
+        supabase.table("reportes").select("id").eq("usuario_id", usuario_id).execute()
+    )
+    ids = [r["id"] for r in (reportes_propios.data or [])]
+    if not ids:
+        return 0
+
+    eventos = (
+        supabase.table("historial_reporte")
+        .select("reporte_id, datos_extra")
+        .eq("tipo_evento", "caso_cerrado")
+        .in_("reporte_id", ids)
+        .execute()
+    )
+    reportes_con_desenlace_valido = {
+        e["reporte_id"] for e in (eventos.data or [])
+        if (e.get("datos_extra") or {}).get("conclusion") in CONCLUSIONES_VALIDAS
+    }
+    return len(reportes_con_desenlace_valido)
+
+
+def _upsert_insignia(
+    usuario_id: str, rol: str, codigo: str, nivel: str | None, progreso: int,
+    obtenido_at: str | None = None, mejorado_at: str | None = None,
+) -> dict | None:
+    """obtenido_at/mejorado_at explícitos son para
+    reevaluar_insignias_historicas_reportante (backfill con fechas
+    reales del pasado) — el camino en vivo (evaluar_insignias_reportante,
+    llamado tras un evento nuevo) no los pasa, así que sigue usando
+    "ahora" exactamente como antes."""
     existente = (
         supabase.table("insignias")
         .select("*")
@@ -407,6 +475,8 @@ def _upsert_insignia(usuario_id: str, rol: str, codigo: str, nivel: str | None, 
         .execute()
     )
     ahora = datetime.now(timezone.utc).isoformat()
+    fecha_obtencion = obtenido_at or ahora
+    fecha_mejora = mejorado_at or ahora
     if existente.data:
         fila = existente.data[0]
         if fila.get("nivel") == nivel and fila.get("progreso") == progreso:
@@ -416,7 +486,7 @@ def _upsert_insignia(usuario_id: str, rol: str, codigo: str, nivel: str | None, 
             .update({
                 "nivel": nivel,
                 "progreso": progreso,
-                "mejorado_at": ahora if nivel != fila.get("nivel") else fila.get("mejorado_at"),
+                "mejorado_at": fecha_mejora if nivel != fila.get("nivel") else fila.get("mejorado_at"),
             })
             .eq("usuario_id", usuario_id).eq("rol", rol).eq("codigo_insignia", codigo)
             .execute()
@@ -426,7 +496,8 @@ def _upsert_insignia(usuario_id: str, rol: str, codigo: str, nivel: str | None, 
         supabase.table("insignias")
         .insert({
             "usuario_id": usuario_id, "rol": rol, "codigo_insignia": codigo,
-            "nivel": nivel, "progreso": progreso, "obtenido_at": ahora,
+            "nivel": nivel, "progreso": progreso,
+            "obtenido_at": fecha_obtencion, "mejorado_at": fecha_mejora,
         })
         .execute()
     )
@@ -772,24 +843,39 @@ def evaluar_reportes_validados_por_tiempo() -> dict:
     """Job de los 7 días — llamado desde POST /internal/gamificacion/run.
 
     Busca reportes con más de 7 días desde su creación, que no hayan
-    sido rechazados/marcados falsos/duplicados/cancelados, y que todavía
-    no tengan un movimiento REGLA_REPORTE_VALIDO. procesar_reporte_valido
-    ya es idempotente vía el UNIQUE de la RPC, así que aunque este job
-    revise un reporte que ya fue pagado por la aceptación temprana,
-    simplemente no duplica nada.
+    sido marcados falsos/duplicados/cancelados, y que todavía no tengan
+    un movimiento REGLA_REPORTE_VALIDO. procesar_reporte_valido ya es
+    idempotente vía el UNIQUE de la RPC, así que aunque este job revise
+    un reporte que ya fue pagado por la aceptación temprana, simplemente
+    no duplica nada.
+
+    BUG CORREGIDO (esta revisión): la consulta reventaba con 22P02 para
+    TODO usuario, siempre, porque ESTADOS_EXCLUIDOS_REPORTE_VALIDO tenía
+    un valor ("rechazado") que nunca existió en el enum real de
+    estado_reporte, y nada capturaba esa excepción — el endpoint
+    devolvía 500 en cada corrida del cron desde que se desplegó. Ahora:
+    (1) la constante ya no tiene el valor inválido, (2) se agregó el
+    filtro separado de estado_moderacion (columna distinta, ver
+    ESTADOS_EXCLUIDOS_REPORTE_VALIDO), y (3) la consulta ahora está
+    protegida — un error inesperado aquí ya no debe poder tumbar el
+    endpoint completo sin control, mismo principio de "la gamificación
+    nunca debe romper el flujo" aplicado también al propio job.
     """
     from datetime import timedelta
 
     limite = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
-    candidatos = (
-        supabase.table("reportes")
-        .select("id, usuario_id, estado_reporte, created_at")
-        .lt("created_at", limite)
-        .not_.in_("estado_reporte", [
-            "rechazado", "cancelado", "duplicado_vinculable", "duplicado_informativo",
-        ])
-        .execute()
-    )
+    try:
+        candidatos = (
+            supabase.table("reportes")
+            .select("id, usuario_id, estado_reporte, created_at")
+            .lt("created_at", limite)
+            .not_.in_("estado_reporte", ESTADOS_EXCLUIDOS_REPORTE_VALIDO)
+            .neq("estado_moderacion", "rechazado")
+            .execute()
+        )
+    except Exception as e:
+        print(f"[WARN] evaluar_reportes_validados_por_tiempo fallo al consultar candidatos: {e}")
+        return {"revisados": 0, "procesados": 0, "error": str(e)}
 
     procesados = 0
     for rep in (candidatos.data or []):
@@ -800,3 +886,141 @@ def evaluar_reportes_validados_por_tiempo() -> dict:
             print(f"[WARN] evaluar_reportes_validados_por_tiempo fallo en reporte {rep['id']}: {e}")
 
     return {"revisados": len(candidatos.data or []), "procesados": procesados}
+
+
+def reevaluar_insignias_historicas_reportante(dry_run: bool = True) -> dict:
+    """Backfill de reportante, incluyendo usuarios de antes de que el
+    sistema de gamificación existiera. Idempotente (seguro de correr
+    más de una vez).
+
+    dry_run=True (DEFAULT, por seguridad): NO escribe nada. Calcula y
+    retorna exactamente qué insignias se crearían/actualizarían, con
+    sus fechas, para que se pueda revisar antes de aplicar de verdad.
+    dry_run=False: aplica los cambios de verdad, vía _upsert_insignia.
+
+    Por qué hacía falta: evaluar_insignias_reportante ya cuenta directo
+    de reportes/historial_reporte (no de movimientos_puntos), así que
+    técnicamente llamarla para cada usuario ya bastaría. Esta función
+    hace eso, PERO además calcula fechas realistas de obtenido_at/
+    mejorado_at (la fecha del reporte/evento real que cruzó el umbral),
+    en vez de "ahora mismo" — evaluar_insignias_reportante normal
+    siempre usa la fecha actual, correcto para el camino en vivo, pero
+    incorrecto para reconstruir historial.
+
+    Aproximación documentada: se usa reportes.created_at como fecha de
+    obtención de "Vigía comunitario" (fecha del 1er/5to/15to reporte
+    válido) — es una aproximación al momento real de validación
+    (aceptación o job de 7 días), no la fecha exacta de validación en
+    sí, pero es razonable para un backfill de una sola vez. Para
+    "Impacto real" sí se usa la fecha exacta del evento
+    historial_reporte de cierre (más preciso, esa fecha existe tal
+    cual).
+
+    NO toca trust_score/movimientos_puntos — solo escribe en
+    `insignias`, por decisión explícita (los puntos/trust score son
+    estrictamente hacia adelante, las insignias son la única excepción
+    documentada para usar historial anterior).
+    """
+    usuarios_resp = (
+        supabase.table("reportes")
+        .select("usuario_id")
+        .not_.is_("usuario_id", "null")
+        .execute()
+    )
+    usuarios = sorted({r["usuario_id"] for r in (usuarios_resp.data or [])})
+
+    if dry_run:
+        candidatos_totales: list[dict] = []
+        for usuario_id in usuarios:
+            try:
+                candidatos_totales.extend(_calcular_candidatos_insignias_historicas(usuario_id))
+            except Exception as e:
+                print(f"[WARN] reevaluar_insignias_historicas_reportante (dry_run) fallo en usuario {usuario_id}: {e}")
+        return {
+            "modo": "dry_run",
+            "usuarios_revisados": len(usuarios),
+            "insignias_que_se_crearian_o_actualizarian": len(candidatos_totales),
+            "detalle": candidatos_totales,
+        }
+
+    actualizados = 0
+    for usuario_id in usuarios:
+        try:
+            cambios = _aplicar_insignias_historicas_usuario(usuario_id)
+            if cambios:
+                actualizados += 1
+        except Exception as e:
+            print(f"[WARN] reevaluar_insignias_historicas_reportante fallo en usuario {usuario_id}: {e}")
+
+    return {"modo": "real", "usuarios_revisados": len(usuarios), "usuarios_actualizados": actualizados}
+
+
+def _calcular_candidatos_insignias_historicas(usuario_id: str) -> list[dict]:
+    """Calcula qué insignias le corresponderían a este usuario según su
+    historial, SIN escribir nada — usada tanto por el modo dry_run como
+    por el backfill real (que solo agrega el paso de escritura encima)."""
+    candidatos: list[dict] = []
+
+    reportes_validos = (
+        supabase.table("reportes")
+        .select("id, created_at")
+        .eq("usuario_id", usuario_id)
+        .not_.in_("estado_reporte", ESTADOS_EXCLUIDOS_REPORTE_VALIDO)
+        .neq("estado_moderacion", "rechazado")
+        .order("created_at")
+        .execute()
+    ).data or []
+
+    total = len(reportes_validos)
+    nivel = "oro" if total >= 15 else "plata" if total >= 5 else "cobre" if total >= 1 else None
+    if nivel:
+        indice_umbral = 15 if nivel == "oro" else 5 if nivel == "plata" else 1
+        candidatos.append({
+            "usuario_id": usuario_id, "rol": ROL_REPORTANTE, "codigo_insignia": "vigia_comunitario",
+            "nivel": nivel, "progreso": total,
+            "obtenido_at": reportes_validos[0]["created_at"],
+            "mejorado_at": reportes_validos[indice_umbral - 1]["created_at"],
+        })
+
+    reportes_propios = (
+        supabase.table("reportes").select("id").eq("usuario_id", usuario_id).execute()
+    ).data or []
+    ids_propios = [r["id"] for r in reportes_propios]
+    if ids_propios:
+        eventos = (
+            supabase.table("historial_reporte")
+            .select("reporte_id, datos_extra, created_at")
+            .eq("tipo_evento", "caso_cerrado")
+            .in_("reporte_id", ids_propios)
+            .order("created_at")
+            .execute()
+        ).data or []
+        vistos: set = set()
+        fechas_validas: list[str] = []
+        for evento in eventos:
+            conclusion = (evento.get("datos_extra") or {}).get("conclusion")
+            if conclusion in CONCLUSIONES_VALIDAS and evento["reporte_id"] not in vistos:
+                vistos.add(evento["reporte_id"])
+                fechas_validas.append(evento["created_at"])
+        if len(fechas_validas) >= 3:
+            candidatos.append({
+                "usuario_id": usuario_id, "rol": ROL_REPORTANTE, "codigo_insignia": "impacto_real",
+                "nivel": None, "progreso": len(fechas_validas),
+                "obtenido_at": fechas_validas[2], "mejorado_at": fechas_validas[2],
+            })
+
+    return candidatos
+
+
+def _aplicar_insignias_historicas_usuario(usuario_id: str) -> list[dict]:
+    """Escribe de verdad — mismo cálculo de arriba, seguido del upsert real."""
+    actualizadas: list[dict] = []
+    for candidato in _calcular_candidatos_insignias_historicas(usuario_id):
+        fila = _upsert_insignia(
+            candidato["usuario_id"], candidato["rol"], candidato["codigo_insignia"],
+            candidato["nivel"], candidato["progreso"],
+            obtenido_at=candidato["obtenido_at"], mejorado_at=candidato["mejorado_at"],
+        )
+        if fila:
+            actualizadas.append(fila)
+    return actualizadas

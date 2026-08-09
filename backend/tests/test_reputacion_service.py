@@ -933,3 +933,583 @@ def test_consultar_restricciones_filtra_por_usuario_y_rol_correctos(make_query):
     supabase.table.assert_called_once_with("trust_score")
     tabla.eq.assert_any_call("usuario_id", "user-42")
     tabla.eq.assert_any_call("rol", "voluntario_externo")
+
+
+# ─── evaluar_reportes_validados_por_tiempo — regresión de los 2 bugs reales ──
+#
+# Bug 1 (ronda anterior, ya corregido): ESTADOS_EXCLUIDOS_REPORTE_VALIDO
+# tenía el string "cancelado" (nombre que dejó de existir en el esquema
+# desde que Daniela lo renombró a "cancelado_por_reportante" en
+# e9e210d, 08-02). El .not_.in_() de Postgres nunca coincidía con el
+# nombre real, así que el job de 7 días NUNCA excluía esos reportes.
+#
+# Bug 2 (EL GRANDE de esta ronda): la misma constante también tenía
+# "rechazado" -- un valor que NUNCA existió en estado_reporte_enum (es
+# un enum tipado de Postgres, confirmado consultando el schema real).
+# Un NOT IN con un literal inválido no "no hace match": revienta la
+# query ENTERA con 22P02 para cualquier usuario, siempre -- esto dejó
+# evaluar_reportes_validados_por_tiempo() fallando con 500 en cada
+# corrida del cron desde que se desplegó (confirmado: cero filas con
+# regla='reporte_valido' en todo movimientos_puntos). El concepto de
+# "reporte rechazado por moderación" vive en estado_moderacion (columna
+# de texto libre, admin.py::resolver_moderacion_reporte), NUNCA en
+# estado_reporte -- por eso ahora se filtra aparte, con
+# .neq("estado_moderacion", "rechazado"), no mezclado en el NOT IN.
+
+ESTADOS_EXCLUIDOS_BUG_VIEJO = ["rechazado", "cancelado", "duplicado_vinculable", "duplicado_informativo"]
+
+
+def test_evaluar_reportes_validados_por_tiempo_manda_la_lista_corregida(make_query):
+    """Fija el valor EXACTO que la función le manda a Postgres para
+    estado_reporte, y confirma que estado_moderacion viaja como
+    condición SEPARADA (.neq), nunca mezclada dentro del NOT IN."""
+    tabla = make_query(data=[])
+    # make_query no encadena .lt(...)/.not_.in_(...)/.neq(...) por
+    # defecto (mismo gotcha documentado en test_insignias_aliado.py) --
+    # hay que apuntarlos a la misma query a mano.
+    tabla.lt.return_value = tabla
+    tabla.not_.in_.return_value = tabla
+    tabla.neq.return_value = tabla
+    supabase = MagicMock()
+    supabase.table.return_value = tabla
+
+    with patch.object(reputacion_service, "supabase", supabase):
+        reputacion_service.evaluar_reportes_validados_por_tiempo()
+
+    tabla.not_.in_.assert_called_once_with(
+        "estado_reporte",
+        ["duplicado", "duplicado_vinculable", "duplicado_informativo", "cancelado_por_reportante"],
+    )
+    tabla.neq.assert_called_once_with("estado_moderacion", "rechazado")
+    assert "rechazado" not in reputacion_service.ESTADOS_EXCLUIDOS_REPORTE_VALIDO
+    assert "cancelado" not in reputacion_service.ESTADOS_EXCLUIDOS_REPORTE_VALIDO  # el nombre viejo, sin sufijo
+    assert reputacion_service.ESTADOS_EXCLUIDOS_REPORTE_VALIDO != ESTADOS_EXCLUIDOS_BUG_VIEJO
+
+
+def test_regresion_bug_reporte_cancelado_ya_no_se_cuela_como_valido(make_query):
+    """Test canario del bug 1: el mock de la tabla APLICA de verdad la
+    lista de exclusión que la función le manda (simula el filtrado real
+    de Postgres) — así se puede probar el efecto completo, no solo el
+    valor de la constante en aislado.
+
+    Con la lista vieja del bug (ESTADOS_EXCLUIDOS_BUG_VIEJO, que tiene
+    'cancelado' en vez de 'cancelado_por_reportante'), este mismo
+    mecanismo hubiera dejado pasar el reporte cancelado a
+    candidatos.data, y procesar_reporte_valido SÍ se habría llamado
+    para él — exactamente el bug real. Con la lista corregida que usa
+    el código hoy, el reporte cancelado nunca llega a candidatos.data."""
+    reporte_cancelado = {"id": "rep-cancelado", "usuario_id": "user-1", "estado_reporte": "cancelado_por_reportante"}
+    reporte_valido = {"id": "rep-valido", "usuario_id": "user-2", "estado_reporte": "pendiente"}
+    todos = [reporte_cancelado, reporte_valido]
+
+    tabla = MagicMock()
+    tabla.select.return_value = tabla
+    tabla.lt.return_value = tabla
+    tabla.neq.return_value = tabla
+
+    def fake_not_in(campo, excluidos):
+        filtrados = [r for r in todos if r[campo] not in excluidos]
+        tabla.execute.return_value = SimpleNamespace(data=filtrados)
+        return tabla
+
+    tabla.not_.in_.side_effect = fake_not_in
+
+    supabase = MagicMock()
+    supabase.table.return_value = tabla
+
+    with (
+        patch.object(reputacion_service, "supabase", supabase),
+        patch.object(reputacion_service, "procesar_reporte_valido") as mock_procesar,
+    ):
+        resultado = reputacion_service.evaluar_reportes_validados_por_tiempo()
+
+    ids_procesados = [llamada.args[0] for llamada in mock_procesar.call_args_list]
+    assert "rep-valido" in ids_procesados
+    assert "rep-cancelado" not in ids_procesados
+    assert resultado["revisados"] == 1
+
+    # Confirmación explícita del "antes": con la lista vieja del bug, el
+    # mismo reporte cancelado SÍ hubiera pasado el filtro.
+    filtrados_con_bug_viejo = [r for r in todos if r["estado_reporte"] not in ESTADOS_EXCLUIDOS_BUG_VIEJO]
+    assert reporte_cancelado in filtrados_con_bug_viejo
+
+
+def test_regresion_bug_literal_rechazado_ya_no_se_manda_a_postgres():
+    """Test canario del BUG GRANDE de esta ronda: 'rechazado' nunca fue
+    miembro de estado_reporte_enum -- un NOT IN que lo incluyera no
+    "no hacía match", reventaba la query ENTERA con 22P02 (confirmado
+    contra Postgres real: se probó cada valor de la lista uno por uno,
+    solo 'rechazado' y el 'cancelado' viejo fueron rechazados por el
+    tipo). Este mock simula esa validación de tipo -- revienta si
+    'rechazado' aparece en la lista de exclusión de estado_reporte,
+    igual que el enum real lo haría."""
+    def not_in_que_valida_enum(campo, excluidos):
+        if campo == "estado_reporte" and "rechazado" in excluidos:
+            raise Exception('invalid input value for enum estado_reporte_enum: "rechazado"')
+        tabla.execute.return_value = SimpleNamespace(data=[])
+        return tabla
+
+    tabla = MagicMock()
+    tabla.select.return_value = tabla
+    tabla.lt.return_value = tabla
+    tabla.neq.return_value = tabla
+    tabla.not_.in_.side_effect = not_in_que_valida_enum
+    supabase = MagicMock()
+    supabase.table.return_value = tabla
+
+    with patch.object(reputacion_service, "supabase", supabase):
+        resultado = reputacion_service.evaluar_reportes_validados_por_tiempo()
+
+    # Con la lista actual (corregida), la validación de tipo simulada
+    # nunca se dispara -- la query corre limpia, sin "error" en la
+    # respuesta.
+    assert "error" not in resultado
+    assert resultado == {"revisados": 0, "procesados": 0}
+
+    # Documentación explícita del "antes": si la lista todavía tuviera
+    # el literal inválido (ESTADOS_EXCLUIDOS_BUG_VIEJO incluye
+    # "rechazado"), esta misma validación de tipo -- la que Postgres
+    # aplica de verdad -- hubiera reventado.
+    with pytest.raises(Exception, match="estado_reporte_enum"):
+        not_in_que_valida_enum("estado_reporte", ESTADOS_EXCLUIDOS_BUG_VIEJO)
+
+
+def test_evaluar_reportes_validados_por_tiempo_no_propaga_si_falla_la_consulta():
+    """Fix nuevo: si la consulta de candidatos revienta (cualquier error
+    de Postgres, no solo el del enum), la función ahora lo atrapa y
+    regresa el dict seguro con 'error', en vez de dejar que la
+    excepción tumbe el endpoint completo con un 500 sin control -- el
+    bug real que causó 22P02 sin manejo alguno durante toda esta
+    investigación."""
+    tabla = MagicMock()
+    tabla.select.return_value = tabla
+    tabla.lt.return_value = tabla
+    tabla.not_.in_.return_value = tabla
+    tabla.neq.return_value = tabla
+    tabla.execute.side_effect = Exception("simulando un fallo real de Postgres")
+    supabase = MagicMock()
+    supabase.table.return_value = tabla
+
+    with (
+        patch.object(reputacion_service, "supabase", supabase),
+        patch.object(reputacion_service, "procesar_reporte_valido") as mock_procesar,
+    ):
+        resultado = reputacion_service.evaluar_reportes_validados_por_tiempo()  # NO debe lanzar
+
+    assert resultado["revisados"] == 0
+    assert resultado["procesados"] == 0
+    assert "error" in resultado
+    assert "simulando un fallo real de Postgres" in resultado["error"]
+    mock_procesar.assert_not_called()
+
+
+# ─── Filtro compuesto: estado_reporte Y estado_moderacion, dos columnas ──
+#
+# Reporte con estado_reporte='asignado' (válido por sí solo) pero
+# estado_moderacion='rechazado' (un admin ya lo marcó como contenido
+# falso) -- debe excluirse en los 3 lugares que usan
+# ESTADOS_EXCLUIDOS_REPORTE_VALIDO. Sin el filtro compuesto, un reporte
+# ya marcado fraudulento seguiría sumando insignias/puntos porque
+# estado_reporte por sí solo nunca refleja el rechazo de moderación
+# (confirmado leyendo admin.py::resolver_moderacion_reporte: esa
+# función solo actualiza estado_moderacion, nunca estado_reporte).
+
+def _tabla_con_filtro_real(filas: list[dict]) -> MagicMock:
+    """Mock de tabla que aplica de verdad los filtros .eq/.not_.in_/
+    .neq sobre `filas`, para probar el filtro compuesto de punta a
+    punta -- no solo que se llamaron los métodos correctos. Simplificación
+    conocida: el estado de filtros se acumula y NO se resetea entre dos
+    .execute() sobre el mismo mock (relevante solo si una función hace
+    más de una consulta encadenada distinta sobre la misma tabla)."""
+    estado = {"eq": {}, "excluidos": None, "neq": {}}
+    tabla = MagicMock()
+
+    def _eq(campo, valor):
+        estado["eq"][campo] = valor
+        return tabla
+
+    def _not_in(campo, valores):
+        estado["excluidos"] = valores
+        return tabla
+
+    def _neq(campo, valor):
+        estado["neq"][campo] = valor
+        return tabla
+
+    def _execute():
+        resultado = [
+            f for f in filas
+            if all(f.get(c) == v for c, v in estado["eq"].items())
+            and (estado["excluidos"] is None or f.get("estado_reporte") not in estado["excluidos"])
+            and all(f.get(c) != v for c, v in estado["neq"].items())
+        ]
+        return SimpleNamespace(data=resultado, count=len(resultado))
+
+    tabla.select.return_value = tabla
+    tabla.order.return_value = tabla
+    tabla.lt.return_value = tabla
+    tabla.eq.side_effect = _eq
+    tabla.not_.in_.side_effect = _not_in
+    tabla.neq.side_effect = _neq
+    tabla.execute.side_effect = _execute
+    return tabla
+
+
+def test_evaluar_insignias_reportante_excluye_moderacion_rechazada(make_query):
+    filas = [{"usuario_id": "user-1", "estado_reporte": "asignado", "estado_moderacion": "rechazado"}]
+    reportes_tabla = _tabla_con_filtro_real(filas)
+    tablas = {"reportes": reportes_tabla, "historial_reporte": make_query(data=[])}
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+
+    with patch.object(reputacion_service, "supabase", supabase):
+        actualizadas = reputacion_service.evaluar_insignias_reportante("user-1")
+
+    assert actualizadas == []  # 0 reportes cuentan como válidos -> ningún nivel
+
+
+def test_evaluar_reportes_validados_por_tiempo_excluye_moderacion_rechazada():
+    reporte_moderado_rechazado = {
+        "id": "rep-1", "usuario_id": "user-1", "estado_reporte": "asignado", "estado_moderacion": "rechazado",
+    }
+    reporte_normal = {
+        "id": "rep-2", "usuario_id": "user-2", "estado_reporte": "pendiente", "estado_moderacion": "visible",
+    }
+    tabla = _tabla_con_filtro_real([reporte_moderado_rechazado, reporte_normal])
+    supabase = MagicMock()
+    supabase.table.return_value = tabla
+
+    with (
+        patch.object(reputacion_service, "supabase", supabase),
+        patch.object(reputacion_service, "procesar_reporte_valido") as mock_procesar,
+    ):
+        resultado = reputacion_service.evaluar_reportes_validados_por_tiempo()
+
+    ids_procesados = [c.args[0] for c in mock_procesar.call_args_list]
+    assert "rep-2" in ids_procesados
+    assert "rep-1" not in ids_procesados
+    assert resultado["revisados"] == 1
+
+
+def test_calcular_candidatos_historicos_excluye_moderacion_rechazada(make_query):
+    filas = [{
+        "id": "rep-1", "usuario_id": "user-1", "estado_reporte": "asignado",
+        "estado_moderacion": "rechazado", "created_at": "2026-01-01T00:00:00+00:00",
+    }]
+    reportes_tabla = _tabla_con_filtro_real(filas)
+    tablas = {"reportes": reportes_tabla, "historial_reporte": make_query(data=[])}
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+
+    with patch.object(reputacion_service, "supabase", supabase):
+        candidatos = reputacion_service._calcular_candidatos_insignias_historicas("user-1")
+
+    assert candidatos == []
+
+
+# ─── evaluar_insignias_reportante — cuenta desde reportes/historial_reporte ──
+#
+# Antes de este cambio, vigia_comunitario/impacto_real contaban desde
+# movimientos_puntos/trust_score_movimientos (ledgers derivados, que
+# solo tienen filas desde que el motor de puntos existe — dejaba
+# "atrasadas" a las cuentas con reportes de antes del lanzamiento).
+# Ahora cuentan directo de reportes/historial_reporte, mismo patrón que
+# evaluar_insignias_aliado (Miguel). Los mocks reflejan eso: se
+# patchea supabase.table("reportes")/("historial_reporte"), nunca
+# movimientos_puntos/trust_score_movimientos.
+
+def test_evaluar_insignias_reportante_cuenta_vigia_desde_reportes(make_query):
+    reportes_query = make_query(execute_results=[
+        SimpleNamespace(data=None, count=5),  # conteo de válidos (vigia)
+        SimpleNamespace(data=[]),  # reportes_propios (_contar_desenlaces_validos) -- vacío, corta temprano
+    ])
+    reportes_query.not_.in_.return_value = reportes_query  # make_query no lo encadena por defecto
+    tablas = {
+        "reportes": reportes_query,
+        "historial_reporte": make_query(data=[]),
+        "insignias": make_query(execute_results=[
+            SimpleNamespace(data=[]),  # select: no existe todavía
+            SimpleNamespace(data=[{"id": "ins-1", "codigo_insignia": "vigia_comunitario", "nivel": "plata"}]),
+        ]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+
+    with patch.object(reputacion_service, "supabase", supabase):
+        actualizadas = reputacion_service.evaluar_insignias_reportante("user-1")
+
+    llamadas_tabla = [c.args[0] for c in supabase.table.call_args_list]
+    assert "reportes" in llamadas_tabla
+    assert "movimientos_puntos" not in llamadas_tabla
+    assert "trust_score_movimientos" not in llamadas_tabla
+    tablas["reportes"].not_.in_.assert_any_call("estado_reporte", reputacion_service.ESTADOS_EXCLUIDOS_REPORTE_VALIDO)
+    assert actualizadas[0]["codigo_insignia"] == "vigia_comunitario"
+    insertado = tablas["insignias"].insert.call_args[0][0]
+    assert insertado["nivel"] == "plata"
+    assert insertado["progreso"] == 5
+
+
+def test_evaluar_insignias_reportante_impacto_real_usa_historial_y_nivel_none(make_query):
+    """Antes tenía nivel='oro' hardcodeado por error (mezclaba el
+    concepto de insignia fija con el de insignia dinámica) -- ahora
+    debe guardarse con nivel=None."""
+    reportes_query = make_query(execute_results=[
+        SimpleNamespace(data=None, count=0),  # conteo de válidos (vigia) -- 0, no dispara upsert de vigia
+        SimpleNamespace(data=[{"id": "rep-1"}, {"id": "rep-2"}, {"id": "rep-3"}]),  # reportes_propios
+    ])
+    reportes_query.not_.in_.return_value = reportes_query  # make_query no lo encadena por defecto
+    eventos = [
+        {"reporte_id": "rep-1", "datos_extra": {"conclusion": "Animal rescatado y estable"}},
+        {"reporte_id": "rep-2", "datos_extra": {"conclusion": "Animal en tratamiento veterinario"}},
+        {"reporte_id": "rep-3", "datos_extra": {"conclusion": "Animal en hogar temporal"}},
+    ]
+    tablas = {
+        "reportes": reportes_query,
+        "historial_reporte": make_query(data=eventos),
+        "insignias": make_query(execute_results=[
+            SimpleNamespace(data=[]),
+            SimpleNamespace(data=[{"id": "ins-2", "codigo_insignia": "impacto_real", "nivel": None}]),
+        ]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+
+    with patch.object(reputacion_service, "supabase", supabase):
+        actualizadas = reputacion_service.evaluar_insignias_reportante("user-1")
+
+    assert actualizadas[0]["codigo_insignia"] == "impacto_real"
+    insertado = tablas["insignias"].insert.call_args[0][0]
+    assert insertado["codigo_insignia"] == "impacto_real"
+    assert insertado["nivel"] is None
+    assert insertado["progreso"] == 3
+
+
+# ─── _calcular_candidatos_insignias_historicas — NUNCA escribe ─────────
+#
+# Separación cálculo/escritura (refactor reciente): esta función solo
+# LEE y regresa los candidatos como dicts -- _aplicar_insignias_
+# historicas_usuario es quien la llama y luego escribe de verdad vía
+# _upsert_insignia. El modo dry_run del endpoint depende por completo
+# de que esta separación se mantenga. Los mocks de abajo hacen que
+# CUALQUIER .insert()/.update() reviente con una excepción -- si
+# alguien en el futuro rompe la separación (ej. mueve el upsert para
+# adentro de esta función por error), la prueba falla ruidosamente en
+# vez de pasar en silencio.
+
+def _tabla_que_revienta_si_escribe(*, data=None, execute_results=None):
+    """Como make_query, pero .insert()/.update() lanzan en vez de
+    regresar un mock encadenable -- cualquier intento de escritura
+    revienta de inmediato, sin importar qué tabla sea."""
+    query = MagicMock()
+    for metodo in ("select", "eq", "order", "limit", "in_", "neq"):
+        getattr(query, metodo).return_value = query
+    query.not_.in_.return_value = query
+    query.not_.is_.return_value = query
+    query.insert.side_effect = AssertionError(
+        "_calcular_candidatos_insignias_historicas NO debe escribir -- .insert() nunca debería llamarse aquí"
+    )
+    query.update.side_effect = AssertionError(
+        "_calcular_candidatos_insignias_historicas NO debe escribir -- .update() nunca debería llamarse aquí"
+    )
+    if execute_results is not None:
+        query.execute.side_effect = execute_results
+    else:
+        query.execute.return_value = SimpleNamespace(data=data, count=None)
+    return query
+
+
+def test_calcular_candidatos_insignias_historicas_no_escribe_nada():
+    """Datos que alcanzan para AMBAS insignias (5+ reportes válidos y 3+
+    desenlaces válidos), a propósito -- para maximizar la chance de
+    atrapar una escritura accidental si alguien la reintroduce."""
+    fechas = [f"2026-01-0{n}T00:00:00+00:00" for n in range(1, 6)]
+    reportes_validos = [{"id": f"rep-{n}", "created_at": fechas[n - 1]} for n in range(1, 6)]
+    reportes_query = _tabla_que_revienta_si_escribe(execute_results=[
+        SimpleNamespace(data=reportes_validos),
+        SimpleNamespace(data=[{"id": r["id"]} for r in reportes_validos]),
+    ])
+    eventos = [
+        {"reporte_id": "rep-1", "datos_extra": {"conclusion": "Animal rescatado y estable"}, "created_at": "2026-02-01T00:00:00+00:00"},
+        {"reporte_id": "rep-2", "datos_extra": {"conclusion": "Animal en tratamiento veterinario"}, "created_at": "2026-02-02T00:00:00+00:00"},
+        {"reporte_id": "rep-3", "datos_extra": {"conclusion": "Animal en hogar temporal"}, "created_at": "2026-02-03T00:00:00+00:00"},
+    ]
+    tablas = {
+        "reportes": reportes_query,
+        "historial_reporte": _tabla_que_revienta_si_escribe(data=eventos),
+        # "insignias" a propósito NO está en el dict -- si la función
+        # intentara tocarla, supabase.table("insignias") lanza KeyError,
+        # segunda capa de protección además de insert/update reventando.
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+
+    with patch.object(reputacion_service, "supabase", supabase):
+        candidatos = reputacion_service._calcular_candidatos_insignias_historicas("user-1")
+
+    tablas["reportes"].insert.assert_not_called()
+    tablas["reportes"].update.assert_not_called()
+    tablas["historial_reporte"].insert.assert_not_called()
+    tablas["historial_reporte"].update.assert_not_called()
+
+    codigos = {c["codigo_insignia"] for c in candidatos}
+    assert codigos == {"vigia_comunitario", "impacto_real"}
+    vigia = next(c for c in candidatos if c["codigo_insignia"] == "vigia_comunitario")
+    assert vigia["nivel"] == "plata"  # 5 reportes válidos -> cruza el umbral de plata (>=5)
+    impacto = next(c for c in candidatos if c["codigo_insignia"] == "impacto_real")
+    assert impacto["nivel"] is None
+    assert impacto["progreso"] == 3
+
+
+def test_reevaluar_insignias_historicas_reportante_dry_run_no_escribe_nada(make_query):
+    """dry_run=True (el default) debe regresar el detalle calculado sin
+    tocar la tabla insignias en absoluto -- ni select, ni insert, ni
+    update. Es el modo que se usa contra producción antes de aplicar de
+    verdad."""
+    reportes_validos = [{"id": "rep-1", "created_at": "2026-01-01T00:00:00+00:00"}]
+    reportes_query = _tabla_que_revienta_si_escribe(execute_results=[
+        SimpleNamespace(data=[{"usuario_id": "user-1"}]),  # usuarios_resp
+        SimpleNamespace(data=reportes_validos),  # reportes válidos de user-1
+        SimpleNamespace(data=[{"id": "rep-1"}]),  # reportes_propios de user-1
+    ])
+    reportes_query.not_.is_.return_value = reportes_query
+    tablas = {
+        "reportes": reportes_query,
+        "historial_reporte": _tabla_que_revienta_si_escribe(data=[]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+
+    with patch.object(reputacion_service, "supabase", supabase):
+        resultado = reputacion_service.reevaluar_insignias_historicas_reportante()  # sin args -> default dry_run=True
+
+    assert resultado["modo"] == "dry_run"
+    assert resultado["usuarios_revisados"] == 1
+    assert resultado["insignias_que_se_crearian_o_actualizarian"] == 1
+    assert resultado["detalle"][0]["codigo_insignia"] == "vigia_comunitario"
+    assert resultado["detalle"][0]["nivel"] == "cobre"
+    tablas["reportes"].insert.assert_not_called()
+    tablas["reportes"].update.assert_not_called()
+
+
+# ─── _aplicar_insignias_historicas_usuario ────────────────────────────
+
+def test_reevaluar_historico_vigia_plata_con_fechas_reales_del_1ro_y_5to(make_query):
+    """6 reportes válidos ordenados por fecha -> nivel 'plata' (>=5, no
+    llega a 'oro' que pide >=15). obtenido_at debe ser la fecha del 1er
+    reporte, mejorado_at la del 5to (el que cruza el umbral de plata),
+    NO la del 6to."""
+    fechas = [f"2026-01-0{n}T00:00:00+00:00" for n in range(1, 7)]
+    reportes_validos = [{"id": f"rep-{n}", "created_at": fechas[n - 1]} for n in range(1, 7)]
+
+    reportes_query = make_query(execute_results=[
+        SimpleNamespace(data=reportes_validos),  # select válidos, ordenados
+        SimpleNamespace(data=[{"id": r["id"]} for r in reportes_validos]),  # reportes_propios
+    ])
+    reportes_query.not_.in_.return_value = reportes_query  # make_query no lo encadena por defecto
+    tablas = {
+        "reportes": reportes_query,
+        "historial_reporte": make_query(data=[]),  # sin eventos de cierre -- impacto_real no aplica aquí
+        "insignias": make_query(execute_results=[
+            SimpleNamespace(data=[]),
+            SimpleNamespace(data=[{"id": "ins-1", "codigo_insignia": "vigia_comunitario", "nivel": "plata"}]),
+        ]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+
+    with patch.object(reputacion_service, "supabase", supabase):
+        actualizadas = reputacion_service._aplicar_insignias_historicas_usuario("user-1")
+
+    assert actualizadas[0]["codigo_insignia"] == "vigia_comunitario"
+    insertado = tablas["insignias"].insert.call_args[0][0]
+    assert insertado["nivel"] == "plata"
+    assert insertado["progreso"] == 6
+    assert insertado["obtenido_at"] == fechas[0]  # 1er reporte
+    # Fix aplicado: _upsert_insignia ahora incluye mejorado_at también en
+    # el INSERT (antes solo se escribía en la rama de UPDATE, así que un
+    # backfill que crea la insignia por primera vez -- el caso real hoy,
+    # nadie tiene insignias de reportante todavía -- la dejaba en NULL sin
+    # forma de corregirla después, porque un segundo run corta temprano en
+    # _upsert_insignia si nivel/progreso no cambiaron). mejorado_at debe
+    # ser la fecha del reporte que cruza el umbral de nivel -- el 5to para
+    # 'plata', NO el 6to (el total de reportes válidos).
+    assert insertado["mejorado_at"] == fechas[4]
+
+
+def test_reevaluar_historico_impacto_real_ignora_conclusion_invalida_y_usa_3er_evento(make_query):
+    """3 eventos caso_cerrado válidos + 1 inválido (que debe ignorarse) ->
+    impacto_real se registra con obtenido_at = fecha del 3er evento
+    válido en orden cronológico (no el 4to evento total, ni el inválido)."""
+    reportes_propios = [{"id": f"rep-{n}"} for n in range(1, 5)]
+    reportes_query = make_query(execute_results=[
+        SimpleNamespace(data=[]),  # select válidos para vigia -- vacío, no dispara esa insignia
+        SimpleNamespace(data=reportes_propios),
+    ])
+    reportes_query.not_.in_.return_value = reportes_query  # make_query no lo encadena por defecto
+    eventos = [
+        {"reporte_id": "rep-1", "datos_extra": {"conclusion": "No se pudo rescatar"}, "created_at": "2026-02-01T00:00:00+00:00"},
+        {"reporte_id": "rep-2", "datos_extra": {"conclusion": "Animal rescatado y estable"}, "created_at": "2026-02-02T00:00:00+00:00"},
+        {"reporte_id": "rep-3", "datos_extra": {"conclusion": "Animal en tratamiento veterinario"}, "created_at": "2026-02-03T00:00:00+00:00"},
+        {"reporte_id": "rep-4", "datos_extra": {"conclusion": "Animal en hogar temporal"}, "created_at": "2026-02-04T00:00:00+00:00"},
+    ]
+    tablas = {
+        "reportes": reportes_query,
+        "historial_reporte": make_query(data=eventos),
+        "insignias": make_query(execute_results=[
+            SimpleNamespace(data=[]),
+            SimpleNamespace(data=[{"id": "ins-2", "codigo_insignia": "impacto_real", "nivel": None}]),
+        ]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+
+    with patch.object(reputacion_service, "supabase", supabase):
+        actualizadas = reputacion_service._aplicar_insignias_historicas_usuario("user-1")
+
+    assert actualizadas[0]["codigo_insignia"] == "impacto_real"
+    insertado = tablas["insignias"].insert.call_args[0][0]
+    assert insertado["nivel"] is None
+    assert insertado["progreso"] == 3
+    # 3er evento VÁLIDO en orden cronológico -- rep-1 (inválido) se
+    # ignora, así que es el 4to evento total pero el 3er válido.
+    assert insertado["obtenido_at"] == "2026-02-04T00:00:00+00:00"
+
+
+def test_reevaluar_historico_impacto_real_mejorado_at_usa_misma_fecha_que_obtenido_at(make_query):
+    """Fix aplicado: _aplicar_insignias_historicas_usuario ahora pasa
+    mejorado_at explícito para impacto_real, con la MISMA fecha que
+    obtenido_at (la fecha del 3er evento válido) -- antes se dejaba sin
+    pasar y _upsert_insignia usaba el default 'ahora', lo cual era
+    incorrecto para un backfill (la insignia no se "mejoró" hoy, se
+    obtuvo en el pasado). impacto_real no tiene niveles (cobre/plata/
+    oro), así que no hay un "umbral distinto" como en vigia_comunitario
+    -- obtenido_at y mejorado_at deben coincidir exactamente."""
+    reportes_propios = [{"id": f"rep-{n}"} for n in range(1, 4)]
+    reportes_query = make_query(execute_results=[
+        SimpleNamespace(data=[]),  # select válidos para vigia -- vacío, no dispara esa insignia
+        SimpleNamespace(data=reportes_propios),
+    ])
+    reportes_query.not_.in_.return_value = reportes_query
+    eventos = [
+        {"reporte_id": "rep-1", "datos_extra": {"conclusion": "Animal rescatado y estable"}, "created_at": "2026-03-01T00:00:00+00:00"},
+        {"reporte_id": "rep-2", "datos_extra": {"conclusion": "Animal en tratamiento veterinario"}, "created_at": "2026-03-02T00:00:00+00:00"},
+        {"reporte_id": "rep-3", "datos_extra": {"conclusion": "Animal en hogar temporal"}, "created_at": "2026-03-03T00:00:00+00:00"},
+    ]
+    tablas = {
+        "reportes": reportes_query,
+        "historial_reporte": make_query(data=eventos),
+        "insignias": make_query(execute_results=[
+            SimpleNamespace(data=[]),
+            SimpleNamespace(data=[{"id": "ins-2", "codigo_insignia": "impacto_real", "nivel": None}]),
+        ]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+
+    with patch.object(reputacion_service, "supabase", supabase):
+        reputacion_service._aplicar_insignias_historicas_usuario("user-1")
+
+    insertado = tablas["insignias"].insert.call_args[0][0]
+    assert insertado["obtenido_at"] == "2026-03-03T00:00:00+00:00"
+    assert insertado["mejorado_at"] == "2026-03-03T00:00:00+00:00"
+    assert insertado["mejorado_at"] == insertado["obtenido_at"]
