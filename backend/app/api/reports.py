@@ -1253,6 +1253,40 @@ DECISIONES_BUSQUEDA_NO_LOCALIZADO = {
 }
 
 
+def _procesar_gamificacion_busqueda_resuelta(resultado: object) -> None:
+    """Identifica al autor de la búsqueda ya resuelta y premia únicamente
+    al voluntario interno. Es una consecuencia secundaria: una falla al
+    consultar o registrar reputación nunca revierte la decisión operativa."""
+    if not isinstance(resultado, dict) or not resultado.get("busqueda_id"):
+        return
+
+    try:
+        busqueda = supabase_admin.table("busquedas_no_localizado").select(
+            "usuario_id"
+        ).eq("id", resultado["busqueda_id"]).limit(1).execute()
+        if not busqueda.data:
+            return
+
+        usuario_id = busqueda.data[0].get("usuario_id")
+        autor = supabase_admin.table("usuarios").select(
+            "id, roles(nombre)"
+        ).eq("id", usuario_id).limit(1).execute()
+        if not autor.data:
+            return
+
+        rol = (autor.data[0].get("roles") or {}).get("nombre")
+        if rol != "voluntario_interno":
+            return
+
+        from app.services.reputacion_service import procesar_busqueda_documentada_interna
+        procesar_busqueda_documentada_interna(resultado["busqueda_id"], usuario_id)
+    except Exception as error:
+        print(
+            "[WARN] no se pudo procesar la gamificación de la búsqueda "
+            f"{resultado.get('busqueda_id')}: {error}"
+        )
+
+
 @router.get("/{reporte_id}/busqueda-no-localizado/pendiente")
 def obtener_busqueda_no_localizado_pendiente(
     reporte_id: str,
@@ -1304,6 +1338,7 @@ def resolver_busqueda_no_localizado(
         if "asociacion_no_coordina" in detalle:
             raise HTTPException(status_code=403, detail="Tu asociación no coordina este caso") from error
         raise
+    _procesar_gamificacion_busqueda_resuelta(resultado.data)
     return resultado.data
 
 ### Endpoint: BACK02 — aceptar la sugerencia de Ruta 1 (motor de sugerencias)
