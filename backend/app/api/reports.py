@@ -1211,7 +1211,7 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
 
     # La recompensa se dispara hasta que foto, GPS, distancia, cambio de
     # estado e historial terminaron correctamente. Como toda gamificación
-    # secundaria, un fallo al otorgarla no debe deshacer el rescate.
+    # La recompensa se dispara hasta que foto, GPS, distancia, cambio de estado e historial terminaron correctamente. Como toda gamificación secundaria, un fallo al otorgarla no debe deshacer el rescate.
     if tipo_hito == "llegue_refugio" and rol_usuario == "voluntario_interno":
         try:
             from app.services.reputacion_service import procesar_llegada_refugio_interna
@@ -1219,6 +1219,26 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
         except Exception as error:
             print(
                 "[WARN] no se pudo procesar la gamificación de llegada al refugio "
+                f"(reporte={reporte_id}): {error}"
+            )
+
+    # --- GAMIFICACIÓN: Voluntario Externo (Llegada/Resguardo) ---
+    if tipo_hito in ("animal_bajo_resguardo", "llegada_hogar_temporal") and rol_usuario == "voluntario_externo":
+        try:
+            from app.services.reputacion_service import otorgar_puntos
+            # Usar la misma regla y el mismo reporte_id asegura que el motor 
+            # solo entregue los 5 puntos una vez, sin importar cuál de los dos hitos ocurra primero.
+            otorgar_puntos(
+                usuario_id=usuario["id"],
+                rol="voluntario_externo",
+                regla="llegada_resguardo_externo",
+                tipo_origen="reporte",
+                evento_origen_id=reporte_id,
+                puntos=5
+            )
+        except Exception as error:
+            print(
+                f"[WARN] no se pudo procesar la gamificación de resguardo externo "
                 f"(reporte={reporte_id}): {error}"
             )
 
