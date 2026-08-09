@@ -1661,6 +1661,56 @@ def confirmar_transferencia(
         descripcion="Se confirmó una parte de la transferencia de custodia",
         datos_extra={"transferencia_id": transferencia_id, "modo": modo, "estado": estado},
     )
+
+    # --- GAMIFICACIÓN: Puntos por transferencia confirmada por ambas partes ---
+    if estado == "confirmada":
+        try:
+            usuarios_a_premiar = []
+            
+            # 1. El voluntario original (quien entrega)
+            vol_origen = supabase_admin.table("voluntarios").select("usuario_id").eq("id", custodia.get("voluntario_id")).limit(1).execute()
+            if vol_origen.data and vol_origen.data[0].get("usuario_id"):
+                usuarios_a_premiar.append({
+                    "uid": vol_origen.data[0]["usuario_id"],
+                    "regla": "trust_transferencia_entregada"
+                })
+            
+            # 2. El voluntario receptor (quien recibe)
+            trans_actual = supabase_admin.table("transferencias_custodia").select("voluntario_receptor_id, oferta_relevo_id").eq("id", transferencia_id).limit(1).execute()
+            if trans_actual.data:
+                vol_receptor_id = trans_actual.data[0].get("voluntario_receptor_id")
+                
+                # Si no está directo en la transferencia, buscamos en la oferta de relevo
+                if not vol_receptor_id and trans_actual.data[0].get("oferta_relevo_id"):
+                    oferta = supabase_admin.table("ofertas_relevo_custodia").select("voluntario_receptor_id").eq("id", trans_actual.data[0]["oferta_relevo_id"]).limit(1).execute()
+                    if oferta.data:
+                        vol_receptor_id = oferta.data[0].get("voluntario_receptor_id")
+
+                if vol_receptor_id:
+                    vol_destino = supabase_admin.table("voluntarios").select("usuario_id").eq("id", vol_receptor_id).limit(1).execute()
+                    if vol_destino.data and vol_destino.data[0].get("usuario_id"):
+                        usuarios_a_premiar.append({
+                            "uid": vol_destino.data[0]["usuario_id"],
+                            "regla": "trust_transferencia_recibida"
+                        })
+
+            # Otorgamos los puntos iterando sobre cada uno con su regla única
+            for recompensa in usuarios_a_premiar:
+                ajustar_trust_score(
+                    usuario_id=recompensa["uid"],
+                    rol="voluntario_externo",
+                    tipo="incremento",
+                    valor=3,
+                    regla=recompensa["regla"],
+                    motivo="Transferencia de custodia confirmada por ambas partes",
+                    tipo_origen="transferencia_custodia",
+                    evento_origen_id=transferencia_id,
+                    limite_incremento_mes=20,
+                )
+            # TODO: Evaluar insignia "Relevo seguro" aquí
+        except Exception as e:
+            print(f"[WARN] Error en gamificación de transferencia {transferencia_id}: {e}")
+
     return {"estado": estado, "confirmacion": modo}
 
 
