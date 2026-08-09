@@ -543,6 +543,22 @@ async def resolver_postulacion(
             "id", usuario_id_voluntario
         ).execute()
 
+        # La aprobación es la primera acción válida del voluntario interno.
+        # El bono es secundario e idempotente: si reputación falla, la
+        # postulación ya aceptada conserva su resultado operativo.
+        try:
+            from app.services.reputacion_service import (
+                procesar_aprobacion_voluntario_interno,
+            )
+            procesar_aprobacion_voluntario_interno(
+                postulacion_id, usuario_id_voluntario,
+            )
+        except Exception as error:
+            print(
+                "[WARN] no se pudo procesar el bono de aprobación interna "
+                f"(postulacion={postulacion_id}): {error}"
+            )
+
         return {"mensaje": "Postulación aceptada", "estado": "activo_nivel_1"}
 
     else:  # rechazar
