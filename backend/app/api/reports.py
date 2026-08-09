@@ -1209,6 +1209,19 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
             datos_extra=datos_hito,
         )
 
+    # La recompensa se dispara hasta que foto, GPS, distancia, cambio de
+    # estado e historial terminaron correctamente. Como toda gamificación
+    # secundaria, un fallo al otorgarla no debe deshacer el rescate.
+    if tipo_hito == "llegue_refugio" and rol_usuario == "voluntario_interno":
+        try:
+            from app.services.reputacion_service import procesar_llegada_refugio_interna
+            procesar_llegada_refugio_interna(reporte_id, usuario["id"])
+        except Exception as error:
+            print(
+                "[WARN] no se pudo procesar la gamificación de llegada al refugio "
+                f"(reporte={reporte_id}): {error}"
+            )
+
     # Motor de sugerencias, Ruta 1 (BACK01) — solo para el hito
     # "encontre_animal". Puramente informativo: no reserva capacidad, no
     # persiste nada, y si no hay match compatible el flujo sigue exactamente

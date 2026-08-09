@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.api import reports
 from app.main import app
+from app.services import report_service, reputacion_service
 
 
 client = TestClient(app)
@@ -134,3 +135,108 @@ def test_staff_no_puede_registrar_busqueda_no_localizado(make_query):
 
     assert response.status_code == 403
     supabase_admin.rpc.assert_not_called()
+
+
+def test_llegada_comprobada_al_refugio_premia_al_voluntario_interno(make_query):
+    reporte = _reporte()
+    reporte["estado_reporte"] = "en_atencion"
+    tablas = {
+        "usuarios": make_query(data=[_usuario()]),
+        "reportes": make_query(data=[reporte]),
+        "asociaciones": make_query(data=[{
+            "latitud": 19.4326,
+            "longitud": -99.1332,
+        }]),
+        "reporte_estados": make_query(data=[{"id": "estado-rescatado"}]),
+    }
+    supabase = _supabase_con_tablas(tablas)
+
+    with (
+        patched_supabase_clients(supabase),
+        patch.object(report_service, "registrar_historial") as mock_historial,
+        patch.object(
+            reputacion_service, "procesar_llegada_refugio_interna"
+        ) as mock_reputacion,
+    ):
+        response = client.post(
+            "/reports/reporte-1/hitos",
+            json={
+                "tipo_hito": "llegue_refugio",
+                "foto_url": "https://pawalert.test/llegada-refugio.jpg",
+                "latitud": 19.4326,
+                "longitud": -99.1332,
+            },
+            headers=AUTH_HEADERS,
+        )
+
+    assert response.status_code == 201
+    assert response.json()["estado"] == "rescatado"
+    mock_historial.assert_called_once()
+    mock_reputacion.assert_called_once_with("reporte-1", "usuario-interno-1")
+
+
+def test_llegada_al_refugio_sin_foto_no_otorga_reputacion(make_query):
+    reporte = _reporte()
+    reporte["estado_reporte"] = "en_atencion"
+    tablas = {
+        "usuarios": make_query(data=[_usuario()]),
+        "reportes": make_query(data=[reporte]),
+    }
+    supabase = _supabase_con_tablas(tablas)
+
+    with (
+        patched_supabase_clients(supabase),
+        patch.object(
+            reputacion_service, "procesar_llegada_refugio_interna"
+        ) as mock_reputacion,
+    ):
+        response = client.post(
+            "/reports/reporte-1/hitos",
+            json={
+                "tipo_hito": "llegue_refugio",
+                "latitud": 19.4326,
+                "longitud": -99.1332,
+            },
+            headers=AUTH_HEADERS,
+        )
+
+    assert response.status_code == 422
+    assert "foto" in response.json()["detail"].lower()
+    mock_reputacion.assert_not_called()
+
+
+def test_llegada_al_refugio_de_staff_no_usa_regla_de_voluntario_interno(make_query):
+    usuario_id = "usuario-staff-1"
+    reporte = _reporte(usuario_id)
+    reporte["estado_reporte"] = "en_atencion"
+    tablas = {
+        "usuarios": make_query(data=[_usuario("staff", usuario_id)]),
+        "reportes": make_query(data=[reporte]),
+        "asociaciones": make_query(data=[{
+            "latitud": 19.4326,
+            "longitud": -99.1332,
+        }]),
+        "reporte_estados": make_query(data=[{"id": "estado-rescatado"}]),
+    }
+    supabase = _supabase_con_tablas(tablas)
+
+    with (
+        patched_supabase_clients(supabase),
+        patch.object(report_service, "registrar_historial"),
+        patch.object(
+            reputacion_service, "procesar_llegada_refugio_interna"
+        ) as mock_reputacion,
+    ):
+        response = client.post(
+            "/reports/reporte-1/hitos",
+            json={
+                "tipo_hito": "llegue_refugio",
+                "foto_url": "https://pawalert.test/llegada-refugio.jpg",
+                "latitud": 19.4326,
+                "longitud": -99.1332,
+            },
+            headers=AUTH_HEADERS,
+        )
+
+    assert response.status_code == 201
+    mock_reputacion.assert_not_called()
