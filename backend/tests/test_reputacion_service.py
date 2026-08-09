@@ -114,6 +114,127 @@ def test_reservar_puntos_parametros_correctos_a_la_rpc():
     })
 
 
+# ─── confirmar_puntos_reservados ────────────────────────────────────────
+
+def test_confirmar_puntos_reservados_parametros_correctos_a_la_rpc():
+    """A diferencia de otorgar/reservar/devolver/revertir, esta función NO
+    manda p_puntos -- confirmar_puntos_reservados_atomico siempre inserta
+    puntos=0 del lado de Postgres (0052_confirmar_liberar_puntos.sql)."""
+    supabase, rpc = _rpc_supabase(data=[{"id": "mov-2", "tipo_movimiento": "confirmado", "puntos": 0}])
+
+    with patch.object(reputacion_service, "supabase", supabase):
+        resultado = reputacion_service.confirmar_puntos_reservados(
+            "user-1", "reportante", "canje_recompensa_confirmado", "canje", "canje-1",
+        )
+
+    assert resultado == {"id": "mov-2", "tipo_movimiento": "confirmado", "puntos": 0}
+    supabase.rpc.assert_called_once_with("confirmar_puntos_reservados_atomico", {
+        "p_usuario_id": "user-1",
+        "p_rol": "reportante",
+        "p_regla": "canje_recompensa_confirmado",
+        "p_tipo_origen": "canje",
+        "p_evento_origen_id": "canje-1",
+    })
+
+
+def test_confirmar_puntos_reservados_no_propaga_excepcion_de_la_rpc(capsys):
+    """Mismo criterio que otorgar_puntos/devolver_puntos/revertir_puntos:
+    traga la excepción, deja rastro por [WARN] y regresa None -- quien
+    confirma un canje ya escaneó el QR, no tiene nada que deshacer si la
+    auditoría falla."""
+    supabase, rpc = _rpc_supabase(raises=Exception("fallo simulado de Postgres"))
+
+    with patch.object(reputacion_service, "supabase", supabase):
+        resultado = reputacion_service.confirmar_puntos_reservados(
+            "user-1", "reportante", "canje_recompensa_confirmado", "canje", "canje-1",
+        )
+
+    assert resultado is None
+    salida = capsys.readouterr().out
+    assert "[WARN]" in salida
+    assert "confirmar_puntos_reservados fallo" in salida
+
+
+def test_confirmar_puntos_reservados_segunda_llamada_no_duplica():
+    """ON CONFLICT (regla, evento_origen_id) DO NOTHING: si la misma
+    confirmación ya se procesó, la RPC regresa RETURNING vacío -- el
+    wrapper debe devolver None sin lanzar, igual que
+    otorgar_puntos_no_duplica_si_ya_existe."""
+    supabase, rpc = _rpc_supabase(data=[])
+
+    with patch.object(reputacion_service, "supabase", supabase):
+        resultado = reputacion_service.confirmar_puntos_reservados(
+            "user-1", "reportante", "canje_recompensa_confirmado", "canje", "canje-1",
+        )
+
+    assert resultado is None
+    supabase.rpc.assert_called_once_with("confirmar_puntos_reservados_atomico", {
+        "p_usuario_id": "user-1",
+        "p_rol": "reportante",
+        "p_regla": "canje_recompensa_confirmado",
+        "p_tipo_origen": "canje",
+        "p_evento_origen_id": "canje-1",
+    })
+
+
+def test_confirmar_puntos_reservados_manda_la_regla_tal_cual_sin_sufijo():
+    """Desde 0053_confirmar_regla_segura.sql, quien reserva y quien
+    confirma deben usar la MISMA regla -- es la propia RPC
+    (confirmar_puntos_reservados_atomico) la que le agrega el sufijo fijo
+    '__confirmado' antes de insertar, no el wrapper de Python.
+
+    Este test deja constancia del contrato del lado Python: p_regla debe
+    viajar a la RPC exactamente como la pasó el llamador (la misma regla
+    usada en reservar_puntos para este evento), SIN que
+    confirmar_puntos_reservados le agregue ningún sufijo por su cuenta.
+    Si el wrapper alguna vez empezara a concatenar '__confirmado' (o
+    cualquier otro sufijo) él mismo, terminaría duplicando el trabajo de
+    la función SQL (que ya lo hace) y produciría una regla con el
+    sufijo dos veces -- la responsabilidad de esa transformación vive
+    exclusivamente en Postgres."""
+    supabase, rpc = _rpc_supabase(data=[{"id": "mov-3", "tipo_movimiento": "confirmado", "puntos": 0}])
+
+    with patch.object(reputacion_service, "supabase", supabase):
+        reputacion_service.confirmar_puntos_reservados(
+            "user-1", "reportante", "canje_recompensa", "canje", "canje-1",
+        )
+
+    kwargs_enviados = supabase.rpc.call_args[0][1]
+    assert kwargs_enviados["p_regla"] == "canje_recompensa"
+    assert not kwargs_enviados["p_regla"].endswith("__confirmado"), (
+        "el wrapper Python no debe agregar el sufijo por su cuenta -- "
+        "eso es responsabilidad exclusiva de confirmar_puntos_reservados_atomico (0053)"
+    )
+
+
+# ─── consultar_saldo_desglosado ─────────────────────────────────────────
+
+def test_consultar_saldo_desglosado_parametros_correctos_y_retorno():
+    fila = {"saldo_disponible": 70, "saldo_reservado": 30, "saldo_total": 100}
+    supabase, rpc = _rpc_supabase(data=[fila])
+
+    with patch.object(reputacion_service, "supabase", supabase):
+        resultado = reputacion_service.consultar_saldo_desglosado("user-1", "reportante")
+
+    assert resultado == fila
+    supabase.rpc.assert_called_once_with("calcular_saldo_desglosado_atomico", {
+        "p_usuario_id": "user-1",
+        "p_rol": "reportante",
+    })
+
+
+def test_consultar_saldo_desglosado_sin_movimientos_usa_default():
+    """Usuario sin ningún movimiento todavía -- la RPC no regresa fila
+    (a diferencia de ajustar_trust_score_atomico, esta no crea nada), el
+    wrapper debe caer al default en cero en vez de tronar con IndexError."""
+    supabase, rpc = _rpc_supabase(data=[])
+
+    with patch.object(reputacion_service, "supabase", supabase):
+        resultado = reputacion_service.consultar_saldo_desglosado("user-1", "reportante")
+
+    assert resultado == {"saldo_disponible": 0, "saldo_reservado": 0, "saldo_total": 0}
+
+
 # ─── ajustar_trust_score ───────────────────────────────────────────────
 #
 # Los 3 puntos pedidos aquí (default 60, clamp [0,100], reduccion sin
@@ -669,6 +790,10 @@ def test_procesar_cierre_reporte_no_ajusta_trust_score_si_usuario_id_es_none():
         usuario_id="user-1", rol="reportante", tipo="incremento", valor=3,
         regla="trust_reporte_validado", motivo="Reporte validado",
         tipo_origen="reporte", evento_origen_id="reporte-1",
+    )),
+    ("confirmar_puntos_reservados", dict(
+        usuario_id="user-1", rol="reportante", regla="canje_recompensa_confirmado",
+        tipo_origen="canje", evento_origen_id="canje-1",
     )),
 ])
 def test_funciones_secundarias_no_propagan_excepcion_de_la_rpc(nombre_funcion, kwargs, capsys):

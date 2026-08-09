@@ -184,6 +184,14 @@ def devolver_puntos(
     evento_origen_id: str,
     puntos: int,
 ) -> dict | None:
+    """Esta es la funcion "liberar puntos reservados" del documento de
+    asignacion (no hay una funcion separada con ese nombre): cubre tanto
+    "QR expiro sin usarse" como "el usuario cancelo antes de confirmar"
+    -- en ambos casos la reserva se revierte y el monto regresa al
+    saldo disponible. Para "confirmar" (la reserva se vuelve
+    definitiva), usar confirmar_puntos_reservados en su lugar, nunca
+    esta funcion."""
+
     try:
         resultado = supabase.rpc("devolver_puntos_atomico", {
             "p_usuario_id": usuario_id,
@@ -283,6 +291,56 @@ def consultar_saldo(usuario_id: str, rol: str) -> int:
     )
     return sum(fila["puntos"] for fila in (resultado.data or []))
 
+def confirmar_puntos_reservados(
+    usuario_id: str,
+    rol: str,
+    regla: str,
+    tipo_origen: str,
+    evento_origen_id: str,
+) -> dict | None:
+    """Vuelve DEFINITIVA una reserva previa (ej. QR de canje escaneado
+    con exito). No resta saldo de nuevo -- ya se resto al reservar, esto
+    solo deja constancia de auditoria (tipo_movimiento='confirmado',
+    puntos=0).
+ 
+    Pasa la MISMA `regla` y el MISMO `evento_origen_id` que usaste en
+    reservar_puntos para esta reserva -- la RPC internamente le agrega
+    un sufijo fijo antes de guardarla (desde 0053), asi que nunca choca
+    con la fila de la reserva original. No hace falta que inventes una
+    regla distinta ni que la recuerdes despues; es imposible
+    equivocarse en este punto por diseño.
+ 
+    "Liberar puntos reservados" (el otro caso, cuando el QR expira o se
+    cancela sin usarse) NO es esta funcion -- es devolver_puntos, ya
+    existente: revierte la reserva y el monto regresa al saldo
+    disponible.
+    """
+    try:
+        resultado = supabase.rpc("confirmar_puntos_reservados_atomico", {
+            "p_usuario_id": usuario_id,
+            "p_rol": rol,
+            "p_regla": regla,
+            "p_tipo_origen": tipo_origen,
+            "p_evento_origen_id": evento_origen_id,
+        }).execute()
+        return resultado.data[0] if resultado.data else None
+    except Exception as e:
+        print(f"[WARN] confirmar_puntos_reservados fallo (usuario={usuario_id}, regla={regla}): {e}")
+        return None
+ 
+ 
+def consultar_saldo_desglosado(usuario_id: str, rol: str) -> dict:
+    """saldo_disponible / saldo_reservado / saldo_total. Para Persona 5:
+    muestren esto en la pantalla de canje ("tienes X puntos, Y
+    reservados en un canje pendiente, Z disponibles")."""
+    resultado = supabase.rpc("calcular_saldo_desglosado_atomico", {
+        "p_usuario_id": usuario_id,
+        "p_rol": rol,
+    }).execute()
+    if not resultado.data:
+        return {"saldo_disponible": 0, "saldo_reservado": 0, "saldo_total": 0}
+    fila = resultado.data[0] if isinstance(resultado.data, list) else resultado.data
+    return fila
 
 def evaluar_insignias_reportante(usuario_id: str) -> list[dict]:
     """Vigía comunitario (1/5/15 reportes válidos), Impacto real (3
