@@ -162,7 +162,19 @@ def evaluar_insignias_aliado(usuario_id: str) -> list[dict]:
 def obtener_mis_insignias_aliado(usuario_id: str) -> list[dict]:
     """Solo las insignias del rol de aliado del usuario — si en el futuro
     el mismo usuario también tiene insignias de reportante/voluntario
-    (Personas 1-3), esas viven bajo otro `rol` y no se mezclan aquí."""
+    (Personas 1-3), esas viven bajo otro `rol` y no se mezclan aquí.
+
+    Antes de consultar se evalúa de forma tolerante a fallos para recuperar
+    contribuciones históricas que fueron confirmadas antes de que existiera
+    el motor de insignias. La evaluación es idempotente, por lo que abrir el
+    panel varias veces no crea duplicados ni retrocede niveles."""
+    try:
+        evaluar_insignias_aliado(usuario_id)
+    except Exception:
+        # La gamificación es secundaria: un fallo nunca debe impedir abrir
+        # el perfil ni consultar las insignias que ya existan.
+        pass
+
     perfil = supabase.table("perfil_apoyo").select("tipo").eq("usuario_id", usuario_id).execute()
     if not perfil.data:
         return []

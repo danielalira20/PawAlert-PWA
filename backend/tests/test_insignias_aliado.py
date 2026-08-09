@@ -174,3 +174,40 @@ def test_diez_canjes_confirmados_otorgan_comunidad_que_recompensa(make_query):
     insertado = tablas["insignias"].insert.call_args[0][0]
     assert insertado["codigo_insignia"] == "comunidad_que_recompensa"
     assert insertado["progreso"] == 10
+
+
+def test_consultar_insignias_reevalua_historial_sin_bloquear_panel(make_query):
+    tablas = {
+        "perfil_apoyo": make_query(data=[{"tipo": "aliado_local"}]),
+        "insignias": make_query(data=[{
+            "id": "ins-1", "usuario_id": "user-1", "rol": "aliado_local",
+            "codigo_insignia": "aliado_de_impacto", "nivel": "cobre",
+            "progreso": 1,
+        }]),
+    }
+    with (
+        patch.object(insignias_aliado_service, "supabase", _supabase(tablas)),
+        patch.object(insignias_aliado_service, "evaluar_insignias_aliado") as evaluar,
+    ):
+        resultado = insignias_aliado_service.obtener_mis_insignias_aliado("user-1")
+
+    evaluar.assert_called_once_with("user-1")
+    assert resultado[0]["codigo_insignia"] == "aliado_de_impacto"
+
+
+def test_fallo_al_reevaluar_no_impide_consultar_insignias(make_query):
+    tablas = {
+        "perfil_apoyo": make_query(data=[{"tipo": "aliado_local"}]),
+        "insignias": make_query(data=[]),
+    }
+    with (
+        patch.object(insignias_aliado_service, "supabase", _supabase(tablas)),
+        patch.object(
+            insignias_aliado_service,
+            "evaluar_insignias_aliado",
+            side_effect=RuntimeError("gamificación no disponible"),
+        ),
+    ):
+        resultado = insignias_aliado_service.obtener_mis_insignias_aliado("user-1")
+
+    assert resultado == []
