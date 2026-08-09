@@ -84,9 +84,18 @@ TRUST_REDUCCION_FALSO_CONFIRMADO = 25
 REGLA_BUSQUEDA_DOCUMENTADA_INTERNA = "busqueda_documentada_interna"
 REGLA_TRUST_BUSQUEDA_DOCUMENTADA_INTERNA = "trust_busqueda_documentada_interna"
 REGLA_LLEGADA_REFUGIO_INTERNA = "llegada_refugio_interna"
+REGLA_BONO_VOLUNTARIO_INTERNO = "postulacion_interna_aprobada"
+REGLA_TRUST_RESPUESTA_PROPUESTA_INTERNA = "trust_respuesta_propuesta_interna"
+REGLA_RESCATE_COMPLETADO_INTERNO = "rescate_completado_interno"
+REGLA_TRUST_RESCATE_COMPLETADO_INTERNO = "trust_rescate_completado_interno"
 PUNTOS_BUSQUEDA_DOCUMENTADA_INTERNA = 15
 TRUST_BUSQUEDA_DOCUMENTADA_INTERNA = 2
 PUNTOS_LLEGADA_REFUGIO_INTERNA = 5
+PUNTOS_BONO_VOLUNTARIO_INTERNO = 30
+TRUST_RESPUESTA_PROPUESTA_INTERNA = 1
+LIMITE_RESPUESTAS_PROPUESTA_MES = 5
+PUNTOS_RESCATE_COMPLETADO_INTERNO = 40
+TRUST_RESCATE_COMPLETADO_INTERNO = 5
 TRUST_LIMITE_INCREMENTO_MES_VOLUNTARIO = 20
 
 # conclusion es texto libre de UI (OPCIONES_CIERRE en AssociationStatusScreen.tsx
@@ -103,6 +112,8 @@ TIPO_ORIGEN_REPORTE = "reporte"
 TIPO_ORIGEN_MODERACION = "moderacion"
 TIPO_ORIGEN_BUSQUEDA = "busqueda_no_localizado"
 TIPO_ORIGEN_HITO_RESCATE = "hito_rescate"
+TIPO_ORIGEN_POSTULACION = "postulacion"
+TIPO_ORIGEN_PROPUESTA_ASIGNACION = "propuesta_asignacion"
 
 
 # ============================================================
@@ -386,6 +397,89 @@ def procesar_busqueda_documentada_interna(busqueda_id: str, usuario_id: str | No
         REGLA_TRUST_BUSQUEDA_DOCUMENTADA_INTERNA,
         "Búsqueda documentada validada por la asociación",
         TIPO_ORIGEN_BUSQUEDA, busqueda_id,
+        limite_incremento_mes=TRUST_LIMITE_INCREMENTO_MES_VOLUNTARIO,
+    )
+
+
+def procesar_aprobacion_voluntario_interno(
+    postulacion_id: str,
+    usuario_id: str | None,
+) -> None:
+    """Entrega una sola vez en la vida el bono inicial del voluntario
+    interno. Se usa usuario_id como evento idempotente para que una futura
+    re-postulación no vuelva a generar el bono."""
+    if not usuario_id:
+        return
+
+    otorgar_puntos(
+        usuario_id, ROL_VOLUNTARIO_INTERNO, REGLA_BONO_VOLUNTARIO_INTERNO,
+        TIPO_ORIGEN_POSTULACION, usuario_id, PUNTOS_BONO_VOLUNTARIO_INTERNO,
+    )
+
+
+def procesar_respuesta_propuesta_interna(
+    propuesta_id: str,
+    usuario_id: str | None,
+) -> None:
+    """Suma +1 de Trust Score por aceptar o rechazar a tiempo, con máximo
+    de cinco puntos mensuales por esta regla y veinte incrementos totales
+    al mes para el rol voluntario."""
+    if not usuario_id:
+        return
+
+    try:
+        inicio_mes = datetime.now(timezone.utc).replace(
+            day=1, hour=0, minute=0, second=0, microsecond=0,
+        ).isoformat()
+        movimientos = (
+            supabase.table("trust_score_movimientos")
+            .select("valor")
+            .eq("usuario_id", usuario_id)
+            .eq("rol", ROL_VOLUNTARIO_INTERNO)
+            .eq("tipo", "incremento")
+            .eq("regla", REGLA_TRUST_RESPUESTA_PROPUESTA_INTERNA)
+            .gte("creado_at", inicio_mes)
+            .execute()
+        )
+        acumulado = sum(int(fila.get("valor") or 0) for fila in (movimientos.data or []))
+        if acumulado >= LIMITE_RESPUESTAS_PROPUESTA_MES:
+            return
+    except Exception as error:
+        print(
+            "[WARN] no se pudo consultar el límite mensual de respuestas "
+            f"(usuario={usuario_id}): {error}"
+        )
+        return
+
+    ajustar_trust_score(
+        usuario_id, ROL_VOLUNTARIO_INTERNO, "incremento",
+        TRUST_RESPUESTA_PROPUESTA_INTERNA,
+        REGLA_TRUST_RESPUESTA_PROPUESTA_INTERNA,
+        "Propuesta de asignación respondida dentro del plazo",
+        TIPO_ORIGEN_PROPUESTA_ASIGNACION, propuesta_id,
+        limite_incremento_mes=TRUST_LIMITE_INCREMENTO_MES_VOLUNTARIO,
+    )
+
+
+def procesar_rescate_completado_interno(
+    reporte_id: str,
+    usuario_id: str | None,
+) -> None:
+    """Premia al voluntario interno originalmente asignado cuando la
+    asociación cierra un caso real y documentado."""
+    if not usuario_id:
+        return
+
+    otorgar_puntos(
+        usuario_id, ROL_VOLUNTARIO_INTERNO, REGLA_RESCATE_COMPLETADO_INTERNO,
+        TIPO_ORIGEN_REPORTE, reporte_id, PUNTOS_RESCATE_COMPLETADO_INTERNO,
+    )
+    ajustar_trust_score(
+        usuario_id, ROL_VOLUNTARIO_INTERNO, "incremento",
+        TRUST_RESCATE_COMPLETADO_INTERNO,
+        REGLA_TRUST_RESCATE_COMPLETADO_INTERNO,
+        "Rescate concluido y documentado correctamente",
+        TIPO_ORIGEN_REPORTE, reporte_id,
         limite_incremento_mes=TRUST_LIMITE_INCREMENTO_MES_VOLUNTARIO,
     )
 

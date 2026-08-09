@@ -522,6 +522,94 @@ def test_procesar_llegada_refugio_interna_ignora_usuario_ausente():
     mock_otorgar.assert_not_called()
 
 
+def test_aprobacion_voluntario_interno_otorga_bono_unico_por_usuario():
+    with patch.object(reputacion_service, "otorgar_puntos") as mock_otorgar:
+        reputacion_service.procesar_aprobacion_voluntario_interno(
+            "postulacion-1", "user-1"
+        )
+
+    mock_otorgar.assert_called_once_with(
+        "user-1",
+        reputacion_service.ROL_VOLUNTARIO_INTERNO,
+        reputacion_service.REGLA_BONO_VOLUNTARIO_INTERNO,
+        reputacion_service.TIPO_ORIGEN_POSTULACION,
+        "user-1",
+        reputacion_service.PUNTOS_BONO_VOLUNTARIO_INTERNO,
+    )
+
+
+def test_respuesta_propuesta_interna_suma_uno_si_no_alcanzo_tope(make_query):
+    movimientos = make_query(data=[{"valor": 1}, {"valor": 1}])
+    supabase = MagicMock()
+    supabase.table.return_value = movimientos
+
+    with (
+        patch.object(reputacion_service, "supabase", supabase),
+        patch.object(reputacion_service, "ajustar_trust_score") as mock_ajustar,
+    ):
+        reputacion_service.procesar_respuesta_propuesta_interna(
+            "propuesta-1", "user-1"
+        )
+
+    mock_ajustar.assert_called_once_with(
+        "user-1",
+        reputacion_service.ROL_VOLUNTARIO_INTERNO,
+        "incremento",
+        reputacion_service.TRUST_RESPUESTA_PROPUESTA_INTERNA,
+        reputacion_service.REGLA_TRUST_RESPUESTA_PROPUESTA_INTERNA,
+        "Propuesta de asignación respondida dentro del plazo",
+        reputacion_service.TIPO_ORIGEN_PROPUESTA_ASIGNACION,
+        "propuesta-1",
+        limite_incremento_mes=reputacion_service.TRUST_LIMITE_INCREMENTO_MES_VOLUNTARIO,
+    )
+
+
+def test_respuesta_propuesta_interna_no_supera_cinco_al_mes(make_query):
+    movimientos = make_query(data=[{"valor": 1} for _ in range(5)])
+    supabase = MagicMock()
+    supabase.table.return_value = movimientos
+
+    with (
+        patch.object(reputacion_service, "supabase", supabase),
+        patch.object(reputacion_service, "ajustar_trust_score") as mock_ajustar,
+    ):
+        reputacion_service.procesar_respuesta_propuesta_interna(
+            "propuesta-6", "user-1"
+        )
+
+    mock_ajustar.assert_not_called()
+
+
+def test_rescate_completado_interno_otorga_cuarenta_puntos_y_cinco_trust():
+    with (
+        patch.object(reputacion_service, "otorgar_puntos") as mock_otorgar,
+        patch.object(reputacion_service, "ajustar_trust_score") as mock_ajustar,
+    ):
+        reputacion_service.procesar_rescate_completado_interno(
+            "reporte-1", "user-1"
+        )
+
+    mock_otorgar.assert_called_once_with(
+        "user-1",
+        reputacion_service.ROL_VOLUNTARIO_INTERNO,
+        reputacion_service.REGLA_RESCATE_COMPLETADO_INTERNO,
+        reputacion_service.TIPO_ORIGEN_REPORTE,
+        "reporte-1",
+        reputacion_service.PUNTOS_RESCATE_COMPLETADO_INTERNO,
+    )
+    mock_ajustar.assert_called_once_with(
+        "user-1",
+        reputacion_service.ROL_VOLUNTARIO_INTERNO,
+        "incremento",
+        reputacion_service.TRUST_RESCATE_COMPLETADO_INTERNO,
+        reputacion_service.REGLA_TRUST_RESCATE_COMPLETADO_INTERNO,
+        "Rescate concluido y documentado correctamente",
+        reputacion_service.TIPO_ORIGEN_REPORTE,
+        "reporte-1",
+        limite_incremento_mes=reputacion_service.TRUST_LIMITE_INCREMENTO_MES_VOLUNTARIO,
+    )
+
+
 # ─── procesar_cierre_reporte ────────────────────────────────────────────
 
 def test_procesar_cierre_reporte_no_ajusta_trust_score_si_conclusion_invalida():
