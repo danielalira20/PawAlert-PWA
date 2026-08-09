@@ -357,7 +357,27 @@ def responder_propuesta(
     reporte_id: str,
     acepta: bool,
     motivo: str | None = None,
+    rol: str | None = None,
 ) -> dict:
+    propuesta_id = None
+    if rol == "voluntario_interno":
+        try:
+            propuesta = (
+                supabase_admin.table("propuestas_asignacion")
+                .select("id")
+                .eq("reporte_id", reporte_id)
+                .eq("usuario_asignado_id", usuario_id)
+                .eq("estado", "activa")
+                .limit(1)
+                .execute()
+            )
+            propuesta_id = propuesta.data[0]["id"] if propuesta.data else None
+        except Exception as error:
+            print(
+                "[WARN] no se pudo identificar la propuesta para gamificación "
+                f"(reporte={reporte_id}): {error}"
+            )
+
     try:
         resultado = supabase_admin.rpc(
             "responder_propuesta_cobertura",
@@ -375,6 +395,18 @@ def responder_propuesta(
                 detail="La propuesta ya no está disponible",
             ) from exc
         raise
+
+    if propuesta_id:
+        try:
+            from app.services.reputacion_service import (
+                procesar_respuesta_propuesta_interna,
+            )
+            procesar_respuesta_propuesta_interna(propuesta_id, usuario_id)
+        except Exception as error:
+            print(
+                "[WARN] no se pudo procesar la respuesta oportuna "
+                f"(propuesta={propuesta_id}): {error}"
+            )
     return {"ok": True, "estado_cobertura": resultado.data}
 
 

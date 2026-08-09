@@ -251,7 +251,7 @@ def test_confirmar_asignacion_mueve_reporte_a_en_camino(make_query):
         "reporte_asignaciones": {"data": []},
         "historial_reporte": {"data": []},
     })
-    usuario = {"id": "user-vol-1"}
+    usuario = {"id": "user-vol-1", "rol": "voluntario_interno"}
     reporte = {"staff_asignado_id": "user-vol-1", "confirmacion_voluntario": "esperando"}
 
     with (
@@ -269,7 +269,9 @@ def test_confirmar_asignacion_mueve_reporte_a_en_camino(make_query):
             "estado_cobertura": "confirmado",
         }
 
-    responder.assert_called_once_with("user-vol-1", "rep-1", True)
+    responder.assert_called_once_with(
+        "user-vol-1", "rep-1", True, rol="voluntario_interno"
+    )
 
 
 def test_rechazar_asignacion_libera_caso_sin_cambiar_estado_reporte(make_query):
@@ -279,7 +281,7 @@ def test_rechazar_asignacion_libera_caso_sin_cambiar_estado_reporte(make_query):
         "reporte_asignaciones": {"data": []},
         "historial_reporte": {"data": []},
     })
-    usuario = {"id": "user-vol-1"}
+    usuario = {"id": "user-vol-1", "rol": "voluntario_interno"}
     reporte = {"staff_asignado_id": "user-vol-1", "confirmacion_voluntario": "esperando"}
 
     with (
@@ -298,7 +300,8 @@ def test_rechazar_asignacion_libera_caso_sin_cambiar_estado_reporte(make_query):
 
     assert resultado == {"ok": True, "estado_cobertura": "abierto"}
     responder.assert_called_once_with(
-        "user-vol-1", "rep-1", False, "No puedo trasladarlo"
+        "user-vol-1", "rep-1", False, "No puedo trasladarlo",
+        rol="voluntario_interno",
     )
 
 

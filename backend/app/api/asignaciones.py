@@ -162,7 +162,7 @@ def confirmar_asignacion(reporte_id: str, authorization: Optional[str] = Header(
     _validar_es_el_voluntario_asignado(usuario, reporte)
 
     return coverage_service.responder_propuesta(
-        usuario["id"], reporte_id, True
+        usuario["id"], reporte_id, True, rol=usuario.get("rol")
     )
 
 
@@ -175,7 +175,7 @@ def rechazar_asignacion(
     _validar_es_el_voluntario_asignado(usuario, reporte)
 
     return coverage_service.responder_propuesta(
-        usuario["id"], reporte_id, False, body.motivo
+        usuario["id"], reporte_id, False, body.motivo, rol=usuario.get("rol")
     )
 
 # ---------------------------------------------------------------------------

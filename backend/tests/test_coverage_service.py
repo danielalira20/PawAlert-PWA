@@ -257,6 +257,52 @@ def test_expira_propuestas_mediante_funcion_transaccional():
     supabase_admin.rpc.assert_called_once_with("expirar_propuestas_cobertura")
 
 
+@pytest.mark.parametrize("acepta", [True, False])
+def test_respuesta_oportuna_interna_suma_trust_al_aceptar_o_rechazar(
+    make_query, acepta,
+):
+    propuestas = make_query(data=[{"id": "propuesta-1"}])
+    supabase_admin = MagicMock()
+    supabase_admin.table.return_value = propuestas
+    supabase_admin.rpc.return_value.execute.return_value = SimpleNamespace(
+        data="confirmado" if acepta else "abierto"
+    )
+
+    with (
+        patch.object(coverage_service, "supabase_admin", supabase_admin),
+        patch(
+            "app.services.reputacion_service.procesar_respuesta_propuesta_interna"
+        ) as mock_reputacion,
+    ):
+        resultado = coverage_service.responder_propuesta(
+            "user-1", "rep-1", acepta, rol="voluntario_interno"
+        )
+
+    assert resultado["ok"] is True
+    mock_reputacion.assert_called_once_with("propuesta-1", "user-1")
+    propuestas.eq.assert_any_call("estado", "activa")
+
+
+def test_respuesta_externa_no_usa_regla_interna():
+    supabase_admin = MagicMock()
+    supabase_admin.rpc.return_value.execute.return_value = SimpleNamespace(
+        data="confirmado"
+    )
+
+    with (
+        patch.object(coverage_service, "supabase_admin", supabase_admin),
+        patch(
+            "app.services.reputacion_service.procesar_respuesta_propuesta_interna"
+        ) as mock_reputacion,
+    ):
+        coverage_service.responder_propuesta(
+            "user-ext", "rep-1", True, rol="voluntario_externo"
+        )
+
+    supabase_admin.table.assert_not_called()
+    mock_reputacion.assert_not_called()
+
+
 def test_reserva_concurrente_devuelve_conflicto_controlado():
     ejecucion = MagicMock()
     ejecucion.execute.side_effect = Exception("caso_no_disponible")
