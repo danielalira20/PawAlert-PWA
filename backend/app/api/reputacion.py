@@ -17,7 +17,17 @@ ni la etiqueta interna que lo origina.
 from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
 
-from app.db.supabase import supabase
+from app.db.supabase import supabase, supabase_admin
+# Dos clientes a propósito: `supabase` (key anon) solo para verificar el
+# token via auth.get_user() y leer `usuarios` (sin RLS restrictivo).
+# `supabase_admin` (service_role) para leer movimientos_puntos/insignias
+# -- esas tablas tienen RLS habilitado + REVOKE ALL FROM anon,
+# authenticated (0046/0047), así que el cliente anon SIEMPRE recibe
+# "permission denied" ahí, sin importar el token. Bug real detectado en
+# producción: las dos consultas directas de este archivo usaban
+# `supabase` por error -- reputacion_service.py (que sí usa
+# supabase_admin internamente) nunca tuvo este problema, por eso
+# GET /reputacion/me funcionaba pero /me/historial y /me/insignias no.
 from app.services import reputacion_service
 
 router = APIRouter()
@@ -157,7 +167,7 @@ async def get_mi_historial_puntos(rol: str, limit: int = 50, authorization: str 
         raise HTTPException(status_code=403, detail="Ese rol no aplica a tu cuenta")
 
     resultado = (
-        supabase.table("movimientos_puntos")
+        supabase_admin.table("movimientos_puntos")
         .select("id, rol, tipo_movimiento, puntos, regla, tipo_origen, creado_at")
         .eq("usuario_id", usuario["id"])
         .eq("rol", rol)
@@ -177,7 +187,7 @@ async def get_mis_insignias(rol: str, authorization: str = Header(None)):
         raise HTTPException(status_code=403, detail="Ese rol no aplica a tu cuenta")
 
     resultado = (
-        supabase.table("insignias")
+        supabase_admin.table("insignias")
         .select("id, rol, codigo_insignia, nivel, progreso, obtenido_at, mejorado_at")
         .eq("usuario_id", usuario["id"])
         .eq("rol", rol)
