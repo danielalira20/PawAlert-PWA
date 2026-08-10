@@ -17,6 +17,7 @@ from app.models.recompensas import (
     CanjeConfirmarRequest,
     CanjeResponse,
     CanjeReembolsoRequest,
+    ReportarProblemaRequest,
     RecompensaCatalogoResponse,
 )
 
@@ -100,6 +101,32 @@ async def reembolsar_canje_endpoint(canje_id: str, body: CanjeReembolsoRequest, 
         raise HTTPException(status_code=403, detail="Solo administradores pueden reembolsar canjes")
     from app.services.canjes_service import reembolsar_canje
     return reembolsar_canje(canje_id, body.motivo, usuario["id"])
+
+
+@router.post("/canjes/{canje_id}/problemas", status_code=201)
+async def reportar_problema_endpoint(canje_id: str, body: ReportarProblemaRequest, authorization: str = Header(None)):
+    usuario = _obtener_usuario_autenticado(authorization)
+    from app.services.canjes_service import reportar_problema_canje
+    return reportar_problema_canje(canje_id, usuario["id"], body.motivo)
+
+
+@router.get("/admin/canjes/problemas", status_code=200)
+async def obtener_problemas_canjes_endpoint(authorization: str = Header(None)):
+    from fastapi import HTTPException
+    usuario = _obtener_usuario_autenticado(authorization)
+    if usuario.get("rol") != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores pueden ver problemas")
+    from app.services.canjes_service import obtener_problemas_pendientes
+    return obtener_problemas_pendientes()
+
+@router.post("/admin/canjes/problemas/{problema_id}/rechazar", status_code=200)
+async def rechazar_problema_endpoint(problema_id: str, authorization: str = Header(None)):
+    from fastapi import HTTPException
+    usuario = _obtener_usuario_autenticado(authorization)
+    if usuario.get("rol") != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores pueden rechazar problemas")
+    from app.services.canjes_service import rechazar_problema_canje
+    return rechazar_problema_canje(problema_id, usuario["id"])
 
 
 @router.post("/canjes/confirmar", status_code=200, response_model=CanjeResponse)

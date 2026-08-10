@@ -171,3 +171,7 @@ class CanjeResponse(BaseModel):
 
 class CanjeReembolsoRequest(BaseModel):
     motivo: str = Field(min_length=5, max_length=500)
+
+
+class ReportarProblemaRequest(BaseModel):
+    motivo: str = Field(min_length=10, max_length=1000)
