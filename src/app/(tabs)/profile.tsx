@@ -21,6 +21,7 @@ import { AppModal } from '@/components/AppModal';
 import { LoggedOutProfile } from '../../components/profile/LoggedOutProfile';
 import { LoggedInProfile } from '../../components/profile/LoggedInProfile';
 import { CatalogoRecompensasScreen } from '../../screens/CatalogoRecompensasScreen';
+import { MisCanjesScreen } from '../../screens/MisCanjesScreen';
 
 const { width } = Dimensions.get('window');
 const isWeb = Platform.OS === 'web';
@@ -52,6 +53,7 @@ export default function ProfileScreen() {
   const [isAportacionVisible, setIsAportacionVisible] = useState(false);
   const [isCustodyVisible, setIsCustodyVisible] = useState(false);
   const [isCatalogoVisible, setIsCatalogoVisible] = useState(false);
+  const [isMisCanjesVisible, setIsMisCanjesVisible] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(24)).current;
@@ -116,6 +118,7 @@ export default function ProfileScreen() {
       setIsAportacionVisible(false);
       setIsCustodyVisible(false);
       setIsCatalogoVisible(false);
+      setIsMisCanjesVisible(false);
     }
   }, [isLoggedIn]);
 
@@ -131,6 +134,8 @@ export default function ProfileScreen() {
       <LoggedInProfile
         onOpenMisReportes={() => setIsMisReportesVisible(true)}
         onOpenAdminPanel={() => setIsAdminVisible(true)}
+        onOpenCatalogo={() => setIsCatalogoVisible(true)}
+        onOpenMisCanjes={() => setIsMisCanjesVisible(true)}
         onOpenAssociationPanel={() => setIsAssociationVisible(true)}
         onOpenStaffPanel={() => setIsStaffVisible(true)}
         onOpenVerificaciones={() => setIsVerificacionesVisible(true)}
@@ -152,6 +157,10 @@ export default function ProfileScreen() {
 
       <AppModal visible={isCatalogoVisible} onClose={() => setIsCatalogoVisible(false)} maxWidth={850}>
         {isCatalogoVisible && <CatalogoRecompensasScreen onClose={() => setIsCatalogoVisible(false)} />}
+      </AppModal>
+
+      <AppModal visible={isMisCanjesVisible} onClose={() => setIsMisCanjesVisible(false)} maxWidth={850}>
+        {isMisCanjesVisible && <MisCanjesScreen onClose={() => setIsMisCanjesVisible(false)} />}
       </AppModal>
 
       <AppModal visible={isAdminVisible} onClose={() => setIsAdminVisible(false)} maxWidth={1100}>

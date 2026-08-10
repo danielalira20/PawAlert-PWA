@@ -31,8 +31,10 @@ const DESKTOP_BREAKPOINT = 900;
 
 interface Props {
   onOpenMisReportes: () => void;
-  onOpenAdminPanel: () => void;
-  onOpenAssociationPanel: () => void;
+  onOpenAdminPanel?: () => void;
+  onOpenCatalogo?: () => void;
+  onOpenMisCanjes?: () => void;
+  onOpenAssociationPanel?: () => void;
   onOpenStaffPanel: () => void;
   onOpenVerificaciones: () => void;
   // Abre el panel de ASIGNACIÓN de staff (candidatos, modo de asignación,
@@ -44,7 +46,6 @@ interface Props {
   onOpenAliadoForm: () => void;
   onOpenAliadoDashboard: () => void;
   onOpenCustodyDashboard: () => void;
-  onOpenCatalogo: () => void;
   onLogout: () => void;
   capacidadesRefreshKey?: number;
 }
@@ -52,6 +53,8 @@ interface Props {
 export function LoggedInProfile({
   onOpenMisReportes,
   onOpenAdminPanel,
+  onOpenCatalogo,
+  onOpenMisCanjes,
   onOpenAssociationPanel,
   onOpenStaffPanel,
   onOpenVerificaciones,
@@ -61,7 +64,6 @@ export function LoggedInProfile({
   onOpenAliadoForm,
   onOpenAliadoDashboard,
   onOpenCustodyDashboard,
-  onOpenCatalogo,
   onLogout,
   capacidadesRefreshKey,
 }: Props) {
@@ -266,12 +268,19 @@ export function LoggedInProfile({
         onPress={onOpenMisReportes}
       />
       {muestraSaldoReputacion && (
-        <AccessRow
-          icon="gift-outline"
-          label="Catálogo de Recompensas"
-          onPress={onOpenCatalogo}
-          isLast={!esAdmin && !esAsociacion && !esStaff && !puedeVerPostulacion && (user?.tiene_perfil_apoyo === true)}
-        />
+        <>
+          <AccessRow
+            icon="gift-outline"
+            label="Catálogo de Recompensas"
+            onPress={onOpenCatalogo}
+          />
+          <AccessRow
+            icon="qr-code-outline"
+            label="Mis Canjes"
+            onPress={onOpenMisCanjes}
+            isLast={!esAdmin && !esAsociacion && !esStaff && !puedeVerPostulacion && (user?.tiene_perfil_apoyo === true)}
+          />
+        </>
       )}
       {user && !user.tiene_perfil_apoyo && !esAsociacion && (
         <AccessRow
