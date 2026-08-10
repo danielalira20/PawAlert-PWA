@@ -6,6 +6,7 @@ from app.db.supabase import supabase_admin
 from app.services import storage_service
 from app.services.video_evidence_service import distancia_metros
 from app.services.reputacion_service import otorgar_puntos, ajustar_trust_score
+from app.services.reputacion_service import otorgar_puntos, ajustar_trust_score, evaluar_insignias_voluntario_externo
 
 
 TIPOS_EVIDENCIA = {
@@ -1077,7 +1078,7 @@ def resolver_verificacion_remota(
         evento_origen_id=verificacion_id,
         puntos=30,
     )
-    # TODO: Aquí llamaremos a tu evaluador de insignias para "Casa segura" más adelante
+    evaluar_insignias_voluntario_externo(usuario_id_postulante)
 
     return {
         "estado": "aprobada",
@@ -2456,7 +2457,7 @@ def resolver_resultado_visita(
         evento_origen_id=verificacion["id"],
         puntos=30,
     )
-    # TODO: Aquí llamaremos a tu evaluador de insignias para "Casa segura"
+    evaluar_insignias_voluntario_externo(usuario_id_postulante)
 
     # 2. +25 Puntos y +3 Trust Score para el Verificador (Voluntario Interno)
     if usuario_id_verificador:
