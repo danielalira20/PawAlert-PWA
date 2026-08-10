@@ -15,6 +15,7 @@ from fastapi import HTTPException
 from app.db.supabase import supabase, supabase_admin
 from app.services import matching
 from app.utils.animal_shaping import shape_animal_embed, shape_animal_response
+from app.services.reputacion_service import consultar_restricciones
 
 
 ESTADOS_VOLUNTARIO_ACTIVO = ("activo_nivel_1", "activo_nivel_2")
@@ -75,6 +76,17 @@ def obtener_casos_cercanos(usuario_id: str) -> list[dict]:
     max_casos = int(capacidades.get("max_casos_simultaneos") or 1)
     if carga_actual >= max_casos:
         return []
+
+    # --- GAMIFICACIÓN: Restricciones operativas (Trust Score < 40) ---
+    try:
+        restricciones = consultar_restricciones(usuario_id, "voluntario_externo")
+        if restricciones.get("bloqueado_nuevas_asignaciones", False):
+            # Si está bloqueado, devolvemos una lista vacía para que no vea nuevos casos en el mapa.
+            # Según las reglas de Jass, "puede_finalizar_activos_en_curso" siempre es True,
+            # así que sus casos asignados actuales no se ven afectados.
+            return []
+    except Exception as e:
+        print(f"[WARN] Error al consultar restricciones de asignación para {usuario_id}: {e}")
 
     resultado = (
         supabase.table("reportes")
@@ -138,6 +150,20 @@ def obtener_casos_cercanos(usuario_id: str) -> list[dict]:
 
 def crear_ofrecimiento(usuario_id: str, reporte_id: str) -> dict:
     perfil = obtener_perfil_externo(usuario_id)
+
+    # --- GAMIFICACIÓN: Bloqueo directo por API ---
+    try:
+        restricciones = consultar_restricciones(usuario_id, "voluntario_externo")
+        if restricciones.get("bloqueado_nuevas_asignaciones", False):
+            raise HTTPException(
+                status_code=403,
+                detail="Tu cuenta está temporalmente restringida para recibir nuevas asignaciones. Revisa tu Trust Score."
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[WARN] Error al consultar restricciones en ofrecimiento para {usuario_id}: {e}")
+
     elegibles = {
         caso["id"]: caso for caso in obtener_casos_cercanos(usuario_id)
     }
