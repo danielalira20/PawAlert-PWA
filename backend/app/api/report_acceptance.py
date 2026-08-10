@@ -26,6 +26,14 @@ def _aceptar_asignacion(asignacion_id: str, reporte_id: str, notas: str | None):
         "estado_reporte": "en_atencion",
     }).eq("id", reporte_id).execute()
 
+    try:
+        reporte = supabase.table("reportes").select("usuario_id").eq("id", reporte_id).execute()
+        usuario_id = reporte.data[0]["usuario_id"] if reporte.data else None
+        from app.services.reputacion_service import procesar_reporte_valido
+        procesar_reporte_valido(reporte_id, usuario_id)
+    except Exception as e:
+        print(f"[WARN] reputacion fallo en _aceptar_asignacion (reporte={reporte_id}): {e}")
+
 
 def _rechazar_asignacion(asignacion_id: str, reporte_id: str, notas: str | None):
     supabase.table("reporte_asignaciones").update({

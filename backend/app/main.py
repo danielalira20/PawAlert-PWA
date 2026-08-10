@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from app.api import ( reports, associations, catalogos, auth, users, report_acceptance, admin, staff, stats, asignaciones, voluntarios, internal, red_aliados, webhooks, perfiles_apoyo, coverage, custody)
+from app.api import ( reports, associations, catalogos, auth, users, report_acceptance, admin, staff, stats, asignaciones, voluntarios, internal, red_aliados, webhooks, perfiles_apoyo, coverage, custody, recompensas, incidentes, reputacion)
 
 app = FastAPI(
     title="PawAlert API",
@@ -33,6 +33,9 @@ app.include_router(webhooks.router, prefix="/webhooks", tags=["Webhooks"])
 app.include_router(perfiles_apoyo.router, prefix="/perfiles-apoyo", tags=["Perfiles de Apoyo"])
 app.include_router(coverage.router, prefix="/coverage", tags=["Cobertura"])
 app.include_router(custody.router, prefix="/custody", tags=["Custodia temporal"])
+app.include_router(recompensas.router, prefix="/recompensas", tags=["Recompensas"])
+app.include_router(incidentes.router, prefix="/incidentes", tags=["Incidentes"])
+app.include_router(reputacion.router, prefix="/reputacion", tags=["Reputación"])
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):

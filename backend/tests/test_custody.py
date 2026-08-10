@@ -842,6 +842,7 @@ def test_coordinadora_resuelve_busqueda_no_localizado_con_rpc():
     with (
         patch.object(reports, "supabase_admin", supabase_admin),
         patch.object(reports, "_obtener_usuario_autenticado", return_value=usuario),
+        patch.object(reports, "_procesar_gamificacion_busqueda_resuelta") as mock_gamificacion,
     ):
         response = client.post(
             "/reports/rep-1/busqueda-no-localizado/resolver",
@@ -851,6 +852,9 @@ def test_coordinadora_resuelve_busqueda_no_localizado_con_rpc():
 
     assert response.status_code == 200
     assert response.json()["decision"] == "repetir_busqueda"
+    mock_gamificacion.assert_called_once_with(
+        {"busqueda_id": "bus-1", "decision": "repetir_busqueda"}
+    )
     supabase_admin.rpc.assert_called_once_with(
         "resolver_busqueda_no_localizado",
         {
@@ -862,6 +866,67 @@ def test_coordinadora_resuelve_busqueda_no_localizado_con_rpc():
             "p_programada_at": None,
         },
     )
+
+
+def test_busqueda_documentada_resuelta_premia_al_voluntario_interno(make_query):
+    tablas = {
+        "busquedas_no_localizado": make_query(data=[{"usuario_id": "user-int"}]),
+        "usuarios": make_query(data=[{
+            "id": "user-int",
+            "roles": {"nombre": "voluntario_interno"},
+        }]),
+    }
+    supabase_admin = MagicMock()
+    supabase_admin.table.side_effect = lambda nombre: tablas[nombre]
+
+    with (
+        patch.object(reports, "supabase_admin", supabase_admin),
+        patch(
+            "app.services.reputacion_service.procesar_busqueda_documentada_interna"
+        ) as mock_procesar,
+    ):
+        reports._procesar_gamificacion_busqueda_resuelta({"busqueda_id": "bus-1"})
+
+    mock_procesar.assert_called_once_with("bus-1", "user-int")
+    tablas["busquedas_no_localizado"].eq.assert_called_once_with("id", "bus-1")
+    tablas["usuarios"].eq.assert_called_once_with("id", "user-int")
+
+
+def test_busqueda_documentada_resuelta_no_duplica_regla_del_voluntario_externo(make_query):
+    tablas = {
+        "busquedas_no_localizado": make_query(data=[{"usuario_id": "user-ext"}]),
+        "usuarios": make_query(data=[{
+            "id": "user-ext",
+            "roles": {"nombre": "voluntario_externo"},
+        }]),
+    }
+    supabase_admin = MagicMock()
+    supabase_admin.table.side_effect = lambda nombre: tablas[nombre]
+
+    with (
+        patch.object(reports, "supabase_admin", supabase_admin),
+        patch(
+            "app.services.reputacion_service.procesar_busqueda_documentada_interna"
+        ) as mock_procesar,
+    ):
+        reports._procesar_gamificacion_busqueda_resuelta({"busqueda_id": "bus-1"})
+
+    mock_procesar.assert_not_called()
+
+
+def test_busqueda_documentada_sin_resultado_confirmado_no_otorga_reputacion():
+    supabase_admin = MagicMock()
+
+    with (
+        patch.object(reports, "supabase_admin", supabase_admin),
+        patch(
+            "app.services.reputacion_service.procesar_busqueda_documentada_interna"
+        ) as mock_procesar,
+    ):
+        reports._procesar_gamificacion_busqueda_resuelta(None)
+
+    supabase_admin.table.assert_not_called()
+    mock_procesar.assert_not_called()
 
 
 def test_ampliar_busqueda_exige_instrucciones():

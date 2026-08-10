@@ -26,6 +26,7 @@ from app.services.red_aliados_service import (
     obtener_mi_perfil_apoyo,
     obtener_impacto_aliado,
 )
+from app.services.insignias_aliado_service import obtener_mis_insignias_aliado
 from app.models.red_aliados import (
     ContribucionRequest,
     ContribucionResponse,
@@ -43,6 +44,7 @@ from app.models.red_aliados import (
     PerfilApoyoMeResponse,
     ImpactoAliadoResponse,
 )
+from app.models.insignias import InsigniaResponse
 from datetime import datetime
 
 router = APIRouter()
@@ -94,6 +96,14 @@ async def get_mi_impacto_aliado(authorization: str = Header(None)):
     tiene_perfil_apoyo=true."""
     usuario = _obtener_usuario_autenticado(authorization)
     return obtener_impacto_aliado(usuario["id"])
+
+
+@router.get("/me/insignias", status_code=200, response_model=list[InsigniaResponse])
+async def get_mis_insignias_aliado(authorization: str = Header(None)):
+    """Insignias de aliado (Persona 4) del usuario logueado — mismo
+    criterio de separación que /me y /me/impacto."""
+    usuario = _obtener_usuario_autenticado(authorization)
+    return obtener_mis_insignias_aliado(usuario["id"])
 
 
 @router.get("/categorias", status_code=200)

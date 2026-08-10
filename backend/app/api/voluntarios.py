@@ -414,11 +414,15 @@ async def patch_mi_disponibilidad_operativa(
 @router.get("/me/reportes", status_code=200)
 async def get_mis_reportes_voluntario(authorization: str = Header(None)):
     """Reemplaza GET /staff/me/reportes (migración staff -> voluntario_interno).
-    Mismos 4 buckets (pendientes/en_accion/completados/historial), pero ya no
-    exige rol 'staff' literal — cualquier voluntario activo (interno o
-    externo) puede ver sus casos asignados."""
+    Mismos 4 buckets (pendientes/en_accion/completados/historial).
+    Se ha unificado la lógica para permitir acceso al rol 'staff' consultando directamente su staff_asignado_id."""
     usuario = _obtener_usuario_autenticado(authorization)
-    return await obtener_reportes_voluntario(usuario["id"])
+    
+    # 1. Ampliamos la validación para dejar entrar al staff
+    _verificar_rol(usuario, ("voluntario_interno", "voluntario_externo", "staff"))
+
+    # 2. Pasamos el ID del usuario y su rol al servicio
+    return await obtener_reportes_voluntario(usuario["id"], usuario["rol"])
 
 
 # ---------------------------------------------------------------------------

@@ -100,6 +100,79 @@ def test_finalizar_postulacion_interno_idempotente_no_llama_crear_postulacion(ma
     }
 
 
+# ─── resolver_postulacion() ───────────────────────────────────────────────
+
+def test_aprobar_postulacion_interna_dispara_bono_del_voluntario(make_query):
+    tablas = {
+        "postulaciones": make_query(data=[{
+            "id": "post-1",
+            "voluntario_id": "vol-1",
+            "asociacion_id": "asoc-1",
+            "tipo": "interno",
+            "estado": "pendiente",
+        }]),
+        "voluntarios": make_query(data=[{"usuario_id": "user-1"}]),
+        "roles": make_query(data=[{"id": "rol-interno"}]),
+        "usuarios": make_query(data=[]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda tabla: tablas[tabla]
+
+    with (
+        patch.object(voluntario_service, "supabase", supabase),
+        patch(
+            "app.services.reputacion_service.procesar_aprobacion_voluntario_interno"
+        ) as mock_bono,
+    ):
+        resultado = asyncio.run(voluntario_service.resolver_postulacion(
+            postulacion_id="post-1",
+            usuario_staff_id="staff-1",
+            asociacion_id="asoc-1",
+            accion="aceptar",
+        ))
+
+    assert resultado["estado"] == "activo_nivel_1"
+    mock_bono.assert_called_once_with("post-1", "user-1")
+
+
+def test_fallo_del_bono_no_revierte_aprobacion_interna(make_query):
+    tablas = {
+        "postulaciones": make_query(data=[{
+            "id": "post-1",
+            "voluntario_id": "vol-1",
+            "asociacion_id": "asoc-1",
+            "tipo": "interno",
+            "estado": "pendiente",
+        }]),
+        "voluntarios": make_query(data=[{"usuario_id": "user-1"}]),
+        "roles": make_query(data=[{"id": "rol-interno"}]),
+        "usuarios": make_query(data=[]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda tabla: tablas[tabla]
+
+    with (
+        patch.object(voluntario_service, "supabase", supabase),
+        patch(
+            "app.services.reputacion_service.procesar_aprobacion_voluntario_interno",
+            side_effect=Exception("fallo simulado"),
+        ),
+    ):
+        resultado = asyncio.run(voluntario_service.resolver_postulacion(
+            postulacion_id="post-1",
+            usuario_staff_id="staff-1",
+            asociacion_id="asoc-1",
+            accion="aceptar",
+        ))
+
+    assert resultado == {
+        "mensaje": "Postulación aceptada",
+        "estado": "activo_nivel_1",
+    }
+    tablas["voluntarios"].update.assert_called_once()
+    tablas["postulaciones"].update.assert_called_once()
+
+
 # ─── asegurar_perfil_voluntario_interno() ─────────────────────────────────
 
 def test_asegurar_perfil_voluntario_interno_ya_tiene_pendiente_lanza_409(make_query):

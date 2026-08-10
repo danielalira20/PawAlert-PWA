@@ -75,6 +75,13 @@ def _config_catalogos_basica():
 def _crear_reporte_con_fotos(supabase, fotos, fotos_animal_index, *, latitud=None, longitud=None):
     with (
         patch.object(report_service, "supabase", supabase),
+        # crear_reporte usa supabase_admin (cliente aparte de `supabase`)
+        # para la bandeja de casos_administrativos cuando no hay
+        # asociación compatible -- sin mockearlo aquí, esa rama sale a la
+        # Supabase real configurada en .env en vez de quedarse en el
+        # proceso de la prueba (hallazgo separado del enganche de
+        # reputacion_service, preexistente en este archivo).
+        patch.object(report_service, "supabase_admin", MagicMock()),
         patch.object(report_service, "obtener_contactos_emergencia", return_value=[]),
         patch.object(report_service, "asignar_asociacion", return_value=None),
         patch(

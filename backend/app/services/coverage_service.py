@@ -15,6 +15,7 @@ from fastapi import HTTPException
 from app.db.supabase import supabase, supabase_admin
 from app.services import matching
 from app.utils.animal_shaping import shape_animal_embed, shape_animal_response
+from app.services.reputacion_service import consultar_restricciones
 
 
 ESTADOS_VOLUNTARIO_ACTIVO = ("activo_nivel_1", "activo_nivel_2")
@@ -75,6 +76,17 @@ def obtener_casos_cercanos(usuario_id: str) -> list[dict]:
     max_casos = int(capacidades.get("max_casos_simultaneos") or 1)
     if carga_actual >= max_casos:
         return []
+
+    # --- GAMIFICACIÓN: Restricciones operativas (Trust Score < 40) ---
+    try:
+        restricciones = consultar_restricciones(usuario_id, "voluntario_externo")
+        if restricciones.get("bloqueado_nuevas_asignaciones", False):
+            # Si está bloqueado, devolvemos una lista vacía para que no vea nuevos casos en el mapa.
+            # Según las reglas de Jass, "puede_finalizar_activos_en_curso" siempre es True,
+            # así que sus casos asignados actuales no se ven afectados.
+            return []
+    except Exception as e:
+        print(f"[WARN] Error al consultar restricciones de asignación para {usuario_id}: {e}")
 
     resultado = (
         supabase.table("reportes")
@@ -138,6 +150,20 @@ def obtener_casos_cercanos(usuario_id: str) -> list[dict]:
 
 def crear_ofrecimiento(usuario_id: str, reporte_id: str) -> dict:
     perfil = obtener_perfil_externo(usuario_id)
+
+    # --- GAMIFICACIÓN: Bloqueo directo por API ---
+    try:
+        restricciones = consultar_restricciones(usuario_id, "voluntario_externo")
+        if restricciones.get("bloqueado_nuevas_asignaciones", False):
+            raise HTTPException(
+                status_code=403,
+                detail="Tu cuenta está temporalmente restringida para recibir nuevas asignaciones. Revisa tu Trust Score."
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[WARN] Error al consultar restricciones en ofrecimiento para {usuario_id}: {e}")
+
     elegibles = {
         caso["id"]: caso for caso in obtener_casos_cercanos(usuario_id)
     }
@@ -357,7 +383,27 @@ def responder_propuesta(
     reporte_id: str,
     acepta: bool,
     motivo: str | None = None,
+    rol: str | None = None,
 ) -> dict:
+    propuesta_id = None
+    if rol == "voluntario_interno":
+        try:
+            propuesta = (
+                supabase_admin.table("propuestas_asignacion")
+                .select("id")
+                .eq("reporte_id", reporte_id)
+                .eq("usuario_asignado_id", usuario_id)
+                .eq("estado", "activa")
+                .limit(1)
+                .execute()
+            )
+            propuesta_id = propuesta.data[0]["id"] if propuesta.data else None
+        except Exception as error:
+            print(
+                "[WARN] no se pudo identificar la propuesta para gamificación "
+                f"(reporte={reporte_id}): {error}"
+            )
+
     try:
         resultado = supabase_admin.rpc(
             "responder_propuesta_cobertura",
@@ -375,6 +421,18 @@ def responder_propuesta(
                 detail="La propuesta ya no está disponible",
             ) from exc
         raise
+
+    if propuesta_id:
+        try:
+            from app.services.reputacion_service import (
+                procesar_respuesta_propuesta_interna,
+            )
+            procesar_respuesta_propuesta_interna(propuesta_id, usuario_id)
+        except Exception as error:
+            print(
+                "[WARN] no se pudo procesar la respuesta oportuna "
+                f"(propuesta={propuesta_id}): {error}"
+            )
     return {"ok": True, "estado_cobertura": resultado.data}
 
 

@@ -519,4 +519,10 @@ async def resolver_moderacion_reporte(
         descripcion=f"El administrador marcó el reporte como {estado}",
         datos_extra={"notas": (body.notas or "").strip() or None},
     )
+    if estado == "rechazado":
+        try:
+            from app.services.reputacion_service import procesar_reporte_falso_confirmado
+            procesar_reporte_falso_confirmado(reporte_id, reportante_id, admin["id"])
+        except Exception as e:
+            print(f"[WARN] reputacion fallo en resolver_moderacion_reporte (reporte={reporte_id}): {e}")
     return {"mensaje": "Moderación resuelta", "estado_moderacion": estado}

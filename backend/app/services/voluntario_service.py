@@ -543,6 +543,22 @@ async def resolver_postulacion(
             "id", usuario_id_voluntario
         ).execute()
 
+        # La aprobación es la primera acción válida del voluntario interno.
+        # El bono es secundario e idempotente: si reputación falla, la
+        # postulación ya aceptada conserva su resultado operativo.
+        try:
+            from app.services.reputacion_service import (
+                procesar_aprobacion_voluntario_interno,
+            )
+            procesar_aprobacion_voluntario_interno(
+                postulacion_id, usuario_id_voluntario,
+            )
+        except Exception as error:
+            print(
+                "[WARN] no se pudo procesar el bono de aprobación interna "
+                f"(postulacion={postulacion_id}): {error}"
+            )
+
         return {"mensaje": "Postulación aceptada", "estado": "activo_nivel_1"}
 
     else:  # rechazar
@@ -882,24 +898,28 @@ async def actualizar_disponibilidad_operativa(
 # que es la columna real que usa todo el sistema (matching, escalamiento).
 # ---------------------------------------------------------------------------
  
-async def obtener_reportes_voluntario(usuario_id: str) -> dict:
-    voluntario = supabase.table("voluntarios").select(
-        "id, estado"
-    ).eq("usuario_id", usuario_id).execute()
+async def obtener_reportes_voluntario(usuario_id: str, rol: str = None) -> dict:
+    lat_voluntario = None
+    lon_voluntario = None
 
-    if not voluntario.data or voluntario.data[0]["estado"] not in (
-        "activo_nivel_1", "activo_nivel_2"
-    ):
-        raise HTTPException(
-            status_code=403,
-            detail="Solo un voluntario activo puede ver sus casos asignados"
-        )
+    if rol != "staff":
+        voluntario = supabase.table("voluntarios").select(
+            "id, estado"
+        ).eq("usuario_id", usuario_id).execute()
 
-    capacidades = supabase.table("capacidades").select("latitud, longitud").eq(
-        "voluntario_id", voluntario.data[0]["id"]
-    ).execute()
-    lat_voluntario = capacidades.data[0]["latitud"] if capacidades.data else None
-    lon_voluntario = capacidades.data[0]["longitud"] if capacidades.data else None
+        if not voluntario.data or voluntario.data[0]["estado"] not in (
+            "activo_nivel_1", "activo_nivel_2"
+        ):
+            raise HTTPException(
+                status_code=403,
+                detail="Solo un voluntario activo o staff puede ver sus casos asignados"
+            )
+
+        capacidades = supabase.table("capacidades").select("latitud, longitud").eq(
+            "voluntario_id", voluntario.data[0]["id"]
+        ).execute()
+        lat_voluntario = capacidades.data[0]["latitud"] if capacidades.data else None
+        lon_voluntario = capacidades.data[0]["longitud"] if capacidades.data else None
 
     resultado = supabase.table("reportes").select(
         "id, estado_reporte, confirmacion_voluntario, municipio, colonia, calle, referencia, "

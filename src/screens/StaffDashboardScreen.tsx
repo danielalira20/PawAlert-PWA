@@ -39,8 +39,9 @@ export default function StaffDashboardScreen({ onClose }: Props) {
   const isDesktop = width >= DESKTOP_BREAKPOINT;
 
   const esHogarTemporal = user?.rol === 'voluntario_externo';
+  const esVoluntarioInterno = user?.rol === 'voluntario_interno';
   const puedeRegistrarHitos =
-    user?.rol === 'voluntario_interno' ||
+    esVoluntarioInterno ||
     user?.rol === 'voluntario_externo' ||
     user?.rol === 'staff';
 
@@ -618,6 +619,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
         onVeterinaria={() => reporteSeleccionado && abrirVeterinaria(reporteSeleccionado)}
         puedeRegistrarHitos={puedeRegistrarHitos}
         esHogarTemporal={esHogarTemporal}
+        esVoluntarioInterno={esVoluntarioInterno}
       />
 
       <EncontreModal
