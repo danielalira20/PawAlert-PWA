@@ -108,6 +108,37 @@ class RecompensaResponse(BaseModel):
     personas_beneficiadas: int = 0
 
 
+class UbicacionPublicaRecompensa(BaseModel):
+    """Ubicación autorizada explícitamente al publicar la recompensa.
+
+    No expone zona_cobertura, domicilio ni coordenadas privadas del perfil.
+    """
+    lugar: Optional[str] = None
+
+
+class RecompensaCatalogoResponse(BaseModel):
+    id: str
+    propietario_id: str
+    patrocinador_nombre: str
+    patrocinador_tipo: str
+    tipo: str
+    categoria: str
+    subcategoria: Optional[str] = None
+    nombre: str
+    descripcion: str
+    nivel: str
+    costo: int
+    unidades_disponibles: int
+    inicio: str
+    vencimiento: str
+    sucursal_lugar: Optional[str] = None
+    horario: Optional[str] = None
+    forma_entrega: str
+    condiciones: Optional[str] = None
+    ubicacion_publica: UbicacionPublicaRecompensa
+    estado: str
+
+
 class CategoriaRecompensaResponse(BaseModel):
     clave: str
     descripcion: str
