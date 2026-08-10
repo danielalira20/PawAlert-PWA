@@ -28,6 +28,34 @@ RECOMPENSA_BODY = {
     "inventario_separado_confirmado": True,
 }
 
+RECOMPENSA_CATALOGO = {
+    "id": "rec-publica-1",
+    "propietario_id": "perfil-1",
+    "tipo": "producto",
+    "categoria": "alimentos",
+    "subcategoria": "croquetas",
+    "nombre": "Bolsa de croquetas",
+    "descripcion": "Bolsa de alimento para mascota.",
+    "nivel": "pequena",
+    "costo": 100,
+    "unidades_disponibles": 4,
+    "inicio": "2026-08-01",
+    "vencimiento": "2026-09-30",
+    "sucursal_lugar": "Sucursal Centro",
+    "horario": "L-V 9-18h",
+    "forma_entrega": "Presentar QR",
+    "condiciones": "Una por persona",
+    "estado": "activa",
+    "perfil_apoyo": {
+        "id": "perfil-1",
+        "tipo": "patrocinador_institucional",
+        "verificado_admin": True,
+        "preferencia_visibilidad": "mostrar mi nombre",
+        "datos_extra": {"razon_social": "Patrocinador Ejemplo AC"},
+        "usuarios": {"nombre": "Ana", "apellido_paterno": "Pérez"},
+    },
+}
+
 
 def _mock_usuario_autenticado(tablas: dict, make_query) -> None:
     tablas["usuarios"] = make_query(data=[{"id": "user-1"}])
@@ -45,6 +73,66 @@ def _supabase_con_tablas(tablas: dict) -> MagicMock:
     supabase.table.side_effect = lambda nombre: tablas[nombre]
     supabase.auth.get_user.return_value = SimpleNamespace(user=SimpleNamespace(id="auth-user-1"))
     return supabase
+
+
+# ─── Catálogo público para Persona 5 ─────────────────────────────────────
+
+def test_catalogo_publico_no_requiere_autenticacion_y_devuelve_contrato(make_query):
+    tablas = {"recompensas": make_query(data=[RECOMPENSA_CATALOGO])}
+    supabase = _supabase_con_tablas(tablas)
+
+    with patch.object(recompensas_service, "supabase", supabase):
+        response = client.get("/recompensas/catalogo")
+
+    assert response.status_code == 200
+    assert supabase.auth.get_user.call_count == 0
+    assert response.json() == [{
+        "id": "rec-publica-1",
+        "propietario_id": "perfil-1",
+        "patrocinador_nombre": "Patrocinador Ejemplo AC",
+        "patrocinador_tipo": "patrocinador_institucional",
+        "tipo": "producto",
+        "categoria": "alimentos",
+        "subcategoria": "croquetas",
+        "nombre": "Bolsa de croquetas",
+        "descripcion": "Bolsa de alimento para mascota.",
+        "nivel": "pequena",
+        "costo": 100,
+        "unidades_disponibles": 4,
+        "inicio": "2026-08-01",
+        "vencimiento": "2026-09-30",
+        "sucursal_lugar": "Sucursal Centro",
+        "horario": "L-V 9-18h",
+        "forma_entrega": "Presentar QR",
+        "condiciones": "Una por persona",
+        "ubicacion_publica": {"lugar": "Sucursal Centro"},
+        "estado": "activa",
+    }]
+    tablas["recompensas"].eq.assert_any_call("estado", "activa")
+    tablas["recompensas"].gte.assert_any_call("unidades_disponibles", 1)
+    tablas["recompensas"].eq.assert_any_call("perfil_apoyo.verificado_admin", True)
+
+
+def test_catalogo_excluye_no_disponibles_aunque_la_bd_los_regrese(make_query):
+    no_verificada = {
+        **RECOMPENSA_CATALOGO,
+        "id": "rec-no-verificada",
+        "perfil_apoyo": {**RECOMPENSA_CATALOGO["perfil_apoyo"], "verificado_admin": False},
+    }
+    agotada = {**RECOMPENSA_CATALOGO, "id": "rec-agotada", "unidades_disponibles": 0}
+    pausada = {**RECOMPENSA_CATALOGO, "id": "rec-pausada", "estado": "pausada"}
+    donante = {
+        **RECOMPENSA_CATALOGO,
+        "id": "rec-donante",
+        "perfil_apoyo": {**RECOMPENSA_CATALOGO["perfil_apoyo"], "tipo": "donante_comunitario"},
+    }
+    tablas = {"recompensas": make_query(data=[no_verificada, agotada, pausada, donante])}
+
+    with patch.object(recompensas_service, "supabase", _supabase_con_tablas(tablas)):
+        response = client.get("/recompensas/catalogo")
+
+    assert response.status_code == 200
+    assert response.json() == []
 
 
 # ─── Elegibilidad ─────────────────────────────────────────────────────────

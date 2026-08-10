@@ -16,6 +16,18 @@ from app.models.recompensas import (
 TIPOS_ELEGIBLES_RECOMPENSA = {"aliado_local", "patrocinador_institucional"}
 
 
+def _nombre_publico_patrocinador(perfil: dict) -> str:
+    datos_extra = perfil.get("datos_extra") or {}
+    if perfil.get("preferencia_visibilidad") in {"anonimo", "donar anónimamente"}:
+        return "Aliado verificado"
+    nombre_comercial = datos_extra.get("razon_social") or datos_extra.get("nombre_negocio")
+    if nombre_comercial:
+        return nombre_comercial
+    usuario = perfil.get("usuarios") or {}
+    nombre = f"{usuario.get('nombre') or ''} {usuario.get('apellido_paterno') or ''}".strip()
+    return nombre or "Aliado verificado"
+
+
 def _obtener_perfil_elegible_o_falla(usuario_id: str) -> dict:
     perfil = supabase.table("perfil_apoyo").select(
         "id, tipo, verificado_admin, categorias, datos_extra"
@@ -104,6 +116,66 @@ async def obtener_mis_recompensas(usuario_id: str, estado: str | None = None) ->
         fila["canjes_confirmados"] = len(confirmados)
         fila["personas_beneficiadas"] = len({c["beneficiario_id"] for c in confirmados})
     return filas
+
+
+def obtener_catalogo_recompensas() -> list[dict]:
+    """Catálogo público para Persona 5.
+
+    Aunque los filtros se envían a PostgREST, se repiten al mapear como
+    defensa en profundidad: este endpoint usa service_role para respetar el
+    RLS cerrado de recompensas y nunca debe filtrar datos privados por error.
+    """
+    hoy = date.today().isoformat()
+    resultado = supabase.table("recompensas").select(
+        "id, propietario_id, tipo, categoria, subcategoria, nombre, descripcion, "
+        "nivel, costo, unidades_disponibles, inicio, vencimiento, sucursal_lugar, "
+        "horario, forma_entrega, condiciones, estado, "
+        "perfil_apoyo!inner(id, tipo, verificado_admin, preferencia_visibilidad, "
+        "datos_extra, usuarios(nombre, apellido_paterno))"
+    ).eq("estado", "activa").gte(
+        "unidades_disponibles", 1
+    ).lte("inicio", hoy).gte(
+        "vencimiento", hoy
+    ).eq("perfil_apoyo.verificado_admin", True).in_(
+        "perfil_apoyo.tipo", list(TIPOS_ELEGIBLES_RECOMPENSA)
+    ).order("creado_at", desc=True).execute()
+
+    catalogo: list[dict] = []
+    for recompensa in resultado.data or []:
+        perfil = recompensa.get("perfil_apoyo") or {}
+        if (
+            recompensa.get("estado") != "activa"
+            or int(recompensa.get("unidades_disponibles") or 0) <= 0
+            or str(recompensa.get("inicio") or "") > hoy
+            or str(recompensa.get("vencimiento") or "") < hoy
+            or not perfil.get("verificado_admin")
+            or perfil.get("tipo") not in TIPOS_ELEGIBLES_RECOMPENSA
+        ):
+            continue
+
+        catalogo.append({
+            "id": recompensa["id"],
+            "propietario_id": recompensa["propietario_id"],
+            "patrocinador_nombre": _nombre_publico_patrocinador(perfil),
+            "patrocinador_tipo": perfil["tipo"],
+            "tipo": recompensa["tipo"],
+            "categoria": recompensa["categoria"],
+            "subcategoria": recompensa.get("subcategoria"),
+            "nombre": recompensa["nombre"],
+            "descripcion": recompensa["descripcion"],
+            "nivel": recompensa["nivel"],
+            "costo": recompensa["costo"],
+            "unidades_disponibles": recompensa["unidades_disponibles"],
+            "inicio": str(recompensa["inicio"]),
+            "vencimiento": str(recompensa["vencimiento"]),
+            "sucursal_lugar": recompensa.get("sucursal_lugar"),
+            "horario": recompensa.get("horario"),
+            "forma_entrega": recompensa["forma_entrega"],
+            "condiciones": recompensa.get("condiciones"),
+            "ubicacion_publica": {"lugar": recompensa.get("sucursal_lugar")},
+            "estado": recompensa["estado"],
+        })
+    return catalogo
 
 
 def obtener_categorias_recompensa(usuario_id: str) -> list[dict]:
