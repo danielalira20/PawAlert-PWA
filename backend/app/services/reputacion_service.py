@@ -291,7 +291,21 @@ def ajustar_trust_score(
 
     Los incrementos (tipo='incremento') no tienen esta restriccion y
     siguen siendo directos, como siempre.
+
+    Notificaciones automáticas: esta función detecta sola si el ajuste
+    hizo que el mensaje de restricción del usuario cambie (aparezca,
+    desaparezca, o cambie de texto) y dispara notificar_reputacion en
+    ese caso — NUNCA con el número de trust score, solo el mensaje ya
+    traducido (ver mensaje_restriccion). Por vivir aquí, cualquier
+    llamador (Dani, Diego, incidentes_service) obtiene esta
+    notificación gratis sin tener que hacer nada en su propio código.
     """
+    try:
+        restricciones_antes = consultar_restricciones(usuario_id, rol)
+        mensaje_antes = mensaje_restriccion(rol, restricciones_antes)
+    except Exception:
+        mensaje_antes = None
+
     try:
         resultado = supabase.rpc("ajustar_trust_score_atomico", {
             "p_usuario_id": usuario_id,
@@ -305,11 +319,27 @@ def ajustar_trust_score(
             "p_responsable_confirmacion_id": responsable_confirmacion_id,
             "p_limite_incremento_mes": limite_incremento_mes,
         }).execute()
-        return resultado.data if isinstance(resultado.data, dict) else (resultado.data[0] if resultado.data else None)
+        payload = resultado.data if isinstance(resultado.data, dict) else (resultado.data[0] if resultado.data else None)
     except Exception as e:
         print(f"[WARN] ajustar_trust_score fallo (usuario={usuario_id}, regla={regla}): {e}")
         return None
 
+    try:
+        restricciones_despues = consultar_restricciones(usuario_id, rol)
+        mensaje_despues = mensaje_restriccion(rol, restricciones_despues)
+        if mensaje_despues != mensaje_antes:
+            if mensaje_despues:
+                notificar_reputacion(usuario_id, "restriccion_activada", mensaje_despues, tipo_origen, evento_origen_id)
+            else:
+                notificar_reputacion(
+                    usuario_id, "restriccion_levantada",
+                    "Ya no tienes restricciones activas en tu cuenta.",
+                    tipo_origen, evento_origen_id,
+                )
+    except Exception as e:
+        print(f"[WARN] deteccion de cambio de restriccion fallo (usuario={usuario_id}): {e}")
+
+    return payload
 
 def consultar_saldo(usuario_id: str, rol: str) -> int:
     resultado = (
@@ -406,7 +436,7 @@ def evaluar_insignias_reportante(usuario_id: str) -> list[dict]:
             "cobre" if total_validos >= 1 else None
         )
         if nivel_vigia:
-            fila = _upsert_insignia(usuario_id, ROL_REPORTANTE, "vigia_comunitario", nivel_vigia, total_validos)
+            fila = _upsert_insignia(usuario_id, ROL_REPORTANTE, "vigia_comunitario", nivel_vigia, total_validos, notificar=True)
             if fila:
                 actualizadas.append(fila)
 
@@ -415,7 +445,7 @@ def evaluar_insignias_reportante(usuario_id: str) -> list[dict]:
             # Insignia fija: nivel=None, no cobre/plata/oro. (Antes tenía
             # "oro" hardcodeado por error — mezclaba el concepto de
             # insignia fija con el de insignia dinámica.)
-            fila = _upsert_insignia(usuario_id, ROL_REPORTANTE, "impacto_real", None, total_desenlaces)
+            fila = _upsert_insignia(usuario_id, ROL_REPORTANTE, "impacto_real", None, total_desenlaces, notificar=True)
             if fila:
                 actualizadas.append(fila)
 
@@ -560,16 +590,30 @@ def _contar_desenlaces_validos(usuario_id: str) -> int:
     }
     return len(reportes_con_desenlace_valido)
 
+NOMBRE_INSIGNIA = {
+    "vigia_comunitario": "Vigía comunitario",
+    "impacto_real": "Impacto real",
+    "evidencia_confiable": "Evidencia confiable",
+}
+NIVEL_LABEL = {"cobre": "Cobre", "plata": "Plata", "oro": "Oro"}
 
 def _upsert_insignia(
     usuario_id: str, rol: str, codigo: str, nivel: str | None, progreso: int,
     obtenido_at: str | None = None, mejorado_at: str | None = None,
+    notificar: bool = False,
 ) -> dict | None:
     """obtenido_at/mejorado_at explícitos son para
     reevaluar_insignias_historicas_reportante (backfill con fechas
     reales del pasado) — el camino en vivo (evaluar_insignias_reportante,
     llamado tras un evento nuevo) no los pasa, así que sigue usando
-    "ahora" exactamente como antes."""
+    "ahora" exactamente como antes.
+
+    `notificar=True` SOLO debe usarse en el camino en vivo. El backfill
+    histórico NUNCA debe pasar notificar=True — notificaría a 47+
+    usuarios de logros obtenidos hace meses, todos de golpe, en el
+    momento en que se corra el backfill. Por eso el default es False:
+    hay que pedirlo explícito, no es fácil activarlo por accidente.
+    """
     existente = (
         supabase.table("insignias")
         .select("*")
@@ -581,21 +625,37 @@ def _upsert_insignia(
     ahora = datetime.now(timezone.utc).isoformat()
     fecha_obtencion = obtenido_at or ahora
     fecha_mejora = mejorado_at or ahora
+    nombre_insignia = NOMBRE_INSIGNIA.get(codigo, codigo)
+
     if existente.data:
         fila = existente.data[0]
         if fila.get("nivel") == nivel and fila.get("progreso") == progreso:
             return None
+        subio_nivel = nivel != fila.get("nivel")
         actualizado = (
             supabase.table("insignias")
             .update({
                 "nivel": nivel,
                 "progreso": progreso,
-                "mejorado_at": fecha_mejora if nivel != fila.get("nivel") else fila.get("mejorado_at"),
+                "mejorado_at": fecha_mejora if subio_nivel else fila.get("mejorado_at"),
             })
             .eq("usuario_id", usuario_id).eq("rol", rol).eq("codigo_insignia", codigo)
             .execute()
         )
-        return actualizado.data[0] if actualizado.data else None
+        fila_resultado = actualizado.data[0] if actualizado.data else None
+        # Solo notifica si de verdad subió de nivel -- un cambio de
+        # `progreso` sin cambio de nivel (ej. de 2 a 3 reportes válidos,
+        # todavía en cobre) es progreso interno, no un logro nuevo que
+        # merezca interrumpir al usuario.
+        if notificar and fila_resultado and subio_nivel:
+            nivel_texto = NIVEL_LABEL.get(nivel, nivel) if nivel else ""
+            notificar_reputacion(
+                usuario_id, "insignia_mejorada",
+                f'¡Subiste de nivel en "{nombre_insignia}"! Ahora estás en {nivel_texto}.',
+                tipo_origen="insignia", evento_origen_id=fila_resultado.get("id"),
+            )
+        return fila_resultado
+
     creado = (
         supabase.table("insignias")
         .insert({
@@ -605,8 +665,14 @@ def _upsert_insignia(
         })
         .execute()
     )
-    return creado.data[0] if creado.data else None
-
+    fila_resultado = creado.data[0] if creado.data else None
+    if notificar and fila_resultado:
+        notificar_reputacion(
+            usuario_id, "insignia_obtenida",
+            f'¡Desbloqueaste la insignia "{nombre_insignia}"!',
+            tipo_origen="insignia", evento_origen_id=fila_resultado.get("id"),
+        )
+    return fila_resultado
 
 # ============================================================
 # Insignias del voluntario interno (Persona 2).
@@ -867,6 +933,7 @@ def procesar_llegada_refugio_interna(reporte_id: str, usuario_id: str | None) ->
     )
 
 def procesar_reporte_valido(reporte_id: str, usuario_id: str | None) -> None:
+
     """Punto de enganche: aceptación temprana (_aceptar_asignacion en
     report_acceptance.py) y el job de 7 días (evaluar_reportes_validados_
     por_tiempo). Idempotente entre ambos caminos gracias al UNIQUE
@@ -876,15 +943,28 @@ def procesar_reporte_valido(reporte_id: str, usuario_id: str | None) -> None:
 
     No paga si usuario_id es None (reporte de invitado sin cuenta) — no
     hay a quién otorgarle puntos.
-    """
+
+    Flujo completo que dispara, en orden: (1) bono de bienvenida, solo
+    la primera vez en la vida de la cuenta, con notificación; (2) +20
+    por reporte válido, topado a 5/mes; (3) +3 de trust score;
+    (4) evaluación de racha de 10 reportes válidos consecutivos;
+    (5) reevaluación de insignias del reportante (Vigía comunitario,
+    Impacto real)."""
+        
     if not usuario_id:
         return
 
-    otorgar_puntos(
+    bono = otorgar_puntos(
         usuario_id, ROL_REPORTANTE, REGLA_BONO_BIENVENIDA,
-        TIPO_ORIGEN_REPORTE, usuario_id,  # evento_origen_id = usuario_id: se entrega una sola vez EN LA VIDA, no por reporte
+        TIPO_ORIGEN_REPORTE, usuario_id,
         PUNTOS_BONO_BIENVENIDA,
     )
+    if bono:
+        notificar_reputacion(
+            usuario_id, "bono_bienvenida",
+            f"¡Bienvenido a PawAlert! Ganaste {PUNTOS_BONO_BIENVENIDA} puntos por tu primer reporte.",
+            tipo_origen=TIPO_ORIGEN_REPORTE, evento_origen_id=reporte_id,
+        )
     otorgar_puntos(
         usuario_id, ROL_REPORTANTE, REGLA_REPORTE_VALIDO,
         TIPO_ORIGEN_REPORTE, reporte_id,
@@ -1077,6 +1157,115 @@ def consultar_restricciones(usuario_id: str, rol: str) -> dict:
         })
 
     return base
+
+def mensaje_restriccion(rol: str, restricciones: dict) -> str | None:
+    """Traduce el dict de consultar_restricciones a un mensaje humano,
+    sin exponer puntaje/estado_interno. Vive aquí (no en el router)
+    para que ajustar_trust_score pueda reusarla al detectar cambios de
+    restricción para notificaciones — una sola fuente de verdad para
+    el texto, en vez de mantenerlo duplicado en dos archivos."""
+    if rol == ROL_REPORTANTE:
+        if restricciones.get("requiere_revision_administrativa_total"):
+            return "Tus reportes requieren revisión administrativa antes de publicarse."
+        if restricciones.get("requiere_revision_previa"):
+            limite = restricciones.get("maximo_reportes_activos_dia")
+            if limite:
+                return f"Tus reportes requieren revisión previa. Máximo {limite} reportes activos por día."
+            return "Tus reportes requieren revisión previa antes de publicarse."
+        return None
+    if restricciones.get("suspension_operativa"):
+        return "Tu cuenta está en suspensión operativa. Puedes finalizar tus casos activos."
+    if restricciones.get("bloqueado_nuevas_asignaciones"):
+        return "No puedes recibir nuevas asignaciones por ahora. Puedes finalizar tus casos activos."
+    if restricciones.get("en_observacion"):
+        return "Tu cuenta está en observación interna."
+    return None
+
+
+def notificar_reputacion(
+    usuario_id: str,
+    tipo: str,
+    mensaje: str,
+    tipo_origen: str | None = None,
+    evento_origen_id: str | None = None,
+) -> None:
+    """Motor genérico de notificaciones de puntos/insignias/trust score
+    (Persona 1). Sigue el patrón de notificaciones_aliado (Miguel):
+    try/except + [WARN], nunca rompe el flujo llamador -- una
+    notificación es siempre secundaria al evento real que la origina.
+
+    Dani/Diego/Magui: llamen esta función desde SUS PROPIOS eventos
+    grandes (rescate completado, aprobación de casa temporal, canje
+    confirmado, etc.) -- no dupliquen el bloque de insert, usen esta.
+    Solo eventos grandes/de una sola vez, nunca los rutinarios
+    repetibles (ver CONTRATO_REPUTACION.md).
+
+    `tipo` es texto libre por ahora (mismo criterio que
+    notificaciones_moderacion, sin catálogo rígido) — sugerido usar
+    snake_case descriptivo: "bono_bienvenida", "rescate_completado",
+    "insignia_obtenida", "insignia_mejorada", "restriccion_activada",
+    "restriccion_levantada", etc. No colisiona con notificacion_tipos
+    (esa es de otro dominio, reportes/asociaciones).
+    """
+    try:
+        supabase.table("notificaciones_reputacion").insert({
+            "usuario_id": usuario_id,
+            "tipo": tipo,
+            "mensaje": mensaje,
+            "tipo_origen": tipo_origen,
+            "evento_origen_id": evento_origen_id,
+        }).execute()
+    except Exception as e:
+        print(f"[WARN] notificar_reputacion fallo (usuario={usuario_id}, tipo={tipo}): {e}")
+
+
+
+    """Job de los 7 días — llamado desde POST /internal/gamificacion/run.
+
+    Busca reportes con más de 7 días desde su creación, que no hayan
+    sido marcados falsos/duplicados/cancelados, y que todavía no tengan
+    un movimiento REGLA_REPORTE_VALIDO. procesar_reporte_valido ya es
+    idempotente vía el UNIQUE de la RPC, así que aunque este job revise
+    un reporte que ya fue pagado por la aceptación temprana, simplemente
+    no duplica nada.
+
+    BUG CORREGIDO (esta revisión): la consulta reventaba con 22P02 para
+    TODO usuario, siempre, porque ESTADOS_EXCLUIDOS_REPORTE_VALIDO tenía
+    un valor ("rechazado") que nunca existió en el enum real de
+    estado_reporte, y nada capturaba esa excepción — el endpoint
+    devolvía 500 en cada corrida del cron desde que se desplegó. Ahora:
+    (1) la constante ya no tiene el valor inválido, (2) se agregó el
+    filtro separado de estado_moderacion (columna distinta, ver
+    ESTADOS_EXCLUIDOS_REPORTE_VALIDO), y (3) la consulta ahora está
+    protegida — un error inesperado aquí ya no debe poder tumbar el
+    endpoint completo sin control, mismo principio de "la gamificación
+    nunca debe romper el flujo" aplicado también al propio job.
+    """
+    from datetime import timedelta
+
+    limite = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    try:
+        candidatos = (
+            supabase.table("reportes")
+            .select("id, usuario_id, estado_reporte, created_at")
+            .lt("created_at", limite)
+            .not_.in_("estado_reporte", ESTADOS_EXCLUIDOS_REPORTE_VALIDO)
+            .neq("estado_moderacion", "rechazado")
+            .execute()
+        )
+    except Exception as e:
+        print(f"[WARN] evaluar_reportes_validados_por_tiempo fallo al consultar candidatos: {e}")
+        return {"revisados": 0, "procesados": 0, "error": str(e)}
+
+    procesados = 0
+    for rep in (candidatos.data or []):
+        try:
+            procesar_reporte_valido(rep["id"], rep.get("usuario_id"))
+            procesados += 1
+        except Exception as e:
+            print(f"[WARN] evaluar_reportes_validados_por_tiempo fallo en reporte {rep['id']}: {e}")
+
+    return {"revisados": len(candidatos.data or []), "procesados": procesados}
 
 
 def usuarios_bloqueados_nuevas_asignaciones(
