@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Brand } from '../../constants/theme';
 import { ReportanteInsigniasCard } from './ReportanteInsigniasCard';
+import { VoluntarioInternoInsigniasCard } from './VoluntarioInternoInsigniasCard';
 
 type Tab = 'insignias' | 'impacto';
 
@@ -12,6 +13,7 @@ interface Props {
   // (ReporterImpactStats / ImpactStatsBase), solo que ahora detrás del
   // selector en vez de siempre visible.
   impactoElement: React.ReactNode;
+  rol?: string | null;
 }
 
 /**
@@ -20,7 +22,7 @@ interface Props {
  * AliadoDashboardScreen.tsx / StaffAsignacionScreen.tsx) — mismos
  * tokens, no un componente inventado desde cero.
  */
-export function ImpactoInsigniasToggle({ impactoElement }: Props) {
+export function ImpactoInsigniasToggle({ impactoElement, rol }: Props) {
   const [tab, setTab] = useState<Tab>('impacto');
 
   return (
@@ -55,7 +57,9 @@ export function ImpactoInsigniasToggle({ impactoElement }: Props) {
         </TouchableOpacity>
       </View>
 
-      {tab === 'insignias' ? <ReportanteInsigniasCard /> : impactoElement}
+      {tab === 'insignias' ? (
+        rol === 'voluntario_interno' ? <VoluntarioInternoInsigniasCard /> : <ReportanteInsigniasCard />
+      ) : impactoElement}
     </View>
   );
 }

@@ -210,16 +210,12 @@ useFocusEffect(
     />
   ) : esStaff ? (
     <StaffImpactStats impacto={impactoStaff} isLoading={isLoadingStaff} />
-  ) : esVoluntarioActivo ? (
-    // esVoluntarioActivo aún no tiene su propia tarjeta de impacto, cae al
-    // default (ReporterImpactStats) -- pero SIN el toggle de insignias,
-    // porque ReportanteInsigniasCard/insignias de 'reportante' no le
-    // pertenecen a un voluntario interno/externo (rol de gamificación
-    // distinto, ver reputacion_service.py).
+  ) : esVoluntarioExterno ? (
     <ReporterImpactStats impacto={impacto} isLoading={isLoadingReportes} />
   ) : (
     <ImpactoInsigniasToggle
       impactoElement={<ReporterImpactStats impacto={impacto} isLoading={isLoadingReportes} />}
+      rol={user?.rol}
     />
   );
 
