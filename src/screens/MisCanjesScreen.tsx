@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
@@ -62,6 +62,27 @@ export function MisCanjesScreen({ onClose }: { onClose: () => void }) {
   const activos = canjes.filter(c => c.estado === 'emitido');
   const historico = canjes.filter(c => c.estado !== 'emitido');
 
+  // Countdown en tiempo real — se actualiza cada minuto
+  const [ahora, setAhora] = useState(new Date());
+  useEffect(() => {
+    const intervalo = setInterval(() => setAhora(new Date()), 60_000);
+    return () => clearInterval(intervalo);
+  }, []);
+
+  const calcularTiempoRestante = (fechaExpiracion: string | undefined): string => {
+    if (!fechaExpiracion) return 'Sin expiración';
+    const expira = new Date(fechaExpiracion);
+    const diffMs = expira.getTime() - ahora.getTime();
+    if (diffMs <= 0) return 'Expirado';
+    const horas = Math.floor(diffMs / (1000 * 60 * 60));
+    const minutos = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+    if (horas >= 24) {
+      const dias = Math.floor(horas / 24);
+      return `${dias}d ${horas % 24}h restantes`;
+    }
+    return `${horas}h ${minutos}m restantes`;
+  };
+
   const renderBadgeEstado = (estado: string) => {
     let color = Brand.textFaint;
     let label = 'Desconocido';
@@ -120,7 +141,7 @@ export function MisCanjesScreen({ onClose }: { onClose: () => void }) {
                       <View style={styles.expiracionBox}>
                         <Ionicons name="time-outline" size={16} color={Brand.danger} />
                         <Text style={styles.expiracionText}>
-                          Expira: {format(parseISO(canje.fecha_expiracion), "dd/MM/yyyy HH:mm", { locale: es })}
+                          ⏱ {calcularTiempoRestante(canje.fecha_expiracion)}
                         </Text>
                       </View>
                     )}

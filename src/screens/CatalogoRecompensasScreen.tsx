@@ -9,7 +9,13 @@ import { Brand } from '../constants/theme';
 import { useAuth } from '../context/AuthContext';
 import { Recompensa, useRecompensas } from '../hooks/useRecompensas';
 
-export function CatalogoRecompensasScreen({ onClose }: { onClose: () => void }) {
+export function CatalogoRecompensasScreen({
+  onClose,
+  onCanjeExitoso,
+}: {
+  onClose: () => void;
+  onCanjeExitoso?: () => void;
+}) {
   const { token, user } = useAuth();
   const [recompensas, setRecompensas] = useState<Recompensa[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,6 +66,7 @@ export function CatalogoRecompensasScreen({ onClose }: { onClose: () => void }) 
         headers: { Authorization: `Bearer ${token}` }
       });
       setMensajeExito('Canje realizado correctamente. Revisa tus canjes activos.');
+      onCanjeExitoso?.();
       fetchCatalogo();
     } catch (error: any) {
       const msg = error.response?.data?.detail || 'Error al procesar el canje';
@@ -177,6 +184,32 @@ export function CatalogoRecompensasScreen({ onClose }: { onClose: () => void }) 
             <Text style={styles.modalDescripcion}>
               ¿Estás seguro que deseas canjear <Text style={{ fontWeight: '800', color: Brand.textDark }}>{recompensaConfirmacion?.nombre}</Text> por <Text style={{ fontWeight: '800', color: '#F59E0B' }}>{recompensaConfirmacion?.costo} puntos</Text>?
             </Text>
+
+            {/* Detalles de la recompensa antes de confirmar */}
+            {recompensaConfirmacion?.condiciones ? (
+              <View style={styles.modalDetalle}>
+                <Ionicons name="document-text-outline" size={14} color={Brand.textMuted} />
+                <Text style={styles.modalDetalleTexto}>{recompensaConfirmacion.condiciones}</Text>
+              </View>
+            ) : null}
+            {recompensaConfirmacion?.horario ? (
+              <View style={styles.modalDetalle}>
+                <Ionicons name="time-outline" size={14} color={Brand.textMuted} />
+                <Text style={styles.modalDetalleTexto}>{recompensaConfirmacion.horario}</Text>
+              </View>
+            ) : null}
+            {recompensaConfirmacion?.sucursal_lugar ? (
+              <View style={styles.modalDetalle}>
+                <Ionicons name="location-outline" size={14} color={Brand.textMuted} />
+                <Text style={styles.modalDetalleTexto}>{recompensaConfirmacion.sucursal_lugar}</Text>
+              </View>
+            ) : null}
+            {recompensaConfirmacion?.vencimiento ? (
+              <View style={styles.modalDetalle}>
+                <Ionicons name="calendar-outline" size={14} color={Brand.textMuted} />
+                <Text style={styles.modalDetalleTexto}>Válido hasta: {recompensaConfirmacion.vencimiento}</Text>
+              </View>
+            ) : null}
 
             <View style={styles.modalButtonsRow}>
               <TouchableOpacity style={styles.modalButtonCancel} onPress={() => setRecompensaConfirmacion(null)}>
@@ -442,5 +475,21 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '800',
     fontSize: 14,
+  },
+  modalDetalle: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,0,0,0.05)',
+    width: '100%',
+  },
+  modalDetalleTexto: {
+    flex: 1,
+    fontSize: 12,
+    color: Brand.textMuted,
+    lineHeight: 16,
   },
 });

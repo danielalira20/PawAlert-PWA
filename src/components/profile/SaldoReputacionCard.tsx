@@ -47,6 +47,15 @@ export function SaldoReputacionCard({ rol, refreshKey }: Props) {
         <Text style={styles.puntos}>{saldo.saldo_disponible} pts</Text>
       </View>
 
+      {saldo.saldo_reservado > 0 && (
+        <View style={styles.filaReservados}>
+          <Ionicons name="time-outline" size={14} color={Brand.textMuted} />
+          <Text style={styles.reservadosTexto}>
+            {saldo.saldo_reservado} pts reservados en canje activo
+          </Text>
+        </View>
+      )}
+
       {saldo.restriccion_activa && saldo.mensaje_restriccion && (
         <View style={styles.avisoRestriccion}>
           <Ionicons name="alert-circle" size={16} color={Brand.danger} style={styles.avisoIcono} />
@@ -97,6 +106,21 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
     color: Brand.danger,
+    fontWeight: '600',
+  },
+  filaReservados: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,0,0,0.06)',
+  },
+  reservadosTexto: {
+    flex: 1,
+    fontSize: 12,
+    color: Brand.textMuted,
     fontWeight: '600',
   },
 });
