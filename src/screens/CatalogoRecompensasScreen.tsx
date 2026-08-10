@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Image, Alert, RefreshControl, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Image, RefreshControl, Modal, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import axios from 'axios';
@@ -14,6 +14,11 @@ export function CatalogoRecompensasScreen({ onClose }: { onClose: () => void }) 
   const [recompensas, setRecompensas] = useState<Recompensa[]>([]);
   const [loading, setLoading] = useState(true);
   const [canjeando, setCanjeando] = useState<string | null>(null);
+
+  // Estados para modales
+  const [recompensaConfirmacion, setRecompensaConfirmacion] = useState<Recompensa | null>(null);
+  const [mensajeExito, setMensajeExito] = useState<string | null>(null);
+  const [mensajeError, setMensajeError] = useState<string | null>(null);
 
   const fetchCatalogo = useCallback(async () => {
     try {
@@ -33,49 +38,34 @@ export function CatalogoRecompensasScreen({ onClose }: { onClose: () => void }) 
     }, [fetchCatalogo])
   );
 
-  const handleCanjear = async (recompensa: Recompensa) => {
-    if (!token) return Alert.alert('Inicia sesión', 'Debes iniciar sesión para canjear recompensas.');
+  const handleIntentarCanje = (recompensa: Recompensa) => {
+    if (!token) {
+      setMensajeError('Debes iniciar sesión para canjear recompensas.');
+      return;
+    }
+    setRecompensaConfirmacion(recompensa);
+  };
 
-    const proceed = async () => {
-      try {
-        setCanjeando(recompensa.id);
-        await axios.post(`${API_URL}/recompensas/canjes`, {
-          recompensa_id: recompensa.id
-        }, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        if (Platform.OS === 'web') {
-          window.alert('¡Éxito! Canje realizado correctamente. Revisa tus canjes activos.');
-        } else {
-          Alert.alert('¡Éxito!', 'Canje realizado correctamente. Revisa tus canjes activos.');
-        }
-        fetchCatalogo();
-      } catch (error: any) {
-        const msg = error.response?.data?.detail || 'Error al procesar el canje';
-        if (Platform.OS === 'web') {
-          window.alert('Error: ' + msg);
-        } else {
-          Alert.alert('Error', msg);
-        }
-      } finally {
-        setCanjeando(null);
-      }
-    };
+  const ejecutarCanje = async () => {
+    if (!recompensaConfirmacion || !token) return;
 
-    if (Platform.OS === 'web') {
-      const confirm = window.confirm(`¿Estás seguro que deseas canjear ${recompensa.nombre} por ${recompensa.costo} puntos?`);
-      if (confirm) {
-        proceed();
-      }
-    } else {
-      Alert.alert(
-        'Confirmar canje',
-        `¿Estás seguro que deseas canjear ${recompensa.nombre} por ${recompensa.costo} puntos?`,
-        [
-          { text: 'Cancelar', style: 'cancel' },
-          { text: 'Sí, canjear', style: 'default', onPress: proceed }
-        ]
-      );
+    const recompensaId = recompensaConfirmacion.id;
+    setRecompensaConfirmacion(null);
+    setCanjeando(recompensaId);
+
+    try {
+      await axios.post(`${API_URL}/recompensas/canjes`, {
+        recompensa_id: recompensaId
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setMensajeExito('Canje realizado correctamente. Revisa tus canjes activos.');
+      fetchCatalogo();
+    } catch (error: any) {
+      const msg = error.response?.data?.detail || 'Error al procesar el canje';
+      setMensajeError(msg);
+    } finally {
+      setCanjeando(null);
     }
   };
 
@@ -156,7 +146,7 @@ export function CatalogoRecompensasScreen({ onClose }: { onClose: () => void }) 
                     ]}
                     activeOpacity={0.8}
                     disabled={recompensa.unidades_disponibles <= 0 || canjeando === recompensa.id}
-                    onPress={() => handleCanjear(recompensa)}
+                    onPress={() => handleIntentarCanje(recompensa)}
                   >
                     {canjeando === recompensa.id ? (
                       <ActivityIndicator size="small" color="#fff" />
@@ -177,6 +167,56 @@ export function CatalogoRecompensasScreen({ onClose }: { onClose: () => void }) 
           </View>
         )}
       </ScrollView>
+
+      {/* Modal Confirmación */}
+      <Modal visible={recompensaConfirmacion !== null} transparent animationType="fade">
+        <Pressable style={styles.overlay} onPress={() => setRecompensaConfirmacion(null)}>
+          <Pressable style={styles.modalTarjeta} onPress={() => { }}>
+            <Ionicons name="help-circle" size={56} color={Brand.primary} style={styles.modalIcon} />
+            <Text style={styles.modalNombre}>Confirmar canje</Text>
+            <Text style={styles.modalDescripcion}>
+              ¿Estás seguro que deseas canjear <Text style={{ fontWeight: '800', color: Brand.textDark }}>{recompensaConfirmacion?.nombre}</Text> por <Text style={{ fontWeight: '800', color: '#F59E0B' }}>{recompensaConfirmacion?.costo} puntos</Text>?
+            </Text>
+
+            <View style={styles.modalButtonsRow}>
+              <TouchableOpacity style={styles.modalButtonCancel} onPress={() => setRecompensaConfirmacion(null)}>
+                <Text style={styles.modalButtonCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.modalButtonConfirm} onPress={ejecutarCanje}>
+                <Text style={styles.modalButtonConfirmText}>Sí, canjear</Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Modal Éxito */}
+      <Modal visible={mensajeExito !== null} transparent animationType="fade">
+        <Pressable style={styles.overlay} onPress={() => setMensajeExito(null)}>
+          <Pressable style={styles.modalTarjeta} onPress={() => { }}>
+            <Ionicons name="checkmark-circle" size={56} color="#10B981" style={styles.modalIcon} />
+            <Text style={[styles.modalNombre, { color: '#10B981' }]}>¡Éxito!</Text>
+            <Text style={styles.modalDescripcion}>{mensajeExito}</Text>
+            <TouchableOpacity style={[styles.modalButtonConfirm, { backgroundColor: '#10B981', width: '100%', marginTop: 20 }]} onPress={() => setMensajeExito(null)}>
+              <Text style={styles.modalButtonConfirmText}>Entendido</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Modal Error */}
+      <Modal visible={mensajeError !== null} transparent animationType="fade">
+        <Pressable style={styles.overlay} onPress={() => setMensajeError(null)}>
+          <Pressable style={styles.modalTarjeta} onPress={() => { }}>
+            <Ionicons name="close-circle" size={56} color={Brand.danger} style={styles.modalIcon} />
+            <Text style={[styles.modalNombre, { color: Brand.danger }]}>¡Ups! Algo salió mal</Text>
+            <Text style={styles.modalDescripcion}>{mensajeError}</Text>
+            <TouchableOpacity style={[styles.modalButtonConfirm, { backgroundColor: Brand.danger, width: '100%', marginTop: 20 }]} onPress={() => setMensajeError(null)}>
+              <Text style={styles.modalButtonConfirmText}>Cerrar</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -184,7 +224,7 @@ export function CatalogoRecompensasScreen({ onClose }: { onClose: () => void }) 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FAFAFA',
+    backgroundColor: Brand.backgroundWarm,
   },
   header: {
     flexDirection: 'row',
@@ -192,9 +232,9 @@ const styles = StyleSheet.create({
     paddingTop: 60,
     paddingBottom: 20,
     paddingHorizontal: 24,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Brand.cardWarm,
     borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
+    borderBottomColor: 'rgba(0,0,0,0.05)',
   },
   backButton: {
     padding: 8,
@@ -223,11 +263,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 20,
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
   },
   card: {
-    width: '100%',
-    backgroundColor: '#FFFFFF',
+    flexGrow: 1,
+    flexBasis: 300,
+    maxWidth: 400,
+    backgroundColor: Brand.cardWarm,
     borderRadius: 24,
     overflow: 'hidden',
     shadowColor: '#000',
@@ -334,5 +376,71 @@ const styles = StyleSheet.create({
     color: Brand.textFaint,
     textAlign: 'center',
     maxWidth: 250,
+  },
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(46, 42, 38, 0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  modalTarjeta: {
+    backgroundColor: Brand.cardWarm,
+    borderRadius: 24,
+    padding: 28,
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 340,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    elevation: 5,
+  },
+  modalIcon: {
+    marginBottom: 16,
+  },
+  modalNombre: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: Brand.primary,
+    textAlign: 'center',
+  },
+  modalDescripcion: {
+    fontSize: 14,
+    color: Brand.textMuted,
+    textAlign: 'center',
+    marginTop: 8,
+    lineHeight: 22,
+  },
+  modalButtonsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 24,
+    width: '100%',
+  },
+  modalButtonCancel: {
+    flex: 1,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  modalButtonCancelText: {
+    color: Brand.textFaint,
+    fontWeight: '800',
+    fontSize: 14,
+  },
+  modalButtonConfirm: {
+    flex: 1,
+    backgroundColor: Brand.primary,
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  modalButtonConfirmText: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 14,
   },
 });

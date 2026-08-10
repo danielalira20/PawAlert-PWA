@@ -150,7 +150,7 @@ export default function ProfileScreen() {
         <MisReportesScreen onClose={() => setIsMisReportesVisible(false)} />
       )}
 
-      <AppModal visible={isCatalogoVisible} onClose={() => setIsCatalogoVisible(false)} maxWidth={1100}>
+      <AppModal visible={isCatalogoVisible} onClose={() => setIsCatalogoVisible(false)} maxWidth={850}>
         {isCatalogoVisible && <CatalogoRecompensasScreen onClose={() => setIsCatalogoVisible(false)} />}
       </AppModal>
 
