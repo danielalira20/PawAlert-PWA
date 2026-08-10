@@ -13,9 +13,8 @@ from math import asin, cos, radians, sin, sqrt
 from fastapi import HTTPException
 
 from app.db.supabase import supabase, supabase_admin
-from app.services import matching
+from app.services import matching, reputacion_service
 from app.utils.animal_shaping import shape_animal_embed, shape_animal_response
-from app.services.reputacion_service import consultar_restricciones
 
 
 ESTADOS_VOLUNTARIO_ACTIVO = ("activo_nivel_1", "activo_nivel_2")
@@ -79,7 +78,10 @@ def obtener_casos_cercanos(usuario_id: str) -> list[dict]:
 
     # --- GAMIFICACIÓN: Restricciones operativas (Trust Score < 40) ---
     try:
-        restricciones = consultar_restricciones(usuario_id, "voluntario_externo")
+        restricciones = reputacion_service.consultar_restricciones(
+            usuario_id,
+            reputacion_service.ROL_VOLUNTARIO_EXTERNO,
+        )
         if restricciones.get("bloqueado_nuevas_asignaciones", False):
             # Si está bloqueado, devolvemos una lista vacía para que no vea nuevos casos en el mapa.
             # Según las reglas de Jass, "puede_finalizar_activos_en_curso" siempre es True,
@@ -149,20 +151,19 @@ def obtener_casos_cercanos(usuario_id: str) -> list[dict]:
 
 
 def crear_ofrecimiento(usuario_id: str, reporte_id: str) -> dict:
+    restricciones = reputacion_service.consultar_restricciones(
+        usuario_id,
+        reputacion_service.ROL_VOLUNTARIO_EXTERNO,
+    )
+    if restricciones["bloqueado_nuevas_asignaciones"]:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "No puedes ofrecerte a casos nuevos por ahora. "
+                "Sí puedes finalizar tus casos activos."
+            ),
+        )
     perfil = obtener_perfil_externo(usuario_id)
-
-    # --- GAMIFICACIÓN: Bloqueo directo por API ---
-    try:
-        restricciones = consultar_restricciones(usuario_id, "voluntario_externo")
-        if restricciones.get("bloqueado_nuevas_asignaciones", False):
-            raise HTTPException(
-                status_code=403,
-                detail="Tu cuenta está temporalmente restringida para recibir nuevas asignaciones. Revisa tu Trust Score."
-            )
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"[WARN] Error al consultar restricciones en ofrecimiento para {usuario_id}: {e}")
 
     elegibles = {
         caso["id"]: caso for caso in obtener_casos_cercanos(usuario_id)
@@ -331,6 +332,23 @@ def reservar_cobertura(
     actor_id: str,
     origen: str,
 ) -> str:
+    rol_reputacion = {
+        "equipo_interno": reputacion_service.ROL_VOLUNTARIO_INTERNO,
+        "ofrecimiento_externo": reputacion_service.ROL_VOLUNTARIO_EXTERNO,
+    }.get(origen)
+    if rol_reputacion:
+        restricciones = reputacion_service.consultar_restricciones(
+            usuario_asignado_id,
+            rol_reputacion,
+        )
+        if restricciones["bloqueado_nuevas_asignaciones"]:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "El voluntario no puede recibir nuevas asignaciones "
+                    "por ahora. Actualiza la lista y elige otro candidato."
+                ),
+            )
     vence_at = datetime.now(timezone.utc) + timedelta(
         minutes=PROPUESTA_COBERTURA_MINUTOS
     )

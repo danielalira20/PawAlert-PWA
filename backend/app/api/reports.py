@@ -1225,9 +1225,11 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
     # --- GAMIFICACIÓN: Voluntario Externo (Llegada/Resguardo) ---
     if tipo_hito in ("animal_bajo_resguardo", "llegada_hogar_temporal") and rol_usuario == "voluntario_externo":
         try:
-            # Agrega la función de insignias al import
-            from app.services.reputacion_service import otorgar_puntos, evaluar_insignias_voluntario_externo
-            
+            from app.services.reputacion_service import (
+                evaluar_insignias_voluntario_externo,
+                otorgar_puntos,
+            )
+
             otorgar_puntos(
                 usuario_id=usuario["id"],
                 rol="voluntario_externo",

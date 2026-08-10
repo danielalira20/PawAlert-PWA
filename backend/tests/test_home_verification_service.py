@@ -128,6 +128,63 @@ def test_obtener_verificacion_recarga_candidatos_pendientes(make_query):
     )
 
 
+def test_candidatos_verificacion_excluyen_bloqueados_por_trust_score():
+    candidatos = [
+        {"voluntario_id": "vol-1", "usuario_id": "user-bloqueado"},
+        {"voluntario_id": "vol-2", "usuario_id": "user-disponible"},
+    ]
+    with patch.object(
+        home_verification_service,
+        "usuarios_bloqueados_nuevas_asignaciones",
+        return_value={"user-bloqueado"},
+    ) as mock_bloqueados:
+        resultado = home_verification_service._filtrar_verificadores_bloqueados(
+            candidatos
+        )
+
+    assert resultado == [candidatos[1]]
+    mock_bloqueados.assert_called_once_with(
+        {"user-bloqueado", "user-disponible"},
+        home_verification_service.ROL_VOLUNTARIO_INTERNO,
+    )
+
+
+def test_asignar_verificador_revalida_restriccion_antes_de_insertar(make_query):
+    verificaciones = make_query(data=[{
+        "id": "ver-1",
+        "asociacion_id": "asoc-1",
+        "estado": "pendiente_asignacion",
+    }])
+    candidatos = make_query(data=[{
+        "voluntario_id": "vol-1",
+        "usuario_id": "user-1",
+        "distancia_km": 2.5,
+        "tramo_distancia": "preferente",
+    }])
+    cliente = MagicMock()
+    cliente.table.return_value = verificaciones
+    cliente.rpc.return_value = candidatos
+
+    with (
+        patch.object(home_verification_service, "supabase_admin", cliente),
+        patch.object(
+            home_verification_service,
+            "_filtrar_verificadores_bloqueados",
+            return_value=[],
+        ),
+        pytest.raises(HTTPException) as error,
+    ):
+        home_verification_service.asignar_verificador_hogar(
+            "ver-1",
+            "vol-1",
+            "asoc-1",
+            "staff-1",
+        )
+
+    assert error.value.status_code == 422
+    verificaciones.insert.assert_not_called()
+
+
 def test_finalizar_postulacion_externa_asigna_asociacion_y_crea_verificacion(
     make_query,
 ):
@@ -715,3 +772,67 @@ def test_resultado_presencial_puede_solicitar_ajustes(make_query):
     cambio = verificaciones.update.call_args.args[0]
     assert cambio["estado"] == "requiere_cambios"
     assert cambio["modalidad"] == "remota"
+
+
+def test_aprobar_visita_evalua_insignias_del_verificador_interno(make_query):
+    checklist = {
+        campo: "cumple"
+        for campo in home_verification_service.CHECKLIST_VISITA_CAMPOS
+    }
+    asignaciones = make_query(data=[{
+        "id": "asig-1",
+        "verificacion_hogar_id": "ver-1",
+        "estado": "aceptada",
+        "check_out_at": "2026-08-10T16:40:00+00:00",
+        "checklist": checklist,
+        "resultado_visita": None,
+    }])
+    verificaciones = make_query(data=[{
+        "id": "ver-1",
+        "postulacion_id": "post-1",
+        "perfil_casa_temporal_id": "perfil-1",
+        "asociacion_id": "asoc-1",
+        "voluntario_postulante_id": "vol-postulante",
+        "estado": "visita_realizada",
+        "modalidad": "presencial",
+    }])
+    voluntarios = make_query(data=[{
+        "id": "vol-postulante",
+        "usuario_id": "user-postulante",
+    }])
+    roles = make_query(data=[{"id": "rol-externo"}])
+    usuarios = make_query()
+    postulaciones = make_query()
+    cliente = MagicMock()
+    cliente.table.side_effect = lambda tabla: {
+        "asignaciones_verificacion_hogar": asignaciones,
+        "verificaciones_hogar": verificaciones,
+        "voluntarios": voluntarios,
+        "roles": roles,
+        "usuarios": usuarios,
+        "postulaciones": postulaciones,
+    }[tabla]
+
+    with (
+        patch.object(home_verification_service, "supabase_admin", cliente),
+        patch.object(
+            home_verification_service,
+            "_usuario_id_voluntario",
+            return_value="user-verificador",
+        ),
+        patch.object(home_verification_service, "_registrar_evento_verificacion"),
+        patch.object(home_verification_service, "otorgar_puntos"),
+        patch.object(home_verification_service, "ajustar_trust_score"),
+        patch.object(
+            home_verification_service,
+            "evaluar_insignias_voluntario_interno",
+        ) as mock_evaluar,
+    ):
+        resultado = home_verification_service.resolver_resultado_visita(
+            "asig-1",
+            "vol-verificador",
+            "aprobar",
+        )
+
+    assert resultado["estado"] == "aprobada"
+    mock_evaluar.assert_called_once_with("user-verificador")

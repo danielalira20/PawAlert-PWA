@@ -7,6 +7,16 @@ from fastapi import HTTPException
 from app.services import coverage_service
 
 
+@pytest.fixture(autouse=True)
+def permitir_asignaciones_sin_restriccion():
+    with patch.object(
+        coverage_service.reputacion_service,
+        "consultar_restricciones",
+        return_value={"bloqueado_nuevas_asignaciones": False},
+    ):
+        yield
+
+
 def test_compatibilidad_exige_todas_las_especies_y_tamanios():
     capacidades = {
         "especies_manejo": ["perro", "gato"],
@@ -356,3 +366,46 @@ def test_reserva_explica_si_falta_compatibilidad_geografica(funcion_faltante):
 
     assert error.value.status_code == 503
     assert "migración 0022" in error.value.detail
+
+
+def test_voluntario_externo_bloqueado_no_puede_crear_ofrecimiento():
+    with (
+        patch.object(
+            coverage_service.reputacion_service,
+            "consultar_restricciones",
+            return_value={"bloqueado_nuevas_asignaciones": True},
+        ),
+        patch.object(coverage_service, "obtener_perfil_externo") as mock_perfil,
+        pytest.raises(HTTPException) as error,
+    ):
+        coverage_service.crear_ofrecimiento("user-ext", "rep-1")
+
+    assert error.value.status_code == 403
+    assert "casos nuevos" in error.value.detail
+    mock_perfil.assert_not_called()
+
+
+@pytest.mark.parametrize("origen", ["equipo_interno", "ofrecimiento_externo"])
+def test_reserva_revalida_bloqueo_antes_de_la_operacion_atomica(origen):
+    supabase_admin = MagicMock()
+    with (
+        patch.object(coverage_service, "supabase_admin", supabase_admin),
+        patch.object(
+            coverage_service.reputacion_service,
+            "consultar_restricciones",
+            return_value={"bloqueado_nuevas_asignaciones": True},
+        ),
+        pytest.raises(HTTPException) as error,
+    ):
+        coverage_service.reservar_cobertura(
+            reporte_id="rep-1",
+            usuario_asignado_id="user-1",
+            voluntario_id="vol-1",
+            asociacion_id="aso-1",
+            actor_id="actor-1",
+            origen=origen,
+        )
+
+    assert error.value.status_code == 409
+    assert "no puede recibir nuevas asignaciones" in error.value.detail
+    supabase_admin.rpc.assert_not_called()

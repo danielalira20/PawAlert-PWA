@@ -440,50 +440,101 @@ def evaluar_insignias_voluntario_externo(usuario_id: str) -> list[dict]:
     """
     try:
         actualizadas: list[dict] = []
-        
+
         # 1. Validar si el usuario tiene perfil de voluntario
-        voluntario_query = supabase.table("voluntarios").select("id, estado").eq("usuario_id", usuario_id).execute()
+        voluntario_query = (
+            supabase.table("voluntarios")
+            .select("id, estado")
+            .eq("usuario_id", usuario_id)
+            .execute()
+        )
         if not voluntario_query.data:
             return actualizadas
-            
+
         vol_data = voluntario_query.data[0]
         voluntario_id = vol_data["id"]
 
         # 2. Insignia: Casa segura (Aprobado formalmente)
         if vol_data.get("estado") == "activo_nivel_2":
-            fila = _upsert_insignia(usuario_id, ROL_VOLUNTARIO_EXTERNO, "casa_segura", None, 1)
-            if fila: actualizadas.append(fila)
+            fila = _upsert_insignia(
+                usuario_id, ROL_VOLUNTARIO_EXTERNO,
+                "casa_segura", None, 1,
+            )
+            if fila:
+                actualizadas.append(fila)
 
         # 3. Insignia: Hogar protector (3 custodias finalizadas)
-        custodias = supabase.table("custodias_temporales").select("id").eq("voluntario_id", voluntario_id).eq("estado", "finalizado").execute()
+        custodias = (
+            supabase.table("custodias_temporales")
+            .select("id")
+            .eq("voluntario_id", voluntario_id)
+            .eq("estado", "finalizado")
+            .execute()
+        )
         total_custodias = len(custodias.data or [])
         if total_custodias >= 3:
-            fila = _upsert_insignia(usuario_id, ROL_VOLUNTARIO_EXTERNO, "hogar_protector", None, total_custodias)
-            if fila: actualizadas.append(fila)
+            fila = _upsert_insignia(
+                usuario_id, ROL_VOLUNTARIO_EXTERNO,
+                "hogar_protector", None, total_custodias,
+            )
+            if fila:
+                actualizadas.append(fila)
 
         # 4. Insignia: Relevo seguro (3 transferencias confirmadas por ambas partes)
         # Se verifica si el usuario fue el que entregó o el que recibió.
-        transferencias = supabase.table("transferencias_custodia").select("id").eq("estado", "confirmada").or_(f"entrega_confirmada_por_id.eq.{usuario_id},recepcion_confirmada_por_id.eq.{usuario_id}").execute()
+        transferencias = (
+            supabase.table("transferencias_custodia")
+            .select("id")
+            .eq("estado", "confirmada")
+            .or_(
+                f"entrega_confirmada_por_id.eq.{usuario_id},"
+                f"recepcion_confirmada_por_id.eq.{usuario_id}"
+            )
+            .execute()
+        )
         total_transferencias = len(transferencias.data or [])
         if total_transferencias >= 3:
-            fila = _upsert_insignia(usuario_id, ROL_VOLUNTARIO_EXTERNO, "relevo_seguro", None, total_transferencias)
-            if fila: actualizadas.append(fila)
+            fila = _upsert_insignia(
+                usuario_id, ROL_VOLUNTARIO_EXTERNO,
+                "relevo_seguro", None, total_transferencias,
+            )
+            if fila:
+                actualizadas.append(fila)
 
         # 5. Insignia: Rescatista PawAlert (Cobre: 1, Plata: 5, Oro: 15)
         # Contamos los reportes únicos donde registró un resguardo válido.
-        rescates = supabase.table("historial_reporte").select("reporte_id").eq("usuario_id", usuario_id).in_("tipo_evento", ["animal_bajo_resguardo", "llegada_hogar_temporal"]).execute()
+        rescates = (
+            supabase.table("historial_reporte")
+            .select("reporte_id")
+            .eq("usuario_id", usuario_id)
+            .in_(
+                "tipo_evento",
+                ["animal_bajo_resguardo", "llegada_hogar_temporal"],
+            )
+            .execute()
+        )
         total_rescates = len(set(r["reporte_id"] for r in (rescates.data or [])))
-        
-        nivel_rescatista = "oro" if total_rescates >= 15 else "plata" if total_rescates >= 5 else "cobre" if total_rescates >= 1 else None
+
+        nivel_rescatista = (
+            "oro" if total_rescates >= 15
+            else "plata" if total_rescates >= 5
+            else "cobre" if total_rescates >= 1
+            else None
+        )
         if nivel_rescatista:
-            fila = _upsert_insignia(usuario_id, ROL_VOLUNTARIO_EXTERNO, "rescatista_pawalert", nivel_rescatista, total_rescates)
-            if fila: actualizadas.append(fila)
+            fila = _upsert_insignia(
+                usuario_id, ROL_VOLUNTARIO_EXTERNO,
+                "rescatista_pawalert", nivel_rescatista, total_rescates,
+            )
+            if fila:
+                actualizadas.append(fila)
 
         return actualizadas
     except Exception as e:
         print(f"[WARN] evaluar_insignias_voluntario_externo fallo (usuario={usuario_id}): {e}")
         return []
-    
+
+
 def _contar_desenlaces_validos(usuario_id: str) -> int:
     """Cuenta reportes PROPIOS de este usuario que llegaron a un
     desenlace válido (evento historial_reporte tipo_evento='caso_cerrado'
@@ -555,6 +606,141 @@ def _upsert_insignia(
         .execute()
     )
     return creado.data[0] if creado.data else None
+
+
+# ============================================================
+# Insignias del voluntario interno (Persona 2).
+# ============================================================
+
+def _rescates_completados_interno(usuario_id: str) -> set[str]:
+    """Reportes asignados al voluntario que tienen un cierre real y una
+    conclusión válida. Se consulta la fuente operativa para que también
+    cuente el historial anterior al lanzamiento de gamificación."""
+    reportes = (
+        supabase.table("reportes")
+        .select("id")
+        .eq("staff_asignado_id", usuario_id)
+        .execute()
+    )
+    ids = [fila["id"] for fila in (reportes.data or [])]
+    if not ids:
+        return set()
+
+    cierres = (
+        supabase.table("historial_reporte")
+        .select("reporte_id, datos_extra")
+        .eq("tipo_evento", "caso_cerrado")
+        .in_("reporte_id", ids)
+        .execute()
+    )
+    return {
+        fila["reporte_id"]
+        for fila in (cierres.data or [])
+        if (fila.get("datos_extra") or {}).get("conclusion") in CONCLUSIONES_VALIDAS
+    }
+
+
+def _contar_rescates_internos_sin_abandono(
+    usuario_id: str,
+    reportes_completados: set[str],
+) -> int:
+    if not reportes_completados:
+        return 0
+
+    abandonos = (
+        supabase.table("incidentes")
+        .select("reporte_id")
+        .eq("usuario_id", usuario_id)
+        .eq("rol", ROL_VOLUNTARIO_INTERNO)
+        .eq("tipo_incidente", "abandono")
+        .eq("estado", "confirmado")
+        .in_("reporte_id", list(reportes_completados))
+        .execute()
+    )
+    reportes_con_abandono = {
+        fila["reporte_id"]
+        for fila in (abandonos.data or [])
+        if fila.get("reporte_id")
+    }
+    return len(reportes_completados - reportes_con_abandono)
+
+
+def _contar_verificaciones_aprobadas_interno(usuario_id: str) -> int:
+    voluntario = (
+        supabase.table("voluntarios")
+        .select("id")
+        .eq("usuario_id", usuario_id)
+        .limit(1)
+        .execute()
+    )
+    if not voluntario.data:
+        return 0
+
+    verificaciones = (
+        supabase.table("asignaciones_verificacion_hogar")
+        .select("id", count="exact")
+        .eq("verificador_voluntario_id", voluntario.data[0]["id"])
+        .eq("estado", "completada")
+        .eq("resultado_visita", "aprobar")
+        .execute()
+    )
+    return int(
+        verificaciones.count
+        if verificaciones.count is not None
+        else len(verificaciones.data or [])
+    )
+
+
+def evaluar_insignias_voluntario_interno(usuario_id: str) -> list[dict]:
+    """Evalúa las tres insignias aprobadas para el voluntariado interno:
+    Rescatista PawAlert (1/5/15), Compromiso cumplido (10 cierres sin
+    abandono confirmado) y Verificador de confianza (5 hogares aprobados).
+    """
+    try:
+        actualizadas: list[dict] = []
+        rescates = _rescates_completados_interno(usuario_id)
+        total_rescates = len(rescates)
+        nivel = (
+            "oro" if total_rescates >= 15
+            else "plata" if total_rescates >= 5
+            else "cobre" if total_rescates >= 1
+            else None
+        )
+        if nivel:
+            fila = _upsert_insignia(
+                usuario_id, ROL_VOLUNTARIO_INTERNO,
+                "rescatista_pawalert", nivel, total_rescates,
+            )
+            if fila:
+                actualizadas.append(fila)
+
+        total_compromiso = _contar_rescates_internos_sin_abandono(
+            usuario_id, rescates,
+        )
+        if total_compromiso >= 10:
+            fila = _upsert_insignia(
+                usuario_id, ROL_VOLUNTARIO_INTERNO,
+                "compromiso_cumplido", None, total_compromiso,
+            )
+            if fila:
+                actualizadas.append(fila)
+
+        total_verificaciones = _contar_verificaciones_aprobadas_interno(usuario_id)
+        if total_verificaciones >= 5:
+            fila = _upsert_insignia(
+                usuario_id, ROL_VOLUNTARIO_INTERNO,
+                "verificador_de_confianza", None, total_verificaciones,
+            )
+            if fila:
+                actualizadas.append(fila)
+
+        return actualizadas
+    except Exception as error:
+        print(
+            "[WARN] evaluar_insignias_voluntario_interno fallo "
+            f"(usuario={usuario_id}): {error}"
+        )
+        return []
 
 
 # ============================================================
@@ -665,6 +851,7 @@ def procesar_rescate_completado_interno(
         TIPO_ORIGEN_REPORTE, reporte_id,
         limite_incremento_mes=TRUST_LIMITE_INCREMENTO_MES_VOLUNTARIO,
     )
+    evaluar_insignias_voluntario_interno(usuario_id)
 
 
 def procesar_llegada_refugio_interna(reporte_id: str, usuario_id: str | None) -> None:
@@ -892,6 +1079,32 @@ def consultar_restricciones(usuario_id: str, rol: str) -> dict:
     return base
 
 
+def usuarios_bloqueados_nuevas_asignaciones(
+    usuario_ids: list[str] | set[str],
+    rol: str,
+) -> set[str]:
+    """Obtiene en una sola consulta quién no puede recibir casos nuevos.
+
+    La ausencia de fila conserva el valor inicial de 60 y, por tanto, no
+    bloquea. Los casos que ya están activos no pasan por esta función.
+    """
+    ids = sorted(set(usuario_ids))
+    if not ids:
+        return set()
+    resultado = (
+        supabase.table("trust_score")
+        .select("usuario_id, puntaje")
+        .eq("rol", rol)
+        .in_("usuario_id", ids)
+        .execute()
+    )
+    return {
+        fila["usuario_id"]
+        for fila in (resultado.data or [])
+        if int(fila.get("puntaje", 60)) < 40
+    }
+
+
 def evaluar_reportes_validados_por_tiempo() -> dict:
     """Job de los 7 días — llamado desde POST /internal/gamificacion/run.
 
@@ -1077,3 +1290,189 @@ def _aplicar_insignias_historicas_usuario(usuario_id: str) -> list[dict]:
         if fila:
             actualizadas.append(fila)
     return actualizadas
+
+
+def _calcular_candidatos_insignias_historicas_voluntario_interno(
+    usuario_id: str,
+) -> list[dict]:
+    """Reconstruye insignias internas desde eventos operativos, sin escribir."""
+    candidatos: list[dict] = []
+    reportes = (
+        supabase.table("reportes")
+        .select("id")
+        .eq("staff_asignado_id", usuario_id)
+        .execute()
+    ).data or []
+    ids_reportes = [fila["id"] for fila in reportes]
+    cierres_validos: list[dict] = []
+    if ids_reportes:
+        eventos = (
+            supabase.table("historial_reporte")
+            .select("reporte_id, datos_extra, created_at")
+            .eq("tipo_evento", "caso_cerrado")
+            .in_("reporte_id", ids_reportes)
+            .order("created_at")
+            .execute()
+        ).data or []
+        vistos: set[str] = set()
+        for evento in eventos:
+            if (
+                evento["reporte_id"] not in vistos
+                and (evento.get("datos_extra") or {}).get("conclusion")
+                in CONCLUSIONES_VALIDAS
+            ):
+                vistos.add(evento["reporte_id"])
+                cierres_validos.append(evento)
+
+    total_rescates = len(cierres_validos)
+    nivel = (
+        "oro" if total_rescates >= 15
+        else "plata" if total_rescates >= 5
+        else "cobre" if total_rescates >= 1
+        else None
+    )
+    if nivel:
+        umbral = 15 if nivel == "oro" else 5 if nivel == "plata" else 1
+        candidatos.append({
+            "usuario_id": usuario_id,
+            "rol": ROL_VOLUNTARIO_INTERNO,
+            "codigo_insignia": "rescatista_pawalert",
+            "nivel": nivel,
+            "progreso": total_rescates,
+            "obtenido_at": cierres_validos[0]["created_at"],
+            "mejorado_at": cierres_validos[umbral - 1]["created_at"],
+        })
+
+    abandonos_ids: set[str] = set()
+    if ids_reportes:
+        abandonos = (
+            supabase.table("incidentes")
+            .select("reporte_id")
+            .eq("usuario_id", usuario_id)
+            .eq("rol", ROL_VOLUNTARIO_INTERNO)
+            .eq("tipo_incidente", "abandono")
+            .eq("estado", "confirmado")
+            .in_("reporte_id", ids_reportes)
+            .execute()
+        ).data or []
+        abandonos_ids = {
+            fila["reporte_id"] for fila in abandonos if fila.get("reporte_id")
+        }
+    cierres_sin_abandono = [
+        evento for evento in cierres_validos
+        if evento["reporte_id"] not in abandonos_ids
+    ]
+    if len(cierres_sin_abandono) >= 10:
+        fecha = cierres_sin_abandono[9]["created_at"]
+        candidatos.append({
+            "usuario_id": usuario_id,
+            "rol": ROL_VOLUNTARIO_INTERNO,
+            "codigo_insignia": "compromiso_cumplido",
+            "nivel": None,
+            "progreso": len(cierres_sin_abandono),
+            "obtenido_at": fecha,
+            "mejorado_at": fecha,
+        })
+
+    voluntario = (
+        supabase.table("voluntarios")
+        .select("id")
+        .eq("usuario_id", usuario_id)
+        .limit(1)
+        .execute()
+    )
+    if voluntario.data:
+        verificaciones = (
+            supabase.table("asignaciones_verificacion_hogar")
+            .select("id, resultado_at, updated_at")
+            .eq("verificador_voluntario_id", voluntario.data[0]["id"])
+            .eq("estado", "completada")
+            .eq("resultado_visita", "aprobar")
+            .order("resultado_at")
+            .execute()
+        ).data or []
+        if len(verificaciones) >= 5:
+            fecha = (
+                verificaciones[4].get("resultado_at")
+                or verificaciones[4]["updated_at"]
+            )
+            candidatos.append({
+                "usuario_id": usuario_id,
+                "rol": ROL_VOLUNTARIO_INTERNO,
+                "codigo_insignia": "verificador_de_confianza",
+                "nivel": None,
+                "progreso": len(verificaciones),
+                "obtenido_at": fecha,
+                "mejorado_at": fecha,
+            })
+
+    return candidatos
+
+
+def reevaluar_insignias_historicas_voluntario_interno(
+    dry_run: bool = True,
+) -> dict:
+    """Revisa el historial del voluntariado interno; por defecto no escribe."""
+    rol = (
+        supabase.table("roles")
+        .select("id")
+        .eq("nombre", ROL_VOLUNTARIO_INTERNO)
+        .limit(1)
+        .execute()
+    )
+    if not rol.data:
+        return {
+            "modo": "dry_run" if dry_run else "real",
+            "usuarios_revisados": 0,
+            "detalle": [] if dry_run else None,
+        }
+    usuarios_resp = (
+        supabase.table("usuarios")
+        .select("id")
+        .eq("rol_id", rol.data[0]["id"])
+        .execute()
+    )
+    usuarios = sorted({fila["id"] for fila in (usuarios_resp.data or [])})
+    candidatos_totales: list[dict] = []
+    usuarios_actualizados = 0
+    for usuario_id in usuarios:
+        try:
+            candidatos = (
+                _calcular_candidatos_insignias_historicas_voluntario_interno(
+                    usuario_id
+                )
+            )
+            if dry_run:
+                candidatos_totales.extend(candidatos)
+                continue
+            tuvo_cambios = False
+            for candidato in candidatos:
+                fila = _upsert_insignia(
+                    candidato["usuario_id"],
+                    candidato["rol"],
+                    candidato["codigo_insignia"],
+                    candidato["nivel"],
+                    candidato["progreso"],
+                    obtenido_at=candidato["obtenido_at"],
+                    mejorado_at=candidato["mejorado_at"],
+                )
+                tuvo_cambios = bool(fila) or tuvo_cambios
+            usuarios_actualizados += int(tuvo_cambios)
+        except Exception as error:
+            print(
+                "[WARN] reevaluar insignias históricas de voluntario interno "
+                f"falló (usuario={usuario_id}): {error}"
+            )
+
+    if dry_run:
+        return {
+            "modo": "dry_run",
+            "usuarios_revisados": len(usuarios),
+            "insignias_que_se_crearian_o_actualizarian": len(candidatos_totales),
+            "detalle": candidatos_totales,
+        }
+    return {
+        "modo": "real",
+        "usuarios_revisados": len(usuarios),
+        "usuarios_actualizados": usuarios_actualizados,
+    }

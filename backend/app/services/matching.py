@@ -9,6 +9,10 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from app.db.supabase import supabase
+from app.services.reputacion_service import (
+    ROL_VOLUNTARIO_INTERNO,
+    usuarios_bloqueados_nuevas_asignaciones,
+)
 from app.utils.animal_shaping import shape_animal_embed
 
 
@@ -54,6 +58,15 @@ def obtener_candidatos(reporte_id: str) -> dict:
         "candidatos_para_reporte", {"p_reporte_id": reporte_id}
     ).execute().data or []
     rechazaron = _voluntarios_que_rechazaron(reporte_id)
+    bloqueados = usuarios_bloqueados_nuevas_asignaciones(
+        {
+            candidato["usuario_id"]
+            for candidato in crudos
+            if candidato.get("rol") == ROL_VOLUNTARIO_INTERNO
+            and candidato.get("usuario_id")
+        },
+        ROL_VOLUNTARIO_INTERNO,
+    )
 
     candidatos = []
     for candidato in crudos:
@@ -63,6 +76,8 @@ def obtener_candidatos(reporte_id: str) -> dict:
         if candidato.get("rol") != "voluntario_interno":
             continue
         if candidato["usuario_id"] in rechazaron:
+            continue
+        if candidato["usuario_id"] in bloqueados:
             continue
 
         especies = set(

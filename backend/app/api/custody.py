@@ -23,8 +23,11 @@ from app.models.custody import (
 from app.services.report_service import registrar_historial
 from app.services.email_service import email_duda_regional, email_respuesta_voluntario
 from app.utils.animal_shaping import shape_animal_embed, shape_animal_response
-from app.services.reputacion_service import otorgar_puntos, ajustar_trust_score
-from app.services.reputacion_service import otorgar_puntos, ajustar_trust_score, evaluar_insignias_voluntario_externo
+from app.services.reputacion_service import (
+    ajustar_trust_score,
+    evaluar_insignias_voluntario_externo,
+    otorgar_puntos,
+)
 
 
 router = APIRouter()
@@ -1708,7 +1711,7 @@ def confirmar_transferencia(
                     evento_origen_id=transferencia_id,
                     limite_incremento_mes=20,
                 )
-            evaluar_insignias_voluntario_externo(recompensa["uid"])
+                evaluar_insignias_voluntario_externo(recompensa["uid"])
         except Exception as e:
             print(f"[WARN] Error en gamificación de transferencia {transferencia_id}: {e}")
 

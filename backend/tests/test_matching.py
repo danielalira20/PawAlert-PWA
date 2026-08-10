@@ -7,6 +7,16 @@ import pytest
 from app.services import matching
 
 
+@pytest.fixture(autouse=True)
+def permitir_candidatos_sin_restriccion():
+    with patch.object(
+        matching,
+        "usuarios_bloqueados_nuevas_asignaciones",
+        return_value=set(),
+    ):
+        yield
+
+
 def candidato(**overrides):
     base = {
         "voluntario_id": "vol-1",
@@ -106,6 +116,27 @@ def test_matching_excluye_carga_al_maximo(reporte_multi_animal):
 
     assert [c["usuario_id"] for c in resultado["candidatos"]] == ["disponible"]
     assert resultado["candidatos"][0]["capacidad_resumen"] == "1 de 2 casos activos"
+
+
+def test_matching_excluye_voluntario_bloqueado_por_trust_score(
+    reporte_multi_animal,
+):
+    bloqueado = candidato(usuario_id="bloqueado")
+    disponible = candidato(usuario_id="disponible")
+
+    with patch.object(
+        matching,
+        "usuarios_bloqueados_nuevas_asignaciones",
+        return_value={"bloqueado"},
+    ):
+        resultado = ejecutar_matching(
+            reporte_multi_animal,
+            [bloqueado, disponible],
+        )
+
+    assert [fila["usuario_id"] for fila in resultado["candidatos"]] == [
+        "disponible"
+    ]
 
 
 def test_matching_respeta_radio_declarado(reporte_multi_animal):
