@@ -84,7 +84,7 @@ def crear_canje(recompensa_id: str, usuario_id: str, rol: str | None) -> dict:
     
     # 1. Reservar los puntos
     try:
-        reservar_puntos(
+        movimiento = reservar_puntos(
             usuario_id=usuario_id,
             rol=rol,
             regla="canje_recompensa",
@@ -128,9 +128,15 @@ def crear_canje(recompensa_id: str, usuario_id: str, rol: str | None) -> dict:
     
     # Actualizamos el movimiento de puntos para que apunte al canje_id en lugar de recompensa_id
     # Esto es seguro porque es la reserva de este usuario que acabamos de crear
-    supabase.table("movimientos_puntos").update({
-        "evento_origen_id": canje_id
-    }).eq("usuario_id", usuario_id).eq("evento_origen_id", recompensa_id).eq("estado", "reservado").execute()
+    if movimiento and "id" in movimiento:
+        supabase.table("movimientos_puntos").update({
+            "evento_origen_id": canje_id
+        }).eq("id", movimiento["id"]).execute()
+    else:
+        # Fallback por si la RPC no retorna el ID por alguna razon
+        supabase.table("movimientos_puntos").update({
+            "evento_origen_id": canje_id
+        }).eq("usuario_id", usuario_id).eq("evento_origen_id", recompensa_id).eq("tipo_origen", "canje").execute()
     
     return canje_final
 

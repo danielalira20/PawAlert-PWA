@@ -22,6 +22,7 @@ import { LoggedOutProfile } from '../../components/profile/LoggedOutProfile';
 import { LoggedInProfile } from '../../components/profile/LoggedInProfile';
 import { CatalogoRecompensasScreen } from '../../screens/CatalogoRecompensasScreen';
 import { MisCanjesScreen } from '../../screens/MisCanjesScreen';
+import { EscanerCanjeScreen } from '../../screens/EscanerCanjeScreen';
 
 const { width } = Dimensions.get('window');
 const isWeb = Platform.OS === 'web';
@@ -54,6 +55,8 @@ export default function ProfileScreen() {
   const [isCustodyVisible, setIsCustodyVisible] = useState(false);
   const [isCatalogoVisible, setIsCatalogoVisible] = useState(false);
   const [isMisCanjesVisible, setIsMisCanjesVisible] = useState(false);
+  const [isEscanerVisible, setIsEscanerVisible] = useState(false);
+  const [reputacionRefreshKey, setReputacionRefreshKey] = useState(0);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(24)).current;
@@ -136,6 +139,7 @@ export default function ProfileScreen() {
         onOpenAdminPanel={() => setIsAdminVisible(true)}
         onOpenCatalogo={() => setIsCatalogoVisible(true)}
         onOpenMisCanjes={() => setIsMisCanjesVisible(true)}
+        onOpenEscaner={() => setIsEscanerVisible(true)}
         onOpenAssociationPanel={() => setIsAssociationVisible(true)}
         onOpenStaffPanel={() => setIsStaffVisible(true)}
         onOpenVerificaciones={() => setIsVerificacionesVisible(true)}
@@ -146,21 +150,25 @@ export default function ProfileScreen() {
         onOpenAliadoForm={() => setIsAliadoFormVisible(true)}
         onOpenAliadoDashboard={() => setIsAliadoDashboardVisible(true)}
         onOpenCustodyDashboard={() => setIsCustodyVisible(true)}
-        onOpenCatalogo={() => setIsCatalogoVisible(true)}
         onLogout={logout}
         capacidadesRefreshKey={capacidadesRefreshKey}
+        reputacionRefreshKey={reputacionRefreshKey}
       />
 
       {isMisReportesVisible && (
         <MisReportesScreen onClose={() => setIsMisReportesVisible(false)} />
       )}
 
-      <AppModal visible={isCatalogoVisible} onClose={() => setIsCatalogoVisible(false)} maxWidth={850}>
-        {isCatalogoVisible && <CatalogoRecompensasScreen onClose={() => setIsCatalogoVisible(false)} />}
+      <AppModal visible={isCatalogoVisible} onClose={() => setIsCatalogoVisible(false)} maxWidth={1000}>
+        {isCatalogoVisible && <CatalogoRecompensasScreen onClose={() => setIsCatalogoVisible(false)} onCanjeExitoso={() => setReputacionRefreshKey(k => k + 1)} />}
       </AppModal>
 
       <AppModal visible={isMisCanjesVisible} onClose={() => setIsMisCanjesVisible(false)} maxWidth={850}>
         {isMisCanjesVisible && <MisCanjesScreen onClose={() => setIsMisCanjesVisible(false)} />}
+      </AppModal>
+
+      <AppModal visible={isEscanerVisible} onClose={() => setIsEscanerVisible(false)} maxWidth={850}>
+        {isEscanerVisible && <EscanerCanjeScreen onClose={() => setIsEscanerVisible(false)} />}
       </AppModal>
 
       <AppModal visible={isAdminVisible} onClose={() => setIsAdminVisible(false)} maxWidth={1100}>

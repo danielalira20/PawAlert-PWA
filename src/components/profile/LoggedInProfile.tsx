@@ -34,6 +34,7 @@ interface Props {
   onOpenAdminPanel?: () => void;
   onOpenCatalogo?: () => void;
   onOpenMisCanjes?: () => void;
+  onOpenEscaner?: () => void;
   onOpenAssociationPanel?: () => void;
   onOpenStaffPanel: () => void;
   onOpenVerificaciones: () => void;
@@ -48,6 +49,7 @@ interface Props {
   onOpenCustodyDashboard: () => void;
   onLogout: () => void;
   capacidadesRefreshKey?: number;
+  reputacionRefreshKey?: number;
 }
 
 export function LoggedInProfile({
@@ -55,6 +57,7 @@ export function LoggedInProfile({
   onOpenAdminPanel,
   onOpenCatalogo,
   onOpenMisCanjes,
+  onOpenEscaner,
   onOpenAssociationPanel,
   onOpenStaffPanel,
   onOpenVerificaciones,
@@ -66,6 +69,7 @@ export function LoggedInProfile({
   onOpenCustodyDashboard,
   onLogout,
   capacidadesRefreshKey,
+  reputacionRefreshKey,
 }: Props) {
   const { user, token } = useAuth();
   const { width } = useWindowDimensions();
@@ -96,7 +100,6 @@ export function LoggedInProfile({
     : esVoluntarioExterno
       ? 'voluntario_externo'
       : 'reportante';
-  const muestraSaldoReputacion = !esAdmin && !esAsociacion && !esStaff;
 
   const [tieneCapacidades, setTieneCapacidades] = useState<boolean | null>(null);
   const [tienePerfilVoluntario, setTienePerfilVoluntario] = useState<boolean | null>(null);
@@ -199,6 +202,8 @@ export function LoggedInProfile({
     !user?.rol && tienePerfilApoyo === true &&
     (tipoPerfilApoyo === 'aliado_local' || tipoPerfilApoyo === 'patrocinador_institucional');
 
+  const muestraSaldoReputacion = !esAdmin && !esAsociacion && !esStaff && tipoPerfilApoyo !== 'patrocinador_institucional' && tipoPerfilApoyo !== 'aliado_local' && !esAliadoPuro;
+
   // Los 4 roles ya tienen su propia versión.
   // NOTA: esVoluntarioActivo aún no tiene su propia tarjeta de impacto —
   // por ahora cae al default (ReporterImpactStats). Pendiente crear una
@@ -267,7 +272,7 @@ export function LoggedInProfile({
         label="Mis Reportes"
         onPress={onOpenMisReportes}
       />
-      {muestraSaldoReputacion && (
+      {muestraSaldoReputacion && !esAliadoPuro && (
         <>
           <AccessRow
             icon="gift-outline"
@@ -287,6 +292,14 @@ export function LoggedInProfile({
           icon="star-outline"
           label="Quiero ser parte de la Red de Aliados"
           onPress={onOpenAliadoForm}
+          isLast={!esAdmin && !esAsociacion && !esStaff && !puedeVerPostulacion}
+        />
+      )}
+      {(tipoPerfilApoyo === 'patrocinador_institucional' || tipoPerfilApoyo === 'aliado_local') && (
+        <AccessRow
+          icon="scan-outline"
+          label="Escanear QR de Canje"
+          onPress={onOpenEscaner}
           isLast={!esAdmin && !esAsociacion && !esStaff && !puedeVerPostulacion}
         />
       )}
@@ -413,7 +426,7 @@ export function LoggedInProfile({
 
                   {muestraSaldoReputacion && (
                     <View style={styles.sectionPadding}>
-                      <SaldoReputacionCard rol={rolParaSaldo} />
+                      <SaldoReputacionCard rol={rolParaSaldo} refreshKey={reputacionRefreshKey} />
                     </View>
                   )}
 
@@ -490,7 +503,7 @@ export function LoggedInProfile({
       <View style={styles.mobileCentered}>
         {muestraSaldoReputacion && (
           <View style={styles.section}>
-            <SaldoReputacionCard rol={rolParaSaldo} />
+            <SaldoReputacionCard rol={rolParaSaldo} refreshKey={reputacionRefreshKey} />
           </View>
         )}
 

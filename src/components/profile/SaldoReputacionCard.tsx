@@ -6,6 +6,7 @@ import { useMiReputacion } from '../../hooks/useMiReputacion';
 
 interface Props {
   rol: string; // 'reportante' | 'voluntario_interno' | 'voluntario_externo'
+  refreshKey?: number;
 }
 
 /**
@@ -18,8 +19,14 @@ interface Props {
  * restricción ya traducido a texto humano. El Trust Score numérico
  * nunca llega hasta aquí (el endpoint ya lo excluye).
  */
-export function SaldoReputacionCard({ rol }: Props) {
-  const { saldo, isLoading } = useMiReputacion(rol);
+export function SaldoReputacionCard({ rol, refreshKey }: Props) {
+  const { saldo, isLoading, recargar } = useMiReputacion(rol);
+
+  React.useEffect(() => {
+    if (refreshKey) {
+      recargar();
+    }
+  }, [refreshKey, recargar]);
 
   if (isLoading) {
     return (
