@@ -282,10 +282,12 @@ export function MisCanjesScreen({ onClose }: { onClose: () => void }) {
               </TouchableOpacity>
             </View>
           </View>
+          <Toast toast={toast} translateY={translateY} />
         </View>
       </Modal>
       
-      <Toast toast={toast} translateY={translateY} />
+      {/* Toast for success when modal closes */}
+      {!problemaModalVisible && <Toast toast={toast} translateY={translateY} />}
     </View>
   );
 }

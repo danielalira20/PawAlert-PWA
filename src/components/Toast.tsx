@@ -115,8 +115,9 @@ const styles = StyleSheet.create({
   container: {
     position: 'absolute',
     top: 52,
-    left: 16,
-    right: 16,
+    alignSelf: 'center',
+    width: '85%',
+    maxWidth: 350,
     borderRadius: 12,
     padding: 14,
     flexDirection: 'row',
