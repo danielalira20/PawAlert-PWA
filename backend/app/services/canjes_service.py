@@ -65,7 +65,7 @@ def crear_canje(recompensa_id: str, usuario_id: str, rol: str | None) -> dict:
     _validar_elegibilidad_usuario(rol)
     
     recompensa = supabase.table("recompensas").select(
-        "id, estado, unidades_disponibles, costo, propietario_id, inicio, vencimiento"
+        "id, estado, unidades_disponibles, costo, propietario_id, inicio, vencimiento, nivel"
     ).eq("id", recompensa_id).execute()
     
     if not recompensa.data:
@@ -128,7 +128,7 @@ def crear_canje(recompensa_id: str, usuario_id: str, rol: str | None) -> dict:
     
     # Actualizamos el movimiento de puntos para que apunte al canje_id en lugar de recompensa_id
     # Esto es seguro porque es la reserva de este usuario que acabamos de crear
-    supabase.table("historial_reputacion").update({
+    supabase.table("movimientos_puntos").update({
         "evento_origen_id": canje_id
     }).eq("usuario_id", usuario_id).eq("evento_origen_id", recompensa_id).eq("estado", "reservado").execute()
     

@@ -35,12 +35,14 @@ def _obtener_usuario_autenticado(authorization: str | None):
     from fastapi import HTTPException
 
     if not authorization or not authorization.startswith("Bearer "):
+        print(f"Auth header malformed or missing: {authorization}")
         raise HTTPException(status_code=401, detail="No autenticado")
 
     token = authorization.replace("Bearer ", "")
     try:
         auth_response = supabase.auth.get_user(token)
-    except Exception:
+    except Exception as e:
+        print(f"Error auth: {e}")
         raise HTTPException(status_code=401, detail="Token inválido o expirado")
 
     resultado = supabase.table("usuarios").select("id, asociacion_id, roles(nombre)").eq(

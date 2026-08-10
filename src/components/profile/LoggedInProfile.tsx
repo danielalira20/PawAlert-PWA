@@ -44,6 +44,7 @@ interface Props {
   onOpenAliadoForm: () => void;
   onOpenAliadoDashboard: () => void;
   onOpenCustodyDashboard: () => void;
+  onOpenCatalogo: () => void;
   onLogout: () => void;
   capacidadesRefreshKey?: number;
 }
@@ -60,19 +61,20 @@ export function LoggedInProfile({
   onOpenAliadoForm,
   onOpenAliadoDashboard,
   onOpenCustodyDashboard,
+  onOpenCatalogo,
   onLogout,
   capacidadesRefreshKey,
 }: Props) {
-  const { user , token } = useAuth();
+  const { user, token } = useAuth();
   const { width } = useWindowDimensions();
   const isDesktop = width >= DESKTOP_BREAKPOINT;
-  
+
   const esAdmin = !!user?.es_admin;
   const esAsociacion = !!user?.asociacion_id && user?.rol === 'asociacion';
   const esStaff = !!user?.asociacion_id && user?.rol === 'staff';
   const esAliadoLocal = user?.rol === 'aliado_local';
   const esPatrocinadorInstitucional = user?.rol === 'patrocinador_institucional';
-  
+
   // Validamos si es voluntario interno o externo. Ambos pueden ver sus
   // casos asignados en el mismo dashboard (StaffDashboardScreen, migrado a
   // GET /voluntarios/me/reportes) — la pantalla internamente restringe los
@@ -142,37 +144,37 @@ export function LoggedInProfile({
 
   const { impacto: impactoAliado, isLoading: isLoadingAliado } = useAliadoImpact(tienePerfilApoyo === true);
 
-useFocusEffect(
-  useCallback(() => {
-    if (!token || esAdmin || esAsociacion || esStaff) {
-      setTienePerfilVoluntario(null);
-      setEstadoVoluntario(null);
-      return;
-    }
-    let cancelado = false;
-    (async () => {
-      try {
-        const res = await axios.get(`${API_URL}/voluntarios/me`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!cancelado) {
-          setTienePerfilVoluntario(!!res.data?.tiene_perfil_voluntario);
-          setEstadoVoluntario(res.data?.estado || null);
-          setTieneCapacidades(!!res.data?.tiene_capacidades);
-        }
-      } catch {
-        if (!cancelado) {
-          setTienePerfilVoluntario(null);
-          setEstadoVoluntario(null);
-          setTieneCapacidades(null);
-        }
+  useFocusEffect(
+    useCallback(() => {
+      if (!token || esAdmin || esAsociacion || esStaff) {
+        setTienePerfilVoluntario(null);
+        setEstadoVoluntario(null);
+        return;
       }
-    })();
-    return () => {
-      cancelado = true;
-    };
-  }, [token, esAdmin, esAsociacion, esStaff, capacidadesRefreshKey])
-);
+      let cancelado = false;
+      (async () => {
+        try {
+          const res = await axios.get(`${API_URL}/voluntarios/me`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (!cancelado) {
+            setTienePerfilVoluntario(!!res.data?.tiene_perfil_voluntario);
+            setEstadoVoluntario(res.data?.estado || null);
+            setTieneCapacidades(!!res.data?.tiene_capacidades);
+          }
+        } catch {
+          if (!cancelado) {
+            setTienePerfilVoluntario(null);
+            setEstadoVoluntario(null);
+            setTieneCapacidades(null);
+          }
+        }
+      })();
+      return () => {
+        cancelado = true;
+      };
+    }, [token, esAdmin, esAsociacion, esStaff, capacidadesRefreshKey])
+  );
 
   const { impacto, isLoading: isLoadingReportes } = useRecentReports();
   const { impacto: impactoAsociacion, isLoading: isLoadingAsociacion } = useAssociationImpact(esAsociacion);
@@ -236,34 +238,41 @@ useFocusEffect(
         : null;
 
   const rolBadgeElement = esAdmin ? (
-  <RoleBadge rol="admin" variant="onWhite" />
-) : esAsociacion ? (
-  <RoleBadge rol="asociacion" variant="onWhite" />
-) : esStaff ? (
-  <RoleBadge rol="staff" variant="onWhite" />
-) : esVoluntarioInterno ? (
-  <RoleBadge rol="voluntario_interno" variant="onWhite" />
-) : esVoluntarioExterno ? (
-  <RoleBadge rol="voluntario_externo" variant="onWhite" />
-) : esAliadoLocal ? (
-  <RoleBadge rol="aliado_local" variant="onWhite" />
-) : esPatrocinadorInstitucional ? (
-  <RoleBadge rol="patrocinador_institucional" variant="onWhite" />
-) : esAliadoPuro ? (
-  <RoleBadge rol={tipoPerfilApoyo as 'aliado_local' | 'patrocinador_institucional'} variant="onWhite" />
-) : (
-  <RoleBadge rol="reportante" variant="onWhite" />
-);
+    <RoleBadge rol="admin" variant="onWhite" />
+  ) : esAsociacion ? (
+    <RoleBadge rol="asociacion" variant="onWhite" />
+  ) : esStaff ? (
+    <RoleBadge rol="staff" variant="onWhite" />
+  ) : esVoluntarioInterno ? (
+    <RoleBadge rol="voluntario_interno" variant="onWhite" />
+  ) : esVoluntarioExterno ? (
+    <RoleBadge rol="voluntario_externo" variant="onWhite" />
+  ) : esAliadoLocal ? (
+    <RoleBadge rol="aliado_local" variant="onWhite" />
+  ) : esPatrocinadorInstitucional ? (
+    <RoleBadge rol="patrocinador_institucional" variant="onWhite" />
+  ) : esAliadoPuro ? (
+    <RoleBadge rol={tipoPerfilApoyo as 'aliado_local' | 'patrocinador_institucional'} variant="onWhite" />
+  ) : (
+    <RoleBadge rol="reportante" variant="onWhite" />
+  );
 
   // Actualizamos los accesos agregando los de voluntario
   const accesos = (
     <>
-      <AccessRow 
-        icon="clipboard-outline" 
-        label="Mis Reportes" 
-        onPress={onOpenMisReportes} 
-        isLast={!esAdmin && !esAsociacion && !esStaff && !puedeVerPostulacion && (user?.tiene_perfil_apoyo === true)}
+      <AccessRow
+        icon="clipboard-outline"
+        label="Mis Reportes"
+        onPress={onOpenMisReportes}
       />
+      {muestraSaldoReputacion && (
+        <AccessRow
+          icon="gift-outline"
+          label="Catálogo de Recompensas"
+          onPress={onOpenCatalogo}
+          isLast={!esAdmin && !esAsociacion && !esStaff && !puedeVerPostulacion && (user?.tiene_perfil_apoyo === true)}
+        />
+      )}
       {user && !user.tiene_perfil_apoyo && !esAsociacion && (
         <AccessRow
           icon="star-outline"
