@@ -1225,9 +1225,11 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
     # --- GAMIFICACIÓN: Voluntario Externo (Llegada/Resguardo) ---
     if tipo_hito in ("animal_bajo_resguardo", "llegada_hogar_temporal") and rol_usuario == "voluntario_externo":
         try:
-            from app.services.reputacion_service import otorgar_puntos
-            # Usar la misma regla y el mismo reporte_id asegura que el motor 
-            # solo entregue los 5 puntos una vez, sin importar cuál de los dos hitos ocurra primero.
+            from app.services.reputacion_service import (
+                evaluar_insignias_voluntario_externo,
+                otorgar_puntos,
+            )
+
             otorgar_puntos(
                 usuario_id=usuario["id"],
                 rol="voluntario_externo",
@@ -1236,6 +1238,8 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
                 evento_origen_id=reporte_id,
                 puntos=5
             )
+            # Evalúa la insignia de rescates
+            evaluar_insignias_voluntario_externo(usuario["id"])
         except Exception as error:
             print(
                 f"[WARN] no se pudo procesar la gamificación de resguardo externo "

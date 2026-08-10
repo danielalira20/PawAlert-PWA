@@ -9,6 +9,7 @@ from app.services.reputacion_service import (
     ROL_VOLUNTARIO_INTERNO,
     ajustar_trust_score,
     evaluar_insignias_voluntario_interno,
+    evaluar_insignias_voluntario_externo,
     otorgar_puntos,
     usuarios_bloqueados_nuevas_asignaciones,
 )
@@ -1105,7 +1106,7 @@ def resolver_verificacion_remota(
         evento_origen_id=verificacion_id,
         puntos=30,
     )
-    # TODO: Aquí llamaremos a tu evaluador de insignias para "Casa segura" más adelante
+    evaluar_insignias_voluntario_externo(usuario_id_postulante)
 
     return {
         "estado": "aprobada",
@@ -2484,7 +2485,7 @@ def resolver_resultado_visita(
         evento_origen_id=verificacion["id"],
         puntos=30,
     )
-    # TODO: Aquí llamaremos a tu evaluador de insignias para "Casa segura"
+    evaluar_insignias_voluntario_externo(usuario_id_postulante)
 
     # 2. +25 Puntos y +3 Trust Score para el Verificador (Voluntario Interno)
     if usuario_id_verificador:

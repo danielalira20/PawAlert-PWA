@@ -76,6 +76,20 @@ def obtener_casos_cercanos(usuario_id: str) -> list[dict]:
     if carga_actual >= max_casos:
         return []
 
+    # --- GAMIFICACIÓN: Restricciones operativas (Trust Score < 40) ---
+    try:
+        restricciones = reputacion_service.consultar_restricciones(
+            usuario_id,
+            reputacion_service.ROL_VOLUNTARIO_EXTERNO,
+        )
+        if restricciones.get("bloqueado_nuevas_asignaciones", False):
+            # Si está bloqueado, devolvemos una lista vacía para que no vea nuevos casos en el mapa.
+            # Según las reglas de Jass, "puede_finalizar_activos_en_curso" siempre es True,
+            # así que sus casos asignados actuales no se ven afectados.
+            return []
+    except Exception as e:
+        print(f"[WARN] Error al consultar restricciones de asignación para {usuario_id}: {e}")
+
     resultado = (
         supabase.table("reportes")
         .select(
@@ -150,6 +164,7 @@ def crear_ofrecimiento(usuario_id: str, reporte_id: str) -> dict:
             ),
         )
     perfil = obtener_perfil_externo(usuario_id)
+
     elegibles = {
         caso["id"]: caso for caso in obtener_casos_cercanos(usuario_id)
     }

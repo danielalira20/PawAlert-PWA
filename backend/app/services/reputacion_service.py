@@ -430,6 +430,110 @@ def evaluar_insignias_reportante(usuario_id: str) -> list[dict]:
         print(f"[WARN] evaluar_insignias_reportante fallo (usuario={usuario_id}): {e}")
         return []
 
+def evaluar_insignias_voluntario_externo(usuario_id: str) -> list[dict]:
+    """
+    Evalúa y actualiza las insignias del voluntario externo (Persona 3).
+    - Casa segura: Al aprobarse formalmente el hogar temporal.
+    - Hogar protector: 3 custodias finalizadas.
+    - Relevo seguro: 3 transferencias confirmadas (entrega o recepción).
+    - Rescatista PawAlert: Cobre (1), Plata (5), Oro (15) rescates.
+    """
+    try:
+        actualizadas: list[dict] = []
+
+        # 1. Validar si el usuario tiene perfil de voluntario
+        voluntario_query = (
+            supabase.table("voluntarios")
+            .select("id, estado")
+            .eq("usuario_id", usuario_id)
+            .execute()
+        )
+        if not voluntario_query.data:
+            return actualizadas
+
+        vol_data = voluntario_query.data[0]
+        voluntario_id = vol_data["id"]
+
+        # 2. Insignia: Casa segura (Aprobado formalmente)
+        if vol_data.get("estado") == "activo_nivel_2":
+            fila = _upsert_insignia(
+                usuario_id, ROL_VOLUNTARIO_EXTERNO,
+                "casa_segura", None, 1,
+            )
+            if fila:
+                actualizadas.append(fila)
+
+        # 3. Insignia: Hogar protector (3 custodias finalizadas)
+        custodias = (
+            supabase.table("custodias_temporales")
+            .select("id")
+            .eq("voluntario_id", voluntario_id)
+            .eq("estado", "finalizado")
+            .execute()
+        )
+        total_custodias = len(custodias.data or [])
+        if total_custodias >= 3:
+            fila = _upsert_insignia(
+                usuario_id, ROL_VOLUNTARIO_EXTERNO,
+                "hogar_protector", None, total_custodias,
+            )
+            if fila:
+                actualizadas.append(fila)
+
+        # 4. Insignia: Relevo seguro (3 transferencias confirmadas por ambas partes)
+        # Se verifica si el usuario fue el que entregó o el que recibió.
+        transferencias = (
+            supabase.table("transferencias_custodia")
+            .select("id")
+            .eq("estado", "confirmada")
+            .or_(
+                f"entrega_confirmada_por_id.eq.{usuario_id},"
+                f"recepcion_confirmada_por_id.eq.{usuario_id}"
+            )
+            .execute()
+        )
+        total_transferencias = len(transferencias.data or [])
+        if total_transferencias >= 3:
+            fila = _upsert_insignia(
+                usuario_id, ROL_VOLUNTARIO_EXTERNO,
+                "relevo_seguro", None, total_transferencias,
+            )
+            if fila:
+                actualizadas.append(fila)
+
+        # 5. Insignia: Rescatista PawAlert (Cobre: 1, Plata: 5, Oro: 15)
+        # Contamos los reportes únicos donde registró un resguardo válido.
+        rescates = (
+            supabase.table("historial_reporte")
+            .select("reporte_id")
+            .eq("usuario_id", usuario_id)
+            .in_(
+                "tipo_evento",
+                ["animal_bajo_resguardo", "llegada_hogar_temporal"],
+            )
+            .execute()
+        )
+        total_rescates = len(set(r["reporte_id"] for r in (rescates.data or [])))
+
+        nivel_rescatista = (
+            "oro" if total_rescates >= 15
+            else "plata" if total_rescates >= 5
+            else "cobre" if total_rescates >= 1
+            else None
+        )
+        if nivel_rescatista:
+            fila = _upsert_insignia(
+                usuario_id, ROL_VOLUNTARIO_EXTERNO,
+                "rescatista_pawalert", nivel_rescatista, total_rescates,
+            )
+            if fila:
+                actualizadas.append(fila)
+
+        return actualizadas
+    except Exception as e:
+        print(f"[WARN] evaluar_insignias_voluntario_externo fallo (usuario={usuario_id}): {e}")
+        return []
+
 
 def _contar_desenlaces_validos(usuario_id: str) -> int:
     """Cuenta reportes PROPIOS de este usuario que llegaron a un
