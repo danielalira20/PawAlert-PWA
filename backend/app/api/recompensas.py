@@ -8,6 +8,7 @@ from app.services.recompensas_service import (
     eliminar_recompensa,
     emitir_canje,
     confirmar_canje,
+    obtener_catalogo_recompensas,
 )
 from app.models.recompensas import (
     RecompensaCreate,
@@ -16,9 +17,16 @@ from app.models.recompensas import (
     CanjeEmitirRequest,
     CanjeConfirmarRequest,
     CanjeResponse,
+    RecompensaCatalogoResponse,
 )
 
 router = APIRouter()
+
+
+@router.get("/catalogo", status_code=200, response_model=list[RecompensaCatalogoResponse])
+async def get_catalogo_recompensas_endpoint():
+    """Catálogo público; no requiere sesión ni expone datos privados."""
+    return obtener_catalogo_recompensas()
 
 
 # Copia local, mismo patrón que red_aliados.py/reports.py/associations.py —
