@@ -107,7 +107,7 @@ def crear_canje(recompensa_id: str, usuario_id: str, rol: str | None) -> dict:
         devolver_puntos(
             usuario_id=usuario_id,
             rol=rol,
-            regla="canje_recompensa",
+            regla="canje_recompensa_fallido",
             tipo_origen="canje",
             evento_origen_id=recompensa_id,
             puntos=fila_recompensa["costo"]
@@ -172,7 +172,7 @@ def expirar_canjes_vencidos() -> int:
             devolver_puntos(
                 usuario_id=canje["beneficiario_id"],
                 rol=rol,
-                regla="canje_recompensa",
+                regla="canje_recompensa_expirado",
                 tipo_origen="canje",
                 evento_origen_id=canje["id"],
                 puntos=canje["costo_snapshot"]
@@ -197,8 +197,13 @@ def reembolsar_canje(canje_id: str, motivo: str, admin_id: str) -> dict:
         "estado": "reembolsado",
         "motivo_cancelacion": f"{motivo} (Por Admin: {admin_id})"
     }).eq("id", canje_id).execute()
-    
     canje_actualizado = actualizado.data[0]
+    
+    # Update state in reportes_problema_canje to 'reembolsado' if it exists
+    supabase.table("reportes_problema_canje").update({
+        "estado": "reembolsado",
+        "actualizado_at": datetime.now(timezone.utc).isoformat()
+    }).eq("canje_id", canje_id).execute()
     
     # Devolver puntos
     usuario = supabase.table("usuarios").select("roles(nombre)").eq("id", canje["beneficiario_id"]).execute()
@@ -207,7 +212,7 @@ def reembolsar_canje(canje_id: str, motivo: str, admin_id: str) -> dict:
     devolver_puntos(
         usuario_id=canje["beneficiario_id"],
         rol=rol,
-        regla="canje_recompensa",
+        regla="canje_recompensa_reembolsado",
         tipo_origen="canje",
         evento_origen_id=canje_id,
         puntos=canje["costo_snapshot"]
@@ -220,3 +225,49 @@ def obtener_mis_canjes(usuario_id: str) -> list[dict]:
         "*, recompensas(nombre, nivel, sucursal_lugar, propietario_id)"
     ).eq("beneficiario_id", usuario_id).order("emitido_at", desc=True).execute()
     return resultado.data or []
+
+def reportar_problema_canje(canje_id: str, usuario_id: str, motivo: str) -> dict:
+    canje_res = supabase.table("canjes_recompensa").select("beneficiario_id").eq("id", canje_id).execute()
+    if not canje_res.data:
+        raise HTTPException(status_code=404, detail="Canje no encontrado")
+    if canje_res.data[0]["beneficiario_id"] != usuario_id:
+        raise HTTPException(status_code=403, detail="No puedes reportar un problema de un canje ajeno")
+    
+    # Verificar si ya existe un reporte
+    existente = supabase.table("reportes_problema_canje").select("id").eq("canje_id", canje_id).execute()
+    if existente.data:
+        raise HTTPException(status_code=400, detail="Ya has reportado un problema para este canje")
+    
+    # Insert in reportes_problema_canje
+    resultado = supabase.table("reportes_problema_canje").insert({
+        "canje_id": canje_id,
+        "usuario_id": usuario_id,
+        "motivo": motivo
+    }).execute()
+    
+    if not resultado.data:
+        raise HTTPException(status_code=500, detail="Error al guardar el reporte")
+    return {"message": "Problema reportado exitosamente"}
+
+def obtener_problemas_pendientes() -> list[dict]:
+    # Obtener los reportes con estado 'pendiente' y traer detalles del canje y usuario
+    resultado = supabase.table("reportes_problema_canje").select(
+        "*, canjes_recompensa(codigo, costo_snapshot, estado, recompensas(nombre, nivel, propietario_id)), usuarios(nombre, apellido_paterno)"
+    ).eq("estado", "pendiente").order("creado_at", desc=True).execute()
+    return resultado.data or []
+
+
+def rechazar_problema_canje(problema_id: str, admin_id: str) -> dict:
+    problema_res = supabase.table("reportes_problema_canje").select("*").eq("id", problema_id).execute()
+    if not problema_res.data:
+        raise HTTPException(status_code=404, detail="Problema no encontrado")
+        
+    if problema_res.data[0]["estado"] != "pendiente":
+        raise HTTPException(status_code=400, detail="El problema ya fue procesado")
+        
+    actualizado = supabase.table("reportes_problema_canje").update({
+        "estado": "rechazado",
+        "actualizado_at": datetime.now(timezone.utc).isoformat()
+    }).eq("id", problema_id).execute()
+    
+    return {"message": "Problema rechazado exitosamente", "problema": actualizado.data[0]}

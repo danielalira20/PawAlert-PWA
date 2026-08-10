@@ -33,6 +33,7 @@ import { PhotoGallery } from '../components/admin-dashboard/PhotoGallery';
 import { ActionBar } from '../components/admin-dashboard/ActionBar';
 import { AdminActionButton } from '../components/admin-dashboard/AdminActionButton';
 import { ReportModerationPanel } from '../components/admin-dashboard/ReportModerationPanel';
+import { ProblemasCanjesPanel } from '../components/admin-dashboard/ProblemasCanjesPanel';
 import { StatsRow, type StatItem } from '../components/staff-dashboard/StatsRow';
 import { Brand } from '../constants/theme';
 import type { AsociacionDetalle } from '../types/asociacionAdmin';
@@ -41,7 +42,7 @@ interface Props {
   onClose?: () => void;
 }
 
-type Tab = 'solicitudes' | 'apelaciones' | 'apelaciones-aliados' | 'aliados' | 'operativos' | 'moderacion';
+type Tab = 'solicitudes' | 'apelaciones' | 'apelaciones-aliados' | 'aliados' | 'operativos' | 'moderacion' | 'problemas-canjes';
 type DetailScreenState = 'list' | 'detail';
 
 interface CasoOperativo {
@@ -198,6 +199,30 @@ export default function AdminDashboardScreen({ onClose }: Props) {
       console.log('Error al cargar apelaciones', error);
     }
   };
+
+  // ── Problemas Canjes ──────────────────────────────────────
+  const [problemasCanjes, setProblemasCanjes] = useState<any[]>([]);
+  const [loadingProblemasCanjes, setLoadingProblemasCanjes] = useState(false);
+
+  const cargarProblemasCanjes = async () => {
+    if (!token) return;
+    setLoadingProblemasCanjes(true);
+    try {
+      const res = await axios.get(`${API_URL}/recompensas/admin/canjes/problemas`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setProblemasCanjes(res.data);
+    } catch (error) {
+      console.log('Error al cargar problemas de canjes', error);
+    } finally {
+      setLoadingProblemasCanjes(false);
+    }
+  };
+
+  useEffect(() => {
+    if (tab === 'problemas-canjes') cargarProblemasCanjes();
+  }, [tab]);
+
 
   useEffect(() => {
     if (tab === 'apelaciones') cargarApelaciones();
@@ -414,6 +439,20 @@ export default function AdminDashboardScreen({ onClose }: Props) {
               </View>
             )}
           </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => setTab('problemas-canjes')}
+            style={[styles.tab, tab === 'problemas-canjes' && styles.tabActiva]}
+          >
+            <Text style={[styles.tabText, tab === 'problemas-canjes' && styles.tabTextActiva]}>
+              Problemas Canjes
+            </Text>
+            {problemasCanjes.length > 0 && (
+              <View style={styles.tabBadge}>
+                <Text style={styles.tabBadgeText}>{problemasCanjes.length}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
         </ScrollView>
       </View>
 
@@ -535,9 +574,17 @@ export default function AdminDashboardScreen({ onClose }: Props) {
           onUpdated={cargarCasosOperativos}
           showToast={showToast}
         />
-      ) : (
+      ) : tab === 'moderacion' ? (
         <ReportModerationPanel
           onCountChange={setModeracionPendiente}
+          showToast={showToast}
+        />
+      ) : (
+        <ProblemasCanjesPanel
+          problemas={problemasCanjes}
+          isLoading={loadingProblemasCanjes}
+          token={token || ''}
+          onRefresh={cargarProblemasCanjes}
           showToast={showToast}
         />
       )}

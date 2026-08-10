@@ -324,7 +324,7 @@ def confirmar_canje(codigo: str, usuario_id: str) -> dict:
         confirmar_puntos_reservados(
             usuario_id=canje["beneficiario_id"],
             rol=rol,
-            regla="canje_recompensa",
+            regla="canje_recompensa_confirmado",
             tipo_origen="canje",
             evento_origen_id=canje["id"],
             puntos=canje["costo_snapshot"]

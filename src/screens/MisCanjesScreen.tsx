@@ -1,9 +1,10 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Modal, TextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import axios from 'axios';
 import QRCode from 'react-native-qrcode-svg';
+import { Toast, useToast } from '../components/Toast';
 import { API_URL } from '../constants/api';
 import { Brand } from '../constants/theme';
 import { useAuth } from '../context/AuthContext';
@@ -34,8 +35,14 @@ export interface Canje {
 
 export function MisCanjesScreen({ onClose }: { onClose: () => void }) {
   const { token } = useAuth();
+  const { showToast, toast, translateY } = useToast();
   const [canjes, setCanjes] = useState<Canje[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const [problemaModalVisible, setProblemaModalVisible] = useState(false);
+  const [problemaMotivo, setProblemaMotivo] = useState('');
+  const [canjeSeleccionado, setCanjeSeleccionado] = useState<Canje | null>(null);
+  const [reportando, setReportando] = useState(false);
 
   const fetchCanjes = useCallback(async () => {
     try {
@@ -50,6 +57,28 @@ export function MisCanjesScreen({ onClose }: { onClose: () => void }) {
       setLoading(false);
     }
   }, [token]);
+
+  const handleReportarProblema = async () => {
+    if (!canjeSeleccionado || !problemaMotivo.trim()) return;
+    
+    setReportando(true);
+    try {
+      await axios.post(`${API_URL}/recompensas/canjes/${canjeSeleccionado.id}/problemas`, {
+        motivo: problemaMotivo
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setProblemaModalVisible(false);
+      setProblemaMotivo('');
+      setCanjeSeleccionado(null);
+      fetchCanjes();
+      showToast({ type: 'success', title: 'Problema reportado', message: 'Tu problema será revisado por un administrador.' });
+    } catch (error: any) {
+      showToast({ type: 'error', title: 'Error', message: error.response?.data?.detail || 'Hubo un error al reportar el problema' });
+    } finally {
+      setReportando(false);
+    }
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -84,7 +113,7 @@ export function MisCanjesScreen({ onClose }: { onClose: () => void }) {
   };
 
   const renderBadgeEstado = (estado: string) => {
-    let color = Brand.textFaint;
+    let color: string = Brand.textFaint;
     let label = 'Desconocido';
     
     switch(estado) {
@@ -152,6 +181,17 @@ export function MisCanjesScreen({ onClose }: { onClose: () => void }) {
                         Muestra este código QR al patrocinador para recibir tu recompensa.
                       </Text>
                     </View>
+                    
+                    <TouchableOpacity
+                      style={styles.reportarButton}
+                      onPress={() => {
+                        setCanjeSeleccionado(canje);
+                        setProblemaModalVisible(true);
+                      }}
+                    >
+                      <Ionicons name="warning-outline" size={16} color={Brand.danger} />
+                      <Text style={styles.reportarButtonText}>Reportar un problema</Text>
+                    </TouchableOpacity>
                   </View>
                 </View>
               ))}
@@ -192,6 +232,60 @@ export function MisCanjesScreen({ onClose }: { onClose: () => void }) {
           )}
         </View>
       </ScrollView>
+      
+      {/* Modal para reportar problema */}
+      <Modal visible={problemaModalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalIconContainer}>
+                <Ionicons name="warning" size={24} color={Brand.danger} />
+              </View>
+              <Text style={styles.modalTitle}>Reportar Problema</Text>
+            </View>
+            
+            <Text style={styles.modalDesc}>
+              Si tuviste un problema al canjear tu recompensa (ej. el establecimiento estaba cerrado o no tenían stock), descríbelo a continuación. Un administrador lo revisará y podría devolverte los puntos.
+            </Text>
+            
+            <TextInput
+              style={styles.textInput}
+              multiline
+              numberOfLines={4}
+              placeholder="Ej. Fui al local y me dijeron que ya no quedaban unidades disponibles..."
+              value={problemaMotivo}
+              onChangeText={setProblemaMotivo}
+            />
+            
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalBtnCancel]}
+                onPress={() => {
+                  setProblemaModalVisible(false);
+                  setProblemaMotivo('');
+                }}
+                disabled={reportando}
+              >
+                <Text style={styles.modalBtnCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalBtnConfirm, !problemaMotivo.trim() && { opacity: 0.5 }]}
+                onPress={handleReportarProblema}
+                disabled={!problemaMotivo.trim() || reportando}
+              >
+                {reportando ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.modalBtnConfirmText}>Enviar Reporte</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+      
+      <Toast toast={toast} translateY={translateY} />
     </View>
   );
 }
@@ -329,21 +423,24 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   historicoCard: {
-    backgroundColor: Brand.cardWarm,
+    backgroundColor: '#fff',
     borderRadius: 16,
     padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.05)',
   },
   historicoHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 12,
   },
   historicoTitle: {
-    flex: 1,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
     color: Brand.textDark,
+    flex: 1,
     marginRight: 12,
   },
   badgeEstado: {
@@ -359,7 +456,6 @@ const styles = StyleSheet.create({
   historicoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
   },
   historicoDate: {
     fontSize: 13,
@@ -379,9 +475,105 @@ const styles = StyleSheet.create({
     paddingVertical: 40,
   },
   emptyText: {
-    marginTop: 12,
+    marginTop: 16,
     fontSize: 15,
-    color: Brand.textFaint,
-    fontWeight: '500',
+    color: Brand.textMuted,
+    fontWeight: '600',
+  },
+  reportarButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+    paddingVertical: 8,
+    gap: 6,
+  },
+  reportarButtonText: {
+    color: Brand.danger,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 24,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: Brand.danger + '20',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 16,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: Brand.textDark,
+  },
+  modalDesc: {
+    fontSize: 14,
+    color: Brand.textMuted,
+    lineHeight: 20,
+    marginBottom: 20,
+  },
+  textInput: {
+    backgroundColor: Brand.backgroundWarm,
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 14,
+    color: Brand.textDark,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.1)',
+    textAlignVertical: 'top',
+    minHeight: 100,
+    marginBottom: 24,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  modalBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalBtnCancel: {
+    backgroundColor: 'rgba(0,0,0,0.05)',
+  },
+  modalBtnCancelText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: Brand.textMuted,
+  },
+  modalBtnConfirm: {
+    backgroundColor: Brand.danger,
+  },
+  modalBtnConfirmText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#fff',
   },
 });

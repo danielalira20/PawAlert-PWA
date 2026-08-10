@@ -7,7 +7,24 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { API_URL } from '../constants/api';
 import { Brand } from '../constants/theme';
 import { useAuth } from '../context/AuthContext';
-import { Recompensa, useRecompensas } from '../hooks/useRecompensas';
+export interface Recompensa {
+  id: string;
+  nombre: string;
+  descripcion: string;
+  nivel: string;
+  costo: number;
+  unidades_disponibles: number;
+  nombre_patrocinador: string;
+  tipo: string;
+  categoria: string;
+  sucursal_lugar?: string;
+  estado: string;
+  fecha_expiracion: string;
+  condiciones?: string;
+  horario?: string;
+  vencimiento?: string;
+}
+import { useMiReputacion } from '../hooks/useMiReputacion';
 
 export function CatalogoRecompensasScreen({
   onClose,
@@ -20,6 +37,10 @@ export function CatalogoRecompensasScreen({
   const [recompensas, setRecompensas] = useState<Recompensa[]>([]);
   const [loading, setLoading] = useState(true);
   const [canjeando, setCanjeando] = useState<string | null>(null);
+
+  const isRolValido = user?.rol === 'reportante' || user?.rol === 'voluntario_interno' || user?.rol === 'voluntario_externo';
+  const { saldo } = useMiReputacion(user?.rol || '', isRolValido);
+
 
   // Estados para modales
   const [recompensaConfirmacion, setRecompensaConfirmacion] = useState<Recompensa | null>(null);
@@ -120,7 +141,7 @@ export function CatalogoRecompensasScreen({
             {recompensas.map(recompensa => (
               <View key={recompensa.id} style={styles.card}>
                 <LinearGradient
-                  colors={getColorForLevel(recompensa.nivel)}
+                  colors={getColorForLevel(recompensa.nivel) as any}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                   style={styles.cardImagePlaceholder}
@@ -146,28 +167,41 @@ export function CatalogoRecompensasScreen({
                   <Text style={styles.cardSponsor} numberOfLines={1}>Por: {recompensa.nombre_patrocinador}</Text>
                   <Text style={styles.cardDesc} numberOfLines={3}>{recompensa.descripcion}</Text>
 
-                  <TouchableOpacity
-                    style={[
-                      styles.canjearButton,
-                      recompensa.unidades_disponibles <= 0 && styles.canjearButtonDisabled
-                    ]}
-                    activeOpacity={0.8}
-                    disabled={recompensa.unidades_disponibles <= 0 || canjeando === recompensa.id}
-                    onPress={() => handleIntentarCanje(recompensa)}
-                  >
-                    {canjeando === recompensa.id ? (
-                      <ActivityIndicator size="small" color="#fff" />
-                    ) : (
-                      <>
-                        <Text style={styles.canjearButtonText}>
-                          {recompensa.unidades_disponibles > 0 ? 'Canjear' : 'Agotado'}
-                        </Text>
-                        {recompensa.unidades_disponibles > 0 && (
-                          <Ionicons name="arrow-forward" size={16} color="#fff" />
+                  {(() => {
+                    if (!isRolValido) return null; // No mostrar si no es rol válido
+                    
+                    const puntosSuficientes = saldo ? saldo.saldo_disponible >= recompensa.costo : false;
+                    const isAgotado = recompensa.unidades_disponibles <= 0;
+                    const isDisabled = isAgotado || !puntosSuficientes || canjeando === recompensa.id;
+                    
+                    return (
+                      <TouchableOpacity
+                        style={[
+                          styles.canjearButton,
+                          isDisabled && styles.canjearButtonDisabled
+                        ]}
+                        activeOpacity={0.8}
+                        disabled={isDisabled}
+                        onPress={() => handleIntentarCanje(recompensa)}
+                      >
+                        {canjeando === recompensa.id ? (
+                          <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                          <>
+                            <Text style={styles.canjearButtonText}>
+                              {isAgotado ? 'Agotado' : puntosSuficientes ? 'Canjear' : 'Puntos insuficientes'}
+                            </Text>
+                            {!isAgotado && puntosSuficientes && (
+                              <Ionicons name="arrow-forward" size={16} color="#fff" />
+                            )}
+                            {!isAgotado && !puntosSuficientes && (
+                              <Ionicons name="lock-closed" size={16} color="#fff" style={{ marginLeft: 4 }} />
+                            )}
+                          </>
                         )}
-                      </>
-                    )}
-                  </TouchableOpacity>
+                      </TouchableOpacity>
+                    );
+                  })()}
                 </View>
               </View>
             ))}
