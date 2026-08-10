@@ -291,6 +291,11 @@ export default function ProfileScreen() {
               setIsAportacionVisible(false);
               setIsAliadoDashboardVisible(true);
             }}
+            onOpenNeeds={() => {
+              setIsAportacionVisible(false);
+              setIsAliadoDashboardVisible(false);
+              router.push('/como-ayudar');
+            }}
           />
         )}
       </Modal>

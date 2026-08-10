@@ -299,9 +299,14 @@ const CAMPOS_CONDICIONALES: Record<string, CampoCondicional[]> = {
 
 interface Props {
   onClose?: () => void;
+  // Navegar a una necesidad puntual no equivale a cancelar el formulario:
+  // algunos contenedores (como Perfil) usan onClose para restaurar el panel
+  // de donaciones. Separamos ambos destinos para no reabrir ese modal encima
+  // de "Cómo ayudar".
+  onOpenNeeds?: () => void;
 }
 
-export default function AportacionFormScreen({ onClose }: Props) {
+export default function AportacionFormScreen({ onClose, onOpenNeeds }: Props) {
   const { token } = useAuth();
   const { toast, translateY, showToast } = useToast();
   const { width: viewportWidth } = useWindowDimensions();
@@ -1334,7 +1339,10 @@ useEffect(() => {
     <FormSection title="¿Qué quieres hacer?" subtitle="Elige cómo quieres ayudar.">
       <TouchableOpacity
         onPress={() => {
-          if (onClose) onClose();
+          if (onOpenNeeds) {
+            onOpenNeeds();
+            return;
+          }
           router.push('/como-ayudar');
         }}
         style={styles.optionCard}

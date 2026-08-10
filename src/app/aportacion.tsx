@@ -8,6 +8,7 @@ export default function AportacionRoute() {
   return (
     <AportacionFormScreen
       onClose={() => router.back()}
+      onOpenNeeds={() => router.replace('/como-ayudar')}
     />
   );
 }
