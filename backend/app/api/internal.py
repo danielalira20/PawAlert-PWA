@@ -80,3 +80,22 @@ def correr_reevaluacion_insignias_historicas(
         raise HTTPException(status_code=401, detail="No autorizado")
     from app.services.reputacion_service import reevaluar_insignias_historicas_reportante
     return {"insignias_historicas": reevaluar_insignias_historicas_reportante(dry_run=dry_run)}
+
+
+@router.post(
+    "/gamificacion/reevaluar-insignias-historicas/voluntarios-internos"
+)
+def correr_reevaluacion_insignias_historicas_voluntarios_internos(
+    dry_run: bool = True,
+    x_cron_secret: Optional[str] = Header(None),
+):
+    if not settings.cron_secret or x_cron_secret != settings.cron_secret:
+        raise HTTPException(status_code=401, detail="No autorizado")
+    from app.services.reputacion_service import (
+        reevaluar_insignias_historicas_voluntario_interno,
+    )
+    return {
+        "insignias_historicas": (
+            reevaluar_insignias_historicas_voluntario_interno(dry_run=dry_run)
+        )
+    }

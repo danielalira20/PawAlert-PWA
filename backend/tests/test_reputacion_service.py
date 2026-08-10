@@ -1631,3 +1631,137 @@ def test_reevaluar_historico_impacto_real_mejorado_at_usa_misma_fecha_que_obteni
     assert insertado["obtenido_at"] == "2026-03-03T00:00:00+00:00"
     assert insertado["mejorado_at"] == "2026-03-03T00:00:00+00:00"
     assert insertado["mejorado_at"] == insertado["obtenido_at"]
+
+
+# ─── backfill de insignias de voluntario interno ──────────────────────
+
+def test_calcular_insignias_historicas_internas_usa_fechas_de_eventos(make_query):
+    reportes = [{"id": f"rep-{numero}"} for numero in range(1, 16)]
+    cierres = [{
+        "reporte_id": f"rep-{numero}",
+        "datos_extra": {"conclusion": "Animal rescatado y estable"},
+        "created_at": f"2026-01-{numero:02d}T00:00:00+00:00",
+    } for numero in range(1, 16)]
+    verificaciones = [{
+        "id": f"asig-{numero}",
+        "resultado_at": f"2026-02-{numero:02d}T00:00:00+00:00",
+        "updated_at": f"2026-02-{numero:02d}T00:00:00+00:00",
+    } for numero in range(1, 6)]
+    tablas = {
+        "reportes": make_query(data=reportes),
+        "historial_reporte": make_query(data=cierres),
+        "incidentes": make_query(data=[]),
+        "voluntarios": make_query(data=[{"id": "vol-1"}]),
+        "asignaciones_verificacion_hogar": make_query(data=verificaciones),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+
+    with patch.object(reputacion_service, "supabase", supabase):
+        candidatos = (
+            reputacion_service
+            ._calcular_candidatos_insignias_historicas_voluntario_interno(
+                "user-1"
+            )
+        )
+
+    por_codigo = {fila["codigo_insignia"]: fila for fila in candidatos}
+    assert set(por_codigo) == {
+        "rescatista_pawalert",
+        "compromiso_cumplido",
+        "verificador_de_confianza",
+    }
+    assert por_codigo["rescatista_pawalert"]["nivel"] == "oro"
+    assert por_codigo["rescatista_pawalert"]["mejorado_at"] == cierres[14]["created_at"]
+    assert por_codigo["compromiso_cumplido"]["obtenido_at"] == cierres[9]["created_at"]
+    assert por_codigo["verificador_de_confianza"]["obtenido_at"] == verificaciones[4]["resultado_at"]
+
+
+def test_backfill_interno_dry_run_no_escribe_insignias(make_query):
+    roles = make_query(data=[{"id": "rol-interno"}])
+    usuarios = make_query(data=[{"id": "user-1"}])
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: {
+        "roles": roles,
+        "usuarios": usuarios,
+    }[nombre]
+    candidato = {
+        "usuario_id": "user-1",
+        "rol": reputacion_service.ROL_VOLUNTARIO_INTERNO,
+        "codigo_insignia": "rescatista_pawalert",
+        "nivel": "cobre",
+        "progreso": 1,
+        "obtenido_at": "2026-01-01T00:00:00+00:00",
+        "mejorado_at": "2026-01-01T00:00:00+00:00",
+    }
+
+    with (
+        patch.object(reputacion_service, "supabase", supabase),
+        patch.object(
+            reputacion_service,
+            "_calcular_candidatos_insignias_historicas_voluntario_interno",
+            return_value=[candidato],
+        ),
+        patch.object(reputacion_service, "_upsert_insignia") as mock_upsert,
+    ):
+        resultado = (
+            reputacion_service
+            .reevaluar_insignias_historicas_voluntario_interno()
+        )
+
+    assert resultado["modo"] == "dry_run"
+    assert resultado["usuarios_revisados"] == 1
+    assert resultado["detalle"] == [candidato]
+    mock_upsert.assert_not_called()
+
+
+def test_backfill_interno_real_aplica_candidatos(make_query):
+    roles = make_query(data=[{"id": "rol-interno"}])
+    usuarios = make_query(data=[{"id": "user-1"}])
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: {
+        "roles": roles,
+        "usuarios": usuarios,
+    }[nombre]
+    candidato = {
+        "usuario_id": "user-1",
+        "rol": reputacion_service.ROL_VOLUNTARIO_INTERNO,
+        "codigo_insignia": "rescatista_pawalert",
+        "nivel": "cobre",
+        "progreso": 1,
+        "obtenido_at": "2026-01-01T00:00:00+00:00",
+        "mejorado_at": "2026-01-01T00:00:00+00:00",
+    }
+
+    with (
+        patch.object(reputacion_service, "supabase", supabase),
+        patch.object(
+            reputacion_service,
+            "_calcular_candidatos_insignias_historicas_voluntario_interno",
+            return_value=[candidato],
+        ),
+        patch.object(
+            reputacion_service,
+            "_upsert_insignia",
+            return_value={"id": "ins-1"},
+        ) as mock_upsert,
+    ):
+        resultado = (
+            reputacion_service
+            .reevaluar_insignias_historicas_voluntario_interno(dry_run=False)
+        )
+
+    assert resultado == {
+        "modo": "real",
+        "usuarios_revisados": 1,
+        "usuarios_actualizados": 1,
+    }
+    mock_upsert.assert_called_once_with(
+        "user-1",
+        reputacion_service.ROL_VOLUNTARIO_INTERNO,
+        "rescatista_pawalert",
+        "cobre",
+        1,
+        obtenido_at="2026-01-01T00:00:00+00:00",
+        mejorado_at="2026-01-01T00:00:00+00:00",
+    )

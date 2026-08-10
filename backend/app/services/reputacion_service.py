@@ -1160,3 +1160,189 @@ def _aplicar_insignias_historicas_usuario(usuario_id: str) -> list[dict]:
         if fila:
             actualizadas.append(fila)
     return actualizadas
+
+
+def _calcular_candidatos_insignias_historicas_voluntario_interno(
+    usuario_id: str,
+) -> list[dict]:
+    """Reconstruye insignias internas desde eventos operativos, sin escribir."""
+    candidatos: list[dict] = []
+    reportes = (
+        supabase.table("reportes")
+        .select("id")
+        .eq("staff_asignado_id", usuario_id)
+        .execute()
+    ).data or []
+    ids_reportes = [fila["id"] for fila in reportes]
+    cierres_validos: list[dict] = []
+    if ids_reportes:
+        eventos = (
+            supabase.table("historial_reporte")
+            .select("reporte_id, datos_extra, created_at")
+            .eq("tipo_evento", "caso_cerrado")
+            .in_("reporte_id", ids_reportes)
+            .order("created_at")
+            .execute()
+        ).data or []
+        vistos: set[str] = set()
+        for evento in eventos:
+            if (
+                evento["reporte_id"] not in vistos
+                and (evento.get("datos_extra") or {}).get("conclusion")
+                in CONCLUSIONES_VALIDAS
+            ):
+                vistos.add(evento["reporte_id"])
+                cierres_validos.append(evento)
+
+    total_rescates = len(cierres_validos)
+    nivel = (
+        "oro" if total_rescates >= 15
+        else "plata" if total_rescates >= 5
+        else "cobre" if total_rescates >= 1
+        else None
+    )
+    if nivel:
+        umbral = 15 if nivel == "oro" else 5 if nivel == "plata" else 1
+        candidatos.append({
+            "usuario_id": usuario_id,
+            "rol": ROL_VOLUNTARIO_INTERNO,
+            "codigo_insignia": "rescatista_pawalert",
+            "nivel": nivel,
+            "progreso": total_rescates,
+            "obtenido_at": cierres_validos[0]["created_at"],
+            "mejorado_at": cierres_validos[umbral - 1]["created_at"],
+        })
+
+    abandonos_ids: set[str] = set()
+    if ids_reportes:
+        abandonos = (
+            supabase.table("incidentes")
+            .select("reporte_id")
+            .eq("usuario_id", usuario_id)
+            .eq("rol", ROL_VOLUNTARIO_INTERNO)
+            .eq("tipo_incidente", "abandono")
+            .eq("estado", "confirmado")
+            .in_("reporte_id", ids_reportes)
+            .execute()
+        ).data or []
+        abandonos_ids = {
+            fila["reporte_id"] for fila in abandonos if fila.get("reporte_id")
+        }
+    cierres_sin_abandono = [
+        evento for evento in cierres_validos
+        if evento["reporte_id"] not in abandonos_ids
+    ]
+    if len(cierres_sin_abandono) >= 10:
+        fecha = cierres_sin_abandono[9]["created_at"]
+        candidatos.append({
+            "usuario_id": usuario_id,
+            "rol": ROL_VOLUNTARIO_INTERNO,
+            "codigo_insignia": "compromiso_cumplido",
+            "nivel": None,
+            "progreso": len(cierres_sin_abandono),
+            "obtenido_at": fecha,
+            "mejorado_at": fecha,
+        })
+
+    voluntario = (
+        supabase.table("voluntarios")
+        .select("id")
+        .eq("usuario_id", usuario_id)
+        .limit(1)
+        .execute()
+    )
+    if voluntario.data:
+        verificaciones = (
+            supabase.table("asignaciones_verificacion_hogar")
+            .select("id, resultado_at, updated_at")
+            .eq("verificador_voluntario_id", voluntario.data[0]["id"])
+            .eq("estado", "completada")
+            .eq("resultado_visita", "aprobar")
+            .order("resultado_at")
+            .execute()
+        ).data or []
+        if len(verificaciones) >= 5:
+            fecha = (
+                verificaciones[4].get("resultado_at")
+                or verificaciones[4]["updated_at"]
+            )
+            candidatos.append({
+                "usuario_id": usuario_id,
+                "rol": ROL_VOLUNTARIO_INTERNO,
+                "codigo_insignia": "verificador_de_confianza",
+                "nivel": None,
+                "progreso": len(verificaciones),
+                "obtenido_at": fecha,
+                "mejorado_at": fecha,
+            })
+
+    return candidatos
+
+
+def reevaluar_insignias_historicas_voluntario_interno(
+    dry_run: bool = True,
+) -> dict:
+    """Revisa el historial del voluntariado interno; por defecto no escribe."""
+    rol = (
+        supabase.table("roles")
+        .select("id")
+        .eq("nombre", ROL_VOLUNTARIO_INTERNO)
+        .limit(1)
+        .execute()
+    )
+    if not rol.data:
+        return {
+            "modo": "dry_run" if dry_run else "real",
+            "usuarios_revisados": 0,
+            "detalle": [] if dry_run else None,
+        }
+    usuarios_resp = (
+        supabase.table("usuarios")
+        .select("id")
+        .eq("rol_id", rol.data[0]["id"])
+        .execute()
+    )
+    usuarios = sorted({fila["id"] for fila in (usuarios_resp.data or [])})
+    candidatos_totales: list[dict] = []
+    usuarios_actualizados = 0
+    for usuario_id in usuarios:
+        try:
+            candidatos = (
+                _calcular_candidatos_insignias_historicas_voluntario_interno(
+                    usuario_id
+                )
+            )
+            if dry_run:
+                candidatos_totales.extend(candidatos)
+                continue
+            tuvo_cambios = False
+            for candidato in candidatos:
+                fila = _upsert_insignia(
+                    candidato["usuario_id"],
+                    candidato["rol"],
+                    candidato["codigo_insignia"],
+                    candidato["nivel"],
+                    candidato["progreso"],
+                    obtenido_at=candidato["obtenido_at"],
+                    mejorado_at=candidato["mejorado_at"],
+                )
+                tuvo_cambios = bool(fila) or tuvo_cambios
+            usuarios_actualizados += int(tuvo_cambios)
+        except Exception as error:
+            print(
+                "[WARN] reevaluar insignias históricas de voluntario interno "
+                f"falló (usuario={usuario_id}): {error}"
+            )
+
+    if dry_run:
+        return {
+            "modo": "dry_run",
+            "usuarios_revisados": len(usuarios),
+            "insignias_que_se_crearian_o_actualizarian": len(candidatos_totales),
+            "detalle": candidatos_totales,
+        }
+    return {
+        "modo": "real",
+        "usuarios_revisados": len(usuarios),
+        "usuarios_actualizados": usuarios_actualizados,
+    }
