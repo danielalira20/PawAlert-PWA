@@ -14,7 +14,7 @@ import {
 import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
 
-type NotificationKind = 'moderacion' | 'aliado';
+type NotificationKind = 'moderacion' | 'aliado' | 'reputacion';
 
 interface AppNotification {
   id: string;
@@ -44,6 +44,11 @@ const TYPE_STYLE: Record<string, { icon: keyof typeof Ionicons.glyphMap; color: 
   oferta_aceptada: { icon: 'gift-outline', color: '#209653', bg: '#EAF8F0', label: 'Oferta aceptada' },
   proximidad: { icon: 'location-outline', color: '#278F87', bg: '#E9F8F6', label: 'Apoyo cercano' },
   necesidad_disponible: { icon: 'heart-outline', color: '#278F87', bg: '#E9F8F6', label: 'Necesidad disponible' },
+  bono_bienvenida: { icon: 'gift-outline', color: '#8B5CF6', bg: '#F3EEFF', label: 'Bono de bienvenida' },
+  insignia_obtenida: { icon: 'ribbon-outline', color: '#C9971C', bg: '#FBF3DC', label: 'Nueva insignia' },
+  insignia_mejorada: { icon: 'trophy-outline', color: '#C9971C', bg: '#FBF3DC', label: 'Insignia mejorada' },
+  restriccion_activada: { icon: 'warning-outline', color: '#D6453D', bg: '#FDEDEC', label: 'Restricción activa' },
+  restriccion_levantada: { icon: 'checkmark-done-outline', color: '#209653', bg: '#EAF8F0', label: 'Restricción levantada' },
 };
 
 function notificationDate(value: string) {
@@ -66,9 +71,10 @@ export default function NotificationsScreen() {
 
     setLoading(true);
     const headers = { Authorization: `Bearer ${token}` };
-    const [moderationResult, allyResult] = await Promise.allSettled([
+    const [moderationResult, allyResult, reputationResult] = await Promise.allSettled([
       axios.get(`${API_URL}/reports/me/notificaciones-moderacion`, { headers }),
       axios.get(`${API_URL}/red-aliados/me/notificaciones`, { headers }),
+      axios.get(`${API_URL}/reputacion/me/notificaciones`, { headers }),
     ]);
 
     const moderation: AppNotification[] = moderationResult.status === 'fulfilled'
@@ -97,7 +103,18 @@ export default function NotificationsScreen() {
         }))
       : [];
 
-    setNotifications([...moderation, ...ally].sort(
+    const reputation: AppNotification[] = reputationResult.status === 'fulfilled'
+      ? (reputationResult.value.data || []).map((item: any) => ({
+          id: item.id,
+          kind: 'reputacion' as const,
+          type: item.tipo,
+          message: item.mensaje,
+          read: Boolean(item.leida),
+          createdAt: item.created_at,
+        }))
+      : [];
+
+    setNotifications([...moderation, ...ally, ...reputation].sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
     ));
     setLoading(false);
@@ -112,7 +129,9 @@ export default function NotificationsScreen() {
       const headers = { Authorization: `Bearer ${token}` };
       const url = item.kind === 'moderacion'
         ? `${API_URL}/reports/me/notificaciones-moderacion/${item.id}/leer`
-        : `${API_URL}/red-aliados/me/notificaciones/${item.id}/leer`;
+        : item.kind === 'aliado'
+        ? `${API_URL}/red-aliados/me/notificaciones/${item.id}/leer`
+        : `${API_URL}/reputacion/me/notificaciones/${item.id}/leer`;
       try {
         await axios.patch(url, {}, { headers });
         setNotifications((current) => current.map((notification) => (
