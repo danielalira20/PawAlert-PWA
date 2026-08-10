@@ -377,3 +377,88 @@ def test_insignias_filtra_usuario_y_rol(make_query):
     tabla = tablas_admin["insignias"]
     tabla.eq.assert_any_call("usuario_id", "user-1")
     tabla.eq.assert_any_call("rol", "reportante")
+
+
+# ─── GET /reputacion/me/notificaciones ──────────────────────────────────
+
+def test_notificaciones_filtra_usuario_orden_y_limit(make_query):
+    notificaciones = [{
+        "id": "notif-1", "tipo": "bono_bienvenida",
+        "mensaje": "¡Bienvenido a PawAlert! Ganaste 30 puntos por tu primer reporte.",
+        "tipo_origen": "reporte", "evento_origen_id": "rep-1",
+        "leida": False, "created_at": "2026-08-01T00:00:00+00:00",
+    }]
+    tablas_auth = {"usuarios": make_query(data=[_usuario_fila(None)])}
+    tablas_admin = {"notificaciones_reputacion": make_query(data=notificaciones)}
+    supabase = _supabase_con_tablas(tablas_auth)
+    supabase_admin = _supabase_admin_con_tablas(tablas_admin)
+
+    with patch.object(reputacion_api, "supabase", supabase), \
+         patch.object(reputacion_api, "supabase_admin", supabase_admin):
+        response = client.get("/reputacion/me/notificaciones", headers=AUTH_HEADERS)
+
+    assert response.status_code == 200
+    assert response.json() == notificaciones
+    tabla = tablas_admin["notificaciones_reputacion"]
+    tabla.eq.assert_called_once_with("usuario_id", "user-1")
+    tabla.order.assert_called_once_with("created_at", desc=True)
+    tabla.limit.assert_called_once_with(50)
+
+
+def test_notificaciones_limit_nunca_supera_200(make_query):
+    tablas_auth = {"usuarios": make_query(data=[_usuario_fila(None)])}
+    tablas_admin = {"notificaciones_reputacion": make_query(data=[])}
+    supabase = _supabase_con_tablas(tablas_auth)
+    supabase_admin = _supabase_admin_con_tablas(tablas_admin)
+
+    with patch.object(reputacion_api, "supabase", supabase), \
+         patch.object(reputacion_api, "supabase_admin", supabase_admin):
+        response = client.get(
+            "/reputacion/me/notificaciones", params={"limit": 9999}, headers=AUTH_HEADERS,
+        )
+
+    assert response.status_code == 200
+    tablas_admin["notificaciones_reputacion"].limit.assert_called_once_with(200)
+
+
+# ─── PATCH /reputacion/me/notificaciones/{id}/leer ──────────────────────
+
+def test_marcar_notificacion_leida_actualiza_leida_true(make_query):
+    tablas_auth = {"usuarios": make_query(data=[_usuario_fila(None)])}
+    tablas_admin = {
+        "notificaciones_reputacion": make_query(data=[{"id": "notif-1", "leida": True}]),
+    }
+    supabase = _supabase_con_tablas(tablas_auth)
+    supabase_admin = _supabase_admin_con_tablas(tablas_admin)
+
+    with patch.object(reputacion_api, "supabase", supabase), \
+         patch.object(reputacion_api, "supabase_admin", supabase_admin):
+        response = client.patch(
+            "/reputacion/me/notificaciones/notif-1/leer", headers=AUTH_HEADERS,
+        )
+
+    assert response.status_code == 200
+    tabla = tablas_admin["notificaciones_reputacion"]
+    actualizado = tabla.update.call_args[0][0]
+    assert actualizado["leida"] is True
+    tabla.eq.assert_any_call("id", "notif-1")
+    tabla.eq.assert_any_call("usuario_id", "user-1")
+
+
+def test_marcar_notificacion_leida_404_si_no_es_del_usuario(make_query):
+    """update.data vacío -- ya sea porque el id no existe, o porque
+    existe pero es de OTRO usuario (el .eq("usuario_id", ...) del router
+    nunca deja que un usuario marque como leída la notificación de
+    alguien más)."""
+    tablas_auth = {"usuarios": make_query(data=[_usuario_fila(None)])}
+    tablas_admin = {"notificaciones_reputacion": make_query(data=[])}
+    supabase = _supabase_con_tablas(tablas_auth)
+    supabase_admin = _supabase_admin_con_tablas(tablas_admin)
+
+    with patch.object(reputacion_api, "supabase", supabase), \
+         patch.object(reputacion_api, "supabase_admin", supabase_admin):
+        response = client.patch(
+            "/reputacion/me/notificaciones/notif-ajena/leer", headers=AUTH_HEADERS,
+        )
+
+    assert response.status_code == 404

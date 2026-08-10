@@ -367,6 +367,78 @@ def test_ajustar_trust_score_reduccion_con_tipo_origen_incidente_funciona_normal
     })
 
 
+# ─── ajustar_trust_score — notifica cambios de restricción ─────────────
+#
+# ajustar_trust_score ahora consulta consultar_restricciones() antes y
+# después de la RPC, traduce ambas con mensaje_restriccion(), y si el
+# mensaje cambió dispara notificar_reputacion -- NUNCA con el número de
+# trust score, solo el mensaje ya traducido. Se mockea
+# consultar_restricciones directamente (función hermana en el mismo
+# módulo) para controlar el "antes"/"después" sin reconstruir filas
+# reales de trust_score.
+
+def test_ajustar_trust_score_notifica_cuando_aparece_restriccion():
+    antes = {"requiere_revision_previa": False, "requiere_revision_administrativa_total": False}
+    despues = {"requiere_revision_previa": False, "requiere_revision_administrativa_total": True}
+    supabase, rpc = _rpc_supabase(data={"usuario_id": "user-1", "puntaje": 15})
+
+    with (
+        patch.object(reputacion_service, "supabase", supabase),
+        patch.object(reputacion_service, "consultar_restricciones", MagicMock(side_effect=[antes, despues])),
+        patch.object(reputacion_service, "notificar_reputacion") as mock_notificar,
+    ):
+        reputacion_service.ajustar_trust_score(
+            "user-1", "reportante", "incremento", 3, "regla_x", "motivo",
+            "reporte", "evt-1",
+        )
+
+    mock_notificar.assert_called_once_with(
+        "user-1", "restriccion_activada",
+        "Tus reportes requieren revisión administrativa antes de publicarse.",
+        "reporte", "evt-1",
+    )
+
+
+def test_ajustar_trust_score_notifica_cuando_desaparece_restriccion():
+    antes = {"requiere_revision_previa": False, "requiere_revision_administrativa_total": True}
+    despues = {"requiere_revision_previa": False, "requiere_revision_administrativa_total": False}
+    supabase, rpc = _rpc_supabase(data={"usuario_id": "user-1", "puntaje": 65})
+
+    with (
+        patch.object(reputacion_service, "supabase", supabase),
+        patch.object(reputacion_service, "consultar_restricciones", MagicMock(side_effect=[antes, despues])),
+        patch.object(reputacion_service, "notificar_reputacion") as mock_notificar,
+    ):
+        reputacion_service.ajustar_trust_score(
+            "user-1", "reportante", "incremento", 5, "regla_x", "motivo",
+            "reporte", "evt-1",
+        )
+
+    mock_notificar.assert_called_once_with(
+        "user-1", "restriccion_levantada",
+        "Ya no tienes restricciones activas en tu cuenta.",
+        "reporte", "evt-1",
+    )
+
+
+def test_ajustar_trust_score_no_notifica_si_mensaje_no_cambia():
+    mismo_antes = {"requiere_revision_previa": False, "requiere_revision_administrativa_total": False}
+    mismo_despues = {"requiere_revision_previa": False, "requiere_revision_administrativa_total": False}
+    supabase, rpc = _rpc_supabase(data={"usuario_id": "user-1", "puntaje": 65})
+
+    with (
+        patch.object(reputacion_service, "supabase", supabase),
+        patch.object(reputacion_service, "consultar_restricciones", MagicMock(side_effect=[mismo_antes, mismo_despues])),
+        patch.object(reputacion_service, "notificar_reputacion") as mock_notificar,
+    ):
+        reputacion_service.ajustar_trust_score(
+            "user-1", "reportante", "incremento", 3, "regla_x", "motivo",
+            "reporte", "evt-1",
+        )
+
+    mock_notificar.assert_not_called()
+
+
 def test_procesar_reporte_falso_confirmado_reduce_trust_score_via_incidente():
     """Reemplaza al canario del turno anterior (test_..._ya_no_reduce_
     trust_score_tras_0050): ese test documentaba el bug de 0050 a
@@ -575,6 +647,100 @@ def test_procesar_reporte_valido_no_otorga_nada_si_usuario_id_es_none():
 
     supabase.rpc.assert_not_called()
     supabase.table.assert_not_called()
+
+
+def test_procesar_reporte_valido_notifica_bono_solo_la_primera_vez():
+    """otorgar_puntos devuelve un dict la primera vez que un
+    (regla, evento_origen_id) se otorga de verdad, y None en cualquier
+    repetición (misma idempotencia que la RPC real vía UNIQUE) --
+    notificar_reputacion para 'bono_bienvenida' debe llamarse UNA sola
+    vez entre dos invocaciones completas de procesar_reporte_valido
+    para el mismo usuario, sin importar cuántas veces internamente se
+    llame otorgar_puntos con esa regla."""
+    ya_otorgado: set[tuple[str, str]] = set()
+
+    def fake_otorgar(usuario_id, rol, regla, tipo_origen, evento_origen_id, puntos, limite_ocurrencias_mes=None):
+        clave = (regla, evento_origen_id)
+        if clave in ya_otorgado:
+            return None
+        ya_otorgado.add(clave)
+        return {"id": f"mov-{len(ya_otorgado)}", "puntos": puntos}
+
+    with (
+        patch.object(reputacion_service, "otorgar_puntos", side_effect=fake_otorgar),
+        patch.object(reputacion_service, "ajustar_trust_score", return_value=None),
+        patch.object(reputacion_service, "_evaluar_racha_reportante", return_value=None),
+        patch.object(reputacion_service, "evaluar_insignias_reportante", return_value=[]),
+        patch.object(reputacion_service, "notificar_reputacion") as mock_notificar,
+    ):
+        reputacion_service.procesar_reporte_valido("reporte-1", "user-1")
+        reputacion_service.procesar_reporte_valido("reporte-2", "user-1")
+
+    llamadas_bono = [
+        llamada for llamada in mock_notificar.call_args_list
+        if llamada.args[1] == "bono_bienvenida"
+    ]
+    assert len(llamadas_bono) == 1
+
+
+def test_procesar_reporte_valido_usuario_existente_flujo_completo_end_to_end():
+    """Usuario con cuenta ya existente -- otorgar_puntos ya otorgó
+    REGLA_BONO_BIENVENIDA en un reporte anterior, así que ahora devuelve
+    None para esa regla (idempotencia real vía UNIQUE) y el bono NO se
+    dispara, lo que aísla esta prueba al camino de 'no es la primera vez'.
+    Verifica que las 4 llamadas posteriores al bono ocurren, EN ORDEN,
+    sin reventar y con los argumentos correctos: otorgar_puntos con
+    REGLA_REPORTE_VALIDO/PUNTOS_REPORTE_VALIDO, ajustar_trust_score con
+    REGLA_TRUST_REPORTE_VALIDADO, _evaluar_racha_reportante,
+    evaluar_insignias_reportante."""
+    orden_llamadas: list[str] = []
+
+    def fake_otorgar(usuario_id, rol, regla, tipo_origen, evento_origen_id, puntos, limite_ocurrencias_mes=None):
+        if regla == reputacion_service.REGLA_BONO_BIENVENIDA:
+            return None  # ya otorgado en un reporte anterior -- usuario existente
+        orden_llamadas.append("otorgar_puntos")
+        assert usuario_id == "user-1"
+        assert rol == reputacion_service.ROL_REPORTANTE
+        assert regla == reputacion_service.REGLA_REPORTE_VALIDO
+        assert evento_origen_id == "reporte-1"
+        assert puntos == reputacion_service.PUNTOS_REPORTE_VALIDO
+        return {"id": "mov-1", "puntos": puntos}
+
+    def fake_ajustar(usuario_id, rol, tipo, valor, regla, motivo, tipo_origen, evento_origen_id,
+                      responsable_confirmacion_id=None, limite_incremento_mes=None):
+        orden_llamadas.append("ajustar_trust_score")
+        assert usuario_id == "user-1"
+        assert rol == reputacion_service.ROL_REPORTANTE
+        assert regla == reputacion_service.REGLA_TRUST_REPORTE_VALIDADO
+        assert evento_origen_id == "reporte-1"
+        return None
+
+    def fake_racha(usuario_id):
+        orden_llamadas.append("_evaluar_racha_reportante")
+        assert usuario_id == "user-1"
+        return None
+
+    def fake_insignias(usuario_id):
+        orden_llamadas.append("evaluar_insignias_reportante")
+        assert usuario_id == "user-1"
+        return []
+
+    with (
+        patch.object(reputacion_service, "otorgar_puntos", side_effect=fake_otorgar),
+        patch.object(reputacion_service, "ajustar_trust_score", side_effect=fake_ajustar),
+        patch.object(reputacion_service, "_evaluar_racha_reportante", side_effect=fake_racha),
+        patch.object(reputacion_service, "evaluar_insignias_reportante", side_effect=fake_insignias),
+        patch.object(reputacion_service, "notificar_reputacion") as mock_notificar,
+    ):
+        reputacion_service.procesar_reporte_valido("reporte-1", "user-1")
+
+    assert orden_llamadas == [
+        "otorgar_puntos",
+        "ajustar_trust_score",
+        "_evaluar_racha_reportante",
+        "evaluar_insignias_reportante",
+    ]
+    mock_notificar.assert_not_called()
 
 
 # ─── reglas de voluntario interno ───────────────────────────────────────
@@ -1349,6 +1515,11 @@ def test_evaluar_insignias_reportante_cuenta_vigia_desde_reportes(make_query):
             SimpleNamespace(data=[]),  # select: no existe todavía
             SimpleNamespace(data=[{"id": "ins-1", "codigo_insignia": "vigia_comunitario", "nivel": "plata"}]),
         ]),
+        # evaluar_insignias_reportante llama _upsert_insignia con
+        # notificar=True -- este test no verifica la notificación en sí
+        # (ver sección dedicada más abajo), solo necesita que la tabla
+        # exista para que notificar_reputacion no reviente el flujo.
+        "notificaciones_reputacion": make_query(data=[{"id": "notif-1"}]),
     }
     supabase = MagicMock()
     supabase.table.side_effect = lambda nombre: tablas[nombre]
@@ -1388,6 +1559,7 @@ def test_evaluar_insignias_reportante_impacto_real_usa_historial_y_nivel_none(ma
             SimpleNamespace(data=[]),
             SimpleNamespace(data=[{"id": "ins-2", "codigo_insignia": "impacto_real", "nivel": None}]),
         ]),
+        "notificaciones_reputacion": make_query(data=[{"id": "notif-1"}]),
     }
     supabase = MagicMock()
     supabase.table.side_effect = lambda nombre: tablas[nombre]
@@ -1400,6 +1572,152 @@ def test_evaluar_insignias_reportante_impacto_real_usa_historial_y_nivel_none(ma
     assert insertado["codigo_insignia"] == "impacto_real"
     assert insertado["nivel"] is None
     assert insertado["progreso"] == 3
+
+
+def test_evaluar_insignias_reportante_flujo_completo_mensaje_real_de_insignia_nueva(make_query):
+    """Verificación funcional de punta a punta (usuario que pasa de 0 a
+    1 reporte válido -> primera insignia, nivel='cobre'), a través de
+    evaluar_insignias_reportante completa -- no _upsert_insignia
+    directo. Usa las constantes NOMBRE_INSIGNIA/NIVEL_LABEL REALES del
+    módulo (ya no hace falta ningún parche, Bug #1 corregido). Si el
+    mensaje trajera el código crudo 'vigia_comunitario' en vez del
+    nombre humano 'Vigía comunitario', sería la señal de que
+    NOMBRE_INSIGNIA.get(codigo, codigo) cayó al fallback porque el
+    diccionario real no tiene la clave -- este test lo descarta
+    explícitamente."""
+    reportes_query = make_query(execute_results=[
+        SimpleNamespace(data=None, count=1),  # conteo de válidos -- pasa de 0 a 1
+        SimpleNamespace(data=[]),  # reportes_propios (_contar_desenlaces_validos) -- vacío, corta temprano
+    ])
+    reportes_query.not_.in_.return_value = reportes_query
+    tablas = {
+        "reportes": reportes_query,
+        "historial_reporte": make_query(data=[]),
+        "insignias": make_query(execute_results=[
+            SimpleNamespace(data=[]),  # no existía -- primera vez
+            SimpleNamespace(data=[{"id": "ins-1", "codigo_insignia": "vigia_comunitario", "nivel": "cobre"}]),
+        ]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+
+    with (
+        patch.object(reputacion_service, "supabase", supabase),
+        patch.object(reputacion_service, "notificar_reputacion") as mock_notificar,
+    ):
+        actualizadas = reputacion_service.evaluar_insignias_reportante("user-1")
+
+    assert actualizadas[0]["nivel"] == "cobre"
+    mock_notificar.assert_called_once_with(
+        "user-1", "insignia_obtenida",
+        '¡Desbloqueaste la insignia "Vigía comunitario"!',
+        tipo_origen="insignia", evento_origen_id="ins-1",
+    )
+    mensaje_real = mock_notificar.call_args.args[2]
+    assert "vigia_comunitario" not in mensaje_real
+    assert "Vigía comunitario" in mensaje_real
+
+
+# ─── _upsert_insignia — notificaciones ──────────────────────────────────
+#
+# notificar=True es el flag que activa las notificaciones de insignias.
+# Hoy SOLO evaluar_insignias_reportante lo pasa -- ningún backfill, ni
+# evaluar_insignias_voluntario_interno/externo (confirmado leyendo cada
+# call site de _upsert_insignia en todo el archivo). Se mockea
+# notificar_reputacion directamente (función hermana) para no depender
+# de que notificaciones_reputacion exista en el mock de tablas.
+
+def test_upsert_insignia_notifica_insignia_nueva(make_query):
+    tabla = make_query(execute_results=[
+        SimpleNamespace(data=[]),  # no existe todavía
+        SimpleNamespace(data=[{"id": "ins-1", "codigo_insignia": "vigia_comunitario", "nivel": "cobre"}]),
+    ])
+    supabase = MagicMock()
+    supabase.table.return_value = tabla
+
+    with (
+        patch.object(reputacion_service, "supabase", supabase),
+        patch.object(reputacion_service, "notificar_reputacion") as mock_notificar,
+    ):
+        reputacion_service._upsert_insignia(
+            "user-1", "reportante", "vigia_comunitario", "cobre", 1, notificar=True,
+        )
+
+    mock_notificar.assert_called_once_with(
+        "user-1", "insignia_obtenida",
+        '¡Desbloqueaste la insignia "Vigía comunitario"!',
+        tipo_origen="insignia", evento_origen_id="ins-1",
+    )
+
+
+def test_upsert_insignia_notifica_solo_si_sube_de_nivel(make_query):
+    """Caso A: sube de cobre a plata -> SÍ notifica, tipo='insignia_mejorada'."""
+    existente_cobre = {"id": "ins-1", "nivel": "cobre", "progreso": 3, "mejorado_at": "2026-01-01T00:00:00+00:00"}
+    tabla = make_query(execute_results=[
+        SimpleNamespace(data=[existente_cobre]),
+        SimpleNamespace(data=[{"id": "ins-1", "nivel": "plata"}]),
+    ])
+    supabase = MagicMock()
+    supabase.table.return_value = tabla
+
+    with (
+        patch.object(reputacion_service, "supabase", supabase),
+        patch.object(reputacion_service, "notificar_reputacion") as mock_notificar,
+    ):
+        reputacion_service._upsert_insignia(
+            "user-1", "reportante", "vigia_comunitario", "plata", 6, notificar=True,
+        )
+
+    mock_notificar.assert_called_once_with(
+        "user-1", "insignia_mejorada",
+        '¡Subiste de nivel en "Vigía comunitario"! Ahora estás en Plata.',
+        tipo_origen="insignia", evento_origen_id="ins-1",
+    )
+
+
+def test_upsert_insignia_no_notifica_si_solo_cambia_progreso_sin_subir_nivel(make_query):
+    """Caso B: mismo nivel (cobre), solo cambia progreso (2->3 reportes
+    válidos) -- progreso interno, no un logro nuevo. NO debe notificar."""
+    existente = {"id": "ins-1", "nivel": "cobre", "progreso": 2, "mejorado_at": "2026-01-01T00:00:00+00:00"}
+    tabla = make_query(execute_results=[
+        SimpleNamespace(data=[existente]),
+        SimpleNamespace(data=[{"id": "ins-1", "nivel": "cobre", "progreso": 3}]),
+    ])
+    supabase = MagicMock()
+    supabase.table.return_value = tabla
+
+    with (
+        patch.object(reputacion_service, "supabase", supabase),
+        patch.object(reputacion_service, "notificar_reputacion") as mock_notificar,
+    ):
+        reputacion_service._upsert_insignia(
+            "user-1", "reportante", "vigia_comunitario", "cobre", 3, notificar=True,
+        )
+
+    mock_notificar.assert_not_called()
+
+
+def test_upsert_insignia_no_notifica_si_notificar_es_false(make_query):
+    """EL TEST MÁS IMPORTANTE de toda la ronda: protege contra que el
+    backfill (u otro código futuro) empiece a notificar por accidente
+    si algún día alguien cambia el default de `notificar` sin querer, o
+    llama _upsert_insignia sin pasar el argumento. Mismo escenario que
+    "insignia nueva" (el que SÍ notificaría con notificar=True), pero
+    aquí notificar ni siquiera se pasa -- debe usar el default (False)."""
+    tabla = make_query(execute_results=[
+        SimpleNamespace(data=[]),  # insignia nueva -- el caso que SÍ notificaría si notificar=True
+        SimpleNamespace(data=[{"id": "ins-1"}]),
+    ])
+    supabase = MagicMock()
+    supabase.table.return_value = tabla
+
+    with (
+        patch.object(reputacion_service, "supabase", supabase),
+        patch.object(reputacion_service, "notificar_reputacion") as mock_notificar,
+    ):
+        reputacion_service._upsert_insignia("user-1", "reportante", "vigia_comunitario", "cobre", 1)
+
+    mock_notificar.assert_not_called()
 
 
 # ─── _calcular_candidatos_insignias_historicas — NUNCA escribe ─────────
@@ -1631,6 +1949,55 @@ def test_reevaluar_historico_impacto_real_mejorado_at_usa_misma_fecha_que_obteni
     assert insertado["obtenido_at"] == "2026-03-03T00:00:00+00:00"
     assert insertado["mejorado_at"] == "2026-03-03T00:00:00+00:00"
     assert insertado["mejorado_at"] == insertado["obtenido_at"]
+
+
+def test_backfill_historico_nunca_notifica(make_query):
+    """EL TEST MÁS CRÍTICO DE TODA LA RONDA: corre
+    _aplicar_insignias_historicas_usuario (la escritura real del
+    backfill) con datos que SÍ crean/actualizan insignias -- vigia_
+    comunitario Y impacto_real, ambas de una sola vez, para maximizar
+    la chance de atrapar cualquier notificación accidental -- y
+    confirma que notificar_reputacion jamás se invoca. Si algún día
+    alguien agrega notificar=True por accidente en el camino de
+    backfill (el escenario que la ronda anterior ya identificó como
+    "notificaría a 47+ usuarios de golpe"), este test debe reventar."""
+    fechas = [f"2026-01-0{n}T00:00:00+00:00" for n in range(1, 6)]
+    reportes_validos = [{"id": f"rep-{n}", "created_at": fechas[n - 1]} for n in range(1, 6)]
+    reportes_query = make_query(execute_results=[
+        SimpleNamespace(data=reportes_validos),
+        SimpleNamespace(data=[{"id": r["id"]} for r in reportes_validos]),
+    ])
+    reportes_query.not_.in_.return_value = reportes_query
+
+    eventos = [
+        {"reporte_id": "rep-1", "datos_extra": {"conclusion": "Animal rescatado y estable"}, "created_at": "2026-02-01T00:00:00+00:00"},
+        {"reporte_id": "rep-2", "datos_extra": {"conclusion": "Animal en tratamiento veterinario"}, "created_at": "2026-02-02T00:00:00+00:00"},
+        {"reporte_id": "rep-3", "datos_extra": {"conclusion": "Animal en hogar temporal"}, "created_at": "2026-02-03T00:00:00+00:00"},
+    ]
+    tablas = {
+        "reportes": reportes_query,
+        "historial_reporte": make_query(data=eventos),
+        "insignias": make_query(execute_results=[
+            SimpleNamespace(data=[]),  # select vigia: no existe
+            SimpleNamespace(data=[{"id": "ins-1", "codigo_insignia": "vigia_comunitario", "nivel": "plata"}]),  # insert vigia
+            SimpleNamespace(data=[]),  # select impacto_real: no existe
+            SimpleNamespace(data=[{"id": "ins-2", "codigo_insignia": "impacto_real", "nivel": None}]),  # insert impacto_real
+        ]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+
+    with (
+        patch.object(reputacion_service, "supabase", supabase),
+        patch.object(reputacion_service, "notificar_reputacion") as mock_notificar,
+    ):
+        actualizadas = reputacion_service._aplicar_insignias_historicas_usuario("user-1")
+
+    # Confirma primero que el escenario SÍ crea las 2 insignias -- si
+    # esto fuera 0, el assert_not_called() de abajo sería una prueba
+    # vacía (nunca hubo oportunidad de notificar).
+    assert len(actualizadas) == 2
+    mock_notificar.assert_not_called()
 
 
 # ─── backfill de insignias de voluntario interno ──────────────────────
