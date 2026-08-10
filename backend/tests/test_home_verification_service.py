@@ -128,6 +128,63 @@ def test_obtener_verificacion_recarga_candidatos_pendientes(make_query):
     )
 
 
+def test_candidatos_verificacion_excluyen_bloqueados_por_trust_score():
+    candidatos = [
+        {"voluntario_id": "vol-1", "usuario_id": "user-bloqueado"},
+        {"voluntario_id": "vol-2", "usuario_id": "user-disponible"},
+    ]
+    with patch.object(
+        home_verification_service,
+        "usuarios_bloqueados_nuevas_asignaciones",
+        return_value={"user-bloqueado"},
+    ) as mock_bloqueados:
+        resultado = home_verification_service._filtrar_verificadores_bloqueados(
+            candidatos
+        )
+
+    assert resultado == [candidatos[1]]
+    mock_bloqueados.assert_called_once_with(
+        {"user-bloqueado", "user-disponible"},
+        home_verification_service.ROL_VOLUNTARIO_INTERNO,
+    )
+
+
+def test_asignar_verificador_revalida_restriccion_antes_de_insertar(make_query):
+    verificaciones = make_query(data=[{
+        "id": "ver-1",
+        "asociacion_id": "asoc-1",
+        "estado": "pendiente_asignacion",
+    }])
+    candidatos = make_query(data=[{
+        "voluntario_id": "vol-1",
+        "usuario_id": "user-1",
+        "distancia_km": 2.5,
+        "tramo_distancia": "preferente",
+    }])
+    cliente = MagicMock()
+    cliente.table.return_value = verificaciones
+    cliente.rpc.return_value = candidatos
+
+    with (
+        patch.object(home_verification_service, "supabase_admin", cliente),
+        patch.object(
+            home_verification_service,
+            "_filtrar_verificadores_bloqueados",
+            return_value=[],
+        ),
+        pytest.raises(HTTPException) as error,
+    ):
+        home_verification_service.asignar_verificador_hogar(
+            "ver-1",
+            "vol-1",
+            "asoc-1",
+            "staff-1",
+        )
+
+    assert error.value.status_code == 422
+    verificaciones.insert.assert_not_called()
+
+
 def test_finalizar_postulacion_externa_asigna_asociacion_y_crea_verificacion(
     make_query,
 ):

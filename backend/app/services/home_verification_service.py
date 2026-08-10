@@ -6,9 +6,11 @@ from app.db.supabase import supabase_admin
 from app.services import storage_service
 from app.services.video_evidence_service import distancia_metros
 from app.services.reputacion_service import (
+    ROL_VOLUNTARIO_INTERNO,
     ajustar_trust_score,
     evaluar_insignias_voluntario_interno,
     otorgar_puntos,
+    usuarios_bloqueados_nuevas_asignaciones,
 )
 
 
@@ -34,6 +36,22 @@ CHECKLIST_REMOTO_CAMPOS = {
     "convivencia_hogar",
     "autorizacion_vivienda",
 }
+
+
+def _filtrar_verificadores_bloqueados(candidatos: list[dict]) -> list[dict]:
+    """Excluye únicamente de propuestas nuevas; no altera visitas activas."""
+    bloqueados = usuarios_bloqueados_nuevas_asignaciones(
+        {
+            candidato["usuario_id"]
+            for candidato in candidatos
+            if candidato.get("usuario_id")
+        },
+        ROL_VOLUNTARIO_INTERNO,
+    )
+    return [
+        candidato for candidato in candidatos
+        if candidato.get("usuario_id") not in bloqueados
+    ]
 
 
 def _registrar_evento_verificacion(
@@ -581,10 +599,12 @@ def obtener_verificacion_postulacion(
     # asociación cierra y vuelve a abrir el expediente, reconstruimos los
     # candidatos elegibles a partir de la función de matching.
     if verificacion["estado"] in ("pendiente_asignacion", "reagendar"):
-        verificacion["candidatos"] = supabase_admin.rpc(
-            "candidatos_verificacion_hogar",
-            {"p_verificacion_hogar_id": verificacion["id"]},
-        ).execute().data or []
+        verificacion["candidatos"] = _filtrar_verificadores_bloqueados(
+            supabase_admin.rpc(
+                "candidatos_verificacion_hogar",
+                {"p_verificacion_hogar_id": verificacion["id"]},
+            ).execute().data or []
+        )
     else:
         verificacion["candidatos"] = []
 
@@ -721,10 +741,12 @@ def preparar_verificacion_hogar(
             detail="La verificación no puede prepararse en su estado actual",
         )
 
-    candidatos = supabase_admin.rpc(
-        "candidatos_verificacion_hogar",
-        {"p_verificacion_hogar_id": verificacion["id"]},
-    ).execute().data or []
+    candidatos = _filtrar_verificadores_bloqueados(
+        supabase_admin.rpc(
+            "candidatos_verificacion_hogar",
+            {"p_verificacion_hogar_id": verificacion["id"]},
+        ).execute().data or []
+    )
 
     if not candidatos:
         supabase_admin.table("verificaciones_hogar").update({
@@ -796,10 +818,12 @@ def asignar_verificador_hogar(
             detail="La verificación no está lista para asignarse",
         )
 
-    candidatos = supabase_admin.rpc(
-        "candidatos_verificacion_hogar",
-        {"p_verificacion_hogar_id": verificacion_id},
-    ).execute().data or []
+    candidatos = _filtrar_verificadores_bloqueados(
+        supabase_admin.rpc(
+            "candidatos_verificacion_hogar",
+            {"p_verificacion_hogar_id": verificacion_id},
+        ).execute().data or []
+    )
     candidato = next(
         (
             item
