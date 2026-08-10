@@ -13,7 +13,7 @@ from math import asin, cos, radians, sin, sqrt
 from fastapi import HTTPException
 
 from app.db.supabase import supabase, supabase_admin
-from app.services import matching
+from app.services import matching, reputacion_service
 from app.utils.animal_shaping import shape_animal_embed, shape_animal_response
 
 
@@ -137,6 +137,18 @@ def obtener_casos_cercanos(usuario_id: str) -> list[dict]:
 
 
 def crear_ofrecimiento(usuario_id: str, reporte_id: str) -> dict:
+    restricciones = reputacion_service.consultar_restricciones(
+        usuario_id,
+        reputacion_service.ROL_VOLUNTARIO_EXTERNO,
+    )
+    if restricciones["bloqueado_nuevas_asignaciones"]:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "No puedes ofrecerte a casos nuevos por ahora. "
+                "Sí puedes finalizar tus casos activos."
+            ),
+        )
     perfil = obtener_perfil_externo(usuario_id)
     elegibles = {
         caso["id"]: caso for caso in obtener_casos_cercanos(usuario_id)
@@ -305,6 +317,23 @@ def reservar_cobertura(
     actor_id: str,
     origen: str,
 ) -> str:
+    rol_reputacion = {
+        "equipo_interno": reputacion_service.ROL_VOLUNTARIO_INTERNO,
+        "ofrecimiento_externo": reputacion_service.ROL_VOLUNTARIO_EXTERNO,
+    }.get(origen)
+    if rol_reputacion:
+        restricciones = reputacion_service.consultar_restricciones(
+            usuario_asignado_id,
+            rol_reputacion,
+        )
+        if restricciones["bloqueado_nuevas_asignaciones"]:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "El voluntario no puede recibir nuevas asignaciones "
+                    "por ahora. Actualiza la lista y elige otro candidato."
+                ),
+            )
     vence_at = datetime.now(timezone.utc) + timedelta(
         minutes=PROPUESTA_COBERTURA_MINUTOS
     )

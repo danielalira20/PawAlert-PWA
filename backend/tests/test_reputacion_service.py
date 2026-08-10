@@ -1765,3 +1765,30 @@ def test_backfill_interno_real_aplica_candidatos(make_query):
         obtenido_at="2026-01-01T00:00:00+00:00",
         mejorado_at="2026-01-01T00:00:00+00:00",
     )
+
+
+def test_consulta_masiva_de_bloqueos_solo_incluye_puntajes_menores_a_40(
+    make_query,
+):
+    tabla = make_query(data=[
+        {"usuario_id": "user-39", "puntaje": 39},
+        {"usuario_id": "user-40", "puntaje": 40},
+    ])
+    supabase = MagicMock()
+    supabase.table.return_value = tabla
+
+    with patch.object(reputacion_service, "supabase", supabase):
+        bloqueados = reputacion_service.usuarios_bloqueados_nuevas_asignaciones(
+            {"user-39", "user-40", "user-sin-fila"},
+            reputacion_service.ROL_VOLUNTARIO_INTERNO,
+        )
+
+    assert bloqueados == {"user-39"}
+    tabla.eq.assert_called_once_with(
+        "rol",
+        reputacion_service.ROL_VOLUNTARIO_INTERNO,
+    )
+    tabla.in_.assert_called_once_with(
+        "usuario_id",
+        ["user-39", "user-40", "user-sin-fila"],
+    )

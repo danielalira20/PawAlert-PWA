@@ -975,6 +975,32 @@ def consultar_restricciones(usuario_id: str, rol: str) -> dict:
     return base
 
 
+def usuarios_bloqueados_nuevas_asignaciones(
+    usuario_ids: list[str] | set[str],
+    rol: str,
+) -> set[str]:
+    """Obtiene en una sola consulta quién no puede recibir casos nuevos.
+
+    La ausencia de fila conserva el valor inicial de 60 y, por tanto, no
+    bloquea. Los casos que ya están activos no pasan por esta función.
+    """
+    ids = sorted(set(usuario_ids))
+    if not ids:
+        return set()
+    resultado = (
+        supabase.table("trust_score")
+        .select("usuario_id, puntaje")
+        .eq("rol", rol)
+        .in_("usuario_id", ids)
+        .execute()
+    )
+    return {
+        fila["usuario_id"]
+        for fila in (resultado.data or [])
+        if int(fila.get("puntaje", 60)) < 40
+    }
+
+
 def evaluar_reportes_validados_por_tiempo() -> dict:
     """Job de los 7 días — llamado desde POST /internal/gamificacion/run.
 
