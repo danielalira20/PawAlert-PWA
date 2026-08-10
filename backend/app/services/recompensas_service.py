@@ -314,9 +314,37 @@ def confirmar_canje(codigo: str, usuario_id: str) -> dict:
     if not resultado.data:
         raise HTTPException(status_code=404, detail="Código de canje no encontrado o no pertenece a tus recompensas")
     canje = resultado.data[0] if isinstance(resultado.data, list) else resultado.data
+    
+    # 1. Confirmar puntos reservados (Persona 5)
+    try:
+        from app.services.reputacion_service import confirmar_puntos_reservados
+        usuario = supabase.table("usuarios").select("roles(nombre)").eq("id", canje["beneficiario_id"]).execute()
+        rol = (usuario.data[0].get("roles") or {}).get("nombre") if usuario.data else None
+        
+        confirmar_puntos_reservados(
+            usuario_id=canje["beneficiario_id"],
+            rol=rol,
+            regla="canje_recompensa",
+            tipo_origen="canje",
+            evento_origen_id=canje["id"],
+            puntos=canje["costo_snapshot"]
+        )
+    except Exception as e:
+        print(f"[WARN] No se pudo confirmar_puntos_reservados para canje {canje['id']}: {e}")
+
+    # 2. Guardar el patrocinador que confirmo
+    try:
+        supabase.table("canjes_recompensa").update({
+            "patrocinador_confirmacion_id": perfil["id"]
+        }).eq("id", canje["id"]).execute()
+    except Exception as e:
+        print(f"[WARN] No se pudo guardar patrocinador_confirmacion_id para canje {canje['id']}: {e}")
+
+    # 3. Evaluar insignias aliado (Persona 4)
     try:
         from app.services.insignias_aliado_service import evaluar_insignias_aliado
         evaluar_insignias_aliado(usuario_id)
     except Exception:
         pass
+        
     return canje

@@ -164,3 +164,9 @@ class CanjeResponse(BaseModel):
     costo_snapshot: int
     emitido_at: str
     confirmado_at: Optional[str] = None
+    fecha_expiracion: Optional[str] = None
+    patrocinador_confirmacion_id: Optional[str] = None
+    motivo_cancelacion: Optional[str] = None
+
+class CanjeReembolsoRequest(BaseModel):
+    motivo: str = Field(min_length=5, max_length=500)

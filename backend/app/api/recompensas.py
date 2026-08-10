@@ -6,7 +6,6 @@ from app.services.recompensas_service import (
     cambiar_estado_recompensa,
     obtener_categorias_recompensa,
     eliminar_recompensa,
-    emitir_canje,
     confirmar_canje,
     obtener_catalogo_recompensas,
 )
@@ -17,6 +16,7 @@ from app.models.recompensas import (
     CanjeEmitirRequest,
     CanjeConfirmarRequest,
     CanjeResponse,
+    CanjeReembolsoRequest,
     RecompensaCatalogoResponse,
 )
 
@@ -79,9 +79,25 @@ async def get_categorias_recompensa_endpoint(authorization: str = Header(None)):
 
 
 @router.post("/canjes", status_code=201, response_model=CanjeResponse)
-async def emitir_canje_endpoint(body: CanjeEmitirRequest, authorization: str = Header(None)):
+async def crear_canje_endpoint(body: CanjeEmitirRequest, authorization: str = Header(None)):
     usuario = _obtener_usuario_autenticado(authorization)
-    return emitir_canje(body.recompensa_id, usuario["id"])
+    from app.services.canjes_service import crear_canje
+    return crear_canje(body.recompensa_id, usuario["id"], usuario.get("rol"))
+
+@router.get("/canjes/mis-canjes", status_code=200, response_model=list[CanjeResponse])
+async def get_mis_canjes_endpoint(authorization: str = Header(None)):
+    usuario = _obtener_usuario_autenticado(authorization)
+    from app.services.canjes_service import obtener_mis_canjes
+    return obtener_mis_canjes(usuario["id"])
+
+@router.post("/canjes/{canje_id}/reembolso", status_code=200, response_model=CanjeResponse)
+async def reembolsar_canje_endpoint(canje_id: str, body: CanjeReembolsoRequest, authorization: str = Header(None)):
+    from fastapi import HTTPException
+    usuario = _obtener_usuario_autenticado(authorization)
+    if usuario.get("rol") != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores pueden reembolsar canjes")
+    from app.services.canjes_service import reembolsar_canje
+    return reembolsar_canje(canje_id, body.motivo, usuario["id"])
 
 
 @router.post("/canjes/confirmar", status_code=200, response_model=CanjeResponse)
