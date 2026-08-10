@@ -69,28 +69,11 @@ def _roles_aplicables(rol_principal: str | None) -> list[str]:
 
 
 # ============================================================
-# Mensajes de restricción -- traducen consultar_restricciones() a texto
-# para el usuario, sin exponer puntaje ni estado_interno.
+# Mensajes de restricción -- viven en reputacion_service.mensaje_restriccion
+# (no aquí), porque ajustar_trust_score también la usa internamente
+# para detectar cambios de restricción y disparar notificaciones. Una
+# sola fuente de verdad del texto, en vez de mantenerlo duplicado.
 # ============================================================
-
-def _mensaje_restriccion(rol: str, restricciones: dict) -> str | None:
-    if rol == "reportante":
-        if restricciones.get("requiere_revision_administrativa_total"):
-            return "Tus reportes requieren revisión administrativa antes de publicarse."
-        if restricciones.get("requiere_revision_previa"):
-            limite = restricciones.get("maximo_reportes_activos_dia")
-            if limite:
-                return f"Tus reportes requieren revisión previa. Máximo {limite} reportes activos por día."
-            return "Tus reportes requieren revisión previa antes de publicarse."
-        return None
-    # voluntario_interno / voluntario_externo
-    if restricciones.get("suspension_operativa"):
-        return "Tu cuenta está en suspensión operativa. Puedes finalizar tus casos activos."
-    if restricciones.get("bloqueado_nuevas_asignaciones"):
-        return "No puedes recibir nuevas asignaciones por ahora. Puedes finalizar tus casos activos."
-    if restricciones.get("en_observacion"):
-        return "Tu cuenta está en observación interna."
-    return None
 
 
 # ============================================================
@@ -130,6 +113,16 @@ class InsigniaResponse(BaseModel):
     mejorado_at: str | None = None
 
 
+class NotificacionReputacionResponse(BaseModel):
+    id: str
+    tipo: str
+    mensaje: str
+    tipo_origen: str | None = None
+    evento_origen_id: str | None = None
+    leida: bool
+    created_at: str
+
+
 # ============================================================
 # Endpoints
 # ============================================================
@@ -146,7 +139,7 @@ async def get_mi_reputacion(authorization: str = Header(None)):
     for rol in roles:
         saldo = reputacion_service.consultar_saldo_desglosado(usuario["id"], rol)
         restricciones = reputacion_service.consultar_restricciones(usuario["id"], rol)
-        mensaje = _mensaje_restriccion(rol, restricciones)
+        mensaje = reputacion_service.mensaje_restriccion(rol, restricciones)
         respuesta.append(SaldoRolResponse(
             rol=rol,
             saldo_disponible=saldo.get("saldo_disponible", 0),
@@ -194,3 +187,39 @@ async def get_mis_insignias(rol: str, authorization: str = Header(None)):
         .execute()
     )
     return resultado.data or []
+
+
+@router.get("/me/notificaciones", response_model=list[NotificacionReputacionResponse])
+async def get_mis_notificaciones_reputacion(limit: int = 50, authorization: str = Header(None)):
+    """Notificaciones de puntos/insignias/trust score del usuario
+    autenticado, más reciente primero. Mismo patrón que
+    GET /reports/me/notificaciones-moderacion y
+    GET /red-aliados/me/notificaciones -- el frontend debe agregar esta
+    como tercera rama al Promise.allSettled ya existente en
+    NotificationsScreen.tsx/NotificationBell.tsx, no como pantalla
+    aparte."""
+    usuario = _obtener_usuario_autenticado(authorization)
+    resultado = (
+        supabase_admin.table("notificaciones_reputacion")
+        .select("id, tipo, mensaje, tipo_origen, evento_origen_id, leida, created_at")
+        .eq("usuario_id", usuario["id"])
+        .order("created_at", desc=True)
+        .limit(min(limit, 200))
+        .execute()
+    )
+    return resultado.data or []
+
+
+@router.patch("/me/notificaciones/{notificacion_id}/leer")
+async def marcar_notificacion_reputacion_leida(notificacion_id: str, authorization: str = Header(None)):
+    usuario = _obtener_usuario_autenticado(authorization)
+    resultado = (
+        supabase_admin.table("notificaciones_reputacion")
+        .update({"leida": True, "leida_at": "now()"})
+        .eq("id", notificacion_id)
+        .eq("usuario_id", usuario["id"])
+        .execute()
+    )
+    if not resultado.data:
+        raise HTTPException(status_code=404, detail="Notificación no encontrada")
+    return {"mensaje": "Notificación marcada como leída"}
