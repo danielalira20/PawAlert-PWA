@@ -747,6 +747,7 @@ def procesar_rescate_completado_interno(
         TIPO_ORIGEN_REPORTE, reporte_id,
         limite_incremento_mes=TRUST_LIMITE_INCREMENTO_MES_VOLUNTARIO,
     )
+    evaluar_insignias_voluntario_interno(usuario_id)
 
 
 def procesar_llegada_refugio_interna(reporte_id: str, usuario_id: str | None) -> None:

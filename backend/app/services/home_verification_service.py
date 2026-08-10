@@ -5,7 +5,11 @@ from fastapi import HTTPException
 from app.db.supabase import supabase_admin
 from app.services import storage_service
 from app.services.video_evidence_service import distancia_metros
-from app.services.reputacion_service import otorgar_puntos, ajustar_trust_score
+from app.services.reputacion_service import (
+    ajustar_trust_score,
+    evaluar_insignias_voluntario_interno,
+    otorgar_puntos,
+)
 
 
 TIPOS_EVIDENCIA = {
@@ -2479,7 +2483,7 @@ def resolver_resultado_visita(
             evento_origen_id=asignacion_id,
             limite_incremento_mes=20,
         )
-        # TODO: Evaluar insignia "Verificador de confianza"
+        evaluar_insignias_voluntario_interno(usuario_id_verificador)
 
     return {
         "estado": "aprobada",

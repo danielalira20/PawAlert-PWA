@@ -705,6 +705,9 @@ def test_rescate_completado_interno_otorga_cuarenta_puntos_y_cinco_trust():
     with (
         patch.object(reputacion_service, "otorgar_puntos") as mock_otorgar,
         patch.object(reputacion_service, "ajustar_trust_score") as mock_ajustar,
+        patch.object(
+            reputacion_service, "evaluar_insignias_voluntario_interno"
+        ) as mock_evaluar,
     ):
         reputacion_service.procesar_rescate_completado_interno(
             "reporte-1", "user-1", "Animal rescatado y estable"
@@ -729,12 +732,16 @@ def test_rescate_completado_interno_otorga_cuarenta_puntos_y_cinco_trust():
         "reporte-1",
         limite_incremento_mes=reputacion_service.TRUST_LIMITE_INCREMENTO_MES_VOLUNTARIO,
     )
+    mock_evaluar.assert_called_once_with("user-1")
 
 
 def test_rescate_interno_sin_conclusion_valida_no_otorga_reputacion():
     with (
         patch.object(reputacion_service, "otorgar_puntos") as mock_otorgar,
         patch.object(reputacion_service, "ajustar_trust_score") as mock_ajustar,
+        patch.object(
+            reputacion_service, "evaluar_insignias_voluntario_interno"
+        ) as mock_evaluar,
     ):
         reputacion_service.procesar_rescate_completado_interno(
             "reporte-1", "user-1", None
@@ -742,6 +749,7 @@ def test_rescate_interno_sin_conclusion_valida_no_otorga_reputacion():
 
     mock_otorgar.assert_not_called()
     mock_ajustar.assert_not_called()
+    mock_evaluar.assert_not_called()
 
 
 # ─── insignias del voluntario interno ────────────────────────────────────
