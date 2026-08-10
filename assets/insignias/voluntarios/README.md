@@ -6,7 +6,7 @@ interno y externo cuando la insignia aplica a ambos roles.
 ## Especificaciones visuales
 
 - Formato: PNG RGBA con fondo transparente.
-- Lienzo recomendado: 450 × 600 px, orientación vertical.
+- Lienzo de entrega: 480 × 720 px, orientación vertical y proporción 2:3.
 - Peso recomendado: máximo 500 KB por archivo.
 - Composición: medalla centrada, con un margen exterior de 8–10 %.
 - Estética: escudo o medalla 3D, listón, laureles y acabados consistentes con
