@@ -505,6 +505,141 @@ def _upsert_insignia(
 
 
 # ============================================================
+# Insignias del voluntario interno (Persona 2).
+# ============================================================
+
+def _rescates_completados_interno(usuario_id: str) -> set[str]:
+    """Reportes asignados al voluntario que tienen un cierre real y una
+    conclusión válida. Se consulta la fuente operativa para que también
+    cuente el historial anterior al lanzamiento de gamificación."""
+    reportes = (
+        supabase.table("reportes")
+        .select("id")
+        .eq("staff_asignado_id", usuario_id)
+        .execute()
+    )
+    ids = [fila["id"] for fila in (reportes.data or [])]
+    if not ids:
+        return set()
+
+    cierres = (
+        supabase.table("historial_reporte")
+        .select("reporte_id, datos_extra")
+        .eq("tipo_evento", "caso_cerrado")
+        .in_("reporte_id", ids)
+        .execute()
+    )
+    return {
+        fila["reporte_id"]
+        for fila in (cierres.data or [])
+        if (fila.get("datos_extra") or {}).get("conclusion") in CONCLUSIONES_VALIDAS
+    }
+
+
+def _contar_rescates_internos_sin_abandono(
+    usuario_id: str,
+    reportes_completados: set[str],
+) -> int:
+    if not reportes_completados:
+        return 0
+
+    abandonos = (
+        supabase.table("incidentes")
+        .select("reporte_id")
+        .eq("usuario_id", usuario_id)
+        .eq("rol", ROL_VOLUNTARIO_INTERNO)
+        .eq("tipo_incidente", "abandono")
+        .eq("estado", "confirmado")
+        .in_("reporte_id", list(reportes_completados))
+        .execute()
+    )
+    reportes_con_abandono = {
+        fila["reporte_id"]
+        for fila in (abandonos.data or [])
+        if fila.get("reporte_id")
+    }
+    return len(reportes_completados - reportes_con_abandono)
+
+
+def _contar_verificaciones_aprobadas_interno(usuario_id: str) -> int:
+    voluntario = (
+        supabase.table("voluntarios")
+        .select("id")
+        .eq("usuario_id", usuario_id)
+        .limit(1)
+        .execute()
+    )
+    if not voluntario.data:
+        return 0
+
+    verificaciones = (
+        supabase.table("asignaciones_verificacion_hogar")
+        .select("id", count="exact")
+        .eq("verificador_voluntario_id", voluntario.data[0]["id"])
+        .eq("estado", "completada")
+        .eq("resultado_visita", "aprobar")
+        .execute()
+    )
+    return int(
+        verificaciones.count
+        if verificaciones.count is not None
+        else len(verificaciones.data or [])
+    )
+
+
+def evaluar_insignias_voluntario_interno(usuario_id: str) -> list[dict]:
+    """Evalúa las tres insignias aprobadas para el voluntariado interno:
+    Rescatista PawAlert (1/5/15), Compromiso cumplido (10 cierres sin
+    abandono confirmado) y Verificador de confianza (5 hogares aprobados).
+    """
+    try:
+        actualizadas: list[dict] = []
+        rescates = _rescates_completados_interno(usuario_id)
+        total_rescates = len(rescates)
+        nivel = (
+            "oro" if total_rescates >= 15
+            else "plata" if total_rescates >= 5
+            else "cobre" if total_rescates >= 1
+            else None
+        )
+        if nivel:
+            fila = _upsert_insignia(
+                usuario_id, ROL_VOLUNTARIO_INTERNO,
+                "rescatista_pawalert", nivel, total_rescates,
+            )
+            if fila:
+                actualizadas.append(fila)
+
+        total_compromiso = _contar_rescates_internos_sin_abandono(
+            usuario_id, rescates,
+        )
+        if total_compromiso >= 10:
+            fila = _upsert_insignia(
+                usuario_id, ROL_VOLUNTARIO_INTERNO,
+                "compromiso_cumplido", None, total_compromiso,
+            )
+            if fila:
+                actualizadas.append(fila)
+
+        total_verificaciones = _contar_verificaciones_aprobadas_interno(usuario_id)
+        if total_verificaciones >= 5:
+            fila = _upsert_insignia(
+                usuario_id, ROL_VOLUNTARIO_INTERNO,
+                "verificador_de_confianza", None, total_verificaciones,
+            )
+            if fila:
+                actualizadas.append(fila)
+
+        return actualizadas
+    except Exception as error:
+        print(
+            "[WARN] evaluar_insignias_voluntario_interno fallo "
+            f"(usuario={usuario_id}): {error}"
+        )
+        return []
+
+
+# ============================================================
 # Reglas específicas por rol — puntos de enganche reales.
 # ============================================================
 

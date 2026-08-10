@@ -744,6 +744,116 @@ def test_rescate_interno_sin_conclusion_valida_no_otorga_reputacion():
     mock_ajustar.assert_not_called()
 
 
+# ─── insignias del voluntario interno ────────────────────────────────────
+
+@pytest.mark.parametrize(
+    "total,nivel",
+    [(1, "cobre"), (5, "plata"), (15, "oro")],
+)
+def test_rescatista_pawalert_evoluciona_por_rescates(total, nivel):
+    rescates = {f"reporte-{indice}" for indice in range(total)}
+
+    with (
+        patch.object(
+            reputacion_service, "_rescates_completados_interno",
+            return_value=rescates,
+        ),
+        patch.object(
+            reputacion_service, "_contar_rescates_internos_sin_abandono",
+            return_value=0,
+        ),
+        patch.object(
+            reputacion_service, "_contar_verificaciones_aprobadas_interno",
+            return_value=0,
+        ),
+        patch.object(
+            reputacion_service, "_upsert_insignia",
+            return_value={"codigo_insignia": "rescatista_pawalert"},
+        ) as mock_upsert,
+    ):
+        resultado = reputacion_service.evaluar_insignias_voluntario_interno("user-1")
+
+    mock_upsert.assert_called_once_with(
+        "user-1",
+        reputacion_service.ROL_VOLUNTARIO_INTERNO,
+        "rescatista_pawalert",
+        nivel,
+        total,
+    )
+    assert resultado == [{"codigo_insignia": "rescatista_pawalert"}]
+
+
+def test_insignias_fijas_internas_se_otorgan_al_cruzar_sus_umbrales():
+    rescates = {f"reporte-{indice}" for indice in range(10)}
+
+    with (
+        patch.object(
+            reputacion_service, "_rescates_completados_interno",
+            return_value=rescates,
+        ),
+        patch.object(
+            reputacion_service, "_contar_rescates_internos_sin_abandono",
+            return_value=10,
+        ),
+        patch.object(
+            reputacion_service, "_contar_verificaciones_aprobadas_interno",
+            return_value=5,
+        ),
+        patch.object(
+            reputacion_service, "_upsert_insignia",
+            side_effect=lambda *args: {"codigo_insignia": args[2]},
+        ) as mock_upsert,
+    ):
+        reputacion_service.evaluar_insignias_voluntario_interno("user-1")
+
+    assert mock_upsert.call_args_list[1].args == (
+        "user-1",
+        reputacion_service.ROL_VOLUNTARIO_INTERNO,
+        "compromiso_cumplido",
+        None,
+        10,
+    )
+    assert mock_upsert.call_args_list[2].args == (
+        "user-1",
+        reputacion_service.ROL_VOLUNTARIO_INTERNO,
+        "verificador_de_confianza",
+        None,
+        5,
+    )
+
+
+def test_compromiso_cumplido_excluye_abandonos_confirmados(make_query):
+    incidentes = make_query(data=[{"reporte_id": "reporte-2"}])
+    supabase = MagicMock()
+    supabase.table.return_value = incidentes
+
+    with patch.object(reputacion_service, "supabase", supabase):
+        total = reputacion_service._contar_rescates_internos_sin_abandono(
+            "user-1", {"reporte-1", "reporte-2", "reporte-3"}
+        )
+
+    assert total == 2
+    incidentes.eq.assert_any_call("tipo_incidente", "abandono")
+    incidentes.eq.assert_any_call("estado", "confirmado")
+
+
+def test_verificador_confianza_cuenta_solo_visitas_aprobadas(make_query):
+    voluntarios = make_query(data=[{"id": "vol-1"}])
+    asignaciones = make_query(data=[], count=5)
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda tabla: {
+        "voluntarios": voluntarios,
+        "asignaciones_verificacion_hogar": asignaciones,
+    }[tabla]
+
+    with patch.object(reputacion_service, "supabase", supabase):
+        total = reputacion_service._contar_verificaciones_aprobadas_interno("user-1")
+
+    assert total == 5
+    asignaciones.eq.assert_any_call("estado", "completada")
+    asignaciones.eq.assert_any_call("resultado_visita", "aprobar")
+
+
 # ─── procesar_cierre_reporte ────────────────────────────────────────────
 
 def test_procesar_cierre_reporte_no_ajusta_trust_score_si_conclusion_invalida():
