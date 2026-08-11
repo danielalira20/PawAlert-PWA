@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Modal, TextInput } from 'react-native';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { Input } from '../../components/ui/Input';
@@ -11,6 +11,7 @@ import * as Location from 'expo-location';
 import * as DocumentPicker from 'expo-document-picker';
 import { useRouter } from 'expo-router';
 import { validarNombre } from '../../utils/validators';
+import { separarNombreCompleto } from '../../utils/nombreCompleto';
 
 const COLORS = {
   bgTeal: '#66BCB4',
@@ -111,6 +112,7 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
   const [checkMural, setCheckMural] = useState(false);
   const [checkReglas, setCheckReglas] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const submitEnCursoRef = useRef(false);
   const [showSubmitError, setShowSubmitError] = useState(false);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [registroExitoso, setRegistroExitoso] = useState(false);
@@ -421,6 +423,9 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
     if (!telefono.trim() || telefono.length !== 10 || /[a-zA-Z]/.test(telefono)) newErrors.telefono = 'Debe tener 10 dígitos numéricos.';
     const nombreContactoCheck = validarNombre(nombreContacto, { etiqueta: 'nombre de contacto' });
     if (!nombreContactoCheck.valido) newErrors.nombreContacto = nombreContactoCheck.mensaje;
+    else if (!separarNombreCompleto(nombreContacto).apellidoPaterno) {
+      newErrors.nombreContacto = 'Ingresa tu nombre y al menos un apellido.';
+    }
     if (!nombreNegocio.trim()) newErrors.nombreNegocio = 'Obligatorio.';
 
     if (Object.keys(newErrors).length > 0) {
@@ -499,6 +504,8 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
   };
 
   const handleGuardar = async () => {
+    if (submitEnCursoRef.current) return;
+
     let newErrors: any = {};
     if (!checkReglas) {
       newErrors.reglas = 'Debes aceptar las reglas de entrega.';
@@ -513,21 +520,20 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
       return;
     }
 
+    submitEnCursoRef.current = true;
     setIsSubmitting(true);
     setShowSubmitError(false);
     try {
       // 1. Register User
-      const [nombre, ...apellidos] = nombreContacto.trim().split(' ');
-      const apellido_paterno = apellidos.length > 0 ? apellidos[0] : '';
-      const apellido_materno = apellidos.length > 1 ? apellidos.slice(1).join(' ') : undefined;
+      const { nombre, apellidoPaterno, apellidoMaterno } = separarNombreCompleto(nombreContacto);
 
       try {
         await axios.post(`${API_URL}/auth/register`, {
           email,
           password,
-          nombre: nombre || nombreNegocio,
-          apellido_paterno: apellido_paterno || '-',
-          apellido_materno,
+          nombre,
+          apellido_paterno: apellidoPaterno,
+          apellido_materno: apellidoMaterno,
           telefono,
           rol_esperado: tipoAliado,
         });
@@ -634,6 +640,7 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
     } catch (error: any) {
       showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'Error al guardar.' });
     } finally {
+      submitEnCursoRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -1176,7 +1183,15 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
                 <TouchableOpacity onPress={handleAnterior} style={[styles.navBtn, styles.navBtnSec]}>
                   <Text style={styles.navBtnSecText}>{paso === 1 ? 'Cancelar' : 'Atrás'}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={paso === 5 ? handleGuardar : handleSiguiente} style={[styles.navBtn, styles.navBtnPri]}>
+                <TouchableOpacity
+                  onPress={paso === 5 ? handleGuardar : handleSiguiente}
+                  disabled={paso === 5 && isSubmitting}
+                  style={[
+                    styles.navBtn,
+                    styles.navBtnPri,
+                    paso === 5 && isSubmitting && { opacity: 0.6 },
+                  ]}
+                >
                   <Text style={styles.navBtnPriText}>
                     {paso === 5 ? (isSubmitting ? 'Guardando...' : 'Activar perfil') : 'Siguiente'}
                   </Text>
