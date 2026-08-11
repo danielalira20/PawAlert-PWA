@@ -219,8 +219,6 @@ export function LoggedInProfile({
     />
   ) : esStaff ? (
     <StaffImpactStats impacto={impactoStaff} isLoading={isLoadingStaff} />
-  ) : esVoluntarioExterno ? (
-    <ReporterImpactStats impacto={impacto} isLoading={isLoadingReportes} />
   ) : (
     <ImpactoInsigniasToggle
       impactoElement={<ReporterImpactStats impacto={impacto} isLoading={isLoadingReportes} />}

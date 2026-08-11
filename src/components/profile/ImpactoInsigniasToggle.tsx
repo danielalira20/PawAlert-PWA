@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Brand } from '../../constants/theme';
 import { ReportanteInsigniasCard } from './ReportanteInsigniasCard';
 import { VoluntarioInternoInsigniasCard } from './VoluntarioInternoInsigniasCard';
+import { VoluntarioExternoInsigniasCard } from './VoluntarioExternoInsigniasCard';
 
 type Tab = 'insignias' | 'impacto';
 
@@ -58,7 +59,13 @@ export function ImpactoInsigniasToggle({ impactoElement, rol }: Props) {
       </View>
 
       {tab === 'insignias' ? (
-        rol === 'voluntario_interno' ? <VoluntarioInternoInsigniasCard /> : <ReportanteInsigniasCard />
+        rol === 'voluntario_interno' ? (
+          <VoluntarioInternoInsigniasCard />
+        ) : rol === 'voluntario_externo' ? (
+          <VoluntarioExternoInsigniasCard />
+        ) : (
+          <ReportanteInsigniasCard />
+        )
       ) : impactoElement}
     </View>
   );
