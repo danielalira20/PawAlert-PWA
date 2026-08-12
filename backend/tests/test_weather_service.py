@@ -217,3 +217,58 @@ def test_get_weather_no_reutiliza_cache_vencido():
 
     assert mock_get.call_count == 1
     assert resultado.status == ExternalSignalStatus.complete
+
+
+def test_get_weather_usa_cache_vieja_util_cuando_el_proveedor_falla():
+    vieja_pero_util = weather_service.WeatherResult(
+        score=50,
+        status=ExternalSignalStatus.complete,
+        temperature_c=22,
+        precipitation_mm_h=3,
+        condition_code=501,
+        observed_at=datetime.now(timezone.utc) - timedelta(minutes=25),
+        evaluated_at=datetime.now(timezone.utc) - timedelta(minutes=25),
+    )
+    weather_service._cache[(19.04, -98.20)] = vieja_pero_util
+
+    with (
+        patch.object(weather_service.settings, "openweather_api_key", "clave-test"),
+        patch.object(weather_service.httpx, "get", return_value=_mock_response(500)),
+    ):
+        resultado = weather_service.get_weather(19.04, -98.20)
+
+    assert resultado.status == ExternalSignalStatus.stale_cache
+    assert resultado.score == 50
+
+
+def test_get_weather_sin_cache_util_devuelve_unavailable():
+    with (
+        patch.object(weather_service.settings, "openweather_api_key", "clave-test"),
+        patch.object(weather_service.httpx, "get", return_value=_mock_response(500)),
+    ):
+        resultado = weather_service.get_weather(19.04, -98.20)
+
+    assert resultado.status == ExternalSignalStatus.unavailable
+    assert resultado.score is None
+
+
+def test_get_weather_no_usa_cache_mas_vieja_de_30_minutos():
+    demasiado_vieja = weather_service.WeatherResult(
+        score=0,
+        status=ExternalSignalStatus.complete,
+        temperature_c=24,
+        precipitation_mm_h=0,
+        condition_code=800,
+        observed_at=datetime.now(timezone.utc) - timedelta(minutes=31),
+        evaluated_at=datetime.now(timezone.utc) - timedelta(minutes=31),
+    )
+    weather_service._cache[(19.04, -98.20)] = demasiado_vieja
+
+    with (
+        patch.object(weather_service.settings, "openweather_api_key", "clave-test"),
+        patch.object(weather_service.httpx, "get", return_value=_mock_response(500)),
+    ):
+        resultado = weather_service.get_weather(19.04, -98.20)
+
+    assert resultado.status == ExternalSignalStatus.unavailable
+    assert resultado.score is None

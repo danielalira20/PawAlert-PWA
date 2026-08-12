@@ -13,6 +13,7 @@ OPENWEATHER_URL = "https://api.openweathermap.org/data/2.5/weather"
 _REQUEST_TIMEOUT_SECONDS = 5.0
 _MAX_ATTEMPTS = 2  # 1 intento + 1 reintento
 _CACHE_TTL = timedelta(minutes=15)
+_STALE_CACHE_TTL = timedelta(minutes=30)
 
 # Coordenadas redondeadas a 2 decimales -> última observación completa.
 _cache: dict[tuple[float, float], WeatherResult] = {}
@@ -151,6 +152,15 @@ def _get_fresh_cache(key: tuple[float, float], now: datetime) -> WeatherResult |
     return None
 
 
+def _get_stale_cache(key: tuple[float, float], now: datetime) -> WeatherResult | None:
+    cached = _cache.get(key)
+    if cached is None or cached.observed_at is None:
+        return None
+    if now - cached.observed_at <= _STALE_CACHE_TTL:
+        return cached
+    return None
+
+
 def get_weather(latitude: float, longitude: float) -> WeatherResult:
     now = datetime.now(timezone.utc)
     key = _cache_key(latitude, longitude)
@@ -162,5 +172,14 @@ def get_weather(latitude: float, longitude: float) -> WeatherResult:
         )
 
     result = _fetch_from_provider(latitude, longitude)
-    _store_in_cache(key, result)
+    if result.status == ExternalSignalStatus.complete:
+        _store_in_cache(key, result)
+        return result
+
+    stale = _get_stale_cache(key, now)
+    if stale is not None:
+        return stale.model_copy(
+            update={"status": ExternalSignalStatus.stale_cache, "evaluated_at": now}
+        )
+
     return result
