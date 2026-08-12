@@ -1,0 +1,243 @@
+"""Compuerta unica entre la validacion inicial y la operacion del reporte."""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+from fastapi import HTTPException
+
+from app.db.supabase import supabase, supabase_admin
+from app.services import matching
+from app.services.assignment_service import asignar_asociacion
+
+
+def _obtener_id_catalogo(tabla: str, clave: str) -> str | None:
+    resultado = (
+        supabase.table(tabla)
+        .select("id")
+        .eq("clave", clave)
+        .eq("activo", True)
+        .execute()
+    )
+    return resultado.data[0]["id"] if resultado.data else None
+
+
+def _registrar_historial(
+    reporte_id: str,
+    tipo_evento: str,
+    descripcion: str,
+    datos_extra: dict | None = None,
+) -> None:
+    supabase.table("historial_reporte").insert(
+        {
+            "reporte_id": reporte_id,
+            "usuario_id": None,
+            "tipo_evento": tipo_evento,
+            "descripcion": descripcion,
+            "datos_extra": datos_extra,
+        }
+    ).execute()
+
+
+def activar_reporte(
+    *,
+    reporte_id: str,
+    latitud: float | None,
+    longitud: float | None,
+    especies: list[str],
+    condicion_mas_grave: str,
+    tipo_animal_mas_grave: str,
+    municipio: str | None,
+) -> dict:
+    """Activa un reporte validado y ejecuta sus efectos operativos.
+
+    Ningun llamador debe elegir asociacion, abrir cobertura, notificar o
+    calcular candidatos por separado. Las capas de validacion deciden si esta
+    funcion se invoca; este servicio no interpreta sus senales.
+    """
+    asociacion = None
+    if latitud is not None and longitud is not None:
+        asociacion = asignar_asociacion(
+            latitud,
+            longitud,
+            tipos_animales=list(dict.fromkeys(especies)),
+        )
+
+    asociacion_id = asociacion.get("id") if asociacion else None
+    estado_clave = "asignado" if asociacion_id else "sin_cobertura"
+    estado_id = _obtener_id_catalogo("reporte_estados", estado_clave)
+    if not estado_id:
+        raise HTTPException(
+            status_code=500,
+            detail="No se pudo resolver el estado operativo del reporte",
+        )
+
+    asignacion_creada = False
+    caso_administrativo_creado = False
+    try:
+        if asociacion_id:
+            estado_asignacion_id = _obtener_id_catalogo(
+                "asignacion_estados", "notificada"
+            )
+            if not estado_asignacion_id:
+                raise HTTPException(
+                    status_code=500,
+                    detail="No se pudo preparar la asignacion de la asociacion",
+                )
+            supabase.table("reporte_asignaciones").insert(
+                {
+                    "reporte_id": reporte_id,
+                    "asociacion_id": asociacion_id,
+                    "estado_id": estado_asignacion_id,
+                    "estado": "notificada",
+                }
+            ).execute()
+            asignacion_creada = True
+        else:
+            supabase_admin.table("casos_administrativos").insert(
+                {
+                    "reporte_id": reporte_id,
+                    "tipo": "reporte_sin_coordinadora",
+                    "prioridad": "alta",
+                    "estado": "pendiente",
+                    "detalle": (
+                        "No se encontro una asociacion compatible y cercana "
+                        "al activar el reporte."
+                    ),
+                }
+            ).execute()
+            caso_administrativo_creado = True
+
+        ahora = datetime.now(timezone.utc).isoformat()
+        actualizacion = (
+            supabase.table("reportes")
+            .update(
+                {
+                    "estado_id": estado_id,
+                    "estado_reporte": estado_clave,
+                    "estado_cobertura": "abierto" if asociacion_id else None,
+                    "asociacion_asignada_id": asociacion_id,
+                    "estado_validacion_reporte": "aprobado",
+                    "validacion_completada_at": ahora,
+                    "activado_at": ahora,
+                    "razones_validacion": [
+                        {
+                            "codigo": "validacion_inicial_aprobada",
+                            "resultado": "aprobado",
+                        }
+                    ],
+                }
+            )
+            .eq("id", reporte_id)
+            .eq("estado_validacion_reporte", "procesando")
+            .execute()
+        )
+        if not actualizacion.data:
+            raise HTTPException(
+                status_code=409,
+                detail="El reporte ya no esta disponible para activacion",
+            )
+    except Exception:
+        if asignacion_creada:
+            (
+                supabase.table("reporte_asignaciones")
+                .delete()
+                .eq("reporte_id", reporte_id)
+                .eq("asociacion_id", asociacion_id)
+                .execute()
+            )
+        if caso_administrativo_creado:
+            (
+                supabase_admin.table("casos_administrativos")
+                .delete()
+                .eq("reporte_id", reporte_id)
+                .eq("tipo", "reporte_sin_coordinadora")
+                .execute()
+            )
+        raise
+
+    _registrar_historial(
+        reporte_id,
+        "validacion_reporte_aprobada",
+        "El reporte completo supero la compuerta de validacion inicial.",
+        {"estado_operativo": estado_clave},
+    )
+
+    if not asociacion_id:
+        return {
+            "estado": "sin_cobertura",
+            "asociacion": None,
+        }
+
+    _registrar_historial(
+        reporte_id,
+        "asociacion_asignada",
+        f"Asignado automaticamente a {asociacion.get('nombre', 'la asociacion')}",
+        {
+            "asociacion_id": asociacion_id,
+            "asociacion_nombre": asociacion.get("nombre"),
+        },
+    )
+
+    try:
+        tipo_notif_id = _obtener_id_catalogo("notificacion_tipos", "nuevo_reporte")
+        if tipo_notif_id:
+            supabase.table("notificaciones").insert(
+                {
+                    "reporte_id": reporte_id,
+                    "asociacion_id": asociacion_id,
+                    "tipo_id": tipo_notif_id,
+                    "tipo": "nuevo_reporte",
+                }
+            ).execute()
+    except Exception as error:
+        print(f"[WARN] No se pudo crear la notificacion del reporte {reporte_id}: {error}")
+
+    try:
+        candidatos_iniciales = matching.obtener_candidatos(reporte_id)
+        if candidatos_iniciales.get("candidatos"):
+            candidatos_at = datetime.now(timezone.utc).isoformat()
+            supabase.table("reportes").update(
+                {"candidatos_presentados_at": candidatos_at}
+            ).eq("id", reporte_id).execute()
+            _registrar_historial(
+                reporte_id,
+                "candidatos_presentados",
+                (
+                    f"{len(candidatos_iniciales['candidatos'])} candidatos "
+                    "calculados al activar el reporte"
+                ),
+                {
+                    "candidatos": [
+                        candidato["voluntario_id"]
+                        for candidato in candidatos_iniciales["candidatos"]
+                    ]
+                },
+            )
+    except Exception as error:
+        print(f"[WARN] No se pudieron calcular candidatos al activar el reporte: {error}")
+
+    if condicion_mas_grave == "grave":
+        try:
+            asociacion_data = (
+                supabase.table("asociaciones")
+                .select("nombre, contacto_email")
+                .eq("id", asociacion_id)
+                .execute()
+            )
+            if asociacion_data.data:
+                from app.services.email_service import email_reporte_grave
+
+                email_reporte_grave(
+                    nombre_asociacion=asociacion_data.data[0]["nombre"],
+                    email=asociacion_data.data[0]["contacto_email"],
+                    municipio=municipio,
+                    tipo_animal=tipo_animal_mas_grave,
+                )
+        except Exception as error:
+            print(f"[WARN] No se pudo enviar email de reporte grave: {error}")
+
+    return {
+        "estado": "asignado",
+        "asociacion": asociacion,
+    }
