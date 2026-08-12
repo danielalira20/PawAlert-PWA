@@ -1,9 +1,18 @@
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import httpx
+import pytest
 
 from app.models.urgency import ExternalSignalErrorCode, ExternalSignalStatus
 from app.services import weather_service
+
+
+@pytest.fixture(autouse=True)
+def _clear_weather_cache():
+    weather_service._cache.clear()
+    yield
+    weather_service._cache.clear()
 
 
 def test_clasifica_temperatura_normal_como_cero():
@@ -53,7 +62,7 @@ def _payload_normal():
     return {
         "main": {"temp": 24},
         "weather": [{"id": 800}],
-        "dt": 1700000000,
+        "dt": int(datetime.now(timezone.utc).timestamp()),
     }
 
 
@@ -149,3 +158,62 @@ def test_fetch_nunca_devuelve_score_cero_ante_fallo_tecnico():
         resultado = weather_service._fetch_from_provider(19.04, -98.20)
 
     assert resultado.score is None
+
+
+def test_redondea_coordenadas_a_dos_decimales_para_la_llave_de_cache():
+    assert weather_service._cache_key(19.0421, -98.2019) == (19.04, -98.20)
+    assert weather_service._cache_key(19.0449, -98.2051) == (19.04, -98.21)
+
+
+def test_get_weather_primera_llamada_consulta_al_proveedor_y_cachea():
+    with (
+        patch.object(weather_service.settings, "openweather_api_key", "clave-test"),
+        patch.object(
+            weather_service.httpx, "get", return_value=_mock_response(200, _payload_normal())
+        ) as mock_get,
+    ):
+        resultado = weather_service.get_weather(19.04, -98.20)
+
+    assert resultado.status == ExternalSignalStatus.complete
+    assert mock_get.call_count == 1
+    assert weather_service._cache[(19.04, -98.20)].status == ExternalSignalStatus.complete
+
+
+def test_get_weather_reutiliza_cache_valido_sin_llamar_al_proveedor():
+    with (
+        patch.object(weather_service.settings, "openweather_api_key", "clave-test"),
+        patch.object(
+            weather_service.httpx, "get", return_value=_mock_response(200, _payload_normal())
+        ) as mock_get,
+    ):
+        primera = weather_service.get_weather(19.04, -98.20)
+        segunda = weather_service.get_weather(19.041, -98.199)
+
+    assert mock_get.call_count == 1
+    assert segunda.status == ExternalSignalStatus.cached
+    assert segunda.score == primera.score
+    assert segunda.temperature_c == primera.temperature_c
+
+
+def test_get_weather_no_reutiliza_cache_vencido():
+    vencido = weather_service.WeatherResult(
+        score=0,
+        status=ExternalSignalStatus.complete,
+        temperature_c=24,
+        precipitation_mm_h=0,
+        condition_code=800,
+        observed_at=datetime.now(timezone.utc) - timedelta(minutes=16),
+        evaluated_at=datetime.now(timezone.utc) - timedelta(minutes=16),
+    )
+    weather_service._cache[(19.04, -98.20)] = vencido
+
+    with (
+        patch.object(weather_service.settings, "openweather_api_key", "clave-test"),
+        patch.object(
+            weather_service.httpx, "get", return_value=_mock_response(200, _payload_normal())
+        ) as mock_get,
+    ):
+        resultado = weather_service.get_weather(19.04, -98.20)
+
+    assert mock_get.call_count == 1
+    assert resultado.status == ExternalSignalStatus.complete

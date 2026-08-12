@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import httpx
 
@@ -12,6 +12,10 @@ from app.models.urgency import (
 OPENWEATHER_URL = "https://api.openweathermap.org/data/2.5/weather"
 _REQUEST_TIMEOUT_SECONDS = 5.0
 _MAX_ATTEMPTS = 2  # 1 intento + 1 reintento
+_CACHE_TTL = timedelta(minutes=15)
+
+# Coordenadas redondeadas a 2 decimales -> última observación completa.
+_cache: dict[tuple[float, float], WeatherResult] = {}
 
 # Grupos de condition_code de OpenWeather:
 # https://openweathermap.org/weather-conditions
@@ -127,3 +131,36 @@ def _fetch_from_provider(latitude: float, longitude: float) -> WeatherResult:
         last_error = _error_code_for_status(response.status_code)
 
     return _unavailable(last_error, evaluated_at)
+
+
+def _cache_key(latitude: float, longitude: float) -> tuple[float, float]:
+    return (round(latitude, 2), round(longitude, 2))
+
+
+def _store_in_cache(key: tuple[float, float], result: WeatherResult) -> None:
+    if result.status == ExternalSignalStatus.complete:
+        _cache[key] = result
+
+
+def _get_fresh_cache(key: tuple[float, float], now: datetime) -> WeatherResult | None:
+    cached = _cache.get(key)
+    if cached is None or cached.observed_at is None:
+        return None
+    if now - cached.observed_at <= _CACHE_TTL:
+        return cached
+    return None
+
+
+def get_weather(latitude: float, longitude: float) -> WeatherResult:
+    now = datetime.now(timezone.utc)
+    key = _cache_key(latitude, longitude)
+
+    fresh = _get_fresh_cache(key, now)
+    if fresh is not None:
+        return fresh.model_copy(
+            update={"status": ExternalSignalStatus.cached, "evaluated_at": now}
+        )
+
+    result = _fetch_from_provider(latitude, longitude)
+    _store_in_cache(key, result)
+    return result
