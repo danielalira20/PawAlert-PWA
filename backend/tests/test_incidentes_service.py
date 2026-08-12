@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -9,6 +10,23 @@ from app.services.incidentes_service import (
     IncidenteNoEncontradoError,
     IncidenteEnEstadoInvalidoError,
 )
+
+
+def test_migracion_confirmacion_incidente_no_cruza_tipos_de_fila():
+    """Regresión del error PostgreSQL 22P02: ajustar_trust_score_atomico
+    retorna trust_score, no trust_score_movimientos. La confirmación solo
+    necesita ejecutar la función y después consulta el movimiento por regla.
+    """
+    migracion = (
+        Path(__file__).resolve().parents[1]
+        / "migrations"
+        / "0057_corregir_confirmacion_incidente.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "PERFORM public.ajustar_trust_score_atomico(" in migracion
+    assert "v_existente record;" in migracion
+    assert "v_movimiento public.trust_score_movimientos%ROWTYPE" not in migracion
+    assert "SELECT * INTO v_movimiento FROM public.ajustar_trust_score_atomico" not in migracion
 
 
 # ─── Helpers ────────────────────────────────────────────────────────────
