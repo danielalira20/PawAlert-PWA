@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.5-flash-lite"
     gemini_file_timeout_seconds: int = 180
+    openweather_api_key: str = ""
 
     class Config:
         env_file = ".env"
