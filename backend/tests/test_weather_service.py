@@ -252,6 +252,69 @@ def test_get_weather_sin_cache_util_devuelve_unavailable():
     assert resultado.score is None
 
 
+def test_get_weather_timeout_con_cache_reciente_no_llama_al_proveedor():
+    reciente = weather_service.WeatherResult(
+        score=0,
+        status=ExternalSignalStatus.complete,
+        temperature_c=24,
+        precipitation_mm_h=0,
+        condition_code=800,
+        observed_at=datetime.now(timezone.utc) - timedelta(minutes=5),
+        evaluated_at=datetime.now(timezone.utc) - timedelta(minutes=5),
+    )
+    weather_service._cache[(19.04, -98.20)] = reciente
+
+    with (
+        patch.object(weather_service.settings, "openweather_api_key", "clave-test"),
+        patch.object(
+            weather_service.httpx, "get", side_effect=httpx.TimeoutException("timeout")
+        ) as mock_get,
+    ):
+        resultado = weather_service.get_weather(19.04, -98.20)
+
+    assert mock_get.call_count == 0
+    assert resultado.status == ExternalSignalStatus.cached
+
+
+def test_get_weather_timeout_con_cache_obsoleta_util():
+    obsoleta_pero_util = weather_service.WeatherResult(
+        score=100,
+        status=ExternalSignalStatus.complete,
+        temperature_c=37,
+        precipitation_mm_h=0,
+        condition_code=800,
+        observed_at=datetime.now(timezone.utc) - timedelta(minutes=28),
+        evaluated_at=datetime.now(timezone.utc) - timedelta(minutes=28),
+    )
+    weather_service._cache[(19.04, -98.20)] = obsoleta_pero_util
+
+    with (
+        patch.object(weather_service.settings, "openweather_api_key", "clave-test"),
+        patch.object(
+            weather_service.httpx, "get", side_effect=httpx.TimeoutException("timeout")
+        ) as mock_get,
+    ):
+        resultado = weather_service.get_weather(19.04, -98.20)
+
+    assert mock_get.call_count == 2  # 1 intento + 1 reintento
+    assert resultado.status == ExternalSignalStatus.stale_cache
+    assert resultado.score == 100
+
+
+def test_get_weather_timeout_sin_cache_devuelve_unavailable():
+    with (
+        patch.object(weather_service.settings, "openweather_api_key", "clave-test"),
+        patch.object(
+            weather_service.httpx, "get", side_effect=httpx.TimeoutException("timeout")
+        ),
+    ):
+        resultado = weather_service.get_weather(19.04, -98.20)
+
+    assert resultado.status == ExternalSignalStatus.unavailable
+    assert resultado.error_code == ExternalSignalErrorCode.timeout
+    assert resultado.score is None
+
+
 def test_get_weather_no_usa_cache_mas_vieja_de_30_minutos():
     demasiado_vieja = weather_service.WeatherResult(
         score=0,
