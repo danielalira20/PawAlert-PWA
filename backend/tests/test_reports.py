@@ -72,7 +72,20 @@ def _config_catalogos_basica():
     }
 
 
-def _crear_reporte_con_fotos(supabase, fotos, fotos_animal_index, *, latitud=None, longitud=None):
+def _crear_reporte_con_fotos(
+    supabase,
+    fotos,
+    fotos_animal_index,
+    *,
+    latitud=None,
+    longitud=None,
+    activacion_side_effect=None,
+):
+    activacion_config = (
+        {"side_effect": activacion_side_effect}
+        if activacion_side_effect
+        else {"return_value": {"estado": "sin_cobertura", "asociacion": None}}
+    )
     with (
         patch.object(report_service, "supabase", supabase),
         # crear_reporte usa supabase_admin (cliente aparte de `supabase`)
@@ -83,7 +96,10 @@ def _crear_reporte_con_fotos(supabase, fotos, fotos_animal_index, *, latitud=Non
         # reputacion_service, preexistente en este archivo).
         patch.object(report_service, "supabase_admin", MagicMock()),
         patch.object(report_service, "obtener_contactos_emergencia", return_value=[]),
-        patch.object(report_service, "asignar_asociacion", return_value=None),
+        patch(
+            "app.services.report_activation_service.activar_reporte",
+            **activacion_config,
+        ),
         patch(
             "app.services.report_moderation_service.calcular_phash",
             return_value="0" * 16,
@@ -121,6 +137,49 @@ def _procesada(*, exif_latitud=None, exif_longitud=None) -> ImagenEvidenciaProce
         exif_longitud=exif_longitud,
         exif_captured_at=None,
     )
+
+
+def test_crear_reporte_permanece_procesando_hasta_terminar_fotos(make_query):
+    supabase, tablas = _tablas_mock(make_query, _config_catalogos_basica())
+    fotos = [FakeUploadFile()]
+
+    def activar_despues_de_evidencia(**_):
+        reporte_insertado = tablas["reportes"].insert.call_args.args[0]
+        assert reporte_insertado["estado_reporte"] == "pendiente"
+        assert reporte_insertado["estado_cobertura"] is None
+        assert reporte_insertado["asociacion_asignada_id"] is None
+        assert reporte_insertado["estado_validacion_reporte"] == "procesando"
+        assert tablas["animal_fotos"].insert.called
+        return {"estado": "sin_cobertura", "asociacion": None}
+
+    with (
+        patch(
+            "app.services.report_photo_vision_service.verificar_foto_animal",
+            return_value={
+                "estado": "completado",
+                "es_animal_real": True,
+                "categoria_rechazo": None,
+                "confianza": 0.9,
+                "condicion_estimada": "estable",
+                "modelo": "gemini-3.5-flash-lite",
+            },
+        ),
+        patch.object(
+            report_service,
+            "subir_bytes",
+            new=AsyncMock(
+                return_value=(
+                    "https://x.supabase.co/storage/v1/object/public/bucket/foto.jpg"
+                )
+            ),
+        ),
+    ):
+        _crear_reporte_con_fotos(
+            supabase,
+            fotos,
+            [0],
+            activacion_side_effect=activar_despues_de_evidencia,
+        )
 
 
 def test_crear_reporte_rechaza_foto_y_limpia_storage_de_fotos_previas(make_query):

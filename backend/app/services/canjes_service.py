@@ -190,7 +190,7 @@ def reembolsar_canje(canje_id: str, motivo: str, admin_id: str) -> dict:
         raise HTTPException(status_code=404, detail="Canje no encontrado")
         
     canje = canje_res.data[0]
-    if canje["estado"] not in ["confirmado", "cancelado"]:
+    if canje["estado"] not in ["emitido", "confirmado", "cancelado"]:
         raise HTTPException(status_code=400, detail=f"No se puede reembolsar un canje en estado {canje['estado']}")
         
     actualizado = supabase.table("canjes_recompensa").update({
@@ -204,6 +204,15 @@ def reembolsar_canje(canje_id: str, motivo: str, admin_id: str) -> dict:
         "estado": "reembolsado",
         "actualizado_at": datetime.now(timezone.utc).isoformat()
     }).eq("canje_id", canje_id).execute()
+    
+    # Si estaba emitido, significa que el inventario seguía reservado pero no entregado, hay que devolverlo
+    if canje["estado"] == "emitido":
+        recompensa = supabase.table("recompensas").select("unidades_disponibles, estado").eq("id", canje["recompensa_id"]).execute().data[0]
+        nuevo_estado = "activa" if recompensa["estado"] == "agotada" else recompensa["estado"]
+        supabase.table("recompensas").update({
+            "unidades_disponibles": recompensa["unidades_disponibles"] + 1,
+            "estado": nuevo_estado
+        }).eq("id", canje["recompensa_id"]).execute()
     
     # Devolver puntos
     usuario = supabase.table("usuarios").select("roles(nombre)").eq("id", canje["beneficiario_id"]).execute()
@@ -220,11 +229,64 @@ def reembolsar_canje(canje_id: str, motivo: str, admin_id: str) -> dict:
     
     return canje_actualizado
 
+def _expirar_canjes_del_usuario(usuario_id: str):
+    """
+    Expiración reactiva: antes de devolver la lista de canjes de un usuario,
+    verifica si alguno de sus canjes 'emitido' ya pasó su fecha_expiracion.
+    Si encuentra alguno, los expira al instante (devuelve puntos + restaura inventario).
+    Esto garantiza que el usuario siempre ve el estado real, sin depender de que
+    el cron de limpieza haya corrido después del último deploy.
+    """
+    ahora = datetime.now(timezone.utc).isoformat()
+    canjes_vencidos = supabase.table("canjes_recompensa").select("*").eq(
+        "beneficiario_id", usuario_id
+    ).eq("estado", "emitido").lt("fecha_expiracion", ahora).execute()
+
+    for canje in (canjes_vencidos.data or []):
+        try:
+            # Restaurar unidad de inventario
+            recompensa = supabase.table("recompensas").select(
+                "unidades_disponibles, estado"
+            ).eq("id", canje["recompensa_id"]).execute().data[0]
+            nuevo_estado = "activa" if recompensa["estado"] == "agotada" else recompensa["estado"]
+            supabase.table("recompensas").update({
+                "unidades_disponibles": recompensa["unidades_disponibles"] + 1,
+                "estado": nuevo_estado
+            }).eq("id", canje["recompensa_id"]).execute()
+
+            # Marcar canje como expirado
+            supabase.table("canjes_recompensa").update({
+                "estado": "expirado"
+            }).eq("id", canje["id"]).execute()
+
+            # Devolver puntos al usuario
+            usuario = supabase.table("usuarios").select("roles(nombre)").eq(
+                "id", canje["beneficiario_id"]
+            ).execute()
+            rol = (usuario.data[0].get("roles") or {}).get("nombre") if usuario.data else None
+            devolver_puntos(
+                usuario_id=canje["beneficiario_id"],
+                rol=rol,
+                regla="canje_recompensa_expirado",
+                tipo_origen="canje",
+                evento_origen_id=canje["id"],
+                puntos=canje["costo_snapshot"]
+            )
+            print(f"[EXPIRACIÓN REACTIVA] Canje {canje['id']} expirado al consultar mis-canjes.")
+        except Exception as e:
+            print(f"[WARN] Expiración reactiva falló para canje {canje['id']}: {e}")
+
+
 def obtener_mis_canjes(usuario_id: str) -> list[dict]:
+    # Primero: expira de forma reactiva cualquier canje vencido del usuario
+    _expirar_canjes_del_usuario(usuario_id)
+    
+    # Luego: devuelve la lista ya actualizada
     resultado = supabase.table("canjes_recompensa").select(
         "*, recompensas(nombre, nivel, sucursal_lugar, propietario_id)"
     ).eq("beneficiario_id", usuario_id).order("emitido_at", desc=True).execute()
     return resultado.data or []
+
 
 def reportar_problema_canje(canje_id: str, usuario_id: str, motivo: str) -> dict:
     canje_res = supabase.table("canjes_recompensa").select("beneficiario_id").eq("id", canje_id).execute()

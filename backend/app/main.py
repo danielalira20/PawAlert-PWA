@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -52,3 +53,22 @@ def root():
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+async def expiracion_en_segundo_plano():
+    from app.services.canjes_service import expirar_canjes_vencidos
+    while True:
+        try:
+            # Ejecutamos la función sincrónica en un hilo para no pausar el servidor
+            total = await asyncio.to_thread(expirar_canjes_vencidos)
+            if total > 0:
+                print(f"[CRON INTERNO] Se expiraron {total} canjes vencidos.")
+        except Exception as e:
+            print(f"[CRON INTERNO ERROR] Error al expirar canjes: {e}")
+        
+        # Espera 1 hora (3600 segundos) antes de volver a revisar
+        await asyncio.sleep(3600)
+
+@app.on_event("startup")
+async def iniciar_tareas_fondo():
+    print("[SISTEMA] Iniciando Cron interno automático de expiración de canjes...")
+    asyncio.create_task(expiracion_en_segundo_plano())

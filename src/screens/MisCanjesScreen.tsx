@@ -34,7 +34,7 @@ export interface Canje {
 }
 
 export function MisCanjesScreen({ onClose }: { onClose: () => void }) {
-  const { token } = useAuth();
+  const { token, user, refreshUser } = useAuth();
   const { showToast, toast, translateY } = useToast();
   const [canjes, setCanjes] = useState<Canje[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,6 +51,9 @@ export function MisCanjesScreen({ onClose }: { onClose: () => void }) {
         headers: { Authorization: `Bearer ${token}` }
       });
       setCanjes(res.data);
+      if (refreshUser) {
+        await refreshUser();
+      }
     } catch (error) {
       console.error('Error al cargar canjes:', error);
     } finally {
