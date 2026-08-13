@@ -3,7 +3,7 @@ from fastapi import UploadFile, HTTPException
 from app.db.supabase import supabase, supabase_admin
 from app.services.storage_service import subir_bytes, eliminar_por_url
 from app.services.assignment_service import obtener_contactos_emergencia
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from app.models.report import AnimalInput
 from app.utils.animal_shaping import shape_animal_embed, shape_animal_response, CONDICION_SEVERIDAD
 import json
@@ -68,77 +68,60 @@ def _clasificar_escenario(animal_existente: dict, tipo_animal_ids_nuevo: list[st
     return 2 if existente_es_grupo else 1
 
 
-def verificar_duplicados(municipio: str | None, colonia: str | None, especies_nuevo: list[str], cantidad_nueva: int) -> list:
-    if not municipio:
-        return []
+def _reconstruir_reporte_existente(
+    reporte_id: str, tipo_animal_ids_nuevo: list[str], cantidad_nueva: int
+) -> dict | None:
+    """Trae el reporte candidato a duplicado (ya localizado por PostGIS en
+    duplicate_service.find_geographic_duplicates, vía distancia/tiempo/
+    especie) con el mismo embed que armaba verificar_duplicados, para
+    reconstruir reporte_existente sin cambiar el shape que ya consume
+    ReportFormScreen.tsx. Regresa None si el candidato no clasifica en
+    ningún escenario (ver _clasificar_escenario) — p. ej. la cantidad
+    nueva excede el margen del caso existente."""
+    resultado = supabase.table("reportes").select(
+        "id, municipio, colonia, created_at, "
+        "animal(id, orden, tipo_animal_id, cantidad, es_grupo, tipo_animal_catalogo(clave), condicion_catalogo(clave))"
+    ).eq("id", reporte_id).execute()
 
-    hace_dos_horas = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+    if not resultado.data:
+        return None
 
-    tipo_animal_ids_nuevo = [
-        tid for tid in (obtener_id_catalogo("tipo_animal_catalogo", e) for e in especies_nuevo) if tid
+    d = resultado.data[0]
+    animales_existente, animal_legado = shape_animal_embed(d.get("animal"))
+    d["animal"] = animal_legado
+    d["animales"] = animales_existente
+
+    escenario = _clasificar_escenario(d, tipo_animal_ids_nuevo, cantidad_nueva)
+    if escenario is None:
+        return None
+    d["escenario"] = escenario
+
+    d["foto_url"] = None
+    if animal_legado and animal_legado.get("id"):
+        fotos_result = supabase.table("animal_fotos").select(
+            "foto_url, orden"
+        ).eq("animal_id", animal_legado["id"]).order("orden").limit(1).execute()
+        d["foto_url"] = fotos_result.data[0]["foto_url"] if fotos_result.data else None
+
+    animal_ids = [a["id"] for a in d["animales"] if a.get("id")]
+    fotos_por_animal: dict[str, str] = {}
+    if animal_ids:
+        fotos_result = supabase.table("animal_fotos").select(
+            "animal_id, foto_url, orden"
+        ).in_("animal_id", animal_ids).order("orden").execute()
+        for f in (fotos_result.data or []):
+            fotos_por_animal.setdefault(f["animal_id"], f["foto_url"])
+    d["animales_resumen"] = [
+        {
+            "tipo_animal": (a.get("tipo_animal_catalogo") or {}).get("clave"),
+            "condicion": (a.get("condicion_catalogo") or {}).get("clave"),
+            "cantidad": a.get("cantidad"),
+            "foto_url": fotos_por_animal.get(a.get("id")),
+        }
+        for a in d["animales"]
     ]
 
-    query = supabase.table("reportes").select(
-        "id, estado_reporte, municipio, colonia, created_at, "
-        "animal(id, orden, tipo_animal_id, cantidad, es_grupo, tipo_animal_catalogo(clave), condicion_catalogo(clave))"
-    ).neq("estado_reporte", "cerrado").gte("created_at", hace_dos_horas).eq("municipio", municipio)
-
-    if colonia:
-        query = query.eq("colonia", colonia)
-
-    resultado = query.execute()
-    duplicados = resultado.data if resultado.data else []
-
-    for d in duplicados:
-        animales_existente, animal_legado = shape_animal_embed(d.get("animal"))
-        d["animal"] = animal_legado
-        d["animales"] = animales_existente
-
-    if tipo_animal_ids_nuevo:
-        # Red amplia: cualquier animal del caso existente comparte especie con
-        # CUALQUIERA de las especies nuevas — el escenario exacto se decide
-        # después, con el subconjunto completo.
-        duplicados = [
-            d for d in duplicados
-            if any(a.get("tipo_animal_id") in tipo_animal_ids_nuevo for a in d.get("animales", []))
-        ]
-
-    duplicados_clasificados = []
-    for d in duplicados:
-        escenario = _clasificar_escenario(d, tipo_animal_ids_nuevo, cantidad_nueva)
-        if escenario is not None:
-            d["escenario"] = escenario
-            duplicados_clasificados.append(d)
-    duplicados = duplicados_clasificados
-
-    for duplicado in duplicados:
-        animal = duplicado.get("animal")
-        duplicado["foto_url"] = None
-        if animal and animal.get("id"):
-            fotos_result = supabase.table("animal_fotos").select(
-                "foto_url, orden"
-            ).eq("animal_id", animal["id"]).order("orden").limit(1).execute()
-            duplicado["foto_url"] = fotos_result.data[0]["foto_url"] if fotos_result.data else None
-
-        animal_ids = [a["id"] for a in duplicado["animales"] if a.get("id")]
-        fotos_por_animal: dict[str, str] = {}
-        if animal_ids:
-            fotos_result = supabase.table("animal_fotos").select(
-                "animal_id, foto_url, orden"
-            ).in_("animal_id", animal_ids).order("orden").execute()
-            for f in (fotos_result.data or []):
-                fotos_por_animal.setdefault(f["animal_id"], f["foto_url"])
-        duplicado["animales_resumen"] = [
-            {
-                "tipo_animal": (a.get("tipo_animal_catalogo") or {}).get("clave"),
-                "condicion": (a.get("condicion_catalogo") or {}).get("clave"),
-                "cantidad": a.get("cantidad"),
-                "foto_url": fotos_por_animal.get(a.get("id")),
-            }
-            for a in duplicado["animales"]
-        ]
-
-    return duplicados
+    return d
 
 async def crear_reporte(
     nombre: str | None,
@@ -171,11 +154,48 @@ async def crear_reporte(
     if es_duplicado_confirmado is None:
         especies_nuevo = list(dict.fromkeys(_condicion_str(a.tipo_animal) for a in animales))
         cantidad_nueva = sum(a.cantidad for a in animales)
-        posibles_duplicados = verificar_duplicados(municipio, colonia, especies_nuevo, cantidad_nueva)
 
-        if posibles_duplicados:
-            duplicado = posibles_duplicados[0]
+        # La detección geoespacial necesita coordenadas — un reporte
+        # enviado solo con municipio/colonia (sin GPS ni pin) no tiene con
+        # qué compararse por distancia, así que se omite el chequeo en vez
+        # de intentar construir una búsqueda inválida (DuplicateSearchInput
+        # exige latitude/longitude).
+        duplicado = None
+        total_duplicados = 0
+        if latitud is not None and longitud is not None:
+            from app.models.urgency import DuplicateSearchInput
+            from app.services.duplicate_service import find_geographic_duplicates
 
+            busqueda = DuplicateSearchInput(
+                latitude=latitud,
+                longitude=longitud,
+                created_at=datetime.now(timezone.utc),
+                species=especies_nuevo,
+                quantity=cantidad_nueva,
+            )
+            candidatos = find_geographic_duplicates(busqueda)
+            # OJO: cambio de semántica. Antes de reemplazar verificar_duplicados,
+            # total_duplicados contaba duplicados ya filtrados por texto
+            # (municipio/colonia) y clasificados por escenario. Ahora cuenta
+            # matches geográficos crudos de buscar_duplicados_geograficos
+            # (radio 150m / ventana 120min), sin pasar por _clasificar_escenario
+            # — solo el candidato más cercano se reconstruye y clasifica, los
+            # demás no. Hoy ningún consumidor (frontend ni tests) usa este
+            # campo, pero si algo llega a leerlo, ya no significa lo mismo.
+            total_duplicados = len(candidatos)
+
+            if candidatos:
+                tipo_animal_ids_nuevo = [
+                    tid for tid in (obtener_id_catalogo("tipo_animal_catalogo", e) for e in especies_nuevo) if tid
+                ]
+                # Solo se reconstruye el candidato más cercano (ya viene
+                # ordenado por distancia desde la función SQL) — si ese no
+                # clasifica en ningún escenario, no se recorren los demás.
+                duplicado = _reconstruir_reporte_existente(
+                    candidatos[0].existing_report_id, tipo_animal_ids_nuevo, cantidad_nueva
+                )
+
+        if duplicado is not None:
             return {
                 "posible_duplicado": True,
                 "escenario": duplicado["escenario"],
@@ -189,7 +209,7 @@ async def crear_reporte(
                     "foto_url": duplicado.get("foto_url"),
                     "animales": duplicado["animales_resumen"],
                 },
-                "total_duplicados": len(posibles_duplicados)
+                "total_duplicados": total_duplicados,
             }
 
     estado_id = obtener_id_catalogo("reporte_estados", "pendiente")

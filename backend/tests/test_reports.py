@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from app.api import reports
 from app.main import app
 from app.models.report import AnimalInput
+from app.models.urgency import DuplicateCandidate
 from app.services import report_service
 from app.services.report_service import _clasificar_escenario
 from app.services.image_evidence_service import ImagenEvidenciaInvalida, ImagenEvidenciaProcesada
@@ -790,7 +791,7 @@ def test_report_sin_ubicacion(animal_payload):
 
 
 def test_report_detecta_duplicado():
-    duplicado_mock = [{
+    duplicado_reconstruido = {
         "id": "abc-123",
         "municipio": "Puebla",
         "colonia": "Centro",
@@ -805,14 +806,25 @@ def test_report_detecta_duplicado():
         "animales_resumen": [
             {"tipo_animal": "perro", "condicion": "estable", "cantidad": 1, "foto_url": None},
         ],
-    }]
+    }
+    candidato = DuplicateCandidate(
+        existing_report_id="abc-123",
+        distance_m=80,
+        time_difference_minutes=10,
+        shared_species=["perro"],
+    )
 
-    with patch("app.services.report_service.verificar_duplicados", return_value=duplicado_mock):
+    with (
+        patch("app.services.duplicate_service.find_geographic_duplicates", return_value=[candidato]),
+        patch.object(report_service, "_reconstruir_reporte_existente", return_value=duplicado_reconstruido),
+    ):
         response = client.post("/reports", data={
             "nombre": "Juan",
             "apellido_paterno": "Pérez",
             "telefono": "5512345678",
             "municipio": "Puebla",
+            "latitud": "19.04",
+            "longitud": "-98.20",
             "animales": json.dumps([
                 {"condicion": "estable", "tipo_animal": "perro", "tamanio": "mediano"},
             ]),
@@ -823,11 +835,11 @@ def test_report_detecta_duplicado():
     assert data.get("posible_duplicado") is True
     assert data.get("escenario") == 1
     assert data["reporte_existente"]["id"] == "abc-123"
-    assert data["reporte_existente"]["animales"] == duplicado_mock[0]["animales_resumen"]
+    assert data["reporte_existente"]["animales"] == duplicado_reconstruido["animales_resumen"]
 
 
 def test_report_detecta_duplicado_escenario_2_grupo():
-    duplicado_mock = [{
+    duplicado_reconstruido = {
         "id": "abc-456",
         "municipio": "Puebla",
         "colonia": "Centro",
@@ -842,14 +854,25 @@ def test_report_detecta_duplicado_escenario_2_grupo():
         "animales_resumen": [
             {"tipo_animal": "gato", "condicion": "grave", "cantidad": 5, "foto_url": None},
         ],
-    }]
+    }
+    candidato = DuplicateCandidate(
+        existing_report_id="abc-456",
+        distance_m=30,
+        time_difference_minutes=20,
+        shared_species=["gato"],
+    )
 
-    with patch("app.services.report_service.verificar_duplicados", return_value=duplicado_mock):
+    with (
+        patch("app.services.duplicate_service.find_geographic_duplicates", return_value=[candidato]),
+        patch.object(report_service, "_reconstruir_reporte_existente", return_value=duplicado_reconstruido),
+    ):
         response = client.post("/reports", data={
             "nombre": "Juan",
             "apellido_paterno": "Pérez",
             "telefono": "5512345678",
             "municipio": "Puebla",
+            "latitud": "19.04",
+            "longitud": "-98.20",
             "animales": json.dumps([
                 {"condicion": "estable", "tipo_animal": "gato", "tamanio": "pequeno"},
             ]),
@@ -859,6 +882,39 @@ def test_report_detecta_duplicado_escenario_2_grupo():
     data = response.json()
     assert data.get("posible_duplicado") is True
     assert data.get("escenario") == 2
+
+
+def test_report_sin_coordenadas_omite_chequeo_de_duplicados_pero_no_revienta(make_query):
+    """Un reporte puede enviarse solo con municipio, sin GPS ni pin --
+    DuplicateSearchInput exige latitude/longitude, así que en vez de armar
+    una búsqueda inválida, crear_reporte omite el chequeo geoespacial por
+    completo cuando faltan coordenadas y continúa creando el reporte
+    normalmente (caso 'h' del ticket de Persona 3)."""
+    supabase, tablas = _tablas_mock(make_query, _config_catalogos_basica())
+
+    with (
+        patch.object(report_service, "supabase", supabase),
+        patch.object(report_service, "supabase_admin", MagicMock()),
+        patch.object(report_service, "obtener_contactos_emergencia", return_value=[]),
+        patch(
+            "app.services.report_activation_service.activar_reporte",
+            return_value={"estado": "sin_cobertura", "asociacion": None},
+        ),
+        patch(
+            "app.services.duplicate_service.find_geographic_duplicates",
+        ) as buscar_duplicados,
+    ):
+        resultado = asyncio.run(report_service.crear_reporte(
+            nombre="Juan", apellido_paterno="Pérez", apellido_materno=None,
+            telefono="5512345678", email=None, usuario_id=None,
+            animales=[AnimalInput(condicion="estable", tipo_animal="perro", tamanio="mediano")],
+            latitud=None, longitud=None, calle=None, colonia="Centro", municipio="Puebla",
+            estado_ubicacion=None, referencia=None,
+        ))
+
+    buscar_duplicados.assert_not_called()
+    assert "posible_duplicado" not in resultado
+    assert resultado["id"] == "reporte-test-1"
 
 
 def test_clasificar_escenario_1_coincidencia_simple():
@@ -882,24 +938,43 @@ def test_clasificar_escenario_none_por_cantidad_mayor_130_por_ciento():
 
 
 def test_crear_reporte_verifica_especies_unicas_y_cantidad_total():
-    duplicado = {
+    duplicado_reconstruido = {
         "id": "rep-existente", "municipio": "Puebla", "colonia": "Centro",
         "created_at": "2026-07-19T10:00:00+00:00", "escenario": 2,
         "animal": {}, "foto_url": None, "animales_resumen": [],
     }
+    candidato = DuplicateCandidate(
+        existing_report_id="rep-existente",
+        distance_m=10,
+        time_difference_minutes=5,
+        shared_species=["perro", "gato"],
+    )
     animales = [
         AnimalInput(condicion="estable", tipo_animal="perro", tamanio="mediano", cantidad=1),
         AnimalInput(condicion="grave", tipo_animal="gato", tamanio="pequeno", cantidad=3, es_grupo=True),
         AnimalInput(condicion="herido", tipo_animal="perro", tamanio="grande", cantidad=1),
     ]
 
-    with patch.object(report_service, "verificar_duplicados", return_value=[duplicado]) as verificar:
+    with (
+        patch(
+            "app.services.duplicate_service.find_geographic_duplicates",
+            return_value=[candidato],
+        ) as buscar,
+        patch.object(report_service, "_reconstruir_reporte_existente", return_value=duplicado_reconstruido),
+    ):
         resultado = asyncio.run(report_service.crear_reporte(
             nombre="Juan", apellido_paterno="Pérez", apellido_materno=None,
             telefono="5512345678", email=None, usuario_id=None, animales=animales,
-            latitud=None, longitud=None, calle=None, colonia="Centro", municipio="Puebla",
+            # Se agregan coordenadas: la búsqueda de duplicados ahora es
+            # geoespacial y DuplicateSearchInput exige latitude/longitude
+            # (antes esta prueba usaba latitud=None/longitud=None porque
+            # verificar_duplicados comparaba solo municipio/colonia como
+            # texto -- ver nota en el resumen final sobre este ajuste).
+            latitud=19.04, longitud=-98.20, calle=None, colonia="Centro", municipio="Puebla",
             estado_ubicacion=None, referencia=None,
         ))
 
-    verificar.assert_called_once_with("Puebla", "Centro", ["perro", "gato"], 5)
+    busqueda_usada = buscar.call_args.args[0]
+    assert busqueda_usada.species == ["perro", "gato"]
+    assert busqueda_usada.quantity == 5
     assert resultado["posible_duplicado"] is True
