@@ -38,13 +38,13 @@ def _clientes(make_query, *, asociacion: bool):
     return supabase, supabase_admin, tablas, admin_tablas, asociacion_data
 
 
-def _activar():
+def _activar(condicion_mas_grave="herido"):
     return report_activation_service.activar_reporte(
         reporte_id="reporte-1",
         latitud=19.04,
         longitud=-98.20,
         especies=["perro", "perro", "gato"],
-        condicion_mas_grave="herido",
+        condicion_mas_grave=condicion_mas_grave,
         tipo_animal_mas_grave="gato",
         municipio="Puebla",
     )
@@ -79,6 +79,7 @@ def test_activar_reporte_abre_cobertura_despues_de_validacion(
         19.04,
         -98.20,
         tipos_animales=["perro", "gato"],
+        es_critico=False,
     )
     actualizacion = tablas["reportes"].update.call_args_list[0].args[0]
     assert actualizacion["estado_validacion_reporte"] == "aprobado"
@@ -102,6 +103,32 @@ def test_activar_reporte_abre_cobertura_despues_de_validacion(
         "asociacion_asignada",
         "candidatos_presentados",
     ]
+
+
+def test_activar_reporte_informa_si_el_caso_es_critico(
+    make_query, _mock_initial_urgency
+):
+    supabase, supabase_admin, _, _, asociacion = _clientes(
+        make_query, asociacion=False
+    )
+
+    with (
+        patch.object(report_activation_service, "supabase", supabase),
+        patch.object(report_activation_service, "supabase_admin", supabase_admin),
+        patch.object(
+            report_activation_service,
+            "asignar_asociacion",
+            return_value=asociacion,
+        ) as asignar,
+    ):
+        _activar(condicion_mas_grave="grave")
+
+    asignar.assert_called_once_with(
+        19.04,
+        -98.20,
+        tipos_animales=["perro", "gato"],
+        es_critico=True,
+    )
 
 
 def test_fallo_interno_de_urgencia_no_rompe_activacion(

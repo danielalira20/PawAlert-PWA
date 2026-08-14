@@ -169,6 +169,7 @@ def activar_reporte(
             latitud,
             longitud,
             tipos_animales=list(dict.fromkeys(especies)),
+            es_critico=condicion_mas_grave == "grave",
         )
 
     asociacion_id = asociacion.get("id") if asociacion else None

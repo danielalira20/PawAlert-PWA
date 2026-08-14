@@ -1,13 +1,20 @@
-from app.db.supabase import supabase
+from app.db.supabase import supabase, supabase_admin
 
-def asignar_asociacion(latitud: float, longitud: float, excluir_ids: list[str] | None = None, tipos_animales: list[str] | None = None) -> dict | None:
-    resultado = supabase.rpc(
-        "encontrar_asociacion_cercana",
+def asignar_asociacion(
+    latitud: float,
+    longitud: float,
+    excluir_ids: list[str] | None = None,
+    tipos_animales: list[str] | None = None,
+    es_critico: bool = False,
+) -> dict | None:
+    resultado = supabase_admin.rpc(
+        "encontrar_asociacion_operativa",
         {
             "reporte_lat": latitud,
             "reporte_lng": longitud,
             "excluir_ids": excluir_ids or [],
-            "p_tipos_animales": tipos_animales
+            "p_tipos_animales": tipos_animales,
+            "p_es_critico": es_critico,
         }
     ).execute()
 

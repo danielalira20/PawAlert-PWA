@@ -1419,7 +1419,7 @@ async def rechazar_reporte(reporte_id: str, body: RechazarReporteRequest, author
     # Verificar que el reporte existe y pertenece a esta asociación
     reporte = supabase.table("reportes").select(
         "id, estado_reporte, asociacion_asignada_id, latitud, longitud, municipio, "
-        "animal(tipo_animal_catalogo(clave))"
+        "animal(tipo_animal_catalogo(clave), condicion_catalogo(clave))"
     ).eq("id", reporte_id).execute()
 
     if not reporte.data:
@@ -1516,6 +1516,7 @@ async def rechazar_reporte(reporte_id: str, body: RechazarReporteRequest, author
                 reporte["latitud"], reporte["longitud"],
                 excluir_ids=ids_rechazadas,
                 tipos_animales=especies_del_caso or None,
+                es_critico=condicion_mas_grave(animales_crudos) == "grave",
             )
             if candidata:
                 nueva_asociacion = candidata
