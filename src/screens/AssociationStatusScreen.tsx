@@ -6,7 +6,7 @@ import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { formatDistanceToNow, formatDistanceStrict } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { ActivityIndicator, Dimensions, Image, Linking, Modal, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Dimensions, Image, Linking, Modal, Platform, ScrollView, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Toast, useToast } from '../components/Toast';
 import { BusquedaNoLocalizadoPanel } from '../components/association-dashboard/BusquedaNoLocalizadoPanel';
@@ -233,6 +233,13 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
   const [timeoutGrave, setTimeoutGrave] = useState('10');
   const [timeoutHerido, setTimeoutHerido] = useState('30');
   const [timeoutEstable, setTimeoutEstable] = useState('60');
+  const [capacidadReportes, setCapacidadReportes] = useState('10');
+  const [capacidadCriticos, setCapacidadCriticos] = useState('3');
+  const [recepcionReportesActiva, setRecepcionReportesActiva] = useState(true);
+  const [recepcionReportes24h, setRecepcionReportes24h] = useState(true);
+  const [diasRecepcion, setDiasRecepcion] = useState<number[]>([1, 2, 3, 4, 5, 6, 7]);
+  const [horaInicioRecepcion, setHoraInicioRecepcion] = useState('00:00');
+  const [horaFinRecepcion, setHoraFinRecepcion] = useState('23:59');
   const [isSavingConfig, setIsSavingConfig] = useState(false);
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
 
@@ -426,6 +433,13 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
         setTimeoutGrave(String(res.data.timeout_grave || 10));
         setTimeoutHerido(String(res.data.timeout_herido || 30));
         setTimeoutEstable(String(res.data.timeout_estable || 60));
+        setCapacidadReportes(String(res.data.capacidad_reportes_simultaneos ?? 10));
+        setCapacidadCriticos(String(res.data.capacidad_reportes_criticos ?? 3));
+        setRecepcionReportesActiva(res.data.recepcion_reportes_activa ?? true);
+        setRecepcionReportes24h(res.data.recepcion_reportes_24h ?? true);
+        setDiasRecepcion(res.data.dias_recepcion || [1, 2, 3, 4, 5, 6, 7]);
+        setHoraInicioRecepcion(String(res.data.hora_inicio_recepcion || '00:00').slice(0, 5));
+        setHoraFinRecepcion(String(res.data.hora_fin_recepcion || '23:59').slice(0, 5));
       }
     } catch (error) {
       console.error(error);
@@ -438,10 +452,31 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
     const g = parseInt(timeoutGrave, 10);
     const h = parseInt(timeoutHerido, 10);
     const e = parseInt(timeoutEstable, 10);
+    const capacidad = parseInt(capacidadReportes, 10);
+    const criticos = parseInt(capacidadCriticos, 10);
 
     if (modoAsignacionConfig !== 'manual') {
       if (isNaN(g) || g < 1 || g > 240 || isNaN(h) || h < 1 || h > 240 || isNaN(e) || e < 1 || e > 240) {
         showToast({ type: 'warning', title: 'Valores inválidos', message: 'Los tiempos deben estar entre 1 y 240 minutos.' });
+        return;
+      }
+    }
+    if (isNaN(capacidad) || capacidad < 1 || capacidad > 100) {
+      showToast({ type: 'warning', title: 'Capacidad inválida', message: 'La capacidad total debe estar entre 1 y 100 casos.' });
+      return;
+    }
+    if (isNaN(criticos) || criticos < 0 || criticos > capacidad) {
+      showToast({ type: 'warning', title: 'Capacidad inválida', message: 'Los casos críticos no pueden superar la capacidad total.' });
+      return;
+    }
+    if (!recepcionReportes24h) {
+      const horaValida = /^([01]\d|2[0-3]):[0-5]\d$/;
+      if (!diasRecepcion.length) {
+        showToast({ type: 'warning', title: 'Horario incompleto', message: 'Selecciona al menos un día de recepción.' });
+        return;
+      }
+      if (!horaValida.test(horaInicioRecepcion) || !horaValida.test(horaFinRecepcion)) {
+        showToast({ type: 'warning', title: 'Horario inválido', message: 'Las horas deben usar el formato HH:MM.' });
         return;
       }
     }
@@ -452,7 +487,14 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
         modo_asignacion: modoAsignacionConfig,
         timeout_grave: g,
         timeout_herido: h,
-        timeout_estable: e
+        timeout_estable: e,
+        capacidad_reportes_simultaneos: capacidad,
+        capacidad_reportes_criticos: criticos,
+        recepcion_reportes_activa: recepcionReportesActiva,
+        recepcion_reportes_24h: recepcionReportes24h,
+        dias_recepcion: diasRecepcion,
+        hora_inicio_recepcion: horaInicioRecepcion,
+        hora_fin_recepcion: horaFinRecepcion,
       }, { headers: { Authorization: `Bearer ${token}` } });
       showToast({ type: 'success', title: '¡Listo!', message: 'Configuración guardada.' });
     } catch (error: any) {
@@ -1794,6 +1836,78 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                         </View>
                       </View>
                     )}
+
+                    <View style={{ borderTopWidth: 1, borderTopColor: '#E4D5C5', paddingTop: 22, marginTop: 2, marginBottom: 22 }}>
+                      <Text style={{ fontSize: 18, fontWeight: '800', color: COLORS.textDark, marginBottom: 16 }}>Recepción de reportes</Text>
+
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+                        <Text style={{ flex: 1, fontSize: 14, fontWeight: '700', color: COLORS.textDark }}>Disponible para recibir casos</Text>
+                        <Switch
+                          value={recepcionReportesActiva}
+                          onValueChange={setRecepcionReportesActiva}
+                          trackColor={{ false: '#D7CEC5', true: COLORS.accent }}
+                          thumbColor={COLORS.white}
+                        />
+                      </View>
+
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 18 }}>
+                        <View style={{ flexGrow: 1, flexBasis: 180 }}>
+                          <Input label="Máximo de casos activos" value={capacidadReportes} onChangeText={setCapacidadReportes} keyboardType="numeric" />
+                        </View>
+                        <View style={{ flexGrow: 1, flexBasis: 180 }}>
+                          <Input label="Máximo de casos críticos" value={capacidadCriticos} onChangeText={setCapacidadCriticos} keyboardType="numeric" />
+                        </View>
+                      </View>
+
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: recepcionReportes24h ? 0 : 18 }}>
+                        <Text style={{ flex: 1, fontSize: 14, fontWeight: '700', color: COLORS.textDark }}>Recepción las 24 horas</Text>
+                        <Switch
+                          value={recepcionReportes24h}
+                          onValueChange={setRecepcionReportes24h}
+                          trackColor={{ false: '#D7CEC5', true: COLORS.accent }}
+                          thumbColor={COLORS.white}
+                        />
+                      </View>
+
+                      {!recepcionReportes24h && (
+                        <View>
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginBottom: 10 }}>Días de recepción</Text>
+                          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+                            {[
+                              [1, 'L'], [2, 'M'], [3, 'X'], [4, 'J'], [5, 'V'], [6, 'S'], [7, 'D'],
+                            ].map(([dia, etiqueta]) => {
+                              const activo = diasRecepcion.includes(dia as number);
+                              return (
+                                <TouchableOpacity
+                                  key={dia}
+                                  accessibilityRole="checkbox"
+                                  accessibilityState={{ checked: activo }}
+                                  onPress={() => setDiasRecepcion((actuales) => activo
+                                    ? actuales.filter((item) => item !== dia)
+                                    : [...actuales, dia as number].sort())}
+                                  style={{
+                                    width: 40, height: 40, borderRadius: 20,
+                                    alignItems: 'center', justifyContent: 'center',
+                                    backgroundColor: activo ? COLORS.accent : COLORS.white,
+                                    borderWidth: 1, borderColor: activo ? COLORS.accent : '#D7CEC5',
+                                  }}
+                                >
+                                  <Text style={{ color: activo ? COLORS.white : COLORS.textDark, fontWeight: '800' }}>{etiqueta}</Text>
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </View>
+                          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+                            <View style={{ flexGrow: 1, flexBasis: 150 }}>
+                              <Input label="Hora de inicio" value={horaInicioRecepcion} onChangeText={setHoraInicioRecepcion} placeholder="08:00" />
+                            </View>
+                            <View style={{ flexGrow: 1, flexBasis: 150 }}>
+                              <Input label="Hora de cierre" value={horaFinRecepcion} onChangeText={setHoraFinRecepcion} placeholder="20:00" />
+                            </View>
+                          </View>
+                        </View>
+                      )}
+                    </View>
 
                     <Button label="Guardar cambios" onPress={guardarConfiguracionAsignacion} isLoading={isSavingConfig} />
                   </>
