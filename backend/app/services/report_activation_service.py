@@ -275,6 +275,16 @@ def activar_reporte(
             )
         raise
 
+    try:
+        from app.services.urgency_service import evaluate_report_urgency
+
+        evaluate_report_urgency(reporte_id)
+    except Exception as error:
+        print(
+            f"[WARN] No se pudo calcular la urgencia inicial del reporte "
+            f"{reporte_id}: {error}"
+        )
+
     _registrar_historial(
         reporte_id,
         "validacion_reporte_aprobada",

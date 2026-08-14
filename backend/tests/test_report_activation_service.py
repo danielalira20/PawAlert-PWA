@@ -1,6 +1,16 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from app.services import report_activation_service
+
+
+@pytest.fixture(autouse=True)
+def _mock_initial_urgency():
+    with patch(
+        "app.services.urgency_service.evaluate_report_urgency"
+    ) as evaluate:
+        yield evaluate
 
 
 def _clientes(make_query, *, asociacion: bool):
@@ -40,7 +50,9 @@ def _activar():
     )
 
 
-def test_activar_reporte_abre_cobertura_despues_de_validacion(make_query):
+def test_activar_reporte_abre_cobertura_despues_de_validacion(
+    make_query, _mock_initial_urgency
+):
     supabase, supabase_admin, tablas, _, asociacion = _clientes(
         make_query, asociacion=True
     )
@@ -79,6 +91,7 @@ def test_activar_reporte_abre_cobertura_despues_de_validacion(make_query):
     assert tablas["reporte_asignaciones"].insert.called
     assert tablas["notificaciones"].insert.called
     obtener_candidatos.assert_called_once_with("reporte-1")
+    _mock_initial_urgency.assert_called_once_with("reporte-1")
 
     eventos = [
         llamada.args[0]["tipo_evento"]
@@ -89,6 +102,34 @@ def test_activar_reporte_abre_cobertura_despues_de_validacion(make_query):
         "asociacion_asignada",
         "candidatos_presentados",
     ]
+
+
+def test_fallo_interno_de_urgencia_no_rompe_activacion(
+    make_query, _mock_initial_urgency
+):
+    supabase, supabase_admin, _, _, asociacion = _clientes(
+        make_query, asociacion=True
+    )
+    _mock_initial_urgency.side_effect = RuntimeError("fallo de persistencia")
+
+    with (
+        patch.object(report_activation_service, "supabase", supabase),
+        patch.object(report_activation_service, "supabase_admin", supabase_admin),
+        patch.object(
+            report_activation_service,
+            "asignar_asociacion",
+            return_value=asociacion,
+        ),
+        patch.object(
+            report_activation_service.matching,
+            "obtener_candidatos",
+            return_value={"candidatos": []},
+        ) as obtener_candidatos,
+    ):
+        resultado = _activar()
+
+    assert resultado["estado"] == "asignado"
+    obtener_candidatos.assert_called_once_with("reporte-1")
 
 
 def test_activar_reporte_sin_asociacion_crea_caso_administrativo(make_query):
