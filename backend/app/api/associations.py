@@ -924,6 +924,34 @@ class ConfigAsignacionUpdate(BaseModel):
     timeout_grave: int | None = None
     timeout_herido: int | None = None
     timeout_estable: int | None = None
+    capacidad_reportes_simultaneos: int | None = None
+    capacidad_reportes_criticos: int | None = None
+    recepcion_reportes_activa: bool | None = None
+    recepcion_reportes_24h: bool | None = None
+    dias_recepcion: list[int] | None = None
+    hora_inicio_recepcion: str | None = None
+    hora_fin_recepcion: str | None = None
+
+
+CAMPOS_CONFIG_ASIGNACION = (
+    "modo_asignacion, timeout_grave, timeout_herido, timeout_estable, "
+    "capacidad_reportes_simultaneos, capacidad_reportes_criticos, "
+    "recepcion_reportes_activa, recepcion_reportes_24h, dias_recepcion, "
+    "hora_inicio_recepcion, hora_fin_recepcion"
+)
+
+
+def _normalizar_hora_recepcion(valor: str, campo: str) -> str:
+    for formato in ("%H:%M", "%H:%M:%S"):
+        try:
+            datetime.strptime(valor, formato)
+            return valor[:5]
+        except ValueError:
+            continue
+    raise HTTPException(
+        status_code=422,
+        detail=f"{campo} debe usar el formato HH:MM",
+    )
 
 
 @router.get("/me/config-asignacion", status_code=200)
@@ -937,7 +965,7 @@ async def get_config_asignacion(authorization: str = Header(None)):
         raise HTTPException(status_code=404, detail="Este usuario no está vinculado a ninguna asociación")
 
     resultado = supabase.table("asociaciones").select(
-        "modo_asignacion, timeout_grave, timeout_herido, timeout_estable"
+        CAMPOS_CONFIG_ASIGNACION
     ).eq("id", usuario["asociacion_id"]).execute()
 
     if not resultado.data:
@@ -973,6 +1001,43 @@ async def patch_config_asignacion(body: ConfigAsignacionUpdate, authorization: s
     actualizacion = {k: v for k, v in body.model_dump().items() if v is not None}
     if not actualizacion:
         raise HTTPException(status_code=422, detail="No se enviaron campos para actualizar")
+
+    actual = supabase.table("asociaciones").select(
+        CAMPOS_CONFIG_ASIGNACION
+    ).eq("id", usuario["asociacion_id"]).execute()
+    if not actual.data:
+        raise HTTPException(status_code=404, detail="Asociación no encontrada")
+
+    combinada = {**actual.data[0], **actualizacion}
+    capacidad_total = combinada["capacidad_reportes_simultaneos"]
+    capacidad_critica = combinada["capacidad_reportes_criticos"]
+    if not (1 <= capacidad_total <= 100):
+        raise HTTPException(
+            status_code=422,
+            detail="capacidad_reportes_simultaneos debe estar entre 1 y 100",
+        )
+    if not (0 <= capacidad_critica <= capacidad_total):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "capacidad_reportes_criticos debe estar entre 0 y la "
+                "capacidad total"
+            ),
+        )
+
+    dias = combinada["dias_recepcion"]
+    if not dias or len(dias) != len(set(dias)) or any(dia not in range(1, 8) for dia in dias):
+        raise HTTPException(
+            status_code=422,
+            detail="dias_recepcion debe contener días ISO únicos entre 1 y 7",
+        )
+    if body.dias_recepcion is not None:
+        actualizacion["dias_recepcion"] = sorted(dias)
+
+    for campo in ("hora_inicio_recepcion", "hora_fin_recepcion"):
+        hora_normalizada = _normalizar_hora_recepcion(str(combinada[campo]), campo)
+        if campo in actualizacion:
+            actualizacion[campo] = hora_normalizada
 
     resultado = supabase.table("asociaciones").update(actualizacion).eq(
         "id", usuario["asociacion_id"]
