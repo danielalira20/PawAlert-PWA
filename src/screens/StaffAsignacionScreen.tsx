@@ -16,7 +16,7 @@ import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
 import { useWindowDimensions } from 'react-native';
 import { PostulacionesPanel } from '../components/association-dashboard/PostulacionesPanel';
-import { Animal, getAnimales, totalAnimales, animalMasGrave } from '../types/reporte';
+import { Animal, getAnimales, totalAnimales, animalMasGrave, ReportUrgencySnapshot } from '../types/reporte';
 import { AnimalCarousel } from '../components/common/AnimalCarousel';
 
 // ─── PALETA DE COLORES PETZEN (misma que AssociationStatusScreen, sin
@@ -54,7 +54,7 @@ interface AsociacionInfo {
   estado: 'pendiente' | 'rechazada' | 'aprobada';
 }
 
-interface ReporteAsignado {
+interface ReporteAsignado extends ReportUrgencySnapshot {
   asignacion_id: string;
   reporte_id: string;
   estado_asignacion_clave: string;

@@ -14,6 +14,16 @@ export interface Animal {
   fotos?: string[]; 
 }
 
+export type UrgencyLevel = 'verde' | 'amarillo' | 'rojo';
+
+export interface ReportUrgencySnapshot {
+  urgency_score: number | null;
+  urgency_nivel: UrgencyLevel | null;
+  urgency_calculado_at: string | null;
+  urgency_proximo_recalculo_at: string | null;
+  urgency_excluido: boolean;
+}
+
 export interface Reporte {
   id: string;
   foto_url: string | null;

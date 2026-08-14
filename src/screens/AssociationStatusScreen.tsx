@@ -21,7 +21,7 @@ import { PostulacionesPanel } from '../components/association-dashboard/Postulac
 import { LotesInvitacionesPanel } from '../components/association-dashboard/LotesInvitacionesPanel';
 import { Animated } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { Animal, getAnimales, totalAnimales, animalMasGrave } from '../types/reporte';
+import { Animal, getAnimales, totalAnimales, animalMasGrave, ReportUrgencySnapshot } from '../types/reporte';
 import { AnimalCarousel } from '../components/common/AnimalCarousel';
 import { ImageLightbox } from '../components/common/ImageLightbox';
 import { getPaginationWindow, getReportsPerPage } from '../utils/reportPagination';
@@ -61,7 +61,7 @@ interface AsociacionInfo {
   motivo_rechazo: string | null;
 }
 
-interface ReporteAsignado {
+interface ReporteAsignado extends ReportUrgencySnapshot {
   asignacion_id: string;
   reporte_id: string;
   estado_asignacion_clave: string;
