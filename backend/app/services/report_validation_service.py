@@ -32,6 +32,7 @@ def evaluate_initial_validation(
     exif_mismatch: bool,
     phash_alert: bool,
     reporter_requires_prior_review: bool,
+    reporter_trust_check_error: bool,
     linked_duplicate_report_id: str | None,
 ) -> InitialValidationDecision:
     """Combina las capas previas a cobertura sin ejecutar efectos operativos."""
@@ -59,6 +60,8 @@ def evaluate_initial_validation(
         reasons.append(_reason("phash_coincidencia"))
     if reporter_requires_prior_review:
         reasons.append(_reason("trust_score_revision_previa"))
+    if reporter_trust_check_error:
+        reasons.append(_reason("trust_score_no_disponible"))
 
     if reasons:
         return InitialValidationDecision(

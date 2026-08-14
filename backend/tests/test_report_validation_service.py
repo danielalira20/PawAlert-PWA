@@ -11,6 +11,7 @@ def _evaluate(**overrides):
         "exif_mismatch": False,
         "phash_alert": False,
         "reporter_requires_prior_review": False,
+        "reporter_trust_check_error": False,
         "linked_duplicate_report_id": None,
     }
     inputs.update(overrides)
@@ -42,6 +43,7 @@ def test_all_clean_signals_approve_initial_validation():
         ({"exif_mismatch": True}, "exif_ubicacion_discrepante"),
         ({"phash_alert": True}, "phash_coincidencia"),
         ({"reporter_requires_prior_review": True}, "trust_score_revision_previa"),
+        ({"reporter_trust_check_error": True}, "trust_score_no_disponible"),
     ],
 )
 def test_each_risk_signal_sends_report_to_manual_review(overrides, expected_code):

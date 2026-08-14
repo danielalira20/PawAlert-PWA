@@ -292,6 +292,11 @@ async def crear_reporte(
     # que en realidad es.
     animal_ids = []
     fotos_urls_subidas: list[str] = []
+    fotos_procesadas = 0
+    gemini_error_tecnico = False
+    gemini_error_detalle: str | None = None
+    exif_discrepancia = False
+    phash_alerta = False
     try:
         for resuelto in animales_resueltos:
             animal_in = resuelto["animal_in"]
@@ -372,6 +377,8 @@ async def crear_reporte(
                     resultado_ubicacion = verificar_ubicacion_exif(
                         exif_latitud, exif_longitud, latitud, longitud,
                     )
+                    if resultado_ubicacion["estado"] == "discrepancia":
+                        exif_discrepancia = True
 
                     foto_url = await subir_bytes(
                         contenido_a_subir,
@@ -392,6 +399,10 @@ async def crear_reporte(
                     }
                     es_error_tecnico = resultado_vision.get("estado") == "error_tecnico"
                     if es_error_tecnico:
+                        gemini_error_tecnico = True
+                        gemini_error_detalle = (
+                            gemini_error_detalle or resultado_vision.get("detalle")
+                        )
                         foto_data.update({
                             "analisis_ia_estado": "error_tecnico",
                             "analisis_ia_error": resultado_vision.get("detalle"),
@@ -420,11 +431,15 @@ async def crear_reporte(
                             descripcion="El análisis automático de una fotografía falló técnicamente; requiere revisión manual.",
                         )
 
-                    registrar_phash_reporte(
+                    resultado_phash = registrar_phash_reporte(
                         reporte_id=reporte_id,
                         animal_foto_id=(foto_insertada.data or [{}])[0].get("id"),
                         phash=phash,
                     )
+                    phash_alerta = phash_alerta or bool(
+                        resultado_phash.get("alerta")
+                    )
+                    fotos_procesadas += 1
 
             for animal_id, condiciones in condiciones_ia_por_animal.items():
                 peor = max(condiciones, key=lambda c: CONDICION_SEVERIDAD.get(c, 0))
@@ -460,25 +475,80 @@ async def crear_reporte(
         }
     )
 
-    from app.services.report_activation_service import activar_reporte
+    requiere_revision_trust = False
+    error_consulta_trust = False
+    if usuario_id and not reporte_original_id:
+        try:
+            from app.services.reputacion_service import (
+                ROL_REPORTANTE,
+                consultar_restricciones,
+            )
+
+            restricciones = consultar_restricciones(usuario_id, ROL_REPORTANTE)
+            requiere_revision_trust = bool(
+                restricciones.get("requiere_revision_previa")
+            )
+        except Exception as error:
+            print(
+                f"[WARN] No se pudo consultar Trust Score para el reporte "
+                f"{reporte_id}: {error}"
+            )
+            error_consulta_trust = True
+
+    from app.services.report_validation_service import evaluate_initial_validation
+
+    decision_validacion = evaluate_initial_validation(
+        has_photos=fotos_procesadas > 0,
+        gemini_technical_error=gemini_error_tecnico,
+        gemini_error_detail=gemini_error_detalle,
+        exif_mismatch=exif_discrepancia,
+        phash_alert=phash_alerta,
+        reporter_requires_prior_review=requiere_revision_trust,
+        reporter_trust_check_error=error_consulta_trust,
+        linked_duplicate_report_id=reporte_original_id,
+    )
+
+    from app.services.report_activation_service import (
+        activar_reporte,
+        enviar_reporte_a_revision,
+        marcar_reporte_duplicado_vinculable,
+    )
 
     especies_del_caso = list(
         dict.fromkeys(_condicion_str(animal.tipo_animal) for animal in animales)
     )
-    activacion = activar_reporte(
-        reporte_id=reporte_id,
-        latitud=latitud,
-        longitud=longitud,
-        especies=especies_del_caso,
-        condicion_mas_grave=_condicion_mas_grave_de(animales),
-        tipo_animal_mas_grave=_tipo_animal_mas_grave_de(animales),
-        municipio=municipio,
-    )
+    if decision_validacion.outcome == "duplicado_vinculable":
+        activacion = marcar_reporte_duplicado_vinculable(
+            reporte_id=reporte_id,
+            reporte_original_id=reporte_original_id,
+            razones=decision_validacion.reasons,
+            razones_exclusion_urgency=(
+                decision_validacion.urgency_exclusion_reasons
+            ),
+        )
+    elif decision_validacion.outcome == "revision_manual":
+        activacion = enviar_reporte_a_revision(
+            reporte_id=reporte_id,
+            razones=decision_validacion.reasons,
+            razones_exclusion_urgency=(
+                decision_validacion.urgency_exclusion_reasons
+            ),
+        )
+    else:
+        activacion = activar_reporte(
+            reporte_id=reporte_id,
+            latitud=latitud,
+            longitud=longitud,
+            especies=especies_del_caso,
+            condicion_mas_grave=_condicion_mas_grave_de(animales),
+            tipo_animal_mas_grave=_tipo_animal_mas_grave_de(animales),
+            municipio=municipio,
+        )
     asociacion = activacion["asociacion"]
     asociacion_id = asociacion.get("id") if asociacion else None
 
     contactos = []
-    if not asociacion_id:
+    if activacion["estado"] == "sin_cobertura":
         # Un caso puede traer varias especies — se junta la lista de
         # contactos de cada especie distinta presente, sin duplicar.
         tipos_presentes = list(dict.fromkeys(_condicion_str(a.tipo_animal) for a in animales))
@@ -490,7 +560,7 @@ async def crear_reporte(
                     contactos.append(c)
     return {
         "id": reporte_id,
-        "estado": activacion["estado"] if asociacion_id else "pendiente",
+        "estado": activacion["estado"],
         "asociacion_asignada": asociacion["nombre"] if asociacion else None,
         "contactos_emergencia": contactos if contactos else None,
         "created_at": str(created_at)

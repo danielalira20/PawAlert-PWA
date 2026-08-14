@@ -5,7 +5,12 @@ from fastapi.testclient import TestClient
 
 from app.api import admin
 from app.main import app
-from app.services import incidentes_service, report_service, reputacion_service
+from app.services import (
+    incidentes_service,
+    report_activation_service,
+    report_service,
+    reputacion_service,
+)
 
 client = TestClient(app)
 
@@ -160,6 +165,78 @@ def test_aprobar_nunca_llama_procesar_reporte_falso_confirmado(make_query):
     assert response.status_code == 200
     assert response.json()["estado_moderacion"] == "aprobado"
     mock_procesar.assert_not_called()
+
+
+def test_aprobar_revision_inicial_activa_reporte_por_la_compuerta(make_query):
+    supabase = _supabase_admin_autenticado(admin_id="admin-1")
+    reporte = {
+        **REPORTE_BASE,
+        "estado_validacion_reporte": "revision_manual",
+    }
+    supabase_admin, _ = _supabase_admin_moderacion(
+        make_query,
+        reporte=reporte,
+    )
+
+    with (
+        patch.object(admin, "supabase", supabase),
+        patch.object(admin, "supabase_admin", supabase_admin),
+        patch.object(report_service, "supabase", MagicMock()),
+        patch.object(
+            report_activation_service,
+            "activar_reporte_desde_revision",
+            return_value={
+                "estado": "asignado",
+                "asociacion": {"id": "asociacion-1"},
+            },
+        ) as activar,
+    ):
+        response = client.patch(
+            "/admin/reportes-moderacion/rep-1",
+            json={"decision": "aprobar", "notas": "Evidencia confirmada"},
+            headers={"Authorization": "Bearer token"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["estado_reporte"] == "asignado"
+    activar.assert_called_once_with(
+        reporte_id="rep-1",
+        admin_id="admin-1",
+        notas="Evidencia confirmada",
+    )
+
+
+def test_rechazar_revision_inicial_cierra_validacion(make_query):
+    supabase = _supabase_admin_autenticado(admin_id="admin-1")
+    reporte = {
+        **REPORTE_BASE,
+        "estado_validacion_reporte": "revision_manual",
+    }
+    supabase_admin, tablas = _supabase_admin_moderacion(
+        make_query,
+        reporte=reporte,
+    )
+
+    with (
+        patch.object(admin, "supabase", supabase),
+        patch.object(admin, "supabase_admin", supabase_admin),
+        patch.object(report_service, "supabase", MagicMock()),
+        patch.object(
+            reputacion_service,
+            "procesar_reporte_falso_confirmado",
+        ),
+    ):
+        response = client.patch(
+            "/admin/reportes-moderacion/rep-1",
+            json={"decision": "rechazar", "notas": "Evidencia inválida"},
+            headers={"Authorization": "Bearer token"},
+        )
+
+    assert response.status_code == 200
+    cambios = tablas["reportes"].update.call_args.args[0]
+    assert cambios["estado_validacion_reporte"] == "rechazado"
+    assert cambios["estado_moderacion"] == "rechazado"
+    assert cambios["urgency_excluido"] is True
 
 
 def test_excepcion_en_procesar_reporte_falso_confirmado_no_rompe_la_resolucion(make_query, capsys):

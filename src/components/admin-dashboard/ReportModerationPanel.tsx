@@ -19,7 +19,21 @@ import { API_URL } from '../../constants/api';
 import { useAuth } from '../../context/AuthContext';
 import { AssocLocationMap } from './AssocLocationMap';
 
-type Foto = { id: string; foto_url: string; orden?: number };
+type Foto = {
+  id: string;
+  foto_url: string;
+  orden?: number;
+  analisis_ia_estado?: string | null;
+  analisis_ia_error?: string | null;
+  exif_estado_verificacion?: string | null;
+  exif_distancia_declarada_m?: number | null;
+  requiere_revision?: boolean | null;
+};
+type RazonValidacion = {
+  codigo: string;
+  resultado?: string;
+  detalle?: string;
+};
 type Denuncia = {
   id: string;
   motivo: string;
@@ -53,6 +67,8 @@ type ReporteModeracion = {
   id: string;
   estado_reporte: string;
   estado_moderacion: string;
+  estado_validacion_reporte?: string | null;
+  razones_validacion?: RazonValidacion[];
   moderacion_origen?: string | null;
   moderacion_actualizada_at?: string | null;
   municipio?: string | null;
@@ -91,6 +107,15 @@ const MOTIVOS: Record<string, string> = {
   contenido_inapropiado: 'Contenido inapropiado',
   posible_fraude: 'Posible fraude',
   otro: 'Otro motivo',
+};
+
+const RAZONES_VALIDACION: Record<string, string> = {
+  sin_evidencia_fotografica: 'No se recibió evidencia fotográfica',
+  gemini_error_tecnico: 'El análisis automático no pudo completarse',
+  exif_ubicacion_discrepante: 'La ubicación de la foto no coincide con el reporte',
+  phash_coincidencia: 'La fotografía coincide con otro reporte',
+  trust_score_revision_previa: 'La cuenta requiere revisión previa',
+  trust_score_no_disponible: 'No se pudo verificar la reputación de la cuenta',
 };
 
 function descargarFoto(url: string, index: number) {
@@ -155,6 +180,7 @@ export function ReportModerationPanel({
 
   const resolver = async (decision: 'aprobar' | 'rechazar') => {
     if (!seleccionado || !token) return;
+    const esRevisionInicial = seleccionado.estado_validacion_reporte === 'revision_manual';
     if (decision === 'rechazar' && !notas.trim()) {
       showToast({
         type: 'warning',
@@ -177,10 +203,15 @@ export function ReportModerationPanel({
       setNotas('');
       showToast({
         type: 'success',
-        title: decision === 'aprobar' ? 'Reporte restablecido' : 'Reporte retirado',
+        title:
+          decision === 'aprobar'
+            ? (esRevisionInicial ? 'Reporte activado' : 'Reporte restablecido')
+            : 'Reporte retirado',
         message:
           decision === 'aprobar'
-            ? 'Volvió a aparecer en el mapa y en el listado público.'
+            ? (esRevisionInicial
+              ? 'Superó la revisión y entró al flujo de atención.'
+              : 'Volvió a aparecer en el mapa y en el listado público.')
             : 'Permanecerá fuera de la vista pública.',
       });
     } catch (error: any) {
@@ -229,7 +260,7 @@ export function ReportModerationPanel({
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>Moderación comunitaria</Text>
           <Text style={styles.subtitle}>
-            Casos con tres alertas distintas o coincidencias fotográficas para revisión humana.
+            Reportes detenidos antes de asignarse y publicaciones con alertas que requieren revisión humana.
           </Text>
         </View>
         <TouchableOpacity onPress={cargar} style={styles.refreshButton}>
@@ -296,6 +327,12 @@ function ModerationCard({
               <Text style={styles.hashBadgeText}>Foto similar</Text>
             </View>
           )}
+          {reporte.estado_validacion_reporte === 'revision_manual' && (
+            <View style={styles.dangerBadge}>
+              <Ionicons name="pause-circle-outline" size={12} color="#C43B32" />
+              <Text style={styles.dangerBadgeText}>Sin asignar</Text>
+            </View>
+          )}
         </View>
         <Text style={styles.cardTitle} numberOfLines={1}>
           {cantidad} {especie}{cantidad === 1 ? '' : 's'}
@@ -343,6 +380,10 @@ function ModerationDetail({
     [animales],
   );
   const denuncias = (reporte.reporte_denuncias || []).filter((item) => !item.resuelta_at);
+  const esRevisionInicial = reporte.estado_validacion_reporte === 'revision_manual';
+  const razonesValidacion = (reporte.razones_validacion || []).filter(
+    (razon) => razon.resultado === 'revision_manual',
+  );
   return (
     <View style={{ flex: 1 }}>
       <View style={styles.detailHeader}>
@@ -473,10 +514,39 @@ function ModerationDetail({
           </View>
         )}
 
+        {esRevisionInicial && (
+          <View style={styles.warningCard}>
+            <Ionicons name="pause-circle-outline" size={24} color="#A76A12" />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.warningTitle}>Activación detenida</Text>
+              <Text style={styles.warningText}>
+                Este reporte todavía no tiene asociación ni voluntarios candidatos.
+              </Text>
+              {razonesValidacion.map((razon) => (
+                <View key={razon.codigo} style={styles.validationReason}>
+                  <Ionicons name="alert-circle-outline" size={16} color="#8A5A12" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.validationReasonTitle}>
+                      {RAZONES_VALIDACION[razon.codigo] || razon.codigo}
+                    </Text>
+                    {!!razon.detalle && (
+                      <Text style={styles.validationReasonDetail}>{razon.detalle}</Text>
+                    )}
+                  </View>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
         <View style={styles.infoCard}>
           <Text style={styles.sectionTitle}>Alertas de la comunidad ({denuncias.length})</Text>
           {denuncias.length === 0 ? (
-            <Text style={styles.emptyText}>Este caso llegó por coincidencia fotográfica.</Text>
+            <Text style={styles.emptyText}>
+              {esRevisionInicial
+                ? 'Este caso no tiene alertas de la comunidad.'
+                : 'Este caso llegó por coincidencia fotográfica.'}
+            </Text>
           ) : denuncias.map((denuncia, index) => (
             <View key={denuncia.id} style={[styles.complaint, index === denuncias.length - 1 && { borderBottomWidth: 0 }]}>
               <View style={styles.complaintNumber}><Text style={styles.complaintNumberText}>{index + 1}</Text></View>
@@ -507,10 +577,10 @@ function ModerationDetail({
 
       <View style={styles.actionBar}>
         <TouchableOpacity disabled={resolving} onPress={onApprove} style={styles.approveButton}>
-          {resolving ? <ActivityIndicator color="#239354" /> : <><Ionicons name="eye-outline" size={19} color="#239354" /><Text style={styles.approveText}>Restaurar en el mapa</Text></>}
+          {resolving ? <ActivityIndicator color="#239354" /> : <><Ionicons name={esRevisionInicial ? 'play-outline' : 'eye-outline'} size={19} color="#239354" /><Text style={styles.approveText}>{esRevisionInicial ? 'Aprobar y activar' : 'Restaurar en el mapa'}</Text></>}
         </TouchableOpacity>
         <TouchableOpacity disabled={resolving} onPress={onReject} style={styles.rejectButton}>
-          {resolving ? <ActivityIndicator color="#FFF" /> : <><Ionicons name="trash-outline" size={18} color="#FFF" /><Text style={styles.rejectText}>Retirar definitivamente</Text></>}
+          {resolving ? <ActivityIndicator color="#FFF" /> : <><Ionicons name="trash-outline" size={18} color="#FFF" /><Text style={styles.rejectText}>{esRevisionInicial ? 'Rechazar reporte' : 'Retirar definitivamente'}</Text></>}
         </TouchableOpacity>
       </View>
     </View>
@@ -589,6 +659,9 @@ const styles = StyleSheet.create({
   warningTitle: { color: '#7D5010', fontSize: 16, fontWeight: '900' },
   warningText: { color: '#806A48', lineHeight: 20, marginTop: 4 },
   hashId: { color: '#9C7C43', fontSize: 11, marginTop: 8 },
+  validationReason: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, marginTop: 11 },
+  validationReasonTitle: { color: '#6E4B18', fontWeight: '800', fontSize: 12 },
+  validationReasonDetail: { color: '#806A48', fontSize: 11, marginTop: 2 },
   complaint: { flexDirection: 'row', gap: 10, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F0E7DF' },
   complaintNumber: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#FFF0EE', alignItems: 'center', justifyContent: 'center' },
   complaintNumberText: { color: '#C43B32', fontWeight: '900' },
