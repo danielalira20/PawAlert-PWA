@@ -126,7 +126,7 @@ def _fetch_from_provider(latitude: float, longitude: float) -> WeatherResult:
         if response.status_code == 200:
             try:
                 return _parse_payload(response.json(), evaluated_at)
-            except _InvalidPayload:
+            except (ValueError, _InvalidPayload):
                 return _unavailable(ExternalSignalErrorCode.invalid_response, evaluated_at)
 
         last_error = _error_code_for_status(response.status_code)

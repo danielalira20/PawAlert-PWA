@@ -134,6 +134,21 @@ def test_fetch_json_incompleto_es_invalido():
     assert resultado.error_code == ExternalSignalErrorCode.invalid_response
 
 
+def test_fetch_respuesta_200_con_json_invalido_es_unavailable():
+    respuesta = _mock_response(200)
+    respuesta.json.side_effect = ValueError("JSON invalido")
+
+    with (
+        patch.object(weather_service.settings, "openweather_api_key", "clave-test"),
+        patch.object(weather_service.httpx, "get", return_value=respuesta),
+    ):
+        resultado = weather_service._fetch_from_provider(19.04, -98.20)
+
+    assert resultado.status == ExternalSignalStatus.unavailable
+    assert resultado.score is None
+    assert resultado.error_code == ExternalSignalErrorCode.invalid_response
+
+
 def test_fetch_timeout_hace_maximo_un_reintento():
     with (
         patch.object(weather_service.settings, "openweather_api_key", "clave-test"),
