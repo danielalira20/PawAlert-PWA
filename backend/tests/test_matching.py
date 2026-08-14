@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
+from fastapi import HTTPException
 
 from app.services import matching
 
@@ -81,6 +82,26 @@ def test_matching_exige_todas_las_especies(reporte_multi_animal):
     resultado = ejecutar_matching(reporte_multi_animal, [parcial, completo])
 
     assert [c["usuario_id"] for c in resultado["candidatos"]] == ["completo"]
+
+
+def test_matching_rechaza_reporte_sin_validacion_aprobada(make_query):
+    supabase = MagicMock()
+    supabase.table.return_value = make_query(data={
+        "id": "rep-1",
+        "estado_validacion_reporte": "revision_manual",
+        "estado_reporte": "pendiente",
+        "estado_cobertura": None,
+        "asociacion_asignada_id": None,
+        "animal": [],
+    })
+
+    with (
+        patch.object(matching, "supabase", supabase),
+        pytest.raises(HTTPException) as error,
+    ):
+        matching._obtener_reporte("rep-1")
+
+    assert error.value.status_code == 409
 
 
 def test_matching_exige_todos_los_tamanios(reporte_multi_animal):

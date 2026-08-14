@@ -9,10 +9,17 @@ from app.services import coverage_service
 
 @pytest.fixture(autouse=True)
 def permitir_asignaciones_sin_restriccion():
-    with patch.object(
-        coverage_service.reputacion_service,
-        "consultar_restricciones",
-        return_value={"bloqueado_nuevas_asignaciones": False},
+    with (
+        patch.object(
+            coverage_service.reputacion_service,
+            "consultar_restricciones",
+            return_value={"bloqueado_nuevas_asignaciones": False},
+        ),
+        patch.object(
+            coverage_service,
+            "_reporte_disponible_para_cobertura",
+            return_value=True,
+        ),
     ):
         yield
 
@@ -252,6 +259,30 @@ def test_reserva_usa_una_sola_funcion_transaccional():
     assert argumentos["p_actor_id"] == "actor-1"
     assert argumentos["p_origen"] == "equipo_interno"
     assert argumentos["p_vence_at"]
+
+
+def test_reserva_rechaza_reporte_sin_validacion_aprobada():
+    supabase_admin = MagicMock()
+    with (
+        patch.object(coverage_service, "supabase_admin", supabase_admin),
+        patch.object(
+            coverage_service,
+            "_reporte_disponible_para_cobertura",
+            return_value=False,
+        ),
+        pytest.raises(HTTPException) as error,
+    ):
+        coverage_service.reservar_cobertura(
+            reporte_id="rep-1",
+            usuario_asignado_id="user-1",
+            voluntario_id="vol-1",
+            asociacion_id="aso-1",
+            actor_id="actor-1",
+            origen="equipo_interno",
+        )
+
+    assert error.value.status_code == 409
+    supabase_admin.rpc.assert_not_called()
 
 
 def test_expira_propuestas_mediante_funcion_transaccional():

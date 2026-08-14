@@ -21,6 +21,30 @@ ESTADOS_VOLUNTARIO_ACTIVO = ("activo_nivel_1", "activo_nivel_2")
 PROPUESTA_COBERTURA_MINUTOS = 10
 
 
+def _reporte_disponible_para_cobertura(
+    reporte_id: str, asociacion_id: str
+) -> bool:
+    resultado = (
+        supabase_admin.table("reportes")
+        .select(
+            "id, estado_validacion_reporte, estado_reporte, estado_cobertura, "
+            "asociacion_asignada_id, staff_asignado_id"
+        )
+        .eq("id", reporte_id)
+        .limit(1)
+        .execute()
+    )
+    reporte = resultado.data[0] if resultado.data else None
+    return bool(
+        reporte
+        and reporte.get("estado_validacion_reporte") == "aprobado"
+        and reporte.get("estado_reporte") == "asignado"
+        and reporte.get("estado_cobertura") == "abierto"
+        and reporte.get("asociacion_asignada_id") == asociacion_id
+        and reporte.get("staff_asignado_id") is None
+    )
+
+
 def obtener_perfil_externo(usuario_id: str) -> dict:
     resultado = (
         supabase.table("voluntarios")
@@ -102,7 +126,9 @@ def obtener_casos_cercanos(usuario_id: str) -> list[dict]:
             "animal_fotos(foto_url, orden))"
         )
         .eq("estado_reporte", "asignado")
+        .eq("estado_validacion_reporte", "aprobado")
         .eq("estado_cobertura", "abierto")
+        .in_("estado_moderacion", ["visible", "aprobado"])
         .is_("staff_asignado_id", "null")
         .not_.is_("asociacion_asignada_id", "null")
         .order("created_at", desc=True)
@@ -349,6 +375,11 @@ def reservar_cobertura(
                     "por ahora. Actualiza la lista y elige otro candidato."
                 ),
             )
+    if not _reporte_disponible_para_cobertura(reporte_id, asociacion_id):
+        raise HTTPException(
+            status_code=409,
+            detail="El caso ya no está disponible. Actualiza la lista.",
+        )
     vence_at = datetime.now(timezone.utc) + timedelta(
         minutes=PROPUESTA_COBERTURA_MINUTOS
     )

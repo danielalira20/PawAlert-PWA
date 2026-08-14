@@ -77,7 +77,9 @@ def _reportes_esperando_asignacion() -> list:
             "asociaciones(modo_asignacion, timeout_grave, timeout_herido, timeout_estable)"
         )
         .eq("estado_reporte", "asignado")
+        .eq("estado_validacion_reporte", "aprobado")
         .eq("estado_cobertura", "abierto")
+        .in_("estado_moderacion", ["visible", "aprobado"])
         .is_("staff_asignado_id", "null")
         .not_.is_("candidatos_presentados_at", "null")
         .execute()

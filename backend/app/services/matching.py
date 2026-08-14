@@ -402,12 +402,25 @@ def _detalles_candidato(
 def _obtener_reporte(reporte_id: str) -> dict:
     resultado = supabase.table("reportes").select(
         "id, asociacion_asignada_id, latitud, longitud, "
-        "candidatos_presentados_at, "
+        "candidatos_presentados_at, estado_validacion_reporte, "
+        "estado_reporte, estado_cobertura, "
         "animal(orden, cantidad, es_agresivo, edad_aproximada, "
         "trae_crias_nacidas, tipo_animal_catalogo(clave), "
         "tamanio_catalogo(clave), condicion_catalogo(clave))"
     ).eq("id", reporte_id).single().execute()
     data = resultado.data
+    if (
+        data.get("estado_validacion_reporte") != "aprobado"
+        or data.get("estado_reporte") != "asignado"
+        or data.get("estado_cobertura") != "abierto"
+        or not data.get("asociacion_asignada_id")
+    ):
+        from fastapi import HTTPException
+
+        raise HTTPException(
+            status_code=409,
+            detail="El reporte todavía no está disponible para asignación",
+        )
     animales_crudos, _ = shape_animal_embed(data.get("animal"))
     data["animales"] = [
         {

@@ -589,7 +589,10 @@ async def obtener_reportes() -> list:
         "tipo_animal_id, condicion_id, tamanio_id, sexo, edad_aproximada, descripcion, "
         "tipo_animal_catalogo(clave), condicion_catalogo(clave), tamanio_catalogo(clave), "
         "animal_fotos(foto_url, orden))"
-    ).neq("estado_reporte", "cerrado").in_(
+    ).eq("estado_validacion_reporte", "aprobado").in_(
+        "estado_reporte",
+        ["pendiente", "asignado", "en_camino", "en_atencion", "sin_cobertura"],
+    ).in_(
         "estado_moderacion", ["visible", "aprobado"]
     ).execute()
 

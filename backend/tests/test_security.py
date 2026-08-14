@@ -305,6 +305,11 @@ def test_mapa_publico_redondea_coordenadas(make_query):
 
     assert resultado[0]["latitud"] == 19.043
     assert resultado[0]["longitud"] == -98.199
+    query.eq.assert_any_call("estado_validacion_reporte", "aprobado")
+    query.in_.assert_any_call(
+        "estado_reporte",
+        ["pendiente", "asignado", "en_camino", "en_atencion", "sin_cobertura"],
+    )
 
 
 def test_reportes_asociacion_conservan_coordenadas_exactas(make_query):
