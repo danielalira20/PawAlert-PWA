@@ -44,7 +44,7 @@ def test_selecciona_unica_via_dentro_del_radio():
     assert abs(distancia - 30) < 0.01
 
 
-def test_prioriza_motorway_sobre_trunk_y_primary_aunque_no_sea_la_mas_cercana():
+def test_selecciona_la_via_mas_cercana_sin_importar_el_tipo():
     offset_cerca = _offset_deg(10)
     offset_lejos = _offset_deg(45)
     elements = [
@@ -55,8 +55,8 @@ def test_prioriza_motorway_sobre_trunk_y_primary_aunque_no_sea_la_mas_cercana():
 
     tipo, distancia = road_risk_service._select_road(19.04, -98.20, elements)
 
-    assert tipo == "motorway"
-    assert abs(distancia - 45) < 0.01
+    assert tipo == "trunk"
+    assert abs(distancia - 10) < 0.01
 
 
 def test_elige_la_mas_cercana_dentro_del_mismo_tipo():
@@ -77,37 +77,45 @@ def test_ninguna_via_no_selecciona_nada():
     assert road_risk_service._select_road(19.04, -98.20, []) is None
 
 
-def test_clamp_a_50m_recorta_y_deja_warning_visible(caplog):
-    # Overpass ya garantiza <=50m vía around:50; esta geometría de prueba
-    # (60m) simula el desacuerdo por redondeo de la reproyección local que
-    # el clamp existe para absorber.
-    offset = _offset_deg(60)
+def test_via_exactamente_a_50m_se_incluye():
+    offset = _offset_deg(50)
     elements = [
         {"tags": {"highway": "primary"}, "geometry": [{"lat": 19.04 + offset, "lon": -98.20}]},
     ]
 
-    with caplog.at_level("WARNING", logger="app.services.road_risk_service"):
-        tipo, distancia = road_risk_service._select_road(19.04, -98.20, elements)
+    tipo, distancia = road_risk_service._select_road(19.04, -98.20, elements)
 
     assert tipo == "primary"
     assert distancia == 50.0
-    assert len(caplog.records) == 1
-    mensaje = caplog.records[0].getMessage()
-    assert "60.00" in mensaje
-    assert "primary" in mensaje
-    assert "se recorta a 50.0" in mensaje
 
 
-def test_sin_clamp_no_hay_warning(caplog):
-    offset = _offset_deg(30)
+def test_via_fuera_de_50m_no_se_incluye():
+    offset = _offset_deg(50.1)
     elements = [
         {"tags": {"highway": "primary"}, "geometry": [{"lat": 19.04 + offset, "lon": -98.20}]},
     ]
 
-    with caplog.at_level("WARNING", logger="app.services.road_risk_service"):
-        road_risk_service._select_road(19.04, -98.20, elements)
+    assert road_risk_service._select_road(19.04, -98.20, elements) is None
 
-    assert caplog.records == []
+
+@pytest.mark.parametrize(
+    ("highway", "road_type"),
+    [
+        ("primary_link", "primary"),
+        ("trunk_link", "trunk"),
+        ("motorway_link", "motorway"),
+    ],
+)
+def test_normaliza_enlaces_al_tipo_principal(highway, road_type):
+    offset = _offset_deg(20)
+    elements = [
+        {
+            "tags": {"highway": highway},
+            "geometry": [{"lat": 19.04 + offset, "lon": -98.20}],
+        },
+    ]
+
+    assert road_risk_service._select_road(19.04, -98.20, elements) == (road_type, 20.0)
 
 
 def test_ignora_elementos_mal_formados_sin_reventar():
@@ -177,6 +185,25 @@ def test_fetch_completo_sin_vias_cercanas():
     assert resultado.score == 0
     assert resultado.road_type is None
     assert resultado.distance_m is None
+
+
+def test_fetch_via_fuera_del_radio_devuelve_score_cero():
+    offset = _offset_deg(50.1)
+    payload = {
+        "elements": [
+            {
+                "tags": {"highway": "primary"},
+                "geometry": [{"lat": 19.04 + offset, "lon": -98.20}],
+            },
+        ],
+    }
+    with patch.object(
+        road_risk_service.httpx, "post", return_value=_mock_response(200, payload)
+    ):
+        resultado = road_risk_service._fetch_from_provider(19.04, -98.20)
+
+    assert resultado.status == ExternalSignalStatus.complete
+    assert resultado.score == 0
 
 
 def test_fetch_401_no_autorizado():
@@ -273,6 +300,35 @@ def test_fetch_json_con_elements_no_lista_no_propaga_excepcion():
 
     assert resultado.status == ExternalSignalStatus.unavailable
     assert resultado.error_code == ExternalSignalErrorCode.invalid_response
+
+
+def test_fetch_json_no_decodificable_no_propaga_excepcion():
+    respuesta = _mock_response(200)
+    respuesta.json.side_effect = ValueError("JSON invalido")
+    with patch.object(road_risk_service.httpx, "post", return_value=respuesta):
+        resultado = road_risk_service._fetch_from_provider(19.04, -98.20)
+
+    assert resultado.status == ExternalSignalStatus.unavailable
+    assert resultado.error_code == ExternalSignalErrorCode.invalid_response
+
+
+def test_fetch_elementos_inutilizables_no_se_interpretan_como_ausencia_de_vias():
+    payload = {"elements": [{"tags": {"highway": "primary"}, "geometry": None}]}
+    with patch.object(
+        road_risk_service.httpx, "post", return_value=_mock_response(200, payload)
+    ):
+        resultado = road_risk_service._fetch_from_provider(19.04, -98.20)
+
+    assert resultado.status == ExternalSignalStatus.unavailable
+    assert resultado.score is None
+    assert resultado.error_code == ExternalSignalErrorCode.invalid_response
+
+
+def test_query_overpass_incluye_enlaces_de_vias_principales():
+    query = road_risk_service._OVERPASS_QUERY_TEMPLATE
+
+    assert "(_link)?" in query
+    assert "primary|trunk|motorway" in query
 
 
 def test_fetch_nunca_devuelve_score_ante_fallo_tecnico():

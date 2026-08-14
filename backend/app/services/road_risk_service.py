@@ -1,4 +1,3 @@
-import logging
 import math
 from datetime import datetime, timezone
 
@@ -11,8 +10,6 @@ from app.models.urgency import (
     RoadType,
 )
 
-logger = logging.getLogger(__name__)
-
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 _REQUEST_TIMEOUT_SECONDS = 8.0
 _MAX_ATTEMPTS = 2  # 1 intento + 1 reintento
@@ -20,7 +17,8 @@ _MAX_ATTEMPTS = 2  # 1 intento + 1 reintento
 _OVERPASS_QUERY_TEMPLATE = (
     "[out:json][timeout:8];\n"
     "(\n"
-    '  way["highway"~"^(primary|trunk|motorway)$"](around:50,{lat},{lon});\n'
+    '  way["highway"~"^(primary|trunk|motorway)(_link)?$"]'
+    "(around:50,{lat},{lon});\n"
     ");\n"
     "out geom;"
 )
@@ -44,9 +42,15 @@ _REQUEST_HEADERS = {
 # de "caché vencida" para esta señal.
 _cache: dict[tuple[float, float], RoadRiskResult] = {}
 
-# Prioridad de selección cuando hay varias vías dentro del radio: mayor
-# número gana, sin importar cuál esté más cerca.
-_PRIORITY: dict[str, int] = {"motorway": 3, "trunk": 2, "primary": 1}
+_ROAD_TYPE_NORMALIZATION: dict[str, RoadType] = {
+    "primary": "primary",
+    "primary_link": "primary",
+    "trunk": "trunk",
+    "trunk_link": "trunk",
+    "motorway": "motorway",
+    "motorway_link": "motorway",
+}
+_PRIORITY: dict[RoadType, int] = {"motorway": 3, "trunk": 2, "primary": 1}
 
 _EARTH_RADIUS_M = 6371000.0
 
@@ -103,50 +107,49 @@ def _distance_to_way_m(latitude: float, longitude: float, geometry: list) -> flo
 def _select_road(
     latitude: float, longitude: float, elements: list
 ) -> tuple[RoadType, float] | None:
-    """Elige la vía a reportar entre las devueltas por Overpass: prioridad
-    motorway > trunk > primary sin importar cercanía; dentro del mismo
-    tipo, la más cercana. Nunca falla por un elemento individual mal
-    formado -- lo ignora y sigue con el resto. None si no hay ninguna vía
-    utilizable."""
-    mejor_distancia_por_tipo: dict[str, float] = {}
+    """Elige la vía admitida más cercana dentro del radio de 50 metros."""
+    candidatos: list[tuple[RoadType, float]] = []
     for el in elements:
         if not isinstance(el, dict):
             continue
         highway = (el.get("tags") or {}).get("highway")
-        if highway not in _PRIORITY:
+        road_type = _ROAD_TYPE_NORMALIZATION.get(highway)
+        if road_type is None:
             continue
         geometry = el.get("geometry")
         if not isinstance(geometry, list):
             continue
 
         distancia = _distance_to_way_m(latitude, longitude, geometry)
-        if distancia == math.inf:
+        if distancia == math.inf or distancia > 50.0 + 1e-6:
             continue
 
-        if highway not in mejor_distancia_por_tipo or distancia < mejor_distancia_por_tipo[highway]:
-            mejor_distancia_por_tipo[highway] = distancia
+        candidatos.append((road_type, min(distancia, 50.0)))
 
-    if not mejor_distancia_por_tipo:
+    if not candidatos:
         return None
 
-    mejor_tipo = max(mejor_distancia_por_tipo, key=lambda tipo: _PRIORITY[tipo])
-    distancia_m = mejor_distancia_por_tipo[mejor_tipo]
+    road_type, distancia_m = min(
+        candidatos,
+        key=lambda candidato: (candidato[1], -_PRIORITY[candidato[0]]),
+    )
+    return road_type, round(distancia_m, 2)
 
-    # Overpass ya filtró con around:50 usando su propio cálculo geodésico;
-    # nuestra reproyección local es solo para desempatar/reportar y puede
-    # diferir por una fracción de metro cerca del borde. Se recorta a 50
-    # para no violar el contrato de RoadRiskResult (distance_m <= 50) por
-    # un error de precisión de proyección, nunca porque la vía esté
-    # realmente más lejos de lo que Overpass ya confirmó.
-    if distancia_m > 50.0:
-        logger.warning(
-            "road_risk_service: distancia calculada %.2fm supera el radio de "
-            "50m para via %s cerca de (%s, %s); se recorta a 50.0",
-            distancia_m, mejor_tipo, latitude, longitude,
-        )
-    distancia_m = min(distancia_m, 50.0)
 
-    return mejor_tipo, round(distancia_m, 2)
+def _has_interpretable_road(latitude: float, longitude: float, elements: list) -> bool:
+    """Distingue una vía válida fuera del radio de una respuesta inutilizable."""
+    for el in elements:
+        if not isinstance(el, dict):
+            continue
+        highway = (el.get("tags") or {}).get("highway")
+        if highway not in _ROAD_TYPE_NORMALIZATION:
+            continue
+        geometry = el.get("geometry")
+        if not isinstance(geometry, list):
+            continue
+        if _distance_to_way_m(latitude, longitude, geometry) != math.inf:
+            return True
+    return False
 
 
 def _unavailable(error_code: ExternalSignalErrorCode, calculated_at: datetime) -> RoadRiskResult:
@@ -178,6 +181,8 @@ def _parse_overpass_payload(
 
     seleccion = _select_road(latitude, longitude, elements)
     if seleccion is None:
+        if elements and not _has_interpretable_road(latitude, longitude, elements):
+            raise _InvalidPayload
         return RoadRiskResult(
             score=0,
             status=ExternalSignalStatus.complete,
@@ -221,7 +226,7 @@ def _fetch_from_provider(latitude: float, longitude: float) -> RoadRiskResult:
         if response.status_code == 200:
             try:
                 return _parse_overpass_payload(response.json(), latitude, longitude, calculated_at)
-            except _InvalidPayload:
+            except (ValueError, _InvalidPayload):
                 return _unavailable(ExternalSignalErrorCode.invalid_response, calculated_at)
 
         last_error = _error_code_for_status(response.status_code)
