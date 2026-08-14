@@ -68,8 +68,33 @@ def _clasificar_escenario(animal_existente: dict, tipo_animal_ids_nuevo: list[st
     return 2 if existente_es_grupo else 1
 
 
+def _clasificar_escenario_por_especies(
+    animal_existente: dict, especies_nuevo: list[str], cantidad_nueva: int
+) -> int | None:
+    """Clasifica con claves de especie ya incluidas en el embed del reporte."""
+    especies_existente = {
+        (animal.get("tipo_animal_catalogo") or {}).get("clave")
+        for animal in animal_existente["animales"]
+    }
+    especies_existente.discard(None)
+    especies_nuevas = set(especies_nuevo)
+    if not especies_nuevas or not especies_nuevas <= especies_existente:
+        return None
+
+    cantidad_existente = sum(
+        animal.get("cantidad") or 1 for animal in animal_existente["animales"]
+    )
+    if cantidad_nueva > cantidad_existente * MARGEN_CANTIDAD_DUPLICADO:
+        return None
+
+    existente_es_grupo = cantidad_existente > 1 or any(
+        animal.get("es_grupo") for animal in animal_existente["animales"]
+    )
+    return 2 if existente_es_grupo else 1
+
+
 def _reconstruir_reporte_existente(
-    reporte_id: str, tipo_animal_ids_nuevo: list[str], cantidad_nueva: int
+    reporte_id: str, especies_nuevo: list[str], cantidad_nueva: int
 ) -> dict | None:
     """Trae el reporte candidato a duplicado (ya localizado por PostGIS en
     duplicate_service.find_geographic_duplicates, vía distancia/tiempo/
@@ -91,7 +116,7 @@ def _reconstruir_reporte_existente(
     d["animal"] = animal_legado
     d["animales"] = animales_existente
 
-    escenario = _clasificar_escenario(d, tipo_animal_ids_nuevo, cantidad_nueva)
+    escenario = _clasificar_escenario_por_especies(d, especies_nuevo, cantidad_nueva)
     if escenario is None:
         return None
     d["escenario"] = escenario
@@ -174,26 +199,16 @@ async def crear_reporte(
                 quantity=cantidad_nueva,
             )
             candidatos = find_geographic_duplicates(busqueda)
-            # OJO: cambio de semántica. Antes de reemplazar verificar_duplicados,
-            # total_duplicados contaba duplicados ya filtrados por texto
-            # (municipio/colonia) y clasificados por escenario. Ahora cuenta
-            # matches geográficos crudos de buscar_duplicados_geograficos
-            # (radio 150m / ventana 120min), sin pasar por _clasificar_escenario
-            # — solo el candidato más cercano se reconstruye y clasifica, los
-            # demás no. Hoy ningún consumidor (frontend ni tests) usa este
-            # campo, pero si algo llega a leerlo, ya no significa lo mismo.
+            # Conserva el conteo de coincidencias geográficas crudas. El modal
+            # muestra el primer candidato que además cumple especie y cantidad.
             total_duplicados = len(candidatos)
 
-            if candidatos:
-                tipo_animal_ids_nuevo = [
-                    tid for tid in (obtener_id_catalogo("tipo_animal_catalogo", e) for e in especies_nuevo) if tid
-                ]
-                # Solo se reconstruye el candidato más cercano (ya viene
-                # ordenado por distancia desde la función SQL) — si ese no
-                # clasifica en ningún escenario, no se recorren los demás.
+            for candidato in candidatos:
                 duplicado = _reconstruir_reporte_existente(
-                    candidatos[0].existing_report_id, tipo_animal_ids_nuevo, cantidad_nueva
+                    candidato.existing_report_id, especies_nuevo, cantidad_nueva
                 )
+                if duplicado is not None:
+                    break
 
         if duplicado is not None:
             return {

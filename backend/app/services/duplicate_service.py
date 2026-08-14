@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from pydantic import ValidationError
 
-from app.db.supabase import supabase
+from app.db.supabase import supabase_admin
 from app.models.urgency import DuplicateCandidate, DuplicateSearchInput
 from app.services.report_service import obtener_id_catalogo
 
@@ -38,7 +38,7 @@ def find_geographic_duplicates(search: DuplicateSearchInput) -> list[DuplicateCa
         return []
 
     try:
-        resultado = supabase.rpc(
+        resultado = supabase_admin.rpc(
             "buscar_duplicados_geograficos",
             {
                 "p_latitud": search.latitude,

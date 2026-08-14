@@ -937,6 +937,65 @@ def test_clasificar_escenario_none_por_cantidad_mayor_130_por_ciento():
     assert _clasificar_escenario(existente, ["perro-id"], 10) is None
 
 
+def test_crear_reporte_revisa_el_siguiente_candidato_si_el_primero_no_clasifica():
+    candidatos = [
+        DuplicateCandidate(
+            existing_report_id="rep-descartado",
+            distance_m=5,
+            time_difference_minutes=3,
+            shared_species=["perro"],
+        ),
+        DuplicateCandidate(
+            existing_report_id="rep-valido",
+            distance_m=10,
+            time_difference_minutes=4,
+            shared_species=["perro"],
+        ),
+    ]
+    duplicado_reconstruido = {
+        "id": "rep-valido",
+        "municipio": "Puebla",
+        "colonia": "Centro",
+        "created_at": "2026-07-19T10:00:00+00:00",
+        "escenario": 1,
+        "animal": {},
+        "foto_url": None,
+        "animales_resumen": [],
+    }
+
+    with (
+        patch(
+            "app.services.duplicate_service.find_geographic_duplicates",
+            return_value=candidatos,
+        ),
+        patch.object(
+            report_service,
+            "_reconstruir_reporte_existente",
+            side_effect=[None, duplicado_reconstruido],
+        ) as reconstruir,
+    ):
+        resultado = asyncio.run(report_service.crear_reporte(
+            nombre="Juan", apellido_paterno="Pérez", apellido_materno=None,
+            telefono="5512345678", email=None, usuario_id=None,
+            animales=[
+                AnimalInput(
+                    condicion="estable",
+                    tipo_animal="perro",
+                    tamanio="mediano",
+                ),
+            ],
+            latitud=19.04, longitud=-98.20, calle=None, colonia="Centro",
+            municipio="Puebla", estado_ubicacion=None, referencia=None,
+        ))
+
+    assert resultado["reporte_existente"]["id"] == "rep-valido"
+    assert resultado["total_duplicados"] == 2
+    assert [llamada.args[0] for llamada in reconstruir.call_args_list] == [
+        "rep-descartado",
+        "rep-valido",
+    ]
+
+
 def test_crear_reporte_verifica_especies_unicas_y_cantidad_total():
     duplicado_reconstruido = {
         "id": "rep-existente", "municipio": "Puebla", "colonia": "Centro",

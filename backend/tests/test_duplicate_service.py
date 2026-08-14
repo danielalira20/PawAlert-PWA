@@ -4,7 +4,7 @@ Nota importante sobre el alcance de estos tests: el filtro real de
 distancia (<=150m), ventana temporal (+-120min) y estados excluidos vive
 en la función SQL buscar_duplicados_geograficos (migración 0060), que
 corre dentro de Postgres/PostGIS -- no en Python. Estos tests mockean
-supabase.rpc(...), así que NO pueden ejercitar ST_DistanceSphere ni el
+supabase.rpc(...), así que NO pueden ejercitar ST_DWithin ni el
 WHERE de la función real contra una base real. Lo que sí verifican es:
 (a) que find_geographic_duplicates arma los parámetros correctos hacia la
 RPC, (b) que traduce cada fila devuelta a un DuplicateCandidate válido,
@@ -62,7 +62,7 @@ def test_149_metros_y_119_minutos_es_candidato(make_query):
 
     with (
         patch.object(report_service, "supabase", supabase_catalogo),
-        patch.object(duplicate_service, "supabase", supabase_rpc),
+        patch.object(duplicate_service, "supabase_admin", supabase_rpc),
     ):
         resultado = duplicate_service.find_geographic_duplicates(_busqueda())
 
@@ -89,7 +89,7 @@ def test_151_metros_se_descarta_por_contrato_pydantic(make_query):
 
     with (
         patch.object(report_service, "supabase", supabase_catalogo),
-        patch.object(duplicate_service, "supabase", supabase_rpc),
+        patch.object(duplicate_service, "supabase_admin", supabase_rpc),
     ):
         resultado = duplicate_service.find_geographic_duplicates(_busqueda())
 
@@ -109,7 +109,7 @@ def test_121_minutos_se_descarta_por_contrato_pydantic(make_query):
 
     with (
         patch.object(report_service, "supabase", supabase_catalogo),
-        patch.object(duplicate_service, "supabase", supabase_rpc),
+        patch.object(duplicate_service, "supabase_admin", supabase_rpc),
     ):
         resultado = duplicate_service.find_geographic_duplicates(_busqueda())
 
@@ -119,7 +119,7 @@ def test_121_minutos_se_descarta_por_contrato_pydantic(make_query):
 def test_misma_colonia_pero_3km_no_es_candidato(make_query):
     """DuplicateSearchInput no lleva colonia -- este test documenta que el
     filtro es puramente geoespacial: se simula que la RPC (que sí calcula
-    distancia real vía ST_DistanceSphere dentro de Postgres) ya excluyó el
+    distancia real vía ST_DWithin dentro de Postgres) ya excluyó el
     reporte por estar a 3km, sin importar que comparta colonia de texto."""
     supabase_catalogo = _mock_catalogo(make_query)
     supabase_rpc = MagicMock()
@@ -127,7 +127,7 @@ def test_misma_colonia_pero_3km_no_es_candidato(make_query):
 
     with (
         patch.object(report_service, "supabase", supabase_catalogo),
-        patch.object(duplicate_service, "supabase", supabase_rpc),
+        patch.object(duplicate_service, "supabase_admin", supabase_rpc),
     ):
         resultado = duplicate_service.find_geographic_duplicates(_busqueda())
 
@@ -147,7 +147,7 @@ def test_distinta_colonia_pero_80_metros_es_candidato(make_query):
 
     with (
         patch.object(report_service, "supabase", supabase_catalogo),
-        patch.object(duplicate_service, "supabase", supabase_rpc),
+        patch.object(duplicate_service, "supabase_admin", supabase_rpc),
     ):
         resultado = duplicate_service.find_geographic_duplicates(_busqueda())
 
@@ -164,7 +164,7 @@ def test_reporte_cerrado_cercano_no_es_candidato(make_query):
 
     with (
         patch.object(report_service, "supabase", supabase_catalogo),
-        patch.object(duplicate_service, "supabase", supabase_rpc),
+        patch.object(duplicate_service, "supabase_admin", supabase_rpc),
     ):
         resultado = duplicate_service.find_geographic_duplicates(_busqueda())
 
@@ -179,7 +179,7 @@ def test_especies_sin_catalogo_no_llama_a_la_rpc(make_query):
 
     with (
         patch.object(report_service, "supabase", supabase_catalogo),
-        patch.object(duplicate_service, "supabase", supabase_rpc),
+        patch.object(duplicate_service, "supabase_admin", supabase_rpc),
     ):
         resultado = duplicate_service.find_geographic_duplicates(_busqueda())
 
@@ -211,7 +211,7 @@ def test_falla_la_rpc_no_tumba_la_busqueda(make_query):
 
     with (
         patch.object(report_service, "supabase", supabase_catalogo),
-        patch.object(duplicate_service, "supabase", supabase_rpc),
+        patch.object(duplicate_service, "supabase_admin", supabase_rpc),
     ):
         resultado = duplicate_service.find_geographic_duplicates(_busqueda())
 
