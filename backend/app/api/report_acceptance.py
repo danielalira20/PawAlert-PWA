@@ -1,6 +1,8 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
-from app.db.supabase import supabase
+from app.db.supabase import supabase, supabase_admin
 
 router = APIRouter()
 
@@ -15,38 +17,106 @@ class AcceptanceRequestStaff(BaseModel):
 
 
 def _aceptar_asignacion(asignacion_id: str, reporte_id: str, notas: str | None):
+    reporte = _obtener_reporte_coordinable(reporte_id)
+    ahora = datetime.now(timezone.utc).isoformat()
+    estado_id = _obtener_estado_asignacion_id("aceptada")
     supabase.table("reporte_asignaciones").update({
-        "accepted_at": "now()",
+        "accepted_at": ahora,
         "notas": notas,
         "estado": "aceptada",
-        "estado_id": "77a2e8ea-7ad6-4a65-bb25-f781d0074947"
+        "estado_id": estado_id,
     }).eq("id", asignacion_id).execute()
 
-    supabase.table("reportes").update({
-        "estado_reporte": "en_atencion",
-    }).eq("id", reporte_id).execute()
-
-    try:
-        reporte = supabase.table("reportes").select("usuario_id").eq("id", reporte_id).execute()
-        usuario_id = reporte.data[0]["usuario_id"] if reporte.data else None
-        from app.services.reputacion_service import procesar_reporte_valido
-        procesar_reporte_valido(reporte_id, usuario_id)
-    except Exception as e:
-        print(f"[WARN] reputacion fallo en _aceptar_asignacion (reporte={reporte_id}): {e}")
+    _registrar_evento(
+        reporte_id,
+        "asociacion_acepta_coordinacion",
+        "La asociación aceptó coordinar el reporte; falta elegir voluntario.",
+        {"asignacion_id": asignacion_id, "asociacion_id": reporte["asociacion_asignada_id"]},
+    )
 
 
 def _rechazar_asignacion(asignacion_id: str, reporte_id: str, notas: str | None):
+    _obtener_reporte_coordinable(reporte_id)
+    ahora = datetime.now(timezone.utc).isoformat()
+    estado_asignacion_id = _obtener_estado_asignacion_id("rechazada")
     supabase.table("reporte_asignaciones").update({
-        "closed_at": "now()",
+        "closed_at": ahora,
         "notas": notas,
         "estado": "rechazada",
-        "estado_id": "54a8005a-4e1f-49b8-8858-12c5a2474daa"
+        "estado_id": estado_asignacion_id,
     }).eq("id", asignacion_id).execute()
 
+    estado_reporte_id = _obtener_estado_reporte_id("sin_cobertura")
     supabase.table("reportes").update({
-        "estado_reporte": "pendiente",
+        "estado_id": estado_reporte_id,
+        "estado_reporte": "sin_cobertura",
+        "estado_cobertura": None,
         "asociacion_asignada_id": None,
+        "candidatos_presentados_at": None,
     }).eq("id", reporte_id).execute()
+    supabase_admin.table("casos_administrativos").insert({
+        "reporte_id": reporte_id,
+        "tipo": "reporte_sin_coordinadora",
+        "prioridad": "alta",
+        "estado": "pendiente",
+        "detalle": "La asociación asignada rechazó coordinar el reporte.",
+    }).execute()
+    _registrar_evento(
+        reporte_id,
+        "asociacion_rechaza_coordinacion",
+        "La asociación rechazó coordinar el reporte; se escaló a administración.",
+        {"asignacion_id": asignacion_id, "notas": notas},
+    )
+
+
+def _obtener_reporte_coordinable(reporte_id: str) -> dict:
+    resultado = supabase.table("reportes").select(
+        "id, estado_validacion_reporte, estado_reporte, estado_cobertura, "
+        "asociacion_asignada_id"
+    ).eq("id", reporte_id).limit(1).execute()
+    reporte = resultado.data[0] if resultado.data else None
+    if (
+        not reporte
+        or reporte.get("estado_validacion_reporte") != "aprobado"
+        or reporte.get("estado_reporte") != "asignado"
+        or reporte.get("estado_cobertura") != "abierto"
+        or not reporte.get("asociacion_asignada_id")
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="El reporte ya no está disponible para esta respuesta",
+        )
+    return reporte
+
+
+def _obtener_estado_asignacion_id(clave: str) -> str:
+    resultado = supabase.table("asignacion_estados").select("id").eq(
+        "clave", clave
+    ).limit(1).execute()
+    if not resultado.data:
+        raise HTTPException(status_code=500, detail="No se pudo resolver la respuesta")
+    return resultado.data[0]["id"]
+
+
+def _obtener_estado_reporte_id(clave: str) -> str:
+    resultado = supabase.table("reporte_estados").select("id").eq(
+        "clave", clave
+    ).limit(1).execute()
+    if not resultado.data:
+        raise HTTPException(status_code=500, detail="No se pudo resolver el estado")
+    return resultado.data[0]["id"]
+
+
+def _registrar_evento(
+    reporte_id: str, tipo_evento: str, descripcion: str, datos_extra: dict
+) -> None:
+    supabase.table("historial_reporte").insert({
+        "reporte_id": reporte_id,
+        "usuario_id": None,
+        "tipo_evento": tipo_evento,
+        "descripcion": descripcion,
+        "datos_extra": datos_extra,
+    }).execute()
 
 
 def _obtener_usuario_autenticado(authorization: str | None) -> dict:
@@ -92,7 +162,7 @@ def _obtener_asignacion_para_staff(reporte_id: str, asociacion_id: str | None) -
 
     asignacion = supabase.table("reporte_asignaciones").select(
         "id, asociacion_id"
-    ).eq("reporte_id", reporte_id).execute()
+    ).eq("reporte_id", reporte_id).eq("estado", "notificada").execute()
 
     if not asignacion.data:
         raise HTTPException(status_code=404, detail="Asignación no encontrada")
@@ -110,26 +180,33 @@ def _obtener_asignacion_para_staff(reporte_id: str, asociacion_id: str | None) -
 async def accept_report(reporte_id: str, body: AcceptanceRequest):
     asignacion = supabase.table("reporte_asignaciones").select(
         "id"
-    ).eq("reporte_id", reporte_id).eq("token", body.token).execute()
+    ).eq("reporte_id", reporte_id).eq("token", body.token).eq(
+        "estado", "notificada"
+    ).execute()
 
     if not asignacion.data:
         raise HTTPException(status_code=404, detail="Asignación no encontrada o token inválido")
 
     _aceptar_asignacion(asignacion.data[0]["id"], reporte_id, body.notas)
-    return {"mensaje": "Reporte aceptado exitosamente", "reporte_id": reporte_id}
+    return {
+        "mensaje": "Coordinación aceptada; ahora selecciona un voluntario",
+        "reporte_id": reporte_id,
+    }
 
 
 @router.post("/{reporte_id}/reject", status_code=200)
 async def reject_report(reporte_id: str, body: AcceptanceRequest):
     asignacion = supabase.table("reporte_asignaciones").select(
         "id"
-    ).eq("reporte_id", reporte_id).eq("token", body.token).execute()
+    ).eq("reporte_id", reporte_id).eq("token", body.token).eq(
+        "estado", "notificada"
+    ).execute()
 
     if not asignacion.data:
         raise HTTPException(status_code=404, detail="Asignación no encontrada o token inválido")
 
     _rechazar_asignacion(asignacion.data[0]["id"], reporte_id, body.notas)
-    return {"mensaje": "Reporte rechazado. Queda pendiente para reasignación.", "reporte_id": reporte_id}
+    return {"mensaje": "Coordinación rechazada y escalada a administración", "reporte_id": reporte_id}
 
 
 # --- Flujo autenticado: para el staff de la asociación ya logueado en la app,
@@ -141,7 +218,10 @@ async def accept_report_staff(reporte_id: str, body: AcceptanceRequestStaff, aut
     _verificar_rol(usuario, ("asociacion", "staff"))
     asignacion_id = _obtener_asignacion_para_staff(reporte_id, usuario["asociacion_id"])
     _aceptar_asignacion(asignacion_id, reporte_id, body.notas)
-    return {"mensaje": "Reporte aceptado exitosamente", "reporte_id": reporte_id}
+    return {
+        "mensaje": "Coordinación aceptada; ahora selecciona un voluntario",
+        "reporte_id": reporte_id,
+    }
 
 
 @router.post("/{reporte_id}/reject-staff", status_code=200)
@@ -150,4 +230,4 @@ async def reject_report_staff(reporte_id: str, body: AcceptanceRequestStaff, aut
     _verificar_rol(usuario, ("asociacion", "staff"))
     asignacion_id = _obtener_asignacion_para_staff(reporte_id, usuario["asociacion_id"])
     _rechazar_asignacion(asignacion_id, reporte_id, body.notas)
-    return {"mensaje": "Reporte rechazado. Queda pendiente para reasignación.", "reporte_id": reporte_id}
+    return {"mensaje": "Coordinación rechazada y escalada a administración", "reporte_id": reporte_id}
