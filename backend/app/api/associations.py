@@ -463,7 +463,9 @@ async def get_reportes_asignados(authorization: str = Header(None)):
     resultado = supabase.table("reporte_asignaciones").select(
     "id, assigned_at, accepted_at, closed_at, notas, "
     "asignacion_estados!reporte_asignaciones_estado_id_fkey(clave, descripcion), "
-    "reportes(id, estado_reporte, confirmacion_voluntario, municipio, colonia, calle, latitud, longitud, created_at, "  # ← agregar latitud, longitud
+    "reportes(id, estado_reporte, confirmacion_voluntario, municipio, colonia, calle, latitud, longitud, created_at, "
+    "urgency_score, urgency_nivel, urgency_calculado_at, "
+    "urgency_proximo_recalculo_at, urgency_excluido, "
     "animal(id, orden, es_grupo, cantidad, trae_crias_nacidas, numero_crias_nacidas, "
     "sexo, edad_aproximada, descripcion, "
     "tipo_animal_catalogo(clave), condicion_catalogo(clave), tamanio_catalogo(clave), "
@@ -567,6 +569,19 @@ async def get_reportes_asignados(authorization: str = Header(None)):
             "latitud": rep.get("latitud"),
             "longitud": rep.get("longitud"),
             "created_at": str(rep["created_at"]),
+            "urgency_score": rep.get("urgency_score"),
+            "urgency_nivel": rep.get("urgency_nivel"),
+            "urgency_calculado_at": (
+                str(rep["urgency_calculado_at"])
+                if rep.get("urgency_calculado_at")
+                else None
+            ),
+            "urgency_proximo_recalculo_at": (
+                str(rep["urgency_proximo_recalculo_at"])
+                if rep.get("urgency_proximo_recalculo_at")
+                else None
+            ),
+            "urgency_excluido": bool(rep.get("urgency_excluido", False)),
             "closed_at": str(r["closed_at"]) if r.get("closed_at") else None,
             "foto_url": foto_url,
             "fotos_urls": fotos_urls,

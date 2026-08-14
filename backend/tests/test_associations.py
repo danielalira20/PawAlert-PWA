@@ -382,6 +382,11 @@ def _mock_reporte_asignado(make_query, *, fotos: list[dict]) -> dict:
                 "latitud": 19.04,
                 "longitud": -98.19,
                 "created_at": "2026-08-02T09:00:00+00:00",
+                "urgency_score": 72.5,
+                "urgency_nivel": "rojo",
+                "urgency_calculado_at": "2026-08-02T09:05:00+00:00",
+                "urgency_proximo_recalculo_at": "2026-08-02T09:15:00+00:00",
+                "urgency_excluido": False,
                 "animal": [{
                     "id": "animal-1",
                     "orden": 1,
@@ -440,6 +445,42 @@ def test_me_reportes_requiere_revision_false_si_ninguna_foto_lo_tiene(make_query
 
     assert response.status_code == 200
     assert response.json()[0]["requiere_revision"] is False
+
+
+def test_me_reportes_expone_urgencia_operativa(make_query):
+    tablas = _mock_reporte_asignado(make_query, fotos=[])
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    supabase.auth.get_user.return_value = SimpleNamespace(
+        user=SimpleNamespace(id="auth-user-1")
+    )
+
+    with patch("app.api.associations.supabase", supabase):
+        response = client.get(
+            "/associations/me/reportes",
+            headers={"Authorization": "Bearer token-valido"},
+        )
+
+    assert response.status_code == 200
+    reporte = response.json()[0]
+    assert reporte["urgency_score"] == 72.5
+    assert reporte["urgency_nivel"] == "rojo"
+    assert reporte["urgency_calculado_at"] == "2026-08-02T09:05:00+00:00"
+    assert (
+        reporte["urgency_proximo_recalculo_at"]
+        == "2026-08-02T09:15:00+00:00"
+    )
+    assert reporte["urgency_excluido"] is False
+
+    select_reportes = tablas["reporte_asignaciones"].select.call_args.args[0]
+    for campo in (
+        "urgency_score",
+        "urgency_nivel",
+        "urgency_calculado_at",
+        "urgency_proximo_recalculo_at",
+        "urgency_excluido",
+    ):
+        assert campo in select_reportes
 
 
 def test_registro_asociacion_devuelve_access_y_refresh_token(make_query):
