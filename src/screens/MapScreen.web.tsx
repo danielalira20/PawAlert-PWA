@@ -261,7 +261,20 @@ export default function MapScreen() {
       if (ordenar === 'antiguo')  return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       return 0;
     });
-
+    // ─── Aplicación de la Regla de Privacidad (Coordenadas Aproximadas) ───
+  // Si el caso está abierto y no tiene voluntario ni staff confirmado, desplazamos
+  // ligeramente el pin en el mapa para no revelar la calle exacta (aprox 100m).
+  const reportesConPrivacidad = reportesFiltrados.map(reporte => {
+    // Casos no asignados a un rescatista o que siguen pendientes/procesando
+    if (!reporte.confirmacion_voluntario && !reporte.staff_asignado_id) {
+      return {
+        ...reporte,
+        latitud: reporte.latitud ? reporte.latitud + 0.0010 : reporte.latitud,
+        longitud: reporte.longitud ? reporte.longitud - 0.0010 : reporte.longitud,
+      };
+    }
+    return reporte;
+  });
   // ── Tarjeta de reporte en lista ──────────────────────────────────────────────
   const ReportCard = ({ reporte, compact = false }: { reporte: Reporte; compact?: boolean }) => {
     const animales = getAnimales(reporte);
@@ -671,7 +684,7 @@ export default function MapScreen() {
       {isClient ? (
         <Suspense fallback={<View style={{ flex: 1, backgroundColor: '#EAE0D0' }} />}>
           <LeafletMap
-            reportes={(mostrarAsociaciones || mostrarAliados) ? [] : reportesFiltrados}
+            reportes={(mostrarAsociaciones || mostrarAliados) ? [] : reportesConPrivacidad}
             asociaciones={mostrarAsociaciones ? asociaciones : []}
             aliados={mostrarAliados ? aliados : []}
             selectedReportId={selectedReport?.id ?? highlightedReportId}
