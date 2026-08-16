@@ -461,15 +461,15 @@ async def get_reportes_asignados(authorization: str = Header(None)):
         raise HTTPException(status_code=403, detail="Tu asociación todavía no ha sido aprobada")
 
     resultado = supabase.table("reporte_asignaciones").select(
-    "id, assigned_at, accepted_at, closed_at, notas, "
-    "asignacion_estados!reporte_asignaciones_estado_id_fkey(clave, descripcion), "
-    "reportes(id, estado_reporte, estado_validacion_reporte, confirmacion_voluntario, municipio, colonia, calle, latitud, longitud, created_at, "
-    "urgency_score, urgency_nivel, urgency_calculado_at, "
-    "urgency_proximo_recalculo_at, urgency_excluido, "
-    "animal(id, orden, es_grupo, cantidad, trae_crias_nacidas, numero_crias_nacidas, "
-    "sexo, edad_aproximada, descripcion, "
-    "tipo_animal_catalogo(clave), condicion_catalogo(clave), tamanio_catalogo(clave), "
-    "animal_fotos(foto_url, orden, requiere_revision)))"
+        "id, assigned_at, accepted_at, closed_at, notas, "
+        "asignacion_estados!reporte_asignaciones_estado_id_fkey(clave, descripcion), "
+        "reportes(id, estado_reporte, estado_validacion_reporte, confirmacion_voluntario, municipio, colonia, calle, latitud, longitud, created_at, "
+        "urgency_score, urgency_nivel, urgency_calculado_at, "
+        "urgency_proximo_recalculo_at, urgency_excluido, "
+        "animal(id, orden, es_grupo, cantidad, trae_crias_nacidas, numero_crias_nacidas, "
+        "sexo, edad_aproximada, descripcion, "
+        "tipo_animal_catalogo(clave), condicion_catalogo(clave), tamanio_catalogo(clave), "
+        "animal_fotos(foto_url, orden, requiere_revision)))"
     ).eq("asociacion_id", usuario["asociacion_id"]).order("assigned_at", desc=True).execute()
 
     reporte_ids_sin_asignar = [
@@ -494,17 +494,17 @@ async def get_reportes_asignados(authorization: str = Header(None)):
                     "creado_at": str(ev["created_at"]),
                 }
 
-    # Motor de sugerencias Ruta 1 (BACK01/BACK02): si ya existe una
-    # contribución con reporte_id, la sugerencia de aliado veterinario fue
-    # aceptada; si además ya hay un evento de llegada a veterinaria en el
-    # historial, el hito de llegada ya se registró (el botón correspondiente
-    # se oculta en el frontend). Se aceptan el nombre canónico y el alias
-    # histórico.
     reporte_ids_todos = [
         r["reportes"]["id"] for r in resultado.data if r.get("reportes")
     ]
     reportes_con_sugerencia_aceptada = set()
     reportes_con_llegada_registrada = set()
+    
+    # ==========================================
+    # NUEVO: DICCIONARIO SEGURO DE EVALUACIONES
+    # ==========================================
+    evaluaciones_por_reporte = {}
+    
     if reporte_ids_todos:
         contribs = supabase.table("contribuciones").select("reporte_id").in_(
             "reporte_id", reporte_ids_todos
@@ -526,6 +526,20 @@ async def get_reportes_asignados(authorization: str = Header(None)):
         reportes_con_llegada_registrada = {
             e["reporte_id"] for e in (llegadas.data or []) if e.get("reporte_id")
         }
+        
+        # Consulta separada para urgencias (Así no colapsa Supabase)
+        try:
+            evals = supabase.table("reporte_urgency_evaluaciones").select(
+                "reporte_id, condicion_ia_score, condicion_declarada_score, tiempo_score, clima_score, riesgo_vial_score, calculado_at"
+            ).in_("reporte_id", reporte_ids_todos).order("calculado_at", desc=True).execute()
+            
+            for ev in (evals.data or []):
+                rid = ev["reporte_id"]
+                # Solo tomamos el más reciente (el primero que sale gracias al order desc)
+                if rid not in evaluaciones_por_reporte:
+                    evaluaciones_por_reporte[rid] = ev
+        except Exception as e:
+            print(f"[WARN] No se pudieron cargar las urgencias detalladas: {e}")
 
     reportes = []
     for r in resultado.data:
@@ -556,6 +570,25 @@ async def get_reportes_asignados(authorization: str = Header(None)):
             for f in (a.get("animal_fotos") or [])
         )
 
+        # ==========================================
+        # NUEVO: ASIGNAR URGENCIAS AL FRONTEND
+        # ==========================================
+        urgency_components = None
+        eval_reciente = evaluaciones_por_reporte.get(rep["id"])
+        
+        if eval_reciente:
+            ia_val = eval_reciente.get("condicion_ia_score") or 0
+            dec_val = eval_reciente.get("condicion_declarada_score") or 0
+            
+            urgency_components = {
+                "ia_score": eval_reciente.get("condicion_ia_score"),
+                "declared_score": eval_reciente.get("condicion_declarada_score"),
+                "time_score": eval_reciente.get("tiempo_score"),
+                "weather_score": eval_reciente.get("clima_score"),
+                "road_risk_score": eval_reciente.get("riesgo_vial_score"),
+                "discrepancia_alerta": bool((ia_val - dec_val) > 40)
+            }
+
         reportes.append({
             "asignacion_id": r["id"],
             "reporte_id": rep["id"],
@@ -572,7 +605,7 @@ async def get_reportes_asignados(authorization: str = Header(None)):
             "created_at": str(rep["created_at"]),
             "urgency_score": rep.get("urgency_score"),
             "urgency_nivel": rep.get("urgency_nivel"),
-            "urgency_components": rep.get("urgency_components"),
+            "urgency_components": urgency_components,  # <-- ¡Aquí van los datos!
             "urgency_calculado_at": (
                 str(rep["urgency_calculado_at"])
                 if rep.get("urgency_calculado_at")
