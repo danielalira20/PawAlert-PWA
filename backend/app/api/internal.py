@@ -107,3 +107,24 @@ def correr_reevaluacion_insignias_historicas_voluntarios_internos(
             reevaluar_insignias_historicas_voluntario_interno(dry_run=dry_run)
         )
     }
+
+@router.post("/urgency/run")
+def correr_urgency(x_cron_secret: Optional[str] = Header(None)):
+    if not settings.cron_secret or x_cron_secret != settings.cron_secret:
+        raise HTTPException(status_code=401, detail="No autorizado")
+    from app.services.urgency_scheduler_service import run_due_urgency_recalculations
+    return run_due_urgency_recalculations(limit=100)
+
+@router.post("/push/run")
+def correr_push_dispatch(x_cron_secret: Optional[str] = Header(None)):
+    if not settings.cron_secret or x_cron_secret != settings.cron_secret:
+        raise HTTPException(status_code=401, detail="No autorizado")
+    from app.services.push_notification_service import dispatch_pending_pushes
+    return dispatch_pending_pushes(limit=100)
+
+@router.post("/reporter-confirmations/run")
+def correr_confirmaciones_permanencia(x_cron_secret: Optional[str] = Header(None)):
+    if not settings.cron_secret or x_cron_secret != settings.cron_secret:
+        raise HTTPException(status_code=401, detail="No autorizado")
+    # Pausado hasta que D-1 y D-3 sean resueltas
+    return {"status": "paused_waiting_for_dependencies"}
