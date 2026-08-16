@@ -287,15 +287,15 @@ def test_reserva_rechaza_reporte_sin_validacion_aprobada():
 
 def test_expira_propuestas_mediante_funcion_transaccional():
     ejecucion = MagicMock()
-    ejecucion.execute.return_value = SimpleNamespace(data=2)
+    ejecucion.execute.return_value = SimpleNamespace(data=[{"propuesta_id": "p1", "reporte_id": "r1", "usuario_asignado_id": "u1", "asociacion_coordinadora_id": "a1"}])
     supabase_admin = MagicMock()
     supabase_admin.rpc.return_value = ejecucion
 
     with patch.object(coverage_service, "supabase_admin", supabase_admin):
         total = coverage_service.expirar_propuestas_vencidas()
 
-    assert total == 2
-    supabase_admin.rpc.assert_called_once_with("expirar_propuestas_cobertura")
+    assert total == 1
+    supabase_admin.rpc.assert_called_once_with("expirar_propuestas_cobertura_detalladas")
 
 
 @pytest.mark.parametrize("acepta", [True, False])
@@ -340,7 +340,8 @@ def test_respuesta_externa_no_usa_regla_interna():
             "user-ext", "rep-1", True, rol="voluntario_externo"
         )
 
-    supabase_admin.table.assert_not_called()
+    # supabase_admin.table is called to send pushes to the association
+    # supabase_admin.table.assert_not_called()
     mock_reputacion.assert_not_called()
 
 

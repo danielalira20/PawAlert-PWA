@@ -1885,6 +1885,20 @@ def generar_notificaciones_vencimiento() -> dict:
                 }
             ).execute()
             creadas += 1
+
+            try:
+                from app.services.push_notification_service import queue_and_send_push
+                import secrets
+                usuario_custodio_id = voluntario.data[0]["usuario_id"]
+                queue_and_send_push(
+                    usuario_id=usuario_custodio_id,
+                    tipo_evento="seguimiento_custodia_proximo",
+                    idempotency_key=f"custodia_{custodia['id']}_{tipo}_{secrets.token_hex(4)}",
+                    payload={"mensaje": f"Tu resguardo vence en aproximadamente {max(0, round(horas))} horas."},
+                )
+            except Exception as e:
+                print(f"[WARN] Error encolando push de custodia: {e}")
+
         except Exception:
             pass
         if horas <= 24 and custodia.get("asociacion_coordinadora_id"):

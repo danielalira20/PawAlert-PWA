@@ -27,3 +27,9 @@ El proceso de **Confirmación de Permanencia** fue completado implementando:
 1. La transición centralizada cuando un reporte "aprobado" se envía a "revisión manual" (Regla D-1).
 2. La definición y exclusión de reportes con "recursos vinculados" activos a través de una función segura en BD (`obtener_reportes_inactivos_permanencia`) (Regla D-2).
 3. El flujo técnico para los Reportantes Invitados (sin cuenta), generando un hash de `token_urlsafe` validado posteriormente en el endpoint público `/reports/invitados/confirmacion-permanencia` (Regla D-3).
+
+## 5. Inyección de Push Notifications (Ciclo de Vida)
+Para cumplir con los Eventos Push obligatorios del producto, se han inyectado de forma segura (usando `queue_and_send_push` con el Patrón Outbox) las siguientes notificaciones:
+- **Nueva propuesta:** Disparada en `reservar_cobertura` (dirigida al voluntario seleccionado).
+- **Respuesta a propuesta (Confirmación / Rechazo):** Disparada en `responder_propuesta` (dirigida al staff de la asociación asignada al reporte).
+- **Seguimiento próximo de custodia:** Disparada por el cron en `generar_notificaciones_vencimiento` (dirigida al voluntario custodio cuando faltan ≤72h).
