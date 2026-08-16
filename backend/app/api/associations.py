@@ -572,6 +572,7 @@ async def get_reportes_asignados(authorization: str = Header(None)):
             "created_at": str(rep["created_at"]),
             "urgency_score": rep.get("urgency_score"),
             "urgency_nivel": rep.get("urgency_nivel"),
+            "urgency_components": rep.get("urgency_components"),
             "urgency_calculado_at": (
                 str(rep["urgency_calculado_at"])
                 if rep.get("urgency_calculado_at")
