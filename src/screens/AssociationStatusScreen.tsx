@@ -1564,7 +1564,14 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                               </TouchableOpacity>
 
                               <View style={{ marginTop: 14 }}>
-                                {!['rechazada', 'cancelada', 'aceptada', 'completada'].includes(reporte.estado_asignacion_clave) && !yaRescatado && (reporte.estado_reporte === 'asignado' || reporte.estado_asignacion_clave === 'notificada') ? (
+                                {/* BLOQUEO DE BOTONES DE ASIGNACIÓN (CORREGIDO) */}
+                                {reporte.estado_reporte === 'cerrado' || reporte.estado_reporte === 'cancelado_por_reportante' || (esperandoConfirmacion || (enProceso && !yaRescatado)) ? (
+                                  <View style={{ backgroundColor: '#F3F4F6', padding: 12, borderRadius: 12, alignItems: 'center' }}>
+                                    <Text style={{ fontSize: 12, color: COLORS.textLight, fontWeight: '600' }}>
+                                      {reporte.estado_reporte === 'cerrado' ? 'Caso cerrado' : 'Ya cuenta con voluntario — no se puede asignar.'}
+                                    </Text>
+                                  </View>
+                                ) : !['rechazada', 'cancelada', 'aceptada', 'completada'].includes(reporte.estado_asignacion_clave) && !yaRescatado && (reporte.estado_reporte === 'asignado' || reporte.estado_asignacion_clave === 'notificada') ? (
                                   <View style={{ flexDirection: 'row', gap: 12 }}>
                                     <TouchableOpacity onPress={() => { setReporteAccionId(reporte.reporte_id); setShowAcceptModal(true); }} style={{ flex: 1, backgroundColor: COLORS.primary, paddingVertical: 14, borderRadius: 16, alignItems: 'center' }}>
                                       <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Aceptar</Text>
@@ -1586,10 +1593,6 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                                     </TouchableOpacity>
                                   </View>
                                 ) : enProceso ? (
-                                  // en_camino / en_atencion: el staff sigue trabajando el caso.
-                                  // "Hito rescate" NO va aquí — le pertenece al dashboard del
-                                  // staff (el backend lo rechaza con 403 si alguien más lo llama).
-                                  // La asociación solo monitorea mientras tanto.
                                   <TouchableOpacity onPress={() => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${reporte.latitud},${reporte.longitud}`)} style={{ backgroundColor: COLORS.primary, paddingVertical: 14, borderRadius: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}>
                                     <Ionicons name="map" size={16} color={COLORS.white} style={{ marginRight: 6 }} />
                                     <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Cómo llegar</Text>

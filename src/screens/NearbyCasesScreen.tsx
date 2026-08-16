@@ -141,7 +141,12 @@ function CaseCard({
         </View>
       </View>
 
-      {ofrecido ? (
+      {/* BLOQUEO DE BOTONES DE ASIGNACIÓN */}
+      {caso.asociacion_coordinadora === 'Sin cobertura' || ['procesando', 'revision_manual', 'rechazado'].includes(caso.estado_reporte) || caso.estado_reporte === 'cerrado' || caso.estado_reporte === 'cancelado_por_reportante' ? (
+        <Text style={[styles.actionHint, { color: C.danger, fontWeight: '700' }]}>
+          Este caso actualmente no puede recibir ofrecimientos.
+        </Text>
+      ) : ofrecido ? (
         <View style={styles.offeredActions}>
           <View style={styles.offeredState}>
             <Ionicons name="checkmark-circle" size={20} color={C.accent} />
@@ -464,7 +469,11 @@ export default function NearbyCasesScreen() {
           <View style={[styles.explorer, width >= 900 && styles.explorerDesktop]}>
             <View style={[styles.mapPanel, width >= 900 && styles.mapPanelDesktop]}>
               <NearbyCasesMap
-                casos={cases}
+                casos={cases.map(c => ({
+                  ...c,
+                  latitud_aproximada: c.latitud_aproximada + 0.0015,
+                  longitud_aproximada: c.longitud_aproximada - 0.0015
+                }))}
                 selectedId={selectedId}
                 onSelect={setSelectedId}
               />
