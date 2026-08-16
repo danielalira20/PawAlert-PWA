@@ -396,6 +396,20 @@ def reservar_cobertura(
                 "p_vence_at": vence_at.isoformat(),
             },
         ).execute()
+
+        try:
+            from app.services.push_notification_service import queue_and_send_push
+            import secrets
+            queue_and_send_push(
+                usuario_id=usuario_asignado_id,
+                tipo_evento="nueva_propuesta",
+                idempotency_key=f"nueva_propuesta_{reporte_id}_{usuario_asignado_id}_{secrets.token_hex(4)}",
+                payload={"mensaje": "Has recibido una nueva propuesta de asignación para un caso."},
+                reporte_id=reporte_id
+            )
+        except Exception as e:
+            print(f"[WARN] Error encolando push de nueva propuesta: {e}")
+
     except Exception as exc:
         detalle = str(exc).lower()
         if (
@@ -502,6 +516,29 @@ def responder_propuesta(
                 "p_motivo": motivo,
             },
         ).execute()
+
+        try:
+            from app.services.push_notification_service import queue_and_send_push
+            import secrets
+            reporte_data = supabase_admin.table("reportes").select("asociacion_asignada_id").eq("id", reporte_id).execute()
+            asoc_id = reporte_data.data[0]["asociacion_asignada_id"] if reporte_data.data else None
+            if asoc_id:
+                usuarios_asoc = supabase_admin.table("usuarios").select("id").eq("asociacion_id", asoc_id).in_("rol_id", ["asociacion", "staff"]).execute()
+                if usuarios_asoc.data:
+                    for ua in usuarios_asoc.data:
+                        tipo_ev = "voluntario_confirmo" if acepta else "voluntario_rechazo"
+                        msg = "Un voluntario ha aceptado la asignación." if acepta else "Un voluntario ha rechazado la asignación."
+                        queue_and_send_push(
+                            usuario_id=ua["id"],
+                            tipo_evento=tipo_ev,
+                            idempotency_key=f"{tipo_ev}_{reporte_id}_{usuario_id}_{ua['id']}_{secrets.token_hex(4)}",
+                            payload={"mensaje": msg},
+                            reporte_id=reporte_id,
+                            propuesta_id=propuesta_id
+                        )
+        except Exception as e:
+            print(f"[WARN] Error encolando push de respuesta a propuesta: {e}")
+
     except Exception as exc:
         if "propuesta_no_disponible" in str(exc).lower():
             raise HTTPException(
