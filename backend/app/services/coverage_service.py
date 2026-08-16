@@ -422,9 +422,48 @@ def reservar_cobertura(
 
 
 def expirar_propuestas_vencidas() -> int:
-    """Libera de forma transaccional las propuestas que agotaron su plazo."""
-    resultado = supabase_admin.rpc("expirar_propuestas_cobertura").execute()
-    return int(resultado.data or 0)
+    """Libera de forma transaccional las propuestas que agotaron su plazo y encola notificaciones."""
+    resultado = supabase_admin.rpc("expirar_propuestas_cobertura_detalladas").execute()
+    propuestas_vencidas = resultado.data or []
+    
+    if propuestas_vencidas:
+        from app.services.push_notification_service import queue_and_send_push
+        import secrets
+        
+        for prop in propuestas_vencidas:
+            usuario_asignado = prop.get("usuario_asignado_id")
+            asoc_id = prop.get("asociacion_coordinadora_id")
+            propuesta_id = prop.get("propuesta_id")
+            reporte_id = prop.get("reporte_id")
+            
+            # Notificar a la persona seleccionada
+            if usuario_asignado:
+                queue_and_send_push(
+                    usuario_id=usuario_asignado,
+                    tipo_evento="propuesta_vencida",
+                    idempotency_key=f"prop_venc_{propuesta_id}_{usuario_asignado}_{secrets.token_hex(4)}",
+                    payload={"mensaje": "El tiempo para responder la propuesta se agotó. El caso ya no está reservado."},
+                    reporte_id=reporte_id,
+                    propuesta_id=propuesta_id
+                )
+            
+            # Notificar a la asociación coordinadora (enviar al staff/admin principal de la asoc)
+            # Como los push se envían a usuario_id, necesitamos encontrar a quién de la asoc notificar.
+            # Por ahora, podemos buscar todos los usuarios de la asociación con rol 'asociacion' o 'staff' y mandarles push
+            if asoc_id:
+                usuarios_asoc = supabase_admin.table("usuarios").select("id").eq("asociacion_id", asoc_id).in_("rol_id", ["asociacion", "staff"]).execute()
+                if usuarios_asoc.data:
+                    for ua in usuarios_asoc.data:
+                        queue_and_send_push(
+                            usuario_id=ua["id"],
+                            tipo_evento="propuesta_vencida_asoc",
+                            idempotency_key=f"prop_venc_asoc_{propuesta_id}_{ua['id']}_{secrets.token_hex(4)}",
+                            payload={"mensaje": "Una propuesta de asignación ha caducado. Revisa tus casos."},
+                            reporte_id=reporte_id,
+                            propuesta_id=propuesta_id
+                        )
+
+    return len(propuestas_vencidas)
 
 
 def responder_propuesta(

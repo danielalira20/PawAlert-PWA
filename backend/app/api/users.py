@@ -73,3 +73,73 @@ async def get_usuario_actual(authorization: str = Header(None)):
         usuario_data["tipo_perfil_apoyo"] = None
  
     return usuario_data
+
+from pydantic import BaseModel
+from typing import Literal
+
+class PushDeviceRequest(BaseModel):
+    token: str
+    platform: Literal["web", "android", "ios"]
+
+@router.post("/me/push-devices", status_code=200)
+async def register_push_device(body: PushDeviceRequest, authorization: str = Header(None)):
+    """Registra o actualiza el token FCM de un dispositivo para el usuario actual."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="No autenticado")
+    
+    token = authorization.replace("Bearer ", "")
+    try:
+        auth_response = supabase.auth.get_user(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Token inválido o expirado")
+        
+    resultado = supabase.table("usuarios").select("id").eq("auth_user_id", auth_response.user.id).execute()
+    if not resultado.data:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        
+    usuario_id = resultado.data[0]["id"]
+    
+    # Upsert el token (la unicidad es por provider y token)
+    # Si el token existía pero pertenecía a otro usuario, esto lo reasigna al usuario actual.
+    data = {
+        "usuario_id": usuario_id,
+        "provider": "fcm",
+        "token": body.token,
+        "platform": body.platform,
+        "active": True,
+        "last_seen_at": "now()",
+        "updated_at": "now()"
+    }
+    
+    # Supabase/PostgREST on_conflict upsert
+    try:
+        supabase.table("dispositivos_push").upsert(data, on_conflict="provider,token").execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al registrar dispositivo: {e}")
+        
+    return {"status": "ok", "message": "Dispositivo registrado exitosamente"}
+
+@router.delete("/me/push-devices/{push_token}", status_code=200)
+async def unregister_push_device(push_token: str, authorization: str = Header(None)):
+    """Elimina el token FCM del usuario actual (ej. al cerrar sesión)."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="No autenticado")
+        
+    token = authorization.replace("Bearer ", "")
+    try:
+        auth_response = supabase.auth.get_user(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Token inválido o expirado")
+        
+    resultado = supabase.table("usuarios").select("id").eq("auth_user_id", auth_response.user.id).execute()
+    if not resultado.data:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        
+    usuario_id = resultado.data[0]["id"]
+    
+    try:
+        supabase.table("dispositivos_push").delete().eq("usuario_id", usuario_id).eq("token", push_token).eq("provider", "fcm").execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al eliminar dispositivo: {e}")
+        
+    return {"status": "ok", "message": "Dispositivo eliminado exitosamente"}
