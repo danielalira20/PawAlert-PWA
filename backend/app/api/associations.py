@@ -463,7 +463,7 @@ async def get_reportes_asignados(authorization: str = Header(None)):
     resultado = supabase.table("reporte_asignaciones").select(
     "id, assigned_at, accepted_at, closed_at, notas, "
     "asignacion_estados!reporte_asignaciones_estado_id_fkey(clave, descripcion), "
-    "reportes(id, estado_reporte, confirmacion_voluntario, municipio, colonia, calle, latitud, longitud, created_at, "
+    "reportes(id, estado_reporte, estado_validacion_reporte, confirmacion_voluntario, municipio, colonia, calle, latitud, longitud, created_at, "
     "urgency_score, urgency_nivel, urgency_calculado_at, "
     "urgency_proximo_recalculo_at, urgency_excluido, "
     "animal(id, orden, es_grupo, cantidad, trae_crias_nacidas, numero_crias_nacidas, "
@@ -561,6 +561,7 @@ async def get_reportes_asignados(authorization: str = Header(None)):
             "reporte_id": rep["id"],
             "estado_asignacion_clave": estado_asignacion_clave,
             "estado_reporte": rep.get("estado_reporte"),
+            "estado_validacion_reporte": rep.get("estado_validacion_reporte"),
             "confirmacion_voluntario": rep.get("confirmacion_voluntario"),
             "ultimo_rechazo": ultimos_rechazos.get(rep["id"]),
             "municipio": rep.get("municipio"),
@@ -571,6 +572,7 @@ async def get_reportes_asignados(authorization: str = Header(None)):
             "created_at": str(rep["created_at"]),
             "urgency_score": rep.get("urgency_score"),
             "urgency_nivel": rep.get("urgency_nivel"),
+            "urgency_components": rep.get("urgency_components"),
             "urgency_calculado_at": (
                 str(rep["urgency_calculado_at"])
                 if rep.get("urgency_calculado_at")
