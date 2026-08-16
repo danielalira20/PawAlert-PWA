@@ -13,7 +13,7 @@ Para facilitar la depuración y evitar dependencias entre distintas tareas pesad
 
 - `POST /internal/urgency/run`: Reclama un lote de reportes (usando concurrencia segura con `FOR UPDATE SKIP LOCKED` en `urgency_report_claims`) y recalcula su nivel de urgencia, clasificando si el reporte fue `updated` o `degraded` (falla de cache). Se mantiene un log en `urgency_scheduler_runs`.
 - `POST /internal/push/run`: Despacha las notificaciones Push pendientes (límite de 100 por ejecución).
-- `POST /internal/reporter-confirmations/run`: *(En desarrollo)* Evaluará los reportes con más de 6 horas sin actividad ("hitos") para solicitarle al Reportante confirmación sobre la permanencia del animal.
+- `POST /internal/reporter-confirmations/run`: Evalúa reportes con más de 6 horas sin actividad (hitos) para solicitar confirmación de permanencia. Excluye reportes con "recursos vinculados" (custodias activas o contribuciones) mediante la función `obtener_reportes_inactivos_permanencia()`. Genera tokens seguros de 1 solo uso para los invitados, encola Pushes para los autenticados, y mueve a revisión manual a aquellos que caducan sin respuesta.
 
 **Nota para producción:** El administrador debe configurar Supabase (o `pg_cron`) para hacer llamadas HTTP POST a estos endpoints cada 5 minutos.
 
@@ -22,8 +22,8 @@ Para facilitar la depuración y evitar dependencias entre distintas tareas pesad
 - **Unicidad:** La clave única es global por `(provider, token)`. Si un usuario nuevo inicia sesión en el mismo dispositivo, el upsert actualiza el `usuario_id` adueñándose del token, lo que previene que le sigan llegando notificaciones a la sesión anterior.
 - El frontend llama a `POST /users/me/push-devices` tras iniciar sesión y a `DELETE /users/me/push-devices/{token}` al cerrar sesión.
 
-## 4. Dependencias Críticas (Bloqueadas temporalmente)
-El proceso de **Confirmación de Permanencia** está pausado y no debe activarse hasta resolver tres reglas de negocio con el equipo (D-1 a D-3):
-1. La transición centralizada cuando un reporte "aprobado" se envía a "revisión manual".
-2. La definición y exclusión de reportes con "recursos vinculados" activos.
-3. El flujo técnico para los Reportantes Invitados (sin cuenta) que deben recibir el aviso de confirmación.
+## 4. Dependencias Críticas (Resueltas en Fase 2)
+El proceso de **Confirmación de Permanencia** fue completado implementando:
+1. La transición centralizada cuando un reporte "aprobado" se envía a "revisión manual" (Regla D-1).
+2. La definición y exclusión de reportes con "recursos vinculados" activos a través de una función segura en BD (`obtener_reportes_inactivos_permanencia`) (Regla D-2).
+3. El flujo técnico para los Reportantes Invitados (sin cuenta), generando un hash de `token_urlsafe` validado posteriormente en el endpoint público `/reports/invitados/confirmacion-permanencia` (Regla D-3).

@@ -126,5 +126,5 @@ def correr_push_dispatch(x_cron_secret: Optional[str] = Header(None)):
 def correr_confirmaciones_permanencia(x_cron_secret: Optional[str] = Header(None)):
     if not settings.cron_secret or x_cron_secret != settings.cron_secret:
         raise HTTPException(status_code=401, detail="No autorizado")
-    # Pausado hasta que D-1 y D-3 sean resueltas
-    return {"status": "paused_waiting_for_dependencies"}
+    from app.services.permanencia_service import procesar_confirmaciones_permanencia
+    return procesar_confirmaciones_permanencia()
