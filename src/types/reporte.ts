@@ -34,8 +34,7 @@ export interface Reporte {
   estado_reporte: string | null;
   estado_cobertura?: string | null;
   estado_moderacion?: string | null;
-  validation_status?: 'processing' | 'approved' | 'manual_review' | 'rejected' | null;
-  urgency_score?: number | null;
+estado_validacion_reporte?: 'procesando' | 'aprobado' | 'revision_manual' | 'rechazado' | null;  urgency_score?: number | null;
   urgency_level?: 'verde' | 'amarillo' | 'rojo' | null;
   urgency_data_status?: 'complete' | 'degraded' | null;
   asociacion_asignada_id?: string | null;

@@ -233,8 +233,8 @@ export default function MapScreen() {
       // Ocultar casos cerrados o cancelados
       if (r.estado_reporte === 'cerrado' || r.estado_reporte === 'cancelado_por_reportante') return false;
       
-      // Ocultar casos que sigan en proceso de validación (tolerante a null para reportes viejos)
-      if (r.validation_status && ['processing', 'manual_review', 'rejected'].includes(r.validation_status)) return false;
+      // Ocultar casos que sigan en proceso de validación
+      if (r.estado_validacion_reporte && ['procesando', 'revision_manual', 'rechazado'].includes(r.estado_validacion_reporte)) return false;
       
       // Ocultar casos bloqueados por moderación
       if (r.estado_moderacion && !['visible', 'aprobado'].includes(r.estado_moderacion)) return false;
@@ -245,14 +245,15 @@ export default function MapScreen() {
       return true;
     })
     .sort((a, b) => {
-      // Regla de negocio: Ordenar por Urgency Score descendente
       if (ordenar === 'urgente') {
-        const scoreA = a.urgency_score ?? -1; 
-        const scoreB = b.urgency_score ?? -1;
+        // Extraer y asegurar que se lean como números (si es null, vale -1)
+        const scoreA = (a.urgency_score !== null && a.urgency_score !== undefined) ? Number(a.urgency_score) : -1; 
+        const scoreB = (b.urgency_score !== null && b.urgency_score !== undefined) ? Number(b.urgency_score) : -1;
         
         if (scoreA !== scoreB) {
-          return scoreB - scoreA;
+          return scoreB - scoreA; // Orden descendente (91 le gana a 80 y a -1)
         }
+        // Desempate: el más antiguo primero
         return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       }
 
