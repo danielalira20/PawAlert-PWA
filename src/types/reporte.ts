@@ -32,6 +32,15 @@ export interface Reporte {
   condicion: string | null;
   estado: string;
   estado_reporte: string | null;
+  estado_cobertura?: string | null;
+  estado_moderacion?: string | null;
+  validation_status?: 'processing' | 'approved' | 'manual_review' | 'rejected' | null;
+  urgency_score?: number | null;
+  urgency_level?: 'verde' | 'amarillo' | 'rojo' | null;
+  urgency_data_status?: 'complete' | 'degraded' | null;
+  asociacion_asignada_id?: string | null;
+  staff_asignado_id?: string | null;
+  candidatos_presentados_at?: string | null;
   latitud: number | null;
   longitud: number | null;
   calle: string | null;

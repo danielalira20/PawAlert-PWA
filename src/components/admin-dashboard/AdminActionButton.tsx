@@ -75,7 +75,7 @@ export function AdminActionButton({
               icon={icon}
               label={label}
               loading={loading}
-              color={rechazarActivo ? '#fff' : Brand.danger}
+              color={rechazarActivo ? '#fff' : '#E74C3C'}
             />
           </View>
         )}
@@ -137,7 +137,7 @@ const styles = StyleSheet.create({
   rechazarTenue: {
     backgroundColor: 'rgba(217,64,37,0.08)',
     borderWidth: 1.5,
-    borderColor: Brand.danger,
+    borderColor: '#E74C3C',
   },
   secundario: {
     backgroundColor: '#F7F4F0',
