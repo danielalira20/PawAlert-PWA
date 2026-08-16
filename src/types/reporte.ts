@@ -34,7 +34,7 @@ export interface Reporte {
   estado_reporte: string | null;
   estado_cobertura?: string | null;
   estado_moderacion?: string | null;
-estado_validacion_reporte?: 'procesando' | 'aprobado' | 'revision_manual' | 'rechazado' | null;  urgency_score?: number | null;
+  estado_validacion_reporte?: 'procesando' | 'aprobado' | 'revision_manual' | 'rechazado' | null;  urgency_score?: number | null;
   urgency_level?: 'verde' | 'amarillo' | 'rojo' | null;
   urgency_data_status?: 'complete' | 'degraded' | null;
   asociacion_asignada_id?: string | null;
@@ -46,6 +46,7 @@ estado_validacion_reporte?: 'procesando' | 'aprobado' | 'revision_manual' | 'rec
   municipio: string | null;
   colonia: string | null;
   created_at: string;
+  confirmacion_voluntario?: string | null;
   animales: Animal[];
 }
 

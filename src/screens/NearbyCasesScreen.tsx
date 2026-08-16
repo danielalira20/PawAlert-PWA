@@ -52,6 +52,7 @@ export interface CasoCercano {
   longitud_aproximada: number;
   distancia_km: number;
   distancia_precisa_km: number;
+  estado_reporte?: string;
   created_at: string;
   asociacion_coordinadora: string;
   animales: Animal[];
@@ -142,8 +143,7 @@ function CaseCard({
       </View>
 
       {/* BLOQUEO DE BOTONES DE ASIGNACIÓN */}
-      {caso.asociacion_coordinadora === 'Sin cobertura' || ['procesando', 'revision_manual', 'rechazado'].includes(caso.estado_reporte) || caso.estado_reporte === 'cerrado' || caso.estado_reporte === 'cancelado_por_reportante' ? (
-        <Text style={[styles.actionHint, { color: C.danger, fontWeight: '700' }]}>
+      {caso.asociacion_coordinadora === 'Sin cobertura' || ['procesando', 'revision_manual', 'rechazado'].includes(caso.estado_reporte ?? '') || caso.estado_reporte === 'cerrado' || caso.estado_reporte === 'cancelado_por_reportante' ? (        <Text style={[styles.actionHint, { color: C.danger, fontWeight: '700' }]}>
           Este caso actualmente no puede recibir ofrecimientos.
         </Text>
       ) : ofrecido ? (

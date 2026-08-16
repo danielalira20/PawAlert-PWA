@@ -66,7 +66,7 @@ export function AdminActionButton({
               icon={icon}
               label={label}
               loading={loading}
-              color={Brand.textLight}
+              color={Brand.textMuted}
             />
           </View>
         ) : (

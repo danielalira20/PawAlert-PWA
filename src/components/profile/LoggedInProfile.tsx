@@ -215,7 +215,7 @@ export function LoggedInProfile({
       pendientes={pendientes}
       totalPendientes={totalPendientes}
       isLoading={isLoadingAdmin}
-      onOpenAdminPanel={onOpenAdminPanel}
+      onOpenAdminPanel={onOpenAdminPanel || (() => {})}
     />
   ) : esStaff ? (
     <StaffImpactStats impacto={impactoStaff} isLoading={isLoadingStaff} />

@@ -78,6 +78,9 @@ interface ReporteAsignado extends ReportUrgencySnapshot {
   fotos_urls: string[];
   animales: Animal[];
   requiere_revision?: boolean;
+  estado_validacion_reporte?: string;
+  urgency_data_status?: string;
+  urgency_components?: any;
 }
 
 interface HistorialEvento {
