@@ -275,12 +275,12 @@ export function LoggedInProfile({
           <AccessRow
             icon="gift-outline"
             label="Catálogo de Recompensas"
-            onPress={onOpenCatalogo}
+            onPress={() => onOpenCatalogo?.()}
           />
           <AccessRow
             icon="qr-code-outline"
             label="Mis Canjes"
-            onPress={onOpenMisCanjes}
+            onPress={() => onOpenMisCanjes?.()}
             isLast={!esAdmin && !esAsociacion && !esStaff && !puedeVerPostulacion && (user?.tiene_perfil_apoyo === true)}
           />
         </>
@@ -297,7 +297,7 @@ export function LoggedInProfile({
         <AccessRow
           icon="scan-outline"
           label="Escanear QR de Canje"
-          onPress={onOpenEscaner}
+          onPress={() => onOpenEscaner?.()}
           isLast={!esAdmin && !esAsociacion && !esStaff && !puedeVerPostulacion}
         />
       )}
@@ -310,11 +310,11 @@ export function LoggedInProfile({
         />
       )}
       {esAdmin && (
-        <AccessRow icon="shield-checkmark-outline" label="Panel de administrador" onPress={onOpenAdminPanel} isLast />
+        <AccessRow icon="shield-checkmark-outline" label="Panel de administrador" onPress={() => onOpenAdminPanel?.()} isLast />
       )}
       {esAsociacion && (
         <>
-          <AccessRow icon="business-outline" label="Panel de asociación" onPress={onOpenAssociationPanel} />
+          <AccessRow icon="business-outline" label="Panel de asociación" onPress={() => onOpenAssociationPanel?.()} />
           <AccessRow icon="pulse-outline" label="Seguimiento regional" onPress={onOpenCustodyDashboard} isLast />
         </>
       )}
