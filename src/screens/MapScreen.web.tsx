@@ -230,23 +230,34 @@ export default function MapScreen() {
 
   const reportesFiltrados = reportes
     .filter(r => {
-      if (r.estado_reporte === 'cerrado') return false;
+      // Ocultar casos cerrados o cancelados
+      if (r.estado_reporte === 'cerrado' || r.estado_reporte === 'cancelado_por_reportante') return false;
+      
+      // Ocultar casos que sigan en proceso de validación (tolerante a null para reportes viejos)
+      if (r.validation_status && ['processing', 'manual_review', 'rejected'].includes(r.validation_status)) return false;
+      
+      // Ocultar casos bloqueados por moderación
+      if (r.estado_moderacion && !['visible', 'aprobado'].includes(r.estado_moderacion)) return false;
+
       const animales = getAnimales(r);
-      // Un caso matchea el filtro si CUALQUIERA de sus animales coincide,
-      // no solo el legado — ej. filtrar "gato" debe mostrar un caso
-      // perro+gato aunque el legado (más grave) sea el perro.
       if (filtro !== 'todos' && !animales.some(a => a.condicion?.toLowerCase() === filtro)) return false;
       if (filtroEspecie !== 'todos' && !animales.some(a => a.tipo_animal?.toLowerCase() === filtroEspecie)) return false;
       return true;
     })
     .sort((a, b) => {
+      // Regla de negocio: Ordenar por Urgency Score descendente
+      if (ordenar === 'urgente') {
+        const scoreA = a.urgency_score ?? -1; 
+        const scoreB = b.urgency_score ?? -1;
+        
+        if (scoreA !== scoreB) {
+          return scoreB - scoreA;
+        }
+        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      }
+
       if (ordenar === 'reciente') return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
       if (ordenar === 'antiguo')  return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-      if (ordenar === 'urgente') {
-        const ua = URGENCIA[condicionMasGrave(getAnimales(a))?.toLowerCase() ?? ''] ?? 3;
-        const ub = URGENCIA[condicionMasGrave(getAnimales(b))?.toLowerCase() ?? ''] ?? 3;
-        return ua - ub;
-      }
       return 0;
     });
 
