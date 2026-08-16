@@ -585,6 +585,7 @@ TRANSICIONES_PERMITIDAS = {
 async def obtener_reportes() -> list:
     resultado = supabase.table("reportes").select(
         "id, estado_reporte, estado_id, latitud, longitud, municipio, colonia, created_at, "
+        "urgency_score, urgency_nivel, estado_validacion_reporte, estado_moderacion, "
         "animal(orden, es_grupo, cantidad, trae_crias_nacidas, numero_crias_nacidas, "
         "tipo_animal_id, condicion_id, tamanio_id, sexo, edad_aproximada, descripcion, "
         "tipo_animal_catalogo(clave), condicion_catalogo(clave), tamanio_catalogo(clave), "
@@ -622,6 +623,10 @@ async def obtener_reportes() -> list:
             "created_at": str(r["created_at"]),
             "foto_url": foto_url,
             "animales": animales,
+            "urgency_score": r.get("urgency_score"),
+            "urgency_nivel": r.get("urgency_nivel"),
+            "estado_validacion_reporte": r.get("estado_validacion_reporte"),
+            "estado_moderacion": r.get("estado_moderacion"),
         })
 
     return reportes
