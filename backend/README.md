@@ -105,6 +105,24 @@ En producción, los mensajes iniciados fuera de la ventana de atención de
 WhatsApp deberán migrarse a templates de utilidad aprobados. El Sandbox se
 usa únicamente para pruebas.
 
+### Notificaciones Push con Firebase
+
+El backend escribe el outbox con la llave `service_role` y Firebase Admin
+entrega los mensajes. En Railway configura el JSON completo de la cuenta de
+servicio como una sola variable; no lo agregues a Git:
+
+```env
+FIREBASE_SERVICE_ACCOUNT_JSON={"type":"service_account","project_id":"..."}
+```
+
+Sin esa variable se intentan usar credenciales predeterminadas de Google. El
+despacho del outbox se ejecuta con:
+
+```text
+POST /internal/push/run
+X-Cron-Secret: <CRON_SECRET>
+```
+
 ## Correr el servidor
 
 ```bash

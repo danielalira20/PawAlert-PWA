@@ -1,30 +1,31 @@
 import logging
+from datetime import datetime, timezone
 from typing import Dict, List, Any
 from collections import defaultdict
-from app.db.supabase import supabase
+from app.db.supabase import supabase_admin
 from app.services.urgency_service import evaluate_report_urgency, UrgencyCalculation
 
 logger = logging.getLogger(__name__)
 
 def _crear_run() -> dict:
-    result = supabase.table("urgency_scheduler_runs").insert({}).execute()
+    result = supabase_admin.table("urgency_scheduler_runs").insert({}).execute()
     return result.data[0] if result.data else {}
 
 def _claim_sublote(run_id: str, limit: int = 10) -> List[str]:
     # We call the RPC claim_due_urgency_reports
-    result = supabase.rpc("claim_due_urgency_reports", {"p_run_id": run_id, "p_limit": limit}).execute()
+    result = supabase_admin.rpc("claim_due_urgency_reports", {"p_run_id": run_id, "p_limit": limit}).execute()
     # The RPC returns a list of dicts: [{"reporte_id": "uuid"}, ...]
     return [row["reporte_id"] for row in (result.data or [])]
 
 def _release_claim(reporte_id: str, run_id: str) -> None:
     try:
-        supabase.rpc("release_urgency_claim", {"p_reporte_id": reporte_id, "p_run_id": run_id}).execute()
+        supabase_admin.rpc("release_urgency_claim", {"p_reporte_id": reporte_id, "p_run_id": run_id}).execute()
     except Exception as e:
         logger.error(f"Error releasing claim for {reporte_id}: {e}")
 
 def _finalizar_run(run_id: str, contadores: dict, error: str = None) -> None:
     update_data = {
-        "finalizado_at": "now()",
+        "finalizado_at": datetime.now(timezone.utc).isoformat(),
         "examined_count": contadores.get("examined", 0),
         "updated_count": contadores.get("updated", 0),
         "degraded_count": contadores.get("degraded", 0),
@@ -33,7 +34,7 @@ def _finalizar_run(run_id: str, contadores: dict, error: str = None) -> None:
         "estado": "error" if error else "completado",
         "resumen_error": error
     }
-    supabase.table("urgency_scheduler_runs").update(update_data).eq("id", run_id).execute()
+    supabase_admin.table("urgency_scheduler_runs").update(update_data).eq("id", run_id).execute()
 
 def _clasificar(result: UrgencyCalculation) -> str:
     """

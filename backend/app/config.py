@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-3.5-flash-lite"
     gemini_file_timeout_seconds: int = 180
     openweather_api_key: str = ""
+    firebase_service_account_json: str = ""
 
     class Config:
         env_file = ".env"
