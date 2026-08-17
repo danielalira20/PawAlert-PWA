@@ -49,6 +49,9 @@ export async function getPushPermissionState(): Promise<PushPermissionState> {
   ) {
     return 'unsupported';
   }
+  if (Notification.permission === 'granted') {
+    return (await AsyncStorage.getItem(STORAGE_KEY)) ? 'granted' : 'default';
+  }
   return Notification.permission;
 }
 
@@ -56,7 +59,7 @@ export async function enablePushNotifications(accessToken: string) {
   const soporte = await getPushPermissionState();
   if (soporte === 'unsupported') throw new Error('push_no_compatible');
 
-  const permiso = soporte === 'granted'
+  const permiso = Notification.permission === 'granted'
     ? 'granted'
     : await Notification.requestPermission();
   if (permiso !== 'granted') throw new Error('push_permiso_denegado');
@@ -104,5 +107,5 @@ export async function disablePushNotifications(accessToken: string) {
     await deleteToken(getMessaging(firebaseApp()));
   }
   await AsyncStorage.removeItem(STORAGE_KEY);
-  return { permission: Notification.permission as PushPermissionState };
+  return { permission: 'default' as const };
 }

@@ -22,10 +22,10 @@ const STORAGE_KEY = '@pawalert_push_token';
 
 export async function getPushPermissionState(): Promise<PushPermissionState> {
   const estado = await hasPermission(getMessaging());
-  return estado === AuthorizationStatus.AUTHORIZED
-    || estado === AuthorizationStatus.PROVISIONAL
-    ? 'granted'
-    : 'default';
+  const autorizado = estado === AuthorizationStatus.AUTHORIZED
+    || estado === AuthorizationStatus.PROVISIONAL;
+  if (!autorizado) return 'default';
+  return (await AsyncStorage.getItem(STORAGE_KEY)) ? 'granted' : 'default';
 }
 
 export async function enablePushNotifications(accessToken: string) {
