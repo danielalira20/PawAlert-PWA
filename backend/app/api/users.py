@@ -1,5 +1,7 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, HTTPException,Header
-from app.db.supabase import supabase
+from app.db.supabase import supabase, supabase_admin
 
 router = APIRouter()
 
@@ -107,15 +109,18 @@ async def register_push_device(body: PushDeviceRequest, authorization: str = Hea
         "token": body.token,
         "platform": body.platform,
         "active": True,
-        "last_seen_at": "now()",
-        "updated_at": "now()"
+        "last_seen_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat()
     }
     
     # Supabase/PostgREST on_conflict upsert
     try:
-        supabase.table("dispositivos_push").upsert(data, on_conflict="provider,token").execute()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al registrar dispositivo: {e}")
+        supabase_admin.table("dispositivos_push").upsert(data, on_conflict="provider,token").execute()
+    except Exception as error:
+        raise HTTPException(
+            status_code=503,
+            detail="No pudimos registrar las notificaciones de este dispositivo",
+        ) from error
         
     return {"status": "ok", "message": "Dispositivo registrado exitosamente"}
 
@@ -138,8 +143,11 @@ async def unregister_push_device(push_token: str, authorization: str = Header(No
     usuario_id = resultado.data[0]["id"]
     
     try:
-        supabase.table("dispositivos_push").delete().eq("usuario_id", usuario_id).eq("token", push_token).eq("provider", "fcm").execute()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al eliminar dispositivo: {e}")
+        supabase_admin.table("dispositivos_push").delete().eq("usuario_id", usuario_id).eq("token", push_token).eq("provider", "fcm").execute()
+    except Exception as error:
+        raise HTTPException(
+            status_code=503,
+            detail="No pudimos desactivar las notificaciones de este dispositivo",
+        ) from error
         
     return {"status": "ok", "message": "Dispositivo eliminado exitosamente"}

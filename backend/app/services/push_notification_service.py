@@ -1,6 +1,8 @@
 import logging
+import json
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
-from app.db.supabase import supabase
+from app.db.supabase import supabase_admin
 from app.config import settings
 
 try:
@@ -12,23 +14,23 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-# Initialize Firebase Admin if not already initialized
-def _init_firebase():
+def _init_firebase() -> bool:
     if not firebase_admin:
         logger.warning("firebase_admin is not installed")
-        return
+        return False
     
     if not firebase_admin._apps:
-        # In a real scenario, credentials should be loaded from env vars securely
-        # e.g., cred = credentials.Certificate(settings.firebase_service_account_dict)
-        # For now, we leave a placeholder as we don't have the cert file.
         try:
-            # Fallback to default credentials if running in a GCP environment
-            firebase_admin.initialize_app()
+            if settings.firebase_service_account_json:
+                credenciales = json.loads(settings.firebase_service_account_json)
+                firebase_admin.initialize_app(credentials.Certificate(credenciales))
+            else:
+                firebase_admin.initialize_app()
         except Exception as e:
             logger.error(f"Failed to initialize firebase admin: {e}")
+            return False
+    return True
 
-_init_firebase()
 
 def queue_and_send_push(
     *,
@@ -59,7 +61,7 @@ def queue_and_send_push(
             "estado": "pendiente"
         }
         
-        result = supabase.table("notificaciones_push").insert(data).execute()
+        result = supabase_admin.table("notificaciones_push").insert(data).execute()
         return {"status": "queued", "id": result.data[0]["id"] if result.data else None}
     except ValueError:
         raise
@@ -69,7 +71,7 @@ def queue_and_send_push(
         if "duplicate key" in str(e).lower() or "unique" in str(e).lower():
             return {"status": "omitida", "reason": "idempotency_key exists"}
         logger.error(f"Failed to queue push {idempotency_key}: {e}")
-        return {"status": "error_queueing", "error": str(e)}
+        return {"status": "error_queueing", "reason": "outbox_no_disponible"}
 
 def _assert_safe_payload(payload: dict) -> None:
     unsafe_keys = {"latitud", "longitud", "latitude", "longitude", "coordinates", "trust_score", "reputacion", "urgency_components"}
@@ -81,12 +83,12 @@ def dispatch_pending_pushes(limit: int = 100) -> Dict[str, int]:
     """
     Called by the cron job to send pending pushes via FCM.
     """
-    if not messaging:
+    if not messaging or not _init_firebase():
         return {"error": "firebase_admin not initialized"}
 
     # Fetch pending pushes
     try:
-        result = supabase.table("notificaciones_push").select("*") \
+        result = supabase_admin.table("notificaciones_push").select("*") \
             .in_("estado", ["pendiente", "fallida"]) \
             .lt("intento", 3) \
             .order("created_at") \
@@ -94,7 +96,7 @@ def dispatch_pending_pushes(limit: int = 100) -> Dict[str, int]:
             .execute()
     except Exception as e:
         logger.error(f"Error fetching pending pushes: {e}")
-        return {"error": str(e)}
+        return {"error": "outbox_no_disponible"}
 
     pendientes = result.data or []
     if not pendientes:
@@ -163,7 +165,7 @@ def dispatch_pending_pushes(limit: int = 100) -> Dict[str, int]:
 
 def _disable_invalid_tokens(tokens: List[str]) -> None:
     try:
-        supabase.table("dispositivos_push").update({"active": False}).in_("token", tokens).execute()
+        supabase_admin.table("dispositivos_push").update({"active": False}).in_("token", tokens).execute()
     except Exception as e:
         logger.error(f"Error disabling invalid tokens: {e}")
 
@@ -175,9 +177,9 @@ def _update_push_status(push_id: str, estado: str, intento: int, error_sanitizad
     if error_sanitizado:
         data["error_sanitizado"] = error_sanitizado
     if estado == "enviada":
-        data["enviada_at"] = "now()"
+        data["enviada_at"] = datetime.now(timezone.utc).isoformat()
         
     try:
-        supabase.table("notificaciones_push").update(data).eq("id", push_id).execute()
+        supabase_admin.table("notificaciones_push").update(data).eq("id", push_id).execute()
     except Exception as e:
         logger.error(f"Error updating push {push_id} status to {estado}: {e}")

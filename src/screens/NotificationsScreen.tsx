@@ -4,8 +4,10 @@ import { router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Platform,
+  Switch,
   Text,
   TouchableOpacity,
   View,
@@ -13,6 +15,12 @@ import {
 
 import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
+import {
+  disablePushNotifications,
+  enablePushNotifications,
+  getPushPermissionState,
+  PushPermissionState,
+} from '../services/pushRegistration';
 
 type NotificationKind = 'moderacion' | 'aliado' | 'reputacion';
 
@@ -61,6 +69,8 @@ export default function NotificationsScreen() {
   const { token } = useAuth();
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(true);
+  const [pushPermission, setPushPermission] = useState<PushPermissionState>('default');
+  const [updatingPush, setUpdatingPush] = useState(false);
 
   const loadNotifications = useCallback(async () => {
     if (!token) {
@@ -124,6 +134,41 @@ export default function NotificationsScreen() {
     loadNotifications();
   }, [loadNotifications]);
 
+  useEffect(() => {
+    getPushPermissionState().then(setPushPermission).catch(() => {
+      setPushPermission('unsupported');
+    });
+  }, []);
+
+  const togglePush = async (enabled: boolean) => {
+    if (!token || updatingPush) return;
+    setUpdatingPush(true);
+    try {
+      if (enabled) {
+        await enablePushNotifications(token);
+        setPushPermission('granted');
+      } else {
+        const result = await disablePushNotifications(token);
+        setPushPermission(result.permission);
+      }
+    } catch (error) {
+      const code = error instanceof Error ? error.message : '';
+      Alert.alert(
+        'No se activaron las alertas',
+        code === 'push_permiso_denegado'
+          ? 'Habilita las notificaciones de PawAlert desde los ajustes de tu dispositivo.'
+          : 'Revisa la configuración de Firebase o inténtalo nuevamente.',
+      );
+      setPushPermission(
+        await getPushPermissionState().catch(
+          (): PushPermissionState => 'unsupported',
+        ),
+      );
+    } finally {
+      setUpdatingPush(false);
+    }
+  };
+
   const openNotification = async (item: AppNotification) => {
     if (!item.read && token) {
       const headers = { Authorization: `Bearer ${token}` };
@@ -164,6 +209,27 @@ export default function NotificationsScreen() {
             <Ionicons name="close" size={23} color={C.dark} />
           </TouchableOpacity>
         </View>
+
+        {token && pushPermission !== 'unsupported' && (
+          <View style={{ backgroundColor: '#FFFFFF', paddingHorizontal: 24, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: C.border, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <Ionicons name="phone-portrait-outline" size={21} color={C.teal} />
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: C.dark, fontSize: 13, fontWeight: '800' }}>Alertas en este dispositivo</Text>
+              <Text style={{ color: C.muted, fontSize: 11, marginTop: 2 }}>Recibe propuestas y cambios importantes</Text>
+            </View>
+            {updatingPush ? (
+              <ActivityIndicator size="small" color={C.orange} />
+            ) : (
+              <Switch
+                accessibilityLabel="Alertas en este dispositivo"
+                value={pushPermission === 'granted'}
+                onValueChange={togglePush}
+                trackColor={{ false: '#D8CEC5', true: '#A7DDD8' }}
+                thumbColor={pushPermission === 'granted' ? C.teal : '#FFFFFF'}
+              />
+            )}
+          </View>
+        )}
 
         {loading ? (
           <View style={{ minHeight: 280, alignItems: 'center', justifyContent: 'center' }}>

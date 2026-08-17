@@ -349,6 +349,22 @@ def obtener_propuestas_pendientes(usuario_id: str) -> list[dict]:
     return resultado.data or []
 
 
+def _usuarios_coordinacion(asociacion_id: str | None) -> list[str]:
+    if not asociacion_id:
+        return []
+    resultado = (
+        supabase_admin.table("usuarios")
+        .select("id, roles(nombre)")
+        .eq("asociacion_id", asociacion_id)
+        .execute()
+    )
+    return [
+        fila["id"]
+        for fila in (resultado.data or [])
+        if (fila.get("roles") or {}).get("nombre") in ("asociacion", "staff")
+    ]
+
+
 def reservar_cobertura(
     *,
     reporte_id: str,
@@ -396,16 +412,20 @@ def reservar_cobertura(
                 "p_vence_at": vence_at.isoformat(),
             },
         ).execute()
+        propuesta_id = str(resultado.data)
 
         try:
             from app.services.push_notification_service import queue_and_send_push
-            import secrets
             queue_and_send_push(
                 usuario_id=usuario_asignado_id,
                 tipo_evento="nueva_propuesta",
-                idempotency_key=f"nueva_propuesta_{reporte_id}_{usuario_asignado_id}_{secrets.token_hex(4)}",
-                payload={"mensaje": "Has recibido una nueva propuesta de asignación para un caso."},
-                reporte_id=reporte_id
+                idempotency_key=f"nueva_propuesta:{propuesta_id}:{usuario_asignado_id}",
+                payload={
+                    "mensaje": "Has recibido una nueva propuesta de asignación para un caso.",
+                    "reporte_id": reporte_id,
+                },
+                reporte_id=reporte_id,
+                propuesta_id=propuesta_id,
             )
         except Exception as e:
             print(f"[WARN] Error encolando push de nueva propuesta: {e}")
@@ -432,7 +452,7 @@ def reservar_cobertura(
                 ),
             ) from exc
         raise
-    return str(resultado.data)
+    return propuesta_id
 
 
 def expirar_propuestas_vencidas() -> int:
@@ -442,7 +462,6 @@ def expirar_propuestas_vencidas() -> int:
     
     if propuestas_vencidas:
         from app.services.push_notification_service import queue_and_send_push
-        import secrets
         
         for prop in propuestas_vencidas:
             usuario_asignado = prop.get("usuario_asignado_id")
@@ -455,27 +474,29 @@ def expirar_propuestas_vencidas() -> int:
                 queue_and_send_push(
                     usuario_id=usuario_asignado,
                     tipo_evento="propuesta_vencida",
-                    idempotency_key=f"prop_venc_{propuesta_id}_{usuario_asignado}_{secrets.token_hex(4)}",
-                    payload={"mensaje": "El tiempo para responder la propuesta se agotó. El caso ya no está reservado."},
+                    idempotency_key=f"propuesta_vencida:{propuesta_id}:{usuario_asignado}",
+                    payload={
+                        "mensaje": "El tiempo para responder la propuesta se agotó. El caso ya no está reservado.",
+                        "reporte_id": reporte_id,
+                    },
                     reporte_id=reporte_id,
                     propuesta_id=propuesta_id
                 )
             
-            # Notificar a la asociación coordinadora (enviar al staff/admin principal de la asoc)
-            # Como los push se envían a usuario_id, necesitamos encontrar a quién de la asoc notificar.
-            # Por ahora, podemos buscar todos los usuarios de la asociación con rol 'asociacion' o 'staff' y mandarles push
-            if asoc_id:
-                usuarios_asoc = supabase_admin.table("usuarios").select("id").eq("asociacion_id", asoc_id).in_("rol_id", ["asociacion", "staff"]).execute()
-                if usuarios_asoc.data:
-                    for ua in usuarios_asoc.data:
-                        queue_and_send_push(
-                            usuario_id=ua["id"],
-                            tipo_evento="propuesta_vencida_asoc",
-                            idempotency_key=f"prop_venc_asoc_{propuesta_id}_{ua['id']}_{secrets.token_hex(4)}",
-                            payload={"mensaje": "Una propuesta de asignación ha caducado. Revisa tus casos."},
-                            reporte_id=reporte_id,
-                            propuesta_id=propuesta_id
-                        )
+            for usuario_asoc_id in _usuarios_coordinacion(asoc_id):
+                queue_and_send_push(
+                    usuario_id=usuario_asoc_id,
+                    tipo_evento="propuesta_vencida_asoc",
+                    idempotency_key=(
+                        f"propuesta_vencida_asoc:{propuesta_id}:{usuario_asoc_id}"
+                    ),
+                    payload={
+                        "mensaje": "Una propuesta de asignación ha caducado. Revisa tus casos.",
+                        "reporte_id": reporte_id,
+                    },
+                    reporte_id=reporte_id,
+                    propuesta_id=propuesta_id,
+                )
 
     return len(propuestas_vencidas)
 
@@ -488,23 +509,23 @@ def responder_propuesta(
     rol: str | None = None,
 ) -> dict:
     propuesta_id = None
-    if rol == "voluntario_interno":
-        try:
-            propuesta = (
-                supabase_admin.table("propuestas_asignacion")
-                .select("id")
-                .eq("reporte_id", reporte_id)
-                .eq("usuario_asignado_id", usuario_id)
-                .eq("estado", "activa")
-                .limit(1)
-                .execute()
-            )
-            propuesta_id = propuesta.data[0]["id"] if propuesta.data else None
-        except Exception as error:
-            print(
-                "[WARN] no se pudo identificar la propuesta para gamificación "
-                f"(reporte={reporte_id}): {error}"
-            )
+    try:
+        propuesta = (
+            supabase_admin.table("propuestas_asignacion")
+            .select("id")
+            .eq("reporte_id", reporte_id)
+            .eq("usuario_asignado_id", usuario_id)
+            .eq("estado", "activa")
+            .limit(1)
+            .execute()
+        )
+        if isinstance(propuesta.data, list) and propuesta.data:
+            propuesta_id = propuesta.data[0]["id"]
+    except Exception as error:
+        print(
+            "[WARN] no se pudo identificar la propuesta "
+            f"(reporte={reporte_id}): {error}"
+        )
 
     try:
         resultado = supabase_admin.rpc(
@@ -519,23 +540,21 @@ def responder_propuesta(
 
         try:
             from app.services.push_notification_service import queue_and_send_push
-            import secrets
             reporte_data = supabase_admin.table("reportes").select("asociacion_asignada_id").eq("id", reporte_id).execute()
             asoc_id = reporte_data.data[0]["asociacion_asignada_id"] if reporte_data.data else None
-            if asoc_id:
-                usuarios_asoc = supabase_admin.table("usuarios").select("id").eq("asociacion_id", asoc_id).in_("rol_id", ["asociacion", "staff"]).execute()
-                if usuarios_asoc.data:
-                    for ua in usuarios_asoc.data:
-                        tipo_ev = "voluntario_confirmo" if acepta else "voluntario_rechazo"
-                        msg = "Un voluntario ha aceptado la asignación." if acepta else "Un voluntario ha rechazado la asignación."
-                        queue_and_send_push(
-                            usuario_id=ua["id"],
-                            tipo_evento=tipo_ev,
-                            idempotency_key=f"{tipo_ev}_{reporte_id}_{usuario_id}_{ua['id']}_{secrets.token_hex(4)}",
-                            payload={"mensaje": msg},
-                            reporte_id=reporte_id,
-                            propuesta_id=propuesta_id
-                        )
+            tipo_ev = "voluntario_confirmo" if acepta else "voluntario_rechazo"
+            msg = "Un voluntario ha aceptado la asignación." if acepta else "Un voluntario ha rechazado la asignación."
+            for usuario_asoc_id in _usuarios_coordinacion(asoc_id):
+                queue_and_send_push(
+                    usuario_id=usuario_asoc_id,
+                    tipo_evento=tipo_ev,
+                    idempotency_key=(
+                        f"{tipo_ev}:{propuesta_id or reporte_id}:{usuario_asoc_id}"
+                    ),
+                    payload={"mensaje": msg, "reporte_id": reporte_id},
+                    reporte_id=reporte_id,
+                    propuesta_id=propuesta_id,
+                )
         except Exception as e:
             print(f"[WARN] Error encolando push de respuesta a propuesta: {e}")
 

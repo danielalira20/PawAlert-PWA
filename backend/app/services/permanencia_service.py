@@ -1,98 +1,165 @@
+import hashlib
 import logging
 import secrets
-import uuid
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any
+from datetime import datetime, timedelta, timezone
+from typing import Any
 
+from app.config import settings
 from app.db.supabase import supabase_admin
 from app.services.push_notification_service import queue_and_send_push
+from app.services.revision_manual_service import (
+    AtencionEnCursoError,
+    RevisionManualError,
+    transicionar_a_revision_manual,
+)
+from app.services.whatsapp_notification_service import (
+    encolar_notificacion,
+    normalizar_telefono_whatsapp,
+    procesar_notificacion,
+)
 
 logger = logging.getLogger(__name__)
 
-def procesar_confirmaciones_permanencia() -> Dict[str, Any]:
-    """
-    Ejecutado por cron.
-    Busca reportes aprobados/verdes con >6h sin actividad, excluyendo recursos vinculados.
-    Genera push para usuarios, y token + (SMS/WhatsApp) para invitados.
-    También procesa los que vencieron sin respuesta y los envía a revisión.
-    """
-    supabase = supabase_admin
-    
-    # 1. Enviar a revisión reportes caducados sin respuesta
-    # (Los que se les pidió confirmación, se venció el deadline y no respondieron)
-    res_caducados = supabase.table("reportes").select("id").not_("confirmacion_permanencia_solicitada_at", "is", "null").is_("confirmacion_permanencia_respuesta", "null").lt("confirmacion_permanencia_deadline_at", "now()").execute()
-    caducados = res_caducados.data
-    
-    enviados_revision = 0
-    if caducados:
-        for rep in caducados:
-            reporte_id = rep["id"]
-            # Enviar a revisión manual usando RPC o servicio central de Daniela
-            try:
-                # Actualizar a 'timeout' para que no vuelva a procesarse
-                supabase.table("reportes").update({
-                    "confirmacion_permanencia_respuesta": "timeout"
-                }).eq("id", reporte_id).execute()
-                
-                # Asumimos que Daniela expone 'transicion_revision_manual'
-                supabase.rpc("transicion_revision_manual", {"p_reporte_id": reporte_id}).execute()
-                enviados_revision += 1
-            except Exception as e:
-                logger.error(f"Error procesando caducidad permanencia reporte {reporte_id}: {e}")
-                
-    # 2. Buscar nuevos reportes inactivos para solicitar confirmación
-    res_inactivos = supabase.rpc("obtener_reportes_inactivos_permanencia").execute()
-    inactivos = res_inactivos.data
 
-    solicitudes = 0
-    if inactivos:
-        for rep in inactivos:
-            reporte_id = rep["reporte_id"]
-            usuario_id = rep["usuario_id"]
-            
-            # Establecer deadlines y solicitudes
-            deadline_at = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
-            solicitada_at = datetime.now(timezone.utc).isoformat()
-            
-            supabase.table("reportes").update({
+def _ahora() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _crear_solicitud(reporte: dict[str, Any]) -> bool:
+    reporte_id = reporte["reporte_id"]
+    usuario_id = reporte.get("usuario_id")
+    ahora = _ahora()
+    solicitada_at = ahora.isoformat()
+    deadline_at = (ahora + timedelta(hours=2)).isoformat()
+
+    actualizacion = (
+        supabase_admin.table("reportes")
+        .update(
+            {
                 "confirmacion_permanencia_solicitada_at": solicitada_at,
-                "confirmacion_permanencia_deadline_at": deadline_at
-            }).eq("id", reporte_id).execute()
-            
-            if usuario_id:
-                # Usuario registrado -> Push Notification
-                queue_and_send_push(
-                    usuario_id=usuario_id,
-                    tipo_evento="confirmacion_permanencia_solicitada",
-                    idempotency_key=f"perm_req_{reporte_id}_{secrets.token_hex(4)}",
-                    payload={"mensaje": "¿El animalito sigue ahí? Confírmanos para mantener activo tu reporte."},
-                    reporte_id=reporte_id
-                )
-            else:
-                # Invitado -> SMS/WhatsApp con Token de 1 uso
-                token_val = secrets.token_urlsafe(32)
-                
-                # Desactivar tokens previos
-                supabase.table("tokens_confirmacion_permanencia").update({"usado": True}).eq("reporte_id", reporte_id).execute()
-                
-                # Guardar el token (se guardaría hash, pero para simplificar la validación directa, guardaremos el valor o su hash.
-                # Como requerimiento se pidió hash, usaremos hashlib)
-                import hashlib
-                token_hash = hashlib.sha256(token_val.encode()).hexdigest()
-                
-                supabase.table("tokens_confirmacion_permanencia").insert({
-                    "token_hash": token_hash,
-                    "reporte_id": reporte_id,
-                    "expira_at": deadline_at
-                }).execute()
-                
-                # Aquí llamaríamos al servicio de SMS/WhatsApp de Daniela
-                # Ej: whatsapp_service.enviar_enlace_invitado(reporte_id, token_val)
-                logger.info(f"Token de invitado generado para {reporte_id}: {token_val}")
-                
-            solicitudes += 1
+                "confirmacion_permanencia_deadline_at": deadline_at,
+                "confirmacion_permanencia_respuesta": None,
+                "confirmacion_permanencia_respondida_at": None,
+            }
+        )
+        .eq("id", reporte_id)
+        .is_("confirmacion_permanencia_solicitada_at", "null")
+        .execute()
+    )
+    if not actualizacion.data:
+        return False
+
+    if usuario_id:
+        queue_and_send_push(
+            usuario_id=usuario_id,
+            tipo_evento="confirmacion_permanencia_solicitada",
+            idempotency_key=f"permanencia:{reporte_id}:{solicitada_at}",
+            payload={
+                "mensaje": (
+                    "¿El animalito sigue ahí? Confírmanos para mantener "
+                    "activo tu reporte."
+                ),
+                "reporte_id": reporte_id,
+            },
+            reporte_id=reporte_id,
+        )
+        return True
+
+    telefono = normalizar_telefono_whatsapp(reporte.get("reportante_telefono"))
+    if not telefono:
+        logger.warning(
+            "No se pudo entregar confirmación de permanencia al invitado del reporte %s",
+            reporte_id,
+        )
+        return True
+
+    token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    supabase_admin.table("tokens_confirmacion_permanencia").update(
+        {"usado": True}
+    ).eq("reporte_id", reporte_id).eq("usado", False).execute()
+    token_creado = supabase_admin.table("tokens_confirmacion_permanencia").insert(
+        {
+            "token_hash": token_hash,
+            "reporte_id": reporte_id,
+            "expira_at": deadline_at,
+        }
+    ).execute()
+    if not token_creado.data:
+        logger.error(
+            "No se pudo crear el enlace de permanencia del reporte %s",
+            reporte_id,
+        )
+        return True
+
+    enlace = (
+        f"{settings.frontend_url.rstrip('/')}/confirmacion-permanencia"
+        f"?token={token}"
+    )
+    aviso = encolar_notificacion(
+        "confirmacion_permanencia_invitado",
+        f"confirmacion_permanencia:{reporte_id}:{solicitada_at}",
+        {
+            "tipo": "reportante_invitado",
+            "id": reporte_id,
+            "telefono": telefono,
+            "mensaje": (
+                "¿El animalito de tu reporte sigue en el lugar? "
+                "Confírmanos desde este enlace; vence en 2 horas."
+            ),
+            "enlace": enlace,
+        },
+    )
+    if aviso:
+        procesar_notificacion(aviso["id"])
+    return True
+
+
+def procesar_confirmaciones_permanencia() -> dict[str, Any]:
+    """Solicita permanencia y pausa de forma atómica los casos vencidos."""
+    caducados = (
+        supabase_admin.table("reportes")
+        .select("id")
+        .not_("confirmacion_permanencia_solicitada_at", "is", "null")
+        .is_("confirmacion_permanencia_respuesta", "null")
+        .lt("confirmacion_permanencia_deadline_at", _ahora().isoformat())
+        .execute()
+        .data
+        or []
+    )
+
+    enviados_revision = 0
+    conflictos_revision = 0
+    errores_revision = 0
+    for reporte in caducados:
+        try:
+            transicionar_a_revision_manual(
+                reporte["id"], "confirmacion_permanencia_timeout"
+            )
+            enviados_revision += 1
+        except AtencionEnCursoError:
+            conflictos_revision += 1
+            logger.warning(
+                "El reporte %s venció, pero ya tiene atención en curso",
+                reporte["id"],
+            )
+        except RevisionManualError:
+            errores_revision += 1
+            logger.exception(
+                "No se pudo pausar el reporte vencido %s", reporte["id"]
+            )
+
+    inactivos = (
+        supabase_admin.rpc("obtener_reportes_inactivos_permanencia")
+        .execute()
+        .data
+        or []
+    )
+    solicitudes = sum(1 for reporte in inactivos if _crear_solicitud(reporte))
 
     return {
         "caducados_procesados": enviados_revision,
-        "solicitudes_creadas": solicitudes
+        "caducados_con_atencion": conflictos_revision,
+        "caducados_con_error": errores_revision,
+        "solicitudes_creadas": solicitudes,
     }
