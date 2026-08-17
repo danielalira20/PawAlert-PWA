@@ -363,5 +363,5 @@ equipo la apruebe manualmente en Supabase.
 - El archivo `.env` nunca se sube a git
 - El bucket `pawalert-fotos` debe existir en Supabase Storage antes de subir fotos
 - La verificación de asociaciones se hace manualmente en Supabase por el equipo PawAlert
-:33
+:333
 
