@@ -207,7 +207,7 @@ def confirmacion_permanencia_autenticada(
     )
 
 
-@router.post("/invitados/confirmacion-permanencia")
+@router.post("/confirmacion-permanencia/invitado")
 def confirmacion_permanencia_invitado(payload: ConfirmacionInvitadoRequest):
     token_hash = hashlib.sha256(payload.token.encode()).hexdigest()
     consulta = (

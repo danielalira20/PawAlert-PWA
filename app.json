@@ -53,7 +53,8 @@
           "cameraPermission": "PawAlert usa la cámara para escanear el código QR de recepción de lotes de la Red de Aliados."
         }
       ],
-      "@react-native-firebase/app"
+      "@react-native-firebase/app",
+      "@react-native-firebase/messaging"
     ],
     "experiments": {
       "typedRoutes": true,

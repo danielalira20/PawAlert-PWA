@@ -35,6 +35,12 @@ def _pendiente(**cambios):
     return datos
 
 
+def test_ruta_invitada_no_compite_con_reporte_id_dinamico():
+    rutas = {route.path for route in api.router.routes}
+    assert "/confirmacion-permanencia/invitado" in rutas
+    assert "/invitados/confirmacion-permanencia" not in rutas
+
+
 def test_transicion_revision_traduce_conflicto(monkeypatch):
     rpc = MagicMock()
     rpc.execute.side_effect = Exception("atencion_en_curso")
