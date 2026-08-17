@@ -2043,7 +2043,11 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                       <Text style={{ fontSize: 16, fontWeight: '800', color: COLORS.textDark }}>Análisis de Urgencia</Text>
                       <View style={{ backgroundColor: reporteSeleccionado.urgency_nivel === 'rojo' ? '#FDEDEC' : reporteSeleccionado.urgency_nivel === 'amarillo' ? '#FEF9E7' : '#EAFAF1', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 }}>
                         <Text style={{ fontSize: 12, fontWeight: '900', color: reporteSeleccionado.urgency_nivel === 'rojo' ? '#E74C3C' : reporteSeleccionado.urgency_nivel === 'amarillo' ? '#F39C12' : '#27AE60', textTransform: 'uppercase' }}>
-                          {reporteSeleccionado.urgency_score} PTS · {reporteSeleccionado.urgency_nivel}
+                          {reporteSeleccionado.urgency_score} PTS · {
+                            reporteSeleccionado.urgency_nivel === 'rojo' ? 'Urgente'
+                            : reporteSeleccionado.urgency_nivel === 'amarillo' ? 'Atención pronta'
+                            : 'Baja prioridad'
+                          }
                         </Text>
                       </View>
                     </View>
