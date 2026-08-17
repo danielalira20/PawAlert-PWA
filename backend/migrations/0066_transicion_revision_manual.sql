@@ -12,6 +12,17 @@ ALTER TABLE public.reportes
     OR confirmacion_permanencia_respuesta IN ('sigue_ahi', 'ya_no_esta', 'timeout')
   );
 
+ALTER TABLE public.notificaciones_whatsapp
+  DROP CONSTRAINT IF EXISTS notificaciones_whatsapp_destinatario_tipo_check;
+
+ALTER TABLE public.notificaciones_whatsapp
+  ADD CONSTRAINT notificaciones_whatsapp_destinatario_tipo_check
+  CHECK (
+    destinatario_tipo IN (
+      'voluntario', 'postulante', 'asociacion', 'reportante_invitado'
+    )
+  );
+
 CREATE OR REPLACE FUNCTION public.transicion_revision_manual(
   p_reporte_id uuid,
   p_motivo text DEFAULT 'confirmacion_permanencia'
@@ -153,10 +164,16 @@ BEGIN
         WHEN p_motivo = 'confirmacion_permanencia_timeout'
           AND confirmacion_permanencia_respuesta IS NULL
           THEN 'timeout'
+        WHEN p_motivo = 'confirmacion_permanencia_ya_no_esta'
+          AND confirmacion_permanencia_respuesta IS NULL
+          THEN 'ya_no_esta'
         ELSE confirmacion_permanencia_respuesta
       END,
       confirmacion_permanencia_respondida_at = CASE
-        WHEN p_motivo = 'confirmacion_permanencia_timeout'
+        WHEN p_motivo IN (
+          'confirmacion_permanencia_timeout',
+          'confirmacion_permanencia_ya_no_esta'
+        )
           THEN COALESCE(confirmacion_permanencia_respondida_at, now())
         ELSE confirmacion_permanencia_respondida_at
       END
@@ -273,6 +290,68 @@ $function$;
 REVOKE ALL ON FUNCTION public.expirar_propuestas_cobertura_detalladas()
   FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.expirar_propuestas_cobertura_detalladas()
+  TO service_role;
+
+DROP FUNCTION IF EXISTS public.obtener_reportes_inactivos_permanencia();
+
+CREATE FUNCTION public.obtener_reportes_inactivos_permanencia()
+RETURNS TABLE (
+  reporte_id uuid,
+  usuario_id uuid,
+  reportante_telefono text
+)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $function$
+  SELECT r.id, r.usuario_id, r.reportante_telefono
+  FROM public.reportes r
+  WHERE r.estado_validacion_reporte = 'aprobado'
+    AND r.urgency_nivel = 'verde'
+    AND r.urgency_excluido = false
+    AND r.created_at <= now() - interval '6 hours'
+    AND r.confirmacion_voluntario IS DISTINCT FROM 'confirmado'
+    AND r.confirmacion_permanencia_solicitada_at IS NULL
+    AND (
+      r.estado_cobertura IS NULL
+      OR r.estado_cobertura NOT IN ('propuesta_enviada', 'confirmado')
+    )
+    AND r.estado_reporte::text NOT IN (
+      'cerrado', 'cancelado_por_reportante', 'duplicado',
+      'en_camino', 'en_atencion', 'rescatado'
+    )
+    AND NOT EXISTS (
+      SELECT 1
+      FROM public.historial_reporte h
+      WHERE h.reporte_id = r.id
+        AND h.created_at > now() - interval '6 hours'
+        AND h.tipo_evento IN (
+          'llegada_zona_reporte', 'animal_encontrado',
+          'animal_no_localizado', 'animal_bajo_resguardo',
+          'llegada_veterinaria', 'llegada_hogar_temporal',
+          'hito_llegue_refugio', 'confirmacion_sigue_ahi'
+        )
+    )
+    AND NOT EXISTS (
+      SELECT 1
+      FROM public.custodias_temporales ct
+      WHERE ct.reporte_id = r.id
+        AND ct.estado IN (
+          'activo', 'extension_pendiente', 'buscando_relevo',
+          'traslado_programado'
+        )
+    )
+    AND NOT EXISTS (
+      SELECT 1
+      FROM public.contribuciones c
+      WHERE c.reporte_id = r.id
+        AND c.estado IN ('confirmada', 'parcial', 'entregada')
+    );
+$function$;
+
+REVOKE ALL ON FUNCTION public.obtener_reportes_inactivos_permanencia()
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.obtener_reportes_inactivos_permanencia()
   TO service_role;
 
 COMMIT;

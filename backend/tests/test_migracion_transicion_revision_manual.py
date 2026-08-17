@@ -47,9 +47,17 @@ def test_timeout_y_detalle_de_propuestas_corrigen_contratos_previos():
         "v_propuesta.asociacion_coordinadora_id"
     ) in MIGRATION
     assert "v_propuesta.asociacion_id" not in MIGRATION
+    assert "'confirmacion_permanencia_ya_no_esta'" in MIGRATION
+
+
+def test_permanencia_de_invitados_tiene_telefono_y_admite_whatsapp():
+    assert "'reportante_invitado'" in MIGRATION
+    assert "reportante_telefono text" in MIGRATION
+    assert "r.estado_cobertura IS NULL" in MIGRATION
+    assert "DROP FUNCTION IF EXISTS public.obtener_reportes_inactivos_permanencia" in MIGRATION
 
 
 def test_funciones_sensibles_solo_se_exponen_a_service_role():
     assert "GRANT EXECUTE ON FUNCTION public.transicion_revision_manual" in MIGRATION
     assert "GRANT EXECUTE ON FUNCTION public.expirar_propuestas_cobertura_detalladas" in MIGRATION
-    assert MIGRATION.count("TO service_role") == 2
+    assert MIGRATION.count("TO service_role") == 3
