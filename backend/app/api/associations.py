@@ -49,6 +49,9 @@ from app.models.red_aliados import NecesidadCreate
 from app.services.red_aliados_service import crear_necesidad_asociacion, VIGENCIA_QR_DIAS
 from enum import Enum
 from datetime import datetime, timedelta, timezone
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 router = APIRouter()
@@ -528,18 +531,25 @@ async def get_reportes_asignados(authorization: str = Header(None)):
         }
         
         # Consulta separada para urgencias (Así no colapsa Supabase)
+        # reporte_urgency_evaluaciones tiene RLS con GRANT exclusivo a
+        # service_role (migrations/0059_urgency_score.sql) -> requiere
+        # supabase_admin, igual que urgency_service.py al escribir en ella.
         try:
-            evals = supabase.table("reporte_urgency_evaluaciones").select(
+            evals = supabase_admin.table("reporte_urgency_evaluaciones").select(
                 "reporte_id, condicion_ia_score, condicion_declarada_score, tiempo_score, clima_score, riesgo_vial_score, calculado_at"
             ).in_("reporte_id", reporte_ids_todos).order("calculado_at", desc=True).execute()
-            
+
             for ev in (evals.data or []):
                 rid = ev["reporte_id"]
                 # Solo tomamos el más reciente (el primero que sale gracias al order desc)
                 if rid not in evaluaciones_por_reporte:
                     evaluaciones_por_reporte[rid] = ev
         except Exception as e:
-            print(f"[WARN] No se pudieron cargar las urgencias detalladas: {e}")
+            codigo = getattr(e, "code", None) or (e.args[0].get("code") if e.args and isinstance(e.args[0], dict) else None)
+            logger.error(
+                "No se pudieron cargar las urgencias detalladas de reporte_urgency_evaluaciones "
+                f"(codigo={codigo}): {e!r}"
+            )
 
     reportes = []
     for r in resultado.data:
