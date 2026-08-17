@@ -7,6 +7,23 @@ from fastapi import HTTPException
 from app.services import coverage_service
 
 
+@pytest.fixture(autouse=True)
+def permitir_asignaciones_sin_restriccion():
+    with (
+        patch.object(
+            coverage_service.reputacion_service,
+            "consultar_restricciones",
+            return_value={"bloqueado_nuevas_asignaciones": False},
+        ),
+        patch.object(
+            coverage_service,
+            "_reporte_disponible_para_cobertura",
+            return_value=True,
+        ),
+    ):
+        yield
+
+
 def test_compatibilidad_exige_todas_las_especies_y_tamanios():
     capacidades = {
         "especies_manejo": ["perro", "gato"],
@@ -244,17 +261,158 @@ def test_reserva_usa_una_sola_funcion_transaccional():
     assert argumentos["p_vence_at"]
 
 
+def test_reserva_rechaza_reporte_sin_validacion_aprobada():
+    supabase_admin = MagicMock()
+    with (
+        patch.object(coverage_service, "supabase_admin", supabase_admin),
+        patch.object(
+            coverage_service,
+            "_reporte_disponible_para_cobertura",
+            return_value=False,
+        ),
+        pytest.raises(HTTPException) as error,
+    ):
+        coverage_service.reservar_cobertura(
+            reporte_id="rep-1",
+            usuario_asignado_id="user-1",
+            voluntario_id="vol-1",
+            asociacion_id="aso-1",
+            actor_id="actor-1",
+            origen="equipo_interno",
+        )
+
+    assert error.value.status_code == 409
+    supabase_admin.rpc.assert_not_called()
+
+
 def test_expira_propuestas_mediante_funcion_transaccional():
     ejecucion = MagicMock()
-    ejecucion.execute.return_value = SimpleNamespace(data=2)
+    ejecucion.execute.return_value = SimpleNamespace(data=[{"propuesta_id": "p1", "reporte_id": "r1", "usuario_asignado_id": "u1", "asociacion_coordinadora_id": "a1"}])
     supabase_admin = MagicMock()
     supabase_admin.rpc.return_value = ejecucion
 
     with patch.object(coverage_service, "supabase_admin", supabase_admin):
         total = coverage_service.expirar_propuestas_vencidas()
 
-    assert total == 2
-    supabase_admin.rpc.assert_called_once_with("expirar_propuestas_cobertura")
+    assert total == 1
+    supabase_admin.rpc.assert_called_once_with("expirar_propuestas_cobertura_detalladas")
+
+
+def test_expiracion_notifica_roles_reales_con_claves_idempotentes(make_query):
+    ejecucion = MagicMock()
+    ejecucion.execute.return_value = SimpleNamespace(
+        data=[
+            {
+                "propuesta_id": "propuesta-1",
+                "reporte_id": "reporte-1",
+                "usuario_asignado_id": "voluntario-1",
+                "asociacion_coordinadora_id": "asociacion-1",
+            }
+        ]
+    )
+    usuarios = make_query(
+        data=[
+            {"id": "staff-1", "roles": {"nombre": "staff"}},
+            {"id": "externo-1", "roles": {"nombre": "voluntario_externo"}},
+        ]
+    )
+    supabase_admin = MagicMock()
+    supabase_admin.rpc.return_value = ejecucion
+    supabase_admin.table.return_value = usuarios
+
+    with (
+        patch.object(coverage_service, "supabase_admin", supabase_admin),
+        patch(
+            "app.services.push_notification_service.queue_and_send_push"
+        ) as push,
+    ):
+        coverage_service.expirar_propuestas_vencidas()
+
+    assert [llamada.kwargs["usuario_id"] for llamada in push.call_args_list] == [
+        "voluntario-1",
+        "staff-1",
+    ]
+    assert [
+        llamada.kwargs["idempotency_key"] for llamada in push.call_args_list
+    ] == [
+        "propuesta_vencida:propuesta-1:voluntario-1",
+        "propuesta_vencida_asoc:propuesta-1:staff-1",
+    ]
+    usuarios.select.assert_called_with("id, roles(nombre)")
+
+
+def test_nueva_propuesta_usa_id_de_rpc_en_push():
+    ejecucion = MagicMock()
+    ejecucion.execute.return_value = SimpleNamespace(data="propuesta-1")
+    supabase_admin = MagicMock()
+    supabase_admin.rpc.return_value = ejecucion
+
+    with (
+        patch.object(coverage_service, "supabase_admin", supabase_admin),
+        patch(
+            "app.services.push_notification_service.queue_and_send_push"
+        ) as push,
+    ):
+        coverage_service.reservar_cobertura(
+            reporte_id="reporte-1",
+            usuario_asignado_id="usuario-1",
+            voluntario_id="voluntario-1",
+            asociacion_id="asociacion-1",
+            actor_id="actor-1",
+            origen="equipo_interno",
+        )
+
+    assert push.call_args.kwargs["idempotency_key"] == (
+        "nueva_propuesta:propuesta-1:usuario-1"
+    )
+    assert push.call_args.kwargs["propuesta_id"] == "propuesta-1"
+
+
+@pytest.mark.parametrize("acepta", [True, False])
+def test_respuesta_oportuna_interna_suma_trust_al_aceptar_o_rechazar(
+    make_query, acepta,
+):
+    propuestas = make_query(data=[{"id": "propuesta-1"}])
+    supabase_admin = MagicMock()
+    supabase_admin.table.return_value = propuestas
+    supabase_admin.rpc.return_value.execute.return_value = SimpleNamespace(
+        data="confirmado" if acepta else "abierto"
+    )
+
+    with (
+        patch.object(coverage_service, "supabase_admin", supabase_admin),
+        patch(
+            "app.services.reputacion_service.procesar_respuesta_propuesta_interna"
+        ) as mock_reputacion,
+    ):
+        resultado = coverage_service.responder_propuesta(
+            "user-1", "rep-1", acepta, rol="voluntario_interno"
+        )
+
+    assert resultado["ok"] is True
+    mock_reputacion.assert_called_once_with("propuesta-1", "user-1")
+    propuestas.eq.assert_any_call("estado", "activa")
+
+
+def test_respuesta_externa_no_usa_regla_interna():
+    supabase_admin = MagicMock()
+    supabase_admin.rpc.return_value.execute.return_value = SimpleNamespace(
+        data="confirmado"
+    )
+
+    with (
+        patch.object(coverage_service, "supabase_admin", supabase_admin),
+        patch(
+            "app.services.reputacion_service.procesar_respuesta_propuesta_interna"
+        ) as mock_reputacion,
+    ):
+        coverage_service.responder_propuesta(
+            "user-ext", "rep-1", True, rol="voluntario_externo"
+        )
+
+    # supabase_admin.table is called to send pushes to the association
+    # supabase_admin.table.assert_not_called()
+    mock_reputacion.assert_not_called()
 
 
 def test_reserva_concurrente_devuelve_conflicto_controlado():
@@ -310,3 +468,46 @@ def test_reserva_explica_si_falta_compatibilidad_geografica(funcion_faltante):
 
     assert error.value.status_code == 503
     assert "migración 0022" in error.value.detail
+
+
+def test_voluntario_externo_bloqueado_no_puede_crear_ofrecimiento():
+    with (
+        patch.object(
+            coverage_service.reputacion_service,
+            "consultar_restricciones",
+            return_value={"bloqueado_nuevas_asignaciones": True},
+        ),
+        patch.object(coverage_service, "obtener_perfil_externo") as mock_perfil,
+        pytest.raises(HTTPException) as error,
+    ):
+        coverage_service.crear_ofrecimiento("user-ext", "rep-1")
+
+    assert error.value.status_code == 403
+    assert "casos nuevos" in error.value.detail
+    mock_perfil.assert_not_called()
+
+
+@pytest.mark.parametrize("origen", ["equipo_interno", "ofrecimiento_externo"])
+def test_reserva_revalida_bloqueo_antes_de_la_operacion_atomica(origen):
+    supabase_admin = MagicMock()
+    with (
+        patch.object(coverage_service, "supabase_admin", supabase_admin),
+        patch.object(
+            coverage_service.reputacion_service,
+            "consultar_restricciones",
+            return_value={"bloqueado_nuevas_asignaciones": True},
+        ),
+        pytest.raises(HTTPException) as error,
+    ):
+        coverage_service.reservar_cobertura(
+            reporte_id="rep-1",
+            usuario_asignado_id="user-1",
+            voluntario_id="vol-1",
+            asociacion_id="aso-1",
+            actor_id="actor-1",
+            origen=origen,
+        )
+
+    assert error.value.status_code == 409
+    assert "no puede recibir nuevas asignaciones" in error.value.detail
+    supabase_admin.rpc.assert_not_called()

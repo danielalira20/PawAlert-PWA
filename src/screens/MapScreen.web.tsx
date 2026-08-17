@@ -230,26 +230,51 @@ export default function MapScreen() {
 
   const reportesFiltrados = reportes
     .filter(r => {
-      if (r.estado_reporte === 'cerrado') return false;
+      // Ocultar casos cerrados o cancelados
+      if (r.estado_reporte === 'cerrado' || r.estado_reporte === 'cancelado_por_reportante') return false;
+      
+      // Ocultar casos que sigan en proceso de validación
+      if (r.estado_validacion_reporte && ['procesando', 'revision_manual', 'rechazado'].includes(r.estado_validacion_reporte)) return false;
+      
+      // Ocultar casos bloqueados por moderación
+      if (r.estado_moderacion && !['visible', 'aprobado'].includes(r.estado_moderacion)) return false;
+
       const animales = getAnimales(r);
-      // Un caso matchea el filtro si CUALQUIERA de sus animales coincide,
-      // no solo el legado — ej. filtrar "gato" debe mostrar un caso
-      // perro+gato aunque el legado (más grave) sea el perro.
       if (filtro !== 'todos' && !animales.some(a => a.condicion?.toLowerCase() === filtro)) return false;
       if (filtroEspecie !== 'todos' && !animales.some(a => a.tipo_animal?.toLowerCase() === filtroEspecie)) return false;
       return true;
     })
     .sort((a, b) => {
+      if (ordenar === 'urgente') {
+        // Extraer y asegurar que se lean como números (si es null, vale -1)
+        const scoreA = (a.urgency_score !== null && a.urgency_score !== undefined) ? Number(a.urgency_score) : -1; 
+        const scoreB = (b.urgency_score !== null && b.urgency_score !== undefined) ? Number(b.urgency_score) : -1;
+        
+        if (scoreA !== scoreB) {
+          return scoreB - scoreA; // Orden descendente (91 le gana a 80 y a -1)
+        }
+        // Desempate: el más antiguo primero
+        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      }
+
       if (ordenar === 'reciente') return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
       if (ordenar === 'antiguo')  return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-      if (ordenar === 'urgente') {
-        const ua = URGENCIA[condicionMasGrave(getAnimales(a))?.toLowerCase() ?? ''] ?? 3;
-        const ub = URGENCIA[condicionMasGrave(getAnimales(b))?.toLowerCase() ?? ''] ?? 3;
-        return ua - ub;
-      }
       return 0;
     });
-
+    // ─── Aplicación de la Regla de Privacidad (Coordenadas Aproximadas) ───
+  // Si el caso está abierto y no tiene voluntario ni staff confirmado, desplazamos
+  // ligeramente el pin en el mapa para no revelar la calle exacta (aprox 100m).
+  const reportesConPrivacidad = reportesFiltrados.map(reporte => {
+    // Casos no asignados a un rescatista o que siguen pendientes/procesando
+    if (!reporte.confirmacion_voluntario && !reporte.staff_asignado_id) {
+      return {
+        ...reporte,
+        latitud: reporte.latitud ? reporte.latitud + 0.0010 : reporte.latitud,
+        longitud: reporte.longitud ? reporte.longitud - 0.0010 : reporte.longitud,
+      };
+    }
+    return reporte;
+  });
   // ── Tarjeta de reporte en lista ──────────────────────────────────────────────
   const ReportCard = ({ reporte, compact = false }: { reporte: Reporte; compact?: boolean }) => {
     const animales = getAnimales(reporte);
@@ -659,7 +684,7 @@ export default function MapScreen() {
       {isClient ? (
         <Suspense fallback={<View style={{ flex: 1, backgroundColor: '#EAE0D0' }} />}>
           <LeafletMap
-            reportes={(mostrarAsociaciones || mostrarAliados) ? [] : reportesFiltrados}
+            reportes={(mostrarAsociaciones || mostrarAliados) ? [] : reportesConPrivacidad}
             asociaciones={mostrarAsociaciones ? asociaciones : []}
             aliados={mostrarAliados ? aliados : []}
             selectedReportId={selectedReport?.id ?? highlightedReportId}

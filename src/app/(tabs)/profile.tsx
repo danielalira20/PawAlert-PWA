@@ -9,7 +9,7 @@ import MisReportesScreen from '../../screens/MisReportesScreen';
 import StaffDashboardScreen from '../../screens/StaffDashboardScreen';
 import StaffAsignacionScreen from '../../screens/StaffAsignacionScreen';
 // Asegúrate de que las rutas a estas pantallas sean correctas según tu proyecto
-import MiPostulacionScreen from '../../screens/MiPostulacionScreen'; 
+import MiPostulacionScreen from '../../screens/MiPostulacionScreen';
 import CapacidadesFormScreen from '../../screens/CapacidadesFormScreen';
 import ExternalVolunteerFormScreen from '../../screens/ExternalVolunteerFormScreen';
 import MisVerificacionesScreen from '../../screens/MisVerificacionesScreen';
@@ -20,6 +20,9 @@ import CustodyDashboardScreen from '../../screens/CustodyDashboardScreen';
 import { AppModal } from '@/components/AppModal';
 import { LoggedOutProfile } from '../../components/profile/LoggedOutProfile';
 import { LoggedInProfile } from '../../components/profile/LoggedInProfile';
+import { CatalogoRecompensasScreen } from '../../screens/CatalogoRecompensasScreen';
+import { MisCanjesScreen } from '../../screens/MisCanjesScreen';
+import { EscanerCanjeScreen } from '../../screens/EscanerCanjeScreen';
 
 const { width } = Dimensions.get('window');
 const isWeb = Platform.OS === 'web';
@@ -40,7 +43,7 @@ export default function ProfileScreen() {
   // postulaciones, mis voluntarios) — distinto de isStaffVisible, que abre
   // StaffDashboardScreen ("mis casos", compartido con voluntario_interno/externo).
   const [isStaffAsignacionVisible, setIsStaffAsignacionVisible] = useState(false);
-  
+
   // 1. Nuevos estados para los modales del voluntario
   const [isPostulacionVisible, setIsPostulacionVisible] = useState(false);
   const [isCapacidadesVisible, setIsCapacidadesVisible] = useState(false);
@@ -50,6 +53,10 @@ export default function ProfileScreen() {
   const [isAliadoDashboardVisible, setIsAliadoDashboardVisible] = useState(false);
   const [isAportacionVisible, setIsAportacionVisible] = useState(false);
   const [isCustodyVisible, setIsCustodyVisible] = useState(false);
+  const [isCatalogoVisible, setIsCatalogoVisible] = useState(false);
+  const [isMisCanjesVisible, setIsMisCanjesVisible] = useState(false);
+  const [isEscanerVisible, setIsEscanerVisible] = useState(false);
+  const [reputacionRefreshKey, setReputacionRefreshKey] = useState(0);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(24)).current;
@@ -57,7 +64,7 @@ export default function ProfileScreen() {
   /// estado para refrescar pantallas 
   const [capacidadesRefreshKey, setCapacidadesRefreshKey] = useState(0);
 
-  
+
   useEffect(() => {
     Animated.parallel([
       Animated.timing(fadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
@@ -113,6 +120,8 @@ export default function ProfileScreen() {
       setIsAliadoDashboardVisible(false);
       setIsAportacionVisible(false);
       setIsCustodyVisible(false);
+      setIsCatalogoVisible(false);
+      setIsMisCanjesVisible(false);
     }
   }, [isLoggedIn]);
 
@@ -122,12 +131,15 @@ export default function ProfileScreen() {
 
   const initials = `${user.nombre?.[0] ?? ''}${user.apellido_paterno?.[0] ?? ''}`.toUpperCase();
 
-  
+
   return (
-     <>
+    <>
       <LoggedInProfile
         onOpenMisReportes={() => setIsMisReportesVisible(true)}
         onOpenAdminPanel={() => setIsAdminVisible(true)}
+        onOpenCatalogo={() => setIsCatalogoVisible(true)}
+        onOpenMisCanjes={() => setIsMisCanjesVisible(true)}
+        onOpenEscaner={() => setIsEscanerVisible(true)}
         onOpenAssociationPanel={() => setIsAssociationVisible(true)}
         onOpenStaffPanel={() => setIsStaffVisible(true)}
         onOpenVerificaciones={() => setIsVerificacionesVisible(true)}
@@ -140,22 +152,35 @@ export default function ProfileScreen() {
         onOpenCustodyDashboard={() => setIsCustodyVisible(true)}
         onLogout={logout}
         capacidadesRefreshKey={capacidadesRefreshKey}
+        reputacionRefreshKey={reputacionRefreshKey}
       />
-      
+
       {isMisReportesVisible && (
         <MisReportesScreen onClose={() => setIsMisReportesVisible(false)} />
       )}
-      
+
+      <AppModal visible={isCatalogoVisible} onClose={() => setIsCatalogoVisible(false)} maxWidth={1000}>
+        {isCatalogoVisible && <CatalogoRecompensasScreen onClose={() => setIsCatalogoVisible(false)} onCanjeExitoso={() => setReputacionRefreshKey(k => k + 1)} />}
+      </AppModal>
+
+      <AppModal visible={isMisCanjesVisible} onClose={() => setIsMisCanjesVisible(false)} maxWidth={850}>
+        {isMisCanjesVisible && <MisCanjesScreen onClose={() => setIsMisCanjesVisible(false)} />}
+      </AppModal>
+
+      <AppModal visible={isEscanerVisible} onClose={() => setIsEscanerVisible(false)} maxWidth={850}>
+        {isEscanerVisible && <EscanerCanjeScreen onClose={() => setIsEscanerVisible(false)} />}
+      </AppModal>
+
       <AppModal visible={isAdminVisible} onClose={() => setIsAdminVisible(false)} maxWidth={1100}>
         {isAdminVisible && <AdminDashboardScreen onClose={() => setIsAdminVisible(false)} />}
       </AppModal>
-      
+
       <AppModal visible={isAssociationVisible} onClose={() => setIsAssociationVisible(false)}>
         {isAssociationVisible && (
           <AssociationStatusScreen onClose={() => setIsAssociationVisible(false)} />
         )}
       </AppModal>
-      
+
       <AppModal visible={isStaffVisible} onClose={() => setIsStaffVisible(false)}>
         {isStaffVisible && <StaffDashboardScreen onClose={() => setIsStaffVisible(false)} />}
       </AppModal>
@@ -201,12 +226,12 @@ export default function ProfileScreen() {
 
       <AppModal visible={isCapacidadesVisible} onClose={() => setIsCapacidadesVisible(false)}>
         {isCapacidadesVisible && (
-          <CapacidadesFormScreen 
+          <CapacidadesFormScreen
             onClose={() => {
               setIsCapacidadesVisible(false)
               setCapacidadesRefreshKey((k) => k + 1);
             }}
-            fromProfile={true} 
+            fromProfile={true}
           />
         )}
       </AppModal>
@@ -265,6 +290,11 @@ export default function ProfileScreen() {
             onClose={() => {
               setIsAportacionVisible(false);
               setIsAliadoDashboardVisible(true);
+            }}
+            onOpenNeeds={() => {
+              setIsAportacionVisible(false);
+              setIsAliadoDashboardVisible(false);
+              router.push('/como-ayudar');
             }}
           />
         )}

@@ -13,12 +13,36 @@ from math import asin, cos, radians, sin, sqrt
 from fastapi import HTTPException
 
 from app.db.supabase import supabase, supabase_admin
-from app.services import matching
+from app.services import matching, reputacion_service
 from app.utils.animal_shaping import shape_animal_embed, shape_animal_response
 
 
 ESTADOS_VOLUNTARIO_ACTIVO = ("activo_nivel_1", "activo_nivel_2")
 PROPUESTA_COBERTURA_MINUTOS = 10
+
+
+def _reporte_disponible_para_cobertura(
+    reporte_id: str, asociacion_id: str
+) -> bool:
+    resultado = (
+        supabase_admin.table("reportes")
+        .select(
+            "id, estado_validacion_reporte, estado_reporte, estado_cobertura, "
+            "asociacion_asignada_id, staff_asignado_id"
+        )
+        .eq("id", reporte_id)
+        .limit(1)
+        .execute()
+    )
+    reporte = resultado.data[0] if resultado.data else None
+    return bool(
+        reporte
+        and reporte.get("estado_validacion_reporte") == "aprobado"
+        and reporte.get("estado_reporte") == "asignado"
+        and reporte.get("estado_cobertura") == "abierto"
+        and reporte.get("asociacion_asignada_id") == asociacion_id
+        and reporte.get("staff_asignado_id") is None
+    )
 
 
 def obtener_perfil_externo(usuario_id: str) -> dict:
@@ -76,6 +100,20 @@ def obtener_casos_cercanos(usuario_id: str) -> list[dict]:
     if carga_actual >= max_casos:
         return []
 
+    # --- GAMIFICACIÓN: Restricciones operativas (Trust Score < 40) ---
+    try:
+        restricciones = reputacion_service.consultar_restricciones(
+            usuario_id,
+            reputacion_service.ROL_VOLUNTARIO_EXTERNO,
+        )
+        if restricciones.get("bloqueado_nuevas_asignaciones", False):
+            # Si está bloqueado, devolvemos una lista vacía para que no vea nuevos casos en el mapa.
+            # Según las reglas de Jass, "puede_finalizar_activos_en_curso" siempre es True,
+            # así que sus casos asignados actuales no se ven afectados.
+            return []
+    except Exception as e:
+        print(f"[WARN] Error al consultar restricciones de asignación para {usuario_id}: {e}")
+
     resultado = (
         supabase.table("reportes")
         .select(
@@ -88,7 +126,9 @@ def obtener_casos_cercanos(usuario_id: str) -> list[dict]:
             "animal_fotos(foto_url, orden))"
         )
         .eq("estado_reporte", "asignado")
+        .eq("estado_validacion_reporte", "aprobado")
         .eq("estado_cobertura", "abierto")
+        .in_("estado_moderacion", ["visible", "aprobado"])
         .is_("staff_asignado_id", "null")
         .not_.is_("asociacion_asignada_id", "null")
         .order("created_at", desc=True)
@@ -137,7 +177,20 @@ def obtener_casos_cercanos(usuario_id: str) -> list[dict]:
 
 
 def crear_ofrecimiento(usuario_id: str, reporte_id: str) -> dict:
+    restricciones = reputacion_service.consultar_restricciones(
+        usuario_id,
+        reputacion_service.ROL_VOLUNTARIO_EXTERNO,
+    )
+    if restricciones["bloqueado_nuevas_asignaciones"]:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "No puedes ofrecerte a casos nuevos por ahora. "
+                "Sí puedes finalizar tus casos activos."
+            ),
+        )
     perfil = obtener_perfil_externo(usuario_id)
+
     elegibles = {
         caso["id"]: caso for caso in obtener_casos_cercanos(usuario_id)
     }
@@ -296,6 +349,22 @@ def obtener_propuestas_pendientes(usuario_id: str) -> list[dict]:
     return resultado.data or []
 
 
+def _usuarios_coordinacion(asociacion_id: str | None) -> list[str]:
+    if not asociacion_id:
+        return []
+    resultado = (
+        supabase_admin.table("usuarios")
+        .select("id, roles(nombre)")
+        .eq("asociacion_id", asociacion_id)
+        .execute()
+    )
+    return [
+        fila["id"]
+        for fila in (resultado.data or [])
+        if (fila.get("roles") or {}).get("nombre") in ("asociacion", "staff")
+    ]
+
+
 def reservar_cobertura(
     *,
     reporte_id: str,
@@ -305,6 +374,28 @@ def reservar_cobertura(
     actor_id: str,
     origen: str,
 ) -> str:
+    rol_reputacion = {
+        "equipo_interno": reputacion_service.ROL_VOLUNTARIO_INTERNO,
+        "ofrecimiento_externo": reputacion_service.ROL_VOLUNTARIO_EXTERNO,
+    }.get(origen)
+    if rol_reputacion:
+        restricciones = reputacion_service.consultar_restricciones(
+            usuario_asignado_id,
+            rol_reputacion,
+        )
+        if restricciones["bloqueado_nuevas_asignaciones"]:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "El voluntario no puede recibir nuevas asignaciones "
+                    "por ahora. Actualiza la lista y elige otro candidato."
+                ),
+            )
+    if not _reporte_disponible_para_cobertura(reporte_id, asociacion_id):
+        raise HTTPException(
+            status_code=409,
+            detail="El caso ya no está disponible. Actualiza la lista.",
+        )
     vence_at = datetime.now(timezone.utc) + timedelta(
         minutes=PROPUESTA_COBERTURA_MINUTOS
     )
@@ -321,6 +412,24 @@ def reservar_cobertura(
                 "p_vence_at": vence_at.isoformat(),
             },
         ).execute()
+        propuesta_id = str(resultado.data)
+
+        try:
+            from app.services.push_notification_service import queue_and_send_push
+            queue_and_send_push(
+                usuario_id=usuario_asignado_id,
+                tipo_evento="nueva_propuesta",
+                idempotency_key=f"nueva_propuesta:{propuesta_id}:{usuario_asignado_id}",
+                payload={
+                    "mensaje": "Has recibido una nueva propuesta de asignación para un caso.",
+                    "reporte_id": reporte_id,
+                },
+                reporte_id=reporte_id,
+                propuesta_id=propuesta_id,
+            )
+        except Exception as e:
+            print(f"[WARN] Error encolando push de nueva propuesta: {e}")
+
     except Exception as exc:
         detalle = str(exc).lower()
         if (
@@ -343,13 +452,53 @@ def reservar_cobertura(
                 ),
             ) from exc
         raise
-    return str(resultado.data)
+    return propuesta_id
 
 
 def expirar_propuestas_vencidas() -> int:
-    """Libera de forma transaccional las propuestas que agotaron su plazo."""
-    resultado = supabase_admin.rpc("expirar_propuestas_cobertura").execute()
-    return int(resultado.data or 0)
+    """Libera de forma transaccional las propuestas que agotaron su plazo y encola notificaciones."""
+    resultado = supabase_admin.rpc("expirar_propuestas_cobertura_detalladas").execute()
+    propuestas_vencidas = resultado.data or []
+    
+    if propuestas_vencidas:
+        from app.services.push_notification_service import queue_and_send_push
+        
+        for prop in propuestas_vencidas:
+            usuario_asignado = prop.get("usuario_asignado_id")
+            asoc_id = prop.get("asociacion_coordinadora_id")
+            propuesta_id = prop.get("propuesta_id")
+            reporte_id = prop.get("reporte_id")
+            
+            # Notificar a la persona seleccionada
+            if usuario_asignado:
+                queue_and_send_push(
+                    usuario_id=usuario_asignado,
+                    tipo_evento="propuesta_vencida",
+                    idempotency_key=f"propuesta_vencida:{propuesta_id}:{usuario_asignado}",
+                    payload={
+                        "mensaje": "El tiempo para responder la propuesta se agotó. El caso ya no está reservado.",
+                        "reporte_id": reporte_id,
+                    },
+                    reporte_id=reporte_id,
+                    propuesta_id=propuesta_id
+                )
+            
+            for usuario_asoc_id in _usuarios_coordinacion(asoc_id):
+                queue_and_send_push(
+                    usuario_id=usuario_asoc_id,
+                    tipo_evento="propuesta_vencida_asoc",
+                    idempotency_key=(
+                        f"propuesta_vencida_asoc:{propuesta_id}:{usuario_asoc_id}"
+                    ),
+                    payload={
+                        "mensaje": "Una propuesta de asignación ha caducado. Revisa tus casos.",
+                        "reporte_id": reporte_id,
+                    },
+                    reporte_id=reporte_id,
+                    propuesta_id=propuesta_id,
+                )
+
+    return len(propuestas_vencidas)
 
 
 def responder_propuesta(
@@ -357,7 +506,27 @@ def responder_propuesta(
     reporte_id: str,
     acepta: bool,
     motivo: str | None = None,
+    rol: str | None = None,
 ) -> dict:
+    propuesta_id = None
+    try:
+        propuesta = (
+            supabase_admin.table("propuestas_asignacion")
+            .select("id")
+            .eq("reporte_id", reporte_id)
+            .eq("usuario_asignado_id", usuario_id)
+            .eq("estado", "activa")
+            .limit(1)
+            .execute()
+        )
+        if isinstance(propuesta.data, list) and propuesta.data:
+            propuesta_id = propuesta.data[0]["id"]
+    except Exception as error:
+        print(
+            "[WARN] no se pudo identificar la propuesta "
+            f"(reporte={reporte_id}): {error}"
+        )
+
     try:
         resultado = supabase_admin.rpc(
             "responder_propuesta_cobertura",
@@ -368,6 +537,27 @@ def responder_propuesta(
                 "p_motivo": motivo,
             },
         ).execute()
+
+        try:
+            from app.services.push_notification_service import queue_and_send_push
+            reporte_data = supabase_admin.table("reportes").select("asociacion_asignada_id").eq("id", reporte_id).execute()
+            asoc_id = reporte_data.data[0]["asociacion_asignada_id"] if reporte_data.data else None
+            tipo_ev = "voluntario_confirmo" if acepta else "voluntario_rechazo"
+            msg = "Un voluntario ha aceptado la asignación." if acepta else "Un voluntario ha rechazado la asignación."
+            for usuario_asoc_id in _usuarios_coordinacion(asoc_id):
+                queue_and_send_push(
+                    usuario_id=usuario_asoc_id,
+                    tipo_evento=tipo_ev,
+                    idempotency_key=(
+                        f"{tipo_ev}:{propuesta_id or reporte_id}:{usuario_asoc_id}"
+                    ),
+                    payload={"mensaje": msg, "reporte_id": reporte_id},
+                    reporte_id=reporte_id,
+                    propuesta_id=propuesta_id,
+                )
+        except Exception as e:
+            print(f"[WARN] Error encolando push de respuesta a propuesta: {e}")
+
     except Exception as exc:
         if "propuesta_no_disponible" in str(exc).lower():
             raise HTTPException(
@@ -375,6 +565,18 @@ def responder_propuesta(
                 detail="La propuesta ya no está disponible",
             ) from exc
         raise
+
+    if propuesta_id:
+        try:
+            from app.services.reputacion_service import (
+                procesar_respuesta_propuesta_interna,
+            )
+            procesar_respuesta_propuesta_interna(propuesta_id, usuario_id)
+        except Exception as error:
+            print(
+                "[WARN] no se pudo procesar la respuesta oportuna "
+                f"(propuesta={propuesta_id}): {error}"
+            )
     return {"ok": True, "estado_cobertura": resultado.data}
 
 

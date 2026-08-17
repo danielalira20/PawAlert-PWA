@@ -24,13 +24,18 @@ import { AdminSupervisionCard } from './AdminSupervisionCard';
 import { StaffImpactStats } from './StaffImpactStats';
 import { AliadoImpactStats } from './AliadoImpactStats';
 import { OperationalAvailabilityCard } from './OperationalAvailabilityCard';
+import { SaldoReputacionCard } from './SaldoReputacionCard';
+import { ImpactoInsigniasToggle } from './ImpactoInsigniasToggle';
 
 const DESKTOP_BREAKPOINT = 900;
 
 interface Props {
   onOpenMisReportes: () => void;
-  onOpenAdminPanel: () => void;
-  onOpenAssociationPanel: () => void;
+  onOpenAdminPanel?: () => void;
+  onOpenCatalogo?: () => void;
+  onOpenMisCanjes?: () => void;
+  onOpenEscaner?: () => void;
+  onOpenAssociationPanel?: () => void;
   onOpenStaffPanel: () => void;
   onOpenVerificaciones: () => void;
   // Abre el panel de ASIGNACIÓN de staff (candidatos, modo de asignación,
@@ -44,11 +49,15 @@ interface Props {
   onOpenCustodyDashboard: () => void;
   onLogout: () => void;
   capacidadesRefreshKey?: number;
+  reputacionRefreshKey?: number;
 }
 
 export function LoggedInProfile({
   onOpenMisReportes,
   onOpenAdminPanel,
+  onOpenCatalogo,
+  onOpenMisCanjes,
+  onOpenEscaner,
   onOpenAssociationPanel,
   onOpenStaffPanel,
   onOpenVerificaciones,
@@ -60,17 +69,18 @@ export function LoggedInProfile({
   onOpenCustodyDashboard,
   onLogout,
   capacidadesRefreshKey,
+  reputacionRefreshKey,
 }: Props) {
-  const { user , token } = useAuth();
+  const { user, token } = useAuth();
   const { width } = useWindowDimensions();
   const isDesktop = width >= DESKTOP_BREAKPOINT;
-  
+
   const esAdmin = !!user?.es_admin;
   const esAsociacion = !!user?.asociacion_id && user?.rol === 'asociacion';
   const esStaff = !!user?.asociacion_id && user?.rol === 'staff';
   const esAliadoLocal = user?.rol === 'aliado_local';
   const esPatrocinadorInstitucional = user?.rol === 'patrocinador_institucional';
-  
+
   // Validamos si es voluntario interno o externo. Ambos pueden ver sus
   // casos asignados en el mismo dashboard (StaffDashboardScreen, migrado a
   // GET /voluntarios/me/reportes) — la pantalla internamente restringe los
@@ -79,6 +89,17 @@ export function LoggedInProfile({
   const esVoluntarioInterno = user?.rol === 'voluntario_interno';
   const esVoluntarioExterno = user?.rol === 'voluntario_externo';
   const esVoluntarioActivo = esVoluntarioInterno || esVoluntarioExterno;
+
+  // Reputación (Persona 1): solo reportante y voluntario activo participan
+  // del sistema de puntos/trust score -- asociación/admin/staff no tienen
+  // rol de gamificación (ver reputacion_service.py: ROL_REPORTANTE /
+  // ROL_VOLUNTARIO_INTERNO / ROL_VOLUNTARIO_EXTERNO, sin equivalente para
+  // esos tres), así que el bloque de saldo no se les muestra.
+  const rolParaSaldo = esVoluntarioInterno
+    ? 'voluntario_interno'
+    : esVoluntarioExterno
+      ? 'voluntario_externo'
+      : 'reportante';
 
   const [tieneCapacidades, setTieneCapacidades] = useState<boolean | null>(null);
   const [tienePerfilVoluntario, setTienePerfilVoluntario] = useState<boolean | null>(null);
@@ -128,37 +149,37 @@ export function LoggedInProfile({
 
   const { impacto: impactoAliado, isLoading: isLoadingAliado } = useAliadoImpact(tienePerfilApoyo === true);
 
-useFocusEffect(
-  useCallback(() => {
-    if (!token || esAdmin || esAsociacion || esStaff) {
-      setTienePerfilVoluntario(null);
-      setEstadoVoluntario(null);
-      return;
-    }
-    let cancelado = false;
-    (async () => {
-      try {
-        const res = await axios.get(`${API_URL}/voluntarios/me`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!cancelado) {
-          setTienePerfilVoluntario(!!res.data?.tiene_perfil_voluntario);
-          setEstadoVoluntario(res.data?.estado || null);
-          setTieneCapacidades(!!res.data?.tiene_capacidades);
-        }
-      } catch {
-        if (!cancelado) {
-          setTienePerfilVoluntario(null);
-          setEstadoVoluntario(null);
-          setTieneCapacidades(null);
-        }
+  useFocusEffect(
+    useCallback(() => {
+      if (!token || esAdmin || esAsociacion || esStaff) {
+        setTienePerfilVoluntario(null);
+        setEstadoVoluntario(null);
+        return;
       }
-    })();
-    return () => {
-      cancelado = true;
-    };
-  }, [token, esAdmin, esAsociacion, esStaff, capacidadesRefreshKey])
-);
+      let cancelado = false;
+      (async () => {
+        try {
+          const res = await axios.get(`${API_URL}/voluntarios/me`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (!cancelado) {
+            setTienePerfilVoluntario(!!res.data?.tiene_perfil_voluntario);
+            setEstadoVoluntario(res.data?.estado || null);
+            setTieneCapacidades(!!res.data?.tiene_capacidades);
+          }
+        } catch {
+          if (!cancelado) {
+            setTienePerfilVoluntario(null);
+            setEstadoVoluntario(null);
+            setTieneCapacidades(null);
+          }
+        }
+      })();
+      return () => {
+        cancelado = true;
+      };
+    }, [token, esAdmin, esAsociacion, esStaff, capacidadesRefreshKey])
+  );
 
   const { impacto, isLoading: isLoadingReportes } = useRecentReports();
   const { impacto: impactoAsociacion, isLoading: isLoadingAsociacion } = useAssociationImpact(esAsociacion);
@@ -181,6 +202,8 @@ useFocusEffect(
     !user?.rol && tienePerfilApoyo === true &&
     (tipoPerfilApoyo === 'aliado_local' || tipoPerfilApoyo === 'patrocinador_institucional');
 
+  const muestraSaldoReputacion = !esAdmin && !esAsociacion && !esStaff && tipoPerfilApoyo !== 'patrocinador_institucional' && tipoPerfilApoyo !== 'aliado_local' && !esAliadoPuro;
+
   // Los 4 roles ya tienen su propia versión.
   // NOTA: esVoluntarioActivo aún no tiene su propia tarjeta de impacto —
   // por ahora cae al default (ReporterImpactStats). Pendiente crear una
@@ -192,12 +215,15 @@ useFocusEffect(
       pendientes={pendientes}
       totalPendientes={totalPendientes}
       isLoading={isLoadingAdmin}
-      onOpenAdminPanel={onOpenAdminPanel}
+      onOpenAdminPanel={onOpenAdminPanel || (() => {})}
     />
   ) : esStaff ? (
     <StaffImpactStats impacto={impactoStaff} isLoading={isLoadingStaff} />
   ) : (
-    <ReporterImpactStats impacto={impacto} isLoading={isLoadingReportes} />
+    <ImpactoInsigniasToggle
+      impactoElement={<ReporterImpactStats impacto={impacto} isLoading={isLoadingReportes} />}
+      rol={user?.rol}
+    />
   );
 
   // Segundo bloque INDEPENDIENTE del ternario de arriba — se muestra ADEMÁS
@@ -217,39 +243,61 @@ useFocusEffect(
         : null;
 
   const rolBadgeElement = esAdmin ? (
-  <RoleBadge rol="admin" variant="onWhite" />
-) : esAsociacion ? (
-  <RoleBadge rol="asociacion" variant="onWhite" />
-) : esStaff ? (
-  <RoleBadge rol="staff" variant="onWhite" />
-) : esVoluntarioInterno ? (
-  <RoleBadge rol="voluntario_interno" variant="onWhite" />
-) : esVoluntarioExterno ? (
-  <RoleBadge rol="voluntario_externo" variant="onWhite" />
-) : esAliadoLocal ? (
-  <RoleBadge rol="aliado_local" variant="onWhite" />
-) : esPatrocinadorInstitucional ? (
-  <RoleBadge rol="patrocinador_institucional" variant="onWhite" />
-) : esAliadoPuro ? (
-  <RoleBadge rol={tipoPerfilApoyo as 'aliado_local' | 'patrocinador_institucional'} variant="onWhite" />
-) : (
-  <RoleBadge rol="reportante" variant="onWhite" />
-);
+    <RoleBadge rol="admin" variant="onWhite" />
+  ) : esAsociacion ? (
+    <RoleBadge rol="asociacion" variant="onWhite" />
+  ) : esStaff ? (
+    <RoleBadge rol="staff" variant="onWhite" />
+  ) : esVoluntarioInterno ? (
+    <RoleBadge rol="voluntario_interno" variant="onWhite" />
+  ) : esVoluntarioExterno ? (
+    <RoleBadge rol="voluntario_externo" variant="onWhite" />
+  ) : esAliadoLocal ? (
+    <RoleBadge rol="aliado_local" variant="onWhite" />
+  ) : esPatrocinadorInstitucional ? (
+    <RoleBadge rol="patrocinador_institucional" variant="onWhite" />
+  ) : esAliadoPuro ? (
+    <RoleBadge rol={tipoPerfilApoyo as 'aliado_local' | 'patrocinador_institucional'} variant="onWhite" />
+  ) : (
+    <RoleBadge rol="reportante" variant="onWhite" />
+  );
 
   // Actualizamos los accesos agregando los de voluntario
   const accesos = (
     <>
-      <AccessRow 
-        icon="clipboard-outline" 
-        label="Mis Reportes" 
-        onPress={onOpenMisReportes} 
-        isLast={!esAdmin && !esAsociacion && !esStaff && !puedeVerPostulacion && (user?.tiene_perfil_apoyo === true)}
+      <AccessRow
+        icon="clipboard-outline"
+        label="Mis Reportes"
+        onPress={onOpenMisReportes}
       />
+      {muestraSaldoReputacion && !esAliadoPuro && (
+        <>
+          <AccessRow
+            icon="gift-outline"
+            label="Catálogo de Recompensas"
+            onPress={() => onOpenCatalogo?.()}
+          />
+          <AccessRow
+            icon="qr-code-outline"
+            label="Mis Canjes"
+            onPress={() => onOpenMisCanjes?.()}
+            isLast={!esAdmin && !esAsociacion && !esStaff && !puedeVerPostulacion && (user?.tiene_perfil_apoyo === true)}
+          />
+        </>
+      )}
       {user && !user.tiene_perfil_apoyo && !esAsociacion && (
         <AccessRow
           icon="star-outline"
           label="Quiero ser parte de la Red de Aliados"
           onPress={onOpenAliadoForm}
+          isLast={!esAdmin && !esAsociacion && !esStaff && !puedeVerPostulacion}
+        />
+      )}
+      {(tipoPerfilApoyo === 'patrocinador_institucional' || tipoPerfilApoyo === 'aliado_local') && (
+        <AccessRow
+          icon="scan-outline"
+          label="Escanear QR de Canje"
+          onPress={() => onOpenEscaner?.()}
           isLast={!esAdmin && !esAsociacion && !esStaff && !puedeVerPostulacion}
         />
       )}
@@ -262,19 +310,19 @@ useFocusEffect(
         />
       )}
       {esAdmin && (
-        <AccessRow icon="shield-checkmark-outline" label="Panel de administrador" onPress={onOpenAdminPanel} isLast />
+        <AccessRow icon="shield-checkmark-outline" label="Panel de administrador" onPress={() => onOpenAdminPanel?.()} isLast />
       )}
       {esAsociacion && (
         <>
-          <AccessRow icon="business-outline" label="Panel de asociación" onPress={onOpenAssociationPanel} />
+          <AccessRow icon="business-outline" label="Panel de asociación" onPress={() => onOpenAssociationPanel?.()} />
           <AccessRow icon="pulse-outline" label="Seguimiento regional" onPress={onOpenCustodyDashboard} isLast />
         </>
       )}
       {esStaff && (
         <>
-          <AccessRow icon="briefcase-outline" label="Panel de staff" onPress={onOpenAssociationPanel} />
-          <AccessRow icon="list-outline" label="Mis casos" onPress={onOpenStaffPanel} />
-          <AccessRow icon="pulse-outline" label="Seguimiento regional" onPress={onOpenCustodyDashboard} isLast />
+          <AccessRow icon="briefcase-outline" label="Panel de staff" onPress={() => onOpenAssociationPanel?.()} />
+          <AccessRow icon="list-outline" label="Mis casos" onPress={() => onOpenStaffPanel?.()} />
+          <AccessRow icon="pulse-outline" label="Seguimiento regional" onPress={() => onOpenCustodyDashboard?.()} isLast />
         </>
       )}
       {esVoluntarioActivo && (
@@ -374,6 +422,12 @@ useFocusEffect(
                     <Text style={styles.emailOnWhite}>{user.email}</Text>
                   </View>
 
+                  {muestraSaldoReputacion && (
+                    <View style={styles.sectionPadding}>
+                      <SaldoReputacionCard rol={rolParaSaldo} refreshKey={reputacionRefreshKey} />
+                    </View>
+                  )}
+
                   <View style={styles.divider} />
 
                   <View style={styles.sectionPadding}>
@@ -445,6 +499,12 @@ useFocusEffect(
       </LinearGradient>
 
       <View style={styles.mobileCentered}>
+        {muestraSaldoReputacion && (
+          <View style={styles.section}>
+            <SaldoReputacionCard rol={rolParaSaldo} refreshKey={reputacionRefreshKey} />
+          </View>
+        )}
+
         <View style={styles.section}>
           <AccountDataCard telefono={user.telefono} email={user.email} />
         </View>

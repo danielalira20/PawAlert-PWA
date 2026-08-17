@@ -6,5 +6,10 @@ export default function RedAliadosRoute() {
   // regresar a la pestaña Perfil: también hay que restaurar ese panel.
   const closeForm = () => router.replace('/profile?abrirPanelAliado=true' as any);
 
-  return <AportacionFormScreen onClose={closeForm} />;
+  return (
+    <AportacionFormScreen
+      onClose={closeForm}
+      onOpenNeeds={() => router.replace('/como-ayudar')}
+    />
+  );
 }

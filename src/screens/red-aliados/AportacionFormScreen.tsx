@@ -22,6 +22,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { API_URL } from '../../constants/api';
 import { useAuth } from '../../context/AuthContext';
 import { validarEmail, validarTelefono } from '../../utils/validators';
+import { puedeOfrecerDisponibilidadAbierta } from '../../utils/aliadoPermissions';
 import { Toast, useToast } from '../../components/Toast';
 import {
   CategoriaSubcategoriaSelector,
@@ -299,13 +300,21 @@ const CAMPOS_CONDICIONALES: Record<string, CampoCondicional[]> = {
 
 interface Props {
   onClose?: () => void;
+  // Navegar a una necesidad puntual no equivale a cancelar el formulario:
+  // algunos contenedores (como Perfil) usan onClose para restaurar el panel
+  // de donaciones. Separamos ambos destinos para no reabrir ese modal encima
+  // de "Cómo ayudar".
+  onOpenNeeds?: () => void;
 }
 
-export default function AportacionFormScreen({ onClose }: Props) {
-  const { token } = useAuth();
+export default function AportacionFormScreen({ onClose, onOpenNeeds }: Props) {
+  const { token, user } = useAuth();
   const { toast, translateY, showToast } = useToast();
   const { width: viewportWidth } = useWindowDimensions();
   const mostrarPresentacionEnColumnas = viewportWidth >= 900;
+  const permiteDisponibilidadProactiva = puedeOfrecerDisponibilidadAbierta(
+    user?.tipo_perfil_apoyo,
+  );
   
   // ─── AQUÍ ATRAPAMOS EL PARÁMETRO QUE MANDASTE ───
   const { necesidad_id } = useLocalSearchParams<{ necesidad_id?: string }>();
@@ -1334,7 +1343,10 @@ useEffect(() => {
     <FormSection title="¿Qué quieres hacer?" subtitle="Elige cómo quieres ayudar.">
       <TouchableOpacity
         onPress={() => {
-          if (onClose) onClose();
+          if (onOpenNeeds) {
+            onOpenNeeds();
+            return;
+          }
           router.push('/como-ayudar');
         }}
         style={styles.optionCard}
@@ -1344,15 +1356,17 @@ useEffect(() => {
           Te llevamos a "Cómo ayudar" para que elijas exactamente qué necesidad quieres cubrir.
         </Text>
       </TouchableOpacity>
-      <TouchableOpacity
-        onPress={() => setHaElegidoProactiva(true)}
-        style={styles.optionCard}
-      >
-        <Text style={styles.optionCardTitle}>Dejar mi disponibilidad abierta</Text>
-        <Text style={styles.optionCardSubtitle}>
-          Ofrece algo que las asociaciones podrán encontrar y usar cuando lo necesiten.
-        </Text>
-      </TouchableOpacity>
+      {permiteDisponibilidadProactiva && (
+        <TouchableOpacity
+          onPress={() => setHaElegidoProactiva(true)}
+          style={styles.optionCard}
+        >
+          <Text style={styles.optionCardTitle}>Dejar mi disponibilidad abierta</Text>
+          <Text style={styles.optionCardSubtitle}>
+            Ofrece algo que las asociaciones podrán encontrar y usar cuando lo necesiten.
+          </Text>
+        </TouchableOpacity>
+      )}
     </FormSection>
   );
 }

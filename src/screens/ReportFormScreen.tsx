@@ -723,7 +723,15 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
         return;
       }
 
-      if (data.asociacion_asignada) {
+      if (data.estado === 'revision_manual') {
+        setResultadoEnvio(
+          'Recibimos tu reporte y está en revisión. Te avisaremos cuando pueda entrar al flujo de atención.',
+        );
+      } else if (data.estado === 'duplicado_vinculable') {
+        setResultadoEnvio(
+          'Tu información quedó vinculada al reporte existente para complementar ese mismo caso.',
+        );
+      } else if (data.asociacion_asignada) {
         setResultadoEnvio(`Tu reporte fue asignado a: ${data.asociacion_asignada}`);
       } else if (data.contactos_emergencia && data.contactos_emergencia.length > 0) {
         const contactos = data.contactos_emergencia.map((c: any) => `${c.nombre}: ${c.telefono}`).join('\n');

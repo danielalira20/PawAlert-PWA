@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from app.api import reports
 from app.main import app
 from app.models.report import AnimalInput
+from app.models.urgency import DuplicateCandidate
 from app.services import report_service
 from app.services.report_service import _clasificar_escenario
 from app.services.image_evidence_service import ImagenEvidenciaInvalida, ImagenEvidenciaProcesada
@@ -72,23 +73,55 @@ def _config_catalogos_basica():
     }
 
 
-def _crear_reporte_con_fotos(supabase, fotos, fotos_animal_index, *, latitud=None, longitud=None):
+def _crear_reporte_con_fotos(
+    supabase,
+    fotos,
+    fotos_animal_index,
+    *,
+    latitud=None,
+    longitud=None,
+    activacion_side_effect=None,
+    phash_result=None,
+    usuario_id=None,
+    reporte_original_id=None,
+):
+    activacion_config = (
+        {"side_effect": activacion_side_effect}
+        if activacion_side_effect
+        else {"return_value": {"estado": "sin_cobertura", "asociacion": None}}
+    )
     with (
         patch.object(report_service, "supabase", supabase),
+        # crear_reporte usa supabase_admin (cliente aparte de `supabase`)
+        # para la bandeja de casos_administrativos cuando no hay
+        # asociación compatible -- sin mockearlo aquí, esa rama sale a la
+        # Supabase real configurada en .env en vez de quedarse en el
+        # proceso de la prueba (hallazgo separado del enganche de
+        # reputacion_service, preexistente en este archivo).
+        patch.object(report_service, "supabase_admin", MagicMock()),
         patch.object(report_service, "obtener_contactos_emergencia", return_value=[]),
-        patch.object(report_service, "asignar_asociacion", return_value=None),
+        patch(
+            "app.services.report_activation_service.activar_reporte",
+            **activacion_config,
+        ),
+        patch(
+            "app.services.report_activation_service.supabase",
+            supabase,
+        ),
         patch(
             "app.services.report_moderation_service.calcular_phash",
             return_value="0" * 16,
         ),
         patch(
             "app.services.report_moderation_service.registrar_phash_reporte",
-            return_value={"id": "hash-1", "alerta": False},
+            return_value=(
+                phash_result or {"id": "hash-1", "alerta": False}
+            ),
         ),
     ):
         return asyncio.run(report_service.crear_reporte(
             nombre="Juan", apellido_paterno="Pérez", apellido_materno=None,
-            telefono="5512345678", email=None, usuario_id=None,
+            telefono="5512345678", email=None, usuario_id=usuario_id,
             animales=[AnimalInput(condicion="estable", tipo_animal="perro", tamanio="mediano")],
             latitud=latitud, longitud=longitud, calle=None, colonia="Centro", municipio="Puebla",
             referencia=None,
@@ -97,7 +130,7 @@ def _crear_reporte_con_fotos(supabase, fotos, fotos_animal_index, *, latitud=Non
             fotos_animal_index=json.dumps(fotos_animal_index),
             estado_ubicacion=None,
             es_duplicado_confirmado=True,
-            reporte_original_id=None,
+            reporte_original_id=reporte_original_id,
         ))
 
 
@@ -114,6 +147,49 @@ def _procesada(*, exif_latitud=None, exif_longitud=None) -> ImagenEvidenciaProce
         exif_longitud=exif_longitud,
         exif_captured_at=None,
     )
+
+
+def test_crear_reporte_permanece_procesando_hasta_terminar_fotos(make_query):
+    supabase, tablas = _tablas_mock(make_query, _config_catalogos_basica())
+    fotos = [FakeUploadFile()]
+
+    def activar_despues_de_evidencia(**_):
+        reporte_insertado = tablas["reportes"].insert.call_args.args[0]
+        assert reporte_insertado["estado_reporte"] == "pendiente"
+        assert reporte_insertado["estado_cobertura"] is None
+        assert reporte_insertado["asociacion_asignada_id"] is None
+        assert reporte_insertado["estado_validacion_reporte"] == "procesando"
+        assert tablas["animal_fotos"].insert.called
+        return {"estado": "sin_cobertura", "asociacion": None}
+
+    with (
+        patch(
+            "app.services.report_photo_vision_service.verificar_foto_animal",
+            return_value={
+                "estado": "completado",
+                "es_animal_real": True,
+                "categoria_rechazo": None,
+                "confianza": 0.9,
+                "condicion_estimada": "estable",
+                "modelo": "gemini-3.5-flash-lite",
+            },
+        ),
+        patch.object(
+            report_service,
+            "subir_bytes",
+            new=AsyncMock(
+                return_value=(
+                    "https://x.supabase.co/storage/v1/object/public/bucket/foto.jpg"
+                )
+            ),
+        ),
+    ):
+        _crear_reporte_con_fotos(
+            supabase,
+            fotos,
+            [0],
+            activacion_side_effect=activar_despues_de_evidencia,
+        )
 
 
 def test_crear_reporte_rechaza_foto_y_limpia_storage_de_fotos_previas(make_query):
@@ -147,7 +223,7 @@ def test_crear_reporte_rechaza_foto_y_limpia_storage_de_fotos_previas(make_query
     assert tablas["animal"].delete.called
 
 
-def test_crear_reporte_error_tecnico_no_bloquea_y_marca_revision(make_query):
+def test_crear_reporte_error_tecnico_detiene_activacion_y_marca_revision(make_query):
     supabase, tablas = _tablas_mock(make_query, _config_catalogos_basica())
     fotos = [FakeUploadFile()]
 
@@ -160,7 +236,7 @@ def test_crear_reporte_error_tecnico_no_bloquea_y_marca_revision(make_query):
     ):
         resultado = _crear_reporte_con_fotos(supabase, fotos, [0])
 
-    assert resultado["estado"] == "pendiente"
+    assert resultado["estado"] == "revision_manual"
     foto_insert = tablas["animal_fotos"].insert.call_args.args[0]
     assert foto_insert["analisis_ia_estado"] == "error_tecnico"
     assert foto_insert["analisis_ia_error"] == "timeout de Gemini"
@@ -188,7 +264,7 @@ def test_crear_reporte_exito_guarda_analisis_y_condicion_estimada(make_query):
     ):
         resultado = _crear_reporte_con_fotos(supabase, fotos, [0])
 
-    assert resultado["estado"] == "pendiente"
+    assert resultado["estado"] == "sin_cobertura"
     foto_insert = tablas["animal_fotos"].insert.call_args.args[0]
     assert foto_insert["analisis_ia_estado"] == "completado"
     assert foto_insert["analisis_ia_condicion"] == "herido"
@@ -201,7 +277,7 @@ def test_crear_reporte_exito_guarda_analisis_y_condicion_estimada(make_query):
     assert "foto_revision_pendiente" not in eventos
 
 
-def test_crear_reporte_exif_discrepancia_no_bloquea(make_query):
+def test_crear_reporte_exif_discrepancia_detiene_activacion(make_query):
     supabase, tablas = _tablas_mock(make_query, _config_catalogos_basica())
     fotos = [FakeUploadFile()]
 
@@ -218,7 +294,7 @@ def test_crear_reporte_exif_discrepancia_no_bloquea(make_query):
     ):
         resultado = _crear_reporte_con_fotos(supabase, fotos, [0], latitud=19.0414, longitud=-98.2063)
 
-    assert resultado["estado"] == "pendiente"
+    assert resultado["estado"] == "revision_manual"
     foto_insert = tablas["animal_fotos"].insert.call_args.args[0]
     assert foto_insert["exif_estado_verificacion"] == "discrepancia"
     assert foto_insert["exif_distancia_declarada_m"] > 200
@@ -245,7 +321,7 @@ def test_crear_reporte_exif_coincidente(make_query):
     ):
         resultado = _crear_reporte_con_fotos(supabase, fotos, [0], latitud=19.0414, longitud=-98.2063)
 
-    assert resultado["estado"] == "pendiente"
+    assert resultado["estado"] == "sin_cobertura"
     foto_insert = tablas["animal_fotos"].insert.call_args.args[0]
     assert foto_insert["exif_estado_verificacion"] == "coincidente"
     assert foto_insert["exif_distancia_declarada_m"] < 200
@@ -268,10 +344,117 @@ def test_crear_reporte_exif_sin_gps(make_query):
     ):
         resultado = _crear_reporte_con_fotos(supabase, fotos, [0], latitud=19.0414, longitud=-98.2063)
 
-    assert resultado["estado"] == "pendiente"
+    assert resultado["estado"] == "sin_cobertura"
     foto_insert = tablas["animal_fotos"].insert.call_args.args[0]
     assert foto_insert["exif_estado_verificacion"] == "sin_gps_exif"
     assert foto_insert["exif_distancia_declarada_m"] is None
+
+
+def test_crear_reporte_phash_alerta_detiene_activacion(make_query):
+    supabase, tablas = _tablas_mock(make_query, _config_catalogos_basica())
+    fotos = [FakeUploadFile()]
+
+    with (
+        patch(
+            "app.services.report_photo_vision_service.verificar_foto_animal",
+            return_value={
+                "estado": "completado",
+                "es_animal_real": True,
+                "confianza": 0.9,
+                "condicion_estimada": "estable",
+            },
+        ),
+        patch.object(
+            report_service,
+            "subir_bytes",
+            new=AsyncMock(return_value="https://x.supabase.co/foto.jpg"),
+        ),
+    ):
+        resultado = _crear_reporte_con_fotos(
+            supabase,
+            fotos,
+            [0],
+            phash_result={"id": "hash-1", "alerta": True},
+        )
+
+    assert resultado["estado"] == "revision_manual"
+    actualizacion = tablas["reportes"].update.call_args.args[0]
+    assert actualizacion["razones_validacion"] == [
+        {"codigo": "phash_coincidencia", "resultado": "revision_manual"}
+    ]
+
+
+def test_crear_reporte_trust_bajo_detiene_activacion(make_query):
+    supabase, tablas = _tablas_mock(make_query, _config_catalogos_basica())
+    fotos = [FakeUploadFile()]
+
+    with (
+        patch(
+            "app.services.report_photo_vision_service.verificar_foto_animal",
+            return_value={
+                "estado": "completado",
+                "es_animal_real": True,
+                "confianza": 0.9,
+                "condicion_estimada": "estable",
+            },
+        ),
+        patch.object(
+            report_service,
+            "subir_bytes",
+            new=AsyncMock(return_value="https://x.supabase.co/foto.jpg"),
+        ),
+        patch(
+            "app.services.reputacion_service.consultar_restricciones",
+            return_value={"requiere_revision_previa": True},
+        ),
+    ):
+        resultado = _crear_reporte_con_fotos(
+            supabase,
+            fotos,
+            [0],
+            usuario_id="reportante-1",
+        )
+
+    assert resultado["estado"] == "revision_manual"
+    actualizacion = tablas["reportes"].update.call_args.args[0]
+    assert actualizacion["urgency_excluido"] is True
+    assert actualizacion["urgency_razones_exclusion"] == [
+        {"codigo": "trust_score_revision_previa"}
+    ]
+
+
+def test_crear_reporte_vinculado_no_abre_segunda_cobertura(make_query):
+    supabase, tablas = _tablas_mock(make_query, _config_catalogos_basica())
+    fotos = [FakeUploadFile()]
+
+    with (
+        patch(
+            "app.services.report_photo_vision_service.verificar_foto_animal",
+            return_value={
+                "estado": "completado",
+                "es_animal_real": True,
+                "confianza": 0.9,
+                "condicion_estimada": "estable",
+            },
+        ),
+        patch.object(
+            report_service,
+            "subir_bytes",
+            new=AsyncMock(return_value="https://x.supabase.co/foto.jpg"),
+        ),
+    ):
+        resultado = _crear_reporte_con_fotos(
+            supabase,
+            fotos,
+            [0],
+            reporte_original_id="reporte-original",
+        )
+
+    assert resultado["estado"] == "duplicado_vinculable"
+    actualizacion = tablas["reportes"].update.call_args.args[0]
+    assert actualizacion["estado_cobertura"] is None
+    assert actualizacion["asociacion_asignada_id"] is None
+    assert actualizacion["urgency_excluido"] is True
 
 
 def test_crear_reporte_procesar_imagen_evidencia_invalida_usa_saneo_de_emergencia(make_query):
@@ -295,7 +478,7 @@ def test_crear_reporte_procesar_imagen_evidencia_invalida_usa_saneo_de_emergenci
     ):
         resultado = _crear_reporte_con_fotos(supabase, fotos, [0], latitud=19.0414, longitud=-98.2063)
 
-    assert resultado["estado"] == "pendiente"
+    assert resultado["estado"] == "sin_cobertura"
     foto_insert = tablas["animal_fotos"].insert.call_args.args[0]
     assert foto_insert["exif_latitud"] is None
     assert foto_insert["exif_longitud"] is None
@@ -724,7 +907,7 @@ def test_report_sin_ubicacion(animal_payload):
 
 
 def test_report_detecta_duplicado():
-    duplicado_mock = [{
+    duplicado_reconstruido = {
         "id": "abc-123",
         "municipio": "Puebla",
         "colonia": "Centro",
@@ -739,14 +922,25 @@ def test_report_detecta_duplicado():
         "animales_resumen": [
             {"tipo_animal": "perro", "condicion": "estable", "cantidad": 1, "foto_url": None},
         ],
-    }]
+    }
+    candidato = DuplicateCandidate(
+        existing_report_id="abc-123",
+        distance_m=80,
+        time_difference_minutes=10,
+        shared_species=["perro"],
+    )
 
-    with patch("app.services.report_service.verificar_duplicados", return_value=duplicado_mock):
+    with (
+        patch("app.services.duplicate_service.find_geographic_duplicates", return_value=[candidato]),
+        patch.object(report_service, "_reconstruir_reporte_existente", return_value=duplicado_reconstruido),
+    ):
         response = client.post("/reports", data={
             "nombre": "Juan",
             "apellido_paterno": "Pérez",
             "telefono": "5512345678",
             "municipio": "Puebla",
+            "latitud": "19.04",
+            "longitud": "-98.20",
             "animales": json.dumps([
                 {"condicion": "estable", "tipo_animal": "perro", "tamanio": "mediano"},
             ]),
@@ -757,11 +951,11 @@ def test_report_detecta_duplicado():
     assert data.get("posible_duplicado") is True
     assert data.get("escenario") == 1
     assert data["reporte_existente"]["id"] == "abc-123"
-    assert data["reporte_existente"]["animales"] == duplicado_mock[0]["animales_resumen"]
+    assert data["reporte_existente"]["animales"] == duplicado_reconstruido["animales_resumen"]
 
 
 def test_report_detecta_duplicado_escenario_2_grupo():
-    duplicado_mock = [{
+    duplicado_reconstruido = {
         "id": "abc-456",
         "municipio": "Puebla",
         "colonia": "Centro",
@@ -776,14 +970,25 @@ def test_report_detecta_duplicado_escenario_2_grupo():
         "animales_resumen": [
             {"tipo_animal": "gato", "condicion": "grave", "cantidad": 5, "foto_url": None},
         ],
-    }]
+    }
+    candidato = DuplicateCandidate(
+        existing_report_id="abc-456",
+        distance_m=30,
+        time_difference_minutes=20,
+        shared_species=["gato"],
+    )
 
-    with patch("app.services.report_service.verificar_duplicados", return_value=duplicado_mock):
+    with (
+        patch("app.services.duplicate_service.find_geographic_duplicates", return_value=[candidato]),
+        patch.object(report_service, "_reconstruir_reporte_existente", return_value=duplicado_reconstruido),
+    ):
         response = client.post("/reports", data={
             "nombre": "Juan",
             "apellido_paterno": "Pérez",
             "telefono": "5512345678",
             "municipio": "Puebla",
+            "latitud": "19.04",
+            "longitud": "-98.20",
             "animales": json.dumps([
                 {"condicion": "estable", "tipo_animal": "gato", "tamanio": "pequeno"},
             ]),
@@ -793,6 +998,44 @@ def test_report_detecta_duplicado_escenario_2_grupo():
     data = response.json()
     assert data.get("posible_duplicado") is True
     assert data.get("escenario") == 2
+
+
+def test_report_sin_coordenadas_omite_chequeo_de_duplicados_pero_no_revienta(make_query):
+    """Un reporte puede enviarse solo con municipio, sin GPS ni pin --
+    DuplicateSearchInput exige latitude/longitude, así que en vez de armar
+    una búsqueda inválida, crear_reporte omite el chequeo geoespacial por
+    completo cuando faltan coordenadas y continúa creando el reporte
+    normalmente (caso 'h' del ticket de Persona 3)."""
+    supabase, tablas = _tablas_mock(make_query, _config_catalogos_basica())
+
+    with (
+        patch.object(report_service, "supabase", supabase),
+        patch.object(report_service, "supabase_admin", MagicMock()),
+        patch.object(report_service, "obtener_contactos_emergencia", return_value=[]),
+        patch(
+            "app.services.report_activation_service.activar_reporte",
+            return_value={"estado": "sin_cobertura", "asociacion": None},
+        ),
+        patch(
+            "app.services.report_activation_service.supabase",
+            supabase,
+        ),
+        patch(
+            "app.services.duplicate_service.find_geographic_duplicates",
+        ) as buscar_duplicados,
+    ):
+        resultado = asyncio.run(report_service.crear_reporte(
+            nombre="Juan", apellido_paterno="Pérez", apellido_materno=None,
+            telefono="5512345678", email=None, usuario_id=None,
+            animales=[AnimalInput(condicion="estable", tipo_animal="perro", tamanio="mediano")],
+            latitud=None, longitud=None, calle=None, colonia="Centro", municipio="Puebla",
+            estado_ubicacion=None, referencia=None,
+        ))
+
+    buscar_duplicados.assert_not_called()
+    assert "posible_duplicado" not in resultado
+    assert resultado["id"] == "reporte-test-1"
+    assert resultado["estado"] == "revision_manual"
 
 
 def test_clasificar_escenario_1_coincidencia_simple():
@@ -815,25 +1058,103 @@ def test_clasificar_escenario_none_por_cantidad_mayor_130_por_ciento():
     assert _clasificar_escenario(existente, ["perro-id"], 10) is None
 
 
+def test_crear_reporte_revisa_el_siguiente_candidato_si_el_primero_no_clasifica():
+    candidatos = [
+        DuplicateCandidate(
+            existing_report_id="rep-descartado",
+            distance_m=5,
+            time_difference_minutes=3,
+            shared_species=["perro"],
+        ),
+        DuplicateCandidate(
+            existing_report_id="rep-valido",
+            distance_m=10,
+            time_difference_minutes=4,
+            shared_species=["perro"],
+        ),
+    ]
+    duplicado_reconstruido = {
+        "id": "rep-valido",
+        "municipio": "Puebla",
+        "colonia": "Centro",
+        "created_at": "2026-07-19T10:00:00+00:00",
+        "escenario": 1,
+        "animal": {},
+        "foto_url": None,
+        "animales_resumen": [],
+    }
+
+    with (
+        patch(
+            "app.services.duplicate_service.find_geographic_duplicates",
+            return_value=candidatos,
+        ),
+        patch.object(
+            report_service,
+            "_reconstruir_reporte_existente",
+            side_effect=[None, duplicado_reconstruido],
+        ) as reconstruir,
+    ):
+        resultado = asyncio.run(report_service.crear_reporte(
+            nombre="Juan", apellido_paterno="Pérez", apellido_materno=None,
+            telefono="5512345678", email=None, usuario_id=None,
+            animales=[
+                AnimalInput(
+                    condicion="estable",
+                    tipo_animal="perro",
+                    tamanio="mediano",
+                ),
+            ],
+            latitud=19.04, longitud=-98.20, calle=None, colonia="Centro",
+            municipio="Puebla", estado_ubicacion=None, referencia=None,
+        ))
+
+    assert resultado["reporte_existente"]["id"] == "rep-valido"
+    assert resultado["total_duplicados"] == 2
+    assert [llamada.args[0] for llamada in reconstruir.call_args_list] == [
+        "rep-descartado",
+        "rep-valido",
+    ]
+
+
 def test_crear_reporte_verifica_especies_unicas_y_cantidad_total():
-    duplicado = {
+    duplicado_reconstruido = {
         "id": "rep-existente", "municipio": "Puebla", "colonia": "Centro",
         "created_at": "2026-07-19T10:00:00+00:00", "escenario": 2,
         "animal": {}, "foto_url": None, "animales_resumen": [],
     }
+    candidato = DuplicateCandidate(
+        existing_report_id="rep-existente",
+        distance_m=10,
+        time_difference_minutes=5,
+        shared_species=["perro", "gato"],
+    )
     animales = [
         AnimalInput(condicion="estable", tipo_animal="perro", tamanio="mediano", cantidad=1),
         AnimalInput(condicion="grave", tipo_animal="gato", tamanio="pequeno", cantidad=3, es_grupo=True),
         AnimalInput(condicion="herido", tipo_animal="perro", tamanio="grande", cantidad=1),
     ]
 
-    with patch.object(report_service, "verificar_duplicados", return_value=[duplicado]) as verificar:
+    with (
+        patch(
+            "app.services.duplicate_service.find_geographic_duplicates",
+            return_value=[candidato],
+        ) as buscar,
+        patch.object(report_service, "_reconstruir_reporte_existente", return_value=duplicado_reconstruido),
+    ):
         resultado = asyncio.run(report_service.crear_reporte(
             nombre="Juan", apellido_paterno="Pérez", apellido_materno=None,
             telefono="5512345678", email=None, usuario_id=None, animales=animales,
-            latitud=None, longitud=None, calle=None, colonia="Centro", municipio="Puebla",
+            # Se agregan coordenadas: la búsqueda de duplicados ahora es
+            # geoespacial y DuplicateSearchInput exige latitude/longitude
+            # (antes esta prueba usaba latitud=None/longitud=None porque
+            # verificar_duplicados comparaba solo municipio/colonia como
+            # texto -- ver nota en el resumen final sobre este ajuste).
+            latitud=19.04, longitud=-98.20, calle=None, colonia="Centro", municipio="Puebla",
             estado_ubicacion=None, referencia=None,
         ))
 
-    verificar.assert_called_once_with("Puebla", "Centro", ["perro", "gato"], 5)
+    busqueda_usada = buscar.call_args.args[0]
+    assert busqueda_usada.species == ["perro", "gato"]
+    assert busqueda_usada.quantity == 5
     assert resultado["posible_duplicado"] is True

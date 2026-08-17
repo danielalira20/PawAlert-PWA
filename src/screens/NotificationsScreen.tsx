@@ -4,8 +4,10 @@ import { router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Platform,
+  Switch,
   Text,
   TouchableOpacity,
   View,
@@ -13,8 +15,14 @@ import {
 
 import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
+import {
+  disablePushNotifications,
+  enablePushNotifications,
+  getPushPermissionState,
+  PushPermissionState,
+} from '../services/pushRegistration';
 
-type NotificationKind = 'moderacion' | 'aliado';
+type NotificationKind = 'moderacion' | 'aliado' | 'reputacion';
 
 interface AppNotification {
   id: string;
@@ -44,6 +52,11 @@ const TYPE_STYLE: Record<string, { icon: keyof typeof Ionicons.glyphMap; color: 
   oferta_aceptada: { icon: 'gift-outline', color: '#209653', bg: '#EAF8F0', label: 'Oferta aceptada' },
   proximidad: { icon: 'location-outline', color: '#278F87', bg: '#E9F8F6', label: 'Apoyo cercano' },
   necesidad_disponible: { icon: 'heart-outline', color: '#278F87', bg: '#E9F8F6', label: 'Necesidad disponible' },
+  bono_bienvenida: { icon: 'gift-outline', color: '#8B5CF6', bg: '#F3EEFF', label: 'Bono de bienvenida' },
+  insignia_obtenida: { icon: 'ribbon-outline', color: '#C9971C', bg: '#FBF3DC', label: 'Nueva insignia' },
+  insignia_mejorada: { icon: 'trophy-outline', color: '#C9971C', bg: '#FBF3DC', label: 'Insignia mejorada' },
+  restriccion_activada: { icon: 'warning-outline', color: '#D6453D', bg: '#FDEDEC', label: 'Restricción activa' },
+  restriccion_levantada: { icon: 'checkmark-done-outline', color: '#209653', bg: '#EAF8F0', label: 'Restricción levantada' },
 };
 
 function notificationDate(value: string) {
@@ -56,6 +69,8 @@ export default function NotificationsScreen() {
   const { token } = useAuth();
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(true);
+  const [pushPermission, setPushPermission] = useState<PushPermissionState>('default');
+  const [updatingPush, setUpdatingPush] = useState(false);
 
   const loadNotifications = useCallback(async () => {
     if (!token) {
@@ -66,9 +81,10 @@ export default function NotificationsScreen() {
 
     setLoading(true);
     const headers = { Authorization: `Bearer ${token}` };
-    const [moderationResult, allyResult] = await Promise.allSettled([
+    const [moderationResult, allyResult, reputationResult] = await Promise.allSettled([
       axios.get(`${API_URL}/reports/me/notificaciones-moderacion`, { headers }),
       axios.get(`${API_URL}/red-aliados/me/notificaciones`, { headers }),
+      axios.get(`${API_URL}/reputacion/me/notificaciones`, { headers }),
     ]);
 
     const moderation: AppNotification[] = moderationResult.status === 'fulfilled'
@@ -97,7 +113,18 @@ export default function NotificationsScreen() {
         }))
       : [];
 
-    setNotifications([...moderation, ...ally].sort(
+    const reputation: AppNotification[] = reputationResult.status === 'fulfilled'
+      ? (reputationResult.value.data || []).map((item: any) => ({
+          id: item.id,
+          kind: 'reputacion' as const,
+          type: item.tipo,
+          message: item.mensaje,
+          read: Boolean(item.leida),
+          createdAt: item.created_at,
+        }))
+      : [];
+
+    setNotifications([...moderation, ...ally, ...reputation].sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
     ));
     setLoading(false);
@@ -107,12 +134,49 @@ export default function NotificationsScreen() {
     loadNotifications();
   }, [loadNotifications]);
 
+  useEffect(() => {
+    getPushPermissionState().then(setPushPermission).catch(() => {
+      setPushPermission('unsupported');
+    });
+  }, []);
+
+  const togglePush = async (enabled: boolean) => {
+    if (!token || updatingPush) return;
+    setUpdatingPush(true);
+    try {
+      if (enabled) {
+        await enablePushNotifications(token);
+        setPushPermission('granted');
+      } else {
+        const result = await disablePushNotifications(token);
+        setPushPermission(result.permission);
+      }
+    } catch (error) {
+      const code = error instanceof Error ? error.message : '';
+      Alert.alert(
+        'No se activaron las alertas',
+        code === 'push_permiso_denegado'
+          ? 'Habilita las notificaciones de PawAlert desde los ajustes de tu dispositivo.'
+          : 'Revisa la configuración de Firebase o inténtalo nuevamente.',
+      );
+      setPushPermission(
+        await getPushPermissionState().catch(
+          (): PushPermissionState => 'unsupported',
+        ),
+      );
+    } finally {
+      setUpdatingPush(false);
+    }
+  };
+
   const openNotification = async (item: AppNotification) => {
     if (!item.read && token) {
       const headers = { Authorization: `Bearer ${token}` };
       const url = item.kind === 'moderacion'
         ? `${API_URL}/reports/me/notificaciones-moderacion/${item.id}/leer`
-        : `${API_URL}/red-aliados/me/notificaciones/${item.id}/leer`;
+        : item.kind === 'aliado'
+        ? `${API_URL}/red-aliados/me/notificaciones/${item.id}/leer`
+        : `${API_URL}/reputacion/me/notificaciones/${item.id}/leer`;
       try {
         await axios.patch(url, {}, { headers });
         setNotifications((current) => current.map((notification) => (
@@ -145,6 +209,27 @@ export default function NotificationsScreen() {
             <Ionicons name="close" size={23} color={C.dark} />
           </TouchableOpacity>
         </View>
+
+        {token && pushPermission !== 'unsupported' && (
+          <View style={{ backgroundColor: '#FFFFFF', paddingHorizontal: 24, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: C.border, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <Ionicons name="phone-portrait-outline" size={21} color={C.teal} />
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: C.dark, fontSize: 13, fontWeight: '800' }}>Alertas en este dispositivo</Text>
+              <Text style={{ color: C.muted, fontSize: 11, marginTop: 2 }}>Recibe propuestas y cambios importantes</Text>
+            </View>
+            {updatingPush ? (
+              <ActivityIndicator size="small" color={C.orange} />
+            ) : (
+              <Switch
+                accessibilityLabel="Alertas en este dispositivo"
+                value={pushPermission === 'granted'}
+                onValueChange={togglePush}
+                trackColor={{ false: '#D8CEC5', true: '#A7DDD8' }}
+                thumbColor={pushPermission === 'granted' ? C.teal : '#FFFFFF'}
+              />
+            )}
+          </View>
+        )}
 
         {loading ? (
           <View style={{ minHeight: 280, alignItems: 'center', justifyContent: 'center' }}>

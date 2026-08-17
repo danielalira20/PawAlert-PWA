@@ -23,6 +23,11 @@ from app.models.custody import (
 from app.services.report_service import registrar_historial
 from app.services.email_service import email_duda_regional, email_respuesta_voluntario
 from app.utils.animal_shaping import shape_animal_embed, shape_animal_response
+from app.services.reputacion_service import (
+    ajustar_trust_score,
+    evaluar_insignias_voluntario_externo,
+    otorgar_puntos,
+)
 
 
 router = APIRouter()
@@ -1047,6 +1052,61 @@ def validar_seguimiento(
         descripcion="Asociación revisó evidencia de custodia",
         datos_extra={"seguimiento_id": seguimiento_id, "decision": body.decision},
     )
+
+    # --- GAMIFICACIÓN: Puntos por seguimiento de custodia ---
+    if estado == "validado":
+        # 1. Obtener al voluntario externo dueño de esta custodia
+        voluntario_query = supabase_admin.table("voluntarios").select(
+            "usuario_id"
+        ).eq("id", custodia["voluntario_id"]).limit(1).execute()
+        
+        if voluntario_query.data:
+            usuario_id_postulante = voluntario_query.data[0]["usuario_id"]
+
+            try:
+                # 2. Otorgar +10 puntos (Máximo 4 por custodia al mes)
+                otorgar_puntos(
+                    usuario_id=usuario_id_postulante,
+                    rol="voluntario_externo",
+                    regla=f"seguimiento_custodia_{custodia.get('reporte_id', 'desconocido')}",
+                    tipo_origen="seguimiento_resguardo",
+                    evento_origen_id=seguimiento_id,
+                    puntos=10,
+                    limite_ocurrencias_mes=4,
+                )
+
+                # 3. Otorgar +1 Trust Score si se entregó a tiempo
+                seguimiento_data = supabase_admin.table("seguimientos_resguardo").select(
+                    "creado_at, proximo_seguimiento_at"
+                ).eq("id", seguimiento_id).limit(1).execute()
+                
+                if seguimiento_data.data:
+                    creado_at_str = seguimiento_data.data[0].get("creado_at")
+                    proximo_at_str = seguimiento_data.data[0].get("proximo_seguimiento_at")
+                    
+                    if creado_at_str and proximo_at_str:
+                        creado_at = datetime.fromisoformat(str(creado_at_str).replace("Z", "+00:00"))
+                        proximo_at = datetime.fromisoformat(str(proximo_at_str).replace("Z", "+00:00"))
+                        
+                        # Si se entregó antes de que venciera, premia la puntualidad
+                        if creado_at <= proximo_at:
+                            ajustar_trust_score(
+                                usuario_id=usuario_id_postulante,
+                                rol="voluntario_externo",
+                                tipo="incremento",
+                                valor=1,
+                                regla="trust_seguimiento_puntual",
+                                motivo="Seguimiento entregado a tiempo",
+                                tipo_origen="seguimiento_resguardo",
+                                evento_origen_id=seguimiento_id,
+                                limite_incremento_mes=20,
+                            )
+                
+                evaluar_insignias_voluntario_externo(usuario_id_postulante)
+
+            except Exception as e:
+                print(f"[WARN] Error en gamificación de seguimiento {seguimiento_id}: {e}")
+
     return {"validacion": insertado.data[0], "estado_validacion": estado}
 
 
@@ -1605,6 +1665,56 @@ def confirmar_transferencia(
         descripcion="Se confirmó una parte de la transferencia de custodia",
         datos_extra={"transferencia_id": transferencia_id, "modo": modo, "estado": estado},
     )
+
+    # --- GAMIFICACIÓN: Puntos por transferencia confirmada por ambas partes ---
+    if estado == "confirmada":
+        try:
+            usuarios_a_premiar = []
+            
+            # 1. El voluntario original (quien entrega)
+            vol_origen = supabase_admin.table("voluntarios").select("usuario_id").eq("id", custodia.get("voluntario_id")).limit(1).execute()
+            if vol_origen.data and vol_origen.data[0].get("usuario_id"):
+                usuarios_a_premiar.append({
+                    "uid": vol_origen.data[0]["usuario_id"],
+                    "regla": "trust_transferencia_entregada"
+                })
+            
+            # 2. El voluntario receptor (quien recibe)
+            trans_actual = supabase_admin.table("transferencias_custodia").select("voluntario_receptor_id, oferta_relevo_id").eq("id", transferencia_id).limit(1).execute()
+            if trans_actual.data:
+                vol_receptor_id = trans_actual.data[0].get("voluntario_receptor_id")
+                
+                # Si no está directo en la transferencia, buscamos en la oferta de relevo
+                if not vol_receptor_id and trans_actual.data[0].get("oferta_relevo_id"):
+                    oferta = supabase_admin.table("ofertas_relevo_custodia").select("voluntario_receptor_id").eq("id", trans_actual.data[0]["oferta_relevo_id"]).limit(1).execute()
+                    if oferta.data:
+                        vol_receptor_id = oferta.data[0].get("voluntario_receptor_id")
+
+                if vol_receptor_id:
+                    vol_destino = supabase_admin.table("voluntarios").select("usuario_id").eq("id", vol_receptor_id).limit(1).execute()
+                    if vol_destino.data and vol_destino.data[0].get("usuario_id"):
+                        usuarios_a_premiar.append({
+                            "uid": vol_destino.data[0]["usuario_id"],
+                            "regla": "trust_transferencia_recibida"
+                        })
+
+            # Otorgamos los puntos iterando sobre cada uno con su regla única
+            for recompensa in usuarios_a_premiar:
+                ajustar_trust_score(
+                    usuario_id=recompensa["uid"],
+                    rol="voluntario_externo",
+                    tipo="incremento",
+                    valor=3,
+                    regla=recompensa["regla"],
+                    motivo="Transferencia de custodia confirmada por ambas partes",
+                    tipo_origen="transferencia_custodia",
+                    evento_origen_id=transferencia_id,
+                    limite_incremento_mes=20,
+                )
+                evaluar_insignias_voluntario_externo(recompensa["uid"])
+        except Exception as e:
+            print(f"[WARN] Error en gamificación de transferencia {transferencia_id}: {e}")
+
     return {"estado": estado, "confirmacion": modo}
 
 
@@ -1775,6 +1885,20 @@ def generar_notificaciones_vencimiento() -> dict:
                 }
             ).execute()
             creadas += 1
+
+            try:
+                from app.services.push_notification_service import queue_and_send_push
+                import secrets
+                usuario_custodio_id = voluntario.data[0]["usuario_id"]
+                queue_and_send_push(
+                    usuario_id=usuario_custodio_id,
+                    tipo_evento="seguimiento_custodia_proximo",
+                    idempotency_key=f"custodia_{custodia['id']}_{tipo}_{secrets.token_hex(4)}",
+                    payload={"mensaje": f"Tu resguardo vence en aproximadamente {max(0, round(horas))} horas."},
+                )
+            except Exception as e:
+                print(f"[WARN] Error encolando push de custodia: {e}")
+
         except Exception:
             pass
         if horas <= 24 and custodia.get("asociacion_coordinadora_id"):

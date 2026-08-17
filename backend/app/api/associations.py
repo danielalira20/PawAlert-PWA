@@ -461,13 +461,15 @@ async def get_reportes_asignados(authorization: str = Header(None)):
         raise HTTPException(status_code=403, detail="Tu asociación todavía no ha sido aprobada")
 
     resultado = supabase.table("reporte_asignaciones").select(
-    "id, assigned_at, accepted_at, closed_at, notas, "
-    "asignacion_estados!reporte_asignaciones_estado_id_fkey(clave, descripcion), "
-    "reportes(id, estado_reporte, confirmacion_voluntario, municipio, colonia, calle, latitud, longitud, created_at, "  # ← agregar latitud, longitud
-    "animal(id, orden, es_grupo, cantidad, trae_crias_nacidas, numero_crias_nacidas, "
-    "sexo, edad_aproximada, descripcion, "
-    "tipo_animal_catalogo(clave), condicion_catalogo(clave), tamanio_catalogo(clave), "
-    "animal_fotos(foto_url, orden, requiere_revision)))"
+        "id, assigned_at, accepted_at, closed_at, notas, "
+        "asignacion_estados!reporte_asignaciones_estado_id_fkey(clave, descripcion), "
+        "reportes(id, estado_reporte, estado_validacion_reporte, confirmacion_voluntario, municipio, colonia, calle, latitud, longitud, created_at, "
+        "urgency_score, urgency_nivel, urgency_calculado_at, "
+        "urgency_proximo_recalculo_at, urgency_excluido, "
+        "animal(id, orden, es_grupo, cantidad, trae_crias_nacidas, numero_crias_nacidas, "
+        "sexo, edad_aproximada, descripcion, "
+        "tipo_animal_catalogo(clave), condicion_catalogo(clave), tamanio_catalogo(clave), "
+        "animal_fotos(foto_url, orden, requiere_revision)))"
     ).eq("asociacion_id", usuario["asociacion_id"]).order("assigned_at", desc=True).execute()
 
     reporte_ids_sin_asignar = [
@@ -492,17 +494,17 @@ async def get_reportes_asignados(authorization: str = Header(None)):
                     "creado_at": str(ev["created_at"]),
                 }
 
-    # Motor de sugerencias Ruta 1 (BACK01/BACK02): si ya existe una
-    # contribución con reporte_id, la sugerencia de aliado veterinario fue
-    # aceptada; si además ya hay un evento de llegada a veterinaria en el
-    # historial, el hito de llegada ya se registró (el botón correspondiente
-    # se oculta en el frontend). Se aceptan el nombre canónico y el alias
-    # histórico.
     reporte_ids_todos = [
         r["reportes"]["id"] for r in resultado.data if r.get("reportes")
     ]
     reportes_con_sugerencia_aceptada = set()
     reportes_con_llegada_registrada = set()
+    
+    # ==========================================
+    # NUEVO: DICCIONARIO SEGURO DE EVALUACIONES
+    # ==========================================
+    evaluaciones_por_reporte = {}
+    
     if reporte_ids_todos:
         contribs = supabase.table("contribuciones").select("reporte_id").in_(
             "reporte_id", reporte_ids_todos
@@ -524,6 +526,20 @@ async def get_reportes_asignados(authorization: str = Header(None)):
         reportes_con_llegada_registrada = {
             e["reporte_id"] for e in (llegadas.data or []) if e.get("reporte_id")
         }
+        
+        # Consulta separada para urgencias (Así no colapsa Supabase)
+        try:
+            evals = supabase.table("reporte_urgency_evaluaciones").select(
+                "reporte_id, condicion_ia_score, condicion_declarada_score, tiempo_score, clima_score, riesgo_vial_score, calculado_at"
+            ).in_("reporte_id", reporte_ids_todos).order("calculado_at", desc=True).execute()
+            
+            for ev in (evals.data or []):
+                rid = ev["reporte_id"]
+                # Solo tomamos el más reciente (el primero que sale gracias al order desc)
+                if rid not in evaluaciones_por_reporte:
+                    evaluaciones_por_reporte[rid] = ev
+        except Exception as e:
+            print(f"[WARN] No se pudieron cargar las urgencias detalladas: {e}")
 
     reportes = []
     for r in resultado.data:
@@ -554,11 +570,31 @@ async def get_reportes_asignados(authorization: str = Header(None)):
             for f in (a.get("animal_fotos") or [])
         )
 
+        # ==========================================
+        # NUEVO: ASIGNAR URGENCIAS AL FRONTEND
+        # ==========================================
+        urgency_components = None
+        eval_reciente = evaluaciones_por_reporte.get(rep["id"])
+        
+        if eval_reciente:
+            ia_val = eval_reciente.get("condicion_ia_score") or 0
+            dec_val = eval_reciente.get("condicion_declarada_score") or 0
+            
+            urgency_components = {
+                "ia_score": eval_reciente.get("condicion_ia_score"),
+                "declared_score": eval_reciente.get("condicion_declarada_score"),
+                "time_score": eval_reciente.get("tiempo_score"),
+                "weather_score": eval_reciente.get("clima_score"),
+                "road_risk_score": eval_reciente.get("riesgo_vial_score"),
+                "discrepancia_alerta": bool((ia_val - dec_val) > 40)
+            }
+
         reportes.append({
             "asignacion_id": r["id"],
             "reporte_id": rep["id"],
             "estado_asignacion_clave": estado_asignacion_clave,
             "estado_reporte": rep.get("estado_reporte"),
+            "estado_validacion_reporte": rep.get("estado_validacion_reporte"),
             "confirmacion_voluntario": rep.get("confirmacion_voluntario"),
             "ultimo_rechazo": ultimos_rechazos.get(rep["id"]),
             "municipio": rep.get("municipio"),
@@ -567,6 +603,20 @@ async def get_reportes_asignados(authorization: str = Header(None)):
             "latitud": rep.get("latitud"),
             "longitud": rep.get("longitud"),
             "created_at": str(rep["created_at"]),
+            "urgency_score": rep.get("urgency_score"),
+            "urgency_nivel": rep.get("urgency_nivel"),
+            "urgency_components": urgency_components,  # <-- ¡Aquí van los datos!
+            "urgency_calculado_at": (
+                str(rep["urgency_calculado_at"])
+                if rep.get("urgency_calculado_at")
+                else None
+            ),
+            "urgency_proximo_recalculo_at": (
+                str(rep["urgency_proximo_recalculo_at"])
+                if rep.get("urgency_proximo_recalculo_at")
+                else None
+            ),
+            "urgency_excluido": bool(rep.get("urgency_excluido", False)),
             "closed_at": str(r["closed_at"]) if r.get("closed_at") else None,
             "foto_url": foto_url,
             "fotos_urls": fotos_urls,
@@ -924,6 +974,34 @@ class ConfigAsignacionUpdate(BaseModel):
     timeout_grave: int | None = None
     timeout_herido: int | None = None
     timeout_estable: int | None = None
+    capacidad_reportes_simultaneos: int | None = None
+    capacidad_reportes_criticos: int | None = None
+    recepcion_reportes_activa: bool | None = None
+    recepcion_reportes_24h: bool | None = None
+    dias_recepcion: list[int] | None = None
+    hora_inicio_recepcion: str | None = None
+    hora_fin_recepcion: str | None = None
+
+
+CAMPOS_CONFIG_ASIGNACION = (
+    "modo_asignacion, timeout_grave, timeout_herido, timeout_estable, "
+    "capacidad_reportes_simultaneos, capacidad_reportes_criticos, "
+    "recepcion_reportes_activa, recepcion_reportes_24h, dias_recepcion, "
+    "hora_inicio_recepcion, hora_fin_recepcion"
+)
+
+
+def _normalizar_hora_recepcion(valor: str, campo: str) -> str:
+    for formato in ("%H:%M", "%H:%M:%S"):
+        try:
+            datetime.strptime(valor, formato)
+            return valor[:5]
+        except ValueError:
+            continue
+    raise HTTPException(
+        status_code=422,
+        detail=f"{campo} debe usar el formato HH:MM",
+    )
 
 
 @router.get("/me/config-asignacion", status_code=200)
@@ -937,7 +1015,7 @@ async def get_config_asignacion(authorization: str = Header(None)):
         raise HTTPException(status_code=404, detail="Este usuario no está vinculado a ninguna asociación")
 
     resultado = supabase.table("asociaciones").select(
-        "modo_asignacion, timeout_grave, timeout_herido, timeout_estable"
+        CAMPOS_CONFIG_ASIGNACION
     ).eq("id", usuario["asociacion_id"]).execute()
 
     if not resultado.data:
@@ -973,6 +1051,43 @@ async def patch_config_asignacion(body: ConfigAsignacionUpdate, authorization: s
     actualizacion = {k: v for k, v in body.model_dump().items() if v is not None}
     if not actualizacion:
         raise HTTPException(status_code=422, detail="No se enviaron campos para actualizar")
+
+    actual = supabase.table("asociaciones").select(
+        CAMPOS_CONFIG_ASIGNACION
+    ).eq("id", usuario["asociacion_id"]).execute()
+    if not actual.data:
+        raise HTTPException(status_code=404, detail="Asociación no encontrada")
+
+    combinada = {**actual.data[0], **actualizacion}
+    capacidad_total = combinada["capacidad_reportes_simultaneos"]
+    capacidad_critica = combinada["capacidad_reportes_criticos"]
+    if not (1 <= capacidad_total <= 100):
+        raise HTTPException(
+            status_code=422,
+            detail="capacidad_reportes_simultaneos debe estar entre 1 y 100",
+        )
+    if not (0 <= capacidad_critica <= capacidad_total):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "capacidad_reportes_criticos debe estar entre 0 y la "
+                "capacidad total"
+            ),
+        )
+
+    dias = combinada["dias_recepcion"]
+    if not dias or len(dias) != len(set(dias)) or any(dia not in range(1, 8) for dia in dias):
+        raise HTTPException(
+            status_code=422,
+            detail="dias_recepcion debe contener días ISO únicos entre 1 y 7",
+        )
+    if body.dias_recepcion is not None:
+        actualizacion["dias_recepcion"] = sorted(dias)
+
+    for campo in ("hora_inicio_recepcion", "hora_fin_recepcion"):
+        hora_normalizada = _normalizar_hora_recepcion(str(combinada[campo]), campo)
+        if campo in actualizacion:
+            actualizacion[campo] = hora_normalizada
 
     resultado = supabase.table("asociaciones").update(actualizacion).eq(
         "id", usuario["asociacion_id"]

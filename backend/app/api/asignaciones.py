@@ -67,6 +67,7 @@ class RechazarBody(BaseModel):
 def obtener_candidatos(reporte_id: str, authorization: Optional[str] = Header(None)):
     usuario = _obtener_usuario_autenticado(authorization)
     reporte = _reporte_o_404(reporte_id)
+    _validar_reporte_operativo(reporte)
     _validar_es_asociacion_duena(usuario, reporte)
 
     resultado = matching.obtener_candidatos(reporte_id)
@@ -106,6 +107,7 @@ def asignar_voluntario(
 ):
     usuario = _obtener_usuario_autenticado(authorization)
     reporte = _reporte_o_404(reporte_id)
+    _validar_reporte_operativo(reporte)
     _validar_es_asociacion_duena(usuario, reporte)
 
     try:
@@ -162,7 +164,7 @@ def confirmar_asignacion(reporte_id: str, authorization: Optional[str] = Header(
     _validar_es_el_voluntario_asignado(usuario, reporte)
 
     return coverage_service.responder_propuesta(
-        usuario["id"], reporte_id, True
+        usuario["id"], reporte_id, True, rol=usuario.get("rol")
     )
 
 
@@ -175,7 +177,7 @@ def rechazar_asignacion(
     _validar_es_el_voluntario_asignado(usuario, reporte)
 
     return coverage_service.responder_propuesta(
-        usuario["id"], reporte_id, False, body.motivo
+        usuario["id"], reporte_id, False, body.motivo, rol=usuario.get("rol")
     )
 
 # ---------------------------------------------------------------------------
@@ -187,7 +189,7 @@ def _reporte_o_404(reporte_id: str) -> dict:
         .select(
             "id, asociacion_asignada_id, staff_asignado_id, "
             "confirmacion_voluntario, candidatos_presentados_at, "
-            "estado_reporte, estado_cobertura, "
+            "estado_reporte, estado_cobertura, estado_validacion_reporte, "
             "animal(condicion_catalogo(clave))"
         )
         .eq("id", reporte_id).single().execute()
@@ -198,6 +200,19 @@ def _reporte_o_404(reporte_id: str) -> dict:
     animales, _ = shape_animal_embed(data.get("animal"))
     data["condicion"] = condicion_mas_grave(animales)
     return data
+
+
+def _validar_reporte_operativo(reporte: dict) -> None:
+    if (
+        reporte.get("estado_validacion_reporte") != "aprobado"
+        or reporte.get("estado_reporte") != "asignado"
+        or reporte.get("estado_cobertura") != "abierto"
+        or not reporte.get("asociacion_asignada_id")
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="El reporte todavía no está disponible para asignación",
+        )
 
 
 def _validar_es_asociacion_duena(usuario: dict, reporte: dict):

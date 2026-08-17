@@ -3,8 +3,19 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
+from fastapi import HTTPException
 
 from app.services import matching
+
+
+@pytest.fixture(autouse=True)
+def permitir_candidatos_sin_restriccion():
+    with patch.object(
+        matching,
+        "usuarios_bloqueados_nuevas_asignaciones",
+        return_value=set(),
+    ):
+        yield
 
 
 def candidato(**overrides):
@@ -73,6 +84,26 @@ def test_matching_exige_todas_las_especies(reporte_multi_animal):
     assert [c["usuario_id"] for c in resultado["candidatos"]] == ["completo"]
 
 
+def test_matching_rechaza_reporte_sin_validacion_aprobada(make_query):
+    supabase = MagicMock()
+    supabase.table.return_value = make_query(data={
+        "id": "rep-1",
+        "estado_validacion_reporte": "revision_manual",
+        "estado_reporte": "pendiente",
+        "estado_cobertura": None,
+        "asociacion_asignada_id": None,
+        "animal": [],
+    })
+
+    with (
+        patch.object(matching, "supabase", supabase),
+        pytest.raises(HTTPException) as error,
+    ):
+        matching._obtener_reporte("rep-1")
+
+    assert error.value.status_code == 409
+
+
 def test_matching_exige_todos_los_tamanios(reporte_multi_animal):
     completo = candidato(usuario_id="completo")
     parcial = candidato(usuario_id="parcial", tamanios_manejo=["pequeno"])
@@ -106,6 +137,27 @@ def test_matching_excluye_carga_al_maximo(reporte_multi_animal):
 
     assert [c["usuario_id"] for c in resultado["candidatos"]] == ["disponible"]
     assert resultado["candidatos"][0]["capacidad_resumen"] == "1 de 2 casos activos"
+
+
+def test_matching_excluye_voluntario_bloqueado_por_trust_score(
+    reporte_multi_animal,
+):
+    bloqueado = candidato(usuario_id="bloqueado")
+    disponible = candidato(usuario_id="disponible")
+
+    with patch.object(
+        matching,
+        "usuarios_bloqueados_nuevas_asignaciones",
+        return_value={"bloqueado"},
+    ):
+        resultado = ejecutar_matching(
+            reporte_multi_animal,
+            [bloqueado, disponible],
+        )
+
+    assert [fila["usuario_id"] for fila in resultado["candidatos"]] == [
+        "disponible"
+    ]
 
 
 def test_matching_respeta_radio_declarado(reporte_multi_animal):

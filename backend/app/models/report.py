@@ -112,6 +112,10 @@ class ReportListItem(BaseModel):
     created_at: str
     foto_url: Optional[str] = None
     animales: list[AnimalResponse] = []
+    urgency_score: Optional[float] = None
+    urgency_nivel: Optional[str] = None
+    estado_validacion_reporte: Optional[str] = None
+    estado_moderacion: Optional[str] = None
 
 ## Lo usa el staff para registrar el avance del rescate
 class HitoRequest(BaseModel):

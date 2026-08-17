@@ -689,6 +689,16 @@ async def confirmar_recepcion_qr(token: str, usuario_id: str) -> dict:
         "confirmada_at": ahora,
     }).eq("lote_asociacion_id", fila["id"]).execute()
 
+    # Insignias de aliado (Persona 4) — nunca debe tronar la confirmación
+    # de entrega si falla; la gamificación es secundaria al flujo principal.
+    lote_usuario_id = (fila.get("lotes") or {}).get("perfil_apoyo", {}).get("usuario_id")
+    if lote_usuario_id:
+        try:
+            from app.services.insignias_aliado_service import evaluar_insignias_aliado
+            evaluar_insignias_aliado(lote_usuario_id)
+        except Exception:
+            pass
+
     return {"id": fila["id"], "estado": "confirmada"}
 
 
@@ -762,6 +772,14 @@ async def confirmar_recepcion_qr_contribucion(token: str, usuario_id: str) -> di
         "token_usado": True,
         "confirmada_at": ahora,
     }).eq("id", fila["id"]).execute()
+
+    # Insignias de aliado (Persona 4) — igual que en confirmar_recepcion_qr,
+    # nunca debe tronar la confirmación de entrega si esto falla.
+    try:
+        from app.services.insignias_aliado_service import evaluar_insignias_aliado
+        evaluar_insignias_aliado(fila["usuario_id"])
+    except Exception:
+        pass
 
     return {"id": fila["id"], "estado": "entregada"}
 

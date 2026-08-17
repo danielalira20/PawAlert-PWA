@@ -21,6 +21,7 @@ export default function NotificationBell() {
           const resultados = await Promise.allSettled([
             axios.get(`${API_URL}/reports/me/notificaciones-moderacion`, { headers }),
             axios.get(`${API_URL}/red-aliados/me/notificaciones`, { headers }),
+            axios.get(`${API_URL}/reputacion/me/notificaciones`, { headers }),
           ]);
           const unread = resultados.reduce((total, resultado) => {
             if (resultado.status !== 'fulfilled' || !Array.isArray(resultado.value.data)) return total;

@@ -436,6 +436,7 @@ async def listar_reportes_moderacion(authorization: str = Header(None)):
         supabase_admin.table("reportes")
         .select(
             "id, usuario_id, estado_reporte, estado_moderacion, moderacion_origen, "
+            "estado_validacion_reporte, razones_validacion, "
             "moderacion_actualizada_at, calle, colonia, municipio, estado_ubicacion, "
             "referencia, latitud, longitud, ubicacion_fuente, created_at, "
             "reportante_nombre, reportante_apellido_paterno, reportante_apellido_materno, "
@@ -445,7 +446,10 @@ async def listar_reportes_moderacion(authorization: str = Header(None)):
             "especie_descripcion, tiene_collar, esta_prenada, es_agresivo, "
             "es_domestico_probable, trae_crias_nacidas, numero_crias_nacidas, "
             "tipo_animal_catalogo(clave), condicion_catalogo(clave), "
-            "tamanio_catalogo(clave), animal_fotos(id, foto_url, orden)), "
+            "tamanio_catalogo(clave), "
+            "animal_fotos(id, foto_url, orden, analisis_ia_estado, "
+            "analisis_ia_error, exif_estado_verificacion, "
+            "exif_distancia_declarada_m, requiere_revision)), "
             "reporte_denuncias(id, motivo, detalle, created_at, resuelta_at, resolucion)"
         )
         .or_("estado_moderacion.eq.en_revision,phash_alerta.eq.true")
@@ -478,26 +482,54 @@ async def resolver_moderacion_reporte(
         raise HTTPException(status_code=422, detail="Indica el motivo del rechazo")
 
     consulta = supabase_admin.table("reportes").select(
-        "id, usuario_id, estado_moderacion, estado_reporte"
+        "id, usuario_id, estado_moderacion, estado_reporte, "
+        "estado_validacion_reporte"
     ).eq("id", reporte_id).limit(1).execute()
     if not consulta.data:
         raise HTTPException(status_code=404, detail="Reporte no encontrado")
 
     ahora = datetime.now(timezone.utc).isoformat()
     estado = "aprobado" if body.decision == "aprobar" else "rechazado"
-    supabase_admin.table("reportes").update({
-        "estado_moderacion": estado,
-        "moderacion_revisada_por": admin["id"],
-        "moderacion_notas": (body.notas or "").strip() or None,
-        "moderacion_actualizada_at": ahora,
-        "phash_alerta": False,
-    }).eq("id", reporte_id).execute()
+    reporte_actual = consulta.data[0]
+    es_revision_inicial = (
+        reporte_actual.get("estado_validacion_reporte") == "revision_manual"
+    )
+    activacion = None
+    if body.decision == "aprobar" and es_revision_inicial:
+        from app.services.report_activation_service import (
+            activar_reporte_desde_revision,
+        )
+
+        activacion = activar_reporte_desde_revision(
+            reporte_id=reporte_id,
+            admin_id=admin["id"],
+            notas=body.notas,
+        )
+    else:
+        cambios_reporte = {
+            "estado_moderacion": estado,
+            "moderacion_revisada_por": admin["id"],
+            "moderacion_notas": (body.notas or "").strip() or None,
+            "moderacion_actualizada_at": ahora,
+            "phash_alerta": False,
+        }
+        if body.decision == "rechazar" and es_revision_inicial:
+            cambios_reporte.update(
+                {
+                    "estado_validacion_reporte": "rechazado",
+                    "validacion_completada_at": ahora,
+                    "urgency_excluido": True,
+                }
+            )
+        supabase_admin.table("reportes").update(cambios_reporte).eq(
+            "id", reporte_id
+        ).execute()
     supabase_admin.table("reporte_denuncias").update({
         "resuelta_at": ahora,
         "resolucion": estado,
     }).eq("reporte_id", reporte_id).is_("resuelta_at", "null").execute()
 
-    reportante_id = consulta.data[0].get("usuario_id")
+    reportante_id = reporte_actual.get("usuario_id")
     if reportante_id:
         mensaje = (
             "Revisamos tu reporte y volvió a estar visible."
@@ -519,4 +551,14 @@ async def resolver_moderacion_reporte(
         descripcion=f"El administrador marcó el reporte como {estado}",
         datos_extra={"notas": (body.notas or "").strip() or None},
     )
-    return {"mensaje": "Moderación resuelta", "estado_moderacion": estado}
+    if estado == "rechazado":
+        try:
+            from app.services.reputacion_service import procesar_reporte_falso_confirmado
+            procesar_reporte_falso_confirmado(reporte_id, reportante_id, admin["id"])
+        except Exception as e:
+            print(f"[WARN] reputacion fallo en resolver_moderacion_reporte (reporte={reporte_id}): {e}")
+    return {
+        "mensaje": "Moderación resuelta",
+        "estado_moderacion": estado,
+        "estado_reporte": activacion["estado"] if activacion else None,
+    }

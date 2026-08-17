@@ -33,6 +33,7 @@ interface Props {
   // otros roles que también pueden consultar el detalle.
   puedeRegistrarHitos?: boolean;
   esHogarTemporal?: boolean;
+  esVoluntarioInterno?: boolean;
 }
 
 export function ReportDetailModal({
@@ -47,6 +48,7 @@ export function ReportDetailModal({
   onVeterinaria,
   puedeRegistrarHitos = true,
   esHogarTemporal = false,
+  esVoluntarioInterno = false,
 }: Props) {
   const animales = reporte ? getAnimales(reporte) : [];
   const grave = animalMasGrave(animales);
@@ -153,23 +155,24 @@ export function ReportDetailModal({
               )}
 
               {puedeRegistrarHitos &&
-                esHogarTemporal &&
                 reporte.estado_reporte === 'en_camino' &&
-                reporte.llegada_zona_registrada && (
+                (esVoluntarioInterno ||
+                  (esHogarTemporal && reporte.llegada_zona_registrada)) && (
                   <TouchableOpacity style={styles.secondaryActionButton} onPress={onNoLocalizado}>
                     <Ionicons name="search-outline" size={18} color="#9A6700" />
                     <Text style={styles.secondaryActionText}>No lo localicé</Text>
                   </TouchableOpacity>
                 )}
 
-              {esHogarTemporal && reporte.animal_no_localizado_registrado && (
-                <View style={styles.searchUpdate}>
-                  <Ionicons name="time-outline" size={16} color="#9A6700" />
-                  <Text style={styles.searchUpdateText}>
-                    Ya enviaste una búsqueda sin resultado. El caso permanece activo.
-                  </Text>
-                </View>
-              )}
+              {(esVoluntarioInterno || esHogarTemporal) &&
+                reporte.animal_no_localizado_registrado && (
+                  <View style={styles.searchUpdate}>
+                    <Ionicons name="time-outline" size={16} color="#9A6700" />
+                    <Text style={styles.searchUpdateText}>
+                      Ya enviaste una búsqueda sin resultado. El caso permanece activo.
+                    </Text>
+                  </View>
+                )}
 
               {puedeRegistrarHitos &&
                 reporte.estado_reporte === 'en_atencion' &&

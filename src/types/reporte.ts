@@ -14,6 +14,16 @@ export interface Animal {
   fotos?: string[]; 
 }
 
+export type UrgencyLevel = 'verde' | 'amarillo' | 'rojo';
+
+export interface ReportUrgencySnapshot {
+  urgency_score: number | null;
+  urgency_nivel: UrgencyLevel | null;
+  urgency_calculado_at: string | null;
+  urgency_proximo_recalculo_at: string | null;
+  urgency_excluido: boolean;
+}
+
 export interface Reporte {
   id: string;
   foto_url: string | null;
@@ -22,12 +32,21 @@ export interface Reporte {
   condicion: string | null;
   estado: string;
   estado_reporte: string | null;
+  estado_cobertura?: string | null;
+  estado_moderacion?: string | null;
+  estado_validacion_reporte?: 'procesando' | 'aprobado' | 'revision_manual' | 'rechazado' | null;  urgency_score?: number | null;
+  urgency_level?: 'verde' | 'amarillo' | 'rojo' | null;
+  urgency_data_status?: 'complete' | 'degraded' | null;
+  asociacion_asignada_id?: string | null;
+  staff_asignado_id?: string | null;
+  candidatos_presentados_at?: string | null;
   latitud: number | null;
   longitud: number | null;
   calle: string | null;
   municipio: string | null;
   colonia: string | null;
   created_at: string;
+  confirmacion_voluntario?: string | null;
   animales: Animal[];
 }
 

@@ -428,8 +428,11 @@ export default function LandingScreen() {
     router.push({ pathname: '/profile', params: { tab, returnTo } } as any);
   };
 
+  const hasOpenedExternalForm = useRef(false);
+
   useEffect(() => {
-    if (isLoggedIn && params.abrirPostulacionExterna === 'true') {
+    if (isLoggedIn && params.abrirPostulacionExterna === 'true' && !hasOpenedExternalForm.current) {
+      hasOpenedExternalForm.current = true;
       setIsExternalVolunteerFormVisible(true);
       router.setParams({ abrirPostulacionExterna: undefined });
     }

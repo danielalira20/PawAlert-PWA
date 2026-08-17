@@ -6,7 +6,7 @@ from app.api import reports
 from app.models.report import RechazarReporteRequest
 
 
-def base_reporte():
+def base_reporte(condicion="estable"):
     return {
         "id": "rep-1",
         "estado_reporte": "asignado",
@@ -15,9 +15,21 @@ def base_reporte():
         "longitud": -98.1987,
         "municipio": "Puebla",
         "animal": [
-            {"orden": 1, "tipo_animal_catalogo": {"clave": "perro"}},
-            {"orden": 2, "tipo_animal_catalogo": {"clave": "gato"}},
-            {"orden": 3, "tipo_animal_catalogo": {"clave": "perro"}},
+            {
+                "orden": 1,
+                "tipo_animal_catalogo": {"clave": "perro"},
+                "condicion_catalogo": {"clave": condicion},
+            },
+            {
+                "orden": 2,
+                "tipo_animal_catalogo": {"clave": "gato"},
+                "condicion_catalogo": {"clave": "estable"},
+            },
+            {
+                "orden": 3,
+                "tipo_animal_catalogo": {"clave": "perro"},
+                "condicion_catalogo": {"clave": "estable"},
+            },
         ],
     }
 
@@ -73,6 +85,7 @@ def test_rechazo_reasigna_con_todas_las_especies_y_excluye_anteriores(make_query
         19.0432, -98.1987,
         excluir_ids=["aso-1", "aso-vieja"],
         tipos_animales=["perro", "gato"],
+        es_critico=False,
     )
     contactos.assert_not_called()
     assert resultado["nueva_asociacion"] == "Huellitas"
@@ -81,7 +94,7 @@ def test_rechazo_reasigna_con_todas_las_especies_y_excluye_anteriores(make_query
 
 def test_sin_cobertura_busca_contactos_por_especie_y_deduplica(make_query):
     reportes = make_query(execute_results=[
-        SimpleNamespace(data=[base_reporte()], count=None),
+        SimpleNamespace(data=[base_reporte(condicion="grave")], count=None),
         SimpleNamespace(data=[{"id": "rep-1"}], count=None),
     ])
     asignaciones_q = make_query(execute_results=[
@@ -110,6 +123,7 @@ def test_sin_cobertura_busca_contactos_por_especie_y_deduplica(make_query):
     )
 
     assert asignar.call_args.kwargs["tipos_animales"] == ["perro", "gato"]
+    assert asignar.call_args.kwargs["es_critico"] is True
     assert [c.kwargs["tipo_animal"] for c in contactos.call_args_list] == ["perro", "gato"]
     assert [c["id"] for c in resultado["contactos_emergencia"]] == [
         "contacto-compartido", "contacto-perro",

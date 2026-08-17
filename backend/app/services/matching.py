@@ -9,6 +9,10 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from app.db.supabase import supabase
+from app.services.reputacion_service import (
+    ROL_VOLUNTARIO_INTERNO,
+    usuarios_bloqueados_nuevas_asignaciones,
+)
 from app.utils.animal_shaping import shape_animal_embed
 
 
@@ -54,6 +58,15 @@ def obtener_candidatos(reporte_id: str) -> dict:
         "candidatos_para_reporte", {"p_reporte_id": reporte_id}
     ).execute().data or []
     rechazaron = _voluntarios_que_rechazaron(reporte_id)
+    bloqueados = usuarios_bloqueados_nuevas_asignaciones(
+        {
+            candidato["usuario_id"]
+            for candidato in crudos
+            if candidato.get("rol") == ROL_VOLUNTARIO_INTERNO
+            and candidato.get("usuario_id")
+        },
+        ROL_VOLUNTARIO_INTERNO,
+    )
 
     candidatos = []
     for candidato in crudos:
@@ -63,6 +76,8 @@ def obtener_candidatos(reporte_id: str) -> dict:
         if candidato.get("rol") != "voluntario_interno":
             continue
         if candidato["usuario_id"] in rechazaron:
+            continue
+        if candidato["usuario_id"] in bloqueados:
             continue
 
         especies = set(
@@ -387,12 +402,25 @@ def _detalles_candidato(
 def _obtener_reporte(reporte_id: str) -> dict:
     resultado = supabase.table("reportes").select(
         "id, asociacion_asignada_id, latitud, longitud, "
-        "candidatos_presentados_at, "
+        "candidatos_presentados_at, estado_validacion_reporte, "
+        "estado_reporte, estado_cobertura, "
         "animal(orden, cantidad, es_agresivo, edad_aproximada, "
         "trae_crias_nacidas, tipo_animal_catalogo(clave), "
         "tamanio_catalogo(clave), condicion_catalogo(clave))"
     ).eq("id", reporte_id).single().execute()
     data = resultado.data
+    if (
+        data.get("estado_validacion_reporte") != "aprobado"
+        or data.get("estado_reporte") != "asignado"
+        or data.get("estado_cobertura") != "abierto"
+        or not data.get("asociacion_asignada_id")
+    ):
+        from fastapi import HTTPException
+
+        raise HTTPException(
+            status_code=409,
+            detail="El reporte todavía no está disponible para asignación",
+        )
     animales_crudos, _ = shape_animal_embed(data.get("animal"))
     data["animales"] = [
         {

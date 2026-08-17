@@ -1,7 +1,8 @@
+import asyncio
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from app.api import ( reports, associations, catalogos, auth, users, report_acceptance, admin, staff, stats, asignaciones, voluntarios, internal, red_aliados, webhooks, perfiles_apoyo, coverage, custody)
+from app.api import ( reports, associations, catalogos, auth, users, report_acceptance, admin, staff, stats, asignaciones, voluntarios, internal, red_aliados, webhooks, perfiles_apoyo, coverage, custody, recompensas, incidentes, reputacion)
 
 app = FastAPI(
     title="PawAlert API",
@@ -33,6 +34,11 @@ app.include_router(webhooks.router, prefix="/webhooks", tags=["Webhooks"])
 app.include_router(perfiles_apoyo.router, prefix="/perfiles-apoyo", tags=["Perfiles de Apoyo"])
 app.include_router(coverage.router, prefix="/coverage", tags=["Cobertura"])
 app.include_router(custody.router, prefix="/custody", tags=["Custodia temporal"])
+app.include_router(recompensas.router, prefix="/recompensas", tags=["Recompensas"])
+app.include_router(incidentes.router, prefix="/incidentes", tags=["Incidentes"])
+app.include_router(reputacion.router, prefix="/reputacion", tags=["Reputación"])
+from app.api import permanencia
+app.include_router(permanencia.router, prefix="/reports", tags=["Permanencia"])
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
@@ -49,3 +55,22 @@ def root():
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+async def expiracion_en_segundo_plano():
+    from app.services.canjes_service import expirar_canjes_vencidos
+    while True:
+        try:
+            # Ejecutamos la función sincrónica en un hilo para no pausar el servidor
+            total = await asyncio.to_thread(expirar_canjes_vencidos)
+            if total > 0:
+                print(f"[CRON INTERNO] Se expiraron {total} canjes vencidos.")
+        except Exception as e:
+            print(f"[CRON INTERNO ERROR] Error al expirar canjes: {e}")
+        
+        # Espera 1 hora (3600 segundos) antes de volver a revisar
+        await asyncio.sleep(3600)
+
+@app.on_event("startup")
+async def iniciar_tareas_fondo():
+    print("[SISTEMA] Iniciando Cron interno automático de expiración de canjes...")
+    asyncio.create_task(expiracion_en_segundo_plano())

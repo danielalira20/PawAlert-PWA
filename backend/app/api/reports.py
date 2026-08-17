@@ -776,10 +776,10 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
             )
 
     if tipo_hito == "animal_no_localizado":
-        if rol_usuario != "voluntario_externo":
+        if rol_usuario not in ("voluntario_interno", "voluntario_externo"):
             raise HTTPException(
                 status_code=403,
-                detail="Este hito corresponde a un voluntario externo",
+                detail="Este hito corresponde a un voluntario asignado",
             )
         if body.latitud is None or body.longitud is None:
             raise HTTPException(
@@ -796,6 +796,27 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
                 status_code=422,
                 detail="Describe brevemente dónde y cómo realizaste la búsqueda",
             )
+        if rol_usuario == "voluntario_interno":
+            if reporte.get("latitud") is None or reporte.get("longitud") is None:
+                raise HTTPException(
+                    status_code=409,
+                    detail="El reporte no tiene coordenadas para validar la búsqueda",
+                )
+            distancia_reporte_metros = _distancia_metros(
+                body.latitud,
+                body.longitud,
+                reporte["latitud"],
+                reporte["longitud"],
+            )
+            if distancia_reporte_metros > RADIO_LLEGADA_ZONA_METROS:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Aún estás lejos de la zona del reporte. "
+                        f"Estás a {round(distancia_reporte_metros)} metros; "
+                        f"acércate a menos de {RADIO_LLEGADA_ZONA_METROS} metros."
+                    ),
+                )
 
     # Validación GPS obligatoria para llegue_refugio
     if tipo_hito == "llegue_refugio":
@@ -1188,6 +1209,43 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
             datos_extra=datos_hito,
         )
 
+    # La recompensa se dispara hasta que foto, GPS, distancia, cambio de
+    # estado e historial terminaron correctamente. Como toda gamificación
+    # La recompensa se dispara hasta que foto, GPS, distancia, cambio de estado e historial terminaron correctamente. Como toda gamificación secundaria, un fallo al otorgarla no debe deshacer el rescate.
+    if tipo_hito == "llegue_refugio" and rol_usuario == "voluntario_interno":
+        try:
+            from app.services.reputacion_service import procesar_llegada_refugio_interna
+            procesar_llegada_refugio_interna(reporte_id, usuario["id"])
+        except Exception as error:
+            print(
+                "[WARN] no se pudo procesar la gamificación de llegada al refugio "
+                f"(reporte={reporte_id}): {error}"
+            )
+
+    # --- GAMIFICACIÓN: Voluntario Externo (Llegada/Resguardo) ---
+    if tipo_hito in ("animal_bajo_resguardo", "llegada_hogar_temporal") and rol_usuario == "voluntario_externo":
+        try:
+            from app.services.reputacion_service import (
+                evaluar_insignias_voluntario_externo,
+                otorgar_puntos,
+            )
+
+            otorgar_puntos(
+                usuario_id=usuario["id"],
+                rol="voluntario_externo",
+                regla="llegada_resguardo_externo",
+                tipo_origen="reporte",
+                evento_origen_id=reporte_id,
+                puntos=5
+            )
+            # Evalúa la insignia de rescates
+            evaluar_insignias_voluntario_externo(usuario["id"])
+        except Exception as error:
+            print(
+                f"[WARN] no se pudo procesar la gamificación de resguardo externo "
+                f"(reporte={reporte_id}): {error}"
+            )
+
     # Motor de sugerencias, Ruta 1 (BACK01) — solo para el hito
     # "encontre_animal". Puramente informativo: no reserva capacidad, no
     # persiste nada, y si no hay match compatible el flujo sigue exactamente
@@ -1230,6 +1288,40 @@ DECISIONES_BUSQUEDA_NO_LOCALIZADO = {
     "liberar_voluntario",
     "cerrar_no_localizado",
 }
+
+
+def _procesar_gamificacion_busqueda_resuelta(resultado: object) -> None:
+    """Identifica al autor de la búsqueda ya resuelta y premia únicamente
+    al voluntario interno. Es una consecuencia secundaria: una falla al
+    consultar o registrar reputación nunca revierte la decisión operativa."""
+    if not isinstance(resultado, dict) or not resultado.get("busqueda_id"):
+        return
+
+    try:
+        busqueda = supabase_admin.table("busquedas_no_localizado").select(
+            "usuario_id"
+        ).eq("id", resultado["busqueda_id"]).limit(1).execute()
+        if not busqueda.data:
+            return
+
+        usuario_id = busqueda.data[0].get("usuario_id")
+        autor = supabase_admin.table("usuarios").select(
+            "id, roles(nombre)"
+        ).eq("id", usuario_id).limit(1).execute()
+        if not autor.data:
+            return
+
+        rol = (autor.data[0].get("roles") or {}).get("nombre")
+        if rol != "voluntario_interno":
+            return
+
+        from app.services.reputacion_service import procesar_busqueda_documentada_interna
+        procesar_busqueda_documentada_interna(resultado["busqueda_id"], usuario_id)
+    except Exception as error:
+        print(
+            "[WARN] no se pudo procesar la gamificación de la búsqueda "
+            f"{resultado.get('busqueda_id')}: {error}"
+        )
 
 
 @router.get("/{reporte_id}/busqueda-no-localizado/pendiente")
@@ -1283,6 +1375,7 @@ def resolver_busqueda_no_localizado(
         if "asociacion_no_coordina" in detalle:
             raise HTTPException(status_code=403, detail="Tu asociación no coordina este caso") from error
         raise
+    _procesar_gamificacion_busqueda_resuelta(resultado.data)
     return resultado.data
 
 ### Endpoint: BACK02 — aceptar la sugerencia de Ruta 1 (motor de sugerencias)
@@ -1326,7 +1419,7 @@ async def rechazar_reporte(reporte_id: str, body: RechazarReporteRequest, author
     # Verificar que el reporte existe y pertenece a esta asociación
     reporte = supabase.table("reportes").select(
         "id, estado_reporte, asociacion_asignada_id, latitud, longitud, municipio, "
-        "animal(tipo_animal_catalogo(clave))"
+        "animal(tipo_animal_catalogo(clave), condicion_catalogo(clave))"
     ).eq("id", reporte_id).execute()
 
     if not reporte.data:
@@ -1423,6 +1516,7 @@ async def rechazar_reporte(reporte_id: str, body: RechazarReporteRequest, author
                 reporte["latitud"], reporte["longitud"],
                 excluir_ids=ids_rechazadas,
                 tipos_animales=especies_del_caso or None,
+                es_critico=condicion_mas_grave(animales_crudos) == "grave",
             )
             if candidata:
                 nueva_asociacion = candidata

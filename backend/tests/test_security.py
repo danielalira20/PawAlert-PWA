@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 
 from app.api import associations, reports
 from app.main import app
-from app.services import report_service, voluntario_service
+from app.services import report_service, reputacion_service, voluntario_service
 
 
 client = TestClient(app)
@@ -67,7 +67,8 @@ def test_cambio_estado_permite_a_asociacion_duena(make_query):
 def test_cerrar_caso_registra_conclusion_notas_y_usuario(make_query):
     tablas = {
         "reportes": make_query(data=[{
-            "id": "rep-1", "estado_reporte": "rescatado", "usuario_id": None,
+            "id": "rep-1", "estado_reporte": "rescatado",
+            "usuario_id": "user-reportante-1",
             "updated_at": "2026-07-23T12:00:00+00:00",
         }]),
         "reporte_estados": make_query(data=[{"id": "estado-cerrado"}]),
@@ -76,10 +77,17 @@ def test_cerrar_caso_registra_conclusion_notas_y_usuario(make_query):
     }
     supabase = MagicMock()
     supabase.table.side_effect = lambda nombre: tablas[nombre]
+    # cambiar_estado_reporte ahora engancha reputacion_service.procesar_cierre_reporte
+    # al cerrar un caso -- sin este patch, la llamada real a
+    # reputacion_service.supabase (supabase_admin, sin mockear aquí) saldría
+    # a la red contra el Supabase configurado en .env en vez de quedarse en
+    # el proceso de la prueba.
+    reputacion_supabase = MagicMock()
 
     with (
         patch.object(report_service, "supabase", supabase),
         patch.object(report_service, "registrar_historial") as historial,
+        patch.object(reputacion_service, "supabase", reputacion_supabase),
     ):
         import asyncio
         resultado = asyncio.run(report_service.cambiar_estado_reporte(
@@ -104,6 +112,23 @@ def test_cerrar_caso_registra_conclusion_notas_y_usuario(make_query):
             "foto_url": "https://x/foto-cierre.jpg",
         },
     )
+    # El enganche de reputación se disparó (RPC de ajustar_trust_score),
+    # sin tocar la red real gracias al patch de arriba.
+    reputacion_supabase.rpc.assert_called_once_with(
+        "ajustar_trust_score_atomico",
+        {
+            "p_usuario_id": "user-reportante-1",
+            "p_rol": "reportante",
+            "p_tipo": "incremento",
+            "p_valor": reputacion_service.TRUST_INCREMENTO_DESENLACE,
+            "p_regla": reputacion_service.REGLA_TRUST_DESENLACE,
+            "p_motivo": "Desenlace confirmado: Animal rescatado y estable",
+            "p_tipo_origen": "reporte",
+            "p_evento_origen_id": "rep-1",
+            "p_responsable_confirmacion_id": None,
+            "p_limite_incremento_mes": reputacion_service.TRUST_LIMITE_INCREMENTO_MES_REPORTANTE,
+        },
+    )
 
 
 def test_cerrar_caso_sin_foto_no_incluye_foto_url(make_query):
@@ -124,6 +149,7 @@ def test_cerrar_caso_sin_foto_no_incluye_foto_url(make_query):
     with (
         patch.object(report_service, "supabase", supabase),
         patch.object(report_service, "registrar_historial") as historial,
+        patch.object(reputacion_service, "supabase", MagicMock()),
     ):
         import asyncio
         resultado = asyncio.run(report_service.cambiar_estado_reporte(
@@ -135,6 +161,92 @@ def test_cerrar_caso_sin_foto_no_incluye_foto_url(make_query):
     assert resultado["estado"] == "cerrado"
     _, kwargs = historial.call_args
     assert kwargs["datos_extra"]["foto_url"] is None
+
+
+def test_cerrar_caso_premia_al_voluntario_interno_asignado(make_query):
+    tablas = {
+        "reportes": make_query(data=[{
+            "id": "rep-1",
+            "estado_reporte": "rescatado",
+            "usuario_id": "user-reportante-1",
+            "staff_asignado_id": "user-voluntario-1",
+            "updated_at": "2026-07-23T12:00:00+00:00",
+        }]),
+        "reporte_estados": make_query(data=[{"id": "estado-cerrado"}]),
+        "asignacion_estados": make_query(data=[{"id": "asignacion-completada"}]),
+        "reporte_asignaciones": make_query(data=[]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    usuarios = make_query(data=[{
+        "id": "user-voluntario-1",
+        "roles": {"nombre": "voluntario_interno"},
+    }])
+    supabase_admin = MagicMock()
+    supabase_admin.table.return_value = usuarios
+
+    with (
+        patch.object(report_service, "supabase", supabase),
+        patch.object(report_service, "supabase_admin", supabase_admin),
+        patch.object(report_service, "registrar_historial"),
+        patch.object(reputacion_service, "procesar_cierre_reporte"),
+        patch.object(
+            reputacion_service, "procesar_rescate_completado_interno"
+        ) as mock_rescate,
+    ):
+        import asyncio
+        resultado = asyncio.run(report_service.cambiar_estado_reporte(
+            "rep-1",
+            "cerrado",
+            conclusion="Animal rescatado y estable",
+            usuario_id="user-aso-1",
+        ))
+
+    assert resultado["estado"] == "cerrado"
+    mock_rescate.assert_called_once_with(
+        "rep-1", "user-voluntario-1", "Animal rescatado y estable"
+    )
+
+
+def test_cerrar_caso_de_staff_no_usa_regla_de_voluntario_interno(make_query):
+    tablas = {
+        "reportes": make_query(data=[{
+            "id": "rep-1",
+            "estado_reporte": "rescatado",
+            "usuario_id": None,
+            "staff_asignado_id": "user-staff-1",
+            "updated_at": "2026-07-23T12:00:00+00:00",
+        }]),
+        "reporte_estados": make_query(data=[{"id": "estado-cerrado"}]),
+        "asignacion_estados": make_query(data=[{"id": "asignacion-completada"}]),
+        "reporte_asignaciones": make_query(data=[]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    supabase_admin = MagicMock()
+    supabase_admin.table.return_value = make_query(data=[{
+        "id": "user-staff-1",
+        "roles": {"nombre": "staff"},
+    }])
+
+    with (
+        patch.object(report_service, "supabase", supabase),
+        patch.object(report_service, "supabase_admin", supabase_admin),
+        patch.object(report_service, "registrar_historial"),
+        patch.object(reputacion_service, "procesar_cierre_reporte"),
+        patch.object(
+            reputacion_service, "procesar_rescate_completado_interno"
+        ) as mock_rescate,
+    ):
+        import asyncio
+        asyncio.run(report_service.cambiar_estado_reporte(
+            "rep-1",
+            "cerrado",
+            conclusion="Animal rescatado y estable",
+            usuario_id="user-aso-1",
+        ))
+
+    mock_rescate.assert_not_called()
 
 
 def test_transicion_no_cerrado_mantiene_historial_generico(make_query):
@@ -193,6 +305,11 @@ def test_mapa_publico_redondea_coordenadas(make_query):
 
     assert resultado[0]["latitud"] == 19.043
     assert resultado[0]["longitud"] == -98.199
+    query.eq.assert_any_call("estado_validacion_reporte", "aprobado")
+    query.in_.assert_any_call(
+        "estado_reporte",
+        ["pendiente", "asignado", "en_camino", "en_atencion", "sin_cobertura"],
+    )
 
 
 def test_reportes_asociacion_conservan_coordenadas_exactas(make_query):

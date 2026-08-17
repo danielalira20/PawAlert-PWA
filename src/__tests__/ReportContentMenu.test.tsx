@@ -8,6 +8,7 @@ import { useAuth } from '../context/AuthContext';
 jest.mock('axios');
 jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
 jest.mock('../context/AuthContext', () => ({ useAuth: jest.fn() }));
+jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons', Feather: 'Feather' }), { virtual: true });
 
 const mockedAxios = axios as jest.Mocked<typeof axios>;
 const mockedUseAuth = useAuth as jest.Mock;

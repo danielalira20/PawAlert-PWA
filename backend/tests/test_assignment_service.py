@@ -8,21 +8,23 @@ def test_asignar_asociacion_envia_todas_las_especies_y_exclusiones():
     rpc = MagicMock()
     rpc.execute.return_value = SimpleNamespace(data=[{"id": "asociacion-2", "nombre": "Patitas"}])
 
-    with patch.object(assignment_service, "supabase") as supabase:
-        supabase.rpc.return_value = rpc
+    with patch.object(assignment_service, "supabase_admin") as supabase_admin:
+        supabase_admin.rpc.return_value = rpc
         resultado = assignment_service.asignar_asociacion(
             19.041, -98.206,
             excluir_ids=["asociacion-1"],
             tipos_animales=["perro", "gato"],
+            es_critico=True,
         )
 
-    supabase.rpc.assert_called_once_with(
-        "encontrar_asociacion_cercana",
+    supabase_admin.rpc.assert_called_once_with(
+        "encontrar_asociacion_operativa",
         {
             "reporte_lat": 19.041,
             "reporte_lng": -98.206,
             "excluir_ids": ["asociacion-1"],
             "p_tipos_animales": ["perro", "gato"],
+            "p_es_critico": True,
         },
     )
     assert resultado == {"id": "asociacion-2", "nombre": "Patitas"}
@@ -32,13 +34,14 @@ def test_asignar_asociacion_usa_listas_vacias_por_default():
     rpc = MagicMock()
     rpc.execute.return_value = SimpleNamespace(data=[])
 
-    with patch.object(assignment_service, "supabase") as supabase:
-        supabase.rpc.return_value = rpc
+    with patch.object(assignment_service, "supabase_admin") as supabase_admin:
+        supabase_admin.rpc.return_value = rpc
         resultado = assignment_service.asignar_asociacion(19.0, -98.0)
 
-    payload = supabase.rpc.call_args.args[1]
+    payload = supabase_admin.rpc.call_args.args[1]
     assert payload["excluir_ids"] == []
     assert payload["p_tipos_animales"] is None
+    assert payload["p_es_critico"] is False
     assert resultado is None
 
 
@@ -49,8 +52,8 @@ def test_asignar_asociacion_devuelve_solo_la_mas_cercana():
         {"id": "lejana", "distancia_km": 3.5},
     ])
 
-    with patch.object(assignment_service, "supabase") as supabase:
-        supabase.rpc.return_value = rpc
+    with patch.object(assignment_service, "supabase_admin") as supabase_admin:
+        supabase_admin.rpc.return_value = rpc
         resultado = assignment_service.asignar_asociacion(19.0, -98.0, tipos_animales=["perro"])
 
     assert resultado["id"] == "cercana"

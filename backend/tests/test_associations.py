@@ -1,8 +1,10 @@
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+from app.api import associations
 from app.main import app
 
 client = TestClient(app)
@@ -19,6 +21,157 @@ BASE_DATA = {
     "longitud": "-98.19",
     "radio_km": "10",
 }
+
+
+CONFIG_ASIGNACION = {
+    "modo_asignacion": "manual",
+    "timeout_grave": 10,
+    "timeout_herido": 30,
+    "timeout_estable": 60,
+    "capacidad_reportes_simultaneos": 10,
+    "capacidad_reportes_criticos": 3,
+    "recepcion_reportes_activa": True,
+    "recepcion_reportes_24h": True,
+    "dias_recepcion": [1, 2, 3, 4, 5, 6, 7],
+    "hora_inicio_recepcion": "00:00:00",
+    "hora_fin_recepcion": "23:59:59",
+}
+
+
+def _usuario_asociacion():
+    return {"id": "usuario-aso", "asociacion_id": "aso-1", "rol": "asociacion"}
+
+
+def test_get_config_asignacion_incluye_capacidad_y_horario(make_query):
+    query = make_query(data=[CONFIG_ASIGNACION])
+    supabase = MagicMock()
+    supabase.table.return_value = query
+
+    with (
+        patch.object(associations, "supabase", supabase),
+        patch.object(
+            associations,
+            "_obtener_usuario_autenticado",
+            return_value=_usuario_asociacion(),
+        ),
+    ):
+        resultado = asyncio.run(
+            associations.get_config_asignacion("Bearer token")
+        )
+
+    assert resultado["capacidad_reportes_simultaneos"] == 10
+    assert resultado["capacidad_reportes_criticos"] == 3
+    assert resultado["recepcion_reportes_24h"] is True
+    assert resultado["dias_recepcion"] == [1, 2, 3, 4, 5, 6, 7]
+
+
+def test_patch_config_asignacion_conserva_clientes_anteriores(make_query):
+    actualizado = {**CONFIG_ASIGNACION, "modo_asignacion": "semi_automatico"}
+    query = make_query(execute_results=[[CONFIG_ASIGNACION], [actualizado]])
+    supabase = MagicMock()
+    supabase.table.return_value = query
+
+    with (
+        patch.object(associations, "supabase", supabase),
+        patch.object(
+            associations,
+            "_obtener_usuario_autenticado",
+            return_value=_usuario_asociacion(),
+        ),
+    ):
+        resultado = asyncio.run(
+            associations.patch_config_asignacion(
+                associations.ConfigAsignacionUpdate(
+                    modo_asignacion="semi_automatico"
+                ),
+                "Bearer token",
+            )
+        )
+
+    assert resultado["modo_asignacion"] == "semi_automatico"
+    query.update.assert_called_once_with({"modo_asignacion": "semi_automatico"})
+
+
+def test_patch_config_asignacion_guarda_operacion_estructurada(make_query):
+    actualizado = {
+        **CONFIG_ASIGNACION,
+        "capacidad_reportes_simultaneos": 6,
+        "capacidad_reportes_criticos": 2,
+        "recepcion_reportes_24h": False,
+        "dias_recepcion": [1, 3, 5],
+        "hora_inicio_recepcion": "08:00",
+        "hora_fin_recepcion": "20:00",
+    }
+    query = make_query(execute_results=[[CONFIG_ASIGNACION], [actualizado]])
+    supabase = MagicMock()
+    supabase.table.return_value = query
+
+    with (
+        patch.object(associations, "supabase", supabase),
+        patch.object(
+            associations,
+            "_obtener_usuario_autenticado",
+            return_value=_usuario_asociacion(),
+        ),
+    ):
+        resultado = asyncio.run(
+            associations.patch_config_asignacion(
+                associations.ConfigAsignacionUpdate(
+                    capacidad_reportes_simultaneos=6,
+                    capacidad_reportes_criticos=2,
+                    recepcion_reportes_24h=False,
+                    dias_recepcion=[5, 1, 3],
+                    hora_inicio_recepcion="08:00",
+                    hora_fin_recepcion="20:00",
+                ),
+                "Bearer token",
+            )
+        )
+
+    guardado = query.update.call_args.args[0]
+    assert guardado["dias_recepcion"] == [1, 3, 5]
+    assert guardado["hora_inicio_recepcion"] == "08:00"
+    assert resultado["capacidad_reportes_simultaneos"] == 6
+
+
+@pytest.mark.parametrize(
+    ("body", "detail"),
+    [
+        (
+            {"capacidad_reportes_simultaneos": 2, "capacidad_reportes_criticos": 3},
+            "capacidad_reportes_criticos",
+        ),
+        ({"dias_recepcion": [1, 1, 8]}, "dias_recepcion"),
+        ({"hora_inicio_recepcion": "25:00"}, "hora_inicio_recepcion"),
+        ({"hora_inicio_recepcion": "09:00 texto"}, "hora_inicio_recepcion"),
+    ],
+)
+def test_patch_config_asignacion_rechaza_configuracion_incoherente(
+    make_query, body, detail
+):
+    query = make_query(data=[CONFIG_ASIGNACION])
+    supabase = MagicMock()
+    supabase.table.return_value = query
+
+    with (
+        patch.object(associations, "supabase", supabase),
+        patch.object(
+            associations,
+            "_obtener_usuario_autenticado",
+            return_value=_usuario_asociacion(),
+        ),
+        pytest.raises(associations.HTTPException) as error,
+    ):
+        asyncio.run(
+            associations.patch_config_asignacion(
+                associations.ConfigAsignacionUpdate(**body),
+                "Bearer token",
+            )
+        )
+
+    assert error.value.status_code == 422
+    assert detail in error.value.detail
+    query.update.assert_not_called()
 
 
 def test_association_telefono_invalido():
@@ -229,6 +382,11 @@ def _mock_reporte_asignado(make_query, *, fotos: list[dict]) -> dict:
                 "latitud": 19.04,
                 "longitud": -98.19,
                 "created_at": "2026-08-02T09:00:00+00:00",
+                "urgency_score": 72.5,
+                "urgency_nivel": "rojo",
+                "urgency_calculado_at": "2026-08-02T09:05:00+00:00",
+                "urgency_proximo_recalculo_at": "2026-08-02T09:15:00+00:00",
+                "urgency_excluido": False,
                 "animal": [{
                     "id": "animal-1",
                     "orden": 1,
@@ -287,6 +445,42 @@ def test_me_reportes_requiere_revision_false_si_ninguna_foto_lo_tiene(make_query
 
     assert response.status_code == 200
     assert response.json()[0]["requiere_revision"] is False
+
+
+def test_me_reportes_expone_urgencia_operativa(make_query):
+    tablas = _mock_reporte_asignado(make_query, fotos=[])
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    supabase.auth.get_user.return_value = SimpleNamespace(
+        user=SimpleNamespace(id="auth-user-1")
+    )
+
+    with patch("app.api.associations.supabase", supabase):
+        response = client.get(
+            "/associations/me/reportes",
+            headers={"Authorization": "Bearer token-valido"},
+        )
+
+    assert response.status_code == 200
+    reporte = response.json()[0]
+    assert reporte["urgency_score"] == 72.5
+    assert reporte["urgency_nivel"] == "rojo"
+    assert reporte["urgency_calculado_at"] == "2026-08-02T09:05:00+00:00"
+    assert (
+        reporte["urgency_proximo_recalculo_at"]
+        == "2026-08-02T09:15:00+00:00"
+    )
+    assert reporte["urgency_excluido"] is False
+
+    select_reportes = tablas["reporte_asignaciones"].select.call_args.args[0]
+    for campo in (
+        "urgency_score",
+        "urgency_nivel",
+        "urgency_calculado_at",
+        "urgency_proximo_recalculo_at",
+        "urgency_excluido",
+    ):
+        assert campo in select_reportes
 
 
 def test_registro_asociacion_devuelve_access_y_refresh_token(make_query):
