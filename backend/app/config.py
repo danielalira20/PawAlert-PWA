@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     gemini_file_timeout_seconds: int = 180
     openweather_api_key: str = ""
     firebase_service_account_json: str = ""
+    google_application_credentials: str = ""
 
     class Config:
         env_file = ".env"
