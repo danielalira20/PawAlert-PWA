@@ -189,7 +189,7 @@ const ROLES = [
     icon: 'camera-outline',
     does: 'Reporta animales en situación de calle desde la app, con foto y ubicación.',
     requirements: 'Solo necesita crear una cuenta básica y tener acceso a la cámara/ubicación.',
-    ctaLabel: 'Reportar',
+    ctaLabel: 'Crear reporte',
     ctaRoute: '/map',
   },
   {
@@ -598,7 +598,7 @@ export default function LandingScreen() {
               } as any}>
                 <Ionicons name="add-circle-outline" size={16} color="#FFF" />
                 <Text numberOfLines={1} style={{ color: '#FFF', fontSize: isCompactHeader ? 12 : 13, fontFamily: F.bodySemiBold }}>
-                  {isCompactHeader ? 'Reportar' : 'Crear reporte'}
+                  Crear reporte
                 </Text>
               </View>
             </AnimatedButton>
@@ -675,7 +675,7 @@ export default function LandingScreen() {
                       ...(isWeb ? { boxShadow: `0 8px 28px ${C.primary}50` } : { elevation: 6 }),
                     } as any}>
                       <Ionicons name="add-circle" size={20} color="#FFF" />
-                      <Text style={{ color: '#FFF', fontSize: 16, fontFamily: F.bodySemiBold, textAlign: 'center' }}>Crear Reporte</Text>
+                      <Text style={{ color: '#FFF', fontSize: 16, fontFamily: F.bodySemiBold, textAlign: 'center' }}>Crear reporte</Text>
                     </View>
                   </AnimatedButton>
 
