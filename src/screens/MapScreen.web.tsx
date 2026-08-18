@@ -119,6 +119,46 @@ export default function MapScreen() {
   } catch {}
 }, []);
 
+  // ── Exclusión mutua: capas de entidad (asociaciones/aliados) vs filtros
+  // de reporte (gravedad/especie). Cualquier clic explícito en un grupo
+  // (incluyendo "todos") apaga al otro para que los pines nunca se
+  // encimen en el mapa ni queden dos cosas seleccionadas a la vez.
+  const handleSetFiltro = (f: string) => {
+    setFiltro(f);
+    setMostrarAsociaciones(false);
+    setMostrarAliados(false);
+  };
+
+  const handleSetFiltroEspecie = (key: string) => {
+    setFiltroEspecie(key);
+    setMostrarAsociaciones(false);
+    setMostrarAliados(false);
+  };
+
+  const handleToggleAsociaciones = () => {
+    setMostrarAsociaciones(v => {
+      const next = !v;
+      if (next) {
+        setFiltro('todos');
+        setFiltroEspecie('todos');
+        setMostrarAliados(false);
+      }
+      return next;
+    });
+  };
+
+  const handleToggleAliados = () => {
+    setMostrarAliados(v => {
+      const next = !v;
+      if (next) {
+        setFiltro('todos');
+        setFiltroEspecie('todos');
+        setMostrarAsociaciones(false);
+      }
+      return next;
+    });
+  };
+
   const handleClockPress = () => {
     if (!isMobile) return;
     setShowClockLabel(true);
@@ -530,11 +570,11 @@ export default function MapScreen() {
         </Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
           {['todos', 'estable', 'herido', 'grave'].map(f => {
-            const isActive = filtro === f;
+            const isActive = filtro === f && !mostrarAsociaciones && !mostrarAliados;
             const cfg = f !== 'todos' ? getCfg(CONDICION, f) : null;
             const activeColor = cfg?.color ?? C.orange;
             return (
-              <TouchableOpacity key={f} onPress={() => setFiltro(f)}
+              <TouchableOpacity key={f} onPress={() => handleSetFiltro(f)}
                 style={{ paddingHorizontal: 11, paddingVertical: 4, borderRadius: 20, borderWidth: 1.5,
                   backgroundColor: isActive ? activeColor : 'transparent', borderColor: activeColor,
                   height: 26, alignItems: 'center', justifyContent: 'center' }}>
@@ -606,15 +646,18 @@ export default function MapScreen() {
               { key: 'todos', icon: ICON_PAW,  label: 'Todos'  },
               { key: 'perro', icon: ICON_DOG,  label: 'Perros' },
               { key: 'gato',  icon: ICON_CAT,  label: 'Gatos'  },
-            ].map(({ key, icon, label }) => (
-              <TouchableOpacity key={key} onPress={() => setFiltroEspecie(key)}
+            ].map(({ key, icon, label }) => {
+              const especieActiva = filtroEspecie === key && !mostrarAsociaciones && !mostrarAliados;
+              return (
+              <TouchableOpacity key={key} onPress={() => handleSetFiltroEspecie(key)}
                 style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, borderWidth: 1.5,
                   borderColor: C.teal, flexDirection: 'row', alignItems: 'center', gap: 5,
-                  backgroundColor: filtroEspecie === key ? C.teal : 'transparent' }}>
-                <Image source={{ uri: icon }} style={{ width: 13, height: 13, tintColor: filtroEspecie === key ? '#FFF' : C.teal }} />
-                <Text style={{ fontSize: 11, fontWeight: '700', color: filtroEspecie === key ? '#FFF' : C.teal }}>{label}</Text>
+                  backgroundColor: especieActiva ? C.teal : 'transparent' }}>
+                <Image source={{ uri: icon }} style={{ width: 13, height: 13, tintColor: especieActiva ? '#FFF' : C.teal }} />
+                <Text style={{ fontSize: 11, fontWeight: '700', color: especieActiva ? '#FFF' : C.teal }}>{label}</Text>
               </TouchableOpacity>
-            ))}
+              );
+            })}
           </View>
 
           <Text style={{ fontSize: 10, fontWeight: '800', color: C.light, textTransform: 'uppercase', marginBottom: 8 }}>Ordenar por</Text>
@@ -645,7 +688,7 @@ export default function MapScreen() {
             <Text style={{ fontSize: 9, color: C.light, lineHeight: 13, marginBottom: 10 }}>
               Muestra organizaciones y puntos de apoyo cercanos.
             </Text>
-            <TouchableOpacity onPress={() => setMostrarAsociaciones(v => !v)}
+            <TouchableOpacity onPress={handleToggleAsociaciones}
               style={{ paddingHorizontal: 12, paddingVertical: 9, borderRadius: 11, borderWidth: 1.5,
                 borderColor: '#2E86DE', flexDirection: 'row', alignItems: 'center', gap: 9,
                 backgroundColor: mostrarAsociaciones ? '#2E86DE' : '#FFF', marginBottom: 8 }}>
@@ -658,7 +701,7 @@ export default function MapScreen() {
               </View>
               <Ionicons name={mostrarAsociaciones ? 'checkmark-circle' : 'eye-outline'} size={16} color={mostrarAsociaciones ? '#FFF' : '#2E86DE'} />
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => setMostrarAliados(v => !v)}
+            <TouchableOpacity onPress={handleToggleAliados}
               style={{ paddingHorizontal: 12, paddingVertical: 9, borderRadius: 11, borderWidth: 1.5,
                 borderColor: '#E67E22', flexDirection: 'row', alignItems: 'center', gap: 9,
                 backgroundColor: mostrarAliados ? '#E67E22' : '#FFF' }}>
@@ -769,7 +812,7 @@ export default function MapScreen() {
               { key: 'herido',  label: 'Herido',  color: '#F39C12' },
               { key: 'grave',   label: 'Grave',   color: '#E74C3C' },
             ].map(({ key, label, color }, idx, arr) => {
-              const isActive = filtro === key;
+              const isActive = filtro === key && !mostrarAsociaciones && !mostrarAliados;
               // Contar desde el total (respetando especie) sin aplicar filtro de condición activo
               const base = reportes.filter(r => {
                 if (r.estado_reporte === 'cerrado') return false;
@@ -781,7 +824,7 @@ export default function MapScreen() {
                 ? base.length
                 : base.filter(r => getAnimales(r).some(a => a.condicion?.toLowerCase() === key)).length;
               return (
-                <TouchableOpacity key={key} onPress={() => setFiltro(key)}
+                <TouchableOpacity key={key} onPress={() => handleSetFiltro(key)}
                   style={{ flex: 1, paddingVertical: 8, alignItems: 'center',
                     backgroundColor: isActive ? color : 'transparent',
                     borderRightWidth: idx < arr.length - 1 ? 1 : 0, borderRightColor: '#F0E8DC' }}>
@@ -797,15 +840,18 @@ export default function MapScreen() {
               { key: 'todos', icon: ICON_PAW, label: 'Todos'  },
               { key: 'perro', icon: ICON_DOG, label: 'Perros' },
               { key: 'gato',  icon: ICON_CAT, label: 'Gatos'  },
-            ].map(({ key, icon, label }) => (
-              <TouchableOpacity key={key} onPress={() => setFiltroEspecie(key)}
+            ].map(({ key, icon, label }) => {
+              const especieActiva = filtroEspecie === key && !mostrarAsociaciones && !mostrarAliados;
+              return (
+              <TouchableOpacity key={key} onPress={() => handleSetFiltroEspecie(key)}
                 style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12, borderWidth: 1.5,
-                  borderColor: C.teal, backgroundColor: filtroEspecie === key ? C.teal : 'transparent',
+                  borderColor: C.teal, backgroundColor: especieActiva ? C.teal : 'transparent',
                   flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                <Image source={{ uri: icon }} style={{ width: 14, height: 14, tintColor: filtroEspecie === key ? '#FFF' : C.teal }} />
-                <Text style={{ fontSize: 10, fontWeight: '700', color: filtroEspecie === key ? '#FFF' : C.teal }}>{label}</Text>
+                <Image source={{ uri: icon }} style={{ width: 14, height: 14, tintColor: especieActiva ? '#FFF' : C.teal }} />
+                <Text style={{ fontSize: 10, fontWeight: '700', color: especieActiva ? '#FFF' : C.teal }}>{label}</Text>
               </TouchableOpacity>
-            ))}
+              );
+            })}
             <View style={{ flex: 1 }} />
             {[
               { key: 'reciente', icon: ICON_CLOCK    },
@@ -822,7 +868,7 @@ export default function MapScreen() {
           </View>
           {/* Fila 3: capas destacadas */}
           <View style={{ flexDirection: 'row', paddingHorizontal: 8, paddingVertical: 7, gap: 7, borderTopWidth: 1, borderTopColor: '#F0E8DC' }}>
-            <TouchableOpacity onPress={() => setMostrarAsociaciones(v => !v)}
+            <TouchableOpacity onPress={handleToggleAsociaciones}
               style={{ flex: 1, minHeight: 34, borderRadius: 11, borderWidth: 1.5,
                 borderColor: '#2E86DE', alignItems: 'center', justifyContent: 'center',
                 flexDirection: 'row', gap: 6,
@@ -832,7 +878,7 @@ export default function MapScreen() {
                 Asociaciones
               </Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => setMostrarAliados(v => !v)}
+            <TouchableOpacity onPress={handleToggleAliados}
               style={{ flex: 1, minHeight: 34, borderRadius: 11, borderWidth: 1.5,
                 borderColor: '#E67E22', alignItems: 'center', justifyContent: 'center',
                 flexDirection: 'row', gap: 6,
