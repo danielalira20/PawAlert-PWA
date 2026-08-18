@@ -19,7 +19,8 @@ export const Input: React.FC<InputProps> = ({ label, error, required, secureText
     <View className="w-full mb-4">
       {label && (
         <Text className="text-text-dark font-semibold text-sm mb-1.5">
-          {label} {required && <Text className="text-urgency-high">*</Text>}
+          {label}
+          {required && <Text className="text-urgency-high">{' *'}</Text>}
         </Text>
       )}
       {/* Altura mínima: 44dp[cite: 5] */}
