@@ -4,7 +4,7 @@ import axios from 'axios';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Dimensions, Image, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { Animated, Dimensions, Image, Modal, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import AuthGateModal from '../components/AuthGateModal';
 import { API_URL } from '../constants/api';
@@ -1024,11 +1024,17 @@ export default function MapScreen() {
   // ─── Modal de formulario (mobile web) ────────────────────────────────────────
   const renderFormModal = () => (
     sidebarView === 'form' && isMobile ? (
-      <View style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 999 } as any}>
-        <View style={{ flex: 1, margin: 16, marginTop: 60, backgroundColor: '#F5F5F5', borderRadius: 20, overflow: 'hidden' }}>
-          <ReportFormScreen onClose={() => { setSidebarView('list'); setTimeout(fetchReportes, 400); }} />
+      <Modal
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSidebarView('list')}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <View style={{ flex: 1, margin: 16, marginTop: 60, backgroundColor: '#F5F5F5', borderRadius: 20, overflow: 'hidden' }}>
+            <ReportFormScreen onClose={() => { setSidebarView('list'); setTimeout(fetchReportes, 400); }} />
+          </View>
         </View>
-      </View>
+      </Modal>
     ) : null
   );
 
