@@ -964,7 +964,7 @@ export default function CapacidadesFormScreen({
           </View>
 
           {mostrarConfirmacion ? (
-            <ScrollView ref={formScrollRef} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+            <ScrollView ref={formScrollRef} style={{ flex: 1 }} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
               <ReviewRow label="Cuándo puedes ayudar" value={`${labels(dias, DIAS).join(', ')} · ${labels(franjas, FRANJAS).join(', ')}`} />
               <ReviewRow label="Tiempo para responder" value={TIEMPOS_REACCION.find((item) => item.value === tiempoReaccion)?.label || '—'} />
               <ReviewRow label="Ayuda en emergencias" value={URGENCIAS.find((item) => item.value === urgencias)?.label || '—'} />
@@ -994,7 +994,7 @@ export default function CapacidadesFormScreen({
             </ScrollView>
           ) : (
             <>
-              <ScrollView ref={formScrollRef} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+              <ScrollView ref={formScrollRef} style={{ flex: 1 }} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
                 {renderPaso()}
               </ScrollView>
               <View style={styles.fixedFooter}>
