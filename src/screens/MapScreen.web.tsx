@@ -5,7 +5,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Dimensions, Image, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import AuthGateModal from '../components/AuthGateModal';
 import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
@@ -242,6 +242,35 @@ export default function MapScreen() {
     }
   }, [selectedReport, isMobile]);
 
+  // sidebarView cambia todo el tiempo durante el uso normal de la pantalla,
+  // así que lo leemos por ref en vez de meterlo como dependencia del
+  // useFocusEffect — si no, el callback se re-registraría en cada cambio.
+  const sidebarViewRef = useRef(sidebarView);
+  useEffect(() => {
+    sidebarViewRef.current = sidebarView;
+  }, [sidebarView]);
+
+  // Al salir de la pestaña "Mapa" (blur), limpia cualquier overlay que se
+  // haya quedado abierto — bottom sheet de reporte, detalle de asociación,
+  // dropdown de filtros, imagen ampliada — para que al regresar la
+  // pantalla arranque en un estado limpio y no se encimen con lo próximo
+  // que el usuario abra. El formulario "Nuevo reporte" es la única
+  // excepción: si el usuario lo dejó a medias, se conserva.
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        if (sidebarViewRef.current !== 'form') {
+          setSelectedReport(null);
+          setSelectedAsociacion(null);
+          setSidebarView('list');
+        }
+        setHighlightedReportId(null);
+        setShowFiltersModal(false);
+        setImagenAmpliada(null);
+      };
+    }, [])
+  );
+
   useEffect(() => {
     if (!highlightedReportId || isMobile || sidebarView !== 'list') return;
 
@@ -255,12 +284,14 @@ export default function MapScreen() {
 
   const handleCrearReporte = () => {
     if (isLoggedIn) {
-      if (isMobile) {
-        // En mobile web abrimos en modal (como native)
-        setSidebarView('form');
-      } else {
-        setSidebarView('form');
-      }
+      // Cierra cualquier detalle abierto (bottom sheet de reporte, panel de
+      // asociación) antes de mostrar el formulario — evita que ambos
+      // queden encimados en mobile, donde el bottom sheet se controla por
+      // selectedReport de forma independiente a sidebarView.
+      setSelectedReport(null);
+      setSelectedAsociacion(null);
+      setHighlightedReportId(null);
+      setSidebarView('form');
     } else {
       setIsAuthGateVisible(true);
     }

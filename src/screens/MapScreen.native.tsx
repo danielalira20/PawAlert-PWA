@@ -2,9 +2,9 @@ import { Feather, Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Dimensions, Image, Modal, Text, TouchableOpacity, View } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import MapView, { Callout, Region } from 'react-native-maps';
 import { TrackedMarker } from './TrackedMarker';
 import AuthGateModal from '../components/AuthGateModal';
@@ -223,6 +223,38 @@ export default function MapScreen() {
   const hideSheet = () =>
     Animated.timing(sheetY, { toValue: 300, duration: 220, useNativeDriver: true }).start(() => setSelectedReport(null));
 
+  const hideSheetImmediate = () => {
+    sheetY.setValue(300);
+    setSelectedReport(null);
+  };
+
+  // Cierra el bottom sheet de detalle antes de abrir el formulario — evita
+  // que ambos queden visibles a la vez (el Modal del formulario es
+  // transparent, así que el bottom sheet de atrás se alcanzaba a ver).
+  const handleCrearReporte = () => {
+    if (isLoggedIn) {
+      hideSheetImmediate();
+      setIsFormVisible(true);
+    } else {
+      setIsAuthGateVisible(true);
+    }
+  };
+
+  // Al salir de la pestaña "Mapa" (blur), limpia cualquier overlay que se
+  // haya quedado abierto — bottom sheet de reporte, auth gate — para que
+  // al regresar la pantalla arranque limpia. El formulario "Nuevo reporte"
+  // es la única excepción: si el usuario lo dejó a medias, se conserva.
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        hideSheetImmediate();
+        setIsAuthGateVisible(false);
+        // isFormVisible NO se toca aquí a propósito: si el usuario lo dejó
+        // a medias, se conserva tal cual al regresar a esta pantalla.
+      };
+    }, [])
+  );
+
   const fetchReportes = async () => {
     try {
       const response = await axios.get(`${API_URL}/reports`);
@@ -249,11 +281,7 @@ export default function MapScreen() {
 
   useEffect(() => {
     if (params.action === 'create') {
-      if (isLoggedIn) {
-        setIsFormVisible(true);
-      } else {
-        setIsAuthGateVisible(true);
-      }
+      handleCrearReporte();
       router.setParams({ action: undefined });
     }
   }, [params.action, isLoggedIn]);
@@ -492,7 +520,7 @@ export default function MapScreen() {
 
       {/* FAB */}
       <TouchableOpacity
-        onPress={() => isLoggedIn ? setIsFormVisible(true) : setIsAuthGateVisible(true)}
+        onPress={handleCrearReporte}
         style={{
           position: 'absolute', bottom: selectedReport ? 230 : 100, right: 20,
           width: 56, height: 56, borderRadius: 28,
@@ -601,7 +629,7 @@ export default function MapScreen() {
       <AuthGateModal
         visible={isAuthGateVisible}
         onClose={() => setIsAuthGateVisible(false)}
-        onGuest={() => setIsFormVisible(true)}
+        onGuest={() => { hideSheetImmediate(); setIsFormVisible(true); }}
       />
 
       <Modal visible={isFormVisible} animationType="slide" transparent onRequestClose={() => setIsFormVisible(false)}>
