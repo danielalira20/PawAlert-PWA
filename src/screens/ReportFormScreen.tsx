@@ -1239,7 +1239,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
           )}
 
           <View style={{ marginBottom: 8 }}>
-            <Input label="Descripción adicional (Opcional)" placeholder="Detalles sobre el animal o la situación..." value={borrador.description} onChangeText={(val) => actualizarBorrador({ description: val })} multiline maxLength={300} numberOfLines={3} style={{ height: 80, textAlignVertical: 'top' }} />
+            <Input label="Descripción adicional (Opcional)" placeholder="Detalles sobre el animal o la situación..." value={borrador.description} onChangeText={(val) => actualizarBorrador({ description: val })} multiline maxLength={300} style={{ minHeight: 80, textAlignVertical: 'top' }} />
             <Text style={{ textAlign: 'right', color: '#95A5A6', fontSize: 12 }}>{borrador.description.length}/300</Text>
           </View>
         </Card>
@@ -1316,7 +1316,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
         {renderSelector('Edad aproximada general', ['Cachorro', 'Joven', 'Adulto', 'Senior', 'Desconocido'], borrador.edad, (val: Edad) => { actualizarBorrador({ edad: val }); setErrors((prev) => ({ ...prev, edad: '' })); }, errors.edad)}
 
         <View style={{ marginBottom: 8 }}>
-          <Input label="Descripción adicional (Opcional)" placeholder="Ej. Están debajo de una camioneta abandonada..." value={borrador.description} onChangeText={(val) => actualizarBorrador({ description: val })} multiline maxLength={300} numberOfLines={3} style={{ height: 80, textAlignVertical: 'top' }} />
+          <Input label="Descripción adicional (Opcional)" placeholder="Ej. Están debajo de una camioneta abandonada..." value={borrador.description} onChangeText={(val) => actualizarBorrador({ description: val })} multiline maxLength={300} style={{ minHeight: 80, textAlignVertical: 'top' }} />
           <Text style={{ textAlign: 'right', color: '#95A5A6', fontSize: 12 }}>{borrador.description.length}/300</Text>
         </View>
       </Card>
