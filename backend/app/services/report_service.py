@@ -563,7 +563,12 @@ async def crear_reporte(
         "estado": activacion["estado"],
         "asociacion_asignada": asociacion["nombre"] if asociacion else None,
         "contactos_emergencia": contactos if contactos else None,
-        "created_at": str(created_at)
+        "motivos_revision": (
+            [razon["codigo"] for razon in decision_validacion.reasons]
+            if activacion["estado"] == "revision_manual"
+            else None
+        ),
+        "created_at": str(created_at),
     }
 
 

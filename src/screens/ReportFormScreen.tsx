@@ -15,6 +15,10 @@ import { petzen } from '../constants/petzenTheme';
 import { useAuth } from '../context/AuthContext';
 import { validarNombre } from '../utils/validators';
 import { getDeviceToken } from '../utils/deviceToken';
+import {
+  construirResultadoRevision,
+  ReportSubmissionResult,
+} from '../utils/reportSubmission';
 import LocationPickerMap from './LocationPickerMap';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -123,7 +127,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
 
   // ─── Estado de envío ───
   const [duplicadoInfo, setDuplicadoInfo] = useState<DuplicadoInfo | null>(null);
-  const [resultadoEnvio, setResultadoEnvio] = useState<string | null>(null);
+  const [resultadoEnvio, setResultadoEnvio] = useState<ReportSubmissionResult | null>(null);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [mostrarCrearCuenta, setMostrarCrearCuenta] = useState(false);
@@ -724,18 +728,26 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
       }
 
       if (data.estado === 'revision_manual') {
-        setResultadoEnvio(
-          'Recibimos tu reporte y está en revisión. Te avisaremos cuando pueda entrar al flujo de atención.',
-        );
+        setResultadoEnvio(construirResultadoRevision(data.motivos_revision));
       } else if (data.estado === 'duplicado_vinculable') {
-        setResultadoEnvio(
-          'Tu información quedó vinculada al reporte existente para complementar ese mismo caso.',
-        );
+        setResultadoEnvio({
+          titulo: 'Información vinculada',
+          mensaje: 'Tu información quedó vinculada al reporte existente para complementar ese mismo caso.',
+          estado: 'completado',
+        });
       } else if (data.asociacion_asignada) {
-        setResultadoEnvio(`Tu reporte fue asignado a: ${data.asociacion_asignada}`);
+        setResultadoEnvio({
+          titulo: 'Reporte enviado',
+          mensaje: `Tu reporte fue asignado a: ${data.asociacion_asignada}`,
+          estado: 'completado',
+        });
       } else if (data.contactos_emergencia && data.contactos_emergencia.length > 0) {
         const contactos = data.contactos_emergencia.map((c: any) => `${c.nombre}: ${c.telefono}`).join('\n');
-        setResultadoEnvio(`No hay asociaciones disponibles en tu zona.\n\nContactos de emergencia:\n${contactos}`);
+        setResultadoEnvio({
+          titulo: 'Reporte registrado sin cobertura',
+          mensaje: `No hay asociaciones disponibles en tu zona.\n\nContactos de emergencia:\n${contactos}`,
+          estado: 'sin_cobertura',
+        });
       } else {
         // Mensaje por defecto para perros, gatos o subcategoría "Otro"
         let mensajeFinal = 'Tu reporte fue publicado. No encontramos asociaciones ni contactos de emergencia en tu zona. Te recomendamos contactar a tu Ayuntamiento local o Protección Civil municipal.';
@@ -759,7 +771,11 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
           }
         }
 
-        setResultadoEnvio(mensajeFinal);
+        setResultadoEnvio({
+          titulo: 'Reporte registrado sin cobertura',
+          mensaje: mensajeFinal,
+          estado: 'sin_cobertura',
+        });
       }
     } catch (error: any) {
       const mensaje = error?.response?.data?.detail || error?.message || 'Error desconocido';
@@ -978,6 +994,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
 
   // ─── Pantalla de confirmación ───
   if (resultadoEnvio !== null) {
+    const esRevision = resultadoEnvio.estado === 'revision';
     return (
       <View style={{ flex: 1, backgroundColor: petzen.colors.background, justifyContent: 'center', alignItems: 'center', padding: 32 }}>
         <Toast toast={toast} translateY={translateY} />
@@ -989,10 +1006,16 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
         />
 
         <Text style={{ fontFamily: petzen.fonts.extraBold, fontSize: 26, color: petzen.colors.textDark, textAlign: 'center', marginBottom: 12 }}>
-          ¡Gracias por reportar!
+          {resultadoEnvio.titulo}
         </Text>
+        {esRevision && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: '#FFF4E8', paddingVertical: 8, paddingHorizontal: 13, borderRadius: 8, marginBottom: 14 }}>
+            <Ionicons name="time-outline" size={17} color="#A75B14" />
+            <Text style={{ color: '#A75B14', fontFamily: petzen.fonts.bold, fontSize: 13 }}>Sin asociación todavía</Text>
+          </View>
+        )}
         <Text style={{ fontFamily: petzen.fonts.regular, fontSize: 15, color: petzen.colors.textSecondary, textAlign: 'center', lineHeight: 24, marginBottom: 36 }}>
-          {resultadoEnvio}
+          {resultadoEnvio.mensaje}
         </Text>
         <TouchableOpacity
           onPress={() => {

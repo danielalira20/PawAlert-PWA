@@ -378,6 +378,7 @@ def test_crear_reporte_phash_alerta_detiene_activacion(make_query):
         )
 
     assert resultado["estado"] == "revision_manual"
+    assert resultado["motivos_revision"] == ["phash_coincidencia"]
     actualizacion = tablas["reportes"].update.call_args.args[0]
     assert actualizacion["razones_validacion"] == [
         {"codigo": "phash_coincidencia", "resultado": "revision_manual"}
