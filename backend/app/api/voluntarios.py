@@ -9,6 +9,8 @@ from fastapi import (
 )
 from app.db.supabase import supabase
 from app.models.voluntario import (
+    CapacidadesDraftContextEnum,
+    CapacidadesDraftRequest,
     CapacidadesRequest,
     CheckInVisitaRequest,
     ChecklistVisitaRequest,
@@ -28,6 +30,9 @@ from app.services.voluntario_service import (
     obtener_mi_voluntario,
     obtener_capacidades,
     guardar_capacidades,
+    obtener_borrador_capacidades,
+    guardar_borrador_capacidades,
+    eliminar_borrador_capacidades,
     obtener_disponibilidad_operativa,
     actualizar_disponibilidad_operativa,
     obtener_reportes_voluntario,
@@ -369,6 +374,37 @@ async def patch_responder_horario_postulante(
             asignacion_id,
         )
     return resultado
+
+
+@router.get("/me/capacidades/borrador", status_code=200)
+async def get_mi_borrador_capacidades(
+    contexto: CapacidadesDraftContextEnum = CapacidadesDraftContextEnum.perfil,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    return await obtener_borrador_capacidades(usuario["id"], contexto.value)
+
+
+@router.put("/me/capacidades/borrador", status_code=200)
+async def put_mi_borrador_capacidades(
+    body: CapacidadesDraftRequest,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    return await guardar_borrador_capacidades(
+        usuario["id"],
+        body.contexto.value,
+        body.model_dump(mode="json"),
+    )
+
+
+@router.delete("/me/capacidades/borrador", status_code=200)
+async def delete_mi_borrador_capacidades(
+    contexto: CapacidadesDraftContextEnum = CapacidadesDraftContextEnum.perfil,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    return await eliminar_borrador_capacidades(usuario["id"], contexto.value)
 
 
 @router.get("/me/capacidades", status_code=200)

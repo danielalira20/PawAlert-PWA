@@ -72,6 +72,61 @@ def test_guardar_capacidades_permite_preparar_repostulacion_rechazada(make_query
     assert resultado == {"mensaje": "Capacidades guardadas correctamente"}
 
 
+def test_guardar_borrador_capacidades_es_privado_y_expira(make_query):
+    borradores = make_query(data=[])
+    borradores.upsert.return_value = borradores
+    supabase_admin = MagicMock()
+    supabase_admin.table.return_value = borradores
+    datos = {
+        "contexto": "externo",
+        "version": 1,
+        "paso": 2,
+        "datos": {"radio_max_km": 10},
+    }
+
+    with patch.object(voluntario_service, "supabase_admin", supabase_admin):
+        resultado = asyncio.run(
+            voluntario_service.guardar_borrador_capacidades(
+                "usuario-1", "externo", datos
+            )
+        )
+
+    payload = borradores.upsert.call_args.args[0]
+    assert payload["usuario_id"] == "usuario-1"
+    assert payload["formulario"] == "capacidades_voluntario:externo"
+    assert payload["datos"] == datos
+    assert (
+        datetime.fromisoformat(payload["expires_at"])
+        > datetime.now(timezone.utc) + timedelta(days=29)
+    )
+    assert resultado["mensaje"] == "Borrador guardado"
+
+
+def test_obtener_borrador_capacidades_descarta_el_vencido(make_query):
+    vencido = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+    borradores = make_query(data=[{
+        "version": 1,
+        "datos": {"paso": 4},
+        "updated_at": vencido,
+        "expires_at": vencido,
+    }])
+    supabase_admin = MagicMock()
+    supabase_admin.table.return_value = borradores
+
+    with patch.object(voluntario_service, "supabase_admin", supabase_admin):
+        resultado = asyncio.run(
+            voluntario_service.obtener_borrador_capacidades(
+                "usuario-1", "perfil"
+            )
+        )
+
+    assert resultado == {"borrador": None}
+    supabase_admin.rpc.assert_called_once_with(
+        "purgar_borradores_formulario_vencidos"
+    )
+    borradores.delete.assert_called_once()
+
+
 def test_pausar_disponibilidad_operativa_indefinidamente(make_query):
     voluntarios = make_query(data=[{"id": "vol-1", "estado": "activo_nivel_1"}])
     supabase = MagicMock()

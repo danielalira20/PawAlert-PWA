@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -208,6 +208,64 @@ interface Props {
   onPostulacionFinalizada?: () => void;
 }
 
+type CapacidadesDraftContext = 'perfil' | 'interno' | 'externo';
+type DraftSaveStatus = 'idle' | 'saving' | 'saved' | 'error';
+type ClosingAction = 'save' | 'discard' | null;
+
+interface CapacidadesStoredData {
+  disponibilidad?: {
+    dias?: string[];
+    franjas?: string[];
+    horarios?: Array<{ de?: string; a?: string }>;
+  };
+  tiempo_reaccion?: string | null;
+  disponibilidad_urgencias?: string | null;
+  max_casos_simultaneos?: number | null;
+  latitud?: number | string | null;
+  longitud?: number | string | null;
+  radio_max_km?: number | null;
+  medios_transporte?: string[];
+  vehiculo_apto_traslado?: boolean | null;
+  tiene_vehiculo?: boolean | null;
+  tamanios_traslado?: string[];
+  especies_manejo?: string[];
+  especies?: string[];
+  otras_especies_manejo?: string[];
+  tamanios_manejo?: string[];
+  tamanios?: string[];
+  primeros_auxilios_nivel?: string | null;
+  experiencias_campo?: string[];
+  vias_tratamiento?: string[];
+  trayectoria_tipos?: string[];
+  experiencia_anios?: string | null;
+  equipamiento?: string[];
+  restricciones_fisicas?: string[];
+  acepta_capacitacion?: string | null;
+  canal_contacto?: string | null;
+  contacto_emergencia_nombre?: string | null;
+  contacto_emergencia_telefono?: string | null;
+  compromiso_comunicacion?: boolean | null;
+  compromiso_notificar?: boolean | null;
+  proyeccion_colaboracion?: string | null;
+  motivaciones?: string[];
+  comentarios_adicionales?: string | null;
+  acepto_terminos?: boolean | null;
+}
+
+interface CapacidadesDraftResponse {
+  contexto: CapacidadesDraftContext;
+  version: number;
+  paso: number;
+  mostrar_confirmacion: boolean;
+  ubicacion_confirmada: boolean;
+  sin_tratamientos: boolean;
+  asociacion_id?: string | null;
+  datos: CapacidadesStoredData;
+}
+
+const CAPACIDADES_DRAFT_VERSION = 1;
+const CAPACIDADES_DRAFT_SAVE_DELAY_MS = 800;
+
 function labels(values: string[], options: Option[]) {
   return values.map((value) => options.find((option) => option.value === value)?.label || value);
 }
@@ -226,6 +284,22 @@ function franjasDesdeHorarioLegado(horarios: Array<{ de?: string; a?: string }>)
   return [...seleccionadas];
 }
 
+function isCapacidadesDraftResponse(value: unknown): value is CapacidadesDraftResponse {
+  if (!value || typeof value !== 'object') return false;
+  const draft = value as Partial<CapacidadesDraftResponse>;
+  return (
+    draft.version === CAPACIDADES_DRAFT_VERSION
+    && Number.isInteger(draft.paso)
+    && Number(draft.paso) >= 1
+    && Number(draft.paso) <= PASOS.length
+    && ['perfil', 'interno', 'externo'].includes(draft.contexto || '')
+    && typeof draft.mostrar_confirmacion === 'boolean'
+    && typeof draft.ubicacion_confirmada === 'boolean'
+    && typeof draft.sin_tratamientos === 'boolean'
+    && Boolean(draft.datos && typeof draft.datos === 'object')
+  );
+}
+
 export default function CapacidadesFormScreen({
   onClose,
   fromProfile = false,
@@ -239,6 +313,9 @@ export default function CapacidadesFormScreen({
   const { width } = useWindowDimensions();
   const compact = width < 700;
   const formScrollRef = useRef<ScrollView>(null);
+  const draftContext: CapacidadesDraftContext = esPostulacionNueva
+    ? (esPostulacionExterna ? 'externo' : 'interno')
+    : 'perfil';
 
   const [paso, setPaso] = useState(1);
   const [mostrarConfirmacion, setMostrarConfirmacion] = useState(false);
@@ -249,6 +326,13 @@ export default function CapacidadesFormScreen({
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [showCasaHogarModal, setShowCasaHogarModal] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [showDraftNotice, setShowDraftNotice] = useState(false);
+  const [draftSaveStatus, setDraftSaveStatus] = useState<DraftSaveStatus>('idle');
+  const [closingAction, setClosingAction] = useState<ClosingAction>(null);
+  const isClosing = closingAction !== null;
+  const lastPersistedDraftRef = useRef<string | null>(null);
+  const draftSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const draftPersistenceDisabledRef = useRef(false);
 
   const [dias, setDias] = useState<string[]>([]);
   const [franjas, setFranjas] = useState<string[]>([]);
@@ -298,20 +382,27 @@ export default function CapacidadesFormScreen({
   }, [paso, mostrarConfirmacion]);
 
   useEffect(() => {
+    let active = true;
+
     const cargar = async () => {
       if (!token) {
         setIsLoading(false);
         return;
       }
-      try {
-        const { data } = await axios.get(`${API_URL}/voluntarios/me/capacidades`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const disponibilidad = data?.disponibilidad || {};
+
+      const aplicarCapacidades = (
+        data: CapacidadesStoredData,
+        opciones?: {
+          ubicacionConfirmada?: boolean;
+          sinTratamientos?: boolean;
+        },
+      ) => {
+        if (!active) return;
+        const disponibilidad = data.disponibilidad || {};
         const tieneDatosV2 =
-          data?.radio_max_km != null ||
-          data?.tiempo_reaccion != null ||
-          (data?.especies_manejo?.length ?? 0) > 0;
+          data.radio_max_km != null
+          || data.tiempo_reaccion != null
+          || (data.especies_manejo?.length ?? 0) > 0;
 
         setDias(disponibilidad.dias || []);
         setFranjas(
@@ -319,65 +410,113 @@ export default function CapacidadesFormScreen({
             ? disponibilidad.franjas
             : franjasDesdeHorarioLegado(disponibilidad.horarios || [])
         );
-        setTiempoReaccion(data?.tiempo_reaccion || '');
-        setUrgencias(data?.disponibilidad_urgencias || '');
-        setMaxCasos(data?.max_casos_simultaneos || 1);
+        setTiempoReaccion(data.tiempo_reaccion || '');
+        setUrgencias(data.disponibilidad_urgencias || '');
+        setMaxCasos(data.max_casos_simultaneos || 1);
 
-        if (data?.latitud != null && data?.longitud != null) {
+        if (data.latitud != null && data.longitud != null) {
           setUbicacion({
             latitud: Number(data.latitud),
             longitud: Number(data.longitud),
           });
-          setUbicacionConfirmada(true);
+          setUbicacionConfirmada(opciones?.ubicacionConfirmada ?? true);
+        } else {
+          setUbicacionConfirmada(Boolean(opciones?.ubicacionConfirmada));
         }
-        setRadioMaxKm(data?.radio_max_km ?? null);
-        setMediosTransporte(data?.medios_transporte || []);
+        setRadioMaxKm(data.radio_max_km ?? null);
+        setMediosTransporte(data.medios_transporte || []);
         setVehiculoApto(
           tieneDatosV2
-            ? Boolean(data?.vehiculo_apto_traslado)
-            : data?.tiene_vehiculo == null
+            ? Boolean(data.vehiculo_apto_traslado)
+            : data.tiene_vehiculo == null
               ? null
               : Boolean(data.tiene_vehiculo)
         );
-        setTamaniosTraslado(data?.tamanios_traslado || []);
+        setTamaniosTraslado(data.tamanios_traslado || []);
 
         setEspeciesManejo(
-          data?.especies_manejo?.length ? data.especies_manejo : data?.especies || []
+          data.especies_manejo?.length ? data.especies_manejo : data.especies || []
         );
-        setOtrasEspecies(data?.otras_especies_manejo || []);
+        setOtrasEspecies(data.otras_especies_manejo || []);
         setTamaniosManejo(
-          data?.tamanios_manejo?.length ? data.tamanios_manejo : data?.tamanios || []
+          data.tamanios_manejo?.length ? data.tamanios_manejo : data.tamanios || []
         );
-        setPrimerosAuxilios(data?.primeros_auxilios_nivel || '');
-        setExperienciasCampo(data?.experiencias_campo || []);
-        setViasTratamiento(data?.vias_tratamiento || []);
+        setPrimerosAuxilios(data.primeros_auxilios_nivel || '');
+        setExperienciasCampo(data.experiencias_campo || []);
+        setViasTratamiento(data.vias_tratamiento || []);
         setSinTratamientos(
-          tieneDatosV2 && (data?.vias_tratamiento?.length ?? 0) === 0
+          opciones?.sinTratamientos
+          ?? (tieneDatosV2 && (data.vias_tratamiento?.length ?? 0) === 0)
         );
-        setTrayectorias(data?.trayectoria_tipos || []);
-        setExperienciaAnios(data?.experiencia_anios || '');
+        setTrayectorias(data.trayectoria_tipos || []);
+        setExperienciaAnios(data.experiencia_anios || '');
 
-        setEquipamiento(data?.equipamiento || []);
-        setRestricciones(data?.restricciones_fisicas || []);
-        setAceptaCapacitacion(data?.acepta_capacitacion || '');
+        setEquipamiento(data.equipamiento || []);
+        setRestricciones(data.restricciones_fisicas || []);
+        setAceptaCapacitacion(data.acepta_capacitacion || '');
 
-        setCanalContacto(data?.canal_contacto || '');
-        setContactoNombre(data?.contacto_emergencia_nombre || '');
-        setContactoTelefono(data?.contacto_emergencia_telefono || '');
-        setCompromisoComunicacion(Boolean(data?.compromiso_comunicacion));
-        setCompromisoNotificar(Boolean(data?.compromiso_notificar));
-        setProyeccion(data?.proyeccion_colaboracion || '');
-        setMotivaciones(data?.motivaciones || []);
-        setComentarios(data?.comentarios_adicionales || '');
-        setAceptoTerminos(Boolean(data?.acepto_terminos));
+        setCanalContacto(data.canal_contacto || '');
+        setContactoNombre(data.contacto_emergencia_nombre || '');
+        setContactoTelefono(data.contacto_emergencia_telefono || '');
+        setCompromisoComunicacion(Boolean(data.compromiso_comunicacion));
+        setCompromisoNotificar(Boolean(data.compromiso_notificar));
+        setProyeccion(data.proyeccion_colaboracion || '');
+        setMotivaciones(data.motivaciones || []);
+        setComentarios(data.comentarios_adicionales || '');
+        setAceptoTerminos(Boolean(data.acepto_terminos));
+      };
+
+      try {
+        const { data: capacidadesGuardadas } = await axios.get(`${API_URL}/voluntarios/me/capacidades`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        aplicarCapacidades(capacidadesGuardadas as CapacidadesStoredData);
       } catch (error) {
         console.error('Error cargando capacidades:', error);
+      }
+
+      try {
+        const { data: draftResult } = await axios.get(
+          `${API_URL}/voluntarios/me/capacidades/borrador`,
+          {
+            params: { contexto: draftContext },
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        );
+        const draft = draftResult?.borrador as unknown;
+        const correspondeAsociacion = draftContext !== 'interno'
+          || (
+            isCapacidadesDraftResponse(draft)
+            && (draft.asociacion_id ?? null) === (asociacionId ?? null)
+          );
+
+        if (
+          active
+          && isCapacidadesDraftResponse(draft)
+          && draft.contexto === draftContext
+          && correspondeAsociacion
+        ) {
+          aplicarCapacidades(draft.datos, {
+            ubicacionConfirmada: draft.ubicacion_confirmada,
+            sinTratamientos: draft.sin_tratamientos,
+          });
+          setPaso(draft.paso);
+          setMostrarConfirmacion(draft.mostrar_confirmacion);
+          setShowDraftNotice(true);
+        }
+      } catch (draftError) {
+        if (axios.isAxiosError(draftError) && draftError.response?.status !== 404) {
+          console.error('Error cargando borrador de capacidades:', draftError);
+        }
       } finally {
-        setIsLoading(false);
+        if (active) setIsLoading(false);
       }
     };
     cargar();
-  }, [token]);
+    return () => {
+      active = false;
+    };
+  }, [asociacionId, draftContext, token]);
 
   const toggle = (
     value: string,
@@ -553,6 +692,152 @@ export default function CapacidadesFormScreen({
     ]
   );
 
+  const draftRequest = useMemo<CapacidadesDraftResponse>(() => ({
+    contexto: draftContext,
+    version: CAPACIDADES_DRAFT_VERSION,
+    paso,
+    mostrar_confirmacion: mostrarConfirmacion,
+    ubicacion_confirmada: ubicacionConfirmada,
+    sin_tratamientos: sinTratamientos,
+    asociacion_id: asociacionId ?? null,
+    datos: payload,
+  }), [
+    asociacionId,
+    draftContext,
+    mostrarConfirmacion,
+    paso,
+    payload,
+    sinTratamientos,
+    ubicacionConfirmada,
+  ]);
+  const serializedDraft = useMemo(
+    () => JSON.stringify(draftRequest),
+    [draftRequest],
+  );
+
+  const persistDraft = useCallback((
+    request: CapacidadesDraftResponse,
+    serialized: string,
+  ): Promise<void> => {
+    const operation = draftSaveQueueRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        if (!token) throw new Error('No hay una sesión activa para guardar el borrador');
+        if (draftPersistenceDisabledRef.current) return;
+
+        setDraftSaveStatus('saving');
+        try {
+          await axios.put(
+            `${API_URL}/voluntarios/me/capacidades/borrador`,
+            request,
+            { headers: { Authorization: `Bearer ${token}` } },
+          );
+          lastPersistedDraftRef.current = serialized;
+          setDraftSaveStatus('saved');
+        } catch (error) {
+          setDraftSaveStatus('error');
+          throw error;
+        }
+      });
+
+    draftSaveQueueRef.current = operation.catch(() => undefined);
+    return operation;
+  }, [token]);
+
+  useEffect(() => {
+    if (
+      isLoading
+      || !token
+      || postulacionCompletada
+      || draftPersistenceDisabledRef.current
+    ) {
+      return;
+    }
+
+    if (lastPersistedDraftRef.current === null) {
+      lastPersistedDraftRef.current = serializedDraft;
+      return;
+    }
+    if (lastPersistedDraftRef.current === serializedDraft) return;
+
+    const timeout = setTimeout(() => {
+      if (draftPersistenceDisabledRef.current) return;
+      void persistDraft(draftRequest, serializedDraft).catch(() => undefined);
+    }, CAPACIDADES_DRAFT_SAVE_DELAY_MS);
+
+    return () => clearTimeout(timeout);
+  }, [
+    draftRequest,
+    isLoading,
+    persistDraft,
+    postulacionCompletada,
+    serializedDraft,
+    token,
+  ]);
+
+  const closeForm = useCallback(() => {
+    if (onClose) onClose();
+    else router.back();
+  }, [onClose]);
+
+  const deleteDraft = useCallback(async () => {
+    if (!token) return;
+    draftPersistenceDisabledRef.current = true;
+    await draftSaveQueueRef.current.catch(() => undefined);
+    await axios.delete(`${API_URL}/voluntarios/me/capacidades/borrador`, {
+      params: { contexto: draftContext },
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    lastPersistedDraftRef.current = null;
+    setDraftSaveStatus('idle');
+  }, [draftContext, token]);
+
+  const clearDraftAfterSubmit = useCallback(async () => {
+    try {
+      await deleteDraft();
+    } catch {
+      // La información final ya quedó guardada. La expiración del borrador
+      // evita que una falla secundaria cambie el resultado del envío.
+    }
+  }, [deleteDraft]);
+
+  const handleSaveAndExit = async () => {
+    setClosingAction('save');
+    try {
+      if (lastPersistedDraftRef.current !== serializedDraft) {
+        await persistDraft(draftRequest, serializedDraft);
+      }
+      setShowCloseConfirm(false);
+      closeForm();
+    } catch {
+      showToast({
+        type: 'error',
+        title: 'No pudimos guardar el borrador',
+        message: 'Revisa tu conexión antes de salir para no perder tus cambios.',
+      });
+    } finally {
+      setClosingAction(null);
+    }
+  };
+
+  const handleDiscardAndExit = async () => {
+    setClosingAction('discard');
+    try {
+      await deleteDraft();
+      setShowCloseConfirm(false);
+      closeForm();
+    } catch {
+      draftPersistenceDisabledRef.current = false;
+      showToast({
+        type: 'error',
+        title: 'No pudimos descartar el borrador',
+        message: 'Inténtalo nuevamente antes de salir.',
+      });
+    } finally {
+      setClosingAction(null);
+    }
+  };
+
   const handleSubmit = async () => {
     setIsSubmitting(true);
     try {
@@ -566,6 +851,7 @@ export default function CapacidadesFormScreen({
             {},
             { headers: { Authorization: `Bearer ${token}` } },
           );
+          await clearDraftAfterSubmit();
           setAsociacionRevisora(finalizacion?.asociacion_nombre || null);
           setMostrarConfirmacion(false);
           setPostulacionCompletada(true);
@@ -575,6 +861,7 @@ export default function CapacidadesFormScreen({
         await finalizarPostulacionInterno();
         return;
       }
+      await clearDraftAfterSubmit();
       showToast({
         type: 'success',
         title: '¡Listo!',
@@ -611,6 +898,7 @@ export default function CapacidadesFormScreen({
         { asociacion_id: asociacionId },
         { headers: { Authorization: `Bearer ${token}` } },
       );
+      await clearDraftAfterSubmit();
       onPostulacionFinalizada?.();
       setMostrarConfirmacion(false);
       setPostulacionCompletada(true);
@@ -963,6 +1251,46 @@ export default function CapacidadesFormScreen({
             )}
           </View>
 
+          {(showDraftNotice || draftSaveStatus !== 'idle') && (
+            <View
+              style={[
+                styles.draftBanner,
+                draftSaveStatus === 'error' && styles.draftBannerError,
+              ]}
+            >
+              <Ionicons
+                name={
+                  draftSaveStatus === 'error'
+                    ? 'alert-circle-outline'
+                    : draftSaveStatus === 'saving'
+                      ? 'cloud-upload-outline'
+                      : 'cloud-done-outline'
+                }
+                size={20}
+                color={draftSaveStatus === 'error' ? COLORS.danger : COLORS.bgTeal}
+              />
+              <Text style={styles.draftBannerText}>
+                {draftSaveStatus === 'saving'
+                  ? 'Guardando borrador…'
+                  : draftSaveStatus === 'error'
+                    ? 'No pudimos guardar automáticamente. Revisa tu conexión.'
+                    : showDraftNotice
+                      ? 'Recuperamos el avance que habías guardado.'
+                      : 'Borrador guardado.'}
+              </Text>
+              {showDraftNotice && draftSaveStatus !== 'saving' && (
+                <TouchableOpacity
+                  style={styles.draftDismissButton}
+                  onPress={() => setShowDraftNotice(false)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Ocultar aviso de borrador recuperado"
+                >
+                  <Ionicons name="close" size={18} color={COLORS.textLight} />
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
           {mostrarConfirmacion ? (
             <ScrollView ref={formScrollRef} style={{ flex: 1 }} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
               <ReviewRow label="Cuándo puedes ayudar" value={`${labels(dias, DIAS).join(', ')} · ${labels(franjas, FRANJAS).join(', ')}`} />
@@ -1010,24 +1338,49 @@ export default function CapacidadesFormScreen({
         </View>
       </View>
 
-      <Modal visible={showCloseConfirm} transparent animationType="fade">
+      <Modal
+        visible={showCloseConfirm}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!isClosing) setShowCloseConfirm(false);
+        }}
+      >
         <View style={styles.modalBackdrop}>
           <View style={styles.confirmCard}>
             <Text style={styles.confirmTitle}>¿Salir del formulario?</Text>
-            <Text style={styles.confirmText}>Los cambios que no hayas guardado se perderán.</Text>
+            <Text style={styles.confirmText}>
+              Puedes guardar tu avance y continuar después desde esta cuenta.
+            </Text>
             <View style={styles.confirmActions}>
-              <TouchableOpacity style={styles.secondaryButton} onPress={() => setShowCloseConfirm(false)}>
+              <TouchableOpacity
+                style={[styles.primaryButton, styles.confirmButton]}
+                onPress={handleSaveAndExit}
+                disabled={isClosing}
+              >
+                {closingAction === 'save' ? (
+                  <ActivityIndicator color={COLORS.bgWhite} />
+                ) : (
+                  <Text style={styles.primaryButtonText}>Guardar y salir</Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.secondaryButton, styles.confirmButton]}
+                onPress={() => setShowCloseConfirm(false)}
+                disabled={isClosing}
+              >
                 <Text style={styles.secondaryButtonText}>Continuar llenando</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.primaryButton, { backgroundColor: COLORS.danger }]}
-                onPress={() => {
-                  setShowCloseConfirm(false);
-                  if (onClose) onClose();
-                  else router.back();
-                }}
+                style={[styles.discardButton, styles.confirmButton]}
+                onPress={handleDiscardAndExit}
+                disabled={isClosing}
               >
-                <Text style={styles.primaryButtonText}>Salir</Text>
+                {closingAction === 'discard' ? (
+                  <ActivityIndicator color={COLORS.danger} />
+                ) : (
+                  <Text style={styles.discardButtonText}>Descartar borrador y salir</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -1431,6 +1784,26 @@ const styles = StyleSheet.create({
   footerButtons: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 20 },
   footerButtonsCompact: { flexDirection: 'column' },
   fullButton: { width: '100%' },
+  draftBanner: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 22,
+    paddingVertical: 11,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    backgroundColor: '#F1FAF8',
+  },
+  draftBannerError: { backgroundColor: '#FFF4F2' },
+  draftBannerText: { flex: 1, color: COLORS.textDark, fontSize: 13, lineHeight: 19, fontWeight: '700' },
+  draftDismissButton: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 16,
+  },
   modalBackdrop: {
     flex: 1,
     alignItems: 'center',
@@ -1441,7 +1814,15 @@ const styles = StyleSheet.create({
   confirmCard: { width: '100%', maxWidth: 440, padding: 28, borderRadius: 25, backgroundColor: COLORS.bgWhite },
   confirmTitle: { color: COLORS.textDark, fontSize: 21, fontWeight: '900', textAlign: 'center' },
   confirmText: { color: COLORS.textLight, fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 9 },
-  confirmActions: { flexDirection: 'row', gap: 10, marginTop: 24 },
+  confirmActions: { gap: 10, marginTop: 24 },
+  confirmButton: { width: '100%' },
+  discardButton: {
+    minHeight: 46,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+  },
+  discardButtonText: { color: COLORS.danger, fontSize: 14, fontWeight: '800' },
   casaHogarIconWrap: {
     alignSelf: 'center',
     width: 64,
