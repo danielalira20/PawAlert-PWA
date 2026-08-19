@@ -3,8 +3,8 @@ import axios from 'axios';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
-import { useEffect, useState } from 'react';
-import { Image, Modal, Platform, ScrollView, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Image, Modal, Platform, ScrollView, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { Toast, useToast } from '../components/Toast';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
@@ -13,6 +13,15 @@ import { AnimalThumbnailStrip, DuplicadoAnimal } from '../components/common/Anim
 import { API_URL } from '../constants/api';
 import { petzen } from '../constants/petzenTheme';
 import { useAuth } from '../context/AuthContext';
+import {
+  getFormDraft,
+  removeFormDraft,
+  setFormDraft,
+} from '../services/formDraftStorage';
+import {
+  createFormDraftEnvelope,
+  parseFormDraftEnvelope,
+} from '../utils/formDraft';
 import { validarNombre } from '../utils/validators';
 import { getDeviceToken } from '../utils/deviceToken';
 import {
@@ -106,8 +115,114 @@ const TOTAL_PASOS = 3;
 // al terminar un grupo; `resumen` es el panel con lo ya agregado.
 type VistaPaso2 = 'pregunta-multi' | 'pregunta-especie' | 'pregunta-parecidos' | 'ficha' | 'grupo' | 'grupo-distinto' | 'resumen';
 
+interface ReportFormDraftData {
+  paso: number;
+  vistaPaso2: VistaPaso2;
+  animales: AnimalDraft[];
+  borrador: AnimalDraft;
+  nombre: string;
+  apellidoPaterno: string;
+  apellidoMaterno: string;
+  telefono: string;
+  email: string;
+  pinLocation: { latitud: number; longitud: number };
+  ubicacionConfirmada: boolean;
+  calleNombre: string;
+  numero: string;
+  colonia: string;
+  municipio: string;
+  referencia: string;
+  direccionConfirmada: string;
+  estadoUbicacion: string;
+  animalIdsConFotos: string[];
+}
+
+const REPORT_DRAFT_VERSION = 1;
+const REPORT_DRAFT_TTL_MS = 2 * 60 * 60 * 1000;
+const REPORT_DRAFT_SAVE_DELAY_MS = 800;
+const REPORT_DRAFT_KEY_PREFIX = '@pawalert:draft:report';
+const VISTAS_PASO_2: VistaPaso2[] = [
+  'pregunta-multi',
+  'pregunta-especie',
+  'pregunta-parecidos',
+  'ficha',
+  'grupo',
+  'grupo-distinto',
+  'resumen',
+];
+
+function isAnimalDraft(value: unknown): value is AnimalDraft {
+  if (!value || typeof value !== 'object') return false;
+  const animal = value as Partial<AnimalDraft>;
+  const nullableStringValues = [
+    animal.tipoAnimal,
+    animal.subcategoria,
+    animal.condition,
+    animal.size,
+    animal.sexo,
+    animal.edad,
+    animal.raza,
+  ];
+  const nullableBooleanValues = [
+    animal.tieneCollar,
+    animal.estaPrenada,
+    animal.traeCriasNacidas,
+    animal.esAgresivo,
+    animal.esDomestico,
+  ];
+
+  return (
+    typeof animal.id === 'string'
+    && animal.id.length > 0
+    && typeof animal.esGrupo === 'boolean'
+    && Number.isInteger(animal.cantidad)
+    && Number(animal.cantidad) >= 1
+    && typeof animal.especieDescripcion === 'string'
+    && typeof animal.numeroCriasNacidas === 'string'
+    && typeof animal.description === 'string'
+    && nullableStringValues.every((field) => field === null || typeof field === 'string')
+    && nullableBooleanValues.every((field) => field === null || typeof field === 'boolean')
+  );
+}
+
+function isReportFormDraftData(value: unknown): value is ReportFormDraftData {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<ReportFormDraftData>;
+  const pin = candidate.pinLocation as Partial<ReportFormDraftData['pinLocation']> | undefined;
+  const stringFields = [
+    candidate.nombre,
+    candidate.apellidoPaterno,
+    candidate.apellidoMaterno,
+    candidate.telefono,
+    candidate.email,
+    candidate.calleNombre,
+    candidate.numero,
+    candidate.colonia,
+    candidate.municipio,
+    candidate.referencia,
+    candidate.direccionConfirmada,
+    candidate.estadoUbicacion,
+  ];
+  return (
+    Number.isInteger(candidate.paso)
+    && Number(candidate.paso) >= 1
+    && Number(candidate.paso) <= TOTAL_PASOS
+    && typeof candidate.vistaPaso2 === 'string'
+    && VISTAS_PASO_2.includes(candidate.vistaPaso2 as VistaPaso2)
+    && Array.isArray(candidate.animales)
+    && candidate.animales.every(isAnimalDraft)
+    && isAnimalDraft(candidate.borrador)
+    && Number.isFinite(Number(pin?.latitud))
+    && Number.isFinite(Number(pin?.longitud))
+    && typeof candidate.ubicacionConfirmada === 'boolean'
+    && stringFields.every((field) => typeof field === 'string')
+    && Array.isArray(candidate.animalIdsConFotos)
+    && candidate.animalIdsConFotos.every((animalId) => typeof animalId === 'string')
+  );
+}
+
 export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
-  const { user, isLoggedIn, logout, login, token } = useAuth();
+  const { user, isLoggedIn, isLoading: isAuthLoading, logout, login, token } = useAuth();
   const { toast, translateY, showToast } = useToast();
   const { width: winWidth } = useWindowDimensions();
   const isDesktopModal = winWidth >= 768;
@@ -168,25 +283,103 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
   const [isSearching, setIsSearching] = useState(false);
   const [estadoUbicacion, setEstadoUbicacion] = useState('');
 
+  // ─── Borrador recuperable ───
+  const [isDraftReady, setIsDraftReady] = useState(false);
+  const [draftStorageKey, setDraftStorageKey] = useState<string | null>(null);
+  const [showDraftNotice, setShowDraftNotice] = useState(false);
+  const [draftHadPhotos, setDraftHadPhotos] = useState(false);
+  const [restoredPhotoAnimalIds, setRestoredPhotoAnimalIds] = useState<string[]>([]);
+  const draftInitializationStartedRef = useRef(false);
+  const draftWasRestoredRef = useRef(false);
+  const draftPersistenceDisabledRef = useRef(false);
+
+  useEffect(() => {
+    if (isAuthLoading || draftInitializationStartedRef.current) return;
+    draftInitializationStartedRef.current = true;
+    let active = true;
+
+    (async () => {
+      const owner = user?.id || `guest:${await getDeviceToken()}`;
+      const storageKey = `${REPORT_DRAFT_KEY_PREFIX}:${owner}:v${REPORT_DRAFT_VERSION}`;
+      if (!active) return;
+      setDraftStorageKey(storageKey);
+
+      const raw = await getFormDraft(storageKey);
+      if (!active || !raw) {
+        if (active) setIsDraftReady(true);
+        return;
+      }
+
+      const parsed = parseFormDraftEnvelope<ReportFormDraftData>(
+        raw,
+        REPORT_DRAFT_VERSION,
+      );
+      if (parsed.status !== 'valid' || !isReportFormDraftData(parsed.draft.data)) {
+        await removeFormDraft(storageKey);
+        if (active) setIsDraftReady(true);
+        return;
+      }
+
+      const data = parsed.draft.data;
+      setPaso(data.paso);
+      setVistaPaso2(data.vistaPaso2);
+      setAnimales(data.animales);
+      setBorrador(data.borrador);
+      setNombre(data.nombre || '');
+      setApellidoPaterno(data.apellidoPaterno || '');
+      setApellidoMaterno(data.apellidoMaterno || '');
+      setTelefono(data.telefono || '');
+      setEmail(data.email || '');
+      setPinLocation({
+        latitud: Number(data.pinLocation.latitud),
+        longitud: Number(data.pinLocation.longitud),
+      });
+      setUbicacionConfirmada(Boolean(data.ubicacionConfirmada));
+      setCalleNombre(data.calleNombre || '');
+      setNumero(data.numero || '');
+      setColonia(data.colonia || '');
+      setMunicipio(data.municipio || '');
+      setReferencia(data.referencia || '');
+      setDireccionConfirmada(data.direccionConfirmada || '');
+      setEstadoUbicacion(data.estadoUbicacion || '');
+      setFotos([]);
+      setDraftHadPhotos(data.animalIdsConFotos.length > 0);
+      setRestoredPhotoAnimalIds(data.animalIdsConFotos);
+      draftWasRestoredRef.current = true;
+      setShowDraftNotice(true);
+      setIsDraftReady(true);
+    })().catch(() => {
+      if (active) setIsDraftReady(true);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [isAuthLoading, user?.id]);
+
   // ─── Pre-rellenar con datos del usuario logueado ───
   useEffect(() => {
+    if (!isDraftReady) return;
     if (isLoggedIn && user) {
-      setNombre(user.nombre);
-      setApellidoPaterno(user.apellido_paterno);
-      setApellidoMaterno(user.apellido_materno ?? '');
-      setTelefono(user.telefono);
-      setEmail(user.email);
+      setNombre((actual) => draftWasRestoredRef.current && actual.trim() ? actual : user.nombre);
+      setApellidoPaterno((actual) => draftWasRestoredRef.current && actual.trim() ? actual : user.apellido_paterno);
+      setApellidoMaterno((actual) => draftWasRestoredRef.current && actual.trim() ? actual : (user.apellido_materno ?? ''));
+      setTelefono((actual) => draftWasRestoredRef.current && actual.trim() ? actual : user.telefono);
+      setEmail((actual) => draftWasRestoredRef.current && actual.trim() ? actual : user.email);
     } else {
-      setNombre('');
-      setApellidoPaterno('');
-      setApellidoMaterno('');
-      setTelefono('');
-      setEmail('');
+      if (!draftWasRestoredRef.current) {
+        setNombre('');
+        setApellidoPaterno('');
+        setApellidoMaterno('');
+        setTelefono('');
+        setEmail('');
+      }
     }
-  }, [isLoggedIn, user]);
+  }, [isDraftReady, isLoggedIn, user]);
 
   // ─── GPS al montar ───
   useEffect(() => {
+    if (!isDraftReady || draftWasRestoredRef.current) return;
     (async () => {
       try {
         const { status } = await Location.getForegroundPermissionsAsync();
@@ -203,7 +396,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
         // Si falla, el mapa queda en el centro de Puebla.
       }
     })();
-  }, []);
+  }, [isDraftReady]);
 
   // ─── Búsqueda Nominatim ───
   useEffect(() => {
@@ -226,6 +419,165 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
     }, 600);
     return () => clearTimeout(timeout);
   }, [searchQuery]);
+
+  const reportDraftData = useMemo<ReportFormDraftData>(() => {
+    const relevantAnimalIds = new Set([
+      ...animales.map((animal) => animal.id),
+      borrador.id,
+    ]);
+    const animalIdsConFotos = Array.from(new Set([
+      ...restoredPhotoAnimalIds,
+      ...fotos.map((foto) => foto.animalLocalId),
+    ])).filter((animalId) => relevantAnimalIds.has(animalId));
+
+    return {
+      paso,
+      vistaPaso2,
+      animales,
+      borrador,
+      nombre,
+      apellidoPaterno,
+      apellidoMaterno,
+      telefono,
+      email,
+      pinLocation,
+      ubicacionConfirmada,
+      calleNombre,
+      numero,
+      colonia,
+      municipio,
+      referencia,
+      direccionConfirmada,
+      estadoUbicacion,
+      animalIdsConFotos,
+    };
+  }, [
+    apellidoMaterno,
+    apellidoPaterno,
+    animales,
+    borrador,
+    calleNombre,
+    colonia,
+    direccionConfirmada,
+    email,
+    estadoUbicacion,
+    fotos,
+    municipio,
+    nombre,
+    numero,
+    paso,
+    pinLocation,
+    referencia,
+    restoredPhotoAnimalIds,
+    telefono,
+    ubicacionConfirmada,
+    vistaPaso2,
+  ]);
+
+  const hasMeaningfulDraft = useMemo(() => (
+    paso > 1
+    || vistaPaso2 !== 'pregunta-multi'
+    || animales.length > 0
+    || Boolean(
+      borrador.tipoAnimal
+      || borrador.condition
+      || borrador.size
+      || borrador.description.trim()
+      || borrador.especieDescripcion.trim()
+    )
+    || referencia.trim().length > 0
+    || (!isLoggedIn && Boolean(
+      nombre.trim()
+      || apellidoPaterno.trim()
+      || apellidoMaterno.trim()
+      || telefono.trim()
+      || email.trim()
+    ))
+  ), [
+    apellidoMaterno,
+    apellidoPaterno,
+    animales.length,
+    borrador.condition,
+    borrador.description,
+    borrador.especieDescripcion,
+    borrador.size,
+    borrador.tipoAnimal,
+    email,
+    isLoggedIn,
+    nombre,
+    paso,
+    referencia,
+    telefono,
+    vistaPaso2,
+  ]);
+
+  useEffect(() => {
+    if (
+      !isDraftReady
+      || !draftStorageKey
+      || !hasMeaningfulDraft
+      || draftPersistenceDisabledRef.current
+      || resultadoEnvio !== null
+    ) {
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      if (draftPersistenceDisabledRef.current) return;
+      const envelope = createFormDraftEnvelope(
+        reportDraftData,
+        REPORT_DRAFT_VERSION,
+        REPORT_DRAFT_TTL_MS,
+      );
+      void setFormDraft(draftStorageKey, JSON.stringify(envelope));
+    }, REPORT_DRAFT_SAVE_DELAY_MS);
+
+    return () => clearTimeout(timeout);
+  }, [
+    draftStorageKey,
+    hasMeaningfulDraft,
+    isDraftReady,
+    reportDraftData,
+    resultadoEnvio,
+  ]);
+
+  useEffect(() => {
+    if (
+      !isDraftReady
+      || !user?.id
+      || !draftStorageKey
+      || !hasMeaningfulDraft
+      || draftPersistenceDisabledRef.current
+    ) {
+      return;
+    }
+
+    const authenticatedKey = `${REPORT_DRAFT_KEY_PREFIX}:${user.id}:v${REPORT_DRAFT_VERSION}`;
+    if (draftStorageKey === authenticatedKey) return;
+
+    const guestKey = draftStorageKey;
+    const envelope = createFormDraftEnvelope(
+      reportDraftData,
+      REPORT_DRAFT_VERSION,
+      REPORT_DRAFT_TTL_MS,
+    );
+    setDraftStorageKey(authenticatedKey);
+    void (async () => {
+      await setFormDraft(authenticatedKey, JSON.stringify(envelope));
+      await removeFormDraft(guestKey);
+    })();
+  }, [
+    draftStorageKey,
+    hasMeaningfulDraft,
+    isDraftReady,
+    reportDraftData,
+    user?.id,
+  ]);
+
+  const clearReportDraft = () => {
+    draftPersistenceDisabledRef.current = true;
+    if (draftStorageKey) void removeFormDraft(draftStorageKey);
+  };
 
   // ─── Geocodificación inversa ───
   const reverseGeocode = async (lat: number, lon: number) => {
@@ -538,6 +890,18 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
       showToast({ type: 'warning', title: 'Falta información', message: 'Agrega al menos un animal antes de continuar.' });
       return false;
     }
+    const animalSinFoto = animales.find(
+      (animal) => !animal.esGrupo && !fotos.some((foto) => foto.animalLocalId === animal.id),
+    );
+    if (animalSinFoto) {
+      setVistaPaso2('resumen');
+      showToast({
+        type: 'warning',
+        title: 'Vuelve a agregar la foto',
+        message: 'Las fotos no se conservan después de recargar. Edita cada ficha individual y adjunta nuevamente su imagen.',
+      });
+      return false;
+    }
     return true;
   };
 
@@ -646,6 +1010,10 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
 
   // ─── Envío ───
   const handleSubmit = async (esDuplicadoConfirmado: boolean = false, reporteOriginalId?: string) => {
+    if (!validarPaso2()) {
+      setPaso(2);
+      return;
+    }
     if (!esDuplicadoConfirmado && !validarPaso3()) return;
     setIsSubmitting(true);
 
@@ -777,6 +1145,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
           estado: 'sin_cobertura',
         });
       }
+      clearReportDraft();
     } catch (error: any) {
       const mensaje = error?.response?.data?.detail || error?.message || 'Error desconocido';
       showToast({ type: 'error', title: 'Error', message: mensaje });
@@ -991,6 +1360,17 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
       </Card>
     </ScrollView>
   );
+
+  if (!isDraftReady) {
+    return (
+      <View style={{ flex: 1, backgroundColor: petzen.colors.background, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator size="large" color={petzen.colors.orange} />
+        <Text style={{ marginTop: 12, color: petzen.colors.textSecondary, fontFamily: petzen.fonts.regular }}>
+          Preparando el reporte...
+        </Text>
+      </View>
+    );
+  }
 
   // ─── Pantalla de confirmación ───
   if (resultadoEnvio !== null) {
@@ -1555,6 +1935,24 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
       {renderHeader()}
 
       <View style={{ flex: 1, backgroundColor: petzen.colors.background, marginTop: -28, borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden' }}>
+        {showDraftNotice && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#EAF8F6', borderBottomWidth: 1, borderBottomColor: '#B9E2DD', paddingHorizontal: 18, paddingVertical: 11 }}>
+            <Ionicons name="cloud-done-outline" size={21} color={petzen.colors.tealDark} />
+            <Text style={{ flex: 1, color: petzen.colors.tealDark, fontSize: 12, lineHeight: 17, fontFamily: petzen.fonts.bold }}>
+              {draftHadPhotos
+                ? 'Recuperamos tu reporte. Vuelve a adjuntar las fotos antes de enviarlo.'
+                : 'Recuperamos la información que estabas llenando.'}
+            </Text>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Cerrar aviso de borrador recuperado"
+              onPress={() => setShowDraftNotice(false)}
+              style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }}
+            >
+              <Ionicons name="close" size={18} color={petzen.colors.tealDark} />
+            </TouchableOpacity>
+          </View>
+        )}
         {paso === 1 && renderPaso1()}
         {paso === 2 && renderPaso2()}
         {paso === 3 && renderPaso3()}
@@ -1724,14 +2122,14 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
               ¿Estás seguro de cerrarlo?
             </Text>
             <Text style={{ fontSize: 14, color: '#566573', textAlign: 'center', marginBottom: 24 }}>
-              Los datos ingresados se perderán y tendrás que empezar de nuevo.
+              Se eliminará el borrador guardado y tendrás que empezar de nuevo.
             </Text>
             <View style={{ flexDirection: 'row', gap: 12 }}>
               <TouchableOpacity onPress={() => setShowCloseConfirm(false)} style={{ flex: 1, paddingVertical: 12, borderRadius: 8, borderWidth: 1, borderColor: '#BDC3C7', alignItems: 'center' }}>
                 <Text style={{ color: '#7F8C8D', fontWeight: '600' }}>Cancelar</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => { setShowCloseConfirm(false); if (onClose) onClose(); }} style={{ flex: 1, paddingVertical: 12, borderRadius: 8, backgroundColor: '#E74C3C', alignItems: 'center' }}>
-                <Text style={{ color: '#FFFFFF', fontWeight: '600' }}>Sí, cerrar</Text>
+              <TouchableOpacity onPress={() => { clearReportDraft(); setShowCloseConfirm(false); if (onClose) onClose(); }} style={{ flex: 1, paddingVertical: 12, borderRadius: 8, backgroundColor: '#E74C3C', alignItems: 'center' }}>
+                <Text style={{ color: '#FFFFFF', fontWeight: '600' }}>Sí, descartar</Text>
               </TouchableOpacity>
             </View>
           </View>
