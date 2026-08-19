@@ -2,7 +2,7 @@ import axios from 'axios';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Image, Modal, ScrollView, Text, TextInput, TouchableOpacity, View, ActivityIndicator, StyleSheet } from 'react-native';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { Toast, useToast } from '../components/Toast';
@@ -12,6 +12,9 @@ import { useAuth } from '../context/AuthContext';
 import LocationPickerMap from './LocationPickerMap';
 import { validarPassword, validarNombre } from '../utils/validators';
 import AssociationStatusScreen from './AssociationStatusScreen';
+import { getFormDraft, removeFormDraft, setFormDraft } from '../services/formDraftStorage';
+import { createFormDraftEnvelope, parseFormDraftEnvelope } from '../utils/formDraft';
+import { getDeviceToken } from '../utils/deviceToken';
 
 const COLORS = {
   bgTeal: '#66BCB4',
@@ -35,6 +38,51 @@ interface Props { onClose?: () => void; }
 
 const PASO_NOMBRES = ['Datos Generales', 'Operación y Animales', 'Ubicación y Fotos'];
 const TOTAL_PASOS = 3;
+
+const ASSOCIATION_DRAFT_VERSION = 1;
+const ASSOCIATION_DRAFT_TTL_MS = 2 * 60 * 60 * 1000;
+const ASSOCIATION_DRAFT_SAVE_DELAY_MS = 800;
+const ASSOCIATION_DRAFT_KEY_PREFIX = '@pawalert:draft:association';
+
+// No incluye password/password2 (dato sensible) ni logoUrl/fotos (URIs
+// blob: locales que dejan de existir al recargar la página).
+interface AssociationFormDraftData {
+  paso: number;
+  nombre: string;
+  nombreResponsable: string;
+  apellidoResponsable: string;
+  acercaDe: string;
+  telefono: string;
+  email: string;
+  diasSeleccionados: string[];
+  horaApertura: string;
+  horaCierre: string;
+  tiposAnimales: TipoAnimal[];
+  subcategoriaOtro: string | null;
+  customTipos: string[];
+  pinLocation: { latitud: number; longitud: number };
+  ubicacionConfirmada: boolean;
+  calle: string;
+  numero: string;
+  colonia: string;
+  municipio: string;
+  estado: string;
+  referencia: string;
+  direccionConfirmada: string;
+  radioKm: string;
+}
+
+function isAssociationFormDraftData(value: unknown): value is AssociationFormDraftData {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<AssociationFormDraftData>;
+  const pin = candidate.pinLocation as Partial<AssociationFormDraftData['pinLocation']> | undefined;
+  return (
+    typeof candidate.paso === 'number'
+    && Array.isArray(candidate.tiposAnimales)
+    && typeof pin?.latitud === 'number'
+    && typeof pin?.longitud === 'number'
+  );
+}
 
 export default function AssociationFormScreen({ onClose }: Props) {
   const { setSession } = useAuth();
@@ -88,10 +136,126 @@ export default function AssociationFormScreen({ onClose }: Props) {
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [registroExitoso, setRegistroExitoso] = useState(false);
 
+  // ─── Borrador recuperable ───
+  const [isDraftReady, setIsDraftReady] = useState(false);
+  const [draftStorageKey, setDraftStorageKey] = useState<string | null>(null);
+  const [showDraftNotice, setShowDraftNotice] = useState(false);
+  const draftInitializationStartedRef = useRef(false);
+  const draftPersistenceDisabledRef = useRef(false);
+
   useEffect(() => {
     const hasErrors = Object.values(errors).some(e => e !== '');
     if (!hasErrors) setShowSubmitError(false);
   }, [errors]);
+
+  useEffect(() => {
+    if (draftInitializationStartedRef.current) return;
+    draftInitializationStartedRef.current = true;
+    let active = true;
+
+    (async () => {
+      const storageKey = `${ASSOCIATION_DRAFT_KEY_PREFIX}:guest:${await getDeviceToken()}:v${ASSOCIATION_DRAFT_VERSION}`;
+      if (!active) return;
+      setDraftStorageKey(storageKey);
+
+      const raw = await getFormDraft(storageKey);
+      if (!active || !raw) {
+        if (active) setIsDraftReady(true);
+        return;
+      }
+
+      const parsed = parseFormDraftEnvelope<AssociationFormDraftData>(raw, ASSOCIATION_DRAFT_VERSION);
+      if (parsed.status !== 'valid' || !isAssociationFormDraftData(parsed.draft.data)) {
+        await removeFormDraft(storageKey);
+        if (active) setIsDraftReady(true);
+        return;
+      }
+
+      const d = parsed.draft.data;
+      setPaso(d.paso);
+      setNombre(d.nombre || '');
+      setNombreResponsable(d.nombreResponsable || '');
+      setApellidoResponsable(d.apellidoResponsable || '');
+      setAcercaDe(d.acercaDe || '');
+      setTelefono(d.telefono || '');
+      setEmail(d.email || '');
+      setDiasSeleccionados(d.diasSeleccionados || []);
+      setHoraApertura(d.horaApertura || '');
+      setHoraCierre(d.horaCierre || '');
+      setTiposAnimales(d.tiposAnimales || []);
+      setSubcategoriaOtro(d.subcategoriaOtro || null);
+      setCustomTipos(d.customTipos || []);
+      setPinLocation({
+        latitud: Number(d.pinLocation.latitud),
+        longitud: Number(d.pinLocation.longitud),
+      });
+      setUbicacionConfirmada(Boolean(d.ubicacionConfirmada));
+      setCalle(d.calle || '');
+      setNumero(d.numero || '');
+      setColonia(d.colonia || '');
+      setMunicipio(d.municipio || '');
+      setEstado(d.estado || '');
+      setReferencia(d.referencia || '');
+      setDireccionConfirmada(d.direccionConfirmada || '');
+      setRadioKm(d.radioKm || '');
+      setShowDraftNotice(true);
+      setIsDraftReady(true);
+    })().catch(() => {
+      if (active) setIsDraftReady(true);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const associationDraftData = useMemo<AssociationFormDraftData>(() => ({
+    paso, nombre, nombreResponsable, apellidoResponsable, acercaDe, telefono, email,
+    diasSeleccionados, horaApertura, horaCierre, tiposAnimales, subcategoriaOtro, customTipos,
+    pinLocation, ubicacionConfirmada, calle, numero, colonia, municipio, estado, referencia,
+    direccionConfirmada, radioKm,
+  }), [
+    paso, nombre, nombreResponsable, apellidoResponsable, acercaDe, telefono, email,
+    diasSeleccionados, horaApertura, horaCierre, tiposAnimales, subcategoriaOtro, customTipos,
+    pinLocation, ubicacionConfirmada, calle, numero, colonia, municipio, estado, referencia,
+    direccionConfirmada, radioKm,
+  ]);
+
+  const hasMeaningfulDraft = paso > 1
+    || nombre.trim() !== ''
+    || nombreResponsable.trim() !== ''
+    || telefono.trim() !== ''
+    || tiposAnimales.length > 0
+    || ubicacionConfirmada;
+
+  useEffect(() => {
+    if (
+      !isDraftReady
+      || !draftStorageKey
+      || !hasMeaningfulDraft
+      || draftPersistenceDisabledRef.current
+      || registroExitoso
+    ) {
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      if (draftPersistenceDisabledRef.current) return;
+      const envelope = createFormDraftEnvelope(
+        associationDraftData,
+        ASSOCIATION_DRAFT_VERSION,
+        ASSOCIATION_DRAFT_TTL_MS,
+      );
+      void setFormDraft(draftStorageKey, JSON.stringify(envelope));
+    }, ASSOCIATION_DRAFT_SAVE_DELAY_MS);
+
+    return () => clearTimeout(timeout);
+  }, [associationDraftData, draftStorageKey, hasMeaningfulDraft, isDraftReady, registroExitoso]);
+
+  const clearAssociationDraft = () => {
+    draftPersistenceDisabledRef.current = true;
+    if (draftStorageKey) void removeFormDraft(draftStorageKey);
+  };
 
   const hasUnsavedChanges = () => {
     return nombre.trim() !== '' || nombreResponsable.trim() !== '' || telefono.trim() !== '' || tiposAnimales.length > 0 || fotos.length > 0;
@@ -525,6 +689,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
 
       await setSession(response.data.usuario, response.data.access_token, response.data.refresh_token);
       setRegistroExitoso(true);
+      clearAssociationDraft();
     } catch (error: any) {
       const mensaje = error?.response?.data?.detail || error?.message || 'Error desconocido';
       showToast({ type: 'error', title: 'Error', message: mensaje });
@@ -800,8 +965,24 @@ export default function AssociationFormScreen({ onClose }: Props) {
           <View style={[styles.centeredContent]}>
             <View style={styles.cardContainer}>
               {renderHeader()}
-              
+
               <View style={styles.bodySection}>
+                {showDraftNotice && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: 'rgba(102, 188, 180, 0.12)', borderRadius: 16, paddingHorizontal: 16, paddingVertical: 12, marginBottom: 20 }}>
+                    <Ionicons name="cloud-done-outline" size={20} color={COLORS.bgTeal} />
+                    <Text style={{ flex: 1, color: COLORS.textDark, fontSize: 12, lineHeight: 17, fontWeight: '700' }}>
+                      Recuperamos la información que estabas llenando. Vuelve a ingresar tu contraseña y, si subiste, el logo/fotos.
+                    </Text>
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel="Cerrar aviso de borrador recuperado"
+                      onPress={() => setShowDraftNotice(false)}
+                      style={{ width: 28, height: 28, alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      <Ionicons name="close" size={16} color={COLORS.bgTeal} />
+                    </TouchableOpacity>
+                  </View>
+                )}
                 {paso === 1 && renderPaso1()}
                 {paso === 2 && renderPaso2()}
                 {paso === 3 && renderPaso3()}
@@ -838,7 +1019,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
                   <TouchableOpacity onPress={() => setShowCloseConfirm(false)} style={styles.confirmButtonCancel}>
                     <Text style={styles.confirmButtonCancelText}>Me quedo</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={() => { setShowCloseConfirm(false); if (onClose) onClose(); }} style={styles.confirmButtonExit}>
+                  <TouchableOpacity onPress={() => { clearAssociationDraft(); setShowCloseConfirm(false); if (onClose) onClose(); }} style={styles.confirmButtonExit}>
                     <Text style={styles.confirmButtonExitText}>Sí, salir</Text>
                   </TouchableOpacity>
                 </View>
