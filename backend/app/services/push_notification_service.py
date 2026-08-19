@@ -110,7 +110,7 @@ def dispatch_pending_pushes(limit: int = 100) -> Dict[str, int]:
         nuevo_intento = push["intento"] + 1
 
         try:
-            tokens_result = supabase.table("dispositivos_push").select("token") \
+            tokens_result = supabase_admin.table("dispositivos_push").select("token") \
                 .eq("usuario_id", usuario_id) \
                 .eq("active", True) \
                 .execute()

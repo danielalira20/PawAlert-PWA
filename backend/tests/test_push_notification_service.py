@@ -98,3 +98,44 @@ def test_estado_enviado_usa_timestamp_real(monkeypatch, make_query):
     cambio = outbox.update.call_args.args[0]
     assert cambio["enviada_at"] != "now()"
     assert "+00:00" in cambio["enviada_at"]
+
+
+def test_dispatch_usa_cliente_admin_y_envia_a_dispositivos_activos(
+    monkeypatch, make_query
+):
+    push = {
+        "id": "push-1",
+        "usuario_id": "usuario-1",
+        "intento": 0,
+        "payload": {"route": "/home", "reporte_id": "reporte-1"},
+    }
+    outbox = make_query(data=[push])
+    outbox.lt.return_value = outbox
+    dispositivos = make_query(data=[{"token": "token-activo"}])
+    db = MagicMock()
+    db.table.side_effect = lambda tabla: {
+        "notificaciones_push": outbox,
+        "dispositivos_push": dispositivos,
+    }[tabla]
+
+    respuesta_fcm = MagicMock(success_count=1, failure_count=0, responses=[])
+    mensajeria = MagicMock()
+    mensajeria.send_each_for_multicast.return_value = respuesta_fcm
+
+    monkeypatch.setattr(push_service, "supabase_admin", db)
+    monkeypatch.setattr(push_service, "messaging", mensajeria)
+    monkeypatch.setattr(push_service, "_init_firebase", lambda: True)
+
+    resultado = push_service.dispatch_pending_pushes()
+
+    assert resultado == {"enviada": 1, "fallida": 0, "omitida": 0}
+    assert db.table.call_args_list[0].args == ("notificaciones_push",)
+    assert db.table.call_args_list[1].args == ("dispositivos_push",)
+    dispositivos.eq.assert_any_call("usuario_id", "usuario-1")
+    dispositivos.eq.assert_any_call("active", True)
+    mensajeria.MulticastMessage.assert_called_once_with(
+        data={"route": "/home", "reporte_id": "reporte-1"},
+        tokens=["token-activo"],
+    )
+    mensajeria.send_each_for_multicast.assert_called_once()
+    assert outbox.update.call_args.args[0]["estado"] == "enviada"
