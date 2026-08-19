@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Header
 from app.db.supabase import supabase
 from app.services.recompensas_service import (
@@ -22,6 +24,7 @@ from app.models.recompensas import (
 )
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("/catalogo", status_code=200, response_model=list[RecompensaCatalogoResponse])
@@ -36,14 +39,14 @@ def _obtener_usuario_autenticado(authorization: str | None):
     from fastapi import HTTPException
 
     if not authorization or not authorization.startswith("Bearer "):
-        print(f"Auth header malformed or missing: {authorization}")
+        logger.warning("Authorization header missing or malformed")
         raise HTTPException(status_code=401, detail="No autenticado")
 
     token = authorization.replace("Bearer ", "")
     try:
         auth_response = supabase.auth.get_user(token)
-    except Exception as e:
-        print(f"Error auth: {e}")
+    except Exception:
+        logger.warning("Authentication token rejected")
         raise HTTPException(status_code=401, detail="Token inválido o expirado")
 
     resultado = supabase.table("usuarios").select("id, asociacion_id, roles(nombre)").eq(

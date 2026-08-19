@@ -3,11 +3,28 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi.testclient import TestClient
 
 from app.api import associations, reports
+from app import main
 from app.main import app
 from app.services import report_service, reputacion_service, voluntario_service
 
 
 client = TestClient(app)
+
+
+def test_cors_usa_origenes_configurados_sin_comodin(monkeypatch):
+    monkeypatch.setattr(main.settings, "frontend_url", "https://pawalert.example/")
+    monkeypatch.setattr(
+        main.settings,
+        "cors_origins",
+        "https://preview.example, https://pawalert.example",
+    )
+
+    origins = main._allowed_cors_origins()
+
+    assert "*" not in origins
+    assert origins.count("https://pawalert.example") == 1
+    assert "https://preview.example" in origins
+    assert "http://localhost:8081" in origins
 
 
 def test_cambio_estado_sin_token_devuelve_401():

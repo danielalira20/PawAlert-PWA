@@ -1,8 +1,24 @@
 import asyncio
+import logging
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.api import ( reports, associations, catalogos, auth, users, report_acceptance, admin, staff, stats, asignaciones, voluntarios, internal, red_aliados, webhooks, perfiles_apoyo, coverage, custody, recompensas, incidentes, reputacion)
+from app.config import settings
+
+logger = logging.getLogger(__name__)
+
+
+def _allowed_cors_origins() -> list[str]:
+    configured = [
+        origin.strip().rstrip("/")
+        for origin in settings.cors_origins.split(",")
+        if origin.strip()
+    ]
+    frontend_origin = settings.frontend_url.strip().rstrip("/")
+    defaults = [frontend_origin] if frontend_origin else []
+    defaults.extend(["http://localhost:8081", "http://localhost:19006"])
+    return list(dict.fromkeys(configured + defaults))
 
 app = FastAPI(
     title="PawAlert API",
@@ -11,7 +27,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # para desarrollo; en producción se restringe al dominio real
+    allow_origins=_allowed_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -42,7 +58,12 @@ app.include_router(permanencia.router, prefix="/reports", tags=["Permanencia"])
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
-    print(f"[ERROR] {request.method} {request.url} — {exc}")
+    logger.exception(
+        "Unhandled error processing %s %s",
+        request.method,
+        request.url.path,
+        exc_info=(type(exc), exc, exc.__traceback__),
+    )
     return JSONResponse(
         status_code=500,
         content={"detail": "Error interno del servidor. Intenta de nuevo más tarde."},

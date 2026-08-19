@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     twilio_validate_signatures: bool = True
     require_phone_verification: bool = False
     frontend_url: str = "https://paw-alert-pwa.vercel.app"
+    cors_origins: str = ""
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.5-flash-lite"
     gemini_file_timeout_seconds: int = 180
