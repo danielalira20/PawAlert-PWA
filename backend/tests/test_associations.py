@@ -483,6 +483,42 @@ def test_me_reportes_expone_urgencia_operativa(make_query):
         assert campo in select_reportes
 
 
+def test_me_reportes_alerta_discrepancia_en_cualquier_direccion(make_query):
+    tablas = _mock_reporte_asignado(make_query, fotos=[])
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    supabase.auth.get_user.return_value = SimpleNamespace(
+        user=SimpleNamespace(id="auth-user-1")
+    )
+    evaluaciones = make_query(data=[{
+        "reporte_id": "reporte-1",
+        "condicion_ia_score": 20,
+        "condicion_declarada_score": 90,
+        "tiempo_score": 30,
+        "clima_score": 10,
+        "riesgo_vial_score": 15,
+        "calculado_at": "2026-08-02T09:05:00+00:00",
+    }])
+    supabase_admin = MagicMock()
+    supabase_admin.table.return_value = evaluaciones
+
+    with (
+        patch("app.api.associations.supabase", supabase),
+        patch("app.api.associations.supabase_admin", supabase_admin),
+    ):
+        response = client.get(
+            "/associations/me/reportes",
+            headers={"Authorization": "Bearer token-valido"},
+        )
+
+    assert response.status_code == 200
+    componentes = response.json()[0]["urgency_components"]
+    assert componentes["ia_score"] == 20
+    assert componentes["declared_score"] == 90
+    assert componentes["discrepancia_alerta"] is True
+    supabase_admin.table.assert_called_once_with("reporte_urgency_evaluaciones")
+
+
 def test_registro_asociacion_devuelve_access_y_refresh_token(make_query):
     tablas = {
         "asociaciones": make_query(data=[{"id": "aso-1"}]),

@@ -580,9 +580,6 @@ async def get_reportes_asignados(authorization: str = Header(None)):
             for f in (a.get("animal_fotos") or [])
         )
 
-        # ==========================================
-        # NUEVO: ASIGNAR URGENCIAS AL FRONTEND
-        # ==========================================
         urgency_components = None
         eval_reciente = evaluaciones_por_reporte.get(rep["id"])
         
@@ -596,7 +593,7 @@ async def get_reportes_asignados(authorization: str = Header(None)):
                 "time_score": eval_reciente.get("tiempo_score"),
                 "weather_score": eval_reciente.get("clima_score"),
                 "road_risk_score": eval_reciente.get("riesgo_vial_score"),
-                "discrepancia_alerta": bool((ia_val - dec_val) > 40)
+                "discrepancia_alerta": abs(ia_val - dec_val) > 40,
             }
 
         reportes.append({
@@ -615,7 +612,7 @@ async def get_reportes_asignados(authorization: str = Header(None)):
             "created_at": str(rep["created_at"]),
             "urgency_score": rep.get("urgency_score"),
             "urgency_nivel": rep.get("urgency_nivel"),
-            "urgency_components": urgency_components,  # <-- ¡Aquí van los datos!
+            "urgency_components": urgency_components,
             "urgency_calculado_at": (
                 str(rep["urgency_calculado_at"])
                 if rep.get("urgency_calculado_at")

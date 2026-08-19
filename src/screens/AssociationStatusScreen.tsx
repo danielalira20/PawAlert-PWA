@@ -61,6 +61,15 @@ interface AsociacionInfo {
   motivo_rechazo: string | null;
 }
 
+interface UrgencyComponents {
+  ia_score: number | null;
+  declared_score: number | null;
+  time_score: number | null;
+  weather_score: number | null;
+  road_risk_score: number | null;
+  discrepancia_alerta: boolean;
+}
+
 interface ReporteAsignado extends ReportUrgencySnapshot {
   asignacion_id: string;
   reporte_id: string;
@@ -80,7 +89,7 @@ interface ReporteAsignado extends ReportUrgencySnapshot {
   requiere_revision?: boolean;
   estado_validacion_reporte?: string;
   urgency_data_status?: string;
-  urgency_components?: any;
+  urgency_components?: UrgencyComponents | null;
 }
 
 interface HistorialEvento {
