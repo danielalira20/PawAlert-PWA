@@ -2,7 +2,7 @@ import axios from 'axios';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Image, Modal, ScrollView, Text, TextInput, TouchableOpacity, View, ActivityIndicator, StyleSheet, Platform } from 'react-native';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { Toast, useToast } from '../components/Toast';
@@ -24,6 +24,7 @@ const COLORS = {
 };
 
 const FORM_MAX_WIDTH = 750;
+const DRAFT_SAVE_DELAY_MS = 800;
 
 const PASO_NOMBRES = ['Tu hogar', 'Convivencia y capacidad', 'Seguridad y compromisos', 'Evidencia'];
 const TOTAL_PASOS = 4;
@@ -129,15 +130,99 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
   const [horario3Hora, setHorario3Hora] = useState('');
   const [consentimiento, setConsentimiento] = useState(false);
 
+  // ─── Borrador (guardar progreso al recargar) ───
+  const lastPersistedDraftRef = useRef<string | null>(null);
+  const draftSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const draftPersistenceDisabledRef = useRef(false);
+
   useEffect(() => {
     const hasErrors = Object.values(errors).some(e => e !== '');
     if (!hasErrors) setShowSubmitError(false);
   }, [errors]);
 
   useEffect(() => {
-    if (!modoReintento || !token) {
+    if (!token) {
       setIsLoadingExisting(false);
       return;
+    }
+
+    if (!modoReintento) {
+      // Modo postulación nueva: solo restauramos el borrador local, no el
+      // perfil ya confirmado (ese es exclusivo del flujo de corrección).
+      let cancelado = false;
+      (async () => {
+        try {
+          const { data } = await axios.get(
+            `${API_URL}/voluntarios/externo/borrador`,
+            { headers: { Authorization: `Bearer ${token}` } },
+          );
+          const borrador = data?.borrador;
+          if (cancelado || !borrador) return;
+
+          const d = borrador.datos || {};
+          setPinLocation(d.pinLocation || pinLocation);
+          setUbicacionConfirmada(!!d.ubicacionConfirmada);
+          setCalle(d.calle || '');
+          setNumero(d.numero || '');
+          setColonia(d.colonia || '');
+          setMunicipio(d.municipio || '');
+          setEstado(d.estado || '');
+          setReferencia(d.referencia || '');
+          setDireccionConfirmada(d.direccionConfirmada || '');
+          setTipoVivienda(d.tipoVivienda || '');
+          setSubcategoriaVivienda(d.subcategoriaVivienda || '');
+          setCustomViviendaInput(d.customViviendaInput || '');
+          setAutorizacion(d.autorizacion || '');
+          setUbicacionAnimal(d.ubicacionAnimal || '');
+          setAceptaVisita(d.aceptaVisita || '');
+          setNumAdultos(d.numAdultos || '');
+          setNinosEdades(d.ninosEdades || '');
+          setOtrosAnimales(d.otrosAnimales || '');
+          setVacunados(d.vacunados || '');
+          setPuedeSeparar(d.puedeSeparar || '');
+          setHorasSolo(d.horasSolo || '');
+          setPreferenciaEspecie(d.preferenciaEspecie || []);
+          setSubcategoriaOtroEspecie(d.subcategoriaOtroEspecie || '');
+          setCustomOtroEspecieInput(d.customOtroEspecieInput || '');
+          setPreferenciaTamanio(d.preferenciaTamanio || []);
+          setTiempoResguardo(d.tiempoResguardo || '');
+          setTiempoResguardoDias(d.tiempoResguardoDias || '');
+          setCheckAccesos(!!d.checkAccesos);
+          setCheckBardas(!!d.checkBardas);
+          setCheckBalcones(!!d.checkBalcones);
+          setCheckEspacio(!!d.checkEspacio);
+          setCheckNingunoSeguridad(!!d.checkNingunoSeguridad);
+          setCheckAislamiento(!!d.checkAislamiento);
+          setCheckCuarentena(!!d.checkCuarentena);
+          setCheckNoEntregar(!!d.checkNoEntregar);
+          setCheckNingunoCompromiso(!!d.checkNingunoCompromiso);
+          setNombreEmergencia(d.nombreEmergencia || '');
+          setTelEmergencia(d.telEmergencia || '');
+          setHorario1Dia(d.horario1Dia || '');
+          setHorario1Hora(d.horario1Hora || '');
+          setHorario2Dia(d.horario2Dia || '');
+          setHorario2Hora(d.horario2Hora || '');
+          setHorario3Dia(d.horario3Dia || '');
+          setHorario3Hora(d.horario3Hora || '');
+          setConsentimiento(!!d.consentimiento);
+          setPaso(borrador.paso || 1);
+          lastPersistedDraftRef.current = JSON.stringify(borrador);
+
+          showToast({
+            type: 'success',
+            title: 'Recuperamos tu progreso',
+            message: 'Continúa donde te quedaste. Vuelve a subir las fotos y el video.',
+          });
+        } catch (error) {
+          // Sin borrador o sin conexión: se arranca con el formulario vacío.
+        } finally {
+          if (!cancelado) setIsLoadingExisting(false);
+        }
+      })();
+
+      return () => {
+        cancelado = true;
+      };
     }
 
     let cancelado = false;
@@ -506,7 +591,105 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
     }
   };
 
-  // ─── ENVÍO ───
+  // ─── BORRADOR: guardar progreso mientras se llena el formulario ───
+  // No incluye fotoAccesos/fotoBardas/fotoBalcones/fotoEspacio/identificacionUrl/videoUrl:
+  // son URIs locales (blob:) que dejan de existir al recargar la página.
+  const draftDatos = useMemo(() => ({
+    pinLocation, ubicacionConfirmada,
+    calle, numero, colonia, municipio, estado, referencia, direccionConfirmada,
+    tipoVivienda, subcategoriaVivienda, customViviendaInput,
+    autorizacion, ubicacionAnimal, aceptaVisita,
+    numAdultos, ninosEdades, otrosAnimales, vacunados, puedeSeparar, horasSolo,
+    preferenciaEspecie, subcategoriaOtroEspecie, customOtroEspecieInput, preferenciaTamanio,
+    tiempoResguardo, tiempoResguardoDias,
+    checkAccesos, checkBardas, checkBalcones, checkEspacio, checkNingunoSeguridad,
+    checkAislamiento, checkCuarentena, checkNoEntregar, checkNingunoCompromiso,
+    nombreEmergencia, telEmergencia,
+    horario1Dia, horario1Hora, horario2Dia, horario2Hora, horario3Dia, horario3Hora,
+    consentimiento,
+  }), [
+    pinLocation, ubicacionConfirmada,
+    calle, numero, colonia, municipio, estado, referencia, direccionConfirmada,
+    tipoVivienda, subcategoriaVivienda, customViviendaInput,
+    autorizacion, ubicacionAnimal, aceptaVisita,
+    numAdultos, ninosEdades, otrosAnimales, vacunados, puedeSeparar, horasSolo,
+    preferenciaEspecie, subcategoriaOtroEspecie, customOtroEspecieInput, preferenciaTamanio,
+    tiempoResguardo, tiempoResguardoDias,
+    checkAccesos, checkBardas, checkBalcones, checkEspacio, checkNingunoSeguridad,
+    checkAislamiento, checkCuarentena, checkNoEntregar, checkNingunoCompromiso,
+    nombreEmergencia, telEmergencia,
+    horario1Dia, horario1Hora, horario2Dia, horario2Hora, horario3Dia, horario3Hora,
+    consentimiento,
+  ]);
+
+  const hasMeaningfulDraft = ubicacionConfirmada
+    || !!tipoVivienda
+    || !!autorizacion
+    || !!numAdultos
+    || preferenciaEspecie.length > 0
+    || !!nombreEmergencia
+    || !!telEmergencia;
+
+  const draftRequest = useMemo(() => ({ paso, datos: draftDatos }), [paso, draftDatos]);
+  const serializedDraft = useMemo(() => JSON.stringify(draftRequest), [draftRequest]);
+
+  const persistDraft = useCallback((request: typeof draftRequest, serialized: string): Promise<void> => {
+    const operation = draftSaveQueueRef.current.catch(() => undefined).then(async () => {
+      if (!token || draftPersistenceDisabledRef.current) return;
+      try {
+        await axios.put(`${API_URL}/voluntarios/externo/borrador`, request, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        lastPersistedDraftRef.current = serialized;
+      } catch {
+        // Falla silenciosa: el usuario sigue llenando el formulario, se
+        // reintentará en el siguiente cambio.
+      }
+    });
+    draftSaveQueueRef.current = operation;
+    return operation;
+  }, [token]);
+
+  const deleteDraft = useCallback(async () => {
+    if (!token) return;
+    draftPersistenceDisabledRef.current = true;
+    await draftSaveQueueRef.current.catch(() => undefined);
+    try {
+      await axios.delete(`${API_URL}/voluntarios/externo/borrador`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch {
+      // La postulación ya quedó guardada; el borrador expira solo si esto falla.
+    }
+  }, [token]);
+
+  useEffect(() => {
+    if (
+      modoReintento
+      || isLoadingExisting
+      || !token
+      || registroExitoso
+      || !hasMeaningfulDraft
+      || draftPersistenceDisabledRef.current
+    ) {
+      return;
+    }
+
+    if (lastPersistedDraftRef.current === null) {
+      lastPersistedDraftRef.current = serializedDraft;
+      return;
+    }
+    if (lastPersistedDraftRef.current === serializedDraft) return;
+
+    const timeout = setTimeout(() => {
+      if (!draftPersistenceDisabledRef.current) {
+        void persistDraft(draftRequest, serializedDraft);
+      }
+    }, DRAFT_SAVE_DELAY_MS);
+
+    return () => clearTimeout(timeout);
+  }, [draftRequest, hasMeaningfulDraft, isLoadingExisting, modoReintento, persistDraft, registroExitoso, serializedDraft, token]);
+
   // ─── ENVÍO ───
   const handleSubmit = async () => {
     if (!validarPaso4()) { setShowSubmitError(true); return; }
@@ -588,7 +771,8 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
       setIsSubmitting(false);
       setCorreccionActiva(Boolean(resultadoGuardado?.correccion));
       setRegistroExitoso(true);
-      
+      if (!modoReintento) void deleteDraft();
+
     } catch (error: any) {
       showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'Error al enviar.' });
       setIsSubmitting(false);
