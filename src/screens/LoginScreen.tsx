@@ -361,6 +361,9 @@ export default function LoginScreen() {
                 {errors.regEmail ? <Text style={errorStyle}>{errors.regEmail}</Text> : null}
 
                 <Text style={labelStyle}>Contraseña *</Text>
+                <Text style={{ fontSize: 11, color: C.muted, fontFamily: F.bodyRegular, marginBottom: 6, marginTop: -2 }}>
+                  Mínimo 8 caracteres, incluye una mayúscula, una minúscula y un número.
+                </Text>
                 <TextInput placeholder="8+ caracteres, mayúscula, minúscula y número" placeholderTextColor={C.muted} secureTextEntry value={regPassword} onChangeText={handleRegPasswordChange} style={errors.regPassword ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC' } : inputStyle} />
                 {errors.regPassword ? <Text style={errorStyle}>{errors.regPassword}</Text> : null}
 
