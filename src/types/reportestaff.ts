@@ -17,6 +17,7 @@ export interface ReporteStaff {
     telefono: string | null;
   };
   distancia_km?: number | null;
+  distancia_linea_recta_km?: number | null;
   ruta?: {
     status: 'complete' | 'unavailable' | null;
     duration_seconds: number | null;

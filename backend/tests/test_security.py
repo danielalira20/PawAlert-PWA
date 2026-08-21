@@ -422,6 +422,7 @@ def test_reportes_voluntario_conservan_coordenadas_exactas(make_query):
 
     assert resultado["en_accion"][0]["latitud"] == 19.0432167
     assert resultado["en_accion"][0]["longitud"] == -98.1987654
+    assert resultado["en_accion"][0]["distancia_linea_recta_km"] == 21.4
 
 
 def _reporte_embed(reporte_id: str) -> dict:
@@ -561,5 +562,6 @@ def test_reportes_voluntario_recupera_ruta_confirmada(make_query):
     assert ruta["status"] == "complete"
     assert ruta["duration_seconds"] == 420
     assert ruta["distance_meters"] == 3100
+    assert resultado["en_accion"][0]["distancia_linea_recta_km"] == 0.0
     rutas.eq.assert_any_call("usuario_asignado_id", "user-vol-1")
     rutas.eq.assert_any_call("estado", "confirmada")
