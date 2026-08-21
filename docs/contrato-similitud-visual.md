@@ -7,11 +7,17 @@ reemplaza PostGIS, pHash, Gemini Vision, EXIF ni la revisión humana.
 
 - Modelo inicial: `openai/clip-vit-base-patch32`.
 - Dimensiones: 512.
-- Proveedor inicial: Hugging Face desde el backend.
+- Proveedor inicial: Inference Endpoint personalizado de Hugging Face,
+  consumido únicamente desde el backend.
 - La función inicia apagada mediante `CLIP_VALIDATION_ENABLED=false`.
 - El token pertenece únicamente a Railway y nunca se expone en Expo o Vercel.
 - Una caída del proveedor no rechaza, cierra ni marca como normal un reporte.
 - CLIP mide similitud; no certifica fraude ni identidad del animal.
+
+El checkpoint elegido no expone embeddings de imagen mediante una tarea
+serverless estándar. `CLIP_ENDPOINT_URL` debe apuntar al handler personalizado
+versionado en `infrastructure/huggingface-clip/handler.py`. Si no existe un
+endpoint configurado, la señal devuelve `unavailable/not_configured`.
 
 ## Umbrales provisionales
 
