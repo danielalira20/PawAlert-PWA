@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  Alert,
   Image,
   Linking,
   Modal,
@@ -57,10 +58,29 @@ export function ReportDetailModal({
   const { width } = useWindowDimensions();
   const isDesktop = width >= DESKTOP_BREAKPOINT;
 
-  const abrirMapa = () => {
-    if (!reporte?.latitud || !reporte?.longitud) return;
-    const url = `https://www.google.com/maps/search/?api=1&query=${reporte.latitud},${reporte.longitud}`;
-    Linking.openURL(url);
+  const tieneCoordenadas =
+    typeof reporte?.latitud === 'number' &&
+    Number.isFinite(reporte.latitud) &&
+    typeof reporte?.longitud === 'number' &&
+    Number.isFinite(reporte.longitud);
+  const tieneRuta =
+    reporte?.ruta?.status === 'complete' &&
+    typeof reporte.ruta.duration_seconds === 'number' &&
+    typeof reporte.ruta.distance_meters === 'number';
+
+  const abrirNavegacion = async (proveedor: 'google' | 'waze') => {
+    if (!tieneCoordenadas || !reporte) return;
+    const destino = `${reporte.latitud},${reporte.longitud}`;
+    const url =
+      proveedor === 'google'
+        ? `https://www.google.com/maps/dir/?api=1&destination=${destino}`
+        : `https://www.waze.com/ul?ll=${destino}&navigate=yes`;
+
+    try {
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert('No pudimos abrir el mapa', 'Intenta nuevamente o usa otra aplicación de navegación.');
+    }
   };
 
   return (
@@ -109,10 +129,50 @@ export function ReportDetailModal({
                 <Text style={styles.colonia}>
                   {[reporte.colonia, reporte.municipio].filter(Boolean).join(', ') || 'Ubicación no disponible'}
                 </Text>
-                <TouchableOpacity onPress={abrirMapa} style={styles.mapaButton}>
-                  <Ionicons name="navigate-outline" size={16} color={Brand.secondary} />
-                  <Text style={styles.mapaButtonText}>Cómo llegar</Text>
-                </TouchableOpacity>
+                {tieneRuta ? (
+                  <View style={styles.routeSummary}>
+                    <Ionicons name="time-outline" size={18} color={Brand.secondary} />
+                    <View style={styles.routeSummaryCopy}>
+                      <Text style={styles.routeSummaryTitle}>
+                        {Math.max(1, Math.round(reporte.ruta!.duration_seconds! / 60))} min ·{' '}
+                        {(reporte.ruta!.distance_meters! / 1000).toFixed(1)} km
+                      </Text>
+                      <Text style={styles.routeSummaryText}>Ruta calculada desde tu ubicación registrada</Text>
+                    </View>
+                  </View>
+                ) : typeof reporte.distancia_linea_recta_km === 'number' ? (
+                  <View style={styles.routeSummary}>
+                    <Ionicons name="resize-outline" size={18} color={Brand.textMuted} />
+                    <View style={styles.routeSummaryCopy}>
+                      <Text style={styles.routeSummaryTitle}>
+                        Aproximadamente {reporte.distancia_linea_recta_km.toFixed(1)} km
+                      </Text>
+                      <Text style={styles.routeSummaryText}>
+                        Distancia en línea recta; la aplicación de navegación mostrará la ruta real.
+                      </Text>
+                    </View>
+                  </View>
+                ) : null}
+                {tieneCoordenadas && (
+                  <View style={styles.navigationActions}>
+                    <TouchableOpacity
+                      accessibilityLabel="Abrir ruta en Google Maps"
+                      onPress={() => void abrirNavegacion('google')}
+                      style={styles.mapaButton}
+                    >
+                      <Ionicons name="map-outline" size={17} color={Brand.secondary} />
+                      <Text style={styles.mapaButtonText}>Google Maps</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      accessibilityLabel="Abrir ruta en Waze"
+                      onPress={() => void abrirNavegacion('waze')}
+                      style={styles.mapaButton}
+                    >
+                      <Ionicons name="navigate-outline" size={17} color={Brand.secondary} />
+                      <Text style={styles.mapaButtonText}>Waze</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
               </View>
 
               {puedeRegistrarHitos &&
@@ -264,7 +324,20 @@ const styles = StyleSheet.create({
   descripcionText: { color: Brand.textDark, fontSize: 13, lineHeight: 19 },
   calle: { color: Brand.textDark, fontWeight: '700', fontSize: 14, marginBottom: 3 },
   colonia: { color: Brand.textMuted, fontSize: 12, marginBottom: 12 },
+  routeSummary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#E4D3B8',
+  },
+  routeSummaryCopy: { flex: 1 },
+  routeSummaryTitle: { color: Brand.textDark, fontWeight: '800', fontSize: 13 },
+  routeSummaryText: { color: Brand.textMuted, fontSize: 11, lineHeight: 16, marginTop: 2 },
+  navigationActions: { flexDirection: 'row', gap: 8, marginTop: 4 },
   mapaButton: {
+    flex: 1,
     paddingVertical: 10,
     borderRadius: 12,
     backgroundColor: `${Brand.secondary}1A`,
