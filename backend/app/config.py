@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     osrm_base_url: str = "https://router.project-osrm.org"
     osrm_timeout_seconds: float = 8.0
     osrm_max_coordinates: int = 100
+    clip_validation_enabled: bool = False
+    huggingface_token: str = ""
+    clip_model: str = "openai/clip-vit-base-patch32"
+    clip_timeout_seconds: float = 8.0
+    clip_gray_threshold: float = 0.88
+    clip_high_threshold: float = 0.94
     firebase_service_account_json: str = ""
     google_application_credentials: str = ""
 
