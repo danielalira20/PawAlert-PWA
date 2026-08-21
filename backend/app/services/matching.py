@@ -9,6 +9,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from app.db.supabase import supabase
+from app.models.dispatch import MATCHING_WEIGHTS
 from app.services.reputacion_service import (
     ROL_VOLUNTARIO_INTERNO,
     usuarios_bloqueados_nuevas_asignaciones,
@@ -20,13 +21,7 @@ TZ_MEXICO = ZoneInfo("America/Mexico_City")
 DIAS = ["lun", "mar", "mie", "jue", "vie", "sab", "dom"]
 MAX_RADIO_KM = 30
 
-PESOS = {
-    "proximidad": 0.30,
-    "disponibilidad": 0.25,
-    "experiencia": 0.20,
-    "movilidad": 0.15,
-    "carga": 0.10,
-}
+PESOS = MATCHING_WEIGHTS
 
 ETIQUETAS_EXPERIENCIA = {
     "docil_estable": "Manejo de animales dóciles o estables",
