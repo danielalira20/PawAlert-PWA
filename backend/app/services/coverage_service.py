@@ -509,6 +509,7 @@ def responder_propuesta(
     rol: str | None = None,
 ) -> dict:
     propuesta_id = None
+    ruta = None
     try:
         propuesta = (
             supabase_admin.table("propuestas_asignacion")
@@ -577,7 +578,28 @@ def responder_propuesta(
                 "[WARN] no se pudo procesar la respuesta oportuna "
                 f"(propuesta={propuesta_id}): {error}"
             )
-    return {"ok": True, "estado_cobertura": resultado.data}
+
+    if acepta and propuesta_id:
+        try:
+            from app.services.assignment_route_service import (
+                calculate_assignment_route,
+            )
+
+            ruta_resultado = calculate_assignment_route(
+                propuesta_id, reporte_id, usuario_id
+            )
+            ruta = ruta_resultado.model_dump(mode="json")
+        except Exception as error:
+            print(
+                "[WARN] no se pudo calcular la ruta confirmada "
+                f"(propuesta={propuesta_id}): {error}"
+            )
+
+    return {
+        "ok": True,
+        "estado_cobertura": resultado.data,
+        "ruta": ruta,
+    }
 
 
 def _ofrecimientos_del_voluntario(voluntario_id: str) -> dict[str, dict]:

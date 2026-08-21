@@ -384,6 +384,9 @@ def test_respuesta_oportuna_interna_suma_trust_al_aceptar_o_rechazar(
         patch(
             "app.services.reputacion_service.procesar_respuesta_propuesta_interna"
         ) as mock_reputacion,
+        patch(
+            "app.services.assignment_route_service.calculate_assignment_route"
+        ) as calculate_route,
     ):
         resultado = coverage_service.responder_propuesta(
             "user-1", "rep-1", acepta, rol="voluntario_interno"
@@ -392,6 +395,12 @@ def test_respuesta_oportuna_interna_suma_trust_al_aceptar_o_rechazar(
     assert resultado["ok"] is True
     mock_reputacion.assert_called_once_with("propuesta-1", "user-1")
     propuestas.eq.assert_any_call("estado", "activa")
+    if acepta:
+        calculate_route.assert_called_once_with(
+            "propuesta-1", "rep-1", "user-1"
+        )
+    else:
+        calculate_route.assert_not_called()
 
 
 def test_respuesta_externa_no_usa_regla_interna():
@@ -405,6 +414,9 @@ def test_respuesta_externa_no_usa_regla_interna():
         patch(
             "app.services.reputacion_service.procesar_respuesta_propuesta_interna"
         ) as mock_reputacion,
+        patch(
+            "app.services.assignment_route_service.calculate_assignment_route"
+        ),
     ):
         coverage_service.responder_propuesta(
             "user-ext", "rep-1", True, rol="voluntario_externo"
@@ -413,6 +425,40 @@ def test_respuesta_externa_no_usa_regla_interna():
     # supabase_admin.table is called to send pushes to the association
     # supabase_admin.table.assert_not_called()
     mock_reputacion.assert_not_called()
+
+
+def test_fallo_de_ruta_no_revierte_confirmacion():
+    propuestas = MagicMock()
+    propuestas.data = [{"id": "propuesta-1"}]
+    propuestas.select.return_value = propuestas
+    propuestas.eq.return_value = propuestas
+    propuestas.limit.return_value = propuestas
+    propuestas.execute.return_value = propuestas
+    supabase_admin = MagicMock()
+    supabase_admin.table.return_value = propuestas
+    supabase_admin.rpc.return_value.execute.return_value = SimpleNamespace(
+        data="confirmado"
+    )
+
+    with (
+        patch.object(coverage_service, "supabase_admin", supabase_admin),
+        patch(
+            "app.services.reputacion_service.procesar_respuesta_propuesta_interna"
+        ),
+        patch(
+            "app.services.assignment_route_service.calculate_assignment_route",
+            side_effect=RuntimeError("OSRM no disponible"),
+        ),
+    ):
+        result = coverage_service.responder_propuesta(
+            "user-1", "rep-1", True, rol="voluntario_interno"
+        )
+
+    assert result == {
+        "ok": True,
+        "estado_cobertura": "confirmado",
+        "ruta": None,
+    }
 
 
 def test_reserva_concurrente_devuelve_conflicto_controlado():
