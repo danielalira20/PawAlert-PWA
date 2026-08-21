@@ -44,7 +44,29 @@ class EstadoReporteEnum(str, Enum):
     cancelado_por_reportante = "cancelado_por_reportante"
     duplicado_vinculable = "duplicado_vinculable"
     duplicado_informativo = "duplicado_informativo"
-    
+
+
+# Contrato compartido por los servicios que calculan o programan trabajo
+# operativo. `duplicado` y `muerto` se conservan como terminales por
+# compatibilidad con registros anteriores, aunque los flujos nuevos usan una
+# conclusion estructurada.
+ESTADOS_REPORTE_OPERATIVOS = frozenset({
+    EstadoReporteEnum.pendiente.value,
+    EstadoReporteEnum.asignado.value,
+    EstadoReporteEnum.en_camino.value,
+    EstadoReporteEnum.en_atencion.value,
+    EstadoReporteEnum.sin_cobertura.value,
+})
+
+ESTADOS_REPORTE_TERMINALES = frozenset({
+    EstadoReporteEnum.rescatado.value,
+    EstadoReporteEnum.cerrado.value,
+    EstadoReporteEnum.duplicado.value,
+    EstadoReporteEnum.muerto.value,
+    EstadoReporteEnum.cancelado_por_reportante.value,
+    EstadoReporteEnum.duplicado_vinculable.value,
+    EstadoReporteEnum.duplicado_informativo.value,
+})
 
 class ContactoEmergencia(BaseModel):
     nombre: str

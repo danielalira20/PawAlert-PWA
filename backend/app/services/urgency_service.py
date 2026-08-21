@@ -8,6 +8,7 @@ from app.models.urgency import (
     RoadRiskResult,
     WeatherResult,
 )
+from app.models.report import ESTADOS_REPORTE_TERMINALES
 
 
 FORMULA_VERSION = "urgency_v1"
@@ -323,7 +324,8 @@ def evaluate_report_urgency(
     query = (
         database.table("reportes")
         .select(
-            "id, created_at, latitud, longitud, estado_validacion_reporte, "
+            "id, created_at, latitud, longitud, estado_reporte, "
+            "estado_validacion_reporte, "
             "urgency_excluido, animal(condicion_estimada_ia, condicion_catalogo(clave))"
         )
         .eq("id", reporte_id)
@@ -336,6 +338,8 @@ def evaluate_report_urgency(
     report = query.data[0]
     if report.get("estado_validacion_reporte") != "aprobado":
         raise ValueError("Urgency can only be calculated for an approved report")
+    if report.get("estado_reporte") in ESTADOS_REPORTE_TERMINALES:
+        raise ValueError("Urgency cannot be calculated for a terminal report")
     if report.get("urgency_excluido"):
         raise ValueError("Report is excluded from urgency calculation")
 

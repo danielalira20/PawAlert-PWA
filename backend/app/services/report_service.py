@@ -4,7 +4,7 @@ from app.db.supabase import supabase, supabase_admin
 from app.services.storage_service import subir_bytes, eliminar_por_url
 from app.services.assignment_service import obtener_contactos_emergencia
 from datetime import datetime, timezone
-from app.models.report import AnimalInput
+from app.models.report import AnimalInput, EstadoReporteEnum
 from app.utils.animal_shaping import shape_animal_embed, shape_animal_response, CONDICION_SEVERIDAD
 import json
 
@@ -575,7 +575,7 @@ async def crear_reporte(
 ESTADOS_VALIDOS = [
     "pendiente", "asignado", "en_camino", "en_atencion", "cerrado",
     "sin_cobertura", "duplicado_vinculable", "duplicado_informativo",
-    "cancelado_por_reportante",
+    "cancelado_por_reportante", EstadoReporteEnum.rescatado.value,
 ]
 
 TRANSICIONES_PERMITIDAS = {

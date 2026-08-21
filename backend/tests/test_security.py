@@ -297,6 +297,34 @@ def test_transicion_no_cerrado_mantiene_historial_generico(make_query):
     )
 
 
+def test_servicio_generico_permite_marcar_reporte_rescatado(make_query):
+    tablas = {
+        "reportes": make_query(data=[{
+            "id": "rep-1",
+            "estado_reporte": "en_atencion",
+            "usuario_id": None,
+            "updated_at": "2026-08-20T12:00:00+00:00",
+        }]),
+        "reporte_estados": make_query(data=[{"id": "estado-rescatado"}]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+
+    with (
+        patch.object(report_service, "supabase", supabase),
+        patch.object(report_service, "registrar_historial"),
+    ):
+        import asyncio
+
+        resultado = asyncio.run(
+            report_service.cambiar_estado_reporte("rep-1", "rescatado")
+        )
+
+    assert resultado["estado"] == "rescatado"
+    actualizacion = tablas["reportes"].update.call_args.args[0]
+    assert actualizacion["estado_reporte"] == "rescatado"
+
+
 def test_busqueda_telefono_sin_token_devuelve_401():
     response = client.get("/users/phone/5512345678")
     assert response.status_code == 401

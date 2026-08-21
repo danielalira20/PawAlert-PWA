@@ -156,6 +156,7 @@ def _report_row(**overrides):
         "created_at": (NOW - timedelta(hours=5)).isoformat(),
         "latitud": 19.04,
         "longitud": -98.20,
+        "estado_reporte": "asignado",
         "estado_validacion_reporte": "aprobado",
         "urgency_excluido": False,
         "animal": [
@@ -282,6 +283,8 @@ def test_missing_coordinates_persist_unavailable_signals_with_provisional_score(
     [
         _report_row(estado_validacion_reporte="revision_manual"),
         _report_row(urgency_excluido=True),
+        _report_row(estado_reporte="rescatado"),
+        _report_row(estado_reporte="cerrado"),
     ],
 )
 def test_persistence_rejects_non_operational_reports(make_query, report):
