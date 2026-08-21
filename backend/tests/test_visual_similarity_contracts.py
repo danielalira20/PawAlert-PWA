@@ -66,7 +66,7 @@ def test_report_candidate_requires_report_reference():
     )
     assert candidate.similarity == 0.95
 
-    with pytest.raises(ValidationError, match="report id"):
+    with pytest.raises(ValidationError, match="report and photo ids"):
         VisualSimilarityCandidate(
             source=VisualSimilaritySource.report,
             source_reference_id="embedding-1",
@@ -80,6 +80,7 @@ def test_unavailable_search_cannot_return_candidates():
         source=VisualSimilaritySource.report,
         source_reference_id="embedding-1",
         report_id="report-1",
+        animal_photo_id="photo-1",
         similarity=0.95,
         model="openai/clip-vit-base-patch32",
     )

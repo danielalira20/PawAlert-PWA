@@ -67,8 +67,10 @@ class VisualSimilarityCandidate(BaseModel):
 
     @model_validator(mode="after")
     def validate_source_reference(self):
-        if self.source == VisualSimilaritySource.report and not self.report_id:
-            raise ValueError("Report similarity requires a report id")
+        if self.source == VisualSimilaritySource.report and (
+            not self.report_id or not self.animal_photo_id
+        ):
+            raise ValueError("Report similarity requires report and photo ids")
         if self.source == VisualSimilaritySource.external_catalog and self.report_id:
             raise ValueError("External catalog similarity cannot claim a report")
         return self
