@@ -46,6 +46,7 @@ class RoutingErrorCode(str, Enum):
     invalid_response = "invalid_response"
     no_route = "no_route"
     request_too_large = "request_too_large"
+    missing_coordinates = "missing_coordinates"
 
 
 class RouteMatrixResult(BaseModel):
