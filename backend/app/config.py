@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-3.5-flash-lite"
     gemini_file_timeout_seconds: int = 180
     openweather_api_key: str = ""
+    osrm_base_url: str = "https://router.project-osrm.org"
+    osrm_timeout_seconds: float = 8.0
+    osrm_max_coordinates: int = 100
     firebase_service_account_json: str = ""
     google_application_credentials: str = ""
 

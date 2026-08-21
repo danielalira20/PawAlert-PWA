@@ -40,12 +40,13 @@ class RoutingErrorCode(str, Enum):
     provider_error = "provider_error"
     invalid_response = "invalid_response"
     no_route = "no_route"
+    request_too_large = "request_too_large"
 
 
 class RouteMatrixResult(BaseModel):
     origin_ids: list[str] = Field(min_length=1)
     destination_ids: list[str] = Field(min_length=1)
-    durations_seconds: list[list[int | None]]
+    durations_seconds: list[list[float | None]]
     distances_meters: list[list[float | None]]
     status: RoutingStatus
     calculated_at: datetime
@@ -75,6 +76,13 @@ class RouteMatrixResult(BaseModel):
             for row in matrix
         ):
             raise ValueError("Route matrix column count does not match destinations")
+        if any(
+            value is not None and value < 0
+            for matrix in matrices
+            for row in matrix
+            for value in row
+        ):
+            raise ValueError("Route matrix values cannot be negative")
         return self
 
 
