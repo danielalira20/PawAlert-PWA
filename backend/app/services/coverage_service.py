@@ -595,6 +595,16 @@ def responder_propuesta(
                 f"(propuesta={propuesta_id}): {error}"
             )
 
+        try:
+            from app.services.urgency_service import apply_operational_confirmation
+
+            apply_operational_confirmation(reporte_id)
+        except Exception as error:
+            print(
+                "[WARN] no se pudo actualizar la prioridad operativa "
+                f"(reporte={reporte_id}): {error}"
+            )
+
     return {
         "ok": True,
         "estado_cobertura": resultado.data,

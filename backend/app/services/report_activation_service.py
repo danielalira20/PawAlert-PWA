@@ -285,6 +285,22 @@ def activar_reporte(
             f"[WARN] No se pudo calcular la urgencia inicial del reporte "
             f"{reporte_id}: {error}"
         )
+        # Sin esto, urgency_proximo_recalculo_at se queda en NULL y el
+        # scheduler nunca lo reclama (su filtro es "<= now()", que en SQL
+        # nunca hace match contra NULL): el reporte quedaria sin score para
+        # siempre en vez de solo hasta el siguiente recalculo.
+        (
+            supabase.table("reportes")
+            .update({"urgency_proximo_recalculo_at": ahora})
+            .eq("id", reporte_id)
+            .execute()
+        )
+        _registrar_historial(
+            reporte_id,
+            "urgency_inicial_fallida",
+            "No se pudo calcular la urgencia inicial al activar el reporte.",
+            {"error": str(error)},
+        )
 
     _registrar_historial(
         reporte_id,

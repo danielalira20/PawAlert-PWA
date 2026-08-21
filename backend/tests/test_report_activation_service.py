@@ -134,7 +134,7 @@ def test_activar_reporte_informa_si_el_caso_es_critico(
 def test_fallo_interno_de_urgencia_no_rompe_activacion(
     make_query, _mock_initial_urgency
 ):
-    supabase, supabase_admin, _, _, asociacion = _clientes(
+    supabase, supabase_admin, tablas, _, asociacion = _clientes(
         make_query, asociacion=True
     )
     _mock_initial_urgency.side_effect = RuntimeError("fallo de persistencia")
@@ -157,6 +157,15 @@ def test_fallo_interno_de_urgencia_no_rompe_activacion(
 
     assert resultado["estado"] == "asignado"
     obtener_candidatos.assert_called_once_with("reporte-1")
+
+    segunda_actualizacion = tablas["reportes"].update.call_args_list[1].args[0]
+    assert "urgency_proximo_recalculo_at" in segunda_actualizacion
+
+    eventos = [
+        llamada.args[0]["tipo_evento"]
+        for llamada in tablas["historial_reporte"].insert.call_args_list
+    ]
+    assert "urgency_inicial_fallida" in eventos
 
 
 def test_activar_reporte_sin_asociacion_crea_caso_administrativo(make_query):
