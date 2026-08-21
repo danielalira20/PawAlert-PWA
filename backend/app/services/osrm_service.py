@@ -6,8 +6,11 @@ import httpx
 
 from app.config import settings
 from app.models.dispatch import (
+    RouteGeometryPoint,
     RouteMatrixRequest,
     RouteMatrixResult,
+    RouteRequest,
+    RouteResult,
     RoutingErrorCode,
     RoutingStatus,
 )
@@ -18,6 +21,10 @@ _PROFILE = "driving"
 
 
 class _InvalidPayload(Exception):
+    pass
+
+
+class _NoRoute(Exception):
     pass
 
 
@@ -72,6 +79,22 @@ def _request_matrix(request: RouteMatrixRequest) -> httpx.Response:
     )
 
 
+def _request_route(request: RouteRequest) -> httpx.Response:
+    base_url = settings.osrm_base_url.rstrip("/")
+    coordinates = (
+        f"{request.origin.longitude},{request.origin.latitude};"
+        f"{request.destination.longitude},{request.destination.latitude}"
+    )
+    return httpx.get(
+        f"{base_url}/route/v1/{_PROFILE}/{coordinates}",
+        params={
+            "alternatives": "false",
+            "steps": "false",
+            "geometries": "geojson",
+            "overview": "full",
+        },
+        timeout=settings.osrm_timeout_seconds,
+    )
 def _normalize_matrix(payload: object) -> list[list[float | None]]:
     if not isinstance(payload, list):
         raise _InvalidPayload
@@ -115,6 +138,60 @@ def _parse_payload(
         raise _InvalidPayload from None
 
 
+def _unavailable_route(
+    request: RouteRequest,
+    error_code: RoutingErrorCode,
+    calculated_at: datetime,
+) -> RouteResult:
+    return RouteResult(
+        origin_id=request.origin.id,
+        destination_id=request.destination.id,
+        status=RoutingStatus.unavailable,
+        error_code=error_code,
+        calculated_at=calculated_at,
+    )
+
+
+def _parse_route_payload(
+    payload: object,
+    request: RouteRequest,
+    calculated_at: datetime,
+) -> RouteResult:
+    if not isinstance(payload, dict):
+        raise _InvalidPayload
+    if payload.get("code") == "NoRoute":
+        raise _NoRoute
+    if payload.get("code") != "Ok":
+        raise _InvalidPayload
+
+    try:
+        route = payload["routes"][0]
+        coordinates = route["geometry"]["coordinates"]
+        if not isinstance(coordinates, list):
+            raise _InvalidPayload
+        geometry = [
+            RouteGeometryPoint(
+                longitude=float(coordinate[0]),
+                latitude=float(coordinate[1]),
+            )
+            for coordinate in coordinates
+            if isinstance(coordinate, list) and len(coordinate) >= 2
+        ]
+        if len(geometry) != len(coordinates):
+            raise _InvalidPayload
+        return RouteResult(
+            origin_id=request.origin.id,
+            destination_id=request.destination.id,
+            duration_seconds=float(route["duration"]),
+            distance_meters=float(route["distance"]),
+            geometry=geometry,
+            status=RoutingStatus.complete,
+            calculated_at=calculated_at,
+        )
+    except (IndexError, KeyError, TypeError, ValueError):
+        raise _InvalidPayload from None
+
+
 def get_route_matrix(request: RouteMatrixRequest) -> RouteMatrixResult:
     """Obtiene duraciones y distancias; nunca propaga fallos del proveedor."""
     calculated_at = datetime.now(timezone.utc)
@@ -150,3 +227,39 @@ def get_route_matrix(request: RouteMatrixRequest) -> RouteMatrixResult:
         last_error = RoutingErrorCode.provider_error
 
     return _unavailable(request, last_error, calculated_at)
+
+
+def get_route(request: RouteRequest) -> RouteResult:
+    """Obtiene la ruta exacta tras confirmar cobertura, sin propagar fallos."""
+    calculated_at = datetime.now(timezone.utc)
+    if not settings.osrm_base_url.strip():
+        return _unavailable_route(
+            request, RoutingErrorCode.not_configured, calculated_at
+        )
+
+    last_error = RoutingErrorCode.provider_error
+    for _attempt in range(_MAX_ATTEMPTS):
+        try:
+            response = _request_route(request)
+        except httpx.TimeoutException:
+            last_error = RoutingErrorCode.timeout
+            continue
+        except httpx.HTTPError:
+            last_error = RoutingErrorCode.provider_error
+            continue
+
+        if response.status_code == 200:
+            try:
+                return _parse_route_payload(response.json(), request, calculated_at)
+            except _NoRoute:
+                return _unavailable_route(
+                    request, RoutingErrorCode.no_route, calculated_at
+                )
+            except (ValueError, _InvalidPayload):
+                return _unavailable_route(
+                    request, RoutingErrorCode.invalid_response, calculated_at
+                )
+
+        last_error = RoutingErrorCode.provider_error
+
+    return _unavailable_route(request, last_error, calculated_at)

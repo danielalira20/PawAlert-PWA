@@ -29,6 +29,11 @@ class RouteMatrixRequest(BaseModel):
     destinations: list[RoutingPoint] = Field(min_length=1)
 
 
+class RouteRequest(BaseModel):
+    origin: RoutingPoint
+    destination: RoutingPoint
+
+
 class RoutingStatus(str, Enum):
     complete = "complete"
     unavailable = "unavailable"
@@ -83,6 +88,44 @@ class RouteMatrixResult(BaseModel):
             for value in row
         ):
             raise ValueError("Route matrix values cannot be negative")
+        return self
+
+
+class RouteGeometryPoint(BaseModel):
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+
+
+class RouteResult(BaseModel):
+    origin_id: str = Field(min_length=1)
+    destination_id: str = Field(min_length=1)
+    duration_seconds: float | None = Field(default=None, ge=0)
+    distance_meters: float | None = Field(default=None, ge=0)
+    geometry: list[RouteGeometryPoint] = Field(default_factory=list)
+    status: RoutingStatus
+    calculated_at: datetime
+    source: Literal["osrm"] = "osrm"
+    error_code: RoutingErrorCode | None = None
+
+    @model_validator(mode="after")
+    def validate_route_availability(self):
+        if self.status == RoutingStatus.unavailable:
+            if self.error_code is None:
+                raise ValueError("Unavailable route requires an error code")
+            if (
+                self.duration_seconds is not None
+                or self.distance_meters is not None
+                or self.geometry
+            ):
+                raise ValueError("Unavailable route cannot include route data")
+            return self
+
+        if self.error_code is not None:
+            raise ValueError("Complete route cannot include an error code")
+        if self.duration_seconds is None or self.distance_meters is None:
+            raise ValueError("Complete route requires duration and distance")
+        if len(self.geometry) < 2:
+            raise ValueError("Complete route requires a usable geometry")
         return self
 
 

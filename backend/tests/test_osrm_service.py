@@ -4,6 +4,7 @@ import httpx
 
 from app.models.dispatch import (
     RouteMatrixRequest,
+    RouteRequest,
     RoutingErrorCode,
     RoutingPoint,
     RoutingStatus,
@@ -20,6 +21,13 @@ def request() -> RouteMatrixRequest:
         destinations=[
             RoutingPoint(id="rep-1", latitude=19.06, longitude=-98.22),
         ],
+    )
+
+
+def route_request() -> RouteRequest:
+    return RouteRequest(
+        origin=RoutingPoint(id="vol-1", latitude=19.04, longitude=-98.20),
+        destination=RoutingPoint(id="rep-1", latitude=19.06, longitude=-98.22),
     )
 
 
@@ -126,3 +134,67 @@ def test_coordinate_limit_prevents_oversized_request():
     get.assert_not_called()
     assert result.status == RoutingStatus.unavailable
     assert result.error_code == RoutingErrorCode.request_too_large
+
+
+def test_get_route_returns_duration_distance_and_geojson_geometry():
+    payload = {
+        "code": "Ok",
+        "routes": [{
+            "duration": 420.5,
+            "distance": 3100.2,
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [
+                    [-98.20, 19.04],
+                    [-98.21, 19.05],
+                    [-98.22, 19.06],
+                ],
+            },
+        }],
+    }
+    with patch.object(
+        osrm_service.httpx,
+        "get",
+        return_value=response(200, payload),
+    ) as get:
+        result = osrm_service.get_route(route_request())
+
+    assert result.status == RoutingStatus.complete
+    assert result.duration_seconds == 420.5
+    assert result.distance_meters == 3100.2
+    assert result.geometry[1].latitude == 19.05
+    assert "/route/v1/driving/" in get.call_args.args[0]
+    assert get.call_args.kwargs["params"]["geometries"] == "geojson"
+    assert get.call_args.kwargs["params"]["overview"] == "full"
+
+
+def test_get_route_preserves_no_route_as_controlled_result():
+    with patch.object(
+        osrm_service.httpx,
+        "get",
+        return_value=response(200, {"code": "NoRoute", "routes": []}),
+    ):
+        result = osrm_service.get_route(route_request())
+
+    assert result.status == RoutingStatus.unavailable
+    assert result.error_code == RoutingErrorCode.no_route
+
+
+def test_get_route_rejects_incomplete_geometry():
+    payload = {
+        "code": "Ok",
+        "routes": [{
+            "duration": 420.5,
+            "distance": 3100.2,
+            "geometry": {"type": "LineString", "coordinates": [[-98.20, 19.04]]},
+        }],
+    }
+    with patch.object(
+        osrm_service.httpx,
+        "get",
+        return_value=response(200, payload),
+    ):
+        result = osrm_service.get_route(route_request())
+
+    assert result.status == RoutingStatus.unavailable
+    assert result.error_code == RoutingErrorCode.invalid_response
