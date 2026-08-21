@@ -1010,6 +1010,7 @@ async def obtener_reportes_voluntario(usuario_id: str, rol: str = None) -> dict:
     reportes_con_llegada_zona = set()
     reportes_con_busqueda_sin_resultado = set()
     reportes_con_animal_bajo_resguardo = set()
+    rutas_confirmadas: dict[str, dict] = {}
     if reporte_ids_todos:
         contribs = supabase.table("contribuciones").select("reporte_id").in_(
             "reporte_id", reporte_ids_todos
@@ -1052,6 +1053,35 @@ async def obtener_reportes_voluntario(usuario_id: str, rol: str = None) -> dict:
             elif tipo_evento == "animal_bajo_resguardo":
                 reportes_con_animal_bajo_resguardo.add(reporte_id_evento)
 
+        rutas = (
+            supabase_admin.table("propuestas_asignacion")
+            .select(
+                "reporte_id, ruta_status, ruta_duracion_segundos, "
+                "ruta_distancia_metros, ruta_geometria, ruta_error_codigo, "
+                "ruta_calculada_at"
+            )
+            .eq("usuario_asignado_id", usuario_id)
+            .eq("estado", "confirmada")
+            .in_("reporte_id", reporte_ids_todos)
+            .order("ruta_calculada_at", desc=True)
+            .execute()
+        )
+        for ruta in rutas.data or []:
+            reporte_id_ruta = ruta.get("reporte_id")
+            if reporte_id_ruta and reporte_id_ruta not in rutas_confirmadas:
+                rutas_confirmadas[reporte_id_ruta] = {
+                    "status": ruta.get("ruta_status"),
+                    "duration_seconds": ruta.get("ruta_duracion_segundos"),
+                    "distance_meters": ruta.get("ruta_distancia_metros"),
+                    "geometry": ruta.get("ruta_geometria"),
+                    "error_code": ruta.get("ruta_error_codigo"),
+                    "calculated_at": (
+                        str(ruta["ruta_calculada_at"])
+                        if ruta.get("ruta_calculada_at")
+                        else None
+                    ),
+                }
+
     esperando_confirmacion = []
     pendientes = []
     en_accion = []
@@ -1087,6 +1117,7 @@ async def obtener_reportes_voluntario(usuario_id: str, rol: str = None) -> dict:
             "llegada_zona_registrada": r["id"] in reportes_con_llegada_zona,
             "animal_no_localizado_registrado": r["id"] in reportes_con_busqueda_sin_resultado,
             "animal_bajo_resguardo_registrado": r["id"] in reportes_con_animal_bajo_resguardo,
+            "ruta": rutas_confirmadas.get(r["id"]),
         }
 
         estado = r.get("estado_reporte")

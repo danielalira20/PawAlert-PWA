@@ -410,8 +410,13 @@ def test_reportes_voluntario_conservan_coordenadas_exactas(make_query):
     }
     supabase = MagicMock()
     supabase.table.side_effect = lambda nombre: tablas[nombre]
+    supabase_admin = MagicMock()
+    supabase_admin.table.return_value = make_query(data=[])
 
-    with patch.object(voluntario_service, "supabase", supabase):
+    with (
+        patch.object(voluntario_service, "supabase", supabase),
+        patch.object(voluntario_service, "supabase_admin", supabase_admin),
+    ):
         import asyncio
         resultado = asyncio.run(voluntario_service.obtener_reportes_voluntario("user-vol-1"))
 
@@ -490,8 +495,13 @@ def test_reportes_voluntario_incluye_flags_sugerencia_veterinaria(make_query):
     }
     supabase = MagicMock()
     supabase.table.side_effect = lambda nombre: tablas[nombre]
+    supabase_admin = MagicMock()
+    supabase_admin.table.return_value = make_query(data=[])
 
-    with patch.object(voluntario_service, "supabase", supabase):
+    with (
+        patch.object(voluntario_service, "supabase", supabase),
+        patch.object(voluntario_service, "supabase_admin", supabase_admin),
+    ):
         import asyncio
         resultado = asyncio.run(voluntario_service.obtener_reportes_voluntario("user-vol-1"))
 
@@ -506,3 +516,50 @@ def test_reportes_voluntario_incluye_flags_sugerencia_veterinaria(make_query):
     assert por_reporte["rep-2"]["llegada_zona_registrada"] is False
     assert por_reporte["rep-2"]["animal_no_localizado_registrado"] is False
     assert por_reporte["rep-2"]["animal_bajo_resguardo_registrado"] is False
+
+
+def test_reportes_voluntario_recupera_ruta_confirmada(make_query):
+    tablas = {
+        "voluntarios": make_query(data=[{"id": "vol-1", "estado": "activo_nivel_1"}]),
+        "capacidades": make_query(data=[{"latitud": 19.0, "longitud": -98.0}]),
+        "reportes": make_query(data=[{
+            **_reporte_embed("rep-1"),
+            "referencia": None,
+            "asociaciones": {"nombre": "Patitas", "contacto_telefono": "5512345678"},
+        }]),
+        "contribuciones": make_query(data=[]),
+        "historial_reporte": make_query(data=[]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    rutas = make_query(data=[{
+        "reporte_id": "rep-1",
+        "ruta_status": "complete",
+        "ruta_duracion_segundos": 420,
+        "ruta_distancia_metros": 3100,
+        "ruta_geometria": {
+            "type": "LineString",
+            "coordinates": [[-98.0, 19.0], [-98.2, 19.04]],
+        },
+        "ruta_error_codigo": None,
+        "ruta_calculada_at": "2026-08-20T12:00:00+00:00",
+    }])
+    supabase_admin = MagicMock()
+    supabase_admin.table.return_value = rutas
+
+    with (
+        patch.object(voluntario_service, "supabase", supabase),
+        patch.object(voluntario_service, "supabase_admin", supabase_admin),
+    ):
+        import asyncio
+
+        resultado = asyncio.run(
+            voluntario_service.obtener_reportes_voluntario("user-vol-1")
+        )
+
+    ruta = resultado["en_accion"][0]["ruta"]
+    assert ruta["status"] == "complete"
+    assert ruta["duration_seconds"] == 420
+    assert ruta["distance_meters"] == 3100
+    rutas.eq.assert_any_call("usuario_asignado_id", "user-vol-1")
+    rutas.eq.assert_any_call("estado", "confirmada")

@@ -17,6 +17,17 @@ export interface ReporteStaff {
     telefono: string | null;
   };
   distancia_km?: number | null;
+  ruta?: {
+    status: 'complete' | 'unavailable' | null;
+    duration_seconds: number | null;
+    distance_meters: number | null;
+    geometry: {
+      type: 'LineString';
+      coordinates: [number, number][];
+    } | null;
+    error_code: string | null;
+    calculated_at: string | null;
+  } | null;
   // Motor de sugerencias Ruta 1 (BACK01/BACK02) — controlan si se muestra
   // el botón "Registrar llegada a veterinaria": solo aplica cuando ya se
   // aceptó una sugerencia y esa llegada todavía no se registró.
