@@ -624,22 +624,22 @@ export function LoggedOutProfile() {
 
       <TouchableOpacity
         onPress={() => { setTab('login'); setView('auth'); }}
-        style={[styles.loginButton, isDesktop && styles.loginButtonDesktop]}
+        style={[styles.loginButton, isDesktop && styles.loginButtonDesktop, { marginBottom: 12 }]}
         activeOpacity={0.85}
       >
         <Ionicons name="log-in-outline" size={19} color="#fff" />
         <Text style={styles.loginButtonText}>Iniciar sesión</Text>
       </TouchableOpacity>
 
+      <TouchableOpacity onPress={() => { setTab('register'); setView('auth'); }} style={{ padding: 10, marginBottom: 32 }}>
+        <Text style={styles.newHereText}>
+          ¿No tienes cuenta? <Text style={styles.newHereLink}>Regístrate</Text>
+        </Text>
+      </TouchableOpacity>
+
       <View style={styles.benefitsWrap}>
         <BenefitsRow />
       </View>
-
-      <TouchableOpacity onPress={() => { setTab('register'); setView('auth'); }} style={{ marginTop: 18 }}>
-        <Text style={styles.newHereText}>
-          ¿Nuevo aquí? <Text style={styles.newHereLink}>Crear una cuenta</Text>
-        </Text>
-      </TouchableOpacity>
     </View>
   );
 
