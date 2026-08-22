@@ -1267,6 +1267,50 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
         if nivel_urgencia:
             sugerencia_aliado = sugerir_aliado_veterinario(reporte_id, nivel_urgencia)
 
+    # Avistamiento derivado (Capa 8, Entrega A): el voluntario asignado que
+    # registra uno de estos hitos ya confirmó dónde está el animal en ese
+    # momento. Nunca debe bloquear el registro del hito -- mismo patrón
+    # fail-open que usa report_activation_service.py con
+    # evaluate_report_urgency().
+    if (
+        tipo_hito in (
+            "animal_encontrado",
+            "llegada_veterinaria",
+            "llegue_refugio",
+            "animal_bajo_resguardo",
+            "llegada_hogar_temporal",
+        )
+        and body.latitud is not None
+        and body.longitud is not None
+    ):
+        try:
+            from app.services.avistamiento_service import (
+                registrar_avistamiento_desde_hito,
+            )
+
+            animal_hito = (
+                supabase.table("animal")
+                .select("id")
+                .eq("reporte_id", reporte_id)
+                .order("orden")
+                .limit(1)
+                .execute()
+            )
+            if animal_hito.data:
+                registrar_avistamiento_desde_hito(
+                    reporte_id=reporte_id,
+                    animal_id=animal_hito.data[0]["id"],
+                    usuario_id=usuario["id"],
+                    latitud=body.latitud,
+                    longitud=body.longitud,
+                    tipo_hito=tipo_hito,
+                )
+        except Exception as error:
+            print(
+                "[WARN] no se pudo registrar el avistamiento derivado del hito "
+                f"(reporte={reporte_id}, hito={tipo_hito}): {error}"
+            )
+
     return {
         "mensaje": f"Hito '{tipo_hito}' registrado correctamente.",
         "tipo_hito": tipo_hito,
