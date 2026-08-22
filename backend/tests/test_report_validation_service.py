@@ -1,5 +1,6 @@
 import pytest
 
+from app.models.visual_similarity import VisualSimilarityLevel
 from app.services.report_validation_service import evaluate_initial_validation
 
 
@@ -89,3 +90,54 @@ def test_linked_duplicate_is_terminal_and_does_not_enter_manual_review():
             "reporte_original_id": "reporte-original",
         }
     ]
+
+
+@pytest.mark.parametrize(
+    ("level", "expected_code", "expected_result"),
+    [
+        (VisualSimilarityLevel.high, "clip_similitud_alta", "revision_manual"),
+        (VisualSimilarityLevel.gray, "clip_zona_gris", "revision_temporal"),
+    ],
+)
+def test_clip_risk_stops_initial_activation(level, expected_code, expected_result):
+    decision = _evaluate(
+        clip_level=level,
+        clip_similarity=0.95 if level == VisualSimilarityLevel.high else 0.9,
+        clip_matching_report_id="reporte-coincidente",
+    )
+
+    assert decision.outcome == "revision_manual"
+    assert decision.urgency_excluded is True
+    assert decision.reasons == [
+        {
+            "codigo": expected_code,
+            "resultado": expected_result,
+            "similitud": 0.95 if level == VisualSimilarityLevel.high else 0.9,
+            "reporte_coincidente_id": "reporte-coincidente",
+        }
+    ]
+
+
+def test_clip_unavailable_is_recorded_without_blocking_report():
+    decision = _evaluate(clip_error_code="timeout")
+
+    assert decision.outcome == "aprobado"
+    assert decision.urgency_excluded is False
+    assert decision.reasons == [
+        {"codigo": "validacion_inicial_aprobada", "resultado": "aprobado"},
+        {
+            "codigo": "clip_no_disponible",
+            "resultado": "sin_bloqueo",
+            "detalle": "timeout",
+        },
+    ]
+
+
+def test_clip_unavailable_does_not_become_urgency_exclusion_with_other_risk():
+    decision = _evaluate(phash_alert=True, clip_error_code="provider_error")
+
+    assert decision.outcome == "revision_manual"
+    assert decision.urgency_exclusion_reasons == [
+        {"codigo": "phash_coincidencia"}
+    ]
+    assert decision.reasons[-1]["codigo"] == "clip_no_disponible"

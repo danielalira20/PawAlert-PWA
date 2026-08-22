@@ -6,6 +6,11 @@ from app.services.storage_service import subir_bytes, eliminar_por_url
 from app.services.assignment_service import obtener_contactos_emergencia
 from datetime import datetime, timezone
 from app.models.report import AnimalInput, EstadoReporteEnum
+from app.models.urgency import ExternalSignalErrorCode, ExternalSignalStatus
+from app.models.visual_similarity import (
+    VisualSimilarityLevel,
+    VisualSimilaritySearchResult,
+)
 from app.utils.animal_shaping import shape_animal_embed, shape_animal_response, CONDICION_SEVERIDAD
 import json
 
@@ -16,7 +21,7 @@ def _analizar_similitud_visual_si_habilitada(
     animal_foto_id: str | None,
     contenido: bytes,
     content_type: str,
-):
+) -> VisualSimilaritySearchResult | None:
     """Registra la senal CLIP sin convertir su disponibilidad en un fallo del reporte."""
     if not settings.clip_validation_enabled or not animal_foto_id:
         return None
@@ -35,7 +40,58 @@ def _analizar_similitud_visual_si_habilitada(
             f"[WARN] No se pudo registrar similitud visual para la foto "
             f"{animal_foto_id} del reporte {reporte_id}: {error}"
         )
-        return None
+        return VisualSimilaritySearchResult(
+            status=ExternalSignalStatus.unavailable,
+            model=settings.clip_model,
+            calculated_at=datetime.now(timezone.utc),
+            error_code=ExternalSignalErrorCode.provider_error,
+        )
+
+
+def _resumir_resultados_clip(
+    resultados: list[VisualSimilaritySearchResult],
+) -> tuple[VisualSimilarityLevel | None, float | None, str | None, str | None]:
+    """Obtiene la coincidencia mas fuerte y conserva un fallo parcial."""
+    candidatos = [
+        candidato
+        for resultado in resultados
+        if resultado.status == ExternalSignalStatus.complete
+        for candidato in resultado.candidates
+    ]
+    mas_fuerte = max(candidatos, key=lambda item: item.similarity, default=None)
+
+    nivel = None
+    similitud = None
+    reporte_coincidente_id = None
+    if mas_fuerte:
+        similitud = mas_fuerte.similarity
+        reporte_coincidente_id = mas_fuerte.report_id
+        if similitud >= settings.clip_high_threshold:
+            nivel = VisualSimilarityLevel.high
+        elif similitud >= settings.clip_gray_threshold:
+            nivel = VisualSimilarityLevel.gray
+        else:
+            nivel = VisualSimilarityLevel.low
+    elif resultados and all(
+        resultado.status == ExternalSignalStatus.complete
+        for resultado in resultados
+    ):
+        nivel = VisualSimilarityLevel.low
+
+    no_disponible = next(
+        (
+            resultado
+            for resultado in resultados
+            if resultado.status == ExternalSignalStatus.unavailable
+        ),
+        None,
+    )
+    error_code = (
+        no_disponible.error_code.value
+        if no_disponible and no_disponible.error_code
+        else None
+    )
+    return nivel, similitud, reporte_coincidente_id, error_code
 
 def _condicion_str(condicion) -> str:
     return condicion.value if hasattr(condicion, "value") else str(condicion)
@@ -326,6 +382,7 @@ async def crear_reporte(
     gemini_error_detalle: str | None = None
     exif_discrepancia = False
     phash_alerta = False
+    resultados_clip: list[VisualSimilaritySearchResult] = []
     try:
         for resuelto in animales_resueltos:
             animal_in = resuelto["animal_in"]
@@ -469,12 +526,14 @@ async def crear_reporte(
                     phash_alerta = phash_alerta or bool(
                         resultado_phash.get("alerta")
                     )
-                    _analizar_similitud_visual_si_habilitada(
+                    resultado_clip = _analizar_similitud_visual_si_habilitada(
                         reporte_id=reporte_id,
                         animal_foto_id=animal_foto_id,
                         contenido=contenido_a_subir,
                         content_type=content_type_subida,
                     )
+                    if resultado_clip:
+                        resultados_clip.append(resultado_clip)
                     fotos_procesadas += 1
 
             for animal_id, condiciones in condiciones_ia_por_animal.items():
@@ -533,6 +592,10 @@ async def crear_reporte(
 
     from app.services.report_validation_service import evaluate_initial_validation
 
+    clip_nivel, clip_similitud, clip_reporte_coincidente, clip_error = (
+        _resumir_resultados_clip(resultados_clip)
+    )
+
     decision_validacion = evaluate_initial_validation(
         has_photos=fotos_procesadas > 0,
         gemini_technical_error=gemini_error_tecnico,
@@ -542,6 +605,10 @@ async def crear_reporte(
         reporter_requires_prior_review=requiere_revision_trust,
         reporter_trust_check_error=error_consulta_trust,
         linked_duplicate_report_id=reporte_original_id,
+        clip_level=clip_nivel,
+        clip_similarity=clip_similitud,
+        clip_matching_report_id=clip_reporte_coincidente,
+        clip_error_code=clip_error,
     )
 
     from app.services.report_activation_service import (
@@ -579,6 +646,7 @@ async def crear_reporte(
             condicion_mas_grave=_condicion_mas_grave_de(animales),
             tipo_animal_mas_grave=_tipo_animal_mas_grave_de(animales),
             municipio=municipio,
+            razones_validacion=decision_validacion.reasons,
         )
     asociacion = activacion["asociacion"]
     asociacion_id = asociacion.get("id") if asociacion else None

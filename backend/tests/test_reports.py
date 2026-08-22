@@ -12,6 +12,12 @@ from app.api import reports
 from app.main import app
 from app.models.report import AnimalInput
 from app.models.urgency import DuplicateCandidate
+from app.models.urgency import ExternalSignalStatus
+from app.models.visual_similarity import (
+    VisualSimilarityCandidate,
+    VisualSimilaritySearchResult,
+    VisualSimilaritySource,
+)
 from app.services import report_service
 from app.services.report_service import _clasificar_escenario
 from app.services.image_evidence_service import ImagenEvidenciaInvalida, ImagenEvidenciaProcesada
@@ -303,7 +309,13 @@ def test_crear_reporte_registra_similitud_visual_con_imagen_saneada(make_query):
             new=AsyncMock(return_value="https://x.supabase.co/foto.jpg"),
         ),
         patch(
-            "app.services.visual_similarity_service.analyze_visual_similarity"
+            "app.services.visual_similarity_service.analyze_visual_similarity",
+            return_value=VisualSimilaritySearchResult(
+                status=ExternalSignalStatus.complete,
+                candidates=[],
+                model="openai/clip-vit-base-patch32",
+                calculated_at=datetime.now(timezone.utc),
+            ),
         ) as analizar,
     ):
         resultado = _crear_reporte_con_fotos(supabase, fotos, [0])
@@ -346,6 +358,57 @@ def test_crear_reporte_no_falla_si_clip_lanza_error_inesperado(make_query):
         resultado = _crear_reporte_con_fotos(supabase, fotos, [0])
 
     assert resultado["estado"] == "sin_cobertura"
+
+
+def test_crear_reporte_clip_alto_detiene_cobertura(make_query):
+    supabase, tablas = _tablas_mock(make_query, _config_catalogos_basica())
+    fotos = [FakeUploadFile()]
+    resultado_clip = VisualSimilaritySearchResult(
+        status=ExternalSignalStatus.complete,
+        candidates=[
+            VisualSimilarityCandidate(
+                source=VisualSimilaritySource.report,
+                source_reference_id="embedding-anterior",
+                report_id="reporte-coincidente",
+                animal_photo_id="foto-coincidente",
+                similarity=0.96,
+                model="openai/clip-vit-base-patch32",
+            )
+        ],
+        model="openai/clip-vit-base-patch32",
+        calculated_at=datetime.now(timezone.utc),
+    )
+
+    with (
+        patch.object(report_service.settings, "clip_validation_enabled", True),
+        patch(
+            "app.services.report_photo_vision_service.verificar_foto_animal",
+            return_value={
+                "estado": "completado",
+                "es_animal_real": True,
+                "confianza": 0.95,
+                "condicion_estimada": "estable",
+                "modelo": "gemini-3.5-flash-lite",
+            },
+        ),
+        patch.object(
+            report_service,
+            "subir_bytes",
+            new=AsyncMock(return_value="https://x.supabase.co/foto.jpg"),
+        ),
+        patch(
+            "app.services.visual_similarity_service.analyze_visual_similarity",
+            return_value=resultado_clip,
+        ),
+    ):
+        resultado = _crear_reporte_con_fotos(supabase, fotos, [0])
+
+    assert resultado["estado"] == "revision_manual"
+    assert resultado["motivos_revision"] == ["clip_similitud_alta"]
+    actualizacion = tablas["reportes"].update.call_args.args[0]
+    assert actualizacion["estado_cobertura"] is None
+    assert actualizacion["asociacion_asignada_id"] is None
+    assert actualizacion["urgency_excluido"] is True
 
 
 def test_crear_reporte_exif_discrepancia_detiene_activacion(make_query):
