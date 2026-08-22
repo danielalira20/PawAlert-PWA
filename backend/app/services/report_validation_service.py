@@ -17,6 +17,7 @@ class InitialValidationDecision:
     reasons: list[dict]
     urgency_excluded: bool
     urgency_exclusion_reasons: list[dict]
+    review_expires_in_minutes: int | None = None
 
 
 def _reason(code: str, detail: str | None = None) -> dict:
@@ -92,6 +93,7 @@ def evaluate_initial_validation(
         )
 
     if reasons:
+        blocking_codes = [reason["codigo"] for reason in reasons]
         return InitialValidationDecision(
             outcome="revision_manual",
             reasons=reasons + advisory_reasons,
@@ -99,6 +101,9 @@ def evaluate_initial_validation(
             urgency_exclusion_reasons=[
                 {"codigo": reason["codigo"]} for reason in reasons
             ],
+            review_expires_in_minutes=(
+                15 if blocking_codes == ["clip_zona_gris"] else None
+            ),
         )
 
     return InitialValidationDecision(

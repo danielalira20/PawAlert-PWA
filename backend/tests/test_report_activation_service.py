@@ -242,6 +242,7 @@ def test_enviar_reporte_a_revision_no_abre_cobertura(make_query):
             reporte_id="reporte-1",
             razones=razones,
             razones_exclusion_urgency=[{"codigo": "gemini_error_tecnico"}],
+            revision_expira_at="2026-08-21T12:15:00+00:00",
         )
 
     assert resultado == {"estado": "revision_manual", "asociacion": None}
@@ -252,6 +253,9 @@ def test_enviar_reporte_a_revision_no_abre_cobertura(make_query):
     assert actualizacion["asociacion_asignada_id"] is None
     assert actualizacion["urgency_excluido"] is True
     assert actualizacion["razones_validacion"] == razones
+    assert actualizacion["validacion_revision_expira_at"] == (
+        "2026-08-21T12:15:00+00:00"
+    )
     asignar.assert_not_called()
     obtener_candidatos.assert_not_called()
     assert not tablas["reporte_asignaciones"].insert.called
@@ -294,6 +298,7 @@ def test_marcar_duplicado_vinculable_no_crea_trabajo_operativo(make_query):
     assert actualizacion["estado_cobertura"] is None
     assert actualizacion["asociacion_asignada_id"] is None
     assert actualizacion["activado_at"] is None
+    assert actualizacion["validacion_revision_expira_at"] is None
     assert actualizacion["urgency_excluido"] is True
     asignar.assert_not_called()
     obtener_candidatos.assert_not_called()

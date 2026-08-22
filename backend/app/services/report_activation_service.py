@@ -45,6 +45,7 @@ def enviar_reporte_a_revision(
     reporte_id: str,
     razones: list[dict],
     razones_exclusion_urgency: list[dict],
+    revision_expira_at: str | None = None,
 ) -> dict:
     """Detiene el reporte antes de cobertura y lo coloca en revision humana."""
     ahora = datetime.now(timezone.utc).isoformat()
@@ -55,6 +56,7 @@ def enviar_reporte_a_revision(
                 "estado_validacion_reporte": "revision_manual",
                 "validacion_completada_at": ahora,
                 "razones_validacion": razones,
+                "validacion_revision_expira_at": revision_expira_at,
                 "estado_moderacion": "en_revision",
                 "moderacion_origen": "validacion_inicial",
                 "moderacion_actualizada_at": ahora,
@@ -114,6 +116,7 @@ def marcar_reporte_duplicado_vinculable(
                 "estado_validacion_reporte": "aprobado",
                 "validacion_completada_at": ahora,
                 "activado_at": None,
+                "validacion_revision_expira_at": None,
                 "razones_validacion": razones,
                 "urgency_score": None,
                 "urgency_nivel": None,
@@ -226,6 +229,7 @@ def activar_reporte(
             "estado_validacion_reporte": "aprobado",
             "validacion_completada_at": ahora,
             "activado_at": ahora,
+            "validacion_revision_expira_at": None,
             "razones_validacion": razones_validacion or [
                 {
                     "codigo": "validacion_inicial_aprobada",

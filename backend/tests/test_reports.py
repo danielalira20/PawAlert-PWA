@@ -411,6 +411,59 @@ def test_crear_reporte_clip_alto_detiene_cobertura(make_query):
     assert actualizacion["urgency_excluido"] is True
 
 
+def test_crear_reporte_clip_gris_asigna_vencimiento_de_quince_minutos(make_query):
+    supabase, tablas = _tablas_mock(make_query, _config_catalogos_basica())
+    fotos = [FakeUploadFile()]
+    resultado_clip = VisualSimilaritySearchResult(
+        status=ExternalSignalStatus.complete,
+        candidates=[
+            VisualSimilarityCandidate(
+                source=VisualSimilaritySource.report,
+                source_reference_id="embedding-anterior",
+                report_id="reporte-coincidente",
+                animal_photo_id="foto-coincidente",
+                similarity=0.9,
+                model="openai/clip-vit-base-patch32",
+            )
+        ],
+        model="openai/clip-vit-base-patch32",
+        calculated_at=datetime.now(timezone.utc),
+    )
+    antes = datetime.now(timezone.utc) + timedelta(minutes=14, seconds=50)
+
+    with (
+        patch.object(report_service.settings, "clip_validation_enabled", True),
+        patch(
+            "app.services.report_photo_vision_service.verificar_foto_animal",
+            return_value={
+                "estado": "completado",
+                "es_animal_real": True,
+                "confianza": 0.95,
+                "condicion_estimada": "estable",
+                "modelo": "gemini-3.5-flash-lite",
+            },
+        ),
+        patch.object(
+            report_service,
+            "subir_bytes",
+            new=AsyncMock(return_value="https://x.supabase.co/foto.jpg"),
+        ),
+        patch(
+            "app.services.visual_similarity_service.analyze_visual_similarity",
+            return_value=resultado_clip,
+        ),
+    ):
+        resultado = _crear_reporte_con_fotos(supabase, fotos, [0])
+
+    despues = datetime.now(timezone.utc) + timedelta(minutes=15, seconds=10)
+    assert resultado["estado"] == "revision_manual"
+    actualizacion = tablas["reportes"].update.call_args.args[0]
+    deadline = datetime.fromisoformat(
+        actualizacion["validacion_revision_expira_at"]
+    )
+    assert antes <= deadline <= despues
+
+
 def test_crear_reporte_exif_discrepancia_detiene_activacion(make_query):
     supabase, tablas = _tablas_mock(make_query, _config_catalogos_basica())
     fotos = [FakeUploadFile()]

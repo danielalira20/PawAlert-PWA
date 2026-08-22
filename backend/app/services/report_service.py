@@ -4,7 +4,7 @@ from app.config import settings
 from app.db.supabase import supabase, supabase_admin
 from app.services.storage_service import subir_bytes, eliminar_por_url
 from app.services.assignment_service import obtener_contactos_emergencia
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from app.models.report import AnimalInput, EstadoReporteEnum
 from app.models.urgency import ExternalSignalErrorCode, ExternalSignalStatus
 from app.models.visual_similarity import (
@@ -630,12 +630,19 @@ async def crear_reporte(
             ),
         )
     elif decision_validacion.outcome == "revision_manual":
+        revision_expira_at = None
+        if decision_validacion.review_expires_in_minutes:
+            revision_expira_at = (
+                datetime.now(timezone.utc)
+                + timedelta(minutes=decision_validacion.review_expires_in_minutes)
+            ).isoformat()
         activacion = enviar_reporte_a_revision(
             reporte_id=reporte_id,
             razones=decision_validacion.reasons,
             razones_exclusion_urgency=(
                 decision_validacion.urgency_exclusion_reasons
             ),
+            revision_expira_at=revision_expira_at,
         )
     else:
         activacion = activar_reporte(

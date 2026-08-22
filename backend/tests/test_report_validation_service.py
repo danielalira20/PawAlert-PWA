@@ -116,6 +116,20 @@ def test_clip_risk_stops_initial_activation(level, expected_code, expected_resul
             "reporte_coincidente_id": "reporte-coincidente",
         }
     ]
+    assert decision.review_expires_in_minutes == (
+        15 if level == VisualSimilarityLevel.gray else None
+    )
+
+
+def test_clip_gray_with_another_risk_has_no_automatic_expiration():
+    decision = _evaluate(
+        clip_level=VisualSimilarityLevel.gray,
+        clip_similarity=0.9,
+        phash_alert=True,
+    )
+
+    assert decision.outcome == "revision_manual"
+    assert decision.review_expires_in_minutes is None
 
 
 def test_clip_unavailable_is_recorded_without_blocking_report():

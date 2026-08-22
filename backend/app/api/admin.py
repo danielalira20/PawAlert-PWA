@@ -437,6 +437,7 @@ async def listar_reportes_moderacion(authorization: str = Header(None)):
         .select(
             "id, usuario_id, estado_reporte, estado_moderacion, moderacion_origen, "
             "estado_validacion_reporte, razones_validacion, "
+            "validacion_revision_expira_at, "
             "moderacion_actualizada_at, calle, colonia, municipio, estado_ubicacion, "
             "referencia, latitud, longitud, ubicacion_fuente, created_at, "
             "reportante_nombre, reportante_apellido_paterno, reportante_apellido_materno, "
@@ -518,6 +519,7 @@ async def resolver_moderacion_reporte(
                 {
                     "estado_validacion_reporte": "rechazado",
                     "validacion_completada_at": ahora,
+                    "validacion_revision_expira_at": None,
                     "urgency_excluido": True,
                 }
             )
