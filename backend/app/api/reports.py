@@ -1288,14 +1288,22 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
                 registrar_avistamiento_desde_hito,
             )
 
+            # limit(2), no limit(1): solo lo suficiente para detectar si el
+            # reporte tiene mas de un animal sin traer la lista completa.
             animal_hito = (
                 supabase.table("animal")
                 .select("id")
                 .eq("reporte_id", reporte_id)
                 .order("orden")
-                .limit(1)
+                .limit(2)
                 .execute()
             )
+            if len(animal_hito.data or []) > 1:
+                print(
+                    "[WARN] avistamiento derivado con reporte multi-animal: "
+                    f"se atribuyo al animal de orden=1, puede no ser el "
+                    f"correcto (reporte={reporte_id}, hito={tipo_hito})"
+                )
             if animal_hito.data:
                 registrar_avistamiento_desde_hito(
                     reporte_id=reporte_id,

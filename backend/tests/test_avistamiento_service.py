@@ -468,6 +468,63 @@ def test_registrar_hito_crea_avistamiento_derivado_en_animal_encontrado(
     )
 
 
+def test_registrar_hito_multi_animal_loguea_advertencia(monkeypatch, make_query, capsys):
+    """orden=1 es una heuristica, no una resolucion real: en un reporte
+    multi-animal, esto debe quedar visible en logs de produccion (no solo
+    documentado en un comentario) para poder contar cuantas veces pasa."""
+    reporte = _reporte_para_hito()
+    reportes_mock = make_query(
+        execute_results=[
+            [reporte],
+            [{"id": "rep-1"}],
+            [{"animal": [{"orden": 1, "condicion_catalogo": {"clave": "estable"}}]}],
+        ]
+    )
+    db = _armar_reports_db(
+        {
+            "usuarios": make_query(
+                data=[{"id": "user-vol", "asociacion_id": None, "roles": {"nombre": "voluntario_interno"}}]
+            ),
+            "reportes": reportes_mock,
+            "reporte_estados": make_query(data=[{"id": "estado-en-atencion"}]),
+            "animal": make_query(
+                data=[{"id": "animal-1"}, {"id": "animal-2"}]
+            ),
+        }
+    )
+    db.auth.get_user.return_value = SimpleNamespace(user=SimpleNamespace(id="auth-uid-1"))
+    monkeypatch.setattr(reports_api, "supabase", db)
+    monkeypatch.setattr(reports_api, "supabase_admin", MagicMock())
+    monkeypatch.setattr(report_service_module, "registrar_historial", MagicMock())
+    monkeypatch.setattr(red_aliados_module, "_nivel_urgencia_efectivo", MagicMock(return_value=None))
+
+    derivado = MagicMock(return_value=SimpleNamespace(id="av-derivado"))
+    monkeypatch.setattr(avs_module, "registrar_avistamiento_desde_hito", derivado)
+
+    body = HitoRequestFake(
+        tipo_hito="animal_encontrado",
+        latitud=19.0001,
+        longitud=-98.0001,
+    )
+
+    asyncio.run(
+        reports_api.registrar_hito("rep-1", body, authorization="Bearer token-valido")
+    )
+
+    salida = capsys.readouterr().out
+    assert "multi-animal" in salida
+    assert "reporte=rep-1" in salida
+    assert "hito=animal_encontrado" in salida
+    derivado.assert_called_once_with(
+        reporte_id="rep-1",
+        animal_id="animal-1",
+        usuario_id="user-vol",
+        latitud=19.0001,
+        longitud=-98.0001,
+        tipo_hito="animal_encontrado",
+    )
+
+
 def test_registrar_hito_no_bloquea_si_avistamiento_falla(monkeypatch, make_query):
     reporte = _reporte_para_hito()
     reportes_mock = make_query(
