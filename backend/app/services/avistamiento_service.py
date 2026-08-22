@@ -7,7 +7,6 @@ evento no se cambian sin avisar.
 """
 
 from datetime import datetime, timezone
-from math import asin, cos, radians, sin, sqrt
 
 from fastapi import HTTPException
 
@@ -18,22 +17,10 @@ from app.models.dispatch import (
     CoordinationEvent,
     LocationSource,
 )
+from app.services.coverage_service import _distancia_km
 
 ESTADO_VOLUNTARIO_VERIFICADO = "activo_nivel_2"
 ROLES_ASOCIACION = ("asociacion", "staff")
-
-
-def _distancia_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """Mismo patron Haversine que coverage_service._distancia_km -- este
-    repo duplica esta funcion por servicio en vez de compartirla."""
-    radio_tierra = 6371.0088
-    dlat = radians(lat2 - lat1)
-    dlon = radians(lon2 - lon1)
-    a = (
-        sin(dlat / 2) ** 2
-        + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2
-    )
-    return 2 * radio_tierra * asin(sqrt(a))
 
 
 def _obtener_reporte(reporte_id: str) -> dict:
