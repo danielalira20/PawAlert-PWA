@@ -306,7 +306,7 @@ async def create_association(
 async def get_associations():
     resultado = supabase.table("asociaciones").select(
         "id, nombre, contacto_telefono, contacto_email, "
-        "latitud, longitud, radio_km, horario_atencion, activo, "
+        "latitud, longitud, radio_km, horario_atencion, acerca_de, activo, "
         "asociacion_tipo_animal(tipo_animal_catalogo(clave, descripcion))"
     ).eq("verificado", True).eq("activo", True).execute()
 
@@ -330,6 +330,7 @@ async def get_associations():
             "longitud": a["longitud"],
             "radio_km": a["radio_km"],
             "horario_atencion": a.get("horario_atencion"),
+            "acerca_de": a.get("acerca_de"),
             "activo": a["activo"],
         })
 

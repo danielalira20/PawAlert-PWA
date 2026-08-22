@@ -27,17 +27,17 @@ const C = {
 
 const CONDICION: Record<string, { color: string; label: string; bg: string }> = {
   estable: { color: '#27AE60', label: 'Estable', bg: '#EAFAF1' },
-  herido:  { color: '#F39C12', label: 'Herido',  bg: '#FEF9E7' },
-  grave:   { color: '#E74C3C', label: 'Grave',   bg: '#FDEDEC' },
+  herido: { color: '#F39C12', label: 'Herido', bg: '#FEF9E7' },
+  grave: { color: '#E74C3C', label: 'Grave', bg: '#FDEDEC' },
 };
 
 const ESTADO: Record<string, { color: string; label: string; bg: string }> = {
-  pendiente:     { color: '#7B68EE', label: 'Pendiente',    bg: '#F0EEFF' },
-  asignado:      { color: '#2980B9', label: 'Asignado',     bg: '#EBF5FB' },
-  en_camino:     { color: '#16A085', label: 'En camino',    bg: '#E8F8F5' },
-  en_atencion:   { color: '#8E44AD', label: 'En atención',  bg: '#F5EEF8' },
-  cerrado:       { color: '#7F8C8D', label: 'Cerrado',      bg: '#F2F3F4' },
-  sin_cobertura: { color: '#E67E22', label: 'Sin cobertura',bg: '#FEF9E7' },
+  pendiente: { color: '#7B68EE', label: 'Pendiente', bg: '#F0EEFF' },
+  asignado: { color: '#2980B9', label: 'Asignado', bg: '#EBF5FB' },
+  en_camino: { color: '#16A085', label: 'En camino', bg: '#E8F8F5' },
+  en_atencion: { color: '#8E44AD', label: 'En atención', bg: '#F5EEF8' },
+  cerrado: { color: '#7F8C8D', label: 'Cerrado', bg: '#F2F3F4' },
+  sin_cobertura: { color: '#E67E22', label: 'Sin cobertura', bg: '#FEF9E7' },
 };
 const TAB_BAR_CLEARANCE = 18 + 68 + 12;
 
@@ -96,7 +96,7 @@ export default function MapScreen() {
 
   //para actualizar el animal reporte
   const [fotoIndexPorReporte, setFotoIndexPorReporte] = useState<Record<string, number>>({});
-  
+
   // useCallback evita que fetchReportes cambie en cada render
   const fetchReportes = useCallback(async () => {
     try {
@@ -112,22 +112,22 @@ export default function MapScreen() {
         setZonasAgregadas([]);
       }
       setLastUpdated(new Date());
-    } catch {}
+    } catch { }
   }, [token]);
 
   const fetchAsociaciones = useCallback(async () => {
     try {
       const res = await axios.get(`${API_URL}/associations`);
       setAsociaciones(res.data.filter((a: AsociacionMapa) => a.latitud && a.longitud));
-    } catch {}
+    } catch { }
   }, []);
 
   const fetchAliados = useCallback(async () => {
-  try {
-    const res = await axios.get(`${API_URL}/red-aliados/directorio`);
-    setAliados(res.data.filter((a: any) => a.latitud && a.longitud));
-  } catch {}
-}, []);
+    try {
+      const res = await axios.get(`${API_URL}/red-aliados/directorio`);
+      setAliados(res.data.filter((a: any) => a.latitud && a.longitud));
+    } catch { }
+  }, []);
 
   // ── Exclusión mutua: capas de entidad (asociaciones/aliados) vs filtros
   // de reporte (gravedad/especie). Cualquier clic explícito en un grupo
@@ -195,7 +195,7 @@ export default function MapScreen() {
       if (clockTimeoutRef.current) clearTimeout(clockTimeoutRef.current);
     };
   }, [fetchReportes, fetchAsociaciones, fetchAliados]);
-  
+
 
   // Handle action parameter (e.g. action=create from landing CTA)
   useEffect(() => {
@@ -313,10 +313,10 @@ export default function MapScreen() {
     .filter(r => {
       // Ocultar casos cerrados o cancelados
       if (r.estado_reporte === 'cerrado' || r.estado_reporte === 'cancelado_por_reportante') return false;
-      
+
       // Ocultar casos que sigan en proceso de validación
       if (r.estado_validacion_reporte && ['procesando', 'revision_manual', 'rechazado'].includes(r.estado_validacion_reporte)) return false;
-      
+
       // Ocultar casos bloqueados por moderación
       if (r.estado_moderacion && !['visible', 'aprobado'].includes(r.estado_moderacion)) return false;
 
@@ -328,9 +328,9 @@ export default function MapScreen() {
     .sort((a, b) => {
       if (ordenar === 'urgente') {
         // Extraer y asegurar que se lean como números (si es null, vale -1)
-        const scoreA = (a.urgency_score !== null && a.urgency_score !== undefined) ? Number(a.urgency_score) : -1; 
+        const scoreA = (a.urgency_score !== null && a.urgency_score !== undefined) ? Number(a.urgency_score) : -1;
         const scoreB = (b.urgency_score !== null && b.urgency_score !== undefined) ? Number(b.urgency_score) : -1;
-        
+
         if (scoreA !== scoreB) {
           return scoreB - scoreA; // Orden descendente (91 le gana a 80 y a -1)
         }
@@ -339,10 +339,10 @@ export default function MapScreen() {
       }
 
       if (ordenar === 'reciente') return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-      if (ordenar === 'antiguo')  return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      if (ordenar === 'antiguo') return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       return 0;
     });
-    // ─── Aplicación de la Regla de Privacidad (Coordenadas Aproximadas) ───
+  // ─── Aplicación de la Regla de Privacidad (Coordenadas Aproximadas) ───
   // Si el caso está abierto y no tiene voluntario ni staff confirmado, desplazamos
   // ligeramente el pin en el mapa para no revelar la calle exacta (aprox 100m).
   const reportesConPrivacidad = reportesFiltrados.map(reporte => {
@@ -362,7 +362,7 @@ export default function MapScreen() {
     const total = totalAnimales(animales);
     const condicionValor = condicionMasGrave(animales) ?? '';
     const condCfg = getCfg(CONDICION, condicionValor);
-    const estCfg  = getCfg(ESTADO, reporte.estado_reporte ?? '');
+    const estCfg = getCfg(ESTADO, reporte.estado_reporte ?? '');
     const isSelected = highlightedReportId === reporte.id || selectedReport?.id === reporte.id;
     const especie = especieMasGrave(animales);
     const tipoLabel = especie
@@ -459,7 +459,7 @@ export default function MapScreen() {
     const total = totalAnimales(animales);
     const grave = animalMasGrave(animales);
     const condCfg = getCfg(CONDICION, grave?.condicion ?? '');
-    const estCfg  = getCfg(ESTADO, r.estado_reporte ?? '');
+    const estCfg = getCfg(ESTADO, r.estado_reporte ?? '');
     const tipoLabel = grave?.tipo_animal
       ? grave.tipo_animal[0].toUpperCase() + grave.tipo_animal.slice(1)
       : 'Animal';
@@ -468,11 +468,11 @@ export default function MapScreen() {
       <ScrollView contentContainerStyle={{ padding: 16 }}>
         <TouchableOpacity onPress={() => abrirImagenAmpliada(r)} activeOpacity={0.85}>
           <View style={{ borderRadius: 14, overflow: 'hidden', height: 220, backgroundColor: condCfg.bg, marginBottom: 14 }}>
-          {(animales[fotoIndexPorReporte[r.id] ?? 0]?.foto_url || r.foto_url) ? (
-              <Image source={{ uri: (animales[fotoIndexPorReporte[r.id] ?? 0]?.foto_url || r.foto_url ) ?? undefined }} style={{ width: '100%', height: 220 }} resizeMode="cover" />
-          ) : (
-            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><Ionicons name="paw" size={48} color={condCfg.color} /></View>
-          )}
+            {(animales[fotoIndexPorReporte[r.id] ?? 0]?.foto_url || r.foto_url) ? (
+              <Image source={{ uri: (animales[fotoIndexPorReporte[r.id] ?? 0]?.foto_url || r.foto_url) ?? undefined }} style={{ width: '100%', height: 220 }} resizeMode="cover" />
+            ) : (
+              <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><Ionicons name="paw" size={48} color={condCfg.color} /></View>
+            )}
             <View style={{ position: 'absolute', top: 10, right: 10, backgroundColor: condCfg.color, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 }}>
               <Text style={{ fontSize: 9, fontWeight: '800', color: '#FFF', textTransform: 'uppercase' }}>{condCfg.label}</Text>
             </View>
@@ -541,20 +541,31 @@ export default function MapScreen() {
         <Text style={{ fontSize: 20, fontWeight: '900', color: C.dark, marginBottom: 4 }}>{a.nombre}</Text>
 
         <View style={{ flexDirection: 'row', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
-          <View style={{ backgroundColor: `${ASOC_COLOR}20`, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 }}>
-            <Text style={{ fontSize: 9, fontWeight: '800', color: ASOC_COLOR, textTransform: 'uppercase', letterSpacing: 0.4 }}>Asociación</Text>
+          <View style={{ backgroundColor: `${ASOC_COLOR}20`, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: `${ASOC_COLOR}40` }}>
+            <Text style={{ fontSize: 10, fontWeight: '800', color: ASOC_COLOR, textTransform: 'uppercase', letterSpacing: 0.4 }}>Asociación</Text>
           </View>
-          {(a.tipos_animales ?? []).map(tipo => (
-            <View key={tipo} style={{ backgroundColor: C.bg, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 }}>
-              <Text style={{ fontSize: 9, fontWeight: '800', color: C.mid, textTransform: 'capitalize' }}>{tipo}</Text>
-            </View>
-          ))}
+          {(a.tipos_animales ?? []).map(tipo => {
+            const getTipoColor = (t: string) => {
+              const tl = t.toLowerCase();
+              if (tl.includes('perro')) return { bg: '#EAF4FF', border: '#BFE0FF', text: '#1B4F91' };
+              if (tl.includes('gato')) return { bg: '#FDF2E9', border: '#FAD7A1', text: '#E67E22' };
+              if (tl.includes('ave')) return { bg: '#E8F8F5', border: '#A3E4D7', text: '#117A65' };
+              if (tl.includes('exótico') || tl.includes('reptil')) return { bg: '#F5EEF8', border: '#D7BDE2', text: '#6C3483' };
+              if (tl.includes('silvestre')) return { bg: '#EAFAF1', border: '#A9DFBF', text: '#196F3D' };
+              return { bg: '#F4F6F6', border: '#D5D8DC', text: '#5D6D7E' };
+            };
+            const colors = getTipoColor(tipo);
+            return (
+              <View key={tipo} style={{ backgroundColor: colors.bg, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: colors.border }}>
+                <Text style={{ fontSize: 10, fontWeight: '800', color: colors.text, textTransform: 'capitalize' }}>{tipo}</Text>
+              </View>
+            );
+          })}
         </View>
 
         {[
           a.contacto_telefono && { icon: 'call-outline', text: a.contacto_telefono },
           a.contacto_email && { icon: 'mail-outline', text: a.contacto_email },
-          a.horario_atencion && { icon: 'time-outline', text: a.horario_atencion },
           a.radio_km != null && { icon: 'navigate-outline', text: `Atiende en un radio de ${a.radio_km} km` },
         ].filter(Boolean).map((row: any, i) => (
           <View key={i} style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start', marginBottom: 10 }}>
@@ -564,6 +575,64 @@ export default function MapScreen() {
             <Text style={{ fontSize: 12, color: C.mid, flex: 1, lineHeight: 18, paddingTop: 4 }}>{row.text}</Text>
           </View>
         ))}
+
+        {a.horario_atencion && (
+          <View style={{ backgroundColor: '#F8FAFC', borderRadius: 10, padding: 12, marginBottom: 14, borderWidth: 1, borderColor: '#E2E8F0' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+              <Ionicons name="time" size={16} color={C.mid} />
+              <Text style={{ fontSize: 12, fontWeight: '800', color: C.dark }}>Horario de Atención</Text>
+            </View>
+            {(() => {
+              const lines = a.horario_atencion.split(/[\n,]/).map(l => l.trim()).filter(Boolean);
+              const result: { day: string; time: string }[] = [];
+              let pendingDays: string[] = [];
+              
+              for (const line of lines) {
+                if (line.includes('|')) {
+                  const parts = line.split('|');
+                  const day = parts[0].trim();
+                  const startTime = parts[1]?.trim() || '';
+                  const endTime = parts[2]?.trim() || '';
+                  const timeStr = `${startTime} - ${endTime}`.trim();
+                  
+                  pendingDays.push(day);
+                  pendingDays.forEach(d => {
+                     if (d) result.push({ day: d, time: timeStr });
+                  });
+                  pendingDays = [];
+                } else {
+                  pendingDays.push(line);
+                }
+              }
+              pendingDays.forEach(d => { if (d) result.push({ day: d, time: '' }); });
+              
+              return result.map((item, i) => (
+                <View key={i} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6, marginLeft: 22 }}>
+                  {item.time ? (
+                    <>
+                      <View style={{ backgroundColor: '#EDF2F7', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, marginRight: 8, minWidth: 85, alignItems: 'center' }}>
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: '#34495E', textTransform: 'capitalize' }}>{item.day}</Text>
+                      </View>
+                      <Text style={{ fontSize: 11, color: C.mid, fontWeight: '600', flex: 1 }}>{item.time}</Text>
+                    </>
+                  ) : (
+                    <>
+                      <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: ASOC_COLOR, marginRight: 8 }} />
+                      <Text style={{ fontSize: 11, color: C.mid, flex: 1 }}>{item.day}</Text>
+                    </>
+                  )}
+                </View>
+              ));
+            })()}
+          </View>
+        )}
+
+        {a.acerca_de && (
+          <View style={{ marginBottom: 14 }}>
+            <Text style={{ fontSize: 12, fontWeight: '800', color: C.dark, marginBottom: 4 }}>Acerca de nosotros</Text>
+            <Text style={{ fontSize: 12, color: C.mid, lineHeight: 18 }}>{a.acerca_de}</Text>
+          </View>
+        )}
       </ScrollView>
     );
   };
@@ -589,8 +658,8 @@ export default function MapScreen() {
       <Text style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', marginTop: 2 }}>
         {sidebarView === 'list' ? 'Mapa de rescate · Puebla'
           : sidebarView === 'detail' ? 'Detalle del reporte'
-          : sidebarView === 'asociacion' ? 'Detalle de la asociación'
-          : 'Nuevo reporte'}
+            : sidebarView === 'asociacion' ? 'Detalle de la asociación'
+              : 'Nuevo reporte'}
       </Text>
     </View>
   );
@@ -616,9 +685,11 @@ export default function MapScreen() {
             const activeColor = cfg?.color ?? C.orange;
             return (
               <TouchableOpacity key={f} onPress={() => handleSetFiltro(f)}
-                style={{ paddingHorizontal: 11, paddingVertical: 4, borderRadius: 20, borderWidth: 1.5,
+                style={{
+                  paddingHorizontal: 11, paddingVertical: 4, borderRadius: 20, borderWidth: 1.5,
                   backgroundColor: isActive ? activeColor : 'transparent', borderColor: activeColor,
-                  height: 26, alignItems: 'center', justifyContent: 'center' }}>
+                  height: 26, alignItems: 'center', justifyContent: 'center'
+                }}>
                 <Text style={{ fontSize: 10, fontWeight: '700', color: isActive ? '#FFF' : activeColor, lineHeight: 13 }}>
                   {f === 'todos' ? 'Todos' : cfg?.label}
                 </Text>
@@ -640,17 +711,21 @@ export default function MapScreen() {
               setMostrarAliados(false);
               setShowFiltersModal(false);
             }}
-            style={{ paddingHorizontal: 11, paddingVertical: 4, borderRadius: 20, borderWidth: 1.5,
+            style={{
+              paddingHorizontal: 11, paddingVertical: 4, borderRadius: 20, borderWidth: 1.5,
               backgroundColor: !masSeleccionado ? C.orange : 'transparent', borderColor: C.orange,
-              height: 26, alignItems: 'center', justifyContent: 'center' }}>
+              height: 26, alignItems: 'center', justifyContent: 'center'
+            }}>
             <Text style={{ fontSize: 10, fontWeight: '700', color: !masSeleccionado ? '#FFF' : C.orange, lineHeight: 13 }}>
               Todos
             </Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={() => setShowFiltersModal(v => !v)}
-            style={{ paddingHorizontal: 11, paddingVertical: 4, borderRadius: 20, borderWidth: 1.5,
+            style={{
+              paddingHorizontal: 11, paddingVertical: 4, borderRadius: 20, borderWidth: 1.5,
               backgroundColor: masSeleccionado ? C.orange : 'transparent', borderColor: C.orange,
-              height: 26, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 4 }}>
+              height: 26, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 4
+            }}>
             <Text style={{ fontSize: 10, fontWeight: '700', color: masSeleccionado ? '#FFF' : C.orange, lineHeight: 13 }}>
               Más...
             </Text>
@@ -684,19 +759,21 @@ export default function MapScreen() {
           <Text style={{ fontSize: 10, fontWeight: '800', color: C.light, textTransform: 'uppercase', marginBottom: 8 }}>Especie</Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
             {[
-              { key: 'todos', icon: ICON_PAW,  label: 'Todos'  },
-              { key: 'perro', icon: ICON_DOG,  label: 'Perros' },
-              { key: 'gato',  icon: ICON_CAT,  label: 'Gatos'  },
+              { key: 'todos', icon: ICON_PAW, label: 'Todos' },
+              { key: 'perro', icon: ICON_DOG, label: 'Perros' },
+              { key: 'gato', icon: ICON_CAT, label: 'Gatos' },
             ].map(({ key, icon, label }) => {
               const especieActiva = filtroEspecie === key && !mostrarAsociaciones && !mostrarAliados;
               return (
-              <TouchableOpacity key={key} onPress={() => handleSetFiltroEspecie(key)}
-                style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, borderWidth: 1.5,
-                  borderColor: C.teal, flexDirection: 'row', alignItems: 'center', gap: 5,
-                  backgroundColor: especieActiva ? C.teal : 'transparent' }}>
-                <Image source={{ uri: icon }} style={{ width: 13, height: 13, tintColor: especieActiva ? '#FFF' : C.teal }} />
-                <Text style={{ fontSize: 11, fontWeight: '700', color: especieActiva ? '#FFF' : C.teal }}>{label}</Text>
-              </TouchableOpacity>
+                <TouchableOpacity key={key} onPress={() => handleSetFiltroEspecie(key)}
+                  style={{
+                    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, borderWidth: 1.5,
+                    borderColor: C.teal, flexDirection: 'row', alignItems: 'center', gap: 5,
+                    backgroundColor: especieActiva ? C.teal : 'transparent'
+                  }}>
+                  <Image source={{ uri: icon }} style={{ width: 13, height: 13, tintColor: especieActiva ? '#FFF' : C.teal }} />
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: especieActiva ? '#FFF' : C.teal }}>{label}</Text>
+                </TouchableOpacity>
               );
             })}
           </View>
@@ -704,14 +781,16 @@ export default function MapScreen() {
           <Text style={{ fontSize: 10, fontWeight: '800', color: C.light, textTransform: 'uppercase', marginBottom: 8 }}>Ordenar por</Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
             {[
-              { key: 'reciente', icon: ICON_CLOCK,    label: 'Reciente' },
-              { key: 'urgente',  icon: ICON_WARNING,  label: 'Urgente'  },
-              { key: 'antiguo',  icon: ICON_CALENDAR, label: 'Antiguo'  },
+              { key: 'reciente', icon: ICON_CLOCK, label: 'Reciente' },
+              { key: 'urgente', icon: ICON_WARNING, label: 'Urgente' },
+              { key: 'antiguo', icon: ICON_CALENDAR, label: 'Antiguo' },
             ].map(({ key, icon, label }) => (
               <TouchableOpacity key={key} onPress={() => setOrdenar(key)}
-                style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, borderWidth: 1.5,
+                style={{
+                  paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, borderWidth: 1.5,
                   borderColor: '#B0A090', flexDirection: 'row', alignItems: 'center', gap: 5,
-                  backgroundColor: ordenar === key ? '#B0A090' : 'transparent' }}>
+                  backgroundColor: ordenar === key ? '#B0A090' : 'transparent'
+                }}>
                 <Image source={{ uri: icon }} style={{ width: 13, height: 13, tintColor: ordenar === key ? '#FFF' : '#B0A090' }} />
                 <Text style={{ fontSize: 11, fontWeight: '700', color: ordenar === key ? '#FFF' : '#B0A090' }}>{label}</Text>
               </TouchableOpacity>
@@ -730,9 +809,11 @@ export default function MapScreen() {
               Muestra organizaciones y puntos de apoyo cercanos.
             </Text>
             <TouchableOpacity onPress={handleToggleAsociaciones}
-              style={{ paddingHorizontal: 12, paddingVertical: 9, borderRadius: 11, borderWidth: 1.5,
+              style={{
+                paddingHorizontal: 12, paddingVertical: 9, borderRadius: 11, borderWidth: 1.5,
                 borderColor: '#2E86DE', flexDirection: 'row', alignItems: 'center', gap: 9,
-                backgroundColor: mostrarAsociaciones ? '#2E86DE' : '#FFF', marginBottom: 8 }}>
+                backgroundColor: mostrarAsociaciones ? '#2E86DE' : '#FFF', marginBottom: 8
+              }}>
               <View style={{ width: 28, height: 28, borderRadius: 9, backgroundColor: mostrarAsociaciones ? 'rgba(255,255,255,0.2)' : '#EAF4FF', alignItems: 'center', justifyContent: 'center' }}>
                 <Ionicons name="home" size={15} color={mostrarAsociaciones ? '#FFF' : '#2E86DE'} />
               </View>
@@ -743,9 +824,11 @@ export default function MapScreen() {
               <Ionicons name={mostrarAsociaciones ? 'checkmark-circle' : 'eye-outline'} size={16} color={mostrarAsociaciones ? '#FFF' : '#2E86DE'} />
             </TouchableOpacity>
             <TouchableOpacity onPress={handleToggleAliados}
-              style={{ paddingHorizontal: 12, paddingVertical: 9, borderRadius: 11, borderWidth: 1.5,
+              style={{
+                paddingHorizontal: 12, paddingVertical: 9, borderRadius: 11, borderWidth: 1.5,
                 borderColor: '#E67E22', flexDirection: 'row', alignItems: 'center', gap: 9,
-                backgroundColor: mostrarAliados ? '#E67E22' : '#FFF' }}>
+                backgroundColor: mostrarAliados ? '#E67E22' : '#FFF'
+              }}>
               <View style={{ width: 28, height: 28, borderRadius: 9, backgroundColor: mostrarAliados ? 'rgba(255,255,255,0.2)' : '#FFF0E2', alignItems: 'center', justifyContent: 'center' }}>
                 <Ionicons name="storefront" size={15} color={mostrarAliados ? '#FFF' : '#E67E22'} />
               </View>
@@ -849,10 +932,10 @@ export default function MapScreen() {
           {/* Fila 1: condición */}
           <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#F0E8DC' }}>
             {[
-              { key: 'todos',   label: 'Todos',   color: C.orange },
+              { key: 'todos', label: 'Todos', color: C.orange },
               { key: 'estable', label: 'Estable', color: '#27AE60' },
-              { key: 'herido',  label: 'Herido',  color: '#F39C12' },
-              { key: 'grave',   label: 'Grave',   color: '#E74C3C' },
+              { key: 'herido', label: 'Herido', color: '#F39C12' },
+              { key: 'grave', label: 'Grave', color: '#E74C3C' },
             ].map(({ key, label, color }, idx, arr) => {
               const isActive = filtro === key && !mostrarAsociaciones && !mostrarAliados;
               // Contar desde el total (respetando especie) sin aplicar filtro de condición activo
@@ -867,9 +950,11 @@ export default function MapScreen() {
                 : base.filter(r => getAnimales(r).some(a => a.condicion?.toLowerCase() === key)).length;
               return (
                 <TouchableOpacity key={key} onPress={() => handleSetFiltro(key)}
-                  style={{ flex: 1, paddingVertical: 8, alignItems: 'center',
+                  style={{
+                    flex: 1, paddingVertical: 8, alignItems: 'center',
                     backgroundColor: isActive ? color : 'transparent',
-                    borderRightWidth: idx < arr.length - 1 ? 1 : 0, borderRightColor: '#F0E8DC' }}>
+                    borderRightWidth: idx < arr.length - 1 ? 1 : 0, borderRightColor: '#F0E8DC'
+                  }}>
                   <Text style={{ fontSize: 9, fontWeight: '800', color: isActive ? '#FFF' : color, lineHeight: 12 }}>{label}</Text>
                   <Text style={{ fontSize: 11, fontWeight: '900', color: isActive ? 'rgba(255,255,255,0.9)' : C.dark, marginTop: 1 }}>{count}</Text>
                 </TouchableOpacity>
@@ -879,31 +964,35 @@ export default function MapScreen() {
           {/* Fila 2: especie + orden */}
           <View style={{ flexDirection: 'row', paddingHorizontal: 8, paddingVertical: 7, gap: 6 }}>
             {[
-              { key: 'todos', icon: ICON_PAW, label: 'Todos'  },
+              { key: 'todos', icon: ICON_PAW, label: 'Todos' },
               { key: 'perro', icon: ICON_DOG, label: 'Perros' },
-              { key: 'gato',  icon: ICON_CAT, label: 'Gatos'  },
+              { key: 'gato', icon: ICON_CAT, label: 'Gatos' },
             ].map(({ key, icon, label }) => {
               const especieActiva = filtroEspecie === key && !mostrarAsociaciones && !mostrarAliados;
               return (
-              <TouchableOpacity key={key} onPress={() => handleSetFiltroEspecie(key)}
-                style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12, borderWidth: 1.5,
-                  borderColor: C.teal, backgroundColor: especieActiva ? C.teal : 'transparent',
-                  flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                <Image source={{ uri: icon }} style={{ width: 14, height: 14, tintColor: especieActiva ? '#FFF' : C.teal }} />
-                <Text style={{ fontSize: 10, fontWeight: '700', color: especieActiva ? '#FFF' : C.teal }}>{label}</Text>
-              </TouchableOpacity>
+                <TouchableOpacity key={key} onPress={() => handleSetFiltroEspecie(key)}
+                  style={{
+                    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12, borderWidth: 1.5,
+                    borderColor: C.teal, backgroundColor: especieActiva ? C.teal : 'transparent',
+                    flexDirection: 'row', alignItems: 'center', gap: 4
+                  }}>
+                  <Image source={{ uri: icon }} style={{ width: 14, height: 14, tintColor: especieActiva ? '#FFF' : C.teal }} />
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: especieActiva ? '#FFF' : C.teal }}>{label}</Text>
+                </TouchableOpacity>
               );
             })}
             <View style={{ flex: 1 }} />
             {[
-              { key: 'reciente', icon: ICON_CLOCK    },
-              { key: 'urgente',  icon: ICON_WARNING  },
-              { key: 'antiguo',  icon: ICON_CALENDAR },
+              { key: 'reciente', icon: ICON_CLOCK },
+              { key: 'urgente', icon: ICON_WARNING },
+              { key: 'antiguo', icon: ICON_CALENDAR },
             ].map(({ key, icon }) => (
               <TouchableOpacity key={key} onPress={() => setOrdenar(key)}
-                style={{ width: 28, height: 28, borderRadius: 14, borderWidth: 1.5,
+                style={{
+                  width: 28, height: 28, borderRadius: 14, borderWidth: 1.5,
                   borderColor: '#B0A090', alignItems: 'center', justifyContent: 'center',
-                  backgroundColor: ordenar === key ? '#B0A090' : 'transparent' }}>
+                  backgroundColor: ordenar === key ? '#B0A090' : 'transparent'
+                }}>
                 <Image source={{ uri: icon }} style={{ width: 16, height: 16, tintColor: ordenar === key ? '#FFF' : '#B0A090' }} />
               </TouchableOpacity>
             ))}
@@ -911,20 +1000,24 @@ export default function MapScreen() {
           {/* Fila 3: capas destacadas */}
           <View style={{ flexDirection: 'row', paddingHorizontal: 8, paddingVertical: 7, gap: 7, borderTopWidth: 1, borderTopColor: '#F0E8DC' }}>
             <TouchableOpacity onPress={handleToggleAsociaciones}
-              style={{ flex: 1, minHeight: 34, borderRadius: 11, borderWidth: 1.5,
+              style={{
+                flex: 1, minHeight: 34, borderRadius: 11, borderWidth: 1.5,
                 borderColor: '#2E86DE', alignItems: 'center', justifyContent: 'center',
                 flexDirection: 'row', gap: 6,
-                backgroundColor: mostrarAsociaciones ? '#2E86DE' : '#F4F9FF' }}>
+                backgroundColor: mostrarAsociaciones ? '#2E86DE' : '#F4F9FF'
+              }}>
               <Ionicons name="home" size={14} color={mostrarAsociaciones ? '#FFF' : '#2E86DE'} />
               <Text numberOfLines={1} style={{ fontSize: 10, fontWeight: '800', color: mostrarAsociaciones ? '#FFF' : '#2E86DE' }}>
                 Asociaciones
               </Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={handleToggleAliados}
-              style={{ flex: 1, minHeight: 34, borderRadius: 11, borderWidth: 1.5,
+              style={{
+                flex: 1, minHeight: 34, borderRadius: 11, borderWidth: 1.5,
                 borderColor: '#E67E22', alignItems: 'center', justifyContent: 'center',
                 flexDirection: 'row', gap: 6,
-                backgroundColor: mostrarAliados ? '#E67E22' : '#FFF7EF' }}>
+                backgroundColor: mostrarAliados ? '#E67E22' : '#FFF7EF'
+              }}>
               <Ionicons name="storefront" size={14} color={mostrarAliados ? '#FFF' : '#E67E22'} />
               <Text numberOfLines={1} style={{ fontSize: 10, fontWeight: '800', color: mostrarAliados ? '#FFF' : '#E67E22' }}>
                 Red de aliados
@@ -944,7 +1037,7 @@ export default function MapScreen() {
     const total = totalAnimales(animales);
     const grave = animalMasGrave(animales);
     const condCfg = getCfg(CONDICION, grave?.condicion ?? '');
-    const estCfg  = getCfg(ESTADO, r.estado_reporte ?? '');
+    const estCfg = getCfg(ESTADO, r.estado_reporte ?? '');
     const tipoLabel = grave?.tipo_animal
       ? grave.tipo_animal[0].toUpperCase() + grave.tipo_animal.slice(1)
       : 'Animal';
@@ -1021,7 +1114,7 @@ export default function MapScreen() {
           {/* Detalles adicionales — navegable si el caso trae más de uno */}
           {animales.length > 0 && (
             <View style={{ marginTop: 12 }}>
-              <AnimalCarousel key={r.id} animales={animales} compact  onIndexChange={(i) => setFotoIndexPorReporte((prev) => ({ ...prev, [r.id]: i }))}/>
+              <AnimalCarousel key={r.id} animales={animales} compact onIndexChange={(i) => setFotoIndexPorReporte((prev) => ({ ...prev, [r.id]: i }))} />
             </View>
           )}
           <View style={{ backgroundColor: '#FFF5EE', borderRadius: 10, padding: 8, marginTop: 12 }}>
@@ -1145,9 +1238,9 @@ export default function MapScreen() {
               <ScrollView contentContainerStyle={{ padding: 10, gap: 8 }} showsVerticalScrollIndicator={false}>
                 {reportesFiltrados.length === 0
                   ? <View style={{ alignItems: 'center', paddingVertical: 40 }}>
-                      <Text style={{ fontSize: 32, marginBottom: 10 }}>🐾</Text>
-                      <Text style={{ fontSize: 14, fontWeight: '700', color: C.dark }}>Sin reportes activos</Text>
-                    </View>
+                    <Text style={{ fontSize: 32, marginBottom: 10 }}>🐾</Text>
+                    <Text style={{ fontSize: 14, fontWeight: '700', color: C.dark }}>Sin reportes activos</Text>
+                  </View>
                   : reportesFiltrados.map(r => <ReportCard key={r.id} reporte={r} />)
                 }
               </ScrollView>
