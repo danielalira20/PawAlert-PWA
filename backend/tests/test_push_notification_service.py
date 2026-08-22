@@ -79,11 +79,34 @@ def test_firebase_acepta_service_account_desde_entorno(monkeypatch):
         "firebase_service_account_json",
         '{"project_id":"pawalert"}',
     )
+    monkeypatch.setattr(push_service.settings, "google_application_credentials", "")
 
     assert push_service._init_firebase() is True
     push_service.credentials.Certificate.assert_called_once_with(
         {"project_id": "pawalert"}
     )
+    firebase.initialize_app.assert_called_once_with(certificado)
+
+
+def test_firebase_acepta_ruta_de_archivo_cuando_no_hay_json_en_env(
+    monkeypatch, tmp_path
+):
+    """Simula el entorno local donde solo existe google_application_credentials."""
+    firebase = MagicMock()
+    firebase._apps = {}
+    certificado = object()
+    monkeypatch.setattr(push_service, "firebase_admin", firebase)
+    monkeypatch.setattr(push_service, "credentials", MagicMock(), raising=False)
+    push_service.credentials.Certificate.return_value = certificado
+
+    ruta_archivo = str(tmp_path / "pawalert-firebase.json")
+    monkeypatch.setattr(push_service.settings, "firebase_service_account_json", "")
+    monkeypatch.setattr(
+        push_service.settings, "google_application_credentials", ruta_archivo
+    )
+
+    assert push_service._init_firebase() is True
+    push_service.credentials.Certificate.assert_called_once_with(ruta_archivo)
     firebase.initialize_app.assert_called_once_with(certificado)
 
 

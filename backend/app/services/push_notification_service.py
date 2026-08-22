@@ -15,17 +15,39 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 def _init_firebase() -> bool:
+    """Inicializa Firebase Admin con la mejor fuente de credenciales disponible.
+
+    Orden de prioridad:
+    1. ``firebase_service_account_json``: JSON completo en variable de entorno
+       (preferido en producción: Railway, Render, etc.).
+    2. ``google_application_credentials``: ruta a un archivo JSON local
+       (conveniente en desarrollo con el archivo descargado de Firebase Console).
+    3. Credenciales de aplicación por defecto de Google (solo funciona dentro de GCP).
+    """
     if not firebase_admin:
         logger.warning("firebase_admin is not installed")
         return False
-    
+
     if not firebase_admin._apps:
         try:
             if settings.firebase_service_account_json:
+                # Producción: JSON completo en variable de entorno
                 credenciales = json.loads(settings.firebase_service_account_json)
-                firebase_admin.initialize_app(credentials.Certificate(credenciales))
+                cred = credentials.Certificate(credenciales)
+            elif settings.google_application_credentials:
+                # Desarrollo local: ruta al archivo JSON descargado
+                import os
+                ruta = settings.google_application_credentials.strip('"').strip("'")
+                cred = credentials.Certificate(ruta)
+                os.environ.setdefault("GOOGLE_APPLICATION_CREDENTIALS", ruta)
             else:
-                firebase_admin.initialize_app()
+                # Último recurso: credenciales de aplicación por defecto (GCP)
+                logger.warning(
+                    "No se encontró configuración explícita de Firebase. "
+                    "Usando credenciales de aplicación por defecto (solo GCP)."
+                )
+                cred = credentials.ApplicationDefault()
+            firebase_admin.initialize_app(cred)
         except Exception as e:
             logger.error(f"Failed to initialize firebase admin: {e}")
             return False
