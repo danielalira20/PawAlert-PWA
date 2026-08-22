@@ -288,6 +288,7 @@ export interface AsociacionMapa {
   contacto_email?: string | null;
   tipos_animales?: string[];
   horario_atencion?: string | null;
+  acerca_de?: string | null;
   radio_km?: number | null;
 }
 
