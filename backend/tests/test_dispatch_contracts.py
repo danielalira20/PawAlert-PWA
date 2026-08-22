@@ -90,9 +90,9 @@ def test_confirmed_location_has_source_time_and_mobility():
         report_id="rep-1",
         location=point("rep-1"),
         confirmed_at=NOW,
-        source=LocationSource.reportante,
-        observed_mobility=ObservedMobility.caminando,
+        source=LocationSource.confirmacion_reportante,
+        observed_mobility=ObservedMobility.normal,
     )
 
     assert location.location.latitude == 19.04
-    assert location.source == LocationSource.reportante
+    assert location.source == LocationSource.confirmacion_reportante
