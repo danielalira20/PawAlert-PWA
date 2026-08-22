@@ -128,3 +128,12 @@ def correr_confirmaciones_permanencia(x_cron_secret: Optional[str] = Header(None
         raise HTTPException(status_code=401, detail="No autorizado")
     from app.services.permanencia_service import procesar_confirmaciones_permanencia
     return procesar_confirmaciones_permanencia()
+
+
+@router.post("/clip-gray/run")
+def correr_vencimientos_clip(x_cron_secret: Optional[str] = Header(None)):
+    if not settings.cron_secret or x_cron_secret != settings.cron_secret:
+        raise HTTPException(status_code=401, detail="No autorizado")
+    from app.services.clip_gray_scheduler_service import procesar_vencimientos_clip
+
+    return procesar_vencimientos_clip(limit=100)

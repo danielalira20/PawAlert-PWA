@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+from fastapi import HTTPException
 
 from app.services import report_activation_service
 
@@ -355,3 +356,72 @@ def test_activar_reporte_desde_revision_reconstruye_contexto_y_aprobacion(make_q
     assert argumentos["razones_validacion"][-1]["codigo"] == (
         "revision_manual_aprobada"
     )
+
+
+def test_activar_reporte_por_vencimiento_clip_exige_unico_bloqueo(make_query):
+    reporte = {
+        "id": "reporte-1",
+        "latitud": 19.04,
+        "longitud": -98.20,
+        "municipio": "Puebla",
+        "estado_validacion_reporte": "revision_manual",
+        "validacion_revision_expira_at": "2026-08-21T00:00:00+00:00",
+        "razones_validacion": [
+            {"codigo": "clip_zona_gris", "resultado": "revision_temporal"}
+        ],
+        "animal": [
+            {
+                "tipo_animal_catalogo": {"clave": "perro"},
+                "condicion_catalogo": {"clave": "estable"},
+            }
+        ],
+    }
+    supabase_admin = MagicMock()
+    supabase_admin.table.return_value = make_query(data=[reporte])
+
+    with (
+        patch.object(report_activation_service, "supabase_admin", supabase_admin),
+        patch.object(
+            report_activation_service,
+            "activar_reporte",
+            return_value={"estado": "asignado", "asociacion": {"id": "a-1"}},
+        ) as activar,
+    ):
+        resultado = report_activation_service.activar_reporte_por_vencimiento_clip(
+            "reporte-1"
+        )
+
+    assert resultado["estado"] == "asignado"
+    argumentos = activar.call_args.kwargs
+    assert argumentos["estado_validacion_esperado"] == "revision_manual"
+    assert argumentos["moderacion_aprobada_automaticamente"] is True
+    assert argumentos["razones_validacion"][-1]["codigo"] == (
+        "clip_zona_gris_expirada"
+    )
+
+
+def test_activar_reporte_por_vencimiento_clip_rechaza_otro_bloqueo(make_query):
+    reporte = {
+        "id": "reporte-1",
+        "estado_validacion_reporte": "revision_manual",
+        "validacion_revision_expira_at": "2026-08-21T00:00:00+00:00",
+        "razones_validacion": [
+            {"codigo": "clip_zona_gris", "resultado": "revision_temporal"},
+            {"codigo": "phash_coincidencia", "resultado": "revision_manual"},
+        ],
+        "animal": [],
+    }
+    supabase_admin = MagicMock()
+    supabase_admin.table.return_value = make_query(data=[reporte])
+
+    with (
+        patch.object(report_activation_service, "supabase_admin", supabase_admin),
+        patch.object(report_activation_service, "activar_reporte") as activar,
+    ):
+        with pytest.raises(HTTPException) as exc_info:
+            report_activation_service.activar_reporte_por_vencimiento_clip(
+                "reporte-1"
+            )
+
+    assert exc_info.value.status_code == 409
+    activar.assert_not_called()

@@ -159,6 +159,7 @@ def activar_reporte(
     razones_validacion: list[dict] | None = None,
     moderacion_aprobada_por: str | None = None,
     moderacion_notas: str | None = None,
+    moderacion_aprobada_automaticamente: bool = False,
 ) -> dict:
     """Activa un reporte validado y ejecuta sus efectos operativos.
 
@@ -239,7 +240,7 @@ def activar_reporte(
             "urgency_excluido": False,
             "urgency_razones_exclusion": [],
         }
-        if moderacion_aprobada_por:
+        if moderacion_aprobada_por or moderacion_aprobada_automaticamente:
             actualizacion_reporte.update(
                 {
                     "estado_moderacion": "aprobado",
@@ -377,18 +378,12 @@ def activar_reporte(
     }
 
 
-def activar_reporte_desde_revision(
-    *,
-    reporte_id: str,
-    admin_id: str,
-    notas: str | None,
-) -> dict:
-    """Retoma un reporte revisado y lo ingresa por la misma compuerta operativa."""
+def _cargar_contexto_revision(reporte_id: str) -> dict:
     consulta = (
         supabase_admin.table("reportes")
         .select(
             "id, latitud, longitud, municipio, estado_validacion_reporte, "
-            "razones_validacion, "
+            "razones_validacion, validacion_revision_expira_at, "
             "animal(tipo_animal_catalogo(clave), condicion_catalogo(clave))"
         )
         .eq("id", reporte_id)
@@ -404,7 +399,10 @@ def activar_reporte_desde_revision(
             status_code=409,
             detail="El reporte no esta pendiente de validacion inicial",
         )
+    return reporte
 
+
+def _contexto_animales_revision(reporte: dict) -> tuple[list[str], str, str]:
     animales = reporte.get("animal") or []
     especies = list(
         dict.fromkeys(
@@ -437,6 +435,20 @@ def activar_reporte_desde_revision(
         ),
         especies[0],
     )
+    return especies, condicion_mas_grave, tipo_animal_mas_grave
+
+
+def activar_reporte_desde_revision(
+    *,
+    reporte_id: str,
+    admin_id: str,
+    notas: str | None,
+) -> dict:
+    """Retoma un reporte revisado y lo ingresa por la misma compuerta operativa."""
+    reporte = _cargar_contexto_revision(reporte_id)
+    especies, condicion_mas_grave, tipo_animal_mas_grave = (
+        _contexto_animales_revision(reporte)
+    )
     razones = list(reporte.get("razones_validacion") or [])
     razones.append(
         {
@@ -458,4 +470,56 @@ def activar_reporte_desde_revision(
         razones_validacion=razones,
         moderacion_aprobada_por=admin_id,
         moderacion_notas=(notas or "").strip() or None,
+    )
+
+
+def activar_reporte_por_vencimiento_clip(reporte_id: str) -> dict:
+    """Autoaprueba exclusivamente una zona gris CLIP ya vencida."""
+    reporte = _cargar_contexto_revision(reporte_id)
+    deadline_value = reporte.get("validacion_revision_expira_at")
+    if not deadline_value:
+        raise HTTPException(status_code=409, detail="La revision no tiene vencimiento")
+    deadline = (
+        deadline_value
+        if isinstance(deadline_value, datetime)
+        else datetime.fromisoformat(str(deadline_value).replace("Z", "+00:00"))
+    )
+    if deadline.tzinfo is None:
+        deadline = deadline.replace(tzinfo=timezone.utc)
+    if deadline > datetime.now(timezone.utc):
+        raise HTTPException(status_code=409, detail="La revision aun no ha vencido")
+
+    razones = list(reporte.get("razones_validacion") or [])
+    bloqueantes = [
+        razon
+        for razon in razones
+        if razon.get("resultado") not in ("sin_bloqueo", "aprobado")
+    ]
+    if len(bloqueantes) != 1 or bloqueantes[0].get("codigo") != "clip_zona_gris":
+        raise HTTPException(
+            status_code=409,
+            detail="La revision requiere una decision humana",
+        )
+
+    especies, condicion_mas_grave, tipo_animal_mas_grave = (
+        _contexto_animales_revision(reporte)
+    )
+    razones.append(
+        {
+            "codigo": "clip_zona_gris_expirada",
+            "resultado": "aprobado_automaticamente",
+        }
+    )
+    return activar_reporte(
+        reporte_id=reporte_id,
+        latitud=reporte.get("latitud"),
+        longitud=reporte.get("longitud"),
+        especies=especies,
+        condicion_mas_grave=condicion_mas_grave,
+        tipo_animal_mas_grave=tipo_animal_mas_grave,
+        municipio=reporte.get("municipio"),
+        estado_validacion_esperado="revision_manual",
+        razones_validacion=razones,
+        moderacion_notas="Zona gris CLIP vencida sin otros bloqueos.",
+        moderacion_aprobada_automaticamente=True,
     )
