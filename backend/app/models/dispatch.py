@@ -189,18 +189,19 @@ class DispatchOptimizationResult(BaseModel):
 
 
 class LocationSource(str, Enum):
-    reportante = "reportante"
-    voluntario_interno = "voluntario_interno"
-    voluntario_externo = "voluntario_externo"
+    reporte_inicial = "reporte_inicial"
+    confirmacion_reportante = "confirmacion_reportante"
+    voluntario_asignado = "voluntario_asignado"
+    voluntario_verificado = "voluntario_verificado"
     asociacion = "asociacion"
     administracion = "administracion"
 
 
 class ObservedMobility(str, Enum):
-    inmovil = "inmovil"
+    sin_movimiento = "sin_movimiento"
     limitada = "limitada"
-    caminando = "caminando"
-    corriendo = "corriendo"
+    normal = "normal"
+    corrio_se_alejo = "corrio_se_alejo"
     desconocida = "desconocida"
 
 
@@ -223,3 +224,23 @@ class CoordinationEvent(str, Enum):
     lista_espera_activada = "lista_espera_activada"
     actividad_voluntario_pendiente = "actividad_voluntario_pendiente"
     caso_liberado_por_inactividad = "caso_liberado_por_inactividad"
+
+
+class AvistamientoCreate(BaseModel):
+    animal_id: str = Field(min_length=1)
+    latitud: float = Field(ge=-90, le=90)
+    longitud: float = Field(ge=-180, le=180)
+    precision_metros: float | None = Field(default=None, ge=0)
+    observado_at: datetime
+    movilidad_observada: ObservedMobility | None = None
+    direccion_observada: str | None = None
+    comentario: str | None = None
+
+
+class AvistamientoResult(BaseModel):
+    id: str
+    reporte_id: str
+    animal_id: str
+    fuente: LocationSource
+    estado_validacion: Literal["pendiente", "validado", "rechazado"]
+    registrado_at: datetime
