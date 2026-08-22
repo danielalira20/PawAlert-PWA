@@ -1,5 +1,6 @@
 import uuid
 from fastapi import UploadFile, HTTPException
+from app.config import settings
 from app.db.supabase import supabase, supabase_admin
 from app.services.storage_service import subir_bytes, eliminar_por_url
 from app.services.assignment_service import obtener_contactos_emergencia
@@ -7,6 +8,34 @@ from datetime import datetime, timezone
 from app.models.report import AnimalInput, EstadoReporteEnum
 from app.utils.animal_shaping import shape_animal_embed, shape_animal_response, CONDICION_SEVERIDAD
 import json
+
+
+def _analizar_similitud_visual_si_habilitada(
+    *,
+    reporte_id: str,
+    animal_foto_id: str | None,
+    contenido: bytes,
+    content_type: str,
+):
+    """Registra la senal CLIP sin convertir su disponibilidad en un fallo del reporte."""
+    if not settings.clip_validation_enabled or not animal_foto_id:
+        return None
+
+    try:
+        from app.services.visual_similarity_service import analyze_visual_similarity
+
+        return analyze_visual_similarity(
+            report_id=reporte_id,
+            animal_photo_id=animal_foto_id,
+            image_bytes=contenido,
+            content_type=content_type,
+        )
+    except Exception as error:
+        print(
+            f"[WARN] No se pudo registrar similitud visual para la foto "
+            f"{animal_foto_id} del reporte {reporte_id}: {error}"
+        )
+        return None
 
 def _condicion_str(condicion) -> str:
     return condicion.value if hasattr(condicion, "value") else str(condicion)
@@ -431,13 +460,20 @@ async def crear_reporte(
                             descripcion="El análisis automático de una fotografía falló técnicamente; requiere revisión manual.",
                         )
 
+                    animal_foto_id = (foto_insertada.data or [{}])[0].get("id")
                     resultado_phash = registrar_phash_reporte(
                         reporte_id=reporte_id,
-                        animal_foto_id=(foto_insertada.data or [{}])[0].get("id"),
+                        animal_foto_id=animal_foto_id,
                         phash=phash,
                     )
                     phash_alerta = phash_alerta or bool(
                         resultado_phash.get("alerta")
+                    )
+                    _analizar_similitud_visual_si_habilitada(
+                        reporte_id=reporte_id,
+                        animal_foto_id=animal_foto_id,
+                        contenido=contenido_a_subir,
+                        content_type=content_type_subida,
                     )
                     fotos_procesadas += 1
 

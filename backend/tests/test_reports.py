@@ -277,6 +277,77 @@ def test_crear_reporte_exito_guarda_analisis_y_condicion_estimada(make_query):
     assert "foto_revision_pendiente" not in eventos
 
 
+def test_crear_reporte_registra_similitud_visual_con_imagen_saneada(make_query):
+    supabase, _ = _tablas_mock(make_query, _config_catalogos_basica())
+    fotos = [FakeUploadFile()]
+
+    with (
+        patch.object(report_service.settings, "clip_validation_enabled", True),
+        patch(
+            "app.services.report_photo_vision_service.verificar_foto_animal",
+            return_value={
+                "estado": "completado",
+                "es_animal_real": True,
+                "confianza": 0.95,
+                "condicion_estimada": "estable",
+                "modelo": "gemini-3.5-flash-lite",
+            },
+        ),
+        patch(
+            "app.services.image_evidence_service.procesar_imagen_evidencia",
+            return_value=_procesada(),
+        ),
+        patch.object(
+            report_service,
+            "subir_bytes",
+            new=AsyncMock(return_value="https://x.supabase.co/foto.jpg"),
+        ),
+        patch(
+            "app.services.visual_similarity_service.analyze_visual_similarity"
+        ) as analizar,
+    ):
+        resultado = _crear_reporte_con_fotos(supabase, fotos, [0])
+
+    assert resultado["estado"] == "sin_cobertura"
+    analizar.assert_called_once_with(
+        report_id="reporte-test-1",
+        animal_photo_id="foto-test-1",
+        image_bytes=b"saneada",
+        content_type="image/jpeg",
+    )
+
+
+def test_crear_reporte_no_falla_si_clip_lanza_error_inesperado(make_query):
+    supabase, _ = _tablas_mock(make_query, _config_catalogos_basica())
+    fotos = [FakeUploadFile()]
+
+    with (
+        patch.object(report_service.settings, "clip_validation_enabled", True),
+        patch(
+            "app.services.report_photo_vision_service.verificar_foto_animal",
+            return_value={
+                "estado": "completado",
+                "es_animal_real": True,
+                "confianza": 0.95,
+                "condicion_estimada": "estable",
+                "modelo": "gemini-3.5-flash-lite",
+            },
+        ),
+        patch.object(
+            report_service,
+            "subir_bytes",
+            new=AsyncMock(return_value="https://x.supabase.co/foto.jpg"),
+        ),
+        patch(
+            "app.services.visual_similarity_service.analyze_visual_similarity",
+            side_effect=RuntimeError("endpoint no disponible"),
+        ),
+    ):
+        resultado = _crear_reporte_con_fotos(supabase, fotos, [0])
+
+    assert resultado["estado"] == "sin_cobertura"
+
+
 def test_crear_reporte_exif_discrepancia_detiene_activacion(make_query):
     supabase, tablas = _tablas_mock(make_query, _config_catalogos_basica())
     fotos = [FakeUploadFile()]
