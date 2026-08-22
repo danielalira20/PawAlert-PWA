@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Literal, Optional
 from enum import Enum
 
 class CondicionEnum(str, Enum):
@@ -138,6 +138,19 @@ class ReportListItem(BaseModel):
     urgency_nivel: Optional[str] = None
     estado_validacion_reporte: Optional[str] = None
     estado_moderacion: Optional[str] = None
+
+class ZonaAgregada(BaseModel):
+    """Punto agregado por zona para el mapa publico sin sesion: no expone
+    ningun reporte individual, solo densidad y severidad dominante."""
+    latitud: float
+    longitud: float
+    cantidad: int
+    nivel_urgencia_max: Optional[str] = None
+
+class ReportesMapaResponse(BaseModel):
+    modo: Literal["agregado", "detallado"]
+    reportes: list[ReportListItem] = []
+    zonas: list[ZonaAgregada] = []
 
 ## Lo usa el staff para registrar el avance del rescate
 class HitoRequest(BaseModel):

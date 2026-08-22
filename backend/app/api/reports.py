@@ -1,7 +1,7 @@
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Header
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
-from app.models.report import ReportResponse, AnimalInput, ReportListItem, HitoRequest, RechazarReporteRequest, CancelarReporteRequest, DenunciarReporteRequest, ResolverBusquedaNoLocalizadoRequest
+from app.models.report import ReportResponse, AnimalInput, ReportListItem, ReportesMapaResponse, HitoRequest, RechazarReporteRequest, CancelarReporteRequest, DenunciarReporteRequest, ResolverBusquedaNoLocalizadoRequest
 from app.models.red_aliados import AceptarSugerenciaRequest, AceptarSugerenciaVeterinariaResponse
 from app.services.report_service import crear_reporte, obtener_reportes, cambiar_estado_reporte, obtener_reportes_usuario
 from app.services import coverage_service
@@ -1710,9 +1710,15 @@ async def marcar_notificacion_moderacion_leida(
         raise HTTPException(status_code=404, detail="Notificación no encontrada")
     return {"mensaje": "Notificación marcada como leída"}
 
-@router.get("", response_model=list[ReportListItem], status_code=200)
-async def get_reports():
-    return await obtener_reportes()
+@router.get("", response_model=ReportesMapaResponse, status_code=200)
+async def get_reports(authorization: str = Header(None)):
+    usuario_id = None
+    if authorization and authorization.startswith("Bearer "):
+        try:
+            usuario_id = _obtener_usuario_autenticado(authorization)["id"]
+        except HTTPException:
+            pass  # token invalido/expirado -> se trata como anonimo, no se rompe el mapa
+    return await obtener_reportes(usuario_id)
 
 @router.patch("/{reporte_id}/status", status_code=200)
 async def update_report_status(reporte_id: str, body: dict, authorization: str = Header(None)):

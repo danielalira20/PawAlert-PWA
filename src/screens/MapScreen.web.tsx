@@ -9,7 +9,7 @@ import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import AuthGateModal from '../components/AuthGateModal';
 import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
-import { Reporte, getAnimales, condicionMasGrave, especieMasGrave, totalAnimales, animalMasGrave } from '../types/reporte';
+import { Reporte, ZonaAgregada, getAnimales, condicionMasGrave, especieMasGrave, totalAnimales, animalMasGrave } from '../types/reporte';
 import { AnimalCarousel } from '../components/common/AnimalCarousel';
 import ReportFormScreen from './ReportFormScreen';
 import type { AsociacionMapa } from './LeafletMap';
@@ -48,11 +48,12 @@ type SidebarView = 'list' | 'detail' | 'form' | 'asociacion';
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 export default function MapScreen() {
-  const { isLoggedIn } = useAuth();
+  const { isLoggedIn, token } = useAuth();
   const params = useLocalSearchParams<{ action?: string }>();
   const [windowWidth, setWindowWidth] = useState(Dimensions.get('window').width);
   const [isClient, setIsClient] = useState(false);
   const [reportes, setReportes] = useState<Reporte[]>([]);
+  const [zonasAgregadas, setZonasAgregadas] = useState<ZonaAgregada[]>([]);
   const [asociaciones, setAsociaciones] = useState<AsociacionMapa[]>([]);
   const [mostrarAsociaciones, setMostrarAsociaciones] = useState(false);
   const [aliados, setAliados] = useState<any[]>([]);
@@ -99,11 +100,20 @@ export default function MapScreen() {
   // useCallback evita que fetchReportes cambie en cada render
   const fetchReportes = useCallback(async () => {
     try {
-      const res = await axios.get(`${API_URL}/reports`);
-      setReportes(res.data.filter((r: Reporte) => r.latitud && r.longitud));
+      const res = await axios.get(
+        `${API_URL}/reports`,
+        token ? { headers: { Authorization: `Bearer ${token}` } } : undefined
+      );
+      if (res.data.modo === 'agregado') {
+        setReportes([]);
+        setZonasAgregadas(res.data.zonas.filter((z: ZonaAgregada) => z.latitud && z.longitud));
+      } else {
+        setReportes(res.data.reportes.filter((r: Reporte) => r.latitud && r.longitud));
+        setZonasAgregadas([]);
+      }
       setLastUpdated(new Date());
     } catch {}
-  }, []);
+  }, [token]);
 
   const fetchAsociaciones = useCallback(async () => {
     try {
@@ -759,6 +769,7 @@ export default function MapScreen() {
         <Suspense fallback={<View style={{ flex: 1, backgroundColor: '#EAE0D0' }} />}>
           <LeafletMap
             reportes={(mostrarAsociaciones || mostrarAliados) ? [] : reportesConPrivacidad}
+            zonas={(mostrarAsociaciones || mostrarAliados) ? [] : zonasAgregadas}
             asociaciones={mostrarAsociaciones ? asociaciones : []}
             aliados={mostrarAliados ? aliados : []}
             selectedReportId={selectedReport?.id ?? highlightedReportId}

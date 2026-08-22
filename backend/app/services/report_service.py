@@ -587,10 +587,40 @@ TRANSICIONES_PERMITIDAS = {
     "sin_cobertura": ["pendiente"],
 }
 
-async def obtener_reportes() -> list:
+NIVEL_URGENCY_SEVERIDAD = {"rojo": 3, "amarillo": 2, "verde": 1}
+
+# Grid de agregacion para el mapa publico sin sesion (~0.01 grado ~ 1.1km):
+# visitantes anonimos no reciben marcadores individuales, solo densidad por
+# zona, para no exponer la ubicacion aproximada de un reporte especifico.
+GRID_MAPA_PUBLICO = 2
+
+
+def _agregar_por_zona(filas: list) -> list[dict]:
+    celdas: dict[tuple[float, float], dict] = {}
+    for r in filas:
+        lat, lng = r.get("latitud"), r.get("longitud")
+        if lat is None or lng is None:
+            continue
+        clave = (round(lat, GRID_MAPA_PUBLICO), round(lng, GRID_MAPA_PUBLICO))
+        celda = celdas.setdefault(
+            clave, {"latitud": clave[0], "longitud": clave[1], "cantidad": 0, "nivel_urgencia_max": None}
+        )
+        celda["cantidad"] += 1
+        nivel = r.get("urgency_nivel")
+        if nivel and (
+            celda["nivel_urgencia_max"] is None
+            or NIVEL_URGENCY_SEVERIDAD.get(nivel, 0)
+            > NIVEL_URGENCY_SEVERIDAD.get(celda["nivel_urgencia_max"], 0)
+        ):
+            celda["nivel_urgencia_max"] = nivel
+    return list(celdas.values())
+
+
+async def obtener_reportes(usuario_id: str | None = None) -> dict:
     resultado = supabase.table("reportes").select(
         "id, estado_reporte, estado_id, latitud, longitud, municipio, colonia, created_at, "
         "urgency_score, urgency_nivel, estado_validacion_reporte, estado_moderacion, "
+        "staff_asignado_id, "
         "animal(orden, es_grupo, cantidad, trae_crias_nacidas, numero_crias_nacidas, "
         "tipo_animal_id, condicion_id, tamanio_id, sexo, edad_aproximada, descripcion, "
         "tipo_animal_catalogo(clave), condicion_catalogo(clave), tamanio_catalogo(clave), "
@@ -601,6 +631,9 @@ async def obtener_reportes() -> list:
     ).in_(
         "estado_moderacion", ["visible", "aprobado"]
     ).execute()
+
+    if usuario_id is None:
+        return {"modo": "agregado", "reportes": [], "zonas": _agregar_por_zona(resultado.data)}
 
     reportes = []
     for r in resultado.data:
@@ -614,15 +647,17 @@ async def obtener_reportes() -> list:
                 fotos_ordenadas = sorted(fotos, key=lambda f: f.get("orden", 0))
                 foto_url = fotos_ordenadas[0]["foto_url"]
 
-        # Endpoint público sin auth — se redondea a ~100m de precisión para no
-        # exponer la ubicación exacta (posible domicilio) del reportante.
+        # Solo quien esta asignado como voluntario/staff a ESTE reporte ve la
+        # coordenada exacta. El resto (reportante, otros voluntarios, staff de
+        # otra asociacion) sigue viendo la ubicacion redondeada a ~100m.
         lat = r.get("latitud")
         lng = r.get("longitud")
+        es_asignado = usuario_id is not None and r.get("staff_asignado_id") == usuario_id
         reportes.append({
             "id": r["id"],
             "estado_reporte": r.get("estado_reporte"),
-            "latitud": round(lat, 3) if lat is not None else None,
-            "longitud": round(lng, 3) if lng is not None else None,
+            "latitud": (lat if es_asignado else round(lat, 3)) if lat is not None else None,
+            "longitud": (lng if es_asignado else round(lng, 3)) if lng is not None else None,
             "municipio": r.get("municipio"),
             "colonia": r.get("colonia"),
             "created_at": str(r["created_at"]),
@@ -634,7 +669,7 @@ async def obtener_reportes() -> list:
             "estado_moderacion": r.get("estado_moderacion"),
         })
 
-    return reportes
+    return {"modo": "detallado", "reportes": reportes, "zonas": []}
 
 async def cambiar_estado_reporte(
     reporte_id: str,
