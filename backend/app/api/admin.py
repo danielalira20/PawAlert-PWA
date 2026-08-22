@@ -7,6 +7,65 @@ from app.services.email_service import (email_asociacion_aprobada, email_asociac
 router = APIRouter()
 
 
+def _adjuntar_coincidencias_visuales(reportes: list[dict]) -> None:
+    reporte_ids = [reporte["id"] for reporte in reportes if reporte.get("id")]
+    if not reporte_ids:
+        return
+
+    try:
+        resultado = (
+            supabase_admin.table("reporte_imagen_coincidencias")
+            .select(
+                "reporte_id, animal_foto_id, reporte_coincidente_id, "
+                "animal_foto_coincidente_id, similitud, nivel, modelo"
+            )
+            .in_("reporte_id", reporte_ids)
+            .order("similitud", desc=True)
+            .execute()
+        )
+        coincidencias = resultado.data or []
+        foto_ids = list(
+            {
+                coincidencia.get("animal_foto_coincidente_id")
+                for coincidencia in coincidencias
+                if coincidencia.get("animal_foto_coincidente_id")
+            }
+        )
+        fotos_por_id: dict[str, str] = {}
+        if foto_ids:
+            fotos = (
+                supabase_admin.table("animal_fotos")
+                .select("id, foto_url")
+                .in_("id", foto_ids)
+                .execute()
+            )
+            fotos_por_id = {
+                foto["id"]: foto["foto_url"]
+                for foto in (fotos.data or [])
+                if foto.get("id") and foto.get("foto_url")
+            }
+
+        por_reporte: dict[str, list[dict]] = {}
+        for coincidencia in coincidencias:
+            reporte_id = coincidencia.get("reporte_id")
+            if not reporte_id:
+                continue
+            item = dict(coincidencia)
+            item["foto_coincidente_url"] = fotos_por_id.get(
+                coincidencia.get("animal_foto_coincidente_id")
+            )
+            por_reporte.setdefault(reporte_id, []).append(item)
+
+        for reporte in reportes:
+            reporte["coincidencias_visuales"] = por_reporte.get(
+                reporte.get("id"), []
+            )
+    except Exception as error:
+        print(f"[WARN] No se pudieron cargar coincidencias CLIP: {error}")
+        for reporte in reportes:
+            reporte["coincidencias_visuales"] = []
+
+
 def _verificar_admin(authorization: str | None) -> dict:
     """Valida el JWT y confirma que el usuario tiene el rol 'admin'."""
     if not authorization or not authorization.startswith("Bearer "):
@@ -458,6 +517,7 @@ async def listar_reportes_moderacion(authorization: str = Header(None)):
         .execute()
     )
     reportes = resultado.data or []
+    _adjuntar_coincidencias_visuales(reportes)
     usuarios_ids = list({r.get("usuario_id") for r in reportes if r.get("usuario_id")})
     usuarios_por_id = {}
     if usuarios_ids:
