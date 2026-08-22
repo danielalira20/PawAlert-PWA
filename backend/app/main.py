@@ -55,6 +55,8 @@ app.include_router(incidentes.router, prefix="/incidentes", tags=["Incidentes"])
 app.include_router(reputacion.router, prefix="/reputacion", tags=["Reputación"])
 from app.api import permanencia
 app.include_router(permanencia.router, prefix="/reports", tags=["Permanencia"])
+from app.api import avistamientos
+app.include_router(avistamientos.router, prefix="/reports", tags=["Avistamientos"])
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
