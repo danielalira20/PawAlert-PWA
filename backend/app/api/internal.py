@@ -5,9 +5,11 @@ entorno CRON_SECRET (local y Railway), leída vía app.config.settings —
 igual que el resto del proyecto (antes usaba os.getenv directo, que
 nunca veía el valor: pydantic-settings no exporta el .env a os.environ).
 """
+from io import BytesIO
 from typing import Optional
 
 from fastapi import APIRouter, Header, HTTPException
+from PIL import Image
 
 from app.config import settings
 from app.services.escalamiento import evaluar_escalamientos
@@ -137,3 +139,24 @@ def correr_vencimientos_clip(x_cron_secret: Optional[str] = Header(None)):
     from app.services.clip_gray_scheduler_service import procesar_vencimientos_clip
 
     return procesar_vencimientos_clip(limit=100)
+
+
+@router.post("/clip/health")
+def comprobar_clip(x_cron_secret: Optional[str] = Header(None)):
+    if not settings.cron_secret or x_cron_secret != settings.cron_secret:
+        raise HTTPException(status_code=401, detail="No autorizado")
+
+    from app.services.clip_embedding_service import probe_clip_embedding
+
+    image_buffer = BytesIO()
+    Image.new("RGB", (8, 8), color=(128, 128, 128)).save(
+        image_buffer,
+        format="JPEG",
+    )
+    result = probe_clip_embedding(image_buffer.getvalue(), "image/jpeg")
+    return {
+        "status": result.status.value,
+        "dimensions": len(result.embedding) if result.embedding is not None else None,
+        "model": result.model,
+        "error_code": result.error_code.value if result.error_code else None,
+    }

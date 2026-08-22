@@ -88,15 +88,19 @@ def _request_embedding(image_bytes: bytes, content_type: str) -> httpx.Response:
     )
 
 
-def get_clip_embedding(image_bytes: bytes, content_type: str) -> ClipEmbeddingResult:
-    """Genera un embedding normalizado sin propagar fallos del proveedor."""
+def _generate_clip_embedding(
+    image_bytes: bytes,
+    content_type: str,
+    *,
+    require_enabled: bool,
+) -> ClipEmbeddingResult:
     calculated_at = datetime.now(timezone.utc)
     if not image_bytes:
         return _unavailable(ExternalSignalErrorCode.no_data, calculated_at)
     if content_type not in _SUPPORTED_CONTENT_TYPES:
         return _unavailable(ExternalSignalErrorCode.invalid_response, calculated_at)
     if (
-        not settings.clip_validation_enabled
+        (require_enabled and not settings.clip_validation_enabled)
         or not settings.huggingface_token.strip()
         or not settings.clip_endpoint_url.strip()
     ):
@@ -126,3 +130,21 @@ def get_clip_embedding(image_bytes: bytes, content_type: str) -> ClipEmbeddingRe
             break
 
     return _unavailable(last_error, calculated_at)
+
+
+def get_clip_embedding(image_bytes: bytes, content_type: str) -> ClipEmbeddingResult:
+    """Genera un embedding normalizado sin propagar fallos del proveedor."""
+    return _generate_clip_embedding(
+        image_bytes,
+        content_type,
+        require_enabled=True,
+    )
+
+
+def probe_clip_embedding(image_bytes: bytes, content_type: str) -> ClipEmbeddingResult:
+    """Comprueba el proveedor sin habilitar CLIP para reportes reales."""
+    return _generate_clip_embedding(
+        image_bytes,
+        content_type,
+        require_enabled=False,
+    )

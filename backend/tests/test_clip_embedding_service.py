@@ -42,6 +42,50 @@ def test_disabled_clip_does_not_call_provider():
     post.assert_not_called()
 
 
+def test_probe_works_while_operational_flag_is_disabled():
+    with (
+        patch.object(clip_embedding_service.settings, "clip_validation_enabled", False),
+        patch.object(clip_embedding_service.settings, "huggingface_token", "hf_test"),
+        patch.object(
+            clip_embedding_service.settings,
+            "clip_endpoint_url",
+            "https://clip.example.test/embed",
+        ),
+        patch.object(clip_embedding_service.settings, "clip_model", MODEL),
+        patch.object(
+            clip_embedding_service.httpx,
+            "post",
+            return_value=response(200, {"embedding": [1.0] * 512}),
+        ) as post,
+    ):
+        result = clip_embedding_service.probe_clip_embedding(
+            b"diagnostic-image",
+            "image/jpeg",
+        )
+
+    assert result.status == ExternalSignalStatus.complete
+    assert result.embedding is not None
+    assert len(result.embedding) == 512
+    post.assert_called_once()
+
+
+def test_probe_still_requires_provider_credentials():
+    with (
+        patch.object(clip_embedding_service.settings, "clip_validation_enabled", False),
+        patch.object(clip_embedding_service.settings, "huggingface_token", ""),
+        patch.object(clip_embedding_service.settings, "clip_endpoint_url", ""),
+        patch.object(clip_embedding_service.httpx, "post") as post,
+    ):
+        result = clip_embedding_service.probe_clip_embedding(
+            b"diagnostic-image",
+            "image/jpeg",
+        )
+
+    assert result.status == ExternalSignalStatus.unavailable
+    assert result.error_code == ExternalSignalErrorCode.not_configured
+    post.assert_not_called()
+
+
 def test_complete_embedding_is_normalized_before_returning():
     values = [1.0] * 512
     patches = configured()
