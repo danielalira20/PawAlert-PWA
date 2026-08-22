@@ -33,6 +33,18 @@ type RazonValidacion = {
   codigo: string;
   resultado?: string;
   detalle?: string;
+  similitud?: number;
+  reporte_coincidente_id?: string;
+};
+type CoincidenciaVisual = {
+  reporte_id: string;
+  animal_foto_id: string;
+  reporte_coincidente_id: string;
+  animal_foto_coincidente_id: string;
+  similitud: number;
+  nivel: 'low' | 'gray' | 'high';
+  modelo: string;
+  foto_coincidente_url?: string | null;
 };
 type Denuncia = {
   id: string;
@@ -69,6 +81,7 @@ type ReporteModeracion = {
   estado_moderacion: string;
   estado_validacion_reporte?: string | null;
   razones_validacion?: RazonValidacion[];
+  validacion_revision_expira_at?: string | null;
   moderacion_origen?: string | null;
   moderacion_actualizada_at?: string | null;
   municipio?: string | null;
@@ -96,6 +109,7 @@ type ReporteModeracion = {
   phash_distancia?: number | null;
   animal?: Animal[];
   reporte_denuncias?: Denuncia[];
+  coincidencias_visuales?: CoincidenciaVisual[];
 };
 
 const MOTIVOS: Record<string, string> = {
@@ -116,6 +130,9 @@ const RAZONES_VALIDACION: Record<string, string> = {
   phash_coincidencia: 'La fotografía coincide con otro reporte',
   trust_score_revision_previa: 'La cuenta requiere revisión previa',
   trust_score_no_disponible: 'No se pudo verificar la reputación de la cuenta',
+  clip_similitud_alta: 'Otra fotografía tiene una similitud visual alta',
+  clip_zona_gris: 'La similitud visual necesita revisión temporal',
+  clip_no_disponible: 'No se pudo completar la comparación visual',
 };
 
 function descargarFoto(url: string, index: number) {
@@ -304,6 +321,9 @@ function ModerationCard({
   const denuncias = reporte.reporte_denuncias?.filter((item) => !item.resuelta_at).length || 0;
   const especie = animales[0]?.tipo_animal_catalogo?.clave || 'animal';
   const cantidad = animales.reduce((total, animal) => total + (animal.cantidad || 1), 0);
+  const tieneCoincidenciaClip = (reporte.coincidencias_visuales || []).some(
+    (coincidencia) => coincidencia.nivel === 'gray' || coincidencia.nivel === 'high',
+  );
   return (
     <TouchableOpacity onPress={onPress} style={[styles.card, !compact && styles.cardDesktop]}>
       {foto ? (
@@ -325,6 +345,12 @@ function ModerationCard({
             <View style={styles.hashBadge}>
               <Ionicons name="copy-outline" size={12} color="#8A5A12" />
               <Text style={styles.hashBadgeText}>Foto similar</Text>
+            </View>
+          )}
+          {tieneCoincidenciaClip && (
+            <View style={styles.clipBadge}>
+              <Ionicons name="layers-outline" size={12} color="#265F73" />
+              <Text style={styles.clipBadgeText}>Coincidencia visual</Text>
             </View>
           )}
           {reporte.estado_validacion_reporte === 'revision_manual' && (
@@ -380,10 +406,16 @@ function ModerationDetail({
     [animales],
   );
   const denuncias = (reporte.reporte_denuncias || []).filter((item) => !item.resuelta_at);
+  const coincidenciasVisuales = (reporte.coincidencias_visuales || []).filter(
+    (coincidencia) => coincidencia.nivel === 'gray' || coincidencia.nivel === 'high',
+  );
   const esRevisionInicial = reporte.estado_validacion_reporte === 'revision_manual';
   const razonesValidacion = (reporte.razones_validacion || []).filter(
-    (razon) => razon.resultado === 'revision_manual',
+    (razon) => razon.resultado === 'revision_manual'
+      || razon.resultado === 'revision_temporal'
+      || razon.resultado === 'sin_bloqueo',
   );
+  const tieneZonaGris = razonesValidacion.some((razon) => razon.codigo === 'clip_zona_gris');
   return (
     <View style={{ flex: 1 }}>
       <View style={styles.detailHeader}>
@@ -514,6 +546,65 @@ function ModerationDetail({
           </View>
         )}
 
+        {coincidenciasVisuales.length > 0 && (
+          <View style={styles.infoCard}>
+            <View style={styles.comparisonHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.sectionTitle}>Comparación visual</Text>
+                <Text style={styles.comparisonHint}>
+                  Revisa ambas imágenes antes de aprobar o rechazar el reporte.
+                </Text>
+              </View>
+              <Ionicons name="layers-outline" size={22} color="#34778D" />
+            </View>
+            {coincidenciasVisuales.map((coincidencia, index) => {
+              const fotoActual = fotos.find(
+                (foto) => foto.id === coincidencia.animal_foto_id,
+              )?.foto_url;
+              return (
+                <View
+                  key={`${coincidencia.animal_foto_id}-${coincidencia.animal_foto_coincidente_id}`}
+                  style={[
+                    styles.comparisonItem,
+                    index === coincidenciasVisuales.length - 1 && styles.comparisonItemLast,
+                  ]}
+                >
+                  <View style={styles.comparisonMeta}>
+                    <View
+                      style={
+                        coincidencia.nivel === 'high'
+                          ? styles.similarityHighBadge
+                          : styles.similarityGrayBadge
+                      }
+                    >
+                      <Text
+                        style={
+                          coincidencia.nivel === 'high'
+                            ? styles.similarityHighText
+                            : styles.similarityGrayText
+                        }
+                      >
+                        {coincidencia.nivel === 'high' ? 'Alta' : 'Zona gris'} ·{' '}
+                        {Math.round(coincidencia.similitud * 100)}%
+                      </Text>
+                    </View>
+                    <Text style={styles.relatedCaseText} numberOfLines={1}>
+                      Caso relacionado: {coincidencia.reporte_coincidente_id}
+                    </Text>
+                  </View>
+                  <View style={[styles.comparisonImages, compact && styles.comparisonImagesCompact]}>
+                    <ComparisonPhoto label="Reporte actual" url={fotoActual} />
+                    <ComparisonPhoto
+                      label="Reporte anterior"
+                      url={coincidencia.foto_coincidente_url}
+                    />
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        )}
+
         {esRevisionInicial && (
           <View style={styles.warningCard}>
             <Ionicons name="pause-circle-outline" size={24} color="#A76A12" />
@@ -522,6 +613,11 @@ function ModerationDetail({
               <Text style={styles.warningText}>
                 Este reporte todavía no tiene asociación ni voluntarios candidatos.
               </Text>
+              {tieneZonaGris && reporte.validacion_revision_expira_at && (
+                <Text style={styles.reviewDeadline}>
+                  Revisión automática prevista: {new Date(reporte.validacion_revision_expira_at).toLocaleString('es-MX')}
+                </Text>
+              )}
               {razonesValidacion.map((razon) => (
                 <View key={razon.codigo} style={styles.validationReason}>
                   <Ionicons name="alert-circle-outline" size={16} color="#8A5A12" />
@@ -587,6 +683,22 @@ function ModerationDetail({
   );
 }
 
+function ComparisonPhoto({ label, url }: { label: string; url?: string | null }) {
+  return (
+    <View style={styles.comparisonPhotoColumn}>
+      <Text style={styles.comparisonPhotoLabel}>{label}</Text>
+      {url ? (
+        <Image source={{ uri: url }} style={styles.comparisonPhoto} resizeMode="contain" />
+      ) : (
+        <View style={[styles.comparisonPhoto, styles.noPhoto]}>
+          <Ionicons name="image-outline" size={32} color="#B6A597" />
+          <Text style={styles.noPhotoText}>Imagen no disponible</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
 function InfoLine({ icon, label, value }: { icon: any; label: string; value: string }) {
   return <View style={styles.infoLine}><Ionicons name={icon} size={18} color="#EC802B" /><View style={{ flex: 1 }}><Text style={styles.infoLabel}>{label}</Text><Text style={styles.infoValue}>{value}</Text></View></View>;
 }
@@ -616,6 +728,8 @@ const styles = StyleSheet.create({
   dangerBadgeText: { color: '#C43B32', fontSize: 11, fontWeight: '900' },
   hashBadge: { flexDirection: 'row', gap: 5, alignItems: 'center', backgroundColor: '#FFF6DC', paddingHorizontal: 9, paddingVertical: 5, borderRadius: 20 },
   hashBadgeText: { color: '#8A5A12', fontSize: 11, fontWeight: '900' },
+  clipBadge: { flexDirection: 'row', gap: 5, alignItems: 'center', backgroundColor: '#E9F4F6', paddingHorizontal: 9, paddingVertical: 5, borderRadius: 20 },
+  clipBadgeText: { color: '#265F73', fontSize: 11, fontWeight: '900' },
   cardTitle: { fontSize: 20, fontWeight: '900', color: '#3F3025', textTransform: 'capitalize' },
   locationRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 8 },
   cardMeta: { flex: 1, color: '#776555', fontWeight: '600' },
@@ -659,6 +773,22 @@ const styles = StyleSheet.create({
   warningTitle: { color: '#7D5010', fontSize: 16, fontWeight: '900' },
   warningText: { color: '#806A48', lineHeight: 20, marginTop: 4 },
   hashId: { color: '#9C7C43', fontSize: 11, marginTop: 8 },
+  comparisonHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  comparisonHint: { color: '#806F61', fontSize: 12, lineHeight: 18, marginTop: -7, marginBottom: 8 },
+  comparisonItem: { paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#E8DED5' },
+  comparisonItemLast: { borderBottomWidth: 0, paddingBottom: 0 },
+  comparisonMeta: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 9, marginBottom: 10 },
+  similarityHighBadge: { backgroundColor: '#FFF0EE', borderRadius: 12, paddingHorizontal: 9, paddingVertical: 5 },
+  similarityHighText: { color: '#B63A32', fontSize: 11, fontWeight: '900' },
+  similarityGrayBadge: { backgroundColor: '#FFF6DC', borderRadius: 12, paddingHorizontal: 9, paddingVertical: 5 },
+  similarityGrayText: { color: '#8A5A12', fontSize: 11, fontWeight: '900' },
+  relatedCaseText: { flexShrink: 1, color: '#806F61', fontSize: 11, fontWeight: '700' },
+  comparisonImages: { flexDirection: 'row', gap: 12 },
+  comparisonImagesCompact: { flexDirection: 'column' },
+  comparisonPhotoColumn: { flex: 1, minWidth: 0 },
+  comparisonPhotoLabel: { color: '#6D5948', fontSize: 11, fontWeight: '900', marginBottom: 6 },
+  comparisonPhoto: { width: '100%', height: 220, backgroundColor: '#29241F', borderRadius: 10 },
+  reviewDeadline: { color: '#7D5010', fontSize: 12, fontWeight: '800', marginTop: 8 },
   validationReason: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, marginTop: 11 },
   validationReasonTitle: { color: '#6E4B18', fontWeight: '800', fontSize: 12 },
   validationReasonDetail: { color: '#806A48', fontSize: 11, marginTop: 2 },
