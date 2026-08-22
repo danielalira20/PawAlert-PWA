@@ -19,6 +19,7 @@ export interface Usuario {
   email: string;
   telefono: string;
   asociacion_id?: string | null;
+  avatar_id?: string | null;
   es_admin?: boolean;
   // null cuando rol_id es NULL de verdad (ej. aliado_local/patrocinador_institucional
   // — ver auth.py/users.py) — distinto de no tener el campo en absoluto.
