@@ -162,3 +162,30 @@ def test_dispatch_usa_cliente_admin_y_envia_a_dispositivos_activos(
     )
     mensajeria.send_each_for_multicast.assert_called_once()
     assert outbox.update.call_args.args[0]["estado"] == "enviada"
+
+def test_puede_notificar_retorna_false_si_hay_spam_reciente(monkeypatch, make_query):
+    # Simular que la consulta devuelve count=1 (ya hay una notificación reciente)
+    outbox = make_query(data=[], count=1)
+    db = MagicMock()
+    db.table.return_value = outbox
+    monkeypatch.setattr(push_service, "supabase_admin", db)
+
+    resultado = push_service.puede_notificar("user-1", "nuevo_caso_cercano")
+    
+    assert resultado is False
+    db.table.assert_called_once_with("notificaciones_push")
+    outbox.select.assert_called_once_with("id", count="exact")
+    outbox.eq.assert_any_call("usuario_id", "user-1")
+    outbox.eq.assert_any_call("tipo_evento", "nuevo_caso_cercano")
+    outbox.in_.assert_called_once_with("estado", ["pendiente", "enviada"])
+
+def test_puede_notificar_falla_abierta_en_caso_de_error(monkeypatch):
+    db = MagicMock()
+    # Simular caída de base de datos
+    db.table.side_effect = Exception("DB down")
+    monkeypatch.setattr(push_service, "supabase_admin", db)
+
+    # Si hay error, debe retornar True para no bloquear la notificación
+    resultado = push_service.puede_notificar("user-1", "nuevo_caso_cercano")
+    
+    assert resultado is True

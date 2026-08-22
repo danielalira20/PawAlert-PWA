@@ -101,10 +101,45 @@ def _assert_safe_payload(payload: dict) -> None:
         if k in payload:
             raise ValueError(f"Payload contains unsafe key: {k}")
 
+
+def puede_notificar(
+    usuario_id: str,
+    tipo_evento: str,
+    ventana_horas: int = 4,
+) -> bool:
+    """Retorna False si ya se encoló el mismo tipo de evento para este usuario
+    en las últimas ``ventana_horas`` horas (en estado pendiente o enviada).
+
+    Evita spam cuando un voluntario es candidato en múltiples reportes cercanos.
+    Falla de forma abierta (retorna True) si la consulta no puede completarse,
+    priorizando que la notificación llegue sobre el silencio.
+    """
+    from datetime import timedelta
+    desde = (datetime.now(timezone.utc) - timedelta(hours=ventana_horas)).isoformat()
+    try:
+        res = (
+            supabase_admin.table("notificaciones_push")
+            .select("id", count="exact")
+            .eq("usuario_id", usuario_id)
+            .eq("tipo_evento", tipo_evento)
+            .in_("estado", ["pendiente", "enviada"])
+            .gte("created_at", desde)
+            .execute()
+        )
+        return (res.count or 0) == 0
+    except Exception as e:
+        logger.warning(
+            f"puede_notificar: error consultando outbox para {usuario_id}/{tipo_evento}: {e}. "
+            "Permitiendo notificación (fail-open)."
+        )
+        return True
+
+
 def dispatch_pending_pushes(limit: int = 100) -> Dict[str, int]:
     """
     Called by the cron job to send pending pushes via FCM.
     """
+
     if not messaging or not _init_firebase():
         return {"error": "firebase_admin not initialized"}
 
