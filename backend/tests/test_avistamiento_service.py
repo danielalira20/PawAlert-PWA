@@ -29,6 +29,8 @@ def _reporte(**cambios):
         "latitud": 19.0,
         "longitud": -98.0,
         "ultima_ubicacion_confirmada_id": None,
+        "ultima_latitud_confirmada": None,
+        "ultima_longitud_confirmada": None,
     }
     datos.update(cambios)
     return datos
@@ -147,7 +149,11 @@ def test_registrar_avistamiento_fuente_asociacion_se_autovalida(
     assert resultado.fuente == LocationSource.asociacion
     assert resultado.estado_validacion == "validado"
     reportes_mock.update.assert_called_once_with(
-        {"ultima_ubicacion_confirmada_id": "av-1"}
+        {
+            "ultima_ubicacion_confirmada_id": "av-1",
+            "ultima_latitud_confirmada": 19.0001,
+            "ultima_longitud_confirmada": -98.0001,
+        }
     )
     historial_mock.insert.assert_called_once()
     datos_evento = historial_mock.insert.call_args[0][0]
@@ -266,7 +272,11 @@ def test_validar_avistamiento_aprobar_confirma_ubicacion(monkeypatch, make_query
 
     assert resultado.estado_validacion == "validado"
     reportes_mock.update.assert_called_once_with(
-        {"ultima_ubicacion_confirmada_id": "av-1"}
+        {
+            "ultima_ubicacion_confirmada_id": "av-1",
+            "ultima_latitud_confirmada": 19.0,
+            "ultima_longitud_confirmada": -98.0,
+        }
     )
     historial_mock.insert.assert_called_once()
     datos_evento = historial_mock.insert.call_args[0][0]
@@ -307,7 +317,11 @@ def test_fallo_de_ruta_no_revierte_confirmacion(monkeypatch, make_query):
 
     assert resultado.estado_validacion == "validado"
     reportes_mock.update.assert_called_once_with(
-        {"ultima_ubicacion_confirmada_id": "av-1"}
+        {
+            "ultima_ubicacion_confirmada_id": "av-1",
+            "ultima_latitud_confirmada": 19.0,
+            "ultima_longitud_confirmada": -98.0,
+        }
     )
     historial_mock.insert.assert_called_once()
 
@@ -355,6 +369,16 @@ def test_validar_avistamiento_rechaza_usuario_no_asignado(monkeypatch, make_quer
     avistamientos_mock.update.assert_not_called()
 
 
+def test_ubicacion_referencia_prefiere_coordenadas_operativas():
+    reporte = _reporte(
+        ultima_ubicacion_confirmada_id="av-1",
+        ultima_latitud_confirmada=19.5,
+        ultima_longitud_confirmada=-98.5,
+    )
+
+    assert svc._ubicacion_referencia(reporte) == (19.5, -98.5)
+
+
 # --- registrar_avistamiento_desde_hito --------------------------------------
 
 
@@ -386,7 +410,11 @@ def test_registrar_avistamiento_desde_hito_se_valida_de_inmediato(monkeypatch, m
     assert datos_insertados["estado_validacion"] == "validado"
     assert datos_insertados["fuente"] == "voluntario_asignado"
     reportes_mock.update.assert_called_once_with(
-        {"ultima_ubicacion_confirmada_id": "av-1"}
+        {
+            "ultima_ubicacion_confirmada_id": "av-1",
+            "ultima_latitud_confirmada": 19.0,
+            "ultima_longitud_confirmada": -98.0,
+        }
     )
     historial_mock.insert.assert_called_once()
 
