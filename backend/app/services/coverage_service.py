@@ -7,6 +7,7 @@ del rescate. La selección definitiva siempre se delega a la función SQL
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 from math import asin, cos, radians, sin, sqrt
 
@@ -22,6 +23,7 @@ from app.utils.animal_shaping import shape_animal_embed, shape_animal_response
 
 ESTADOS_VOLUNTARIO_ACTIVO = ("activo_nivel_1", "activo_nivel_2")
 PROPUESTA_COBERTURA_MINUTOS = 10
+logger = logging.getLogger(__name__)
 
 
 def _reporte_disponible_para_cobertura(
@@ -368,6 +370,50 @@ def _usuarios_coordinacion(asociacion_id: str | None) -> list[str]:
     ]
 
 
+def _obtener_ruta_estimada_propuesta(
+    reporte_id: str,
+    voluntario_id: str | None,
+) -> dict | None:
+    if not voluntario_id:
+        return None
+    try:
+        candidates = enrich_candidates_with_route_estimates(
+            reporte_id,
+            [{"voluntario_id": voluntario_id}],
+        )
+        return candidates[0].get("ruta_estimada") if candidates else None
+    except Exception:
+        logger.warning(
+            "No se pudo estimar la ruta de la propuesta para el reporte %s",
+            reporte_id,
+            exc_info=True,
+        )
+        return None
+
+
+def _payload_nueva_propuesta(
+    reporte_id: str,
+    ruta_estimada: dict | None,
+) -> dict:
+    payload = {
+        "mensaje": "Has recibido una nueva propuesta de asignación para un caso.",
+        "reporte_id": reporte_id,
+        "route_status": (
+            ruta_estimada.get("status") if ruta_estimada else "unavailable"
+        ),
+    }
+    if ruta_estimada and ruta_estimada.get("status") == "complete":
+        duration_seconds = ruta_estimada.get("duration_seconds")
+        distance_meters = ruta_estimada.get("distance_meters")
+        if duration_seconds is not None:
+            payload["duration_seconds"] = float(duration_seconds)
+            minutes = max(1, round(float(duration_seconds) / 60))
+            payload["mensaje"] += f" Tiempo estimado al caso: {minutes} min."
+        if distance_meters is not None:
+            payload["distance_meters"] = float(distance_meters)
+    return payload
+
+
 def reservar_cobertura(
     *,
     reporte_id: str,
@@ -416,6 +462,10 @@ def reservar_cobertura(
             },
         ).execute()
         propuesta_id = str(resultado.data)
+        ruta_estimada = _obtener_ruta_estimada_propuesta(
+            reporte_id,
+            voluntario_id,
+        )
 
         try:
             from app.services.push_notification_service import queue_and_send_push
@@ -423,10 +473,7 @@ def reservar_cobertura(
                 usuario_id=usuario_asignado_id,
                 tipo_evento="nueva_propuesta",
                 idempotency_key=f"nueva_propuesta:{propuesta_id}:{usuario_asignado_id}",
-                payload={
-                    "mensaje": "Has recibido una nueva propuesta de asignación para un caso.",
-                    "reporte_id": reporte_id,
-                },
+                payload=_payload_nueva_propuesta(reporte_id, ruta_estimada),
                 reporte_id=reporte_id,
                 propuesta_id=propuesta_id,
             )

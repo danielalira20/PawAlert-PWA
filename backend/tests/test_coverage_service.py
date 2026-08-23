@@ -20,6 +20,11 @@ def permitir_asignaciones_sin_restriccion():
             "_reporte_disponible_para_cobertura",
             return_value=True,
         ),
+        patch.object(
+            coverage_service,
+            "_obtener_ruta_estimada_propuesta",
+            return_value=None,
+        ),
     ):
         yield
 
@@ -372,6 +377,72 @@ def test_nueva_propuesta_usa_id_de_rpc_en_push():
         "nueva_propuesta:propuesta-1:usuario-1"
     )
     assert push.call_args.kwargs["propuesta_id"] == "propuesta-1"
+
+
+def test_nueva_propuesta_incluye_tiempo_y_distancia_osrm():
+    ejecucion = MagicMock()
+    ejecucion.execute.return_value = SimpleNamespace(data="propuesta-1")
+    supabase_admin = MagicMock()
+    supabase_admin.rpc.return_value = ejecucion
+    ruta_estimada = {
+        "status": "complete",
+        "duration_seconds": 725.4,
+        "distance_meters": 5400.8,
+        "error_code": None,
+        "calculated_at": "2026-08-23T12:00:00+00:00",
+        "source": "osrm",
+    }
+
+    with (
+        patch.object(coverage_service, "supabase_admin", supabase_admin),
+        patch.object(
+            coverage_service,
+            "_obtener_ruta_estimada_propuesta",
+            return_value=ruta_estimada,
+        ),
+        patch(
+            "app.services.push_notification_service.queue_and_send_push"
+        ) as push,
+    ):
+        propuesta = coverage_service.reservar_cobertura(
+            reporte_id="reporte-1",
+            usuario_asignado_id="usuario-1",
+            voluntario_id="voluntario-1",
+            asociacion_id="asociacion-1",
+            actor_id="actor-1",
+            origen="equipo_interno",
+        )
+
+    assert propuesta == "propuesta-1"
+    payload = push.call_args.kwargs["payload"]
+    assert payload["route_status"] == "complete"
+    assert payload["duration_seconds"] == 725.4
+    assert payload["distance_meters"] == 5400.8
+    assert "12 min" in payload["mensaje"]
+
+
+def test_fallo_inesperado_de_osrm_no_bloquea_la_estimacion():
+    with patch.object(
+        coverage_service,
+        "enrich_candidates_with_route_estimates",
+        side_effect=RuntimeError("OSRM fuera de servicio"),
+    ):
+        ruta = coverage_service._obtener_ruta_estimada_propuesta(
+            "reporte-1",
+            "voluntario-1",
+        )
+
+    assert ruta is None
+
+
+def test_push_sin_ruta_conserva_payload_operativo():
+    payload = coverage_service._payload_nueva_propuesta("reporte-1", None)
+
+    assert payload == {
+        "mensaje": "Has recibido una nueva propuesta de asignación para un caso.",
+        "reporte_id": "reporte-1",
+        "route_status": "unavailable",
+    }
 
 
 @pytest.mark.parametrize("acepta", [True, False])

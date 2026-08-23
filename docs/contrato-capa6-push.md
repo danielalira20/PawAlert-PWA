@@ -131,6 +131,13 @@ recibía push al celular. Se agrega FCM con tipo `seguimiento_vencido` o `seguim
 | `reporte_en_revision` | Reportante + voluntario con propuesta | `permanencia._notificar_revision()` |
 | `nuevo_caso_cercano` | Candidatos top-3 del ranking | `report_activation_service.activar_reporte()` *(Tarea A)* |
 
+### Payload de `nueva_propuesta`
+
+La reserva se confirma primero en base de datos y despues se consulta OSRM.
+El push siempre incluye `route_status`. Cuando OSRM devuelve una ruta valida,
+tambien incluye `duration_seconds` y `distance_meters`, y el mensaje muestra
+los minutos estimados. Una falla de ruteo no revierte ni bloquea la propuesta.
+
 ---
 
 ## 7. Tareas pendientes (bloqueadas por otros)
@@ -142,4 +149,4 @@ recibía push al celular. Se agrega FCM con tipo `seguimiento_vencido` o `seguim
 | Dead Man's Switch | **Jass (VROOM)** | Propuesta 10→15 min + alerta a los 12 min |
 | Confirmación con 3 casos activos | **Jass (VROOM)** | Verificar carga antes de enviar propuesta |
 | Notificar reemplazo | **Jass (VROOM)** | Push al siguiente en lista cuando el ganador no responde |
-| Tiempo estimado en push | **Daniela (OSRM real)** | Incluir `duration_seconds` en push `nueva_propuesta` |
+| Tiempo estimado en push | **Completado (Daniela)** | `duration_seconds` y `distance_meters` en `nueva_propuesta` |
