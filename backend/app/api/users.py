@@ -78,6 +78,42 @@ async def get_usuario_actual(authorization: str = Header(None)):
  
     return usuario_data
 
+
+class UpdateProfileRequest(BaseModel):
+    nombre: str
+    apellido_paterno: str
+    apellido_materno: str | None = None
+    telefono: str
+
+@router.patch("/me", status_code=200)
+async def update_usuario_actual(body: UpdateProfileRequest, authorization: str = Header(None)):
+    """Actualiza los datos personales del usuario logueado."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="No autenticado")
+
+    token = authorization.replace("Bearer ", "")
+    try:
+        auth_response = supabase.auth.get_user(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Token inválido o expirado")
+
+    telefono_limpio = body.telefono.replace(" ", "").replace("-", "")
+
+    update_data = {
+        "nombre": body.nombre.strip(),
+        "apellido_paterno": body.apellido_paterno.strip(),
+        "apellido_materno": body.apellido_materno.strip() if body.apellido_materno else None,
+        "telefono": telefono_limpio
+    }
+
+    # Se actualizan los datos usando supabase_admin para evitar bloqueos de RLS
+    resultado = supabase_admin.table("usuarios").update(update_data).eq("auth_user_id", auth_response.user.id).execute()
+
+    if not resultado.data:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    return {"status": "ok", "message": "Perfil actualizado correctamente"}
+
 class UpdateAvatarRequest(BaseModel):
     avatar_id: str | None
 
