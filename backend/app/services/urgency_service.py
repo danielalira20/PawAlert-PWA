@@ -425,3 +425,53 @@ def evaluate_report_urgency(
         ).execute()
 
     return result
+
+
+OPERATIONAL_REDUCTION_FACTOR = 0.7
+
+
+def apply_operational_confirmation(reporte_id: str) -> None:
+    """Reduce la prioridad operativa al confirmar cobertura, sin tocar el score clinico."""
+    database = _get_admin_client()
+    query = (
+        database.table("reportes")
+        .select("urgency_score, urgency_nivel")
+        .eq("id", reporte_id)
+        .limit(1)
+        .execute()
+    )
+    if not query.data:
+        return
+
+    score_clinico = query.data[0].get("urgency_score")
+    if score_clinico is None:
+        return
+
+    now = datetime.now(timezone.utc)
+    score_operativo = round(float(score_clinico) * OPERATIONAL_REDUCTION_FACTOR, 2)
+    nivel_operativo = _level_for(score_operativo)
+
+    database.table("reportes").update(
+        {
+            "urgency_score_operativo": score_operativo,
+            "urgency_nivel_operativo": nivel_operativo,
+            "urgency_operativo_actualizado_at": now.isoformat(),
+        }
+    ).eq("id", reporte_id).execute()
+
+    database.table("historial_reporte").insert(
+        {
+            "reporte_id": reporte_id,
+            "tipo_evento": "urgency_operativo_actualizado",
+            "descripcion": (
+                "Se redujo la prioridad operativa al confirmar cobertura; "
+                "el score clinico se conserva sin cambios."
+            ),
+            "datos_extra": {
+                "score_clinico": score_clinico,
+                "nivel_clinico": query.data[0].get("urgency_nivel"),
+                "score_operativo": score_operativo,
+                "nivel_operativo": nivel_operativo,
+            },
+        }
+    ).execute()

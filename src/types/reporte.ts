@@ -16,6 +16,21 @@ export interface Animal {
 
 export type UrgencyLevel = 'verde' | 'amarillo' | 'rojo';
 
+/** Punto agregado por zona que recibe un visitante sin sesión en el mapa
+ * público — sin id ni datos de un reporte individual, solo densidad. */
+export interface ZonaAgregada {
+  latitud: number;
+  longitud: number;
+  cantidad: number;
+  nivel_urgencia_max: UrgencyLevel | null;
+}
+
+export interface ReportesMapaResponse {
+  modo: 'agregado' | 'detallado';
+  reportes: Reporte[];
+  zonas: ZonaAgregada[];
+}
+
 export interface ReportUrgencySnapshot {
   urgency_score: number | null;
   urgency_nivel: UrgencyLevel | null;

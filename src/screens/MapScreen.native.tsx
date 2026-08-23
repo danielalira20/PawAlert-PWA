@@ -12,7 +12,7 @@ import { ReportContentMenu } from '../components/reports/ReportContentMenu';
 import { ICON_CAT, ICON_CLOCK, ICON_CALENDAR, ICON_DOG, ICON_PAW, ICON_WARNING, ICON_MULTIPLE } from '../constants/mapIcons';
 import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
-import { Reporte, getAnimales, condicionMasGrave, especieMasGrave, totalAnimales, animalMasGrave } from '../types/reporte';
+import { Reporte, ZonaAgregada, getAnimales, condicionMasGrave, especieMasGrave, totalAnimales, animalMasGrave } from '../types/reporte';
 import { AnimalCarousel } from '../components/common/AnimalCarousel';
 import ReportFormScreen from './ReportFormScreen';
 
@@ -128,6 +128,29 @@ function AnimalMarker({ condicion, tipoAnimal, selected, count = 1 }: {
   );
 }
 
+// ─── Marcador de zona agregada (visitantes sin sesión: densidad, no reportes) ─
+const NIVEL_URGENCIA_CONFIG: Record<string, { color: string; bg: string }> = {
+  rojo:     { color: '#E74C3C', bg: '#FDEDEC' },
+  amarillo: { color: '#F39C12', bg: '#FEF9E7' },
+  verde:    { color: '#27AE60', bg: '#EAFAF1' },
+};
+
+function ZonaMarker({ cantidad, nivel }: { cantidad: number; nivel: string | null }) {
+  const cfg = NIVEL_URGENCIA_CONFIG[nivel ?? ''] ?? { color: '#95A5A6', bg: '#F2F3F4' };
+  const size = 40;
+  return (
+    <View style={{
+      width: size, height: size, borderRadius: size / 2,
+      backgroundColor: cfg.bg,
+      borderWidth: 2, borderColor: cfg.color,
+      alignItems: 'center', justifyContent: 'center',
+      shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 5, elevation: 4,
+    }}>
+      <Text style={{ fontSize: 13, fontWeight: '800', color: cfg.color }}>{cantidad}</Text>
+    </View>
+  );
+}
+
 interface AsociacionMapa {
   id: string;
   nombre: string;
@@ -174,9 +197,10 @@ function AssocMarker({ selected }: { selected: boolean }) {
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 export default function MapScreen() {
-  const { isLoggedIn } = useAuth();
+  const { isLoggedIn, token } = useAuth();
   const params = useLocalSearchParams<{ action?: string }>();
   const [reportes, setReportes] = useState<Reporte[]>([]);
+  const [zonasAgregadas, setZonasAgregadas] = useState<ZonaAgregada[]>([]);
   const [asociaciones, setAsociaciones] = useState<AsociacionMapa[]>([]);
   const [mostrarAsociaciones, setMostrarAsociaciones] = useState(false);
   const [selectedReport, setSelectedReport] = useState<Reporte | null>(null);
@@ -255,14 +279,22 @@ export default function MapScreen() {
     }, [])
   );
 
-  const fetchReportes = async () => {
+  const fetchReportes = useCallback(async () => {
     try {
-      const response = await axios.get(`${API_URL}/reports`);
-      const validReports = response.data.filter((r: Reporte) => r.latitud && r.longitud);
-      setReportes(validReports);
+      const response = await axios.get(
+        `${API_URL}/reports`,
+        token ? { headers: { Authorization: `Bearer ${token}` } } : undefined
+      );
+      if (response.data.modo === 'agregado') {
+        setReportes([]);
+        setZonasAgregadas(response.data.zonas.filter((z: ZonaAgregada) => z.latitud && z.longitud));
+      } else {
+        setReportes(response.data.reportes.filter((r: Reporte) => r.latitud && r.longitud));
+        setZonasAgregadas([]);
+      }
       setLastUpdated(new Date());
     } catch {}
-  };
+  }, [token]);
 
   const fetchAsociaciones = async () => {
     try {
@@ -277,7 +309,7 @@ export default function MapScreen() {
     const fetchInterval = setInterval(fetchReportes, 600000);
     const tickInterval = setInterval(() => setTick(t => t + 1), 60000);
     return () => { clearInterval(fetchInterval); clearInterval(tickInterval); };
-  }, []);
+  }, [fetchReportes]);
 
   useEffect(() => {
     if (params.action === 'create') {
@@ -394,6 +426,24 @@ export default function MapScreen() {
                 {!!asociacion.contacto_telefono && (
                   <Text style={{ fontSize: 10, color: '#9B8B7A', marginTop: 9 }}>{asociacion.contacto_telefono}</Text>
                 )}
+              </View>
+            </Callout>
+          </TrackedMarker>
+        ))}
+        {(mostrarAsociaciones ? [] : zonasAgregadas).map((zona, index) => (
+          <TrackedMarker
+            key={`zona-${index}-${zona.latitud}-${zona.longitud}`}
+            coordinate={{ latitude: zona.latitud, longitude: zona.longitud }}
+          >
+            <ZonaMarker cantidad={zona.cantidad} nivel={zona.nivel_urgencia_max} />
+            <Callout tooltip={false}>
+              <View style={{ minWidth: 170, maxWidth: 220, padding: 12, borderRadius: 12 }}>
+                <Text style={{ fontSize: 13, fontWeight: '900', color: '#1A1A1A', marginBottom: 4 }}>
+                  {zona.cantidad} {zona.cantidad === 1 ? 'reporte' : 'reportes'} en esta zona
+                </Text>
+                <Text style={{ fontSize: 10, color: '#9B8B7A' }}>
+                  Inicia sesión para ver el detalle de cada reporte
+                </Text>
               </View>
             </Callout>
           </TrackedMarker>

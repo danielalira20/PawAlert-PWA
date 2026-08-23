@@ -2,10 +2,12 @@ import React, { useState } from 'react';
 import { View, Text, Image, StyleSheet, TouchableOpacity } from 'react-native';
 import { Brand } from '../../constants/theme';
 import { ImageLightbox } from '../common/ImageLightbox';
+import { AVATARS } from '../profile/AvatarSelector'; // Importar el diccionario de avatares
 
 interface Props {
   nombre: string;
   logoUrl?: string | null;
+  avatarId?: string | null; // <-- Propiedad agregada
   size?: 'sm' | 'md' | 'lg';
   /** Paleta de fondo para las iniciales cuando no hay logo. Default: AVATAR_COLORS. */
   colors?: string[];
@@ -34,10 +36,22 @@ function iniciales(nombre: string): string {
   return (palabras[0][0] + palabras[1][0]).toUpperCase();
 }
 
-export function AssocAvatar({ nombre, logoUrl, size = 'md', colors = AVATAR_COLORS, zoomable = false }: Props) {
+export function AssocAvatar({ nombre, logoUrl, avatarId, size = 'md', colors = AVATAR_COLORS, zoomable = false }: Props) {
   const dim = SIZES[size];
   const [showLightbox, setShowLightbox] = useState(false);
 
+  // Si hay un avatar predeterminado de nuestro set local
+  if (avatarId && AVATARS[avatarId]) {
+    return (
+      <Image
+        source={AVATARS[avatarId]}
+        style={[styles.base, { width: dim, height: dim, borderRadius: dim / 2 }]}
+        resizeMode="cover"
+      />
+    );
+  }
+
+  // Si hay un logo remoto (para asociaciones o usuarios que hayan subido uno)
   if (logoUrl) {
     const img = (
       <Image
@@ -61,6 +75,7 @@ export function AssocAvatar({ nombre, logoUrl, size = 'md', colors = AVATAR_COLO
     );
   }
 
+  // Fallback: iniciales
   return (
     <View
       style={[
