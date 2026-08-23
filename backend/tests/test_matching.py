@@ -101,6 +101,28 @@ def test_matching_exige_todas_las_especies(reporte_multi_animal):
     assert [c["usuario_id"] for c in resultado["candidatos"]] == ["completo"]
 
 
+def test_matching_especie_manejo_vacia_usa_fallback_a_especies_base(
+    reporte_multi_animal,
+):
+    """especies_manejo (experiencia de manejo especifica) y especies
+    (especies que atiende en general) son campos distintos que coexisten en
+    capacidades -- ver migracion
+    0075_candidatos_para_reporte_especies_tamanios_base.sql. El fallback de
+    matching.py:81-85 (usar `especies` si `especies_manejo` viene vacio) ya
+    existia, pero para un voluntario interno nunca se habia ejercitado
+    porque la RPC no traia la columna `especies` en absoluto antes de esa
+    migracion. Confirma que, ahora que si llega, el fallback funciona."""
+    solo_especie_base = candidato(
+        usuario_id="solo-base",
+        especies_manejo=[],
+        especies=["perro", "gato"],
+    )
+
+    resultado = ejecutar_matching(reporte_multi_animal, [solo_especie_base])
+
+    assert [c["usuario_id"] for c in resultado["candidatos"]] == ["solo-base"]
+
+
 def test_matching_rechaza_reporte_sin_validacion_aprobada(make_query):
     supabase = MagicMock()
     supabase.table.return_value = make_query(data={
