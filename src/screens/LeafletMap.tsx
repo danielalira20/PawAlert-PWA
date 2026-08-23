@@ -1,8 +1,8 @@
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import { useEffect } from 'react';
 import 'leaflet/dist/leaflet.css';
-import { MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
+import { Circle, MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import { ReportContentMenu } from '../components/reports/ReportContentMenu';
 import { Reporte, ZonaAgregada, getAnimales, condicionMasGrave, especieMasGrave, totalAnimales } from '../types/reporte';
 import { ICON_MULTIPLE } from '../constants/mapIcons';
@@ -363,6 +363,11 @@ export default function LeafletMap({
   fitToMarkers = false,
   showReportMenuInPopup = true,
 }: LeafletMapProps) {
+  // Zona seleccionada (visitantes sin sesión): al hacer click en un pin de
+  // zona se muestra un círculo difuminado alrededor, solo esa — no todas a
+  // la vez, para no saturar el mapa.
+  const [zonaSeleccionada, setZonaSeleccionada] = useState<string | null>(null);
+
   const markerPositions = useMemo(
     () =>
       [
@@ -567,25 +572,54 @@ export default function LeafletMap({
               </Popup>
             </Marker>
           ))}
-        {zonas
-          .filter((z): z is ZonaAgregada & { latitud: number; longitud: number } =>
-            z.latitud !== null && z.longitud !== null)
-          .map((zona, index) => (
-            <Marker
-              key={`zona-${index}-${zona.latitud}-${zona.longitud}`}
-              position={[zona.latitud, zona.longitud]}
-              icon={createZonaPin(zona.cantidad, zona.nivel_urgencia_max)}
-            >
-              <Popup closeButton={false} className="pp-wrap" offset={[0, -6]}>
-                <div className="pp-body">
-                  <div className="pp-title">
-                    {zona.cantidad} {zona.cantidad === 1 ? 'reporte' : 'reportes'} en esta zona
-                  </div>
-                  <div className="pp-loc">Inicia sesión para ver el detalle de cada reporte</div>
-                </div>
-              </Popup>
-            </Marker>
-          ))}
+        {(() => {
+          const zonasValidas = zonas.filter(
+            (z): z is ZonaAgregada & { latitud: number; longitud: number } =>
+              z.latitud !== null && z.longitud !== null,
+          );
+          const zonaActiva = zonasValidas.find(
+            (z) => `${z.latitud}-${z.longitud}` === zonaSeleccionada,
+          );
+          return (
+            <>
+              {zonaActiva && (
+                <Circle
+                  center={[zonaActiva.latitud, zonaActiva.longitud]}
+                  radius={400 + zonaActiva.cantidad * 150}
+                  pathOptions={{
+                    color: NIVEL_URGENCIA_COLOR[zonaActiva.nivel_urgencia_max ?? '']?.border ?? '#95A5A6',
+                    fillColor: NIVEL_URGENCIA_COLOR[zonaActiva.nivel_urgencia_max ?? '']?.border ?? '#95A5A6',
+                    fillOpacity: 0.25,
+                    weight: 0,
+                  }}
+                />
+              )}
+              {zonasValidas.map((zona) => {
+                const clave = `${zona.latitud}-${zona.longitud}`;
+                return (
+                  <Marker
+                    key={`zona-${clave}`}
+                    position={[zona.latitud, zona.longitud]}
+                    icon={createZonaPin(zona.cantidad, zona.nivel_urgencia_max)}
+                    eventHandlers={{
+                      click: () =>
+                        setZonaSeleccionada((actual) => (actual === clave ? null : clave)),
+                    }}
+                  >
+                    <Popup closeButton={false} className="pp-wrap" offset={[0, -6]}>
+                      <div className="pp-body">
+                        <div className="pp-title">
+                          {zona.cantidad} {zona.cantidad === 1 ? 'reporte' : 'reportes'} en esta zona
+                        </div>
+                        <div className="pp-loc">Inicia sesión para ver el detalle de cada reporte</div>
+                      </div>
+                    </Popup>
+                  </Marker>
+                );
+              })}
+            </>
+          );
+        })()}
       </MapContainer>
     </>
   );

@@ -5,7 +5,7 @@ import { es } from 'date-fns/locale';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Dimensions, Image, Modal, Text, TouchableOpacity, View } from 'react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import MapView, { Callout, Region } from 'react-native-maps';
+import MapView, { Callout, Circle, Region } from 'react-native-maps';
 import { TrackedMarker } from './TrackedMarker';
 import AuthGateModal from '../components/AuthGateModal';
 import { ReportContentMenu } from '../components/reports/ReportContentMenu';
@@ -201,6 +201,9 @@ export default function MapScreen() {
   const params = useLocalSearchParams<{ action?: string }>();
   const [reportes, setReportes] = useState<Reporte[]>([]);
   const [zonasAgregadas, setZonasAgregadas] = useState<ZonaAgregada[]>([]);
+  // Zona seleccionada (visitantes sin sesión): al tocar un pin de zona se
+  // muestra un círculo difuminado alrededor, solo esa.
+  const [zonaSeleccionada, setZonaSeleccionada] = useState<string | null>(null);
   const [asociaciones, setAsociaciones] = useState<AsociacionMapa[]>([]);
   const [mostrarAsociaciones, setMostrarAsociaciones] = useState(false);
   const [selectedReport, setSelectedReport] = useState<Reporte | null>(null);
@@ -430,24 +433,48 @@ export default function MapScreen() {
             </Callout>
           </TrackedMarker>
         ))}
-        {(mostrarAsociaciones ? [] : zonasAgregadas).map((zona, index) => (
-          <TrackedMarker
-            key={`zona-${index}-${zona.latitud}-${zona.longitud}`}
-            coordinate={{ latitude: zona.latitud, longitude: zona.longitud }}
-          >
-            <ZonaMarker cantidad={zona.cantidad} nivel={zona.nivel_urgencia_max} />
-            <Callout tooltip={false}>
-              <View style={{ minWidth: 170, maxWidth: 220, padding: 12, borderRadius: 12 }}>
-                <Text style={{ fontSize: 13, fontWeight: '900', color: '#1A1A1A', marginBottom: 4 }}>
-                  {zona.cantidad} {zona.cantidad === 1 ? 'reporte' : 'reportes'} en esta zona
-                </Text>
-                <Text style={{ fontSize: 10, color: '#9B8B7A' }}>
-                  Inicia sesión para ver el detalle de cada reporte
-                </Text>
-              </View>
-            </Callout>
-          </TrackedMarker>
-        ))}
+        {(() => {
+          const zonasVisibles = mostrarAsociaciones ? [] : zonasAgregadas;
+          const zonaActiva = zonasVisibles.find(
+            (z) => `${z.latitud}-${z.longitud}` === zonaSeleccionada,
+          );
+          return (
+            <>
+              {zonaActiva && (
+                <Circle
+                  center={{ latitude: zonaActiva.latitud, longitude: zonaActiva.longitud }}
+                  radius={400 + zonaActiva.cantidad * 150}
+                  strokeWidth={0}
+                  fillColor={`${NIVEL_URGENCIA_CONFIG[zonaActiva.nivel_urgencia_max ?? '']?.color ?? '#95A5A6'}40`}
+                />
+              )}
+              {zonasVisibles.map((zona, index) => {
+                const clave = `${zona.latitud}-${zona.longitud}`;
+                return (
+                  <TrackedMarker
+                    key={`zona-${index}-${clave}`}
+                    coordinate={{ latitude: zona.latitud, longitude: zona.longitud }}
+                    onPress={() =>
+                      setZonaSeleccionada((actual) => (actual === clave ? null : clave))
+                    }
+                  >
+                    <ZonaMarker cantidad={zona.cantidad} nivel={zona.nivel_urgencia_max} />
+                    <Callout tooltip={false}>
+                      <View style={{ minWidth: 170, maxWidth: 220, padding: 12, borderRadius: 12 }}>
+                        <Text style={{ fontSize: 13, fontWeight: '900', color: '#1A1A1A', marginBottom: 4 }}>
+                          {zona.cantidad} {zona.cantidad === 1 ? 'reporte' : 'reportes'} en esta zona
+                        </Text>
+                        <Text style={{ fontSize: 10, color: '#9B8B7A' }}>
+                          Inicia sesión para ver el detalle de cada reporte
+                        </Text>
+                      </View>
+                    </Callout>
+                  </TrackedMarker>
+                );
+              })}
+            </>
+          );
+        })()}
       </MapView>
 
       {/* Barra de filtros interactivos — portada de MapScreen.web.tsx.
