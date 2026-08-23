@@ -1,7 +1,7 @@
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Header
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
-from app.models.report import ReportResponse, AnimalInput, ReportListItem, HitoRequest, RechazarReporteRequest, CancelarReporteRequest, DenunciarReporteRequest, ResolverBusquedaNoLocalizadoRequest
+from app.models.report import ReportResponse, AnimalInput, ReportListItem, ReportesMapaResponse, HitoRequest, RechazarReporteRequest, CancelarReporteRequest, DenunciarReporteRequest, ResolverBusquedaNoLocalizadoRequest
 from app.models.red_aliados import AceptarSugerenciaRequest, AceptarSugerenciaVeterinariaResponse
 from app.services.report_service import crear_reporte, obtener_reportes, cambiar_estado_reporte, obtener_reportes_usuario
 from app.services import coverage_service
@@ -1267,6 +1267,58 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
         if nivel_urgencia:
             sugerencia_aliado = sugerir_aliado_veterinario(reporte_id, nivel_urgencia)
 
+    # Avistamiento derivado (Capa 8, Entrega A): el voluntario asignado que
+    # registra uno de estos hitos ya confirmó dónde está el animal en ese
+    # momento. Nunca debe bloquear el registro del hito -- mismo patrón
+    # fail-open que usa report_activation_service.py con
+    # evaluate_report_urgency().
+    if (
+        tipo_hito in (
+            "animal_encontrado",
+            "llegada_veterinaria",
+            "llegue_refugio",
+            "animal_bajo_resguardo",
+            "llegada_hogar_temporal",
+        )
+        and body.latitud is not None
+        and body.longitud is not None
+    ):
+        try:
+            from app.services.avistamiento_service import (
+                registrar_avistamiento_desde_hito,
+            )
+
+            # limit(2), no limit(1): solo lo suficiente para detectar si el
+            # reporte tiene mas de un animal sin traer la lista completa.
+            animal_hito = (
+                supabase.table("animal")
+                .select("id")
+                .eq("reporte_id", reporte_id)
+                .order("orden")
+                .limit(2)
+                .execute()
+            )
+            if len(animal_hito.data or []) > 1:
+                print(
+                    "[WARN] avistamiento derivado con reporte multi-animal: "
+                    f"se atribuyo al animal de orden=1, puede no ser el "
+                    f"correcto (reporte={reporte_id}, hito={tipo_hito})"
+                )
+            if animal_hito.data:
+                registrar_avistamiento_desde_hito(
+                    reporte_id=reporte_id,
+                    animal_id=animal_hito.data[0]["id"],
+                    usuario_id=usuario["id"],
+                    latitud=body.latitud,
+                    longitud=body.longitud,
+                    tipo_hito=tipo_hito,
+                )
+        except Exception as error:
+            print(
+                "[WARN] no se pudo registrar el avistamiento derivado del hito "
+                f"(reporte={reporte_id}, hito={tipo_hito}): {error}"
+            )
+
     return {
         "mensaje": f"Hito '{tipo_hito}' registrado correctamente.",
         "tipo_hito": tipo_hito,
@@ -1710,9 +1762,15 @@ async def marcar_notificacion_moderacion_leida(
         raise HTTPException(status_code=404, detail="Notificación no encontrada")
     return {"mensaje": "Notificación marcada como leída"}
 
-@router.get("", response_model=list[ReportListItem], status_code=200)
-async def get_reports():
-    return await obtener_reportes()
+@router.get("", response_model=ReportesMapaResponse, status_code=200)
+async def get_reports(authorization: str = Header(None)):
+    usuario_id = None
+    if authorization and authorization.startswith("Bearer "):
+        try:
+            usuario_id = _obtener_usuario_autenticado(authorization)["id"]
+        except HTTPException:
+            pass  # token invalido/expirado -> se trata como anonimo, no se rompe el mapa
+    return await obtener_reportes(usuario_id)
 
 @router.patch("/{reporte_id}/status", status_code=200)
 async def update_report_status(reporte_id: str, body: dict, authorization: str = Header(None)):

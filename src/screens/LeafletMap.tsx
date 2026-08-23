@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import 'leaflet/dist/leaflet.css';
 import { MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import { ReportContentMenu } from '../components/reports/ReportContentMenu';
-import { Reporte, getAnimales, condicionMasGrave, especieMasGrave, totalAnimales } from '../types/reporte';
+import { Reporte, ZonaAgregada, getAnimales, condicionMasGrave, especieMasGrave, totalAnimales } from '../types/reporte';
 import { ICON_MULTIPLE } from '../constants/mapIcons';
 
 const INITIAL_CENTER: [number, number] = [19.0414, -98.2063];
@@ -136,6 +136,33 @@ const createPin = (condicion: string, tipoAnimal: string, selected = false, coun
 };
 
 
+// ─── Pin de zona agregada (visitantes sin sesión: densidad, no reportes) ──────
+const NIVEL_URGENCIA_COLOR: Record<string, { border: string; bg: string }> = {
+  rojo:     { border: '#E74C3C', bg: '#FDEDEC' },
+  amarillo: { border: '#F39C12', bg: '#FEF9E7' },
+  verde:    { border: '#27AE60', bg: '#EAFAF1' },
+};
+
+const createZonaPin = (cantidad: number, nivel: string | null) => {
+  const cfg = NIVEL_URGENCIA_COLOR[nivel ?? ''] ?? { border: '#95A5A6', bg: '#F2F3F4' };
+  const size = 40;
+  const html = `
+    <div style="
+      width:${size}px; height:${size}px; border-radius:50%;
+      background:${cfg.bg};
+      border:2px solid ${cfg.border};
+      display:flex; align-items:center; justify-content:center;
+      font-size:13px; font-weight:800; color:${cfg.border}; font-family:sans-serif;
+      box-shadow:0 2px 8px ${cfg.border}55;
+    ">${cantidad}</div>`;
+  return L.divIcon({
+    className: 'pawalert-zona-marker',
+    html,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+};
+
 // ─── Config por estado del reporte ───────────────────────────────────────────
 const ESTADO: Record<string, { color: string; bg: string; label: string }> = {
   pendiente:     { color: '#7B68EE', bg: '#F0EEFF', label: 'Pendiente'    },
@@ -261,6 +288,7 @@ export interface AsociacionMapa {
   contacto_email?: string | null;
   tipos_animales?: string[];
   horario_atencion?: string | null;
+  acerca_de?: string | null;
   radio_km?: number | null;
 }
 
@@ -301,6 +329,7 @@ function FitToMarkers({
 // ─── Props ────────────────────────────────────────────────────────────────────
 interface LeafletMapProps {
   reportes: Reporte[];
+  zonas?: ZonaAgregada[];
   asociaciones?: AsociacionMapa[];
   aliados?: AliadoMapa[];
   selectedReportId?: string | null;
@@ -319,6 +348,7 @@ interface LeafletMapProps {
 // ─── Componente ───────────────────────────────────────────────────────────────
 export default function LeafletMap({
   reportes,
+  zonas = [],
   asociaciones = [],
   aliados = [],
   getMarkerColor,
@@ -337,13 +367,14 @@ export default function LeafletMap({
     () =>
       [
         ...reportes.map((reporte) => [reporte.latitud, reporte.longitud]),
+        ...zonas.map((zona) => [zona.latitud, zona.longitud]),
         ...asociaciones.map((asociacion) => [asociacion.latitud, asociacion.longitud]),
         ...aliados.map((aliado) => [aliado.latitud, aliado.longitud]),
       ].filter(
         (position): position is [number, number] =>
           typeof position[0] === 'number' && typeof position[1] === 'number',
       ),
-    [aliados, asociaciones, reportes],
+    [aliados, asociaciones, reportes, zonas],
   );
 
   useEffect(() => {
@@ -532,6 +563,25 @@ export default function LeafletMap({
                       </span>
                     )}
                   </div>
+                </div>
+              </Popup>
+            </Marker>
+          ))}
+        {zonas
+          .filter((z): z is ZonaAgregada & { latitud: number; longitud: number } =>
+            z.latitud !== null && z.longitud !== null)
+          .map((zona, index) => (
+            <Marker
+              key={`zona-${index}-${zona.latitud}-${zona.longitud}`}
+              position={[zona.latitud, zona.longitud]}
+              icon={createZonaPin(zona.cantidad, zona.nivel_urgencia_max)}
+            >
+              <Popup closeButton={false} className="pp-wrap" offset={[0, -6]}>
+                <div className="pp-body">
+                  <div className="pp-title">
+                    {zona.cantidad} {zona.cantidad === 1 ? 'reporte' : 'reportes'} en esta zona
+                  </div>
+                  <div className="pp-loc">Inicia sesión para ver el detalle de cada reporte</div>
                 </div>
               </Popup>
             </Marker>

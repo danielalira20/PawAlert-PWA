@@ -1953,6 +1953,22 @@ def generar_notificaciones_vencimiento() -> dict:
                 }
             ).execute()
             creadas += 1
+
+            try:
+                from app.services.push_notification_service import queue_and_send_push
+                queue_and_send_push(
+                    usuario_id=voluntario.data[0]["usuario_id"],
+                    tipo_evento=tipo,  # "seguimiento_vencido" o "seguimiento_proximo"
+                    idempotency_key=(
+                        f"seg_{tipo}_{custodia['id']}_"
+                        f"{custodia['proximo_seguimiento_at']}"
+                    ),
+                    payload={"mensaje": mensaje},
+                    custodia_id=custodia["id"],
+                )
+            except Exception as e:
+                print(f"[WARN] Error encolando push de seguimiento: {e}")
+
         except Exception:
             continue
     return {

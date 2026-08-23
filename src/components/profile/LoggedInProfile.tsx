@@ -26,6 +26,7 @@ import { AliadoImpactStats } from './AliadoImpactStats';
 import { OperationalAvailabilityCard } from './OperationalAvailabilityCard';
 import { SaldoReputacionCard } from './SaldoReputacionCard';
 import { ImpactoInsigniasToggle } from './ImpactoInsigniasToggle';
+import { AvatarSelector } from './AvatarSelector';
 
 const DESKTOP_BREAKPOINT = 900;
 
@@ -104,6 +105,15 @@ export function LoggedInProfile({
   const [tieneCapacidades, setTieneCapacidades] = useState<boolean | null>(null);
   const [tienePerfilVoluntario, setTienePerfilVoluntario] = useState<boolean | null>(null);
   const [estadoVoluntario, setEstadoVoluntario] = useState<string | null>(null);
+
+  const [showAvatarSelector, setShowAvatarSelector] = useState(false);
+  const [localAvatarId, setLocalAvatarId] = useState<string | null>(user?.avatar_id ?? null);
+
+  useEffect(() => {
+    if (user?.avatar_id !== undefined) {
+      setLocalAvatarId(user.avatar_id);
+    }
+  }, [user?.avatar_id]);
 
   // FRONT03/BACK04 — perfil_apoyo (donante/aliado/patrocinador) es una
   // identidad independiente del rol principal, así que este chequeo corre
@@ -215,7 +225,7 @@ export function LoggedInProfile({
       pendientes={pendientes}
       totalPendientes={totalPendientes}
       isLoading={isLoadingAdmin}
-      onOpenAdminPanel={onOpenAdminPanel || (() => {})}
+      onOpenAdminPanel={onOpenAdminPanel || (() => { })}
     />
   ) : esStaff ? (
     <StaffImpactStats impacto={impactoStaff} isLoading={isLoadingStaff} />
@@ -411,15 +421,19 @@ export function LoggedInProfile({
                 <View style={styles.unifiedCard}>
                   <View style={styles.avatarSection}>
                     <View style={[styles.avatarWrap, esVoluntarioExterno && styles.avatarWrapVoluntarioExterno]}>
-                      <AssocAvatar nombre={nombreCompleto || 'Usuario'} logoUrl={null} size="lg" />
-                      {rolBadgeElement && (
-                        <View style={styles.badgeFloating}>
-                          {React.cloneElement(rolBadgeElement, { style: styles.badgeFloatingInner })}
-                        </View>
-                      )}
+                      <AssocAvatar nombre={nombreCompleto || 'Usuario'} logoUrl={null} avatarId={localAvatarId} size="lg" />
                     </View>
+                    {rolBadgeElement && (
+                      <View style={{ marginBottom: 12, marginTop: -20 }}>
+                        {rolBadgeElement}
+                      </View>
+                    )}
                     <Text style={styles.nombreOnWhite}>{nombreCompleto || 'Usuario'}</Text>
                     <Text style={styles.emailOnWhite}>{user.email}</Text>
+                    <TouchableOpacity onPress={() => setShowAvatarSelector(true)} style={styles.editAvatarBtnDesktop} activeOpacity={0.7}>
+                      <Ionicons name="camera-outline" size={14} color={Brand.primary} />
+                      <Text style={styles.editAvatarBtnTextDesktop}>Cambiar avatar</Text>
+                    </TouchableOpacity>
                   </View>
 
                   {muestraSaldoReputacion && (
@@ -467,6 +481,14 @@ export function LoggedInProfile({
             <GeneralStatsStrip />
           </View>
         </ScrollView>
+
+        <AvatarSelector
+          visible={showAvatarSelector}
+          onClose={() => setShowAvatarSelector(false)}
+          token={token}
+          currentAvatarId={localAvatarId}
+          onSelect={(newAvatarId) => setLocalAvatarId(newAvatarId)}
+        />
       </View>
     );
   }
@@ -481,21 +503,27 @@ export function LoggedInProfile({
         style={styles.mobileBanner}
       >
         <View style={styles.avatarRing}>
-          <AssocAvatar nombre={nombreCompleto || 'Usuario'} logoUrl={null} size="lg" />
+          <AssocAvatar nombre={nombreCompleto || 'Usuario'} logoUrl={null} avatarId={localAvatarId} size="lg" />
+        </View>
+        <View style={{ marginTop: 12, marginBottom: 8 }}>
+          {esAdmin && <RoleBadge rol="admin" variant="onColor" />}
+          {esAsociacion && <RoleBadge rol="asociacion" variant="onColor" />}
+          {esStaff && <RoleBadge rol="staff" variant="onColor" />}
+          {esVoluntarioInterno && <RoleBadge rol="voluntario_interno" variant="onColor" />}
+          {esVoluntarioExterno && <RoleBadge rol="voluntario_externo" variant="onColor" />}
+          {esAliadoPuro && (
+            <RoleBadge rol={tipoPerfilApoyo as 'aliado_local' | 'patrocinador_institucional'} variant="onColor" />
+          )}
+          {!esAdmin && !esAsociacion && !esStaff && !esVoluntarioInterno && !esVoluntarioExterno && !esAliadoPuro && (
+            <RoleBadge rol="reportante" variant="onColor" />
+          )}
         </View>
         <Text style={styles.nombreOnColor}>{nombreCompleto || 'Usuario'}</Text>
         <Text style={styles.emailOnColor}>{user.email}</Text>
-        {esAdmin && <RoleBadge rol="admin" variant="onColor" />}
-        {esAsociacion && <RoleBadge rol="asociacion" variant="onColor" />}
-        {esStaff && <RoleBadge rol="staff" variant="onColor" />}
-        {esVoluntarioInterno && <RoleBadge rol="voluntario_interno" variant="onColor" />}
-        {esVoluntarioExterno && <RoleBadge rol="voluntario_externo" variant="onColor" />}
-        {esAliadoPuro && (
-          <RoleBadge rol={tipoPerfilApoyo as 'aliado_local' | 'patrocinador_institucional'} variant="onColor" />
-        )}
-        {!esAdmin && !esAsociacion && !esStaff && !esVoluntarioInterno && !esVoluntarioExterno && !esAliadoPuro && (
-          <RoleBadge rol="reportante" variant="onColor" />
-        )}
+        <TouchableOpacity onPress={() => setShowAvatarSelector(true)} style={styles.editAvatarBtnMobile} activeOpacity={0.7}>
+          <Ionicons name="camera-outline" size={14} color="#FFF" />
+          <Text style={styles.editAvatarBtnTextMobile}>Cambiar foto</Text>
+        </TouchableOpacity>
       </LinearGradient>
 
       <View style={styles.mobileCentered}>
@@ -537,6 +565,14 @@ export function LoggedInProfile({
         </View>
         <GeneralStatsStrip />
       </View>
+
+      <AvatarSelector
+        visible={showAvatarSelector}
+        onClose={() => setShowAvatarSelector(false)}
+        token={token}
+        currentAvatarId={localAvatarId}
+        onSelect={(newAvatarId) => setLocalAvatarId(newAvatarId)}
+      />
     </ScrollView>
   );
 }
@@ -616,6 +652,39 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     alignItems: 'center',
+  },
+  editAvatarBtnDesktop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(217, 64, 37, 0.08)',
+    borderRadius: 12,
+  },
+  editAvatarBtnTextDesktop: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Brand.primary,
+  },
+  editAvatarBtnMobile: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 10,
+    marginBottom: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 12,
+  },
+  editAvatarBtnTextMobile: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFF',
   },
   badgeFloatingInner: { marginTop: 0, borderWidth: 2, borderColor: '#fff' },
   nombreOnWhite: { fontSize: 15, fontWeight: '800', color: Brand.textDark, textAlign: 'center' },

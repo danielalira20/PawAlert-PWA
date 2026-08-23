@@ -15,17 +15,39 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 def _init_firebase() -> bool:
+    """Inicializa Firebase Admin con la mejor fuente de credenciales disponible.
+
+    Orden de prioridad:
+    1. ``firebase_service_account_json``: JSON completo en variable de entorno
+       (preferido en producción: Railway, Render, etc.).
+    2. ``google_application_credentials``: ruta a un archivo JSON local
+       (conveniente en desarrollo con el archivo descargado de Firebase Console).
+    3. Credenciales de aplicación por defecto de Google (solo funciona dentro de GCP).
+    """
     if not firebase_admin:
         logger.warning("firebase_admin is not installed")
         return False
-    
+
     if not firebase_admin._apps:
         try:
             if settings.firebase_service_account_json:
+                # Producción: JSON completo en variable de entorno
                 credenciales = json.loads(settings.firebase_service_account_json)
-                firebase_admin.initialize_app(credentials.Certificate(credenciales))
+                cred = credentials.Certificate(credenciales)
+            elif settings.google_application_credentials:
+                # Desarrollo local: ruta al archivo JSON descargado
+                import os
+                ruta = settings.google_application_credentials.strip('"').strip("'")
+                cred = credentials.Certificate(ruta)
+                os.environ.setdefault("GOOGLE_APPLICATION_CREDENTIALS", ruta)
             else:
-                firebase_admin.initialize_app()
+                # Último recurso: credenciales de aplicación por defecto (GCP)
+                logger.warning(
+                    "No se encontró configuración explícita de Firebase. "
+                    "Usando credenciales de aplicación por defecto (solo GCP)."
+                )
+                cred = credentials.ApplicationDefault()
+            firebase_admin.initialize_app(cred)
         except Exception as e:
             logger.error(f"Failed to initialize firebase admin: {e}")
             return False
@@ -79,10 +101,45 @@ def _assert_safe_payload(payload: dict) -> None:
         if k in payload:
             raise ValueError(f"Payload contains unsafe key: {k}")
 
+
+def puede_notificar(
+    usuario_id: str,
+    tipo_evento: str,
+    ventana_horas: int = 4,
+) -> bool:
+    """Retorna False si ya se encoló el mismo tipo de evento para este usuario
+    en las últimas ``ventana_horas`` horas (en estado pendiente o enviada).
+
+    Evita spam cuando un voluntario es candidato en múltiples reportes cercanos.
+    Falla de forma abierta (retorna True) si la consulta no puede completarse,
+    priorizando que la notificación llegue sobre el silencio.
+    """
+    from datetime import timedelta
+    desde = (datetime.now(timezone.utc) - timedelta(hours=ventana_horas)).isoformat()
+    try:
+        res = (
+            supabase_admin.table("notificaciones_push")
+            .select("id", count="exact")
+            .eq("usuario_id", usuario_id)
+            .eq("tipo_evento", tipo_evento)
+            .in_("estado", ["pendiente", "enviada"])
+            .gte("created_at", desde)
+            .execute()
+        )
+        return (res.count or 0) == 0
+    except Exception as e:
+        logger.warning(
+            f"puede_notificar: error consultando outbox para {usuario_id}/{tipo_evento}: {e}. "
+            "Permitiendo notificación (fail-open)."
+        )
+        return True
+
+
 def dispatch_pending_pushes(limit: int = 100) -> Dict[str, int]:
     """
     Called by the cron job to send pending pushes via FCM.
     """
+
     if not messaging or not _init_firebase():
         return {"error": "firebase_admin not initialized"}
 

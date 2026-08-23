@@ -285,6 +285,22 @@ def activar_reporte(
             f"[WARN] No se pudo calcular la urgencia inicial del reporte "
             f"{reporte_id}: {error}"
         )
+        # Sin esto, urgency_proximo_recalculo_at se queda en NULL y el
+        # scheduler nunca lo reclama (su filtro es "<= now()", que en SQL
+        # nunca hace match contra NULL): el reporte quedaria sin score para
+        # siempre en vez de solo hasta el siguiente recalculo.
+        (
+            supabase.table("reportes")
+            .update({"urgency_proximo_recalculo_at": ahora})
+            .eq("id", reporte_id)
+            .execute()
+        )
+        _registrar_historial(
+            reporte_id,
+            "urgency_inicial_fallida",
+            "No se pudo calcular la urgencia inicial al activar el reporte.",
+            {"error": str(error)},
+        )
 
     _registrar_historial(
         reporte_id,
@@ -344,8 +360,38 @@ def activar_reporte(
                     ]
                 },
             )
+
+            # Notificar a cada candidato que hay un caso nuevo para él.
+            # Usa control de fatiga para no spamear a voluntarios con radio amplio.
+            try:
+                from app.services.push_notification_service import (
+                    puede_notificar,
+                    queue_and_send_push,
+                )
+                for candidato in candidatos_iniciales["candidatos"]:
+                    uid = candidato.get("usuario_id")
+                    if uid and puede_notificar(uid, "nuevo_caso_cercano"):
+                        queue_and_send_push(
+                            usuario_id=uid,
+                            tipo_evento="nuevo_caso_cercano",
+                            idempotency_key=f"nuevo_caso_cercano:{reporte_id}:{uid}",
+                            payload={
+                                "mensaje": (
+                                    "Hay un nuevo caso cerca de ti que "
+                                    "podría necesitar tu ayuda."
+                                ),
+                                "reporte_id": reporte_id,
+                            },
+                            reporte_id=reporte_id,
+                        )
+            except Exception as error:
+                print(
+                    f"[WARN] No se pudo notificar a candidatos del reporte "
+                    f"{reporte_id}: {error}"
+                )
     except Exception as error:
         print(f"[WARN] No se pudieron calcular candidatos al activar el reporte: {error}")
+
 
     if condicion_mas_grave == "grave":
         try:
