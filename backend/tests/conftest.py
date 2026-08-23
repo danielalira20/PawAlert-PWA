@@ -53,7 +53,7 @@ def query_mock(*, data=None, count=None, execute_results=None):
     """
     query = MagicMock()
     for method in (
-        "select", "eq", "neq", "gte", "lte", "is_", "not_", "in_",
+        "select", "eq", "neq", "gt", "gte", "lte", "is_", "not_", "in_",
         "order", "limit", "single", "insert", "update", "delete",
     ):
         getattr(query, method).return_value = query

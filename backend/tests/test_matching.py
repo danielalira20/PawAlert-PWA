@@ -54,9 +54,19 @@ def candidato(**overrides):
     return base
 
 
-def ejecutar_matching(reporte, candidatos, rechazaron=None):
+def ejecutar_matching(reporte, candidatos, rechazaron=None, propuestas_activas=None):
+    """propuestas_activas simula lo que Postgres devolvería para
+    `.eq("estado", "activa").gt("vence_at", ahora)` -- por defecto, nada
+    (ninguna propuesta activa y sin vencer bloqueando a nadie)."""
     rpc = MagicMock()
     rpc.execute.return_value = SimpleNamespace(data=candidatos)
+    propuestas_query = MagicMock()
+    propuestas_query.select.return_value = propuestas_query
+    propuestas_query.eq.return_value = propuestas_query
+    propuestas_query.gt.return_value = propuestas_query
+    propuestas_query.execute.return_value = SimpleNamespace(
+        data=propuestas_activas or []
+    )
     with (
         patch.object(matching, "_obtener_reporte", return_value=reporte),
         patch.object(
@@ -67,6 +77,11 @@ def ejecutar_matching(reporte, candidatos, rechazaron=None):
         patch.object(matching, "supabase") as supabase,
     ):
         supabase.rpc.return_value = rpc
+        supabase.table.side_effect = (
+            lambda nombre: propuestas_query
+            if nombre == "propuestas_asignacion"
+            else MagicMock()
+        )
         resultado = matching.obtener_candidatos(reporte["id"])
     supabase.rpc.assert_called_once_with(
         "candidatos_para_reporte",
@@ -179,6 +194,152 @@ def test_matching_no_repite_voluntario_que_ya_rechazo(reporte_multi_animal):
     )
 
     assert resultado["candidatos"] == []
+
+
+def test_matching_excluye_voluntario_con_propuesta_activa_sin_vencer(
+    reporte_multi_animal,
+):
+    con_propuesta = candidato(usuario_id="con-propuesta", distancia_km=0)
+    disponible = candidato(usuario_id="disponible", distancia_km=5)
+
+    resultado = ejecutar_matching(
+        reporte_multi_animal,
+        [con_propuesta, disponible],
+        propuestas_activas=[{"usuario_asignado_id": "con-propuesta"}],
+    )
+
+    assert [c["usuario_id"] for c in resultado["candidatos"]] == ["disponible"]
+
+
+def test_propuesta_activa_vigente_bloquea_al_voluntario(make_query):
+    """Postgres SI devuelve la fila: estado='activa' y vence_at futuro."""
+    query = make_query(data=[{"usuario_asignado_id": "user-1"}])
+    db = MagicMock()
+    db.table.return_value = query
+
+    with patch.object(matching, "supabase", db):
+        resultado = matching._voluntarios_con_propuesta_activa()
+
+    assert resultado == {"user-1"}
+    db.table.assert_called_once_with("propuestas_asignacion")
+    query.eq.assert_called_once_with("estado", "activa")
+    assert query.gt.call_args[0][0] == "vence_at"
+
+
+def test_propuesta_vencida_no_bloquea_al_voluntario(make_query):
+    """Una propuesta con vence_at en el pasado nunca llega aqui: Postgres
+    ya la excluyo con `.gt("vence_at", ahora)`, asi que la fila no vuelve
+    y nadie queda bloqueado -- el filtro es temporal, no permanente."""
+    query = make_query(data=[])
+    db = MagicMock()
+    db.table.return_value = query
+
+    with patch.object(matching, "supabase", db):
+        resultado = matching._voluntarios_con_propuesta_activa()
+
+    assert resultado == set()
+    assert query.gt.call_args[0][0] == "vence_at"
+
+
+def test_propuesta_en_otro_estado_no_bloquea_al_voluntario(make_query):
+    """Una propuesta 'confirmada'/'rechazada'/'vencida'/'cancelada' nunca
+    llega aqui: Postgres ya la excluyo con `.eq("estado", "activa")` --
+    el filtro es especifico al estado activa-vigente, no a cualquier
+    propuesta que haya existido alguna vez."""
+    query = make_query(data=[])
+    db = MagicMock()
+    db.table.return_value = query
+
+    with patch.object(matching, "supabase", db):
+        resultado = matching._voluntarios_con_propuesta_activa()
+
+    assert resultado == set()
+    query.eq.assert_called_once_with("estado", "activa")
+
+
+def test_integracion_segunda_llamada_excluye_tras_reservar_cobertura(
+    monkeypatch, reporte_multi_animal
+):
+    """Escenario real del bug: dos reportes, el mismo voluntario como
+    mejor candidato en ambos. reservar_cobertura() corre de verdad (solo
+    se mockea el cliente de Supabase, no la funcion) y escribe en una
+    tabla falsa compartida; la segunda llamada a obtener_candidatos()
+    lee de esa misma tabla y ya no debe incluirlo."""
+    from app.services import coverage_service
+
+    tabla_propuestas: list[dict] = []
+
+    def fake_rpc(nombre, params):
+        resultado_rpc = MagicMock()
+        if nombre == "reservar_cobertura_reporte":
+            tabla_propuestas.append(
+                {"usuario_asignado_id": params["p_usuario_asignado_id"]}
+            )
+            resultado_rpc.execute.return_value = SimpleNamespace(
+                data="propuesta-1"
+            )
+        return resultado_rpc
+
+    supabase_admin_mock = MagicMock()
+    supabase_admin_mock.rpc.side_effect = fake_rpc
+    monkeypatch.setattr(coverage_service, "supabase_admin", supabase_admin_mock)
+    monkeypatch.setattr(
+        coverage_service, "_reporte_disponible_para_cobertura", lambda *a, **k: True
+    )
+    monkeypatch.setattr(
+        coverage_service.reputacion_service,
+        "consultar_restricciones",
+        lambda *a, **k: {"bloqueado_nuevas_asignaciones": False},
+    )
+
+    def _propuestas_query() -> MagicMock:
+        query = MagicMock()
+        query.select.return_value = query
+        query.eq.return_value = query
+        query.gt.return_value = query
+        query.execute.return_value = SimpleNamespace(data=list(tabla_propuestas))
+        return query
+
+    top = candidato(usuario_id="user-top", distancia_km=0)
+    otro = candidato(usuario_id="user-otro", distancia_km=5)
+
+    def ejecutar(reporte_id: str, candidatos: list[dict]) -> dict:
+        rpc = MagicMock()
+        rpc.execute.return_value = SimpleNamespace(data=candidatos)
+        with (
+            patch.object(
+                matching,
+                "_obtener_reporte",
+                return_value={**reporte_multi_animal, "id": reporte_id},
+            ),
+            patch.object(
+                matching, "_voluntarios_que_rechazaron", return_value=set()
+            ),
+            patch.object(matching, "supabase") as supabase,
+        ):
+            supabase.rpc.return_value = rpc
+            supabase.table.side_effect = (
+                lambda nombre: _propuestas_query()
+                if nombre == "propuestas_asignacion"
+                else MagicMock()
+            )
+            return matching.obtener_candidatos(reporte_id)
+
+    primera = ejecutar("reporte-1", [top, otro])
+    assert primera["candidatos"][0]["usuario_id"] == "user-top"
+
+    coverage_service.reservar_cobertura(
+        reporte_id="reporte-1",
+        usuario_asignado_id="user-top",
+        voluntario_id="vol-1",
+        asociacion_id="aso-1",
+        actor_id="staff-1",
+        origen="equipo_interno",
+    )
+
+    segunda = ejecutar("reporte-2", [top, otro])
+
+    assert [c["usuario_id"] for c in segunda["candidatos"]] == ["user-otro"]
 
 
 def test_matching_nunca_incluye_voluntario_externo_en_top_tres(reporte_multi_animal):
