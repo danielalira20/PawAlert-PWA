@@ -167,3 +167,53 @@ def test_missing_coordinates_are_persisted_without_calling_osrm(make_query):
     payload = tables["propuestas_asignacion"].update.call_args.args[0]
     assert payload["ruta_error_codigo"] == "missing_coordinates"
     assert payload["ruta_geometria"] is None
+
+
+def test_recalculates_route_for_confirmed_assignment(make_query):
+    proposal = make_query(
+        data=[{"id": "prop-1", "usuario_asignado_id": "user-1"}]
+    )
+    database = MagicMock()
+    database.table.return_value = proposal
+    route = MagicMock(spec=RouteResult)
+
+    with (
+        patch.object(assignment_route_service, "supabase_admin", database),
+        patch.object(
+            assignment_route_service,
+            "calculate_assignment_route",
+            return_value=route,
+        ) as calculate,
+    ):
+        result = (
+            assignment_route_service.recalculate_confirmed_assignment_route(
+                "rep-1"
+            )
+        )
+
+    assert result is route
+    calculate.assert_called_once_with("prop-1", "rep-1", "user-1")
+    proposal.eq.assert_any_call("reporte_id", "rep-1")
+    proposal.eq.assert_any_call("estado", "confirmada")
+
+
+def test_skips_recalculation_without_confirmed_assignment(make_query):
+    proposal = make_query(data=[])
+    database = MagicMock()
+    database.table.return_value = proposal
+
+    with (
+        patch.object(assignment_route_service, "supabase_admin", database),
+        patch.object(
+            assignment_route_service,
+            "calculate_assignment_route",
+        ) as calculate,
+    ):
+        result = (
+            assignment_route_service.recalculate_confirmed_assignment_route(
+                "rep-1"
+            )
+        )
+
+    assert result is None
+    calculate.assert_not_called()

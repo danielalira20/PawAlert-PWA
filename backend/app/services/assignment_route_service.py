@@ -164,3 +164,25 @@ def calculate_assignment_route(
         .execute()
     )
     return result
+
+
+def recalculate_confirmed_assignment_route(
+    reporte_id: str,
+) -> RouteResult | None:
+    proposal = (
+        supabase_admin.table("propuestas_asignacion")
+        .select("id, usuario_asignado_id")
+        .eq("reporte_id", reporte_id)
+        .eq("estado", "confirmada")
+        .limit(1)
+        .execute()
+    )
+    if not proposal.data:
+        return None
+
+    proposal_row = proposal.data[0]
+    return calculate_assignment_route(
+        proposal_row["id"],
+        reporte_id,
+        proposal_row["usuario_asignado_id"],
+    )

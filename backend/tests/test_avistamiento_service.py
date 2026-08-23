@@ -17,6 +17,7 @@ os.environ.setdefault("SUPABASE_SERVICE_KEY", JWT_DUMMY)
 
 from app.models.dispatch import AvistamientoCreate, LocationSource
 from app.services import avistamiento_service as svc
+from app.services import assignment_route_service
 
 
 def _reporte(**cambios):
@@ -276,6 +277,39 @@ def test_validar_avistamiento_aprobar_confirma_ubicacion(monkeypatch, make_query
         "longitud": -98.0,
         "fuente": "confirmacion_reportante",
     }
+
+
+def test_confirmar_ubicacion_recalcula_ruta_confirmada(monkeypatch, make_query):
+    db, _, _, _, usuario_id = _armar_validar(monkeypatch, make_query)
+    recalcular = MagicMock()
+    monkeypatch.setattr(
+        assignment_route_service,
+        "recalculate_confirmed_assignment_route",
+        recalcular,
+    )
+
+    svc.validar_avistamiento("av-1", usuario_id, aprobar=True)
+
+    recalcular.assert_called_once_with("rep-1")
+
+
+def test_fallo_de_ruta_no_revierte_confirmacion(monkeypatch, make_query):
+    _, _, reportes_mock, historial_mock, usuario_id = _armar_validar(
+        monkeypatch, make_query
+    )
+    monkeypatch.setattr(
+        assignment_route_service,
+        "recalculate_confirmed_assignment_route",
+        MagicMock(side_effect=RuntimeError("OSRM no disponible")),
+    )
+
+    resultado = svc.validar_avistamiento("av-1", usuario_id, aprobar=True)
+
+    assert resultado.estado_validacion == "validado"
+    reportes_mock.update.assert_called_once_with(
+        {"ultima_ubicacion_confirmada_id": "av-1"}
+    )
+    historial_mock.insert.assert_called_once()
 
 
 def test_validar_avistamiento_rechazar_no_toca_ultima_ubicacion(monkeypatch, make_query):

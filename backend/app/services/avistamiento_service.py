@@ -6,6 +6,7 @@ cambios de ubicacion confirmada del animal. El nombre y shape de ese
 evento no se cambian sin avisar.
 """
 
+import logging
 from datetime import datetime, timezone
 
 from fastapi import HTTPException
@@ -21,6 +22,7 @@ from app.services.coverage_service import _distancia_km
 
 ESTADO_VOLUNTARIO_VERIFICADO = "activo_nivel_2"
 ROLES_ASOCIACION = ("asociacion", "staff")
+logger = logging.getLogger(__name__)
 
 
 def _obtener_reporte(reporte_id: str) -> dict:
@@ -194,6 +196,19 @@ def _confirmar_avistamiento(
         longitud=longitud,
         fuente=fuente,
     )
+    try:
+        from app.services.assignment_route_service import (
+            recalculate_confirmed_assignment_route,
+        )
+
+        recalculate_confirmed_assignment_route(reporte_id)
+    except Exception:
+        logger.warning(
+            "No se pudo recalcular la ruta del reporte %s tras confirmar "
+            "una ubicacion",
+            reporte_id,
+            exc_info=True,
+        )
 
 
 def registrar_avistamiento(
