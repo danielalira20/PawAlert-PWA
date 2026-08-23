@@ -68,7 +68,10 @@ def _load_volunteer_points(volunteer_ids: list[str]) -> list[RoutingPoint] | Non
 def _load_report_points(report_ids: list[str]) -> list[RoutingPoint] | None:
     result = (
         supabase_admin.table("reportes")
-        .select("id, latitud, longitud, ultima_ubicacion_confirmada_id")
+        .select(
+            "id, latitud, longitud, "
+            "ultima_latitud_confirmada, ultima_longitud_confirmada"
+        )
         .in_("id", report_ids)
         .execute()
     )
@@ -78,33 +81,17 @@ def _load_report_points(report_ids: list[str]) -> list[RoutingPoint] | None:
     if any(report_id not in by_id for report_id in report_ids):
         return None
 
-    latest_ids = [
-        row["ultima_ubicacion_confirmada_id"]
-        for row in by_id.values()
-        if row.get("ultima_ubicacion_confirmada_id")
-    ]
-    latest_by_id: dict[str, dict] = {}
-    if latest_ids:
-        latest = (
-            supabase_admin.table("avistamientos_animal")
-            .select("id, latitud, longitud")
-            .in_("id", latest_ids)
-            .eq("estado_validacion", "validado")
-            .execute()
-        )
-        latest_by_id = {
-            row["id"]: row
-            for row in (latest.data or [])
-            if row.get("id")
-        }
-
     points = []
     for report_id in report_ids:
         report = by_id[report_id]
-        latest_id = report.get("ultima_ubicacion_confirmada_id")
-        location = latest_by_id.get(latest_id, report)
-        latitude = location.get("latitud")
-        longitude = location.get("longitud")
+        latest_latitude = report.get("ultima_latitud_confirmada")
+        latest_longitude = report.get("ultima_longitud_confirmada")
+        if latest_latitude is not None and latest_longitude is not None:
+            latitude = latest_latitude
+            longitude = latest_longitude
+        else:
+            latitude = report.get("latitud")
+            longitude = report.get("longitud")
         if latitude is None or longitude is None:
             return None
         points.append(
@@ -132,4 +119,3 @@ def calculate_dispatch_route_matrix(
     return get_route_matrix(
         RouteMatrixRequest(origins=origins, destinations=destinations)
     )
-

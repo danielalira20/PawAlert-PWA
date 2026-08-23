@@ -191,6 +191,11 @@ def test_asociacion_recibe_datos_del_externo_con_cliente_administrativo():
                 "capacidad_resumen": "0 de 2 casos activos",
             },
         ),
+        patch.object(
+            coverage_service,
+            "enrich_candidates_with_route_estimates",
+            side_effect=lambda _reporte_id, items: items,
+        ) as enrich,
     ):
         ofertas = coverage_service.obtener_ofrecimientos_reporte("rep-1")
 
@@ -199,6 +204,7 @@ def test_asociacion_recibe_datos_del_externo_con_cliente_administrativo():
     assert ofertas[0]["tipo"] == "voluntario_externo"
     assert ofertas[0]["score"]["total"] == 78
     assert ofertas[0]["capacidad_resumen"] == "0 de 2 casos activos"
+    enrich.assert_called_once()
     assert supabase_admin.table.call_count == 2
     supabase_publico.table.assert_not_called()
 

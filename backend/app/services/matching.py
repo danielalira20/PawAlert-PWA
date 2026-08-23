@@ -10,6 +10,9 @@ from zoneinfo import ZoneInfo
 
 from app.db.supabase import supabase
 from app.models.dispatch import MATCHING_WEIGHTS
+from app.services.candidate_route_estimation_service import (
+    enrich_candidates_with_route_estimates,
+)
 from app.services.reputacion_service import (
     ROL_VOLUNTARIO_INTERNO,
     usuarios_bloqueados_nuevas_asignaciones,
@@ -131,7 +134,13 @@ def obtener_candidatos(reporte_id: str) -> dict:
         ),
         reverse=True,
     )
-    return {"candidatos": candidatos[:3]}
+    top_candidates = candidatos[:3]
+    return {
+        "candidatos": enrich_candidates_with_route_estimates(
+            reporte_id,
+            top_candidates,
+        )
+    }
 
 
 def evaluar_candidato_externo(

@@ -14,6 +14,9 @@ from fastapi import HTTPException
 
 from app.db.supabase import supabase, supabase_admin
 from app.services import matching, reputacion_service
+from app.services.candidate_route_estimation_service import (
+    enrich_candidates_with_route_estimates,
+)
 from app.utils.animal_shaping import shape_animal_embed, shape_animal_response
 
 
@@ -334,7 +337,7 @@ def obtener_ofrecimientos_reporte(reporte_id: str) -> list[dict]:
                 **evaluacion,
             }
         )
-    return ofrecimientos
+    return enrich_candidates_with_route_estimates(reporte_id, ofrecimientos)
 
 
 def obtener_propuestas_pendientes(usuario_id: str) -> list[dict]:
