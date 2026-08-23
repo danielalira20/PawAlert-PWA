@@ -5,7 +5,7 @@ pausas, distancia y carga. Este módulo aplica compatibilidad segura y genera
 un ranking entendible para la asociación.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from app.db.supabase import supabase
@@ -62,6 +62,7 @@ def obtener_candidatos(reporte_id: str) -> dict:
         },
         ROL_VOLUNTARIO_INTERNO,
     )
+    con_propuesta_activa = _voluntarios_con_propuesta_activa()
 
     candidatos = []
     for candidato in crudos:
@@ -73,6 +74,8 @@ def obtener_candidatos(reporte_id: str) -> dict:
         if candidato["usuario_id"] in rechazaron:
             continue
         if candidato["usuario_id"] in bloqueados:
+            continue
+        if candidato["usuario_id"] in con_propuesta_activa:
             continue
 
         especies = set(
@@ -436,6 +439,29 @@ def _obtener_reporte(reporte_id: str) -> dict:
         for animal in animales_crudos
     ]
     return data
+
+
+def _voluntarios_con_propuesta_activa() -> set:
+    """Voluntarios con una propuesta activa y sin vencer en cualquier
+    reporte -- no deben volver a salir como candidatos disponibles
+    mientras esa propuesta siga sin resolverse. Sin esto, el mismo
+    voluntario puede salir como top-1 en dos llamadas a
+    obtener_candidatos() antes de que la primera propuesta se resuelva
+    (dos reportes en la misma corrida de escalamiento, o un staff
+    procesando dos reportes manualmente en pocos minutos)."""
+    ahora = datetime.now(timezone.utc).isoformat()
+    resultado = (
+        supabase.table("propuestas_asignacion")
+        .select("usuario_asignado_id")
+        .eq("estado", "activa")
+        .gt("vence_at", ahora)
+        .execute()
+    )
+    return {
+        fila["usuario_asignado_id"]
+        for fila in (resultado.data or [])
+        if fila.get("usuario_asignado_id")
+    }
 
 
 def _voluntarios_que_rechazaron(reporte_id: str) -> set:
