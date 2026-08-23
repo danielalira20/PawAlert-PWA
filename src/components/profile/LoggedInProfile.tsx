@@ -17,6 +17,7 @@ import { useRecentReports } from '../../hooks/useRecentReports';
 import { useAssociationImpact } from '../../hooks/useAssociationImpact';
 import { useAdminSupervision } from '../../hooks/useAdminSupervision';
 import { useStaffImpact } from '../../hooks/useStaffImpact';
+import { useVoluntarioImpact } from '../../hooks/useVoluntarioImpact';
 import { useAliadoImpact } from '../../hooks/useAliadoImpact';
 import { GeneralStatsStrip } from './GeneralStatsStrip';
 import { ReporterImpactStats } from './ReporterImpactStats';
@@ -196,6 +197,7 @@ export function LoggedInProfile({
   const { impacto: impactoAsociacion, isLoading: isLoadingAsociacion } = useAssociationImpact(esAsociacion);
   const { pendientes, totalPendientes, isLoading: isLoadingAdmin } = useAdminSupervision(esAdmin);
   const { impacto: impactoStaff, isLoading: isLoadingStaff } = useStaffImpact(esStaff);
+  const { impacto: impactoVoluntario, isLoading: isLoadingVoluntario } = useVoluntarioImpact(esVoluntarioActivo);
 
   if (!user) return null;
 
@@ -344,10 +346,9 @@ export function LoggedInProfile({
 
   const muestraSaldoReputacion = !esAdmin && !esAsociacion && !esStaff && tipoPerfilApoyo !== 'patrocinador_institucional' && tipoPerfilApoyo !== 'aliado_local' && !esAliadoPuro;
 
-  // Los 4 roles ya tienen su propia versión.
-  // NOTA: esVoluntarioActivo aún no tiene su propia tarjeta de impacto —
-  // por ahora cae al default (ReporterImpactStats). Pendiente crear una
-  // tarjeta específica de impacto de voluntario más adelante.
+  // Los 5 roles ya tienen su propia versión (voluntario_interno/externo
+  // comparten StaffImpactStats: es puramente presentacional y el shape de
+  // impacto es idéntico al de staff, solo cambia el endpoint que lo llena).
   const impactStatsElement = esAsociacion ? (
     <AssociationImpactStats impacto={impactoAsociacion} isLoading={isLoadingAsociacion} />
   ) : esAdmin ? (
@@ -359,6 +360,8 @@ export function LoggedInProfile({
     />
   ) : esStaff ? (
     <StaffImpactStats impacto={impactoStaff} isLoading={isLoadingStaff} />
+  ) : esVoluntarioActivo ? (
+    <StaffImpactStats impacto={impactoVoluntario} isLoading={isLoadingVoluntario} />
   ) : (
     <ImpactoInsigniasToggle
       impactoElement={<ReporterImpactStats impacto={impacto} isLoading={isLoadingReportes} />}

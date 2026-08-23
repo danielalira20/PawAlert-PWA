@@ -52,3 +52,69 @@ def test_stats_cantidad_nula_cuenta_como_un_animal(make_query):
         response = client.get("/stats/generales")
 
     assert response.json()["animales_rescatados"] == 1
+
+
+def test_stats_admin_requiere_autenticacion():
+    response = client.get("/stats/admin")
+    assert response.status_code == 401
+
+
+def test_stats_admin_calcula_metricas(make_query):
+    reportes_data = [
+        {
+            "id": "r1", "estado_reporte": "pendiente", "estado_moderacion": "aprobado",
+            "latitud": 19.04, "longitud": -98.20, "urgency_nivel": "rojo",
+            "municipio": "Puebla", "colonia": "Centro",
+        },
+        {
+            "id": "r2", "estado_reporte": "sin_cobertura", "estado_moderacion": "aprobado",
+            "latitud": 19.05, "longitud": -98.21, "urgency_nivel": "amarillo",
+            "municipio": "Puebla", "colonia": "Centro",
+        },
+        {
+            "id": "r3", "estado_reporte": "cerrado", "estado_moderacion": "aprobado",
+            "latitud": 19.10, "longitud": -98.30, "urgency_nivel": None,
+            "municipio": "Puebla", "colonia": "Norte",
+        },
+        {
+            "id": "r4", "estado_reporte": "duplicado", "estado_moderacion": "rechazado",
+            "latitud": None, "longitud": None, "urgency_nivel": None,
+            "municipio": None, "colonia": None,
+        },
+    ]
+    reportes_query = make_query(execute_results=[
+        SimpleNamespace(data=reportes_data, count=None),
+        SimpleNamespace(data=[{"id": "r1", "created_at": "2026-08-01T00:00:00+00:00"}], count=None),
+    ])
+    propuestas_query = make_query(data=[
+        {"reporte_id": "r1", "respondida_at": "2026-08-01T02:00:00+00:00"},
+    ])
+    necesidades_query = make_query(data=[
+        {"categoria": "alimento"}, {"categoria": "alimento"}, {"categoria": "transporte"},
+    ])
+    tablas = {
+        "reportes": reportes_query,
+        "propuestas_asignacion": propuestas_query,
+        "necesidades": necesidades_query,
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+
+    with (
+        patch.object(stats, "supabase", supabase),
+        patch.object(stats, "_verificar_admin", return_value={"id": "admin-1"}),
+    ):
+        response = client.get("/stats/admin", headers={"Authorization": "Bearer token"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["casos_activos_actuales"] == 2
+    assert body["tiempo_promedio_aceptacion_horas"] == 2.0
+    assert body["tasa_duplicados"] == 0.25
+    assert body["tasa_fraude_detectado"] == 0.25
+    assert body["recursos_mas_solicitados"][0] == {"categoria": "alimento", "cantidad": 2}
+    assert {"municipio": "Puebla", "colonia": "Centro", "cantidad": 1} in (
+        body["casos_sin_cobertura_por_zona"]
+    )
+    assert len(body["mapa_calor_activo"]) == 2
+    assert len(body["mapa_calor_historico"]) == 1

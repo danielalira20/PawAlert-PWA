@@ -34,6 +34,7 @@ import { ActionBar } from '../components/admin-dashboard/ActionBar';
 import { AdminActionButton } from '../components/admin-dashboard/AdminActionButton';
 import { ReportModerationPanel } from '../components/admin-dashboard/ReportModerationPanel';
 import { ProblemasCanjesPanel } from '../components/admin-dashboard/ProblemasCanjesPanel';
+import { AdminStatsPanel } from '../components/admin-dashboard/AdminStatsPanel';
 import { StatsRow, type StatItem } from '../components/staff-dashboard/StatsRow';
 import { Brand } from '../constants/theme';
 import type { AsociacionDetalle } from '../types/asociacionAdmin';
@@ -42,7 +43,7 @@ interface Props {
   onClose?: () => void;
 }
 
-type Tab = 'solicitudes' | 'apelaciones' | 'apelaciones-aliados' | 'aliados' | 'operativos' | 'moderacion' | 'problemas-canjes';
+type Tab = 'solicitudes' | 'apelaciones' | 'apelaciones-aliados' | 'aliados' | 'operativos' | 'moderacion' | 'problemas-canjes' | 'estadisticas';
 type DetailScreenState = 'list' | 'detail';
 
 interface CasoOperativo {
@@ -453,6 +454,15 @@ export default function AdminDashboardScreen({ onClose }: Props) {
               </View>
             )}
           </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => setTab('estadisticas')}
+            style={[styles.tab, tab === 'estadisticas' && styles.tabActiva]}
+          >
+            <Text style={[styles.tabText, tab === 'estadisticas' && styles.tabTextActiva]}>
+              Estadísticas
+            </Text>
+          </TouchableOpacity>
         </ScrollView>
       </View>
 
@@ -579,6 +589,8 @@ export default function AdminDashboardScreen({ onClose }: Props) {
           onCountChange={setModeracionPendiente}
           showToast={showToast}
         />
+      ) : tab === 'estadisticas' ? (
+        <AdminStatsPanel />
       ) : (
         <ProblemasCanjesPanel
           problemas={problemasCanjes}
