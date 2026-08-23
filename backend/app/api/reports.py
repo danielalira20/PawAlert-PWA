@@ -62,6 +62,34 @@ def _distancia_metros(
     return radio_tierra * 2 * math.asin(math.sqrt(haversine))
 
 
+def _resolver_punto_referencia(reporte: dict) -> tuple[float, float, str]:
+    """Punto contra el que se valida la cercania del voluntario: la ultima
+    ubicacion confirmada (avistamientos_animal) si el reporte ya tiene una
+    via ultima_ubicacion_confirmada_id, o el punto original del reporte
+    mientras no exista ninguna todavia. avistamientos_animal solo tiene
+    GRANT para service_role (migracion 0071) -- se consulta con
+    supabase_admin, nunca con el cliente anon."""
+    ultima_id = reporte.get("ultima_ubicacion_confirmada_id")
+    if ultima_id:
+        avistamiento = (
+            supabase_admin.table("avistamientos_animal")
+            .select("latitud, longitud")
+            .eq("id", ultima_id)
+            .limit(1)
+            .execute()
+        )
+        if avistamiento.data:
+            fila = avistamiento.data[0]
+            if fila.get("latitud") is not None and fila.get("longitud") is not None:
+                return (
+                    float(fila["latitud"]),
+                    float(fila["longitud"]),
+                    "ubicacion_confirmada",
+                )
+
+    return float(reporte["latitud"]), float(reporte["longitud"]), "punto_original"
+
+
 def _fecha_utc(fecha: datetime) -> datetime:
     """Normaliza fechas del cliente sin depender de la zona horaria del servidor."""
     if fecha.tzinfo is None:
@@ -678,7 +706,8 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
     # Verificar que el reporte existe y está asignado a este staff
     reporte = supabase.table("reportes").select(
         "id, estado_reporte, estado_cobertura, staff_asignado_id, "
-        "asociacion_asignada_id, latitud, longitud"
+        "asociacion_asignada_id, latitud, longitud, "
+        "ultima_ubicacion_confirmada_id"
     ).eq("id", reporte_id).execute()
 
     if not reporte.data:
@@ -726,6 +755,7 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
 
     rol_usuario = (usuario.get("roles") or {}).get("nombre")
     distancia_reporte_metros = None
+    fuente_comparacion = None
 
     if tipo_hito == "llegada_zona_reporte":
         if rol_usuario != "voluntario_externo":
@@ -743,11 +773,12 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
                 status_code=409,
                 detail="El reporte no tiene coordenadas para validar la llegada",
             )
+        lat_referencia, lon_referencia, fuente_comparacion = _resolver_punto_referencia(reporte)
         distancia_reporte_metros = _distancia_metros(
             body.latitud,
             body.longitud,
-            reporte["latitud"],
-            reporte["longitud"],
+            lat_referencia,
+            lon_referencia,
         )
         if distancia_reporte_metros > RADIO_LLEGADA_ZONA_METROS:
             raise HTTPException(
@@ -802,11 +833,12 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
                     status_code=409,
                     detail="El reporte no tiene coordenadas para validar la búsqueda",
                 )
+            lat_referencia, lon_referencia, fuente_comparacion = _resolver_punto_referencia(reporte)
             distancia_reporte_metros = _distancia_metros(
                 body.latitud,
                 body.longitud,
-                reporte["latitud"],
-                reporte["longitud"],
+                lat_referencia,
+                lon_referencia,
             )
             if distancia_reporte_metros > RADIO_LLEGADA_ZONA_METROS:
                 raise HTTPException(
@@ -1150,6 +1182,7 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
                 if distancia_reporte_metros is not None
                 else None
             ),
+            "fuente_comparacion": fuente_comparacion,
             "verificacion_ubicacion": verificacion_ubicacion,
             "ruta_resguardo": body.ruta_resguardo,
             "fecha_limite_resguardo": (
