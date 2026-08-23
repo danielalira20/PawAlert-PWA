@@ -598,3 +598,110 @@ def test_reserva_revalida_bloqueo_antes_de_la_operacion_atomica(origen):
     assert error.value.status_code == 409
     assert "no puede recibir nuevas asignaciones" in error.value.detail
     supabase_admin.rpc.assert_not_called()
+
+
+def _reportes_query_cercanos(reporte: dict) -> MagicMock:
+    query = MagicMock()
+    query.select.return_value = query
+    query.eq.return_value = query
+    query.in_.return_value = query
+    query.is_.return_value = query
+    query.not_.is_.return_value = query
+    query.order.return_value = query
+    query.execute.return_value = SimpleNamespace(data=[reporte])
+    return query
+
+
+def _reporte_cercano(**overrides) -> dict:
+    base = {
+        "id": "rep-1",
+        "estado_reporte": "asignado",
+        "estado_cobertura": "abierto",
+        "asociacion_asignada_id": "aso-1",
+        "staff_asignado_id": None,
+        "municipio": "Puebla",
+        "colonia": "Centro",
+        "latitud": 19.05,
+        "longitud": -98.05,
+        "created_at": "2026-08-23T10:00:00+00:00",
+        "asociaciones": {"nombre": "Asociación Uno"},
+        "animal": [],
+    }
+    base.update(overrides)
+    return base
+
+
+def test_casos_cercanos_usa_max_radio_km_cuando_radio_max_km_es_null():
+    """Antes de esta migración, radio_max_km NULL producía radio=0 y
+    `radio <= 0` descartaba el caso siempre: un voluntario sin radio
+    configurado no encontraba nunca ningún caso. La decisión de producto es
+    que NULL significa "sin límite configurado, usar el máximo de la
+    plataforma" (matching.MAX_RADIO_KM), no 0."""
+    supabase_publico = MagicMock()
+    supabase_publico.table.return_value = _reportes_query_cercanos(
+        _reporte_cercano()
+    )
+    perfil = {
+        "id": "vol-1",
+        "capacidades": {
+            "latitud": 19.00,
+            "longitud": -98.00,
+            "radio_max_km": None,
+            "max_casos_simultaneos": 2,
+        },
+    }
+
+    with (
+        patch.object(coverage_service, "supabase", supabase_publico),
+        patch.object(
+            coverage_service, "obtener_perfil_externo", return_value=perfil
+        ),
+        patch.object(coverage_service, "_carga_activa", return_value=0),
+        patch.object(
+            coverage_service, "_ofrecimientos_del_voluntario", return_value={}
+        ),
+        patch.object(
+            coverage_service, "_animales_compatibles", return_value=True
+        ),
+        patch.object(coverage_service, "_distancia_km", return_value=25.0),
+    ):
+        casos = coverage_service.obtener_casos_cercanos("user-1")
+
+    assert [caso["id"] for caso in casos] == ["rep-1"]
+
+
+def test_casos_cercanos_radio_null_sigue_topado_al_maximo_de_plataforma():
+    """El fallback a NULL no es "sin límite real": sigue topado a
+    matching.MAX_RADIO_KM (30km), igual que un voluntario que configuró
+    30km a mano -- un caso más allá de esa distancia sigue quedando fuera."""
+    supabase_publico = MagicMock()
+    supabase_publico.table.return_value = _reportes_query_cercanos(
+        _reporte_cercano()
+    )
+    perfil = {
+        "id": "vol-1",
+        "capacidades": {
+            "latitud": 19.00,
+            "longitud": -98.00,
+            "radio_max_km": None,
+            "max_casos_simultaneos": 2,
+        },
+    }
+
+    with (
+        patch.object(coverage_service, "supabase", supabase_publico),
+        patch.object(
+            coverage_service, "obtener_perfil_externo", return_value=perfil
+        ),
+        patch.object(coverage_service, "_carga_activa", return_value=0),
+        patch.object(
+            coverage_service, "_ofrecimientos_del_voluntario", return_value={}
+        ),
+        patch.object(
+            coverage_service, "_animales_compatibles", return_value=True
+        ),
+        patch.object(coverage_service, "_distancia_km", return_value=35.0),
+    ):
+        casos = coverage_service.obtener_casos_cercanos("user-1")
+
+    assert casos == []

@@ -177,6 +177,33 @@ def test_matching_excluye_voluntario_bloqueado_por_trust_score(
     ]
 
 
+def test_matching_radio_null_usa_max_radio_km(reporte_multi_animal):
+    """migrations/0074_radio_max_km_null_sin_limite.sql quito el filtro SQL
+    que excluia por completo cualquier fila con radio_max_km NULL -- este
+    fallback de aca (or MAX_RADIO_KM) ya existia pero era codigo muerto para
+    candidatos internos, porque la RPC nunca dejaba pasar una fila asi.
+    Confirma que ahora que si llegan filas reales con radio_max_km=None,
+    el fallback las trata como "hasta el maximo de la plataforma"."""
+    sin_radio = candidato(usuario_id="sin-radio", distancia_km=15, radio_max_km=None)
+
+    resultado = ejecutar_matching(reporte_multi_animal, [sin_radio])
+
+    assert [c["usuario_id"] for c in resultado["candidatos"]] == ["sin-radio"]
+    assert resultado["candidatos"][0]["radio_max_km"] == matching.MAX_RADIO_KM
+
+
+def test_matching_radio_null_sigue_topado_en_max_radio_km(reporte_multi_animal):
+    """El fallback a NULL no es "sin limite real": sigue topado al maximo
+    de la plataforma, igual que la comparacion LEAST(..., 30) del lado SQL."""
+    lejos = candidato(
+        usuario_id="lejos", distancia_km=matching.MAX_RADIO_KM + 5, radio_max_km=None
+    )
+
+    resultado = ejecutar_matching(reporte_multi_animal, [lejos])
+
+    assert resultado["candidatos"] == []
+
+
 def test_matching_respeta_radio_declarado(reporte_multi_animal):
     fuera = candidato(usuario_id="fuera", distancia_km=6, radio_max_km=5)
     dentro = candidato(usuario_id="dentro", distancia_km=4, radio_max_km=5)

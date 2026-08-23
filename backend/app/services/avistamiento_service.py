@@ -18,6 +18,7 @@ from app.models.dispatch import (
     CoordinationEvent,
     LocationSource,
 )
+from app.services import matching
 from app.services.coverage_service import _distancia_km
 
 ESTADO_VOLUNTARIO_VERIFICADO = "activo_nivel_2"
@@ -117,7 +118,7 @@ def _voluntario_verificado_cerca(usuario_id: str, reporte: dict) -> bool:
     if capacidades.get("latitud") is None or capacidades.get("longitud") is None:
         return False
 
-    radio = float(capacidades.get("radio_max_km") or 0)
+    radio = float(capacidades.get("radio_max_km") or matching.MAX_RADIO_KM)
     if radio <= 0:
         return False
 

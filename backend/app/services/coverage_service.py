@@ -151,7 +151,7 @@ def obtener_casos_cercanos(usuario_id: str) -> list[dict]:
             float(reporte["latitud"]),
             float(reporte["longitud"]),
         )
-        radio = min(float(capacidades.get("radio_max_km") or 0), 30)
+        radio = min(float(capacidades.get("radio_max_km") or matching.MAX_RADIO_KM), 30)
         if radio <= 0 or distancia > radio:
             continue
 

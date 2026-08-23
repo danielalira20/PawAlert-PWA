@@ -197,6 +197,89 @@ def test_registrar_avistamiento_fuente_voluntario_verificado_dentro_de_radio(
     assert resultado.estado_validacion == "pendiente"
 
 
+def test_registrar_avistamiento_voluntario_verificado_radio_null_usa_maximo_plataforma(
+    monkeypatch, make_query
+):
+    """Antes, radio_max_km NULL producia radio=0 y `if radio <= 0: return
+    False` descartaba siempre al voluntario. Ahora NULL significa "sin
+    limite configurado, usar el maximo de la plataforma"
+    (matching.MAX_RADIO_KM = 30km) -- ~15km de distancia debe calificar."""
+    reporte = _reporte(usuario_id="user-reportante", staff_asignado_id="user-staff")
+    fila = _fila_insertada(fuente="voluntario_verificado")
+    db = _armar_db(
+        {
+            "reportes": make_query(data=[reporte]),
+            "usuarios": make_query(
+                data=[
+                    _usuario(
+                        id="user-ext", asociacion_id=None, roles={"nombre": "voluntario_externo"}
+                    )
+                ]
+            ),
+            "voluntarios": make_query(
+                data=[
+                    {
+                        "estado": "activo_nivel_2",
+                        "capacidades": {
+                            "latitud": 19.135,
+                            "longitud": -98.0,
+                            "radio_max_km": None,
+                        },
+                    }
+                ]
+            ),
+            "animal": make_query(data=[{"id": "animal-1"}]),
+            "avistamientos_animal": make_query(data=[fila]),
+        }
+    )
+    monkeypatch.setattr(svc, "supabase_admin", db)
+
+    resultado = svc.registrar_avistamiento(
+        "rep-1", "user-ext", _avistamiento_create()
+    )
+
+    assert resultado.fuente == LocationSource.voluntario_verificado
+    assert resultado.estado_validacion == "pendiente"
+
+
+def test_registrar_avistamiento_voluntario_verificado_radio_null_sigue_topado(
+    monkeypatch, make_query
+):
+    """El fallback a NULL no es "sin limite real": sigue topado al maximo
+    de la plataforma (30km) -- ~35km de distancia sigue quedando fuera."""
+    reporte = _reporte(usuario_id="user-reportante", staff_asignado_id="user-staff")
+    db = _armar_db(
+        {
+            "reportes": make_query(data=[reporte]),
+            "usuarios": make_query(
+                data=[
+                    _usuario(
+                        id="user-ext", asociacion_id=None, roles={"nombre": "voluntario_externo"}
+                    )
+                ]
+            ),
+            "voluntarios": make_query(
+                data=[
+                    {
+                        "estado": "activo_nivel_2",
+                        "capacidades": {
+                            "latitud": 19.315,
+                            "longitud": -98.0,
+                            "radio_max_km": None,
+                        },
+                    }
+                ]
+            ),
+        }
+    )
+    monkeypatch.setattr(svc, "supabase_admin", db)
+
+    with pytest.raises(HTTPException) as error:
+        svc.registrar_avistamiento("rep-1", "user-ext", _avistamiento_create())
+
+    assert error.value.status_code == 403
+
+
 def test_registrar_avistamiento_rechaza_usuario_sin_rol_calificado(
     monkeypatch, make_query
 ):
