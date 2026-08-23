@@ -179,6 +179,112 @@ def _emitir_ubicacion_confirmada(
     ).execute()
 
 
+def _datos_para_duplicados(
+    reporte_id: str,
+) -> tuple[list[str], int, str] | None:
+    """Especies (claves de tipo_animal_catalogo), cantidad total y
+    created_at del reporte -- lo que exige DuplicateSearchInput mas alla de
+    la ubicacion. created_at es el del reporte original, no el momento de
+    esta confirmacion: buscar_duplicados_geograficos (migracion 0060) filtra
+    candidatos por una ventana de +-120min alrededor de ese valor, y un
+    avistamiento puede confirmarse horas despues de creado el reporte."""
+    resultado = (
+        supabase_admin.table("reportes")
+        .select("created_at, animal(tipo_animal_catalogo(clave), cantidad)")
+        .eq("id", reporte_id)
+        .limit(1)
+        .execute()
+    )
+    if not resultado.data:
+        return None
+
+    fila = resultado.data[0]
+    animales = fila.get("animal") or []
+    especies = list(
+        dict.fromkeys(
+            (animal.get("tipo_animal_catalogo") or {}).get("clave")
+            for animal in animales
+            if (animal.get("tipo_animal_catalogo") or {}).get("clave")
+        )
+    )
+    if not especies or not fila.get("created_at"):
+        return None
+
+    cantidad = sum(animal.get("cantidad") or 1 for animal in animales)
+    return especies, cantidad, fila["created_at"]
+
+
+def _detectar_posibles_duplicados(
+    *,
+    reporte_id: str,
+    avistamiento_id: str,
+    latitud: float,
+    longitud: float,
+) -> None:
+    from app.models.urgency import DuplicateSearchInput
+    from app.services.duplicate_service import find_geographic_duplicates
+
+    datos = _datos_para_duplicados(reporte_id)
+    if datos is None:
+        return
+    especies, cantidad, created_at = datos
+
+    busqueda = DuplicateSearchInput(
+        latitude=latitud,
+        longitude=longitud,
+        created_at=created_at,
+        species=especies,
+        quantity=cantidad,
+        report_id=reporte_id,
+    )
+    duplicados = find_geographic_duplicates(busqueda)
+    if not duplicados:
+        return
+
+    supabase_admin.table("historial_reporte").insert(
+        {
+            "reporte_id": reporte_id,
+            "usuario_id": None,
+            "tipo_evento": CoordinationEvent.posible_duplicado_detectado.value,
+            "descripcion": (
+                "Se detectaron posibles duplicados tras confirmar una "
+                "nueva ubicación."
+            ),
+            "datos_extra": {
+                "avistamiento_id": avistamiento_id,
+                "candidatos": [
+                    {
+                        "reporte_id": candidato.existing_report_id,
+                        "distancia_m": candidato.distance_m,
+                        "diferencia_minutos": candidato.time_difference_minutes,
+                        "especies_compartidas": candidato.shared_species,
+                    }
+                    for candidato in duplicados
+                ],
+            },
+        }
+    ).execute()
+
+
+def _recalcular_urgency(*, reporte_id: str, avistamiento_id: str) -> None:
+    from app.services.urgency_service import evaluate_report_urgency
+
+    resultado = evaluate_report_urgency(reporte_id)
+    supabase_admin.table("historial_reporte").insert(
+        {
+            "reporte_id": reporte_id,
+            "usuario_id": None,
+            "tipo_evento": CoordinationEvent.urgency_recalculada.value,
+            "descripcion": "Urgency se recalculó tras confirmar una nueva ubicación.",
+            "datos_extra": {
+                "avistamiento_id": avistamiento_id,
+                "score": resultado.score,
+                "nivel": resultado.level,
+            },
+        }
+    ).execute()
+
+
 def _confirmar_avistamiento(
     *,
     reporte_id: str,
@@ -206,6 +312,31 @@ def _confirmar_avistamiento(
     except Exception:
         logger.warning(
             "No se pudo recalcular la ruta del reporte %s tras confirmar "
+            "una ubicacion",
+            reporte_id,
+            exc_info=True,
+        )
+
+    try:
+        _detectar_posibles_duplicados(
+            reporte_id=reporte_id,
+            avistamiento_id=avistamiento_id,
+            latitud=latitud,
+            longitud=longitud,
+        )
+    except Exception:
+        logger.warning(
+            "No se pudo detectar duplicados del reporte %s tras confirmar "
+            "una ubicacion",
+            reporte_id,
+            exc_info=True,
+        )
+
+    try:
+        _recalcular_urgency(reporte_id=reporte_id, avistamiento_id=avistamiento_id)
+    except Exception:
+        logger.warning(
+            "No se pudo recalcular urgency del reporte %s tras confirmar "
             "una ubicacion",
             reporte_id,
             exc_info=True,
