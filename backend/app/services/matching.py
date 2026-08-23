@@ -8,7 +8,7 @@ un ranking entendible para la asociación.
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-from app.db.supabase import supabase
+from app.db.supabase import supabase, supabase_admin
 from app.models.dispatch import MATCHING_WEIGHTS
 from app.services.reputacion_service import (
     ROL_VOLUNTARIO_INTERNO,
@@ -451,7 +451,7 @@ def _voluntarios_con_propuesta_activa() -> set:
     procesando dos reportes manualmente en pocos minutos)."""
     ahora = datetime.now(timezone.utc).isoformat()
     resultado = (
-        supabase.table("propuestas_asignacion")
+        supabase_admin.table("propuestas_asignacion")
         .select("usuario_asignado_id")
         .eq("estado", "activa")
         .gt("vence_at", ahora)

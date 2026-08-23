@@ -75,9 +75,10 @@ def ejecutar_matching(reporte, candidatos, rechazaron=None, propuestas_activas=N
             return_value=set(rechazaron or []),
         ),
         patch.object(matching, "supabase") as supabase,
+        patch.object(matching, "supabase_admin") as supabase_admin,
     ):
         supabase.rpc.return_value = rpc
-        supabase.table.side_effect = (
+        supabase_admin.table.side_effect = (
             lambda nombre: propuestas_query
             if nombre == "propuestas_asignacion"
             else MagicMock()
@@ -87,6 +88,7 @@ def ejecutar_matching(reporte, candidatos, rechazaron=None, propuestas_activas=N
         "candidatos_para_reporte",
         {"p_reporte_id": reporte["id"]},
     )
+    supabase.table.assert_not_called()
     return resultado
 
 
@@ -214,14 +216,19 @@ def test_matching_excluye_voluntario_con_propuesta_activa_sin_vencer(
 def test_propuesta_activa_vigente_bloquea_al_voluntario(make_query):
     """Postgres SI devuelve la fila: estado='activa' y vence_at futuro."""
     query = make_query(data=[{"usuario_asignado_id": "user-1"}])
-    db = MagicMock()
-    db.table.return_value = query
+    db_admin = MagicMock()
+    db_admin.table.return_value = query
+    db_anon = MagicMock()
 
-    with patch.object(matching, "supabase", db):
+    with (
+        patch.object(matching, "supabase_admin", db_admin),
+        patch.object(matching, "supabase", db_anon),
+    ):
         resultado = matching._voluntarios_con_propuesta_activa()
 
     assert resultado == {"user-1"}
-    db.table.assert_called_once_with("propuestas_asignacion")
+    db_admin.table.assert_called_once_with("propuestas_asignacion")
+    db_anon.table.assert_not_called()
     query.eq.assert_called_once_with("estado", "activa")
     assert query.gt.call_args[0][0] == "vence_at"
 
@@ -231,10 +238,10 @@ def test_propuesta_vencida_no_bloquea_al_voluntario(make_query):
     ya la excluyo con `.gt("vence_at", ahora)`, asi que la fila no vuelve
     y nadie queda bloqueado -- el filtro es temporal, no permanente."""
     query = make_query(data=[])
-    db = MagicMock()
-    db.table.return_value = query
+    db_admin = MagicMock()
+    db_admin.table.return_value = query
 
-    with patch.object(matching, "supabase", db):
+    with patch.object(matching, "supabase_admin", db_admin):
         resultado = matching._voluntarios_con_propuesta_activa()
 
     assert resultado == set()
@@ -247,14 +254,41 @@ def test_propuesta_en_otro_estado_no_bloquea_al_voluntario(make_query):
     el filtro es especifico al estado activa-vigente, no a cualquier
     propuesta que haya existido alguna vez."""
     query = make_query(data=[])
-    db = MagicMock()
-    db.table.return_value = query
+    db_admin = MagicMock()
+    db_admin.table.return_value = query
 
-    with patch.object(matching, "supabase", db):
+    with patch.object(matching, "supabase_admin", db_admin):
         resultado = matching._voluntarios_con_propuesta_activa()
 
     assert resultado == set()
     query.eq.assert_called_once_with("estado", "activa")
+
+
+def test_propuestas_activas_usa_supabase_admin_no_el_cliente_anon(make_query):
+    """Regresion del bug real de produccion: propuestas_asignacion tiene RLS
+    habilitado con grants solo para service_role desde la migracion
+    0069_rutas_asignacion_osrm.sql (REVOKE ALL ... FROM PUBLIC, anon,
+    authenticated; GRANT ALL ... TO service_role). El cliente `supabase`
+    (construido con SUPABASE_KEY) no tiene permiso sobre esta tabla y
+    Postgres responde 42501 'permission denied for table
+    propuestas_asignacion'. Un mock que solo verifica la respuesta (como
+    hacian los tests anteriores, parcheando cualquiera de los dos clientes
+    indistintamente) no detecta que la consulta corrio contra el cliente
+    equivocado -- este test verifica explicitamente CUAL cliente se usa,
+    no solo el resultado."""
+    query = make_query(data=[{"usuario_asignado_id": "user-1"}])
+    db_admin = MagicMock()
+    db_admin.table.return_value = query
+    db_anon = MagicMock()
+
+    with (
+        patch.object(matching, "supabase_admin", db_admin),
+        patch.object(matching, "supabase", db_anon),
+    ):
+        matching._voluntarios_con_propuesta_activa()
+
+    db_admin.table.assert_called_once_with("propuestas_asignacion")
+    db_anon.table.assert_not_called()
 
 
 def test_integracion_segunda_llamada_excluye_tras_reservar_cobertura(
@@ -316,9 +350,10 @@ def test_integracion_segunda_llamada_excluye_tras_reservar_cobertura(
                 matching, "_voluntarios_que_rechazaron", return_value=set()
             ),
             patch.object(matching, "supabase") as supabase,
+            patch.object(matching, "supabase_admin") as supabase_admin,
         ):
             supabase.rpc.return_value = rpc
-            supabase.table.side_effect = (
+            supabase_admin.table.side_effect = (
                 lambda nombre: _propuestas_query()
                 if nombre == "propuestas_asignacion"
                 else MagicMock()
