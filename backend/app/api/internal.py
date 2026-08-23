@@ -160,3 +160,21 @@ def comprobar_clip(x_cron_secret: Optional[str] = Header(None)):
         "model": result.model,
         "error_code": result.error_code.value if result.error_code else None,
     }
+
+
+# TEMPORAL -- verificacion manual del cliente VROOM (Fase 1) contra la
+# instancia real de Railway, no accesible desde fuera de su red privada.
+# Quitar en cuanto se confirme un code=0 real.
+@router.get("/diagnostics/vroom-check")
+def comprobar_vroom(x_cron_secret: Optional[str] = Header(None)):
+    if not settings.cron_secret or x_cron_secret != settings.cron_secret:
+        raise HTTPException(status_code=401, detail="No autorizado")
+
+    from app.services import vroom_service
+
+    request = vroom_service.VroomOptimizationRequest(
+        vehicles=[vroom_service.VroomVehicle(id=1, start_index=0)],
+        jobs=[vroom_service.VroomJob(id=1, location_index=1)],
+        matrix=[[0, 300], [300, 0]],
+    )
+    return vroom_service.get_optimization(request)
