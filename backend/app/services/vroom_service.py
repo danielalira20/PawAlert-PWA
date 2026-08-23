@@ -36,12 +36,14 @@ class VroomJob(BaseModel):
     id: int
     location_index: int
     priority: int = 0
+    delivery: list[int] = Field(default_factory=list)
     skills: list[int] = Field(default_factory=list)
 
 
 class VroomVehicle(BaseModel):
     id: int
     start_index: int
+    capacity: list[int] = Field(default_factory=list)
     skills: list[int] = Field(default_factory=list)
 
 

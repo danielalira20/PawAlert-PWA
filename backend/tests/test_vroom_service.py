@@ -64,9 +64,17 @@ def test_builds_payload_with_indexes_and_matrix():
         vroom_service.get_optimization(request())
 
     body = post.call_args.kwargs["json"]
-    assert body["vehicles"] == [{"id": 1, "start_index": 0, "skills": []}]
+    assert body["vehicles"] == [
+        {"id": 1, "start_index": 0, "capacity": [], "skills": []}
+    ]
     assert body["jobs"] == [
-        {"id": 1, "location_index": 1, "priority": 0, "skills": []}
+        {
+            "id": 1,
+            "location_index": 1,
+            "priority": 0,
+            "delivery": [],
+            "skills": [],
+        }
     ]
     assert body["matrix"] == [[0, 300], [300, 0]]
 
