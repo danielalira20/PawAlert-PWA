@@ -4,6 +4,10 @@ Este documento describe los cambios implementados y las decisiones de diseño de
 cuya responsabilidad es la coordinación asincrónica de notificaciones Push hacia los distintos
 actores del sistema (voluntarios, asociaciones, reportantes, custodios).
 
+Los destinatarios candidatos provienen del ranking definido en
+[`contrato-ranking-despacho.md`](./contrato-ranking-despacho.md). Push no modifica sus pesos
+ni incorpora Urgency Score al score del voluntario.
+
 ---
 
 ## 1. Contexto

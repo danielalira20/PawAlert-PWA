@@ -3,6 +3,10 @@
 Estos contratos permiten desarrollar clima, riesgo vial y duplicados sin
 modificar la activacion, el matching ni la formula de urgencia.
 
+Urgency prioriza reportes, pero no forma parte del score del voluntario. La
+formula vigente del ranking y su relacion con VROOM estan definidas en
+[`contrato-ranking-despacho.md`](./contrato-ranking-despacho.md).
+
 La fuente ejecutable de verdad esta en `backend/app/models/urgency.py`. Los
 servicios deben devolver instancias de esos modelos, no diccionarios con
 campos adicionales o nombres alternativos.
