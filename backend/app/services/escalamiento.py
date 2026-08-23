@@ -16,7 +16,7 @@ que llama POST /internal/escalamiento/run cada 5 min) en el MVP.
 from datetime import datetime, timezone
 
 from app.db.supabase import supabase
-from app.services import coverage_service, matching
+from app.services import coverage_service, dispatch_optimizer, matching
 from app.utils.animal_shaping import shape_animal_embed, condicion_mas_grave
 
 MODOS_CON_ESCALAMIENTO = ("semi_automatico", "automatico")
@@ -28,6 +28,8 @@ def evaluar_escalamientos() -> dict:
     pendientes = _reportes_esperando_asignacion()
     revisados, escalados, sin_candidatos = 0, [], 0
 
+    elegibles = []
+    asociacion_por_reporte = {}
     for rep in pendientes:
         aso = rep.get("asociaciones") or {}
         modo = aso.get("modo_asignacion", "manual")
@@ -39,21 +41,28 @@ def evaluar_escalamientos() -> dict:
         if _minutos_desde(rep["candidatos_presentados_at"]) < timeout_min:
             continue  # aun dentro del plazo de la asociacion
 
-        candidatos = matching.obtener_candidatos(rep["id"])["candidatos"]
-        if not candidatos:
-            sin_candidatos += 1
-            continue  # nadie elegible; el caso sigue con el staff como siempre
+        elegibles.append(rep["id"])
+        asociacion_por_reporte[rep["id"]] = rep["asociacion_asignada_id"]
 
-        top = candidatos[0]
-        coverage_service.reservar_cobertura(
-            reporte_id=rep["id"],
-            usuario_asignado_id=top["usuario_id"],
-            voluntario_id=top["voluntario_id"],
-            asociacion_id=rep["asociacion_asignada_id"],
-            actor_id=top["usuario_id"],
-            origen="escalamiento_automatico",
-        )
-        escalados.append({"reporte_id": rep["id"], "voluntario": top["nombre"]})
+    if elegibles:
+        resultado, voluntarios_info = dispatch_optimizer.optimizar_lote_reportes(elegibles)
+
+        for assignment in resultado.assignments:
+            info = voluntarios_info[assignment.volunteer_id]
+            coverage_service.reservar_cobertura(
+                reporte_id=assignment.report_id,
+                usuario_asignado_id=info["usuario_id"],
+                voluntario_id=assignment.volunteer_id,
+                asociacion_id=asociacion_por_reporte[assignment.report_id],
+                actor_id=info["usuario_id"],
+                origen="escalamiento_automatico",
+            )
+            escalados.append({
+                "reporte_id": assignment.report_id,
+                "voluntario": info["nombre"],
+            })
+
+        sin_candidatos = len(resultado.unassigned_report_ids)
 
     return {
         "revisados": revisados,
