@@ -6,13 +6,7 @@ import { API_URL } from '../../constants/api';
 import { useAuth } from '../../context/AuthContext';
 import { Brand } from '../../constants/theme';
 import { StatsRow, type StatItem } from '../staff-dashboard/StatsRow';
-
-interface ZonaStat {
-  latitud: number;
-  longitud: number;
-  cantidad: number;
-  nivel_urgencia_max: 'rojo' | 'amarillo' | 'verde' | null;
-}
+import { ZonaHeatMap, type ZonaStat } from './ZonaHeatMap';
 
 interface StatsAdmin {
   casos_activos_actuales: number;
@@ -23,39 +17,6 @@ interface StatsAdmin {
   casos_sin_cobertura_por_zona: { municipio: string | null; colonia: string | null; cantidad: number }[];
   mapa_calor_activo: ZonaStat[];
   mapa_calor_historico: ZonaStat[];
-}
-
-const COLOR_NIVEL: Record<string, string> = {
-  rojo: Brand.danger,
-  amarillo: Brand.accent,
-  verde: Brand.secondary,
-};
-
-function ZonasList({ titulo, zonas }: { titulo: string; zonas: ZonaStat[] }) {
-  const top = [...zonas].sort((a, b) => b.cantidad - a.cantidad).slice(0, 8);
-  return (
-    <View style={styles.bloque}>
-      <Text style={styles.bloqueTitulo}>{titulo}</Text>
-      {top.length === 0 ? (
-        <Text style={styles.vacio}>Sin datos</Text>
-      ) : (
-        top.map((zona, i) => (
-          <View key={`${zona.latitud}-${zona.longitud}-${i}`} style={styles.fila}>
-            <View
-              style={[
-                styles.punto,
-                { backgroundColor: COLOR_NIVEL[zona.nivel_urgencia_max ?? ''] ?? '#B5A99A' },
-              ]}
-            />
-            <Text style={styles.filaTexto}>
-              {zona.latitud.toFixed(2)}, {zona.longitud.toFixed(2)}
-            </Text>
-            <Text style={styles.filaCantidad}>{zona.cantidad}</Text>
-          </View>
-        ))
-      )}
-    </View>
-  );
 }
 
 export function AdminStatsPanel() {
@@ -143,8 +104,15 @@ export function AdminStatsPanel() {
         )}
       </View>
 
-      <ZonasList titulo="Zonas activas (mapa de calor)" zonas={stats.mapa_calor_activo} />
-      <ZonasList titulo="Zonas históricas (mapa de calor)" zonas={stats.mapa_calor_historico} />
+      <View style={styles.bloque}>
+        <Text style={styles.bloqueTitulo}>Zonas activas (mapa de calor)</Text>
+        <ZonaHeatMap zonas={stats.mapa_calor_activo} />
+      </View>
+
+      <View style={styles.bloque}>
+        <Text style={styles.bloqueTitulo}>Zonas históricas (mapa de calor)</Text>
+        <ZonaHeatMap zonas={stats.mapa_calor_historico} />
+      </View>
     </View>
   );
 }
@@ -163,5 +131,4 @@ const styles = StyleSheet.create({
   fila: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   filaTexto: { flex: 1, fontSize: 12, color: Brand.textMuted, textTransform: 'capitalize' },
   filaCantidad: { fontSize: 12, fontWeight: '800', color: Brand.textDark },
-  punto: { width: 8, height: 8, borderRadius: 4 },
 });

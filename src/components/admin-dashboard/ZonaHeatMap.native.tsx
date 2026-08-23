@@ -1,0 +1,89 @@
+import React, { useState } from 'react';
+import { View, StyleSheet, Text } from 'react-native';
+import MapView, { Marker, Circle, Callout } from 'react-native-maps';
+import { Brand } from '../../constants/theme';
+
+export interface ZonaStat {
+  latitud: number;
+  longitud: number;
+  cantidad: number;
+  nivel_urgencia_max: 'rojo' | 'amarillo' | 'verde' | null;
+}
+
+const NIVEL_COLOR: Record<string, string> = {
+  rojo: '#E74C3C',
+  amarillo: '#F39C12',
+  verde: '#27AE60',
+};
+
+const claveZona = (z: ZonaStat) => `${z.latitud}-${z.longitud}`;
+
+interface Props {
+  zonas: ZonaStat[];
+  height?: number;
+}
+
+export function ZonaHeatMap({ zonas, height = 220 }: Props) {
+  const [seleccionada, setSeleccionada] = useState<string | null>(null);
+
+  if (zonas.length === 0) {
+    return (
+      <View style={[styles.vacioContenedor, { height }]}>
+        <Text style={styles.vacio}>Sin datos</Text>
+      </View>
+    );
+  }
+
+  const lats = zonas.map((z) => z.latitud);
+  const lngs = zonas.map((z) => z.longitud);
+  const centro = {
+    latitude: (Math.min(...lats) + Math.max(...lats)) / 2,
+    longitude: (Math.min(...lngs) + Math.max(...lngs)) / 2,
+  };
+  const delta = Math.max(Math.max(...lats) - Math.min(...lats), Math.max(...lngs) - Math.min(...lngs), 0.02) * 1.6;
+  const zonaActiva = zonas.find((z) => claveZona(z) === seleccionada) ?? null;
+
+  return (
+    <View style={[styles.container, { height }]}>
+      <MapView
+        style={styles.map}
+        initialRegion={{ ...centro, latitudeDelta: delta, longitudeDelta: delta }}
+      >
+        {zonaActiva && (
+          <Circle
+            center={{ latitude: zonaActiva.latitud, longitude: zonaActiva.longitud }}
+            radius={400 + zonaActiva.cantidad * 150}
+            strokeWidth={0}
+            fillColor={`${NIVEL_COLOR[zonaActiva.nivel_urgencia_max ?? ''] ?? '#95A5A6'}40`}
+          />
+        )}
+        {zonas.map((zona) => {
+          const clave = claveZona(zona);
+          const color = NIVEL_COLOR[zona.nivel_urgencia_max ?? ''] ?? '#95A5A6';
+          return (
+            <Marker
+              key={clave}
+              coordinate={{ latitude: zona.latitud, longitude: zona.longitud }}
+              pinColor={color}
+              onPress={() => setSeleccionada((actual) => (actual === clave ? null : clave))}
+            >
+              <Callout>
+                <Text style={styles.calloutTexto}>
+                  {zona.cantidad} {zona.cantidad === 1 ? 'reporte' : 'reportes'} en esta zona
+                </Text>
+              </Callout>
+            </Marker>
+          );
+        })}
+      </MapView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { borderRadius: 14, overflow: 'hidden' },
+  map: { flex: 1 },
+  vacioContenedor: { alignItems: 'center', justifyContent: 'center' },
+  vacio: { fontSize: 12, color: Brand.textFaint },
+  calloutTexto: { fontSize: 12, color: Brand.textDark },
+});

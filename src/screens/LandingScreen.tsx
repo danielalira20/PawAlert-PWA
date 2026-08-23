@@ -474,7 +474,7 @@ export default function LandingScreen() {
     const fetchPhotos = async () => {
       try {
         const res = await axios.get(`${API_URL}/reports`);
-        const reports = res.data;
+        const reports = res.data.modo === 'detallado' ? res.data.reportes : [];
         const photos: string[] = [];
         for (const r of reports) {
           if (r.foto_url) {
