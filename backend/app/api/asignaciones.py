@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from app.services import coverage_service, matching
 from app.db.supabase import supabase, supabase_admin
 from app.utils.animal_shaping import shape_animal_embed, condicion_mas_grave
+from app.services.assignment_service import procesar_timeouts_asociaciones
 
 router = APIRouter()
 
@@ -245,3 +246,21 @@ def _evento(reporte_id, usuario_id, tipo_evento, descripcion, datos_extra):
         "descripcion": descripcion,
         "datos_extra": datos_extra,
     }).execute()
+
+
+@router.post("/cron/procesar-timeouts", status_code=200)
+def trigger_procesar_timeouts(authorization: Optional[str] = Header(None)):
+    """
+    Endpoint diseñado para ser ejecutado por un CRON externo cada 1 minuto.
+    Detecta asociaciones que superaron su SLA de respuesta, les retira el caso, 
+    y busca la siguiente asociación disponible o lo escala a administración.
+    """
+    # Validar un token o secreto básico para que no cualquiera llame al cron
+    # if authorization != "Bearer secreto-seguro-del-cron":
+    #     raise HTTPException(status_code=401, detail="No autorizado para ejecutar el cron")
+    
+    try:
+        resultado = procesar_timeouts_asociaciones()
+        return {"status": "ok", "resultados": resultado}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error ejecutando cron de reasignación: {str(e)}")
