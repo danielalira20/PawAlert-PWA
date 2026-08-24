@@ -44,6 +44,7 @@ class VroomVehicle(BaseModel):
 class VroomProfileMatrix(BaseModel):
     durations: list[list[int]] = Field(min_length=1)
     distances: list[list[int]] | None = None
+    costs: list[list[int]] | None = None
 
     @model_validator(mode="after")
     def validate_square_matrices(self):
@@ -51,6 +52,8 @@ class VroomProfileMatrix(BaseModel):
         matrices = [self.durations]
         if self.distances is not None:
             matrices.append(self.distances)
+        if self.costs is not None:
+            matrices.append(self.costs)
 
         if any(len(matrix) != size for matrix in matrices):
             raise ValueError("VROOM matrices must have the same dimensions")
@@ -215,7 +218,7 @@ def get_optimization(
         try:
             response = httpx.post(
                 base_url,
-                json=request.model_dump(mode="json"),
+                json=request.model_dump(mode="json", exclude_none=True),
                 timeout=settings.vroom_timeout_seconds,
             )
         except httpx.TimeoutException:
