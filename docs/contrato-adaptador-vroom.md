@@ -58,6 +58,8 @@ Para cada reporte se toma el menor ETA vial entre sus parejas candidatas como
 Una ruta inexistente no se convierte en cero ni en distancia en linea recta.
 La pareja debe excluirse antes de construir el request. Si OSRM falla por
 completo, no existe asignacion automatica: el caso conserva su flujo manual.
+Si OSRM responde pero ninguna pareja conserva una ruta util, la preparacion
+devuelve `error_code=no_viable_routes`, distinto de `routing_unavailable`.
 
 `DispatchPreparationResult.excluded_items` registra las exclusiones parciales
 sin contaminar el request. Cada elemento indica `scope` (`report`, `volunteer`
@@ -108,6 +110,12 @@ El cliente debe enviar `matrices.car` con `durations`, `distances` y `costs`.
 No debe enviar la matriz rectangular directamente ni usar el campo singular
 deprecado `matrix`. Antes de llamar al proveedor se validan dimensiones,
 indices, enteros no negativos y tamano maximo del lote.
+
+La matriz rectangular puede conservar `None` solamente en cruces que no
+aparecen en `candidates`. Al construir la matriz cuadrada, el optimizador
+reemplaza esos cruces prohibidos por un costo alto, finito y determinista;
+nunca por cero. Las restricciones de `skills` siguen siendo la barrera que
+impide que VROOM seleccione una pareja no autorizada.
 
 ## Dos soluciones sobre el lote completo
 

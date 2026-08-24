@@ -326,10 +326,15 @@ class DispatchOptimizationRequest(BaseModel):
         for report_id, report_candidates in candidates_by_report.items():
             durations = {}
             for candidate in report_candidates:
-                duration = self.travel_matrix.durations_seconds[
-                    origin_index[candidate.volunteer_id]
-                ][destination_index[report_id]]
-                if duration is None:
+                row_index = origin_index[candidate.volunteer_id]
+                column_index = destination_index[report_id]
+                duration = self.travel_matrix.durations_seconds[row_index][
+                    column_index
+                ]
+                distance = self.travel_matrix.distances_meters[row_index][
+                    column_index
+                ]
+                if duration is None or distance is None:
                     raise ValueError("Dispatch candidate requires a usable route")
                 durations[candidate.volunteer_id] = duration
 
@@ -360,6 +365,7 @@ class DispatchPreparationErrorCode(str, Enum):
     no_candidates = "no_candidates"
     missing_coordinates = "missing_coordinates"
     routing_unavailable = "routing_unavailable"
+    no_viable_routes = "no_viable_routes"
     invalid_candidate_data = "invalid_candidate_data"
     data_source_error = "data_source_error"
 

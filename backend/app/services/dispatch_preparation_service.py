@@ -461,6 +461,90 @@ def _exclude_jobs_without_candidates(
     return retained_jobs, retained_pairs, excluded_items
 
 
+def _exclude_unroutable_candidate_pairs(
+    pairs: list[dict],
+    matrix: RouteMatrixResult,
+) -> tuple[list[dict], list[DispatchExcludedItem]]:
+    origin_index = {
+        volunteer_id: index
+        for index, volunteer_id in enumerate(matrix.origin_ids)
+    }
+    destination_index = {
+        report_id: index
+        for index, report_id in enumerate(matrix.destination_ids)
+    }
+    retained_pairs = []
+    excluded_items = []
+    try:
+        for pair in pairs:
+            report_id = str(pair["report_id"])
+            volunteer_id = str(pair["voluntario_id"])
+            row_index = origin_index[volunteer_id]
+            column_index = destination_index[report_id]
+            duration = matrix.durations_seconds[row_index][column_index]
+            distance = matrix.distances_meters[row_index][column_index]
+            if duration is None or distance is None:
+                excluded_items.append(
+                    DispatchExcludedItem(
+                        scope=DispatchExclusionScope.candidate_pair,
+                        reason=DispatchExclusionReason.no_route,
+                        report_id=report_id,
+                        volunteer_id=volunteer_id,
+                    )
+                )
+                continue
+            retained_pairs.append(pair)
+    except (IndexError, KeyError, TypeError, ValueError):
+        raise _PreparationFailure(
+            DispatchPreparationErrorCode.routing_unavailable
+        ) from None
+    return retained_pairs, excluded_items
+
+
+def _compact_route_matrix(
+    matrix: RouteMatrixResult,
+    volunteer_ids: list[str],
+    report_ids: list[str],
+) -> RouteMatrixResult:
+    origin_index = {
+        volunteer_id: index
+        for index, volunteer_id in enumerate(matrix.origin_ids)
+    }
+    destination_index = {
+        report_id: index
+        for index, report_id in enumerate(matrix.destination_ids)
+    }
+    try:
+        origin_indexes = [origin_index[item] for item in volunteer_ids]
+        destination_indexes = [destination_index[item] for item in report_ids]
+        return RouteMatrixResult(
+            origin_ids=volunteer_ids,
+            destination_ids=report_ids,
+            durations_seconds=[
+                [
+                    matrix.durations_seconds[row_index][column_index]
+                    for column_index in destination_indexes
+                ]
+                for row_index in origin_indexes
+            ],
+            distances_meters=[
+                [
+                    matrix.distances_meters[row_index][column_index]
+                    for column_index in destination_indexes
+                ]
+                for row_index in origin_indexes
+            ],
+            status=matrix.status,
+            calculated_at=matrix.calculated_at,
+            source=matrix.source,
+            error_code=matrix.error_code,
+        )
+    except (IndexError, KeyError, TypeError, ValueError):
+        raise _PreparationFailure(
+            DispatchPreparationErrorCode.routing_unavailable
+        ) from None
+
+
 def _route_tier(
     duration_seconds: float,
     minimum_duration_seconds: float,
@@ -614,15 +698,46 @@ def prepare_dispatch_optimization(
             [volunteer.volunteer_id for volunteer in volunteers],
             operational_report_ids,
         )
-        if matrix.status != RoutingStatus.complete or any(
-            value is None
-            for values in (matrix.durations_seconds, matrix.distances_meters)
-            for row in values
-            for value in row
-        ):
+        if matrix.status != RoutingStatus.complete:
             raise _PreparationFailure(
                 DispatchPreparationErrorCode.routing_unavailable
             )
+        pairs, pairs_without_routes = _exclude_unroutable_candidate_pairs(
+            pairs,
+            matrix,
+        )
+        excluded_items.extend(pairs_without_routes)
+        if not pairs:
+            return _unavailable(
+                DispatchPreparationErrorCode.no_viable_routes,
+                prepared_at,
+                excluded_items,
+            )
+        jobs, pairs, reports_without_routes = _exclude_jobs_without_candidates(
+            jobs,
+            pairs,
+        )
+        excluded_items.extend(reports_without_routes)
+        if not jobs:
+            return _unavailable(
+                DispatchPreparationErrorCode.no_viable_routes,
+                prepared_at,
+                excluded_items,
+            )
+        volunteers, pairs, unexpected_exclusions = _prepare_volunteers(
+            pairs,
+            capacities,
+        )
+        if unexpected_exclusions:
+            raise _PreparationFailure(
+                DispatchPreparationErrorCode.invalid_candidate_data
+            )
+        operational_report_ids = [job.report_id for job in jobs]
+        matrix = _compact_route_matrix(
+            matrix,
+            [volunteer.volunteer_id for volunteer in volunteers],
+            operational_report_ids,
+        )
         routing_policy = DispatchRoutingPolicy(
             candidate_window_minutes=settings.vroom_candidate_window_minutes,
             secondary_max_eta_minutes=(

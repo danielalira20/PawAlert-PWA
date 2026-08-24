@@ -504,7 +504,7 @@ def test_rejects_unavailable_route_matrix(make_query):
     assert result.error_code == DispatchPreparationErrorCode.routing_unavailable
 
 
-def test_rejects_partial_route_matrix(make_query):
+def test_rejects_batch_without_any_viable_route(make_query):
     db = database(
         make_query,
         [report("rep-1")],
@@ -536,7 +536,124 @@ def test_rejects_partial_route_matrix(make_query):
     ):
         result = service.prepare_dispatch_optimization(["rep-1"])
 
-    assert result.error_code == DispatchPreparationErrorCode.routing_unavailable
+    assert result.error_code == DispatchPreparationErrorCode.no_viable_routes
+    assert [
+        (item.scope, item.reason, item.report_id, item.volunteer_id)
+        for item in result.excluded_items
+    ] == [
+        (
+            DispatchExclusionScope.candidate_pair,
+            DispatchExclusionReason.no_route,
+            "rep-1",
+            "vol-1",
+        )
+    ]
+
+
+def test_excludes_only_unroutable_pairs_and_keeps_sparse_matrix(make_query):
+    reports = [report("rep-1"), report("rep-2")]
+    capacities = [capacity("vol-1"), capacity("vol-2")]
+    internal_by_report = {
+        "rep-1": [candidate("vol-1", 85), candidate("vol-2", 70)],
+        "rep-2": [candidate("vol-1", 75), candidate("vol-2", 90)],
+    }
+    sparse_matrix = matrix(
+        ["vol-1", "vol-2"],
+        ["rep-1", "rep-2"],
+        durations_seconds=[[120, None], [None, 300]],
+        distances_meters=[[900, None], [None, 2100]],
+    )
+    with (
+        patch.object(
+            service,
+            "supabase_admin",
+            database(make_query, reports, capacities),
+        ),
+        patch.object(
+            service.matching,
+            "obtener_candidatos",
+            side_effect=lambda report_id, **_kwargs: {
+                "candidatos": internal_by_report[report_id]
+            },
+        ),
+        patch.object(
+            service.coverage_service,
+            "obtener_ofrecimientos_reporte",
+            return_value=[],
+        ),
+        patch.object(
+            service,
+            "calculate_dispatch_route_matrix",
+            return_value=sparse_matrix,
+        ),
+    ):
+        result = service.prepare_dispatch_optimization(["rep-1", "rep-2"])
+
+    assert result.status == DispatchPreparationStatus.ready
+    assert result.request is not None
+    assert [
+        (item.report_id, item.volunteer_id)
+        for item in result.request.candidates
+    ] == [("rep-1", "vol-1"), ("rep-2", "vol-2")]
+    assert result.request.travel_matrix.durations_seconds == [
+        [120, None],
+        [None, 300],
+    ]
+    assert [
+        (item.report_id, item.volunteer_id, item.reason)
+        for item in result.excluded_items
+    ] == [
+        ("rep-1", "vol-2", DispatchExclusionReason.no_route),
+        ("rep-2", "vol-1", DispatchExclusionReason.no_route),
+    ]
+
+
+def test_compacts_matrix_after_volunteer_loses_every_route(make_query):
+    reports = [report("rep-1")]
+    capacities = [capacity("vol-no-route"), capacity("vol-valid")]
+    sparse_matrix = matrix(
+        ["vol-no-route", "vol-valid"],
+        ["rep-1"],
+        durations_seconds=[[None], [180]],
+        distances_meters=[[None], [1200]],
+    )
+    with (
+        patch.object(
+            service,
+            "supabase_admin",
+            database(make_query, reports, capacities),
+        ),
+        patch.object(
+            service.matching,
+            "obtener_candidatos",
+            return_value={
+                "candidatos": [
+                    candidate("vol-no-route", 90),
+                    candidate("vol-valid", 80),
+                ]
+            },
+        ),
+        patch.object(
+            service.coverage_service,
+            "obtener_ofrecimientos_reporte",
+            return_value=[],
+        ),
+        patch.object(
+            service,
+            "calculate_dispatch_route_matrix",
+            return_value=sparse_matrix,
+        ),
+    ):
+        result = service.prepare_dispatch_optimization(["rep-1"])
+
+    assert result.status == DispatchPreparationStatus.ready
+    assert result.request is not None
+    assert result.request.travel_matrix.origin_ids == ["vol-valid"]
+    assert result.request.travel_matrix.durations_seconds == [[180]]
+    assert [
+        volunteer.volunteer_id for volunteer in result.request.volunteers
+    ] == ["vol-valid"]
+    assert result.request.volunteers[0].matching_score == 80
 
 
 def test_classifies_closest_candidate_over_absolute_limit_as_manual(make_query):
