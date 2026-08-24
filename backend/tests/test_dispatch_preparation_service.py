@@ -3,6 +3,8 @@ from unittest.mock import MagicMock, patch
 
 from app.models.dispatch import (
     CandidateRouteTier,
+    DispatchExclusionReason,
+    DispatchExclusionScope,
     DispatchPreparationErrorCode,
     DispatchPreparationStatus,
     DispatchRoutingPolicy,
@@ -228,7 +230,67 @@ def test_rejects_report_without_current_urgency(make_query):
     assert result.status == DispatchPreparationStatus.unavailable
     assert result.error_code == DispatchPreparationErrorCode.urgency_unavailable
     assert result.request is None
+    assert [
+        (item.scope, item.reason, item.report_id)
+        for item in result.excluded_items
+    ] == [
+        (
+            DispatchExclusionScope.report,
+            DispatchExclusionReason.urgency_unavailable,
+            "rep-1",
+        )
+    ]
     matching.assert_not_called()
+
+
+def test_excludes_invalid_reports_without_losing_valid_batch(make_query):
+    reports = [
+        report("rep-valid"),
+        report("rep-urgency", urgency_score=None, urgency_nivel=None),
+        report("rep-location", latitud=200),
+    ]
+    db = database(
+        make_query,
+        reports,
+        [capacity("vol-1")],
+    )
+    route_matrix = matrix(["vol-1"], ["rep-valid"])
+    with (
+        patch.object(service, "supabase_admin", db),
+        patch.object(
+            service.matching,
+            "obtener_candidatos",
+            return_value={"candidatos": [candidate("vol-1", 80)]},
+        ) as matching,
+        patch.object(
+            service.coverage_service,
+            "obtener_ofrecimientos_reporte",
+            return_value=[],
+        ) as external,
+        patch.object(
+            service,
+            "calculate_dispatch_route_matrix",
+            return_value=route_matrix,
+        ) as calculate_matrix,
+    ):
+        result = service.prepare_dispatch_optimization(
+            ["rep-valid", "rep-missing", "rep-urgency", "rep-location"]
+        )
+
+    assert result.status == DispatchPreparationStatus.ready
+    assert result.request is not None
+    assert [job.report_id for job in result.request.jobs] == ["rep-valid"]
+    assert [
+        (item.report_id, item.reason)
+        for item in result.excluded_items
+    ] == [
+        ("rep-missing", DispatchExclusionReason.report_not_operational),
+        ("rep-urgency", DispatchExclusionReason.urgency_unavailable),
+        ("rep-location", DispatchExclusionReason.missing_coordinates),
+    ]
+    matching.assert_called_once_with("rep-valid", incluir_rutas=False)
+    external.assert_called_once_with("rep-valid", incluir_rutas=False)
+    calculate_matrix.assert_called_once_with(["vol-1"], ["rep-valid"])
 
 
 def test_rejects_dispatch_without_candidates(make_query):

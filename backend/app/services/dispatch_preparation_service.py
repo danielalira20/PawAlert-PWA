@@ -8,6 +8,9 @@ from app.db.supabase import supabase_admin
 from app.models.dispatch import (
     CandidateRouteTier,
     DispatchCandidate,
+    DispatchExcludedItem,
+    DispatchExclusionReason,
+    DispatchExclusionScope,
     DispatchJob,
     DispatchOptimizationRequest,
     DispatchPreparationErrorCode,
@@ -42,11 +45,13 @@ def _unique_ids(values: list[str]) -> list[str]:
 def _unavailable(
     code: DispatchPreparationErrorCode,
     prepared_at: datetime,
+    excluded_items: list[DispatchExcludedItem] | None = None,
 ) -> DispatchPreparationResult:
     return DispatchPreparationResult(
         status=DispatchPreparationStatus.unavailable,
         error_code=code,
         prepared_at=prepared_at,
+        excluded_items=excluded_items or [],
     )
 
 
@@ -103,14 +108,19 @@ def _report_location(report: dict) -> RoutingPoint:
         raise _PreparationFailure(
             DispatchPreparationErrorCode.missing_coordinates
         )
-    return RoutingPoint(
-        id=report["id"],
-        latitude=float(latitude),
-        longitude=float(longitude),
-    )
+    try:
+        return RoutingPoint(
+            id=report["id"],
+            latitude=float(latitude),
+            longitude=float(longitude),
+        )
+    except (KeyError, TypeError, ValueError):
+        raise _PreparationFailure(
+            DispatchPreparationErrorCode.missing_coordinates
+        ) from None
 
 
-def _load_reports(report_ids: list[str]) -> list[dict]:
+def _load_reports(report_ids: list[str]) -> dict[str, dict]:
     result = (
         supabase_admin.table("reportes")
         .select(
@@ -124,16 +134,11 @@ def _load_reports(report_ids: list[str]) -> list[dict]:
         .in_("id", report_ids)
         .execute()
     )
-    by_id = {
+    return {
         row["id"]: row
         for row in (result.data or [])
         if row.get("id")
     }
-    if any(report_id not in by_id for report_id in report_ids):
-        raise _PreparationFailure(
-            DispatchPreparationErrorCode.report_not_operational
-        )
-    return [by_id[report_id] for report_id in report_ids]
 
 
 def _validate_report(report: dict) -> None:
@@ -166,6 +171,80 @@ def _validate_report(report: dict) -> None:
         raise _PreparationFailure(
             DispatchPreparationErrorCode.urgency_unavailable
         )
+
+
+def _build_job(report: dict) -> DispatchJob:
+    _validate_report(report)
+    try:
+        urgency = DispatchUrgency(
+            score=float(report["urgency_score"]),
+            level=report["urgency_nivel"],
+            calculated_at=report["urgency_calculado_at"],
+        )
+    except (KeyError, TypeError, ValueError):
+        raise _PreparationFailure(
+            DispatchPreparationErrorCode.urgency_unavailable
+        ) from None
+    return DispatchJob(
+        report_id=report["id"],
+        location=_report_location(report),
+        urgency=urgency,
+        required_skills=_job_skills(report),
+    )
+
+
+def _exclude_report(
+    report_id: str,
+    code: DispatchPreparationErrorCode,
+) -> DispatchExcludedItem:
+    reasons = {
+        DispatchPreparationErrorCode.report_not_operational: (
+            DispatchExclusionReason.report_not_operational
+        ),
+        DispatchPreparationErrorCode.urgency_unavailable: (
+            DispatchExclusionReason.urgency_unavailable
+        ),
+        DispatchPreparationErrorCode.missing_coordinates: (
+            DispatchExclusionReason.missing_coordinates
+        ),
+    }
+    reason = reasons.get(code)
+    if reason is None:
+        raise _PreparationFailure(code)
+    return DispatchExcludedItem(
+        scope=DispatchExclusionScope.report,
+        reason=reason,
+        report_id=report_id,
+    )
+
+
+def _prepare_jobs(
+    report_ids: list[str],
+    reports_by_id: dict[str, dict],
+) -> tuple[list[DispatchJob], list[DispatchExcludedItem]]:
+    jobs = []
+    excluded_items = []
+    for report_id in report_ids:
+        report = reports_by_id.get(report_id)
+        if report is None:
+            excluded_items.append(
+                _exclude_report(
+                    report_id,
+                    DispatchPreparationErrorCode.report_not_operational,
+                )
+            )
+            continue
+        try:
+            jobs.append(_build_job(report))
+        except _PreparationFailure as error:
+            excluded_items.append(_exclude_report(report_id, error.code))
+    return jobs, excluded_items
+
+
+def _error_for_excluded_report(
+    excluded_item: DispatchExcludedItem,
+) -> DispatchPreparationErrorCode:
+    return DispatchPreparationErrorCode(excluded_item.reason.value)
 
 
 def _load_candidate_pairs(report_ids: list[str]) -> list[dict]:
@@ -387,24 +466,21 @@ def prepare_dispatch_optimization(
             prepared_at,
         )
 
+    excluded_items: list[DispatchExcludedItem] = []
     try:
-        reports = _load_reports(normalized_report_ids)
-        for report in reports:
-            _validate_report(report)
-        jobs = [
-            DispatchJob(
-                report_id=report["id"],
-                location=_report_location(report),
-                urgency=DispatchUrgency(
-                    score=float(report["urgency_score"]),
-                    level=report["urgency_nivel"],
-                    calculated_at=report["urgency_calculado_at"],
-                ),
-                required_skills=_job_skills(report),
+        reports_by_id = _load_reports(normalized_report_ids)
+        jobs, excluded_items = _prepare_jobs(
+            normalized_report_ids,
+            reports_by_id,
+        )
+        if not jobs:
+            return _unavailable(
+                _error_for_excluded_report(excluded_items[0]),
+                prepared_at,
+                excluded_items,
             )
-            for report in reports
-        ]
-        pairs = _load_candidate_pairs(normalized_report_ids)
+        operational_report_ids = [job.report_id for job in jobs]
+        pairs = _load_candidate_pairs(operational_report_ids)
         volunteer_ids = _unique_ids(
             [str(pair.get("voluntario_id") or "") for pair in pairs]
         )
@@ -416,7 +492,7 @@ def prepare_dispatch_optimization(
         volunteers = _build_volunteers(pairs, capacities)
         matrix = calculate_dispatch_route_matrix(
             [volunteer.volunteer_id for volunteer in volunteers],
-            normalized_report_ids,
+            operational_report_ids,
         )
         if matrix.status != RoutingStatus.complete or any(
             value is None
@@ -450,12 +526,14 @@ def prepare_dispatch_optimization(
             status=DispatchPreparationStatus.ready,
             request=request,
             prepared_at=prepared_at,
+            excluded_items=excluded_items,
         )
     except _PreparationFailure as error:
-        return _unavailable(error.code, prepared_at)
+        return _unavailable(error.code, prepared_at, excluded_items)
     except Exception:
         logger.exception("No se pudo preparar el despacho para VROOM")
         return _unavailable(
             DispatchPreparationErrorCode.data_source_error,
             prepared_at,
+            excluded_items,
         )
