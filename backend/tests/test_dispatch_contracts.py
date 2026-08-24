@@ -6,6 +6,8 @@ from pydantic import ValidationError
 from app.models.dispatch import (
     MATCHING_WEIGHTS,
     ConfirmedReportLocation,
+    DispatchPreparationStatus,
+    DispatchPreparationResult,
     DispatchVolunteer,
     LocationSource,
     ObservedMobility,
@@ -96,3 +98,11 @@ def test_confirmed_location_has_source_time_and_mobility():
 
     assert location.location.latitude == 19.04
     assert location.source == LocationSource.confirmacion_reportante
+
+
+def test_ready_dispatch_preparation_requires_a_request():
+    with pytest.raises(ValidationError, match="requires only a request"):
+        DispatchPreparationResult(
+            status=DispatchPreparationStatus.ready,
+            prepared_at=NOW,
+        )

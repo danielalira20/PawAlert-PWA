@@ -35,7 +35,11 @@ ETIQUETAS_EXPERIENCIA = {
 }
 
 
-def obtener_candidatos(reporte_id: str) -> dict:
+def obtener_candidatos(
+    reporte_id: str,
+    *,
+    incluir_rutas: bool = True,
+) -> dict:
     """Devuelve el top 3 vigente con filtros y desglose de puntuación."""
     reporte = _obtener_reporte(reporte_id)
     especies_caso = {
@@ -135,6 +139,8 @@ def obtener_candidatos(reporte_id: str) -> dict:
         reverse=True,
     )
     top_candidates = candidatos[:3]
+    if not incluir_rutas:
+        return {"candidatos": top_candidates}
     return {
         "candidatos": enrich_candidates_with_route_estimates(
             reporte_id,

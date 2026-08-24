@@ -65,6 +65,11 @@ class RouteMatrixResult(BaseModel):
         columns = len(self.destination_ids)
         matrices = (self.durations_seconds, self.distances_meters)
 
+        if len(set(self.origin_ids)) != rows:
+            raise ValueError("Route matrix origins must be unique")
+        if len(set(self.destination_ids)) != columns:
+            raise ValueError("Route matrix destinations must be unique")
+
         if self.status == RoutingStatus.unavailable:
             if self.error_code is None:
                 raise ValueError("Unavailable routing requires an error code")
@@ -168,10 +173,90 @@ class DispatchVolunteer(BaseModel):
         return self
 
 
+class DispatchCandidate(BaseModel):
+    report_id: str = Field(min_length=1)
+    volunteer_id: str = Field(min_length=1)
+    matching_score: float = Field(ge=0, le=100)
+    offered: bool = False
+
+
 class DispatchOptimizationRequest(BaseModel):
     jobs: list[DispatchJob] = Field(min_length=1)
     volunteers: list[DispatchVolunteer] = Field(min_length=1)
+    candidates: list[DispatchCandidate] = Field(min_length=1)
     travel_matrix: RouteMatrixResult
+
+    @model_validator(mode="after")
+    def validate_dispatch_references(self):
+        report_ids = {job.report_id for job in self.jobs}
+        volunteers_by_id = {
+            volunteer.volunteer_id: volunteer
+            for volunteer in self.volunteers
+        }
+        if len(report_ids) != len(self.jobs):
+            raise ValueError("Dispatch jobs must be unique")
+        if len(volunteers_by_id) != len(self.volunteers):
+            raise ValueError("Dispatch volunteers must be unique")
+        if set(self.travel_matrix.destination_ids) != report_ids:
+            raise ValueError("Route destinations must match dispatch jobs")
+        if set(self.travel_matrix.origin_ids) != set(volunteers_by_id):
+            raise ValueError("Route origins must match dispatch volunteers")
+
+        candidate_reports = {candidate.report_id for candidate in self.candidates}
+        if not candidate_reports.issubset(report_ids):
+            raise ValueError("Candidate references an unknown report")
+        candidate_pairs = {
+            (candidate.report_id, candidate.volunteer_id)
+            for candidate in self.candidates
+        }
+        if len(candidate_pairs) != len(self.candidates):
+            raise ValueError("Dispatch candidates must be unique per report")
+        for candidate in self.candidates:
+            volunteer = volunteers_by_id.get(candidate.volunteer_id)
+            if volunteer is None:
+                raise ValueError("Candidate references an unknown volunteer")
+            if volunteer.role == "voluntario_externo":
+                if not candidate.offered:
+                    raise ValueError("External candidate requires an explicit offer")
+                if candidate.report_id not in volunteer.offered_report_ids:
+                    raise ValueError("External offer does not match candidate report")
+        for volunteer in self.volunteers:
+            if volunteer.role == "voluntario_externo" and not set(
+                volunteer.offered_report_ids
+            ).issubset(report_ids):
+                raise ValueError("External offer references an unknown report")
+        return self
+
+
+class DispatchPreparationStatus(str, Enum):
+    ready = "ready"
+    unavailable = "unavailable"
+
+
+class DispatchPreparationErrorCode(str, Enum):
+    report_not_operational = "report_not_operational"
+    urgency_unavailable = "urgency_unavailable"
+    no_candidates = "no_candidates"
+    missing_coordinates = "missing_coordinates"
+    routing_unavailable = "routing_unavailable"
+    invalid_candidate_data = "invalid_candidate_data"
+    data_source_error = "data_source_error"
+
+
+class DispatchPreparationResult(BaseModel):
+    status: DispatchPreparationStatus
+    prepared_at: datetime
+    request: DispatchOptimizationRequest | None = None
+    error_code: DispatchPreparationErrorCode | None = None
+
+    @model_validator(mode="after")
+    def validate_preparation_result(self):
+        if self.status == DispatchPreparationStatus.ready:
+            if self.request is None or self.error_code is not None:
+                raise ValueError("Ready preparation requires only a request")
+        elif self.request is not None or self.error_code is None:
+            raise ValueError("Unavailable preparation requires only an error")
+        return self
 
 
 class DispatchAssignment(BaseModel):

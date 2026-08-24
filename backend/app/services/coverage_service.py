@@ -276,7 +276,11 @@ def retirar_ofrecimiento(usuario_id: str, reporte_id: str) -> dict:
     return {"ok": True, "ofrecimiento": resultado.data}
 
 
-def obtener_ofrecimientos_reporte(reporte_id: str) -> list[dict]:
+def obtener_ofrecimientos_reporte(
+    reporte_id: str,
+    *,
+    incluir_rutas: bool = True,
+) -> list[dict]:
     resultado = (
         supabase_admin.table("voluntario_ofrecimientos")
         .select(
@@ -339,6 +343,8 @@ def obtener_ofrecimientos_reporte(reporte_id: str) -> list[dict]:
                 **evaluacion,
             }
         )
+    if not incluir_rutas:
+        return ofrecimientos
     return enrich_candidates_with_route_estimates(reporte_id, ofrecimientos)
 
 

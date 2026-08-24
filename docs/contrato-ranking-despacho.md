@@ -38,7 +38,10 @@ ni carga.
 
 VROOM podra consumir la prioridad del reporte junto con la matriz de tiempos
 de OSRM, pero debe recibir el `matching_score` ya calculado con la formula
-30/25/20/15/10. No debe recalcular los pesos del candidato.
+30/25/20/15/10. No debe recalcular los pesos del candidato. Para lotes con
+varios reportes, la lista `candidates` del contrato VROOM conserva el score
+por pareja reporte-voluntario; el score incluido en `volunteers` es solo un
+resumen compatible.
 
 ## Estimacion vial de candidatos
 

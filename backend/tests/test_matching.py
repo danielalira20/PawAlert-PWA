@@ -118,6 +118,33 @@ def test_matching_envia_solo_el_top_tres_a_osrm(reporte_multi_animal):
     ]
 
 
+def test_matching_por_lotes_omite_rutas_individuales(reporte_multi_animal):
+    rpc = MagicMock()
+    rpc.execute.return_value = SimpleNamespace(data=[candidato()])
+
+    with (
+        patch.object(
+            matching,
+            "_obtener_reporte",
+            return_value=reporte_multi_animal,
+        ),
+        patch.object(matching, "_voluntarios_que_rechazaron", return_value=set()),
+        patch.object(matching, "supabase") as supabase,
+        patch.object(
+            matching,
+            "enrich_candidates_with_route_estimates",
+        ) as enrich,
+    ):
+        supabase.rpc.return_value = rpc
+        result = matching.obtener_candidatos(
+            reporte_multi_animal["id"],
+            incluir_rutas=False,
+        )
+
+    assert len(result["candidatos"]) == 1
+    enrich.assert_not_called()
+
+
 def test_matching_exige_todas_las_especies(reporte_multi_animal):
     completo = candidato(usuario_id="completo")
     parcial = candidato(usuario_id="parcial", especies_manejo=["perro"])

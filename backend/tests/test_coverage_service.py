@@ -214,6 +214,32 @@ def test_asociacion_recibe_datos_del_externo_con_cliente_administrativo():
     supabase_publico.table.assert_not_called()
 
 
+def test_ofrecimientos_por_lotes_omiten_rutas_individuales():
+    consulta = MagicMock()
+    consulta.select.return_value = consulta
+    consulta.eq.return_value = consulta
+    consulta.in_.return_value = consulta
+    consulta.order.return_value = consulta
+    consulta.execute.return_value = SimpleNamespace(data=[])
+    supabase_admin = MagicMock()
+    supabase_admin.table.return_value = consulta
+
+    with (
+        patch.object(coverage_service, "supabase_admin", supabase_admin),
+        patch.object(
+            coverage_service,
+            "enrich_candidates_with_route_estimates",
+        ) as enrich,
+    ):
+        result = coverage_service.obtener_ofrecimientos_reporte(
+            "rep-1",
+            incluir_rutas=False,
+        )
+
+    assert result == []
+    enrich.assert_not_called()
+
+
 def test_propuestas_pendientes_solo_consulta_las_activas_del_usuario():
     consulta = MagicMock()
     consulta.select.return_value = consulta
