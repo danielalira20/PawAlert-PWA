@@ -245,11 +245,21 @@ def crear_ofrecimiento(usuario_id: str, reporte_id: str) -> dict:
             detail="No pudimos registrar tu ofrecimiento. Inténtalo nuevamente.",
         ) from exc
 
-    return resultado.data or {
-        "reporte_id": reporte_id,
-        "voluntario_id": perfil["id"],
-        "estado": "vigente",
-    }
+    oferta_data = resultado.data
+    if not isinstance(oferta_data, dict):
+        oferta_data = {
+            "reporte_id": reporte_id,
+            "voluntario_id": perfil["id"],
+            "estado": "vigente",
+            "ofrecido_at": datetime.now(timezone.utc).isoformat()
+        }
+    
+    # El ofrecimiento expira en 30 minutos
+    ofrecido_at_str = oferta_data.get("ofrecido_at", datetime.now(timezone.utc).isoformat())
+    ofrecido_at = datetime.fromisoformat(ofrecido_at_str.replace("Z", "+00:00"))
+    oferta_data["expira_at"] = (ofrecido_at + timedelta(minutes=30)).isoformat()
+
+    return oferta_data
 
 
 def retirar_ofrecimiento(usuario_id: str, reporte_id: str) -> dict:
@@ -325,6 +335,10 @@ def obtener_ofrecimientos_reporte(
             carga_actual,
             max_casos,
         )
+        ofrecido_at_str = oferta.get("ofrecido_at", datetime.now(timezone.utc).isoformat())
+        ofrecido_at_dt = datetime.fromisoformat(ofrecido_at_str.replace("Z", "+00:00"))
+        expira_at_str = (ofrecido_at_dt + timedelta(minutes=30)).isoformat()
+
         ofrecimientos.append(
             {
                 **oferta,
@@ -340,6 +354,7 @@ def obtener_ofrecimientos_reporte(
                 "foto_url": None,
                 "etiqueta": "Se ofreció",
                 "tipo": "voluntario_externo",
+                "expira_at": expira_at_str,
                 **evaluacion,
             }
         )
@@ -676,7 +691,17 @@ def _ofrecimientos_del_voluntario(voluntario_id: str) -> dict[str, dict]:
         .in_("estado", ["vigente", "seleccionado"])
         .execute()
     )
-    return {fila["reporte_id"]: fila for fila in (resultado.data or [])}
+    
+    ofrecimientos_map = {}
+    for fila in (resultado.data or []):
+        # Calcular el tiempo de expiración (30 minutos)
+        ofrecido_at_str = fila.get("ofrecido_at", datetime.now(timezone.utc).isoformat())
+        ofrecido_at_dt = datetime.fromisoformat(ofrecido_at_str.replace("Z", "+00:00"))
+        fila["expira_at"] = (ofrecido_at_dt + timedelta(minutes=30)).isoformat()
+        
+        ofrecimientos_map[fila["reporte_id"]] = fila
+        
+    return ofrecimientos_map
 
 
 def _carga_activa(usuario_id: str) -> int:
@@ -737,3 +762,42 @@ def _distancia_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
         + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2
     )
     return 2 * radio_tierra * asin(sqrt(a))
+
+def notificar_externos_caso_cercano(reporte_id: str, latitud: float, longitud: float) -> None:
+    """Busca voluntarios externos activos en la zona y les envía un Push cuando surge un caso."""
+    try:
+        voluntarios = supabase_admin.table("voluntarios").select(
+            "usuario_id, capacidades(latitud, longitud, radio_max_km)"
+        ).eq("estado", "activo_nivel_2").eq("disponible_operativamente", True).execute()
+        
+        from app.services.push_notification_service import queue_and_send_push, puede_notificar
+        
+        for vol in (voluntarios.data or []):
+            cap = vol.get("capacidades") or {}
+            if isinstance(cap, list): 
+                cap = cap[0] if cap else {}
+            
+            v_lat = cap.get("latitud")
+            v_lon = cap.get("longitud")
+            v_radio = cap.get("radio_max_km") or matching.MAX_RADIO_KM
+            
+            if v_lat is None or v_lon is None:
+                continue
+                
+            distancia = _distancia_km(float(v_lat), float(v_lon), latitud, longitud)
+            if distancia <= float(v_radio):
+                usuario_id = vol["usuario_id"]
+                # Limitamos el spam: maximo 1 notificación de caso cercano por hora
+                if puede_notificar(usuario_id, "caso_cercano", ventana_horas=1):
+                    queue_and_send_push(
+                        usuario_id=usuario_id,
+                        tipo_evento="caso_cercano",
+                        idempotency_key=f"caso_cercano:{reporte_id}:{usuario_id}",
+                        payload={
+                            "mensaje": "¡Tu ayuda puede empezar cerca! Hay un nuevo caso en tu radio de acción.",
+                            "reporte_id": reporte_id
+                        },
+                        reporte_id=reporte_id
+                    )
+    except Exception as error:
+        logger.error("Error notificando a externos sobre caso cercano %s: %s", reporte_id, error)
