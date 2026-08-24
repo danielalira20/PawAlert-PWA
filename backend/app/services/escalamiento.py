@@ -15,8 +15,15 @@ que llama POST /internal/escalamiento/run cada 5 min) en el MVP.
 """
 from datetime import datetime, timezone
 
-from app.db.supabase import supabase
-from app.services import coverage_service, matching
+from fastapi import HTTPException
+
+from app.db.supabase import supabase, supabase_admin
+from app.models.dispatch import DispatchPreparationStatus
+from app.services import (
+    coverage_service,
+    dispatch_optimizer,
+    dispatch_preparation_service,
+)
 from app.utils.animal_shaping import shape_animal_embed, condicion_mas_grave
 
 MODOS_CON_ESCALAMIENTO = ("semi_automatico", "automatico")
@@ -26,7 +33,9 @@ def evaluar_escalamientos() -> dict:
     """Revisa los reportes que esperan asignacion y escala los vencidos.
     Devuelve un resumen para el log del cron."""
     pendientes = _reportes_esperando_asignacion()
-    revisados, escalados, sin_candidatos = 0, [], 0
+    revisados, escalados, sin_candidatos, conflictos = 0, [], 0, 0
+    elegibles = []
+    reportes_por_id = {}
 
     for rep in pendientes:
         aso = rep.get("asociaciones") or {}
@@ -39,26 +48,78 @@ def evaluar_escalamientos() -> dict:
         if _minutos_desde(rep["candidatos_presentados_at"]) < timeout_min:
             continue  # aun dentro del plazo de la asociacion
 
-        candidatos = matching.obtener_candidatos(rep["id"])["candidatos"]
-        if not candidatos:
-            sin_candidatos += 1
-            continue  # nadie elegible; el caso sigue con el staff como siempre
+        elegibles.append(rep["id"])
+        reportes_por_id[rep["id"]] = rep
 
-        top = candidatos[0]
-        coverage_service.reservar_cobertura(
-            reporte_id=rep["id"],
-            usuario_asignado_id=top["usuario_id"],
-            voluntario_id=top["voluntario_id"],
-            asociacion_id=rep["asociacion_asignada_id"],
-            actor_id=top["usuario_id"],
-            origen="escalamiento_automatico",
+    optimization_status = "not_required"
+    optimization_source = None
+    optimization_error = None
+    if elegibles:
+        preparation = dispatch_preparation_service.prepare_dispatch_optimization(
+            elegibles
         )
-        escalados.append({"reporte_id": rep["id"], "voluntario": top["nombre"]})
+        if preparation.status == DispatchPreparationStatus.unavailable:
+            optimization_status = "unavailable"
+            optimization_error = preparation.error_code.value
+            if optimization_error == "no_candidates":
+                sin_candidatos = len(elegibles)
+        else:
+            optimization_status = "complete"
+            request = preparation.request
+            result = dispatch_optimizer.optimize_dispatch(request)
+            optimization_source = result.source
+            sin_candidatos = len(result.unassigned_report_ids)
+            volunteers_by_id = {
+                volunteer.volunteer_id: volunteer
+                for volunteer in request.volunteers
+            }
+            assignment_info = _volunteer_assignment_info(
+                [assignment.volunteer_id for assignment in result.assignments]
+            )
+
+            for assignment in result.assignments:
+                report = reportes_por_id[assignment.report_id]
+                volunteer = volunteers_by_id[assignment.volunteer_id]
+                info = assignment_info.get(assignment.volunteer_id)
+                if info is None:
+                    conflictos += 1
+                    continue
+                origin = (
+                    "ofrecimiento_externo"
+                    if volunteer.role == "voluntario_externo"
+                    else "escalamiento_automatico"
+                )
+                try:
+                    coverage_service.reservar_cobertura(
+                        reporte_id=assignment.report_id,
+                        usuario_asignado_id=info["usuario_id"],
+                        voluntario_id=assignment.volunteer_id,
+                        asociacion_id=report["asociacion_asignada_id"],
+                        actor_id=info["usuario_id"],
+                        origen=origin,
+                    )
+                except HTTPException as exc:
+                    if exc.status_code == 409:
+                        conflictos += 1
+                        continue
+                    raise
+                escalados.append(
+                    {
+                        "reporte_id": assignment.report_id,
+                        "voluntario": info["nombre"],
+                    }
+                )
 
     return {
         "revisados": revisados,
         "escalados": escalados,
         "sin_candidatos": sin_candidatos,
+        "conflictos": conflictos,
+        "optimizacion": {
+            "status": optimization_status,
+            "source": optimization_source,
+            "error_code": optimization_error,
+        },
         "ejecutado_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -98,6 +159,27 @@ def _minutos_desde(iso_timestamp: str) -> float:
 def _timeout_por_condicion(aso: dict, condicion) -> int:
     mapa = {"grave": "timeout_grave", "herido": "timeout_herido", "estable": "timeout_estable"}
     return aso.get(mapa.get(str(condicion), "timeout_estable"), 60)
+
+
+def _volunteer_assignment_info(volunteer_ids: list[str]) -> dict[str, dict]:
+    if not volunteer_ids:
+        return {}
+    result = (
+        supabase_admin.table("voluntarios")
+        .select("id, usuario_id, usuarios(nombre, apellido_paterno)")
+        .in_("id", list(dict.fromkeys(volunteer_ids)))
+        .execute()
+    )
+    info = {}
+    for row in result.data or []:
+        user = row.get("usuarios") or {}
+        info[row["id"]] = {
+            "usuario_id": row["usuario_id"],
+            "nombre": " ".join(
+                filter(None, [user.get("nombre"), user.get("apellido_paterno")])
+            ),
+        }
+    return info
 
 
 def _evento(reporte_id, usuario_id, tipo_evento, descripcion, datos_extra):

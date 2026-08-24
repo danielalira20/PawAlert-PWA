@@ -328,6 +328,7 @@ def obtener_ofrecimientos_reporte(
         ofrecimientos.append(
             {
                 **oferta,
+                "usuario_id": voluntario["usuario_id"],
                 "nombre": " ".join(
                     filter(
                         None,
@@ -340,6 +341,8 @@ def obtener_ofrecimientos_reporte(
                 "foto_url": None,
                 "etiqueta": "Se ofreció",
                 "tipo": "voluntario_externo",
+                "carga_actual": carga_actual,
+                "max_casos_simultaneos": max_casos,
                 **evaluacion,
             }
         )
@@ -432,6 +435,7 @@ def reservar_cobertura(
     rol_reputacion = {
         "equipo_interno": reputacion_service.ROL_VOLUNTARIO_INTERNO,
         "ofrecimiento_externo": reputacion_service.ROL_VOLUNTARIO_EXTERNO,
+        "escalamiento_automatico": reputacion_service.ROL_VOLUNTARIO_INTERNO,
     }.get(origen)
     if rol_reputacion:
         restricciones = reputacion_service.consultar_restricciones(
