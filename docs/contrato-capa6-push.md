@@ -1,4 +1,4 @@
-﻿# Contrato: Coordinación Push — Capa 6 (Magui)
+# Contrato: Coordinación Push — Capa 6 (Magui)
 
 Este documento describe los cambios implementados y las decisiones de diseño de la Capa 6,
 cuya responsabilidad es la coordinación asincrónica de notificaciones Push hacia los distintos
@@ -115,7 +115,7 @@ recibía push al celular. Se agrega FCM con tipo `seguimiento_vencido` o `seguim
 
 ---
 
-## 6. Tabla de eventos Push registrados (estado actual)
+## 7. Tabla de eventos Push registrados (estado actualizado)
 
 | `tipo_evento` | Destinatario | Disparado en |
 |---|---|---|
@@ -129,7 +129,9 @@ recibía push al celular. Se agrega FCM con tipo `seguimiento_vencido` o `seguim
 | `seguimiento_proximo` | Voluntario custodio | `custody.generar_notificaciones_vencimiento()` *(Tarea C)* |
 | `confirmacion_permanencia_solicitada` | Reportante autenticado | `permanencia_service._crear_solicitud()` |
 | `reporte_en_revision` | Reportante + voluntario con propuesta | `permanencia._notificar_revision()` |
-| `nuevo_caso_cercano` | Candidatos top-3 del ranking | `report_activation_service.activar_reporte()` *(Tarea A)* |
+| `nuevo_caso_cercano` | Candidatos top del ranking (internos) | `report_activation_service.activar_reporte()` *(Tarea A)* |
+| `caso_cercano` | Voluntarios externos en radio geográfico | `coverage_service.notificar_externos_caso_cercano()` |
+| `lista_espera_activada` | Candidatos no-ganadores del pool | `escalamiento._llenar_pool_y_notificar_espera()` *(Tarea 1)* |
 
 ### Payload de `nueva_propuesta`
 
@@ -140,13 +142,77 @@ los minutos estimados. Una falla de ruteo no revierte ni bloquea la propuesta.
 
 ---
 
-## 7. Tareas pendientes (bloqueadas por otros)
+## 8. Feature: Pool de interesados y lista de espera (Tarea 1)
 
-| Tarea | Espera a | Descripción |
+### Problema
+Cuando el voluntario seleccionado no respondía a la propuesta, el sistema
+(`expirar_propuestas_vencidas`) liberaba el reporte, pero **no tenía memoria de
+quién seguía en la lista**. El caso quedaba abierto y esperaba el próximo ciclo
+de escalamiento automático para asignar a alguien más.
+
+### Solución implementada
+
+**Base de datos — migración `0077_pool_interesados_reporte.sql`:**
+
+Nueva tabla `pool_interesados_reporte`:
+```
+reporte_id    → FK reportes (CASCADE DELETE)
+voluntario_id → FK voluntarios (RESTRICT)
+usuario_id    → FK usuarios (RESTRICT)
+posicion      → INTEGER (1=ganador, 2,3,...=lista de espera)
+estado        → 'propuesta_enviada' | 'en_espera' | 'descartado' | 'aceptado' | 'vencido'
+```
+Restricción `UNIQUE (reporte_id, voluntario_id)` garantiza que un voluntario
+aparece una sola vez por reporte. El `UPSERT` permite re-calcular el pool sin
+duplicados si el escalamiento vuelve a correr.
+
+**Backend — `escalamiento.py:_llenar_pool_y_notificar_espera()`:**
+
+Función privada nueva que se llama inmediatamente después de `reservar_cobertura()`
+en el for-loop de `evaluar_escalamientos()`. Flujo:
+
+```
+reservar_cobertura()  [ganador escogido]
+  → _llenar_pool_y_notificar_espera(reporte_id, volunteer_id_ganador)
+      → matching.obtener_candidatos()  [lista completa, misma llamada que ya existía]
+      → UPSERT en pool_interesados_reporte
+          posicion=1, estado='propuesta_enviada'  → ganador
+          posicion>1, estado='en_espera'          → lista de espera
+      → para cada candidato en lista de espera:
+          → puede_notificar(uid, "lista_espera_activada")
+              → si True: queue_and_send_push(tipo="lista_espera_activada")
+```
+
+**Garantías:**
+- Si la función falla (BD caída, etc.), solo se imprime `[WARN]` —  la propuesta
+  ya enviada al ganador **nunca se revierte**.
+- Idempotente: si escalamiento vuelve a correr sobre el mismo reporte, el UPSERT
+  actualiza sin duplicar filas.
+- Control de fatiga: `puede_notificar()` (ventana 4 h por defecto) evita spam
+  si el mismo voluntario está en lista de espera de múltiples casos simultáneos.
+
+### Impacto en compañeros
+- **Diego:** cuando conecte el panel de asociaciones para mostrar la lista de
+  candidatos, puede leer `pool_interesados_reporte` ordenado por `posicion` para
+  mostrar quién está en espera sin requerir recalcular el ranking.
+- **Jass:** cuando los avistamientos actualicen la ubicación del animal (Capa 8),
+  el pool puede recalcularse con una nueva llamada a `obtener_candidatos()` y
+  un UPSERT que sobreescriba las posiciones.
+- **Daniela / Miguel:** ningún cambio visible en contratos existentes.
+
+### Archivos modificados
+- `backend/migrations/0077_pool_interesados_reporte.sql` — tabla nueva, RLS, índice
+- `backend/app/services/escalamiento.py` — llamada a `_llenar_pool_y_notificar_espera()` en el for-loop + función privada nueva
+
+---
+
+## 9. Tareas pendientes
+
+| Tarea | Estado | Descripción |
 |---|---|---|
-| Pool de interesados | **Jass (VROOM)** | Tabla con ganador y lista de espera ordenada |
-| Lista de espera (`lista_espera_activada`) | **Jass (VROOM)** | Push a voluntarios no seleccionados |
-| Dead Man's Switch | **Jass (VROOM)** | Propuesta 10→15 min + alerta a los 12 min |
-| Confirmación con 3 casos activos | **Jass (VROOM)** | Verificar carga antes de enviar propuesta |
-| Notificar reemplazo | **Jass (VROOM)** | Push al siguiente en lista cuando el ganador no responde |
-| Tiempo estimado en push | **Completado (Daniela)** | `duration_seconds` y `distance_meters` en `nueva_propuesta` |
+| Pool de interesados | ✅ **Implementado (Tarea 1)** | `0077` + `escalamiento.py` |
+| Lista de espera (`lista_espera_activada`) | ✅ **Implementado (Tarea 1)** | Dentro de `_llenar_pool_y_notificar_espera()` |
+| Dead Man's Switch (15 min + aviso 3 min antes) | ⏳ **Tarea 2 — próxima** | Migración `0078` + `coverage_service.py` |
+| Notificar reemplazo al siguiente en lista | ⏳ **Tarea 3** | `coverage_service.expirar_propuestas_vencidas()` |
+| Push diferenciado con carga ≥ 3 casos | ⏳ **Tarea 4** | `coverage_service.reservar_cobertura()` |
+| Alertas de bienestar (Fase 5) | ❓ **Pendiente definición** | Confirmar con equipo qué significa exactamente |

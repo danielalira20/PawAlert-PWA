@@ -62,6 +62,9 @@ def evaluar_escalamientos() -> dict:
                 "voluntario": info["nombre"],
             })
 
+            # Llenar pool de interesados para lista de espera
+            _llenar_pool_y_notificar_espera(assignment.report_id, assignment.volunteer_id)
+
         sin_candidatos = len(resultado.unassigned_report_ids)
 
     return {
@@ -117,3 +120,73 @@ def _evento(reporte_id, usuario_id, tipo_evento, descripcion, datos_extra):
         "descripcion": descripcion,
         "datos_extra": datos_extra,
     }).execute()
+
+
+def _llenar_pool_y_notificar_espera(reporte_id: str, volunteer_id_ganador: str) -> None:
+    """Guarda el pool de candidatos para este reporte en pool_interesados_reporte
+    y envía push 'lista_espera_activada' a todos los candidatos que NO ganaron.
+
+    Se llama inmediatamente después de reservar_cobertura() en el escalamiento
+    automático. Si falla, solo se registra un [WARN] — nunca revierte la propuesta.
+
+    Diseño:
+    - posicion=1 → ganador, estado='propuesta_enviada'
+    - posicion>1 → lista de espera, estado='en_espera'
+    - Idempotente via UPSERT (UNIQUE reporte_id, voluntario_id).
+    """
+    try:
+        from app.db.supabase import supabase_admin
+        from app.services.push_notification_service import (
+            puede_notificar,
+            queue_and_send_push,
+        )
+
+        candidatos = matching.obtener_candidatos(reporte_id).get("candidatos", [])
+        if not candidatos:
+            return
+
+        pool_rows = []
+        for posicion, candidato in enumerate(candidatos, start=1):
+            uid = candidato.get("usuario_id")
+            vol_id = candidato.get("voluntario_id")
+            if not uid or not vol_id:
+                continue
+            pool_rows.append({
+                "reporte_id": reporte_id,
+                "voluntario_id": vol_id,
+                "usuario_id": uid,
+                "posicion": posicion,
+                "estado": (
+                    "propuesta_enviada" if vol_id == volunteer_id_ganador else "en_espera"
+                ),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            })
+
+        if pool_rows:
+            supabase_admin.table("pool_interesados_reporte").upsert(
+                pool_rows,
+                on_conflict="reporte_id,voluntario_id",
+            ).execute()
+
+        # Push a candidatos en lista de espera (posicion > 1)
+        for row in pool_rows:
+            if row["estado"] == "en_espera":
+                uid_espera = row["usuario_id"]
+                if puede_notificar(uid_espera, "lista_espera_activada"):
+                    queue_and_send_push(
+                        usuario_id=uid_espera,
+                        tipo_evento="lista_espera_activada",
+                        idempotency_key=f"lista_espera:{reporte_id}:{uid_espera}",
+                        payload={
+                            "mensaje": (
+                                "Estás en lista de espera para un caso cercano. "
+                                "Si el candidato seleccionado no responde, "
+                                "podrías ser contactado."
+                            ),
+                            "reporte_id": reporte_id,
+                        },
+                        reporte_id=reporte_id,
+                    )
+
+    except Exception as e:
+        print(f"[WARN] Error llenando pool de interesados para reporte {reporte_id}: {e}")
