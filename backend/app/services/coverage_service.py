@@ -504,11 +504,20 @@ def reservar_cobertura(
 
         try:
             from app.services.push_notification_service import queue_and_send_push
+            carga_actual = _carga_activa(usuario_asignado_id)
+            payload_propuesta = _payload_nueva_propuesta(reporte_id, ruta_estimada)
+            if carga_actual >= 3:
+                payload_propuesta["carga_alta"] = True
+                payload_propuesta["mensaje"] = (
+                    f"Tienes {carga_actual} casos activos. "
+                    "¿Confirmas que puedes atender uno más?"
+                )
+                
             queue_and_send_push(
                 usuario_id=usuario_asignado_id,
                 tipo_evento="nueva_propuesta",
                 idempotency_key=f"nueva_propuesta:{propuesta_id}:{usuario_asignado_id}",
-                payload=_payload_nueva_propuesta(reporte_id, ruta_estimada),
+                payload=payload_propuesta,
                 reporte_id=reporte_id,
                 propuesta_id=propuesta_id,
             )
