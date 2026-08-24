@@ -196,6 +196,14 @@ recomendaciones para la asociacion, pero no forman parte de `assignments`.
 La reserva en base de datos sigue siendo la autoridad final. Ningun resultado
 de VROOM constituye por si mismo una asignacion confirmada.
 
+El fallback vive en `dispatch_fallback_service.optimize_dispatch_fallback`.
+Es una funcion pura sobre `DispatchOptimizationRequest`: no consulta
+Supabase, matching, cobertura, OSRM ni VROOM. Resuelve el lote completo, no
+reporte por reporte; ejecuta las alternativas primaria y ampliada, excluye
+externos y parejas `manual_only`, y conserva los ETA y distancias de la matriz
+preparada. El optimizador debe invocarlo solamente despues de tener un request
+valido y recibir un fallo de VROOM.
+
 ## Criterios minimos de aceptacion
 
 - request con 2 voluntarios y 2 reportes produce indices cuadrados distintos;
