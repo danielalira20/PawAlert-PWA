@@ -336,8 +336,9 @@ def evaluate_report_urgency(
         raise ValueError("Report not found")
 
     report = query.data[0]
-    if report.get("estado_validacion_reporte") != "aprobado":
-        raise ValueError("Urgency can only be calculated for an approved report")
+    estado_validacion = report.get("estado_validacion_reporte")
+    if estado_validacion not in ("aprobado", "urgency_pendiente"):
+        raise ValueError("Urgency can only be calculated for a validated report")
     if report.get("estado_reporte") in ESTADOS_REPORTE_TERMINALES:
         raise ValueError("Urgency cannot be calculated for a terminal report")
     if report.get("urgency_excluido"):
@@ -403,7 +404,7 @@ def evaluate_report_urgency(
             }
         )
         .eq("id", reporte_id)
-        .eq("estado_validacion_reporte", "aprobado")
+        .eq("estado_validacion_reporte", estado_validacion)
         .eq("urgency_excluido", False)
         .execute()
     )

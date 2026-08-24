@@ -82,7 +82,11 @@ def test_activar_reporte_abre_cobertura_despues_de_validacion(
         tipos_animales=["perro", "gato"],
         es_critico=False,
     )
-    actualizacion = tablas["reportes"].update.call_args_list[0].args[0]
+    preparacion = tablas["reportes"].update.call_args_list[0].args[0]
+    assert preparacion["estado_validacion_reporte"] == "urgency_pendiente"
+    assert preparacion["estado_cobertura"] is None
+    assert preparacion["activado_at"] is None
+    actualizacion = tablas["reportes"].update.call_args_list[1].args[0]
     assert actualizacion["estado_validacion_reporte"] == "aprobado"
     assert actualizacion["estado_reporte"] == "asignado"
     assert actualizacion["estado_cobertura"] == "abierto"
@@ -132,7 +136,7 @@ def test_activar_reporte_informa_si_el_caso_es_critico(
     )
 
 
-def test_fallo_interno_de_urgencia_no_rompe_activacion(
+def test_fallo_interno_de_urgencia_detiene_activacion(
     make_query, _mock_initial_urgency
 ):
     supabase, supabase_admin, tablas, _, asociacion = _clientes(
@@ -156,11 +160,15 @@ def test_fallo_interno_de_urgencia_no_rompe_activacion(
     ):
         resultado = _activar()
 
-    assert resultado["estado"] == "asignado"
-    obtener_candidatos.assert_called_once_with("reporte-1")
-
-    segunda_actualizacion = tablas["reportes"].update.call_args_list[1].args[0]
-    assert "urgency_proximo_recalculo_at" in segunda_actualizacion
+    assert resultado == {"estado": "urgency_pendiente", "asociacion": None}
+    obtener_candidatos.assert_not_called()
+    assert not tablas["reporte_asignaciones"].insert.called
+    preparacion = tablas["reportes"].update.call_args_list[0].args[0]
+    assert preparacion["estado_validacion_reporte"] == "urgency_pendiente"
+    assert preparacion["estado_cobertura"] is None
+    assert preparacion["asociacion_asignada_id"] is None
+    assert preparacion["activado_at"] is None
+    assert "urgency_proximo_recalculo_at" in preparacion
 
     eventos = [
         llamada.args[0]["tipo_evento"]
@@ -205,7 +213,10 @@ def test_activar_reporte_compensa_preparacion_si_falla_actualizacion(make_query)
     supabase, supabase_admin, tablas, _, asociacion = _clientes(
         make_query, asociacion=True
     )
-    tablas["reportes"].execute.side_effect = RuntimeError("fallo de escritura")
+    tablas["reportes"].execute.side_effect = [
+        MagicMock(data=[{"id": "reporte-1"}]),
+        RuntimeError("fallo de escritura"),
+    ]
 
     with (
         patch.object(report_activation_service, "supabase", supabase),
@@ -365,6 +376,45 @@ def test_activar_reporte_desde_revision_reconstruye_contexto_y_aprobacion(make_q
     assert argumentos["razones_validacion"][-1]["codigo"] == (
         "revision_manual_aprobada"
     )
+
+
+def test_reanudar_urgency_pendiente_completa_activacion_sin_recalcular(make_query):
+    reporte = {
+        "id": "reporte-1",
+        "latitud": 19.04,
+        "longitud": -98.20,
+        "municipio": "Puebla",
+        "estado_validacion_reporte": "urgency_pendiente",
+        "razones_validacion": [
+            {"codigo": "validacion_inicial_aprobada", "resultado": "aprobado"}
+        ],
+        "animal": [
+            {
+                "tipo_animal_catalogo": {"clave": "perro"},
+                "condicion_catalogo": {"clave": "grave"},
+            }
+        ],
+    }
+    supabase_admin = MagicMock()
+    supabase_admin.table.return_value = make_query(data=[reporte])
+
+    with (
+        patch.object(report_activation_service, "supabase_admin", supabase_admin),
+        patch.object(
+            report_activation_service,
+            "activar_reporte",
+            return_value={"estado": "asignado", "asociacion": {"id": "a-1"}},
+        ) as activar,
+    ):
+        resultado = report_activation_service.reanudar_activacion_urgency_pendiente(
+            "reporte-1"
+        )
+
+    assert resultado["estado"] == "asignado"
+    argumentos = activar.call_args.kwargs
+    assert argumentos["estado_validacion_esperado"] == "urgency_pendiente"
+    assert argumentos["urgency_inicial_calculada"] is True
+    assert argumentos["condicion_mas_grave"] == "grave"
 
 
 def test_activar_reporte_por_vencimiento_clip_exige_unico_bloqueo(make_query):
