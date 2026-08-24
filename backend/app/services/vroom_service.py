@@ -7,11 +7,19 @@ proveedor). Los modelos de aqui son internos de este cliente, no un
 contrato compartido entre capas -- a diferencia de RouteMatrixResult
 (dispatch.py), nadie mas los consume todavia.
 
-El request SIEMPRE debe incluir `matrix` ya calculada: sin ella, VROOM
-intenta contactar un router en localhost:5000 que no existe en este
-despliegue y falla con un error de conexion (code=3). location_index
-(jobs) y start_index (vehicles) referencian posiciones dentro de esa
-matriz -- nunca coordenadas crudas.
+El body SIEMPRE debe incluir `matrices` con al menos un perfil (ej. `car`):
+sin ella, VROOM intenta contactar un router en localhost:5000 que no existe
+en este despliegue y falla con un error de conexion (code=3). El campo
+singular `matrix` esta deprecado por `docs/contrato-adaptador-vroom.md` y no
+existe en este cliente -- usar `matrices.car` con `durations`, `distances` y
+`costs`. location_index (jobs) y start_index (vehicles) referencian
+posiciones dentro de esa matriz -- nunca coordenadas crudas.
+
+Antes de llamar al proveedor se valida, en este orden: tamano maximo del
+lote (VROOM_MAX_LOCATIONS), dimensiones de las matrices (cuadradas y
+consistentes entre perfiles) e indices de vehicles/jobs (no negativos y
+dentro de rango). Cualquier fallo de estas validaciones cae de forma
+controlada -- nunca se le manda a VROOM un payload que ya sabemos invalido.
 """
 
 import logging
@@ -26,10 +34,6 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 _MAX_ATTEMPTS = 2
-
-# Limite conservador de jobs por lote -- ajustable segun el tiempo de
-# respuesta real observado en Railway con lotes grandes.
-_MAX_VROOM_JOBS = 50
 
 
 class VroomJob(BaseModel):
@@ -47,10 +51,16 @@ class VroomVehicle(BaseModel):
     skills: list[int] = Field(default_factory=list)
 
 
+class VroomProfileMatrix(BaseModel):
+    durations: list[list[float]]
+    distances: list[list[float]]
+    costs: list[list[float]]
+
+
 class VroomOptimizationRequest(BaseModel):
     vehicles: list[VroomVehicle] = Field(min_length=1)
     jobs: list[VroomJob] = Field(min_length=1)
-    matrix: list[list[float]]
+    matrices: dict[str, VroomProfileMatrix]
 
 
 class VroomRouteStep(BaseModel):
@@ -75,6 +85,69 @@ class VroomOptimizationResult(BaseModel):
 
 class _InvalidPayload(Exception):
     pass
+
+
+def _square_matrix_size(matrix: list[list[float]], label: str) -> int:
+    rows = len(matrix)
+    if rows == 0:
+        raise ValueError(f"{label} matrix cannot be empty")
+    if any(len(row) != rows for row in matrix):
+        raise ValueError(f"{label} matrix must be square")
+    return rows
+
+
+def validate_square_matrices(matrices: dict[str, VroomProfileMatrix]) -> None:
+    """Cada perfil debe tener durations/distances/costs cuadradas y del
+    mismo tamano entre si, y todos los perfiles del dict deben compartir ese
+    mismo tamano -- VROOM usa un unico espacio de indices para todos los
+    perfiles de una misma solicitud."""
+    if not matrices:
+        raise ValueError("VROOM request requires at least one profile matrix")
+
+    reference_size: int | None = None
+    reference_profile: str | None = None
+    for profile_name, profile_matrix in matrices.items():
+        durations_size = _square_matrix_size(
+            profile_matrix.durations, f"Profile '{profile_name}' durations"
+        )
+        distances_size = _square_matrix_size(
+            profile_matrix.distances, f"Profile '{profile_name}' distances"
+        )
+        costs_size = _square_matrix_size(
+            profile_matrix.costs, f"Profile '{profile_name}' costs"
+        )
+        if distances_size != durations_size or costs_size != durations_size:
+            raise ValueError(
+                f"Profile '{profile_name}' durations, distances and costs "
+                "must share the same size"
+            )
+        if reference_size is None:
+            reference_size = durations_size
+            reference_profile = profile_name
+        elif durations_size != reference_size:
+            raise ValueError(
+                f"Profile '{profile_name}' size ({durations_size}) does not "
+                f"match profile '{reference_profile}' size ({reference_size})"
+            )
+
+
+def validate_references(request: VroomOptimizationRequest) -> None:
+    """vehicle.start_index y job.location_index deben ser no negativos y
+    caer dentro del espacio de indices de la matriz cuadrada compartida por
+    todos los perfiles de la solicitud."""
+    matrix_size = len(next(iter(request.matrices.values())).durations)
+    for vehicle in request.vehicles:
+        if not 0 <= vehicle.start_index < matrix_size:
+            raise ValueError(
+                f"Vehicle {vehicle.id} start_index {vehicle.start_index} is "
+                f"out of range for a matrix of size {matrix_size}"
+            )
+    for job in request.jobs:
+        if not 0 <= job.location_index < matrix_size:
+            raise ValueError(
+                f"Job {job.id} location_index {job.location_index} is out "
+                f"of range for a matrix of size {matrix_size}"
+            )
 
 
 def _unavailable(error_code: str, calculated_at: datetime) -> VroomOptimizationResult:
@@ -172,11 +245,29 @@ def _parse_payload(
 def get_optimization(
     request: VroomOptimizationRequest,
 ) -> VroomOptimizationResult:
-    """Optimiza vehicles/jobs contra una matriz ya calculada; nunca
-    propaga fallos del proveedor."""
+    """Optimiza vehicles/jobs contra matrices ya calculadas; nunca propaga
+    fallos del proveedor ni le manda un payload que ya sabemos invalido."""
     calculated_at = datetime.now(timezone.utc)
-    if len(request.jobs) > _MAX_VROOM_JOBS:
+
+    combined_locations = len(request.vehicles) + len(request.jobs)
+    if combined_locations > settings.vroom_max_locations:
+        logger.warning(
+            "Lote de despacho excede VROOM_MAX_LOCATIONS: %s locations "
+            "(limite %s)",
+            combined_locations,
+            settings.vroom_max_locations,
+        )
         return _unavailable("request_too_large", calculated_at)
+
+    try:
+        validate_square_matrices(request.matrices)
+        validate_references(request)
+    except ValueError as error:
+        logger.warning(
+            "Solicitud VROOM invalida antes de llamar al proveedor: %s", error
+        )
+        return _unavailable("invalid_request", calculated_at)
+
     if not settings.vroom_base_url.strip():
         return _unavailable("not_configured", calculated_at)
 

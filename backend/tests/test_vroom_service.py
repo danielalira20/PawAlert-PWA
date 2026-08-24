@@ -1,3 +1,4 @@
+import logging
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -16,11 +17,17 @@ def _vroom_configurado(monkeypatch):
     )
 
 
+def _profile_matrix(matrix: list[list[float]]) -> vroom_service.VroomProfileMatrix:
+    return vroom_service.VroomProfileMatrix(
+        durations=matrix, distances=matrix, costs=matrix
+    )
+
+
 def request() -> vroom_service.VroomOptimizationRequest:
     return vroom_service.VroomOptimizationRequest(
         vehicles=[vroom_service.VroomVehicle(id=1, start_index=0)],
         jobs=[vroom_service.VroomJob(id=1, location_index=1)],
-        matrix=[[0, 300], [300, 0]],
+        matrices={"car": _profile_matrix([[0, 300], [300, 0]])},
     )
 
 
@@ -55,7 +62,7 @@ def payload_exitoso() -> dict:
     }
 
 
-def test_builds_payload_with_indexes_and_matrix():
+def test_builds_payload_with_indexes_and_matrices_car():
     with patch.object(
         vroom_service.httpx,
         "post",
@@ -76,7 +83,110 @@ def test_builds_payload_with_indexes_and_matrix():
             "skills": [],
         }
     ]
-    assert body["matrix"] == [[0, 300], [300, 0]]
+    assert body["matrices"] == {
+        "car": {
+            "durations": [[0, 300], [300, 0]],
+            "distances": [[0, 300], [300, 0]],
+            "costs": [[0, 300], [300, 0]],
+        }
+    }
+    assert "matrix" not in body
+
+
+def test_matrix_field_removed_in_favor_of_matrices():
+    assert "matrix" not in vroom_service.VroomOptimizationRequest.model_fields
+    assert "matrices" in vroom_service.VroomOptimizationRequest.model_fields
+
+
+def test_validate_square_matrices_rejects_non_square_matrix():
+    matrices = {
+        "car": vroom_service.VroomProfileMatrix(
+            durations=[[0, 300]],
+            distances=[[0, 300]],
+            costs=[[0, 300]],
+        )
+    }
+
+    with pytest.raises(ValueError, match="square"):
+        vroom_service.validate_square_matrices(matrices)
+
+
+def test_validate_square_matrices_rejects_mismatched_profile_sizes():
+    matrices = {
+        "car": _profile_matrix([[0, 300], [300, 0]]),
+        "bike": _profile_matrix(
+            [[0, 100, 200], [100, 0, 150], [200, 150, 0]]
+        ),
+    }
+
+    with pytest.raises(ValueError, match="does not match"):
+        vroom_service.validate_square_matrices(matrices)
+
+
+def test_validate_square_matrices_rejects_empty_matrices_dict():
+    with pytest.raises(ValueError, match="at least one profile"):
+        vroom_service.validate_square_matrices({})
+
+
+def test_validate_references_rejects_out_of_range_start_index():
+    invalid_request = vroom_service.VroomOptimizationRequest(
+        vehicles=[vroom_service.VroomVehicle(id=1, start_index=5)],
+        jobs=[vroom_service.VroomJob(id=1, location_index=1)],
+        matrices={"car": _profile_matrix([[0, 300], [300, 0]])},
+    )
+
+    with pytest.raises(ValueError, match="out of range"):
+        vroom_service.validate_references(invalid_request)
+
+
+def test_validate_references_rejects_out_of_range_location_index():
+    invalid_request = vroom_service.VroomOptimizationRequest(
+        vehicles=[vroom_service.VroomVehicle(id=1, start_index=0)],
+        jobs=[vroom_service.VroomJob(id=1, location_index=9)],
+        matrices={"car": _profile_matrix([[0, 300], [300, 0]])},
+    )
+
+    with pytest.raises(ValueError, match="out of range"):
+        vroom_service.validate_references(invalid_request)
+
+
+def test_batch_over_max_locations_returns_request_too_large_without_request(
+    monkeypatch, caplog
+):
+    monkeypatch.setattr(vroom_service.settings, "vroom_max_locations", 1)
+
+    with (
+        patch.object(vroom_service.httpx, "post") as post,
+        caplog.at_level(logging.WARNING),
+    ):
+        result = vroom_service.get_optimization(request())
+
+    post.assert_not_called()
+    assert result.status == "unavailable"
+    assert result.error_code == "request_too_large"
+    assert any(
+        "VROOM_MAX_LOCATIONS" in record.message for record in caplog.records
+    )
+
+
+def test_invalid_matrices_return_invalid_request_without_calling_provider():
+    lote = vroom_service.VroomOptimizationRequest(
+        vehicles=[vroom_service.VroomVehicle(id=1, start_index=0)],
+        jobs=[vroom_service.VroomJob(id=1, location_index=1)],
+        matrices={
+            "car": vroom_service.VroomProfileMatrix(
+                durations=[[0, 300]],
+                distances=[[0, 300]],
+                costs=[[0, 300]],
+            )
+        },
+    )
+    with patch.object(vroom_service.httpx, "post") as post:
+        result = vroom_service.get_optimization(lote)
+
+    post.assert_not_called()
+    assert result.status == "unavailable"
+    assert result.error_code == "invalid_request"
 
 
 def test_missing_base_url_returns_not_configured_without_request():
@@ -89,23 +199,6 @@ def test_missing_base_url_returns_not_configured_without_request():
     post.assert_not_called()
     assert result.status == "unavailable"
     assert result.error_code == "not_configured"
-
-
-def test_batch_over_limit_returns_request_too_large_without_request():
-    lote = vroom_service.VroomOptimizationRequest(
-        vehicles=[vroom_service.VroomVehicle(id=1, start_index=0)],
-        jobs=[
-            vroom_service.VroomJob(id=i, location_index=i)
-            for i in range(1, vroom_service._MAX_VROOM_JOBS + 2)
-        ],
-        matrix=[[0]],
-    )
-    with patch.object(vroom_service.httpx, "post") as post:
-        result = vroom_service.get_optimization(lote)
-
-    post.assert_not_called()
-    assert result.status == "unavailable"
-    assert result.error_code == "request_too_large"
 
 
 def test_timeout_retries_once_and_returns_timeout():
