@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     vroom_timeout_seconds: int = 10
     vroom_candidate_window_minutes: int = Field(default=5, ge=0)
     vroom_secondary_max_eta_minutes: int = Field(default=30, gt=0)
+    vroom_max_locations: int = Field(default=50, gt=0)
     clip_validation_enabled: bool = False
     huggingface_token: str = ""
     clip_endpoint_url: str = ""
