@@ -71,9 +71,9 @@ const DARK: Record<string, string> = {
 const createPin = (condicion: string, tipoAnimal: string, selected = false, count = 1) => {
   const cfg = getCfg(condicion);
   const dark = DARK[cfg.border] ?? cfg.border;
-  const size = selected ? 54 : 46;
+  const size = 46;
   const shadow = selected
-    ? `0 6px 24px ${cfg.border}BB, 0 0 0 3px white, 0 0 0 5px ${dark}66`
+    ? `0 3px 12px ${cfg.border}88, 0 0 0 2px #FFFFFF, 0 0 0 4px ${dark}`
     : `0 3px 12px ${cfg.border}88`;
 
   // Badge de conteo — solo si el caso trae más de un animal. Vive fuera del
@@ -94,9 +94,7 @@ const createPin = (condicion: string, tipoAnimal: string, selected = false, coun
   const html = `
     <div style="
       display:flex; flex-direction:column; align-items:center;
-      transform:scale(${selected ? 1.1 : 1});
       transform-origin:bottom center;
-      transition:transform 0.2s cubic-bezier(0.34,1.56,0.64,1);
     ">
       <!-- Wrapper con overflow visible, para que el badge no se recorte -->
       <div style="position:relative; display:flex; align-items:center; justify-content:center;">
@@ -134,6 +132,36 @@ const createPin = (condicion: string, tipoAnimal: string, selected = false, coun
     iconAnchor: [(size + 8) / 2, totalH],
   });
 };
+
+// Cobertura aproximada del caso seleccionado. Los círculos se dibujan en
+// metros (no en píxeles), por lo que representan una zona real al cambiar el
+// zoom. La superposición crea un borde difuminado sin agrandar el pin.
+const REPORT_COVERAGE_RINGS = [
+  { radius: 520, opacity: 0.025 },
+  { radius: 420, opacity: 0.04 },
+  { radius: 320, opacity: 0.065 },
+  { radius: 225, opacity: 0.09 },
+  { radius: 135, opacity: 0.12 },
+];
+
+function ReportCoverageGlow({ reporte }: { reporte: Reporte & { latitud: number; longitud: number } }) {
+  const condicion = condicionMasGrave(getAnimales(reporte)) ?? '';
+  const color = getCfg(condicion).border;
+
+  return (
+    <>
+      {REPORT_COVERAGE_RINGS.map(({ radius, opacity }) => (
+        <Circle
+          key={radius}
+          center={[reporte.latitud, reporte.longitud]}
+          radius={radius}
+          interactive={false}
+          pathOptions={{ stroke: false, fillColor: color, fillOpacity: opacity }}
+        />
+      ))}
+    </>
+  );
+}
 
 
 // ─── Pin de zona agregada (visitantes sin sesión: densidad, no reportes) ──────
@@ -497,6 +525,15 @@ export default function LeafletMap({
         />
         <MapClickHandler onMapClick={onMapClick} />
         <FitToMarkers enabled={fitToMarkers} positions={markerPositions} />
+        {(() => {
+          const reporteSeleccionado = reportes.find(
+            (reporte): reporte is Reporte & { latitud: number; longitud: number } =>
+              reporte.id === selectedReportId &&
+              reporte.latitud !== null &&
+              reporte.longitud !== null,
+          );
+          return reporteSeleccionado ? <ReportCoverageGlow reporte={reporteSeleccionado} /> : null;
+        })()}
         {reportes
           .filter((r): r is typeof r & { latitud: number; longitud: number } =>
             r.latitud !== null && r.longitud !== null)

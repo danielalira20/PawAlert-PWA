@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import MapView, { Marker, Region } from 'react-native-maps';
+import MapView, { Circle, Marker, Region } from 'react-native-maps';
 
 import type { CasoCercano } from '../../screens/NearbyCasesScreen';
 import { CondicionColors, normalizeCondicion } from '../../constants/theme';
@@ -38,9 +38,32 @@ function regionFor(casos: CasoCercano[]): Region {
 
 export function NearbyCasesMap({ casos, selectedId, onSelect }: Props) {
   const region = useMemo(() => regionFor(casos), [casos]);
+  const selectedCase = casos.find((caso) => caso.id === selectedId);
+  const selectedAnimal = selectedCase ? animalMasGrave(selectedCase.animales) : null;
+  const selectedCondition = normalizeCondicion(selectedAnimal?.condicion);
+  const selectedColor = selectedCondition ? CondicionColors[selectedCondition] : '#EC802B';
+  const coverageRings = [
+    { radius: 520, opacity: '07' },
+    { radius: 420, opacity: '0A' },
+    { radius: 320, opacity: '11' },
+    { radius: 225, opacity: '17' },
+    { radius: 135, opacity: '1F' },
+  ];
 
   return (
     <MapView style={StyleSheet.absoluteFillObject} initialRegion={region}>
+      {selectedCase && coverageRings.map(({ radius, opacity }) => (
+        <Circle
+          key={radius}
+          center={{
+            latitude: selectedCase.latitud_aproximada,
+            longitude: selectedCase.longitud_aproximada,
+          }}
+          radius={radius}
+          strokeWidth={0}
+          fillColor={`${selectedColor}${opacity}`}
+        />
+      ))}
       {casos.map((caso) => {
         const animal = animalMasGrave(caso.animales);
         const condicion = normalizeCondicion(animal?.condicion);
@@ -59,7 +82,7 @@ export function NearbyCasesMap({ casos, selectedId, onSelect }: Props) {
           >
             <View style={[styles.markerHalo, selected && { borderColor: color }]}>
               <View style={[styles.marker, { backgroundColor: color }]}>
-                <Ionicons name="paw" size={selected ? 21 : 18} color="#FFFFFF" />
+                <Ionicons name="paw" size={18} color="#FFFFFF" />
               </View>
               {total > 1 && (
                 <View style={styles.count}>
