@@ -10,6 +10,9 @@ from zoneinfo import ZoneInfo
 
 from app.db.supabase import supabase, supabase_admin
 from app.models.dispatch import MATCHING_WEIGHTS
+from app.services.candidate_route_estimation_service import (
+    enrich_candidates_with_route_estimates,
+)
 from app.services.reputacion_service import (
     ROL_VOLUNTARIO_INTERNO,
     usuarios_bloqueados_nuevas_asignaciones,
@@ -32,7 +35,11 @@ ETIQUETAS_EXPERIENCIA = {
 }
 
 
-def obtener_candidatos(reporte_id: str) -> dict:
+def obtener_candidatos(
+    reporte_id: str,
+    *,
+    incluir_rutas: bool = True,
+) -> dict:
     """Devuelve el top 3 vigente con filtros y desglose de puntuación."""
     reporte = _obtener_reporte(reporte_id)
     especies_caso = {
@@ -134,7 +141,15 @@ def obtener_candidatos(reporte_id: str) -> dict:
         ),
         reverse=True,
     )
-    return {"candidatos": candidatos[:3]}
+    top_candidates = candidatos[:3]
+    if not incluir_rutas:
+        return {"candidatos": top_candidates}
+    return {
+        "candidatos": enrich_candidates_with_route_estimates(
+            reporte_id,
+            top_candidates,
+        )
+    }
 
 
 def evaluar_candidato_externo(

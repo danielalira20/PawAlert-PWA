@@ -31,7 +31,8 @@ def _obtener_reporte(reporte_id: str) -> dict:
         supabase_admin.table("reportes")
         .select(
             "id, usuario_id, staff_asignado_id, asociacion_asignada_id, "
-            "latitud, longitud, ultima_ubicacion_confirmada_id"
+            "latitud, longitud, ultima_ubicacion_confirmada_id, "
+            "ultima_latitud_confirmada, ultima_longitud_confirmada"
         )
         .eq("id", reporte_id)
         .limit(1)
@@ -72,6 +73,11 @@ def _ubicacion_referencia(reporte: dict) -> tuple[float, float] | None:
     """Punto contra el que se mide la cercania de un voluntario_verificado:
     la ultima ubicacion confirmada si ya existe, o el punto original del
     reporte mientras no haya ninguna todavia."""
+    ultima_latitud = reporte.get("ultima_latitud_confirmada")
+    ultima_longitud = reporte.get("ultima_longitud_confirmada")
+    if ultima_latitud is not None and ultima_longitud is not None:
+        return float(ultima_latitud), float(ultima_longitud)
+
     ultima_id = reporte.get("ultima_ubicacion_confirmada_id")
     if ultima_id:
         avistamiento = (
@@ -294,7 +300,11 @@ def _confirmar_avistamiento(
     fuente: LocationSource,
 ) -> None:
     supabase_admin.table("reportes").update(
-        {"ultima_ubicacion_confirmada_id": avistamiento_id}
+        {
+            "ultima_ubicacion_confirmada_id": avistamiento_id,
+            "ultima_latitud_confirmada": latitud,
+            "ultima_longitud_confirmada": longitud,
+        }
     ).eq("id", reporte_id).execute()
     _emitir_ubicacion_confirmada(
         reporte_id=reporte_id,

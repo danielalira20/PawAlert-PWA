@@ -35,17 +35,16 @@ def test_builds_ordered_matrix_with_latest_report_location(make_query):
                 "id": "rep-1",
                 "latitud": 19.10,
                 "longitud": -98.10,
-                "ultima_ubicacion_confirmada_id": None,
+                "ultima_latitud_confirmada": None,
+                "ultima_longitud_confirmada": None,
             },
             {
                 "id": "rep-2",
                 "latitud": 19.20,
                 "longitud": -98.20,
-                "ultima_ubicacion_confirmada_id": "av-2",
+                "ultima_latitud_confirmada": 19.25,
+                "ultima_longitud_confirmada": -98.25,
             },
-        ]),
-        "avistamientos_animal": make_query(data=[
-            {"id": "av-2", "latitud": 19.25, "longitud": -98.25},
         ]),
     }
     db = database(tables)
@@ -69,9 +68,6 @@ def test_builds_ordered_matrix_with_latest_report_location(make_query):
     assert [point.id for point in request.destinations] == ["rep-2", "rep-1"]
     assert request.destinations[0].latitude == 19.25
     assert request.destinations[1].latitude == 19.10
-    tables["avistamientos_animal"].eq.assert_called_once_with(
-        "estado_validacion", "validado"
-    )
 
 
 def test_returns_missing_coordinates_without_calling_osrm(make_query):
@@ -84,7 +80,8 @@ def test_returns_missing_coordinates_without_calling_osrm(make_query):
                 "id": "rep-1",
                 "latitud": 19.10,
                 "longitud": -98.10,
-                "ultima_ubicacion_confirmada_id": None,
+                "ultima_latitud_confirmada": None,
+                "ultima_longitud_confirmada": None,
             },
         ]),
     }
@@ -105,6 +102,45 @@ def test_returns_missing_coordinates_without_calling_osrm(make_query):
     get_matrix.assert_not_called()
 
 
+def test_incomplete_operational_location_falls_back_to_original(make_query):
+    tables = {
+        "capacidades": make_query(
+            data=[
+                {
+                    "voluntario_id": "vol-1",
+                    "latitud": 19.01,
+                    "longitud": -98.01,
+                },
+            ]
+        ),
+        "reportes": make_query(
+            data=[
+                {
+                    "id": "rep-1",
+                    "latitud": 19.10,
+                    "longitud": -98.10,
+                    "ultima_latitud_confirmada": 19.25,
+                    "ultima_longitud_confirmada": None,
+                },
+            ]
+        ),
+    }
+    db = database(tables)
+
+    with (
+        patch.object(service, "supabase_admin", db),
+        patch.object(
+            service,
+            "get_route_matrix",
+            side_effect=lambda request: request,
+        ),
+    ):
+        request = service.calculate_dispatch_route_matrix(["vol-1"], ["rep-1"])
+
+    assert request.destinations[0].latitude == 19.10
+    assert request.destinations[0].longitude == -98.10
+
+
 @pytest.mark.parametrize(
     ("volunteer_ids", "report_ids", "message"),
     [
@@ -115,4 +151,3 @@ def test_returns_missing_coordinates_without_calling_osrm(make_query):
 def test_rejects_empty_matrix_axes(volunteer_ids, report_ids, message):
     with pytest.raises(ValueError, match=message):
         service.calculate_dispatch_route_matrix(volunteer_ids, report_ids)
-
