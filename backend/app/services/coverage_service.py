@@ -583,6 +583,54 @@ def expirar_propuestas_vencidas() -> int:
                     propuesta_id=propuesta_id,
                 )
 
+            # Notificar y promover al siguiente en la lista de espera
+            try:
+                siguiente = (
+                    supabase_admin.table("pool_interesados_reporte")
+                    .select("usuario_id, voluntario_id")
+                    .eq("reporte_id", reporte_id)
+                    .eq("estado", "en_espera")
+                    .order("posicion")
+                    .limit(1)
+                    .execute()
+                )
+                if siguiente.data:
+                    uid_sig = siguiente.data[0]["usuario_id"]
+                    vol_id_sig = siguiente.data[0]["voluntario_id"]
+
+                    # Marcar al vencido como 'vencido' en el pool
+                    vol_vencido = prop.get("voluntario_id")
+                    if vol_vencido:
+                        supabase_admin.table("pool_interesados_reporte").update(
+                            {"estado": "vencido"}
+                        ).eq("reporte_id", reporte_id).eq(
+                            "voluntario_id", vol_vencido
+                        ).execute()
+
+                    # Promover al siguiente
+                    supabase_admin.table("pool_interesados_reporte").update(
+                        {"estado": "propuesta_enviada"}
+                    ).eq("reporte_id", reporte_id).eq(
+                        "voluntario_id", vol_id_sig
+                    ).execute()
+
+                    # Push al siguiente
+                    queue_and_send_push(
+                        usuario_id=uid_sig,
+                        tipo_evento="nueva_propuesta",
+                        idempotency_key=f"reemplazo:{reporte_id}:{uid_sig}",
+                        payload={
+                            "mensaje": (
+                                "El voluntario anterior no respondió. "
+                                "Ahora eres el candidato principal para este caso."
+                            ),
+                            "reporte_id": reporte_id,
+                        },
+                        reporte_id=reporte_id,
+                    )
+            except Exception as e:
+                print(f"[WARN] Error promoviendo lista de espera para {reporte_id}: {e}")
+
     return len(propuestas_vencidas)
 
 
