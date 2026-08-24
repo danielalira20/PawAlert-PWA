@@ -1,6 +1,7 @@
 """Prepara el contrato validado que consumira el adaptador de VROOM."""
 
 import logging
+import math
 from datetime import datetime, timezone
 
 from app.config import settings
@@ -247,36 +248,216 @@ def _error_for_excluded_report(
     return DispatchPreparationErrorCode(excluded_item.reason.value)
 
 
-def _load_candidate_pairs(report_ids: list[str]) -> list[dict]:
-    pairs = []
-    for report_id in report_ids:
-        internal = matching.obtener_candidatos(
-            report_id,
-            incluir_rutas=False,
-        )["candidatos"]
-        external = coverage_service.obtener_ofrecimientos_reporte(
-            report_id,
-            incluir_rutas=False,
+def _candidate_identifier(candidate: object) -> str | None:
+    if not isinstance(candidate, dict):
+        return None
+    volunteer_id = candidate.get("voluntario_id")
+    if not isinstance(volunteer_id, str) or not volunteer_id.strip():
+        return None
+    return volunteer_id.strip()
+
+
+def _finite_number(value: object) -> float:
+    if isinstance(value, bool):
+        raise ValueError("Boolean values are not candidate numbers")
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError("Candidate number must be finite")
+    return number
+
+
+def _candidate_integer(value: object, *, minimum: int) -> int:
+    number = _finite_number(value)
+    if not number.is_integer() or number < minimum:
+        raise ValueError("Candidate integer is outside its valid range")
+    return int(number)
+
+
+def _normalize_candidate_pair(
+    candidate: object,
+    report_id: str,
+    role: str,
+    offered: bool,
+) -> dict:
+    if not isinstance(candidate, dict):
+        raise ValueError("Candidate must be an object")
+    volunteer_id = _candidate_identifier(candidate)
+    if volunteer_id is None:
+        raise ValueError("Candidate requires a volunteer id")
+    score = candidate.get("score")
+    if not isinstance(score, dict) or "total" not in score:
+        raise ValueError("Candidate requires a matching score")
+    matching_score = _finite_number(score["total"])
+    if not 0 <= matching_score <= 100:
+        raise ValueError("Candidate matching score is outside its valid range")
+    maximum_cases = _candidate_integer(
+        candidate.get("max_casos_simultaneos"),
+        minimum=1,
+    )
+    current_load = _candidate_integer(
+        candidate.get("carga_actual"),
+        minimum=0,
+    )
+    if current_load >= maximum_cases:
+        raise ValueError("Candidate has no operational capacity")
+    return {
+        **candidate,
+        "voluntario_id": volunteer_id,
+        "report_id": report_id,
+        "role": role,
+        "offered": offered,
+        "score": {**score, "total": matching_score},
+        "max_casos_simultaneos": maximum_cases,
+        "carga_actual": current_load,
+    }
+
+
+def _candidate_exclusion(
+    report_id: str,
+    candidate: object,
+) -> DispatchExcludedItem:
+    volunteer_id = _candidate_identifier(candidate)
+    if volunteer_id is None:
+        return DispatchExcludedItem(
+            scope=DispatchExclusionScope.report,
+            reason=DispatchExclusionReason.invalid_candidate_data,
+            report_id=report_id,
         )
-        for candidate in internal:
-            pairs.append(
-                {
-                    **candidate,
-                    "report_id": report_id,
-                    "role": "voluntario_interno",
-                    "offered": False,
-                }
+    return DispatchExcludedItem(
+        scope=DispatchExclusionScope.candidate_pair,
+        reason=DispatchExclusionReason.invalid_candidate_data,
+        report_id=report_id,
+        volunteer_id=volunteer_id,
+    )
+
+
+def _candidate_rows(response: object) -> list[object]:
+    if not isinstance(response, dict):
+        raise ValueError("Matching response must be an object")
+    candidates = response.get("candidatos")
+    if not isinstance(candidates, list):
+        raise ValueError("Matching response requires a candidate list")
+    return candidates
+
+
+def _normalize_report_candidates(
+    report_id: str,
+    internal_rows: list[object],
+    external_rows: list[object],
+) -> tuple[list[dict], list[DispatchExcludedItem]]:
+    pairs = []
+    excluded_items = []
+    report_is_unidentifiable = False
+    invalid_pair_ids = set()
+    sources = (
+        (internal_rows, "voluntario_interno", False),
+        (external_rows, "voluntario_externo", True),
+    )
+    for rows, role, offered in sources:
+        for candidate in rows:
+            try:
+                pairs.append(
+                    _normalize_candidate_pair(
+                        candidate,
+                        report_id,
+                        role,
+                        offered,
+                    )
+                )
+            except (TypeError, ValueError):
+                exclusion = _candidate_exclusion(report_id, candidate)
+                if exclusion.scope == DispatchExclusionScope.report:
+                    report_is_unidentifiable = True
+                else:
+                    invalid_pair_ids.add(exclusion.volunteer_id)
+                    if exclusion not in excluded_items:
+                        excluded_items.append(exclusion)
+
+    if report_is_unidentifiable:
+        return [], [
+            DispatchExcludedItem(
+                scope=DispatchExclusionScope.report,
+                reason=DispatchExclusionReason.invalid_candidate_data,
+                report_id=report_id,
             )
-        for candidate in external:
-            pairs.append(
-                {
-                    **candidate,
-                    "report_id": report_id,
-                    "role": "voluntario_externo",
-                    "offered": True,
-                }
+        ]
+
+    by_volunteer: dict[str, list[dict]] = {}
+    for pair in pairs:
+        by_volunteer.setdefault(pair["voluntario_id"], []).append(pair)
+    duplicate_ids = {
+        volunteer_id
+        for volunteer_id, volunteer_pairs in by_volunteer.items()
+        if len(volunteer_pairs) > 1
+    }
+    rejected_ids = invalid_pair_ids | duplicate_ids
+    if rejected_ids:
+        pairs = [
+            pair
+            for pair in pairs
+            if pair["voluntario_id"] not in rejected_ids
+        ]
+        for volunteer_id in sorted(rejected_ids):
+            exclusion = DispatchExcludedItem(
+                scope=DispatchExclusionScope.candidate_pair,
+                reason=DispatchExclusionReason.invalid_candidate_data,
+                report_id=report_id,
+                volunteer_id=volunteer_id,
             )
-    return pairs
+            if exclusion not in excluded_items:
+                excluded_items.append(exclusion)
+    return pairs, excluded_items
+
+
+def _load_candidate_pairs(
+    report_ids: list[str],
+) -> tuple[list[dict], list[DispatchExcludedItem]]:
+    pairs = []
+    excluded_items = []
+    for report_id in report_ids:
+        try:
+            internal_response = matching.obtener_candidatos(
+                report_id,
+                incluir_rutas=False,
+            )
+            internal = _candidate_rows(internal_response)
+            external = coverage_service.obtener_ofrecimientos_reporte(
+                report_id,
+                incluir_rutas=False,
+            )
+            if not isinstance(external, list):
+                raise ValueError("External offers require a list")
+        except ValueError:
+            excluded_items.append(
+                DispatchExcludedItem(
+                    scope=DispatchExclusionScope.report,
+                    reason=DispatchExclusionReason.invalid_candidate_data,
+                    report_id=report_id,
+                )
+            )
+            continue
+        except Exception:
+            logger.exception(
+                "No se pudieron cargar candidatos para el reporte %s",
+                report_id,
+            )
+            excluded_items.append(
+                DispatchExcludedItem(
+                    scope=DispatchExclusionScope.report,
+                    reason=DispatchExclusionReason.data_source_error,
+                    report_id=report_id,
+                )
+            )
+            continue
+
+        report_pairs, report_exclusions = _normalize_report_candidates(
+            report_id,
+            internal,
+            external,
+        )
+        pairs.extend(report_pairs)
+        excluded_items.extend(report_exclusions)
+    return pairs, excluded_items
 
 
 def _load_capacities(volunteer_ids: list[str]) -> dict[str, dict]:
@@ -650,7 +831,32 @@ def prepare_dispatch_optimization(
                 excluded_items,
             )
         operational_report_ids = [job.report_id for job in jobs]
-        pairs = _load_candidate_pairs(operational_report_ids)
+        pairs, candidate_exclusions = _load_candidate_pairs(
+            operational_report_ids
+        )
+        excluded_items.extend(candidate_exclusions)
+        candidate_excluded_report_ids = {
+            item.report_id
+            for item in candidate_exclusions
+            if item.scope == DispatchExclusionScope.report
+        }
+        if candidate_excluded_report_ids:
+            jobs = [
+                job
+                for job in jobs
+                if job.report_id not in candidate_excluded_report_ids
+            ]
+            pairs = [
+                pair
+                for pair in pairs
+                if pair.get("report_id") not in candidate_excluded_report_ids
+            ]
+        if not jobs:
+            return _unavailable(
+                _error_for_excluded_report(candidate_exclusions[0]),
+                prepared_at,
+                excluded_items,
+            )
         jobs, pairs, reports_without_candidates = (
             _exclude_jobs_without_candidates(jobs, pairs)
         )

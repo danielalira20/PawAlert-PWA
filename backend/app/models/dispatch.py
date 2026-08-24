@@ -376,6 +376,7 @@ class DispatchExclusionReason(str, Enum):
     no_candidates = "no_candidates"
     missing_coordinates = "missing_coordinates"
     invalid_candidate_data = "invalid_candidate_data"
+    data_source_error = "data_source_error"
     no_route = "no_route"
 
 

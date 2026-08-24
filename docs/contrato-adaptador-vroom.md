@@ -65,9 +65,15 @@ devuelve `error_code=no_viable_routes`, distinto de `routing_unavailable`.
 sin contaminar el request. Cada elemento indica `scope` (`report`, `volunteer`
 o `candidate_pair`), `reason` y los identificadores correspondientes. Entre
 las razones admitidas estan reporte no operativo, Urgency ausente, falta de
-candidatos o coordenadas, datos invalidos y ruta inexistente. Un resultado
-`ready` puede incluir exclusiones siempre que conserve al menos un trabajo y
-una pareja validos.
+candidatos o coordenadas, datos invalidos, fallo de fuente y ruta inexistente.
+Un resultado `ready` puede incluir exclusiones siempre que conserve al menos
+un trabajo y una pareja validos.
+
+Un registro candidato identificable pero malformado se excluye como
+`candidate_pair/invalid_candidate_data`. Si no contiene un `volunteer_id`
+auditable, se excluye el reporte completo con la misma razon. Una excepcion
+al consultar matching u ofrecimientos se registra como
+`report/data_source_error`; no se confunde con una lista vacia valida.
 
 ## Parejas candidatas
 

@@ -293,6 +293,190 @@ def test_excludes_invalid_reports_without_losing_valid_batch(make_query):
     calculate_matrix.assert_called_once_with(["vol-1"], ["rep-valid"])
 
 
+def test_excludes_malformed_pair_without_losing_report(make_query):
+    reports = [report("rep-1")]
+    capacities = [capacity("vol-valid")]
+    route_matrix = matrix(["vol-valid"], ["rep-1"])
+    with (
+        patch.object(
+            service,
+            "supabase_admin",
+            database(make_query, reports, capacities),
+        ),
+        patch.object(
+            service.matching,
+            "obtener_candidatos",
+            return_value={
+                "candidatos": [
+                    candidate("vol-valid", 80),
+                    candidate("vol-invalid", float("nan")),
+                ]
+            },
+        ),
+        patch.object(
+            service.coverage_service,
+            "obtener_ofrecimientos_reporte",
+            return_value=[],
+        ),
+        patch.object(
+            service,
+            "calculate_dispatch_route_matrix",
+            return_value=route_matrix,
+        ),
+    ):
+        result = service.prepare_dispatch_optimization(["rep-1"])
+
+    assert result.status == DispatchPreparationStatus.ready
+    assert result.request is not None
+    assert [
+        (item.report_id, item.volunteer_id)
+        for item in result.request.candidates
+    ] == [("rep-1", "vol-valid")]
+    assert [
+        (item.scope, item.reason, item.report_id, item.volunteer_id)
+        for item in result.excluded_items
+    ] == [
+        (
+            DispatchExclusionScope.candidate_pair,
+            DispatchExclusionReason.invalid_candidate_data,
+            "rep-1",
+            "vol-invalid",
+        )
+    ]
+
+
+def test_rejects_all_rows_for_an_ambiguous_candidate_identity():
+    valid = candidate("vol-ambiguous", 80)
+    malformed = candidate("vol-ambiguous", float("inf"))
+
+    pairs, exclusions = service._normalize_report_candidates(
+        "rep-1",
+        [valid, malformed],
+        [],
+    )
+
+    assert pairs == []
+    assert [
+        (item.scope, item.reason, item.report_id, item.volunteer_id)
+        for item in exclusions
+    ] == [
+        (
+            DispatchExclusionScope.candidate_pair,
+            DispatchExclusionReason.invalid_candidate_data,
+            "rep-1",
+            "vol-ambiguous",
+        )
+    ]
+
+
+def test_excludes_report_when_candidate_identity_is_missing(make_query):
+    reports = [report("rep-valid"), report("rep-unsafe")]
+    capacities = [capacity("vol-valid")]
+    internal_by_report = {
+        "rep-valid": [candidate("vol-valid", 80)],
+        "rep-unsafe": [
+            {
+                "score": {"total": 75},
+                "max_casos_simultaneos": 2,
+                "carga_actual": 0,
+            }
+        ],
+    }
+    route_matrix = matrix(["vol-valid"], ["rep-valid"])
+    with (
+        patch.object(
+            service,
+            "supabase_admin",
+            database(make_query, reports, capacities),
+        ),
+        patch.object(
+            service.matching,
+            "obtener_candidatos",
+            side_effect=lambda report_id, **_kwargs: {
+                "candidatos": internal_by_report[report_id]
+            },
+        ),
+        patch.object(
+            service.coverage_service,
+            "obtener_ofrecimientos_reporte",
+            return_value=[],
+        ),
+        patch.object(
+            service,
+            "calculate_dispatch_route_matrix",
+            return_value=route_matrix,
+        ),
+    ):
+        result = service.prepare_dispatch_optimization(
+            ["rep-valid", "rep-unsafe"]
+        )
+
+    assert result.status == DispatchPreparationStatus.ready
+    assert result.request is not None
+    assert [job.report_id for job in result.request.jobs] == ["rep-valid"]
+    assert [
+        (item.scope, item.reason, item.report_id)
+        for item in result.excluded_items
+    ] == [
+        (
+            DispatchExclusionScope.report,
+            DispatchExclusionReason.invalid_candidate_data,
+            "rep-unsafe",
+        )
+    ]
+
+
+def test_isolates_candidate_source_failure_by_report(make_query):
+    reports = [report("rep-valid"), report("rep-error")]
+    capacities = [capacity("vol-valid")]
+    route_matrix = matrix(["vol-valid"], ["rep-valid"])
+
+    def internal_candidates(report_id: str, **_kwargs):
+        if report_id == "rep-error":
+            raise RuntimeError("fallo simulado")
+        return {"candidatos": [candidate("vol-valid", 80)]}
+
+    with (
+        patch.object(
+            service,
+            "supabase_admin",
+            database(make_query, reports, capacities),
+        ),
+        patch.object(
+            service.matching,
+            "obtener_candidatos",
+            side_effect=internal_candidates,
+        ),
+        patch.object(
+            service.coverage_service,
+            "obtener_ofrecimientos_reporte",
+            return_value=[],
+        ),
+        patch.object(
+            service,
+            "calculate_dispatch_route_matrix",
+            return_value=route_matrix,
+        ),
+    ):
+        result = service.prepare_dispatch_optimization(
+            ["rep-valid", "rep-error"]
+        )
+
+    assert result.status == DispatchPreparationStatus.ready
+    assert result.request is not None
+    assert [job.report_id for job in result.request.jobs] == ["rep-valid"]
+    assert [
+        (item.scope, item.reason, item.report_id)
+        for item in result.excluded_items
+    ] == [
+        (
+            DispatchExclusionScope.report,
+            DispatchExclusionReason.data_source_error,
+            "rep-error",
+        )
+    ]
+
+
 def test_rejects_dispatch_without_candidates(make_query):
     db = database(make_query, [report("rep-1")], [])
     with (
