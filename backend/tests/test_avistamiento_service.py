@@ -516,9 +516,14 @@ def test_confirmar_ubicacion_detecta_posible_duplicado(monkeypatch, make_query):
         }
     ]
     # Nunca archiva ni fusiona: la única escritura sobre reportes es la de
-    # ultima_ubicacion_confirmada_id que ya hacia _confirmar_avistamiento.
+    # ultima_ubicacion_confirmada_id (+ coordenadas) que ya hacia
+    # _confirmar_avistamiento.
     reportes_mock.update.assert_called_once_with(
-        {"ultima_ubicacion_confirmada_id": "av-1"}
+        {
+            "ultima_ubicacion_confirmada_id": "av-1",
+            "ultima_latitud_confirmada": 19.0,
+            "ultima_longitud_confirmada": -98.0,
+        }
     )
 
 
@@ -563,7 +568,11 @@ def test_confirmar_ubicacion_duplicados_falla_no_bloquea(monkeypatch, make_query
 
     assert resultado.estado_validacion == "validado"
     reportes_mock.update.assert_called_once_with(
-        {"ultima_ubicacion_confirmada_id": "av-1"}
+        {
+            "ultima_ubicacion_confirmada_id": "av-1",
+            "ultima_latitud_confirmada": 19.0,
+            "ultima_longitud_confirmada": -98.0,
+        }
     )
     eventos = [
         llamada.args[0]["tipo_evento"] for llamada in historial_mock.insert.call_args_list
@@ -614,7 +623,11 @@ def test_confirmar_ubicacion_urgency_falla_no_bloquea(monkeypatch, make_query):
 
     assert resultado.estado_validacion == "validado"
     reportes_mock.update.assert_called_once_with(
-        {"ultima_ubicacion_confirmada_id": "av-1"}
+        {
+            "ultima_ubicacion_confirmada_id": "av-1",
+            "ultima_latitud_confirmada": 19.0,
+            "ultima_longitud_confirmada": -98.0,
+        }
     )
     eventos = [
         llamada.args[0]["tipo_evento"] for llamada in historial_mock.insert.call_args_list
