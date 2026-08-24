@@ -276,8 +276,6 @@ def _load_candidate_pairs(report_ids: list[str]) -> list[dict]:
                     "offered": True,
                 }
             )
-    if not pairs:
-        raise _PreparationFailure(DispatchPreparationErrorCode.no_candidates)
     return pairs
 
 
@@ -291,27 +289,116 @@ def _load_capacities(volunteer_ids: list[str]) -> dict[str, dict]:
         .in_("voluntario_id", volunteer_ids)
         .execute()
     )
-    capacities = {
+    return {
         row["voluntario_id"]: row
         for row in (result.data or [])
         if row.get("voluntario_id")
     }
-    if any(
-        volunteer_id not in capacities
-        or capacities[volunteer_id].get("latitud") is None
-        or capacities[volunteer_id].get("longitud") is None
-        for volunteer_id in volunteer_ids
+
+
+def _volunteer_location(
+    volunteer_id: str,
+    capacity: dict | None,
+) -> RoutingPoint:
+    if (
+        capacity is None
+        or capacity.get("latitud") is None
+        or capacity.get("longitud") is None
     ):
         raise _PreparationFailure(
             DispatchPreparationErrorCode.missing_coordinates
         )
-    return capacities
+    try:
+        return RoutingPoint(
+            id=volunteer_id,
+            latitude=float(capacity["latitud"]),
+            longitude=float(capacity["longitud"]),
+        )
+    except (KeyError, TypeError, ValueError):
+        raise _PreparationFailure(
+            DispatchPreparationErrorCode.missing_coordinates
+        ) from None
 
 
-def _build_volunteers(
+def _build_volunteer(
+    volunteer_id: str,
+    volunteer_pairs: list[dict],
+    capacity: dict | None,
+) -> DispatchVolunteer:
+    location = _volunteer_location(volunteer_id, capacity)
+    roles = {pair.get("role") for pair in volunteer_pairs}
+    if len(roles) != 1:
+        raise _PreparationFailure(
+            DispatchPreparationErrorCode.invalid_candidate_data
+        )
+    role = roles.pop()
+    if role not in ("voluntario_interno", "voluntario_externo"):
+        raise _PreparationFailure(
+            DispatchPreparationErrorCode.invalid_candidate_data
+        )
+    offered_report_ids = _unique_ids(
+        [
+            pair["report_id"]
+            for pair in volunteer_pairs
+            if pair.get("offered")
+        ]
+    )
+    try:
+        return DispatchVolunteer(
+            volunteer_id=volunteer_id,
+            location=location,
+            matching_score=max(
+                float(pair["score"]["total"])
+                for pair in volunteer_pairs
+            ),
+            capacity=min(
+                int(pair.get("max_casos_simultaneos") or 0)
+                for pair in volunteer_pairs
+            ),
+            current_load=max(
+                int(pair.get("carga_actual") or 0)
+                for pair in volunteer_pairs
+            ),
+            skills=_volunteer_skills(capacity or {}),
+            role=role,
+            offered_report_ids=offered_report_ids,
+        )
+    except (KeyError, TypeError, ValueError):
+        raise _PreparationFailure(
+            DispatchPreparationErrorCode.invalid_candidate_data
+        ) from None
+
+
+def _exclude_volunteer(
+    volunteer_id: str,
+    code: DispatchPreparationErrorCode,
+) -> DispatchExcludedItem:
+    reasons = {
+        DispatchPreparationErrorCode.missing_coordinates: (
+            DispatchExclusionReason.missing_coordinates
+        ),
+        DispatchPreparationErrorCode.invalid_candidate_data: (
+            DispatchExclusionReason.invalid_candidate_data
+        ),
+    }
+    reason = reasons.get(code)
+    if reason is None:
+        raise _PreparationFailure(code)
+    return DispatchExcludedItem(
+        scope=DispatchExclusionScope.volunteer,
+        reason=reason,
+        volunteer_id=volunteer_id,
+    )
+
+
+def _prepare_volunteers(
     pairs: list[dict],
     capacities: dict[str, dict],
-) -> list[DispatchVolunteer]:
+) -> tuple[
+    list[DispatchVolunteer],
+    list[dict],
+    list[DispatchExcludedItem],
+]:
     by_volunteer: dict[str, list[dict]] = {}
     for pair in pairs:
         volunteer_id = str(pair.get("voluntario_id") or "")
@@ -322,57 +409,56 @@ def _build_volunteers(
         by_volunteer.setdefault(volunteer_id, []).append(pair)
 
     volunteers = []
+    excluded_items = []
     for volunteer_id, volunteer_pairs in by_volunteer.items():
-        first = volunteer_pairs[0]
-        roles = {pair.get("role") for pair in volunteer_pairs}
-        if len(roles) != 1:
-            raise _PreparationFailure(
-                DispatchPreparationErrorCode.invalid_candidate_data
-            )
-        role = roles.pop()
-        if role not in ("voluntario_interno", "voluntario_externo"):
-            raise _PreparationFailure(
-                DispatchPreparationErrorCode.invalid_candidate_data
-            )
-        capacity = capacities[volunteer_id]
-        offered_report_ids = _unique_ids(
-            [
-                pair["report_id"]
-                for pair in volunteer_pairs
-                if pair.get("offered")
-            ]
-        )
         try:
             volunteers.append(
-                DispatchVolunteer(
-                    volunteer_id=volunteer_id,
-                    location=RoutingPoint(
-                        id=volunteer_id,
-                        latitude=float(capacity["latitud"]),
-                        longitude=float(capacity["longitud"]),
-                    ),
-                    matching_score=max(
-                        float(pair["score"]["total"])
-                        for pair in volunteer_pairs
-                    ),
-                    capacity=min(
-                        int(pair.get("max_casos_simultaneos") or 0)
-                        for pair in volunteer_pairs
-                    ),
-                    current_load=max(
-                        int(pair.get("carga_actual") or 0)
-                        for pair in volunteer_pairs
-                    ),
-                    skills=_volunteer_skills(capacity),
-                    role=role,
-                    offered_report_ids=offered_report_ids,
+                _build_volunteer(
+                    volunteer_id,
+                    volunteer_pairs,
+                    capacities.get(volunteer_id),
                 )
             )
-        except (KeyError, TypeError, ValueError):
-            raise _PreparationFailure(
-                DispatchPreparationErrorCode.invalid_candidate_data
-            ) from None
-    return volunteers
+        except _PreparationFailure as error:
+            excluded_items.append(_exclude_volunteer(volunteer_id, error.code))
+
+    valid_volunteer_ids = {
+        volunteer.volunteer_id for volunteer in volunteers
+    }
+    valid_pairs = [
+        pair
+        for pair in pairs
+        if str(pair.get("voluntario_id") or "") in valid_volunteer_ids
+    ]
+    return volunteers, valid_pairs, excluded_items
+
+
+def _exclude_jobs_without_candidates(
+    jobs: list[DispatchJob],
+    pairs: list[dict],
+) -> tuple[list[DispatchJob], list[dict], list[DispatchExcludedItem]]:
+    candidate_report_ids = {
+        str(pair.get("report_id") or "")
+        for pair in pairs
+        if pair.get("voluntario_id")
+    }
+    retained_jobs = [
+        job for job in jobs if job.report_id in candidate_report_ids
+    ]
+    retained_report_ids = {job.report_id for job in retained_jobs}
+    retained_pairs = [
+        pair for pair in pairs if pair.get("report_id") in retained_report_ids
+    ]
+    excluded_items = [
+        DispatchExcludedItem(
+            scope=DispatchExclusionScope.report,
+            reason=DispatchExclusionReason.no_candidates,
+            report_id=job.report_id,
+        )
+        for job in jobs
+        if job.report_id not in candidate_report_ids
+    ]
+    return retained_jobs, retained_pairs, excluded_items
 
 
 def _route_tier(
@@ -481,6 +567,16 @@ def prepare_dispatch_optimization(
             )
         operational_report_ids = [job.report_id for job in jobs]
         pairs = _load_candidate_pairs(operational_report_ids)
+        jobs, pairs, reports_without_candidates = (
+            _exclude_jobs_without_candidates(jobs, pairs)
+        )
+        excluded_items.extend(reports_without_candidates)
+        if not jobs:
+            return _unavailable(
+                DispatchPreparationErrorCode.no_candidates,
+                prepared_at,
+                excluded_items,
+            )
         volunteer_ids = _unique_ids(
             [str(pair.get("voluntario_id") or "") for pair in pairs]
         )
@@ -489,7 +585,31 @@ def prepare_dispatch_optimization(
                 DispatchPreparationErrorCode.invalid_candidate_data
             )
         capacities = _load_capacities(volunteer_ids)
-        volunteers = _build_volunteers(pairs, capacities)
+        volunteers, pairs, excluded_volunteers = _prepare_volunteers(
+            pairs,
+            capacities,
+        )
+        excluded_items.extend(excluded_volunteers)
+        if not volunteers:
+            error_code = (
+                DispatchPreparationErrorCode(
+                    excluded_volunteers[0].reason.value
+                )
+                if excluded_volunteers
+                else DispatchPreparationErrorCode.invalid_candidate_data
+            )
+            return _unavailable(error_code, prepared_at, excluded_items)
+        jobs, pairs, reports_without_valid_candidates = (
+            _exclude_jobs_without_candidates(jobs, pairs)
+        )
+        excluded_items.extend(reports_without_valid_candidates)
+        if not jobs:
+            return _unavailable(
+                DispatchPreparationErrorCode.no_candidates,
+                prepared_at,
+                excluded_items,
+            )
+        operational_report_ids = [job.report_id for job in jobs]
         matrix = calculate_dispatch_route_matrix(
             [volunteer.volunteer_id for volunteer in volunteers],
             operational_report_ids,

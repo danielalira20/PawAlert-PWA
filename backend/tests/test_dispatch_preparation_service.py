@@ -312,6 +312,16 @@ def test_rejects_dispatch_without_candidates(make_query):
         result = service.prepare_dispatch_optimization(["rep-1"])
 
     assert result.error_code == DispatchPreparationErrorCode.no_candidates
+    assert [
+        (item.scope, item.reason, item.report_id)
+        for item in result.excluded_items
+    ] == [
+        (
+            DispatchExclusionScope.report,
+            DispatchExclusionReason.no_candidates,
+            "rep-1",
+        )
+    ]
     route.assert_not_called()
 
 
@@ -337,6 +347,123 @@ def test_rejects_candidate_without_coordinates(make_query):
         result = service.prepare_dispatch_optimization(["rep-1"])
 
     assert result.error_code == DispatchPreparationErrorCode.missing_coordinates
+    assert [
+        (item.scope, item.reason, item.volunteer_id)
+        for item in result.excluded_items
+    ] == [
+        (
+            DispatchExclusionScope.volunteer,
+            DispatchExclusionReason.missing_coordinates,
+            "vol-1",
+        )
+    ]
+
+
+def test_excludes_invalid_volunteer_and_orphaned_report(make_query):
+    reports = [report("rep-valid"), report("rep-orphaned")]
+    capacities = [
+        capacity("vol-valid"),
+        capacity("vol-invalid", latitud=None),
+    ]
+    internal_by_report = {
+        "rep-valid": [
+            candidate("vol-valid", 85),
+            candidate("vol-invalid", 70),
+        ],
+        "rep-orphaned": [candidate("vol-invalid", 75)],
+    }
+    route_matrix = matrix(["vol-valid"], ["rep-valid"])
+    with (
+        patch.object(
+            service,
+            "supabase_admin",
+            database(make_query, reports, capacities),
+        ),
+        patch.object(
+            service.matching,
+            "obtener_candidatos",
+            side_effect=lambda report_id, **_kwargs: {
+                "candidatos": internal_by_report[report_id]
+            },
+        ),
+        patch.object(
+            service.coverage_service,
+            "obtener_ofrecimientos_reporte",
+            return_value=[],
+        ),
+        patch.object(
+            service,
+            "calculate_dispatch_route_matrix",
+            return_value=route_matrix,
+        ) as calculate_matrix,
+    ):
+        result = service.prepare_dispatch_optimization(
+            ["rep-valid", "rep-orphaned"]
+        )
+
+    assert result.status == DispatchPreparationStatus.ready
+    assert result.request is not None
+    assert [job.report_id for job in result.request.jobs] == ["rep-valid"]
+    assert [
+        (item.scope, item.reason, item.report_id, item.volunteer_id)
+        for item in result.excluded_items
+    ] == [
+        (
+            DispatchExclusionScope.volunteer,
+            DispatchExclusionReason.missing_coordinates,
+            None,
+            "vol-invalid",
+        ),
+        (
+            DispatchExclusionScope.report,
+            DispatchExclusionReason.no_candidates,
+            "rep-orphaned",
+            None,
+        ),
+    ]
+    assert [
+        volunteer.volunteer_id for volunteer in result.request.volunteers
+    ] == ["vol-valid"]
+    assert [
+        (item.report_id, item.volunteer_id)
+        for item in result.request.candidates
+    ] == [("rep-valid", "vol-valid")]
+    calculate_matrix.assert_called_once_with(["vol-valid"], ["rep-valid"])
+
+
+def test_isolates_volunteer_with_inconsistent_roles():
+    pairs = [
+        {
+            **candidate("vol-mixed", 80),
+            "report_id": "rep-1",
+            "role": "voluntario_interno",
+            "offered": False,
+        },
+        {
+            **candidate("vol-mixed", 75),
+            "report_id": "rep-2",
+            "role": "voluntario_externo",
+            "offered": True,
+        },
+    ]
+
+    volunteers, valid_pairs, exclusions = service._prepare_volunteers(
+        pairs,
+        {"vol-mixed": capacity("vol-mixed")},
+    )
+
+    assert volunteers == []
+    assert valid_pairs == []
+    assert [
+        (item.scope, item.reason, item.volunteer_id)
+        for item in exclusions
+    ] == [
+        (
+            DispatchExclusionScope.volunteer,
+            DispatchExclusionReason.invalid_candidate_data,
+            "vol-mixed",
+        )
+    ]
 
 
 def test_rejects_unavailable_route_matrix(make_query):
