@@ -4,6 +4,7 @@ from typing import Dict, List, Any
 from collections import defaultdict
 from app.db.supabase import supabase_admin
 from app.services.urgency_service import evaluate_report_urgency, UrgencyCalculation
+from app.services.report_activation_service import reanudar_activacion_urgency_pendiente
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +69,7 @@ def run_due_urgency_recalculations(limit: int = 100) -> Dict[str, int]:
             for reporte_id in sublote:
                 try:
                     result = evaluate_report_urgency(reporte_id)
+                    reanudar_activacion_urgency_pendiente(reporte_id)
                     clasificacion = _clasificar(result)
                     contadores[clasificacion] += 1
                 except ValueError as ve:

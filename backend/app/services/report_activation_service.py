@@ -160,6 +160,7 @@ def activar_reporte(
     moderacion_aprobada_por: str | None = None,
     moderacion_notas: str | None = None,
     moderacion_aprobada_automaticamente: bool = False,
+    urgency_inicial_calculada: bool = False,
 ) -> dict:
     """Activa un reporte validado y ejecuta sus efectos operativos.
 
@@ -167,6 +168,61 @@ def activar_reporte(
     calcular candidatos por separado. Las capas de validacion deciden si esta
     funcion se invoca; este servicio no interpreta sus senales.
     """
+    razones_finales = razones_validacion or [
+        {"codigo": "validacion_inicial_aprobada", "resultado": "aprobado"}
+    ]
+
+    if not urgency_inicial_calculada:
+        ahora_preparacion = datetime.now(timezone.utc).isoformat()
+        preparacion = {
+            "estado_validacion_reporte": "urgency_pendiente",
+            "validacion_completada_at": ahora_preparacion,
+            "validacion_revision_expira_at": None,
+            "razones_validacion": razones_finales,
+            "estado_cobertura": None,
+            "asociacion_asignada_id": None,
+            "activado_at": None,
+            "urgency_excluido": False,
+            "urgency_razones_exclusion": [],
+            "urgency_proximo_recalculo_at": ahora_preparacion,
+        }
+        if moderacion_aprobada_por or moderacion_aprobada_automaticamente:
+            preparacion.update(
+                {
+                    "estado_moderacion": "aprobado",
+                    "moderacion_revisada_por": moderacion_aprobada_por,
+                    "moderacion_notas": moderacion_notas,
+                    "moderacion_actualizada_at": ahora_preparacion,
+                    "phash_alerta": False,
+                }
+            )
+        actualizacion_previa = (
+            supabase.table("reportes")
+            .update(preparacion)
+            .eq("id", reporte_id)
+            .eq("estado_validacion_reporte", estado_validacion_esperado)
+            .execute()
+        )
+        if not actualizacion_previa.data:
+            raise HTTPException(
+                status_code=409,
+                detail="El reporte ya no esta disponible para calcular urgencia",
+            )
+
+        try:
+            from app.services.urgency_service import evaluate_report_urgency
+
+            evaluate_report_urgency(reporte_id)
+        except Exception as error:
+            _registrar_historial(
+                reporte_id,
+                "urgency_inicial_fallida",
+                "El reporte quedo detenido hasta obtener su urgencia inicial.",
+                {"error": str(error)},
+            )
+            return {"estado": "urgency_pendiente", "asociacion": None}
+
+    estado_validacion_esperado = "urgency_pendiente"
     asociacion = None
     if latitud is not None and longitud is not None:
         asociacion = asignar_asociacion(
@@ -231,12 +287,7 @@ def activar_reporte(
             "validacion_completada_at": ahora,
             "activado_at": ahora,
             "validacion_revision_expira_at": None,
-            "razones_validacion": razones_validacion or [
-                {
-                    "codigo": "validacion_inicial_aprobada",
-                    "resultado": "aprobado",
-                }
-            ],
+            "razones_validacion": razones_finales,
             "urgency_excluido": False,
             "urgency_razones_exclusion": [],
         }
@@ -280,32 +331,6 @@ def activar_reporte(
                 .execute()
             )
         raise
-
-    try:
-        from app.services.urgency_service import evaluate_report_urgency
-
-        evaluate_report_urgency(reporte_id)
-    except Exception as error:
-        print(
-            f"[WARN] No se pudo calcular la urgencia inicial del reporte "
-            f"{reporte_id}: {error}"
-        )
-        # Sin esto, urgency_proximo_recalculo_at se queda en NULL y el
-        # scheduler nunca lo reclama (su filtro es "<= now()", que en SQL
-        # nunca hace match contra NULL): el reporte quedaria sin score para
-        # siempre en vez de solo hasta el siguiente recalculo.
-        (
-            supabase.table("reportes")
-            .update({"urgency_proximo_recalculo_at": ahora})
-            .eq("id", reporte_id)
-            .execute()
-        )
-        _registrar_historial(
-            reporte_id,
-            "urgency_inicial_fallida",
-            "No se pudo calcular la urgencia inicial al activar el reporte.",
-            {"error": str(error)},
-        )
 
     _registrar_historial(
         reporte_id,
@@ -422,6 +447,40 @@ def activar_reporte(
         "estado": "asignado",
         "asociacion": asociacion,
     }
+
+
+def reanudar_activacion_urgency_pendiente(reporte_id: str) -> dict | None:
+    """Completa la activacion tras un recalculo exitoso del cron."""
+    consulta = (
+        supabase_admin.table("reportes")
+        .select(
+            "id, latitud, longitud, municipio, estado_validacion_reporte, "
+            "razones_validacion, animal(tipo_animal_catalogo(clave), condicion_catalogo(clave))"
+        )
+        .eq("id", reporte_id)
+        .limit(1)
+        .execute()
+    )
+    if not consulta.data:
+        return None
+    reporte = consulta.data[0]
+    if reporte.get("estado_validacion_reporte") != "urgency_pendiente":
+        return None
+    especies, condicion_mas_grave, tipo_animal_mas_grave = (
+        _contexto_animales_revision(reporte)
+    )
+    return activar_reporte(
+        reporte_id=reporte_id,
+        latitud=reporte.get("latitud"),
+        longitud=reporte.get("longitud"),
+        especies=especies,
+        condicion_mas_grave=condicion_mas_grave,
+        tipo_animal_mas_grave=tipo_animal_mas_grave,
+        municipio=reporte.get("municipio"),
+        estado_validacion_esperado="urgency_pendiente",
+        razones_validacion=reporte.get("razones_validacion") or [],
+        urgency_inicial_calculada=True,
+    )
 
 
 def _cargar_contexto_revision(reporte_id: str) -> dict:
