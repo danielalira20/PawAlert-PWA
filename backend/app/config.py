@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     osrm_base_url: str = "https://router.project-osrm.org"
     osrm_timeout_seconds: float = 8.0
     osrm_max_coordinates: int = 100
+    vroom_base_url: str = ""
+    vroom_timeout_seconds: float = 10.0
     clip_validation_enabled: bool = False
     huggingface_token: str = ""
     clip_endpoint_url: str = ""
