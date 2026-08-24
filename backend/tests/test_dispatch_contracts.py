@@ -4,10 +4,19 @@ import pytest
 from pydantic import ValidationError
 
 from app.models.dispatch import (
+    CandidateRouteTier,
     MATCHING_WEIGHTS,
     ConfirmedReportLocation,
+    DispatchAssignment,
+    DispatchExcludedItem,
+    DispatchExclusionReason,
+    DispatchExclusionScope,
     DispatchPreparationStatus,
     DispatchPreparationResult,
+    DispatchCandidate,
+    DispatchOptimizationPass,
+    DispatchOptimizationResult,
+    DispatchRoutingPolicy,
     DispatchVolunteer,
     LocationSource,
     ObservedMobility,
@@ -84,6 +93,77 @@ def test_external_volunteer_requires_an_explicit_offer():
             capacity=2,
             current_load=0,
             role="voluntario_externo",
+        )
+
+
+def test_dispatch_routing_policy_rejects_overlapping_windows():
+    with pytest.raises(ValidationError, match="greater than"):
+        DispatchRoutingPolicy(
+            candidate_window_minutes=30,
+            secondary_max_eta_minutes=30,
+        )
+
+
+def test_dispatch_candidate_requires_explicit_route_classification():
+    candidate = DispatchCandidate(
+        report_id="rep-1",
+        volunteer_id="vol-1",
+        matching_score=80,
+        offered=False,
+        route_tier=CandidateRouteTier.primary,
+        automatic_eligible=True,
+    )
+
+    assert candidate.route_tier == CandidateRouteTier.primary
+    assert candidate.automatic_eligible is True
+
+
+def test_manual_only_assignment_is_rejected():
+    with pytest.raises(ValidationError, match="Manual-only"):
+        DispatchAssignment(
+            report_id="rep-1",
+            volunteer_id="vol-1",
+            arrival_seconds=1900,
+            distance_meters=12000,
+            route_tier=CandidateRouteTier.manual_only,
+        )
+
+
+def test_expanded_result_requires_a_secondary_assignment():
+    result = DispatchOptimizationResult(
+        assignments=[
+            DispatchAssignment(
+                report_id="rep-1",
+                volunteer_id="vol-1",
+                arrival_seconds=900,
+                distance_meters=6000,
+                route_tier=CandidateRouteTier.secondary,
+            )
+        ],
+        source="vroom",
+        calculated_at=NOW,
+        optimization_pass=DispatchOptimizationPass.expanded,
+        used_secondary=True,
+    )
+
+    assert result.used_secondary is True
+
+
+def test_candidate_pair_exclusion_requires_both_identifiers():
+    exclusion = DispatchExcludedItem(
+        scope=DispatchExclusionScope.candidate_pair,
+        reason=DispatchExclusionReason.no_route,
+        report_id="rep-1",
+        volunteer_id="vol-1",
+    )
+
+    assert exclusion.reason == DispatchExclusionReason.no_route
+
+    with pytest.raises(ValidationError, match="report and volunteer"):
+        DispatchExcludedItem(
+            scope=DispatchExclusionScope.candidate_pair,
+            reason=DispatchExclusionReason.no_route,
+            report_id="rep-1",
         )
 
 
