@@ -496,6 +496,18 @@ class CapacidadesDraftRequest(BaseModel):
     datos: CapacidadesRequest = Field(default_factory=CapacidadesRequest)
 
 
+class PostulacionExternaDraftRequest(BaseModel):
+    """Borrador temporal de la postulación de casa temporal (voluntario externo).
+
+    No incluye evidencia multimedia (foto/video): esas URIs son locales al
+    dispositivo/sesión y no sobreviven una recarga de página.
+    """
+
+    version: int = Field(default=1, ge=1, le=1)
+    paso: int = Field(default=1, ge=1, le=4)
+    datos: dict = Field(default_factory=dict)
+
+
 class DisponibilidadOperativaRequest(BaseModel):
     """Control mutable del pool, separado del formulario de capacidades."""
 

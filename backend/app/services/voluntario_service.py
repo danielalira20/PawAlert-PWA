@@ -774,6 +774,70 @@ async def eliminar_borrador_capacidades(usuario_id: str, contexto: str) -> dict:
     return {"mensaje": "Borrador eliminado"}
 
 
+# ---------------------------------------------------------------------------
+# B3 — Postulación de voluntario externo (casa temporal)
+# ---------------------------------------------------------------------------
+
+POSTULACION_EXTERNA_DRAFT_TTL_DAYS = 30
+_FORMULARIO_POSTULACION_EXTERNA = "postulacion_externa"
+
+
+async def obtener_borrador_postulacion_externa(usuario_id: str) -> dict:
+    supabase_admin.rpc("purgar_borradores_formulario_vencidos").execute()
+    resultado = supabase_admin.table("borradores_formulario").select(
+        "version, datos, updated_at, expires_at"
+    ).eq("usuario_id", usuario_id).eq(
+        "formulario", _FORMULARIO_POSTULACION_EXTERNA
+    ).limit(1).execute()
+
+    if not resultado.data:
+        return {"borrador": None}
+
+    fila = resultado.data[0]
+    expires_at = _fecha_utc(fila.get("expires_at"))
+    if expires_at is None or expires_at <= datetime.now(timezone.utc):
+        supabase_admin.table("borradores_formulario").delete().eq(
+            "usuario_id", usuario_id
+        ).eq("formulario", _FORMULARIO_POSTULACION_EXTERNA).execute()
+        return {"borrador": None}
+
+    return {
+        "borrador": fila.get("datos") or {},
+        "version": fila.get("version", 1),
+        "updated_at": fila.get("updated_at"),
+        "expires_at": fila.get("expires_at"),
+    }
+
+
+async def guardar_borrador_postulacion_externa(usuario_id: str, datos: dict) -> dict:
+    ahora = datetime.now(timezone.utc)
+    expires_at = ahora + timedelta(days=POSTULACION_EXTERNA_DRAFT_TTL_DAYS)
+    payload = {
+        "usuario_id": usuario_id,
+        "formulario": _FORMULARIO_POSTULACION_EXTERNA,
+        "version": datos.get("version", 1),
+        "datos": datos,
+        "expires_at": expires_at.isoformat(),
+        "updated_at": ahora.isoformat(),
+    }
+    supabase_admin.table("borradores_formulario").upsert(
+        payload,
+        on_conflict="usuario_id,formulario",
+    ).execute()
+    return {
+        "mensaje": "Borrador guardado",
+        "updated_at": payload["updated_at"],
+        "expires_at": payload["expires_at"],
+    }
+
+
+async def eliminar_borrador_postulacion_externa(usuario_id: str) -> dict:
+    supabase_admin.table("borradores_formulario").delete().eq(
+        "usuario_id", usuario_id
+    ).eq("formulario", _FORMULARIO_POSTULACION_EXTERNA).execute()
+    return {"mensaje": "Borrador eliminado"}
+
+
 async def obtener_capacidades(voluntario_id: str) -> dict:
     perfil = supabase.table("voluntarios").select(
         "disponible_operativamente, pausa_operativa_hasta, "

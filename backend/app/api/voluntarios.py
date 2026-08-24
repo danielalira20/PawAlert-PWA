@@ -16,6 +16,7 @@ from app.models.voluntario import (
     ChecklistVisitaRequest,
     DisponibilidadOperativaRequest,
     FinalizarPostulacionInternoRequest,
+    PostulacionExternaDraftRequest,
     PostulacionRequest,
     ProponerHorarioVisitaRequest,
     ResponderHorarioPostulanteRequest,
@@ -38,6 +39,9 @@ from app.services.voluntario_service import (
     obtener_reportes_voluntario,
     crear_perfil_externo,
     obtener_perfil_externo,
+    obtener_borrador_postulacion_externa,
+    guardar_borrador_postulacion_externa,
+    eliminar_borrador_postulacion_externa,
 )
 from app.services.home_verification_service import (
     enviar_evidencia_solicitada,
@@ -472,6 +476,30 @@ async def get_perfil_voluntario_externo(
     usuario = _obtener_usuario_autenticado(authorization)
     voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
     return await obtener_perfil_externo(voluntario_id)
+
+
+@router.get("/externo/borrador", status_code=200)
+async def get_mi_borrador_postulacion_externa(authorization: str = Header(None)):
+    usuario = _obtener_usuario_autenticado(authorization)
+    return await obtener_borrador_postulacion_externa(usuario["id"])
+
+
+@router.put("/externo/borrador", status_code=200)
+async def put_mi_borrador_postulacion_externa(
+    body: PostulacionExternaDraftRequest,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    return await guardar_borrador_postulacion_externa(
+        usuario["id"],
+        body.model_dump(mode="json"),
+    )
+
+
+@router.delete("/externo/borrador", status_code=200)
+async def delete_mi_borrador_postulacion_externa(authorization: str = Header(None)):
+    usuario = _obtener_usuario_autenticado(authorization)
+    return await eliminar_borrador_postulacion_externa(usuario["id"])
 
 
 @router.post("/externo/postular", status_code=201)
