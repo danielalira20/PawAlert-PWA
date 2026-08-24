@@ -16,8 +16,11 @@ os.environ.setdefault("SUPABASE_KEY", JWT_DUMMY)
 os.environ.setdefault("SUPABASE_SERVICE_KEY", JWT_DUMMY)
 
 from app.models.dispatch import AvistamientoCreate, LocationSource
+from app.models.urgency import DuplicateCandidate
 from app.services import avistamiento_service as svc
 from app.services import assignment_route_service
+from app.services import duplicate_service
+from app.services import urgency_service
 
 
 def _reporte(**cambios):
@@ -30,6 +33,20 @@ def _reporte(**cambios):
         "longitud": -98.0,
         "ultima_ubicacion_confirmada_id": None,
     }
+    datos.update(cambios)
+    return datos
+
+
+def _reporte_con_animales(**cambios):
+    """Igual que _reporte(), pero con lo que _datos_para_duplicados() necesita
+    (created_at + animal embed) para no salir temprano con None."""
+    datos = _reporte()
+    datos.update(
+        {
+            "created_at": "2026-08-20T10:00:00+00:00",
+            "animal": [{"tipo_animal_catalogo": {"clave": "perro"}, "cantidad": 1}],
+        }
+    )
     datos.update(cambios)
     return datos
 
@@ -436,6 +453,184 @@ def test_validar_avistamiento_rechaza_usuario_no_asignado(monkeypatch, make_quer
 
     assert error.value.status_code == 403
     avistamientos_mock.update.assert_not_called()
+
+
+# --- _confirmar_avistamiento: duplicados + urgency --------------------------
+
+
+def test_confirmar_ubicacion_detecta_posible_duplicado(monkeypatch, make_query):
+    _, _, reportes_mock, historial_mock, usuario_id = _armar_validar(
+        monkeypatch, make_query, reporte=_reporte_con_animales()
+    )
+    candidato = DuplicateCandidate(
+        existing_report_id="rep-2",
+        distance_m=80.5,
+        time_difference_minutes=15.0,
+        shared_species=["perro"],
+    )
+    monkeypatch.setattr(
+        duplicate_service,
+        "find_geographic_duplicates",
+        MagicMock(return_value=[candidato]),
+    )
+    monkeypatch.setattr(
+        urgency_service,
+        "evaluate_report_urgency",
+        MagicMock(side_effect=RuntimeError("no aplica en este test")),
+    )
+
+    resultado = svc.validar_avistamiento("av-1", usuario_id, aprobar=True)
+
+    assert resultado.estado_validacion == "validado"
+    eventos = [
+        llamada.args[0]["tipo_evento"] for llamada in historial_mock.insert.call_args_list
+    ]
+    assert "posible_duplicado_detectado" in eventos
+
+    evento_duplicado = next(
+        llamada.args[0]
+        for llamada in historial_mock.insert.call_args_list
+        if llamada.args[0]["tipo_evento"] == "posible_duplicado_detectado"
+    )
+    assert evento_duplicado["datos_extra"]["avistamiento_id"] == "av-1"
+    assert evento_duplicado["datos_extra"]["candidatos"] == [
+        {
+            "reporte_id": "rep-2",
+            "distancia_m": 80.5,
+            "diferencia_minutos": 15.0,
+            "especies_compartidas": ["perro"],
+        }
+    ]
+    # Nunca archiva ni fusiona: la única escritura sobre reportes es la de
+    # ultima_ubicacion_confirmada_id que ya hacia _confirmar_avistamiento.
+    reportes_mock.update.assert_called_once_with(
+        {"ultima_ubicacion_confirmada_id": "av-1"}
+    )
+
+
+def test_confirmar_ubicacion_sin_duplicados_no_registra_evento(monkeypatch, make_query):
+    _, _, _, historial_mock, usuario_id = _armar_validar(
+        monkeypatch, make_query, reporte=_reporte_con_animales()
+    )
+    monkeypatch.setattr(
+        duplicate_service, "find_geographic_duplicates", MagicMock(return_value=[])
+    )
+    monkeypatch.setattr(
+        urgency_service,
+        "evaluate_report_urgency",
+        MagicMock(side_effect=RuntimeError("no aplica en este test")),
+    )
+
+    resultado = svc.validar_avistamiento("av-1", usuario_id, aprobar=True)
+
+    assert resultado.estado_validacion == "validado"
+    eventos = [
+        llamada.args[0]["tipo_evento"] for llamada in historial_mock.insert.call_args_list
+    ]
+    assert "posible_duplicado_detectado" not in eventos
+
+
+def test_confirmar_ubicacion_duplicados_falla_no_bloquea(monkeypatch, make_query):
+    _, _, reportes_mock, historial_mock, usuario_id = _armar_validar(
+        monkeypatch, make_query, reporte=_reporte_con_animales()
+    )
+    monkeypatch.setattr(
+        duplicate_service,
+        "find_geographic_duplicates",
+        MagicMock(side_effect=RuntimeError("RPC no disponible")),
+    )
+    monkeypatch.setattr(
+        urgency_service,
+        "evaluate_report_urgency",
+        MagicMock(side_effect=RuntimeError("no aplica en este test")),
+    )
+
+    resultado = svc.validar_avistamiento("av-1", usuario_id, aprobar=True)
+
+    assert resultado.estado_validacion == "validado"
+    reportes_mock.update.assert_called_once_with(
+        {"ultima_ubicacion_confirmada_id": "av-1"}
+    )
+    eventos = [
+        llamada.args[0]["tipo_evento"] for llamada in historial_mock.insert.call_args_list
+    ]
+    assert "ubicacion_confirmada" in eventos
+
+
+def test_confirmar_ubicacion_recalcula_urgency_con_reporte_id(monkeypatch, make_query):
+    _, _, _, historial_mock, usuario_id = _armar_validar(
+        monkeypatch, make_query, reporte=_reporte_con_animales()
+    )
+    monkeypatch.setattr(
+        duplicate_service, "find_geographic_duplicates", MagicMock(return_value=[])
+    )
+    evaluar = MagicMock(return_value=SimpleNamespace(score=72.5, level="rojo"))
+    monkeypatch.setattr(urgency_service, "evaluate_report_urgency", evaluar)
+
+    resultado = svc.validar_avistamiento("av-1", usuario_id, aprobar=True)
+
+    assert resultado.estado_validacion == "validado"
+    evaluar.assert_called_once_with("rep-1")
+    evento_urgency = next(
+        llamada.args[0]
+        for llamada in historial_mock.insert.call_args_list
+        if llamada.args[0]["tipo_evento"] == "urgency_recalculada"
+    )
+    assert evento_urgency["datos_extra"] == {
+        "avistamiento_id": "av-1",
+        "score": 72.5,
+        "nivel": "rojo",
+    }
+
+
+def test_confirmar_ubicacion_urgency_falla_no_bloquea(monkeypatch, make_query):
+    _, _, reportes_mock, historial_mock, usuario_id = _armar_validar(
+        monkeypatch, make_query, reporte=_reporte_con_animales()
+    )
+    monkeypatch.setattr(
+        duplicate_service, "find_geographic_duplicates", MagicMock(return_value=[])
+    )
+    monkeypatch.setattr(
+        urgency_service,
+        "evaluate_report_urgency",
+        MagicMock(side_effect=ValueError("Report is excluded from urgency calculation")),
+    )
+
+    resultado = svc.validar_avistamiento("av-1", usuario_id, aprobar=True)
+
+    assert resultado.estado_validacion == "validado"
+    reportes_mock.update.assert_called_once_with(
+        {"ultima_ubicacion_confirmada_id": "av-1"}
+    )
+    eventos = [
+        llamada.args[0]["tipo_evento"] for llamada in historial_mock.insert.call_args_list
+    ]
+    assert "ubicacion_confirmada" in eventos
+    assert "urgency_recalculada" not in eventos
+
+
+def test_confirmar_ubicacion_duplicados_antes_que_urgency(monkeypatch, make_query):
+    _, _, _, _, usuario_id = _armar_validar(
+        monkeypatch, make_query, reporte=_reporte_con_animales()
+    )
+    orden = []
+    monkeypatch.setattr(
+        duplicate_service,
+        "find_geographic_duplicates",
+        MagicMock(side_effect=lambda *a, **k: orden.append("duplicados") or []),
+    )
+    monkeypatch.setattr(
+        urgency_service,
+        "evaluate_report_urgency",
+        MagicMock(
+            side_effect=lambda *a, **k: orden.append("urgency")
+            or SimpleNamespace(score=1, level="verde")
+        ),
+    )
+
+    svc.validar_avistamiento("av-1", usuario_id, aprobar=True)
+
+    assert orden == ["duplicados", "urgency"]
 
 
 # --- registrar_avistamiento_desde_hito --------------------------------------

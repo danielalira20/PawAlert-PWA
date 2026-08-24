@@ -216,6 +216,7 @@ class ConfirmedReportLocation(BaseModel):
 class CoordinationEvent(str, Enum):
     ubicacion_confirmada = "ubicacion_confirmada"
     urgency_recalculada = "urgency_recalculada"
+    posible_duplicado_detectado = "posible_duplicado_detectado"
     matriz_ruta_calculada = "matriz_ruta_calculada"
     matching_optimizado = "matching_optimizado"
     nuevo_caso_cercano = "nuevo_caso_cercano"
