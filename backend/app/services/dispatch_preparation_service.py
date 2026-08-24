@@ -21,6 +21,7 @@ from app.models.dispatch import (
     DispatchUrgency,
     DispatchVolunteer,
     RouteMatrixResult,
+    RoutingErrorCode,
     RoutingPoint,
     RoutingStatus,
 )
@@ -905,6 +906,10 @@ def prepare_dispatch_optimization(
             operational_report_ids,
         )
         if matrix.status != RoutingStatus.complete:
+            if matrix.error_code == RoutingErrorCode.request_too_large:
+                raise _PreparationFailure(
+                    DispatchPreparationErrorCode.request_too_large
+                )
             raise _PreparationFailure(
                 DispatchPreparationErrorCode.routing_unavailable
             )

@@ -1,5 +1,6 @@
 """Contratos entre matching, ruteo, ubicacion y coordinacion asincrona."""
 
+import math
 from datetime import datetime
 from enum import Enum
 from typing import Literal
@@ -91,12 +92,14 @@ class RouteMatrixResult(BaseModel):
         ):
             raise ValueError("Route matrix column count does not match destinations")
         if any(
-            value is not None and value < 0
+            value is not None and (not math.isfinite(value) or value < 0)
             for matrix in matrices
             for row in matrix
             for value in row
         ):
-            raise ValueError("Route matrix values cannot be negative")
+            raise ValueError(
+                "Route matrix values must be finite and nonnegative"
+            )
         return self
 
 
@@ -365,6 +368,7 @@ class DispatchPreparationErrorCode(str, Enum):
     no_candidates = "no_candidates"
     missing_coordinates = "missing_coordinates"
     routing_unavailable = "routing_unavailable"
+    request_too_large = "request_too_large"
     no_viable_routes = "no_viable_routes"
     invalid_candidate_data = "invalid_candidate_data"
     data_source_error = "data_source_error"

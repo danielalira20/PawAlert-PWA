@@ -688,6 +688,44 @@ def test_rejects_unavailable_route_matrix(make_query):
     assert result.error_code == DispatchPreparationErrorCode.routing_unavailable
 
 
+def test_preserves_oversized_route_matrix_error(make_query):
+    db = database(
+        make_query,
+        [report("rep-1")],
+        [capacity("vol-1")],
+    )
+    unavailable = matrix(
+        ["vol-1"],
+        ["rep-1"],
+        durations_seconds=[],
+        distances_meters=[],
+        status=RoutingStatus.unavailable,
+        error_code=RoutingErrorCode.request_too_large,
+    )
+    with (
+        patch.object(service, "supabase_admin", db),
+        patch.object(
+            service.matching,
+            "obtener_candidatos",
+            return_value={"candidatos": [candidate("vol-1", 80)]},
+        ),
+        patch.object(
+            service.coverage_service,
+            "obtener_ofrecimientos_reporte",
+            return_value=[],
+        ),
+        patch.object(
+            service,
+            "calculate_dispatch_route_matrix",
+            return_value=unavailable,
+        ),
+    ):
+        result = service.prepare_dispatch_optimization(["rep-1"])
+
+    assert result.status == DispatchPreparationStatus.unavailable
+    assert result.error_code == DispatchPreparationErrorCode.request_too_large
+
+
 def test_rejects_batch_without_any_viable_route(make_query):
     db = database(
         make_query,

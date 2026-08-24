@@ -61,6 +61,12 @@ completo, no existe asignacion automatica: el caso conserva su flujo manual.
 Si OSRM responde pero ninguna pareja conserva una ruta util, la preparacion
 devuelve `error_code=no_viable_routes`, distinto de `routing_unavailable`.
 
+La suma de voluntarios y reportes no puede superar
+`OSRM_MAX_COORDINATES`. El lote no se divide automaticamente: superar el
+limite devuelve `request_too_large` para que el coordinador reduzca el lote
+antes de reintentar. Asi VROOM recibe una sola fotografia vial coherente y no
+una mezcla de matrices calculadas en momentos distintos.
+
 `DispatchPreparationResult.excluded_items` registra las exclusiones parciales
 sin contaminar el request. Cada elemento indica `scope` (`report`, `volunteer`
 o `candidate_pair`), `reason` y los identificadores correspondientes. Entre
