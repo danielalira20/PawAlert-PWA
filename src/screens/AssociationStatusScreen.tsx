@@ -151,6 +151,7 @@ interface OfrecimientoExterno {
   alertas: string[];
   score: ScoreCandidato;
   ofrecido_at: string;
+  expira_at?: string;
   foto_url?: string | null;
 }
 
@@ -2730,6 +2731,7 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                                     </Text>
                                     <Text style={{ color: COLORS.textLight, fontSize: 10, marginTop: 3 }}>
                                       Se ofreció hace {formatDistanceToNow(new Date(oferta.ofrecido_at), { locale: es })}
+                                      {oferta.expira_at ? ` · expira en ${formatDistanceToNow(new Date(oferta.expira_at), { locale: es })}` : ''}
                                     </Text>
                                   </View>
                                   <View style={{ alignItems: 'center', marginLeft: 8 }}>

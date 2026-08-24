@@ -140,6 +140,7 @@ interface OfrecimientoExterno {
   alertas: string[];
   score: ScoreCandidato;
   ofrecido_at: string;
+  expira_at?: string;
   foto_url?: string | null;
 }
 
