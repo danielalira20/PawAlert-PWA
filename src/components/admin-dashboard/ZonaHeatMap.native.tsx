@@ -18,6 +18,37 @@ const NIVEL_COLOR: Record<string, string> = {
 
 const claveZona = (z: ZonaStat) => `${z.latitud}-${z.longitud}`;
 
+// Anillos concéntricos con opacidad decreciente — react-native-maps no
+// soporta un fillColor con degradado radial nativo, así que se simula
+// apilando varios círculos (mismo criterio que en MapScreen.native.tsx).
+const ANILLOS_GLOW = [
+  { factor: 1, opacity: 0.05 },
+  { factor: 0.7, opacity: 0.09 },
+  { factor: 0.45, opacity: 0.16 },
+  { factor: 0.22, opacity: 0.3 },
+];
+
+const alphaHex = (opacity: number) =>
+  Math.round(opacity * 255).toString(16).padStart(2, '0');
+
+function ZonaGlow({ zona }: { zona: ZonaStat }) {
+  const color = NIVEL_COLOR[zona.nivel_urgencia_max ?? ''] ?? '#95A5A6';
+  const radioBase = 500 + zona.cantidad * 180;
+  return (
+    <>
+      {ANILLOS_GLOW.map((anillo) => (
+        <Circle
+          key={anillo.factor}
+          center={{ latitude: zona.latitud, longitude: zona.longitud }}
+          radius={radioBase * anillo.factor}
+          strokeWidth={0}
+          fillColor={`${color}${alphaHex(anillo.opacity)}`}
+        />
+      ))}
+    </>
+  );
+}
+
 interface Props {
   zonas: ZonaStat[];
   height?: number;
@@ -49,14 +80,7 @@ export function ZonaHeatMap({ zonas, height = 220 }: Props) {
         style={styles.map}
         initialRegion={{ ...centro, latitudeDelta: delta, longitudeDelta: delta }}
       >
-        {zonaActiva && (
-          <Circle
-            center={{ latitude: zonaActiva.latitud, longitude: zonaActiva.longitud }}
-            radius={400 + zonaActiva.cantidad * 150}
-            strokeWidth={0}
-            fillColor={`${NIVEL_COLOR[zonaActiva.nivel_urgencia_max ?? ''] ?? '#95A5A6'}40`}
-          />
-        )}
+        {zonaActiva && <ZonaGlow zona={zonaActiva} />}
         {zonas.map((zona) => {
           const clave = claveZona(zona);
           const color = NIVEL_COLOR[zona.nivel_urgencia_max ?? ''] ?? '#95A5A6';

@@ -135,6 +135,37 @@ const NIVEL_URGENCIA_CONFIG: Record<string, { color: string; bg: string }> = {
   verde:    { color: '#27AE60', bg: '#EAFAF1' },
 };
 
+// Anillos concéntricos con opacidad decreciente — react-native-maps no
+// soporta un fillColor con degradado radial nativo, así que se simula
+// apilando varios círculos (mismo criterio que LeafletMap.tsx en web).
+const ANILLOS_GLOW = [
+  { factor: 1, opacity: 0.05 },
+  { factor: 0.7, opacity: 0.09 },
+  { factor: 0.45, opacity: 0.16 },
+  { factor: 0.22, opacity: 0.3 },
+];
+
+const alphaHex = (opacity: number) =>
+  Math.round(opacity * 255).toString(16).padStart(2, '0');
+
+function ZonaGlow({ zona }: { zona: { latitud: number; longitud: number; cantidad: number; nivel_urgencia_max: string | null } }) {
+  const color = NIVEL_URGENCIA_CONFIG[zona.nivel_urgencia_max ?? '']?.color ?? '#95A5A6';
+  const radioBase = 500 + zona.cantidad * 180;
+  return (
+    <>
+      {ANILLOS_GLOW.map((anillo) => (
+        <Circle
+          key={anillo.factor}
+          center={{ latitude: zona.latitud, longitude: zona.longitud }}
+          radius={radioBase * anillo.factor}
+          strokeWidth={0}
+          fillColor={`${color}${alphaHex(anillo.opacity)}`}
+        />
+      ))}
+    </>
+  );
+}
+
 function ZonaMarker({ cantidad, nivel }: { cantidad: number; nivel: string | null }) {
   const cfg = NIVEL_URGENCIA_CONFIG[nivel ?? ''] ?? { color: '#95A5A6', bg: '#F2F3F4' };
   const size = 40;
@@ -440,14 +471,7 @@ export default function MapScreen() {
           );
           return (
             <>
-              {zonaActiva && (
-                <Circle
-                  center={{ latitude: zonaActiva.latitud, longitude: zonaActiva.longitud }}
-                  radius={400 + zonaActiva.cantidad * 150}
-                  strokeWidth={0}
-                  fillColor={`${NIVEL_URGENCIA_CONFIG[zonaActiva.nivel_urgencia_max ?? '']?.color ?? '#95A5A6'}40`}
-                />
-              )}
+              {zonaActiva && <ZonaGlow zona={zonaActiva} />}
               {zonasVisibles.map((zona, index) => {
                 const clave = `${zona.latitud}-${zona.longitud}`;
                 return (

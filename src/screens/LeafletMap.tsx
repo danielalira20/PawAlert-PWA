@@ -163,6 +163,34 @@ const createZonaPin = (cantidad: number, nivel: string | null) => {
   });
 };
 
+// Anillos concéntricos con opacidad decreciente — Leaflet no soporta un
+// fillColor con degradado radial nativo, así que se simula apilando varios
+// círculos. El radio depende de la cantidad de reportes: zonas con más
+// casos se ven "más calientes" (círculo más grande).
+const ANILLOS_GLOW = [
+  { factor: 1, opacity: 0.05 },
+  { factor: 0.7, opacity: 0.09 },
+  { factor: 0.45, opacity: 0.16 },
+  { factor: 0.22, opacity: 0.3 },
+];
+
+function ZonaGlow({ zona }: { zona: { latitud: number; longitud: number; cantidad: number; nivel_urgencia_max: string | null } }) {
+  const color = NIVEL_URGENCIA_COLOR[zona.nivel_urgencia_max ?? '']?.border ?? '#95A5A6';
+  const radioBase = 500 + zona.cantidad * 180;
+  return (
+    <>
+      {ANILLOS_GLOW.map((anillo) => (
+        <Circle
+          key={anillo.factor}
+          center={[zona.latitud, zona.longitud]}
+          radius={radioBase * anillo.factor}
+          pathOptions={{ stroke: false, fillColor: color, fillOpacity: anillo.opacity }}
+        />
+      ))}
+    </>
+  );
+}
+
 // ─── Config por estado del reporte ───────────────────────────────────────────
 const ESTADO: Record<string, { color: string; bg: string; label: string }> = {
   pendiente:     { color: '#7B68EE', bg: '#F0EEFF', label: 'Pendiente'    },
@@ -300,6 +328,26 @@ function MapClickHandler({ onMapClick }: { onMapClick: () => void }) {
   return null;
 }
 
+// Botón "×" propio (Leaflet trae uno por defecto, pero closeButton está
+// desactivado en todos los popups de este archivo para usar el diseño
+// pp-* en su lugar) — cierra el popup abierto vía el mapa, sin necesitar
+// una ref al Marker.
+function PopupCloseButton() {
+  const map = useMap();
+  return (
+    <button
+      className="pp-close"
+      onClick={(event) => {
+        event.stopPropagation();
+        map.closePopup();
+      }}
+      aria-label="Cerrar"
+    >
+      ×
+    </button>
+  );
+}
+
 function FitToMarkers({
   enabled,
   positions,
@@ -421,7 +469,16 @@ export default function LeafletMap({
         .pp-accent { height:5px; width:100%; }
         .pp-body { position:relative; padding:13px 14px 14px; font-family:'Segoe UI',Arial,sans-serif; }
         .pp-title { padding-right:32px; font-size:14px; font-weight:900; color:#1A1A1A; margin-bottom:8px; letter-spacing:-0.3px; }
-        .pp-menu { position:absolute; top:9px; right:10px; z-index:10; }
+        .pp-menu { position:absolute; top:9px; right:42px; z-index:10; }
+        .pp-close {
+          position:absolute; top:8px; right:9px; z-index:11;
+          width:22px; height:22px; border-radius:11px; border:none;
+          background:#F2F0EC; color:#5C4A3A;
+          font-size:16px; line-height:1; font-weight:700;
+          display:flex; align-items:center; justify-content:center;
+          cursor:pointer; padding:0;
+        }
+        .pp-close:hover { background:#E5E1D9; }
         .pp-badges { display:flex; gap:5px; flex-wrap:wrap; margin-bottom:9px; }
         .pp-badge { padding:3px 9px; border-radius:20px; font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:0.4px; }
         .pp-loc { display:flex; align-items:center; gap:5px; font-size:10px; color:#9B8B7A; margin-bottom:11px; padding:5px 8px; background:#FAFAFA; border-radius:8px; }
@@ -466,6 +523,7 @@ export default function LeafletMap({
                   {/* Barra de acento del color de condición */}
                   <div className="pp-accent" style={{ background: cond.border }} />
                   <div className="pp-body">
+                    <PopupCloseButton />
                     {showReportMenuInPopup && (
                       <div className="pp-menu" onClick={(event) => event.stopPropagation()}>
                         <ReportContentMenu
@@ -476,7 +534,7 @@ export default function LeafletMap({
                       </div>
                     )}
                     {/* Título */}
-                    <div className="pp-title" style={{ paddingRight: showReportMenuInPopup ? 32 : 0 }}>
+                    <div className="pp-title" style={{ paddingRight: showReportMenuInPopup ? 64 : 32 }}>
                       {tipoLabel}{tamanioLabel ? ` · ${tamanioLabel}` : ''}{total > 1 ? ` · ${total} animales` : ''}
                     </div>
                     {/* Badges de condición y estado */}
@@ -582,18 +640,7 @@ export default function LeafletMap({
           );
           return (
             <>
-              {zonaActiva && (
-                <Circle
-                  center={[zonaActiva.latitud, zonaActiva.longitud]}
-                  radius={400 + zonaActiva.cantidad * 150}
-                  pathOptions={{
-                    color: NIVEL_URGENCIA_COLOR[zonaActiva.nivel_urgencia_max ?? '']?.border ?? '#95A5A6',
-                    fillColor: NIVEL_URGENCIA_COLOR[zonaActiva.nivel_urgencia_max ?? '']?.border ?? '#95A5A6',
-                    fillOpacity: 0.25,
-                    weight: 0,
-                  }}
-                />
-              )}
+              {zonaActiva && <ZonaGlow zona={zonaActiva} />}
               {zonasValidas.map((zona) => {
                 const clave = `${zona.latitud}-${zona.longitud}`;
                 return (

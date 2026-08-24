@@ -12,6 +12,33 @@ const NIVEL_COLOR: Record<string, string> = {
 
 const claveZona = (z: ZonaStat) => `${z.latitud}-${z.longitud}`;
 
+// Anillos concéntricos con opacidad decreciente — Leaflet no soporta un
+// fillColor con degradado radial nativo, así que se simula apilando varios
+// círculos (mismo criterio que ZonaGlow en LeafletMap.tsx).
+const ANILLOS_GLOW = [
+  { factor: 1, opacity: 0.05 },
+  { factor: 0.7, opacity: 0.09 },
+  { factor: 0.45, opacity: 0.16 },
+  { factor: 0.22, opacity: 0.3 },
+];
+
+function ZonaGlow({ zona }: { zona: ZonaStat }) {
+  const color = NIVEL_COLOR[zona.nivel_urgencia_max ?? ''] ?? '#95A5A6';
+  const radioBase = 500 + zona.cantidad * 180;
+  return (
+    <>
+      {ANILLOS_GLOW.map((anillo) => (
+        <Circle
+          key={anillo.factor}
+          center={[zona.latitud, zona.longitud]}
+          radius={radioBase * anillo.factor}
+          pathOptions={{ stroke: false, fillColor: color, fillOpacity: anillo.opacity }}
+        />
+      ))}
+    </>
+  );
+}
+
 function crearPinZona(cantidad: number, nivel: string | null, seleccionada: boolean) {
   const color = NIVEL_COLOR[nivel ?? ''] ?? '#95A5A6';
   const size = seleccionada ? 36 : 30;
@@ -57,18 +84,7 @@ export default function ZonaLeafletMap({ zonas, width, height }: Props) {
       {/* Zona seleccionada: circulo difuminado tipo "mapa de calor",
           solo aparece al hacer click en un pin — no todas a la vez, para
           no saturar el mapa. */}
-      {zonaActiva && (
-        <Circle
-          center={[zonaActiva.latitud, zonaActiva.longitud]}
-          radius={400 + zonaActiva.cantidad * 150}
-          pathOptions={{
-            color: NIVEL_COLOR[zonaActiva.nivel_urgencia_max ?? ''] ?? '#95A5A6',
-            fillColor: NIVEL_COLOR[zonaActiva.nivel_urgencia_max ?? ''] ?? '#95A5A6',
-            fillOpacity: 0.25,
-            weight: 0,
-          }}
-        />
-      )}
+      {zonaActiva && <ZonaGlow zona={zonaActiva} />}
       {zonas.map((zona) => {
         const clave = claveZona(zona);
         return (
