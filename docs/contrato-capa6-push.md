@@ -212,7 +212,7 @@ reservar_cobertura()  [ganador escogido]
 |---|---|---|
 | Pool de interesados | ✅ **Implementado (Tarea 1)** | `0077` + `escalamiento.py` |
 | Lista de espera (`lista_espera_activada`) | ✅ **Implementado (Tarea 1)** | Dentro de `_llenar_pool_y_notificar_espera()` |
-| Dead Man's Switch (15 min + aviso 3 min antes) | ⏳ **Tarea 2 — próxima** | Migración `0078` + `coverage_service.py` |
-| Notificar reemplazo al siguiente en lista | ⏳ **Tarea 3** | `coverage_service.expirar_propuestas_vencidas()` |
+| Dead Man's Switch (15 min + aviso 3 min antes) | ✅ **Implementado (Tarea 2)** | Migración `0078`, `coverage_service.py` y `internal.py` (`/push/alerta-vencimiento`) |
+| Notificar reemplazo al siguiente en lista | ⏳ **Tarea 3 — próxima** | `coverage_service.expirar_propuestas_vencidas()` |
 | Push diferenciado con carga ≥ 3 casos | ⏳ **Tarea 4** | `coverage_service.reservar_cobertura()` |
 | Alertas de bienestar (Fase 5) | ❓ **Pendiente definición** | Confirmar con equipo qué significa exactamente |

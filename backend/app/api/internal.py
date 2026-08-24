@@ -124,6 +124,13 @@ def correr_push_dispatch(x_cron_secret: Optional[str] = Header(None)):
     from app.services.push_notification_service import dispatch_pending_pushes
     return dispatch_pending_pushes(limit=100)
 
+@router.post("/push/alerta-vencimiento")
+def correr_alertas_vencimiento(x_cron_secret: Optional[str] = Header(None)):
+    if not settings.cron_secret or x_cron_secret != settings.cron_secret:
+        raise HTTPException(status_code=401, detail="No autorizado")
+    from app.services.coverage_service import enviar_alertas_vencimiento_proximo
+    return enviar_alertas_vencimiento_proximo()
+
 @router.post("/reporter-confirmations/run")
 def correr_confirmaciones_permanencia(x_cron_secret: Optional[str] = Header(None)):
     if not settings.cron_secret or x_cron_secret != settings.cron_secret:
