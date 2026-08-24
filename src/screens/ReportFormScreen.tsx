@@ -28,6 +28,8 @@ import {
   construirResultadoRevision,
   ReportSubmissionResult,
 } from '../utils/reportSubmission';
+import { isOfflineError, queueReport } from '../services/offlineReportQueue';
+import { isNetworkUnavailable } from '../utils/networkError';
 import LocationPickerMap from './LocationPickerMap';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -1016,9 +1018,10 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
     }
     if (!esDuplicadoConfirmado && !validarPaso3()) return;
     setIsSubmitting(true);
+    let formData: FormData | null = null;
 
     try {
-      const formData = new FormData();
+      formData = new FormData();
       formData.append('nombre', nombre);
       formData.append('apellido_paterno', apellidoPaterno);
       if (apellidoMaterno.trim()) formData.append('apellido_materno', apellidoMaterno);
@@ -1047,7 +1050,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
         }
       } else {
         fotosOrdenadas.forEach((f) => {
-          formData.append('fotos', { uri: f.foto_url, name: `foto_${f.id}_${Date.now()}.jpg`, type: 'image/jpeg' } as any);
+          formData!.append('fotos', { uri: f.foto_url, name: `foto_${f.id}_${Date.now()}.jpg`, type: 'image/jpeg' } as any);
         });
       }
 
@@ -1147,6 +1150,28 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
       }
       clearReportDraft();
     } catch (error: any) {
+      if (Platform.OS === 'web' && formData && isOfflineError(error)) {
+        try {
+          await queueReport({
+            endpoint: `${API_URL}/reports`,
+            formData,
+            authorization: isLoggedIn && token ? `Bearer ${token}` : undefined,
+            animalSummary: animales
+              .map((animal) => `${animal.cantidad} ${animal.tipoAnimal || 'animal'}`)
+              .join(', '),
+            photoCount: fotos.length,
+          });
+          clearReportDraft();
+          setResultadoEnvio({
+            titulo: 'Reporte guardado sin conexión',
+            mensaje: 'Conservamos el reporte y sus fotografías en este dispositivo. Se enviará automáticamente cuando vuelva internet; puedes revisar su estado en Pendientes de sincronización.',
+            estado: 'pendiente',
+          });
+          return;
+        } catch {
+          // Si el navegador bloquea IndexedDB, mostramos el error original.
+        }
+      }
       const mensaje = error?.response?.data?.detail || error?.message || 'Error desconocido';
       showToast({ type: 'error', title: 'Error', message: mensaje });
     } finally {
@@ -1168,7 +1193,11 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
       setLoginPassword('');
       showToast({ type: 'success', title: '¡Bienvenida!', message: 'Sesión iniciada. Tus datos fueron autorellenados.' });
     } catch (error: any) {
-      showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'Correo o contraseña incorrectos' });
+      if (isNetworkUnavailable(error)) {
+        showToast({ type: 'warning', title: 'Sin conexión', message: 'Revisa tu red para poder iniciar sesión.' }, 4200);
+      } else {
+        showToast({ type: 'error', title: 'No pudimos iniciar sesión', message: error?.response?.data?.detail || 'Correo o contraseña incorrectos.' });
+      }
     } finally {
       setIsLoggingIn(false);
     }

@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useFocusEffect } from 'expo-router';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, useWindowDimensions, Modal, TextInput, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, useWindowDimensions, Modal, TextInput, ActivityIndicator, Platform } from 'react-native';
 import { validarNombre } from '../../utils/validators';
 import { Ionicons } from '@expo/vector-icons';
 import { Toast, useToast } from '../Toast';import { LinearGradient } from 'expo-linear-gradient';
@@ -50,6 +50,7 @@ interface Props {
   onOpenAliadoForm: () => void;
   onOpenAliadoDashboard: () => void;
   onOpenCustodyDashboard: () => void;
+  onOpenPendingSync: () => void;
   onLogout: () => void;
   capacidadesRefreshKey?: number;
   reputacionRefreshKey?: number;
@@ -70,6 +71,7 @@ export function LoggedInProfile({
   onOpenAliadoForm,
   onOpenAliadoDashboard,
   onOpenCustodyDashboard,
+  onOpenPendingSync,
   onLogout,
   capacidadesRefreshKey,
   reputacionRefreshKey,
@@ -413,6 +415,13 @@ export function LoggedInProfile({
         label="Mis Reportes"
         onPress={onOpenMisReportes}
       />
+      {Platform.OS === 'web' && (
+        <AccessRow
+          icon="cloud-upload-outline"
+          label="Pendientes de sincronización"
+          onPress={onOpenPendingSync}
+        />
+      )}
       {muestraSaldoReputacion && !esAliadoPuro && (
         <>
           <AccessRow

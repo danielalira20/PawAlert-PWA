@@ -11,6 +11,7 @@ import { useFonts } from 'expo-font';
 import { Fraunces_800ExtraBold } from '@expo-google-fonts/fraunces';
 import { Poppins_400Regular, Poppins_500Medium, Poppins_600SemiBold } from '@expo-google-fonts/poppins';
 import { Ionicons } from '@expo/vector-icons';
+import { isNetworkUnavailable } from '../utils/networkError';
 
 const C = {
   primary:       '#F5842B',
@@ -192,7 +193,11 @@ export default function LoginScreen() {
       const destino = getPostAuthDestination(params.returnTo, fallback);
       showSuccessAndRedirect('¡Bienvenida de vuelta! Redirigiendo...', destino);
     } catch (error: any) {
-      showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'Error al iniciar sesión' });
+      if (isNetworkUnavailable(error)) {
+        showToast({ type: 'warning', title: 'Sin conexión', message: 'Revisa tu red para poder iniciar sesión.' }, 4200);
+      } else {
+        showToast({ type: 'error', title: 'No pudimos iniciar sesión', message: error?.response?.data?.detail || 'Correo o contraseña incorrectos.' });
+      }
     } finally {
       setIsLoading(false);
     }

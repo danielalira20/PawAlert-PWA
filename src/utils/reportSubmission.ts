@@ -1,4 +1,4 @@
-export type ReportSubmissionStatus = 'completado' | 'revision' | 'sin_cobertura';
+export type ReportSubmissionStatus = 'completado' | 'revision' | 'sin_cobertura' | 'pendiente';
 
 export interface ReportSubmissionResult {
   titulo: string;

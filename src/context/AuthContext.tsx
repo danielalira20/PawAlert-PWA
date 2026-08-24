@@ -277,14 +277,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
           return axios(originalRequest);
         } catch (refreshError) {
-          // El refresh_token también expiró — la sesión realmente terminó.
-          // Limpiamos todo y dejamos que la app redirija a login de forma natural
-          // (isLoggedIn pasará a false).
           refreshSubscribersRef.current.forEach((subscriber) => {
             subscriber.reject(refreshError);
           });
           refreshSubscribersRef.current = [];
-          logout();
+
+          // Un fallo de red no demuestra que la sesión haya expirado. Mantener
+          // usuario y tokens permite seguir usando el perfil offline y volver a
+          // intentar al recuperar conexión. Solo una respuesta explícita del
+          // servidor confirma que las credenciales dejaron de ser válidas.
+          const refreshStatus = axios.isAxiosError(refreshError)
+            ? refreshError.response?.status
+            : undefined;
+          if (refreshStatus === 400 || refreshStatus === 401 || refreshStatus === 403) {
+            logout();
+          }
           return Promise.reject(refreshError);
         } finally {
           isRefreshingRef.current = false;
