@@ -2,8 +2,10 @@ from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 from app.models.dispatch import (
+    CandidateRouteTier,
     DispatchPreparationErrorCode,
     DispatchPreparationStatus,
+    DispatchRoutingPolicy,
     RouteMatrixResult,
     RoutingErrorCode,
     RoutingStatus,
@@ -99,6 +101,17 @@ def database(make_query, reports: list[dict], capacities: list[dict]):
     return db
 
 
+def test_route_tier_boundaries_are_inclusive():
+    policy = DispatchRoutingPolicy(
+        candidate_window_minutes=5,
+        secondary_max_eta_minutes=30,
+    )
+
+    assert service._route_tier(420, 120, policy) == CandidateRouteTier.primary
+    assert service._route_tier(1800, 120, policy) == CandidateRouteTier.secondary
+    assert service._route_tier(1801, 120, policy) == CandidateRouteTier.manual_only
+
+
 def test_prepares_multi_report_contract_with_pair_scores(make_query):
     reports = [
         report("rep-1"),
@@ -125,7 +138,11 @@ def test_prepares_multi_report_contract_with_pair_scores(make_query):
         ],
         "rep-2": [],
     }
-    route_matrix = matrix(["vol-int", "vol-ext"], ["rep-1", "rep-2"])
+    route_matrix = matrix(
+        ["vol-int", "vol-ext"],
+        ["rep-1", "rep-2"],
+        durations_seconds=[[120, 600], [480, 700]],
+    )
 
     with (
         patch.object(
@@ -163,13 +180,22 @@ def test_prepares_multi_report_contract_with_pair_scores(make_query):
         "tamanio:mediano",
     ]
     assert {
-        (item.report_id, item.volunteer_id, item.matching_score, item.offered)
+        (
+            item.report_id,
+            item.volunteer_id,
+            item.matching_score,
+            item.offered,
+            item.route_tier,
+            item.automatic_eligible,
+        )
         for item in request.candidates
     } == {
-        ("rep-1", "vol-int", 85, False),
-        ("rep-2", "vol-int", 70, False),
-        ("rep-1", "vol-ext", 90, True),
+        ("rep-1", "vol-int", 85, False, CandidateRouteTier.primary, True),
+        ("rep-2", "vol-int", 70, False, CandidateRouteTier.primary, True),
+        ("rep-1", "vol-ext", 90, True, CandidateRouteTier.secondary, False),
     }
+    assert request.routing_policy.candidate_window_minutes == 5
+    assert request.routing_policy.secondary_max_eta_minutes == 30
     volunteers = {item.volunteer_id: item for item in request.volunteers}
     assert volunteers["vol-int"].matching_score == 85
     assert volunteers["vol-ext"].offered_report_ids == ["rep-1"]
@@ -322,3 +348,41 @@ def test_rejects_partial_route_matrix(make_query):
         result = service.prepare_dispatch_optimization(["rep-1"])
 
     assert result.error_code == DispatchPreparationErrorCode.routing_unavailable
+
+
+def test_classifies_closest_candidate_over_absolute_limit_as_manual(make_query):
+    db = database(
+        make_query,
+        [report("rep-1")],
+        [capacity("vol-1")],
+    )
+    over_limit = matrix(
+        ["vol-1"],
+        ["rep-1"],
+        durations_seconds=[[1801]],
+    )
+    with (
+        patch.object(service, "supabase_admin", db),
+        patch.object(
+            service.matching,
+            "obtener_candidatos",
+            return_value={"candidatos": [candidate("vol-1", 80)]},
+        ),
+        patch.object(
+            service.coverage_service,
+            "obtener_ofrecimientos_reporte",
+            return_value=[],
+        ),
+        patch.object(
+            service,
+            "calculate_dispatch_route_matrix",
+            return_value=over_limit,
+        ),
+    ):
+        result = service.prepare_dispatch_optimization(["rep-1"])
+
+    assert result.status == DispatchPreparationStatus.ready
+    assert result.request is not None
+    prepared_candidate = result.request.candidates[0]
+    assert prepared_candidate.route_tier == CandidateRouteTier.manual_only
+    assert prepared_candidate.automatic_eligible is False
