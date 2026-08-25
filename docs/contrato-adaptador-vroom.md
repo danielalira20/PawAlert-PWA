@@ -58,14 +58,28 @@ Para cada reporte se toma el menor ETA vial entre sus parejas candidatas como
 Una ruta inexistente no se convierte en cero ni en distancia en linea recta.
 La pareja debe excluirse antes de construir el request. Si OSRM falla por
 completo, no existe asignacion automatica: el caso conserva su flujo manual.
+Si OSRM responde pero ninguna pareja conserva una ruta util, la preparacion
+devuelve `error_code=no_viable_routes`, distinto de `routing_unavailable`.
+
+La suma de voluntarios y reportes no puede superar
+`OSRM_MAX_COORDINATES`. El lote no se divide automaticamente: superar el
+limite devuelve `request_too_large` para que el coordinador reduzca el lote
+antes de reintentar. Asi VROOM recibe una sola fotografia vial coherente y no
+una mezcla de matrices calculadas en momentos distintos.
 
 `DispatchPreparationResult.excluded_items` registra las exclusiones parciales
 sin contaminar el request. Cada elemento indica `scope` (`report`, `volunteer`
 o `candidate_pair`), `reason` y los identificadores correspondientes. Entre
 las razones admitidas estan reporte no operativo, Urgency ausente, falta de
-candidatos o coordenadas, datos invalidos y ruta inexistente. Un resultado
-`ready` puede incluir exclusiones siempre que conserve al menos un trabajo y
-una pareja validos.
+candidatos o coordenadas, datos invalidos, fallo de fuente y ruta inexistente.
+Un resultado `ready` puede incluir exclusiones siempre que conserve al menos
+un trabajo y una pareja validos.
+
+Un registro candidato identificable pero malformado se excluye como
+`candidate_pair/invalid_candidate_data`. Si no contiene un `volunteer_id`
+auditable, se excluye el reporte completo con la misma razon. Una excepcion
+al consultar matching u ofrecimientos se registra como
+`report/data_source_error`; no se confunde con una lista vacia valida.
 
 ## Parejas candidatas
 
@@ -108,6 +122,12 @@ El cliente debe enviar `matrices.car` con `durations`, `distances` y `costs`.
 No debe enviar la matriz rectangular directamente ni usar el campo singular
 deprecado `matrix`. Antes de llamar al proveedor se validan dimensiones,
 indices, enteros no negativos y tamano maximo del lote.
+
+La matriz rectangular puede conservar `None` solamente en cruces que no
+aparecen en `candidates`. Al construir la matriz cuadrada, el optimizador
+reemplaza esos cruces prohibidos por un costo alto, finito y determinista;
+nunca por cero. Las restricciones de `skills` siguen siendo la barrera que
+impide que VROOM seleccione una pareja no autorizada.
 
 ## Dos soluciones sobre el lote completo
 
@@ -175,6 +195,14 @@ recomendaciones para la asociacion, pero no forman parte de `assignments`.
 
 La reserva en base de datos sigue siendo la autoridad final. Ningun resultado
 de VROOM constituye por si mismo una asignacion confirmada.
+
+El fallback vive en `dispatch_fallback_service.optimize_dispatch_fallback`.
+Es una funcion pura sobre `DispatchOptimizationRequest`: no consulta
+Supabase, matching, cobertura, OSRM ni VROOM. Resuelve el lote completo, no
+reporte por reporte; ejecuta las alternativas primaria y ampliada, excluye
+externos y parejas `manual_only`, y conserva los ETA y distancias de la matriz
+preparada. El optimizador debe invocarlo solamente despues de tener un request
+valido y recibir un fallo de VROOM.
 
 ## Criterios minimos de aceptacion
 
