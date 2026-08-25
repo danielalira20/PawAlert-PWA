@@ -572,3 +572,161 @@ def _unassigned_report_ids(
     assigned = {assignment.report_id for assignment in assignments}
     return [report_id for report_id in report_ids if report_id not in assigned]
 
+
+def _quality(
+    assignments: list[DispatchAssignment],
+    urgency_by_report: dict[str, Decimal],
+) -> tuple[Decimal, int, int, Decimal]:
+    """Espejo de dispatch_fallback_service._Solution.quality, sin el criterio
+    adicional `candidate_rank_sum` que ese modulo agrega -- ese criterio no
+    esta en el texto de docs/contrato-adaptador-vroom.md (ver aviso en el
+    resumen de la implementacion)."""
+    urgency_sum = sum(
+        (urgency_by_report[assignment.report_id] for assignment in assignments),
+        Decimal(0),
+    )
+    secondary_count = sum(
+        1
+        for assignment in assignments
+        if assignment.route_tier == CandidateRouteTier.secondary
+    )
+    duration_sum = sum(
+        (Decimal(assignment.arrival_seconds) for assignment in assignments),
+        Decimal(0),
+    )
+    return (urgency_sum, len(assignments), -secondary_count, -duration_sum)
+
+
+def _stable_signature(
+    assignments: list[DispatchAssignment],
+) -> tuple[tuple[str, str], ...]:
+    return tuple(
+        sorted(
+            (assignment.report_id, assignment.volunteer_id)
+            for assignment in assignments
+        )
+    )
+
+
+def _expanded_is_better(
+    primary_assignments: list[DispatchAssignment],
+    expanded_assignments: list[DispatchAssignment],
+    urgency_by_report: dict[str, Decimal],
+) -> bool:
+    """docs/contrato-adaptador-vroom.md, seccion "Dos soluciones sobre el
+    lote completo": B solo reemplaza a A si mejora prioridad cubierta,
+    cobertura, cantidad de secondary o costo vial total, en ese orden; un
+    empate total se resuelve por identificadores estables."""
+    if not any(
+        assignment.route_tier == CandidateRouteTier.secondary
+        for assignment in expanded_assignments
+    ):
+        return False
+    primary_quality = _quality(primary_assignments, urgency_by_report)
+    expanded_quality = _quality(expanded_assignments, urgency_by_report)
+    if expanded_quality != primary_quality:
+        return expanded_quality > primary_quality
+    return _stable_signature(expanded_assignments) < _stable_signature(
+        primary_assignments
+    )
+
+
+def _finalize_vroom(
+    assignments: list[DispatchAssignment],
+    unassigned_report_ids: list[str],
+    optimization_pass: DispatchOptimizationPass,
+    calculated_at: datetime,
+) -> DispatchOptimizationResult:
+    return DispatchOptimizationResult(
+        assignments=assignments,
+        unassigned_report_ids=unassigned_report_ids,
+        source="vroom",
+        calculated_at=calculated_at,
+        optimization_pass=optimization_pass,
+        used_secondary=any(
+            assignment.route_tier == CandidateRouteTier.secondary
+            for assignment in assignments
+        ),
+    )
+
+
+def optimize_dispatch(
+    request: DispatchOptimizationRequest,
+) -> DispatchOptimizationResult:
+    """Optimiza un lote ya preparado con VROOM (dos pasadas, primary y
+    expanded) y cae a dispatch_fallback_service.optimize_dispatch_fallback
+    cuando VROOM no responde en cualquiera de los intentos hechos, o cuando
+    su respuesta no pasa la validacion de _translate_and_validate.
+
+    Funcion pura sobre `request`: no consulta matching, Supabase,
+    coverage_service ni OSRM (docs/contrato-adaptador-vroom.md).
+    """
+    calculated_at = datetime.now(timezone.utc)
+    volunteer_ids = list(request.travel_matrix.origin_ids)
+    report_ids = list(request.travel_matrix.destination_ids)
+    candidates_by_pair = {
+        (candidate.volunteer_id, candidate.report_id): candidate
+        for candidate in request.candidates
+    }
+    distance_by_pair = _distance_lookup(request)
+    urgency_by_report = {
+        job.report_id: Decimal(str(job.urgency.score)) for job in request.jobs
+    }
+    forbidden_cost = _forbidden_pair_cost(request.travel_matrix.durations_seconds)
+
+    primary_assignments = _solve_pass(
+        request,
+        frozenset({CandidateRouteTier.primary}),
+        candidates_by_pair,
+        distance_by_pair,
+        volunteer_ids,
+        report_ids,
+        forbidden_cost,
+    )
+    if primary_assignments is None:
+        logger.warning(
+            "VROOM no disponible o respuesta invalida en la pasada primary; "
+            "usando fallback local"
+        )
+        return optimize_dispatch_fallback(request)
+
+    primary_unassigned = _unassigned_report_ids(report_ids, primary_assignments)
+    if not primary_unassigned:
+        return _finalize_vroom(
+            primary_assignments,
+            primary_unassigned,
+            DispatchOptimizationPass.primary,
+            calculated_at,
+        )
+
+    expanded_assignments = _solve_pass(
+        request,
+        frozenset({CandidateRouteTier.primary, CandidateRouteTier.secondary}),
+        candidates_by_pair,
+        distance_by_pair,
+        volunteer_ids,
+        report_ids,
+        forbidden_cost,
+    )
+    if expanded_assignments is None:
+        logger.warning(
+            "VROOM no disponible o respuesta invalida en la pasada expanded; "
+            "usando fallback local"
+        )
+        return optimize_dispatch_fallback(request)
+
+    if _expanded_is_better(
+        primary_assignments, expanded_assignments, urgency_by_report
+    ):
+        return _finalize_vroom(
+            expanded_assignments,
+            _unassigned_report_ids(report_ids, expanded_assignments),
+            DispatchOptimizationPass.expanded,
+            calculated_at,
+        )
+    return _finalize_vroom(
+        primary_assignments,
+        primary_unassigned,
+        DispatchOptimizationPass.primary,
+        calculated_at,
+    )
