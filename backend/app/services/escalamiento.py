@@ -13,13 +13,26 @@ Principio: la asociacion decide, pero su silencio no detiene un rescate.
 Disenado para Celery; implementado con evaluacion diferida (cron externo
 que llama POST /internal/escalamiento/run cada 5 min) en el MVP.
 """
+import logging
 from datetime import datetime, timezone
 
-from app.db.supabase import supabase
-from app.services import coverage_service, dispatch_optimizer, matching
+from fastapi import HTTPException
+
+from app.db.supabase import supabase, supabase_admin
+from app.models.dispatch import (
+    DispatchExclusionReason,
+    DispatchExclusionScope,
+    DispatchPreparationStatus,
+)
+from app.services import (
+    coverage_service,
+    dispatch_optimizer,
+    dispatch_preparation_service,
+)
 from app.utils.animal_shaping import shape_animal_embed, condicion_mas_grave
 
 MODOS_CON_ESCALAMIENTO = ("semi_automatico", "automatico")
+logger = logging.getLogger(__name__)
 
 
 def evaluar_escalamientos() -> dict:
@@ -27,6 +40,8 @@ def evaluar_escalamientos() -> dict:
     Devuelve un resumen para el log del cron."""
     pendientes = _reportes_esperando_asignacion()
     revisados, escalados, sin_candidatos = 0, [], 0
+    conflictos, omitidos = [], []
+    preparacion_error = None
 
     elegibles = []
     asociacion_por_reporte = {}
@@ -45,29 +60,75 @@ def evaluar_escalamientos() -> dict:
         asociacion_por_reporte[rep["id"]] = rep["asociacion_asignada_id"]
 
     if elegibles:
-        resultado, voluntarios_info = dispatch_optimizer.optimizar_lote_reportes(elegibles)
-
-        for assignment in resultado.assignments:
-            info = voluntarios_info[assignment.volunteer_id]
-            coverage_service.reservar_cobertura(
-                reporte_id=assignment.report_id,
-                usuario_asignado_id=info["usuario_id"],
-                voluntario_id=assignment.volunteer_id,
-                asociacion_id=asociacion_por_reporte[assignment.report_id],
-                actor_id=info["usuario_id"],
-                origen="escalamiento_automatico",
+        preparacion = (
+            dispatch_preparation_service.prepare_dispatch_optimization(
+                elegibles
             )
-            escalados.append({
-                "reporte_id": assignment.report_id,
-                "voluntario": info["nombre"],
-            })
+        )
+        sin_candidatos = _contar_reportes_sin_candidatos(preparacion)
+        if preparacion.status == DispatchPreparationStatus.ready:
+            resultado = dispatch_optimizer.optimize_dispatch(
+                preparacion.request
+            )
+            sin_candidatos += len(resultado.unassigned_report_ids)
+            voluntarios_info = _cargar_voluntarios_info(
+                [
+                    assignment.volunteer_id
+                    for assignment in resultado.assignments
+                ]
+            )
 
-        sin_candidatos = len(resultado.unassigned_report_ids)
+            for assignment in resultado.assignments:
+                info = voluntarios_info.get(assignment.volunteer_id)
+                if info is None:
+                    logger.error(
+                        "No se encontro identidad para el voluntario %s del "
+                        "reporte %s; la propuesta no se reservara",
+                        assignment.volunteer_id,
+                        assignment.report_id,
+                    )
+                    omitidos.append(assignment.report_id)
+                    continue
+                try:
+                    coverage_service.reservar_cobertura(
+                        reporte_id=assignment.report_id,
+                        usuario_asignado_id=info["usuario_id"],
+                        voluntario_id=assignment.volunteer_id,
+                        asociacion_id=(
+                            asociacion_por_reporte[assignment.report_id]
+                        ),
+                        actor_id=info["usuario_id"],
+                        origen="escalamiento_automatico",
+                    )
+                except HTTPException as error:
+                    if error.status_code != 409:
+                        raise
+                    logger.info(
+                        "Conflicto reservando el reporte %s; se reevaluara "
+                        "el lote en el siguiente ciclo",
+                        assignment.report_id,
+                    )
+                    conflictos.append(assignment.report_id)
+                    continue
+                escalados.append({
+                    "reporte_id": assignment.report_id,
+                    "voluntario": info["nombre"],
+                })
+        else:
+            preparacion_error = preparacion.error_code.value
+            logger.warning(
+                "Despacho automatico no preparado para %s: %s",
+                elegibles,
+                preparacion_error,
+            )
 
     return {
         "revisados": revisados,
         "escalados": escalados,
         "sin_candidatos": sin_candidatos,
+        "conflictos": conflictos,
+        "omitidos": omitidos,
+        "preparacion_error": preparacion_error,
         "ejecutado_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -75,6 +136,51 @@ def evaluar_escalamientos() -> dict:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+def _contar_reportes_sin_candidatos(preparacion) -> int:
+    return len({
+        item.report_id
+        for item in preparacion.excluded_items
+        if item.scope == DispatchExclusionScope.report
+        and item.reason == DispatchExclusionReason.no_candidates
+        and item.report_id
+    })
+
+
+def _cargar_voluntarios_info(voluntario_ids: list[str]) -> dict[str, dict]:
+    ids = list(dict.fromkeys(voluntario_ids))
+    if not ids:
+        return {}
+    resultado = (
+        supabase_admin.table("voluntarios")
+        .select("id, usuario_id, usuarios(nombre, apellido_paterno)")
+        .in_("id", ids)
+        .execute()
+    )
+    voluntarios_info = {}
+    for fila in resultado.data or []:
+        voluntario_id = fila.get("id")
+        usuario_id = fila.get("usuario_id")
+        usuario = fila.get("usuarios") or {}
+        if isinstance(usuario, list):
+            usuario = usuario[0] if usuario else {}
+        if not voluntario_id or not usuario_id:
+            continue
+        nombre = " ".join(
+            filter(
+                None,
+                [
+                    str(usuario.get("nombre") or "").strip(),
+                    str(usuario.get("apellido_paterno") or "").strip(),
+                ],
+            )
+        )
+        voluntarios_info[str(voluntario_id)] = {
+            "usuario_id": str(usuario_id),
+            "nombre": nombre or "Persona voluntaria",
+        }
+    return voluntarios_info
+
+
 def _reportes_esperando_asignacion() -> list:
     """Reportes en estado 'asignado' (con asociacion), con candidatos ya
     presentados y sin voluntario asignado."""
