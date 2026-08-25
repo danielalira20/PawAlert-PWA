@@ -557,8 +557,10 @@ def _translate_and_validate(
     vroom_result: VroomOptimizationResult,
     vehicle_id_to_volunteer: dict[int, str],
     job_id_to_report: dict[int, str],
+    job_id_to_location_index: dict[int, int],
     candidates_by_pair: dict[tuple[str, str], DispatchCandidate],
     distance_by_pair: dict[tuple[str, str], float],
+    allowed_tiers: frozenset[CandidateRouteTier],
 ) -> list[DispatchAssignment] | None:
     """Traduce la respuesta de VROOM validando cada regla del contrato
     (docs/contrato-adaptador-vroom.md). Devuelve None ante CUALQUIER
@@ -578,8 +580,15 @@ def _translate_and_validate(
             report_id = job_id_to_report.get(step.job_id)
             if report_id is None:
                 return None
+            expected_location = job_id_to_location_index.get(step.job_id)
+            if step.location_index != expected_location:
+                return None
             candidate = candidates_by_pair.get((volunteer_id, report_id))
-            if candidate is None or not candidate.automatic_eligible:
+            if (
+                candidate is None
+                or not candidate.automatic_eligible
+                or candidate.route_tier not in allowed_tiers
+            ):
                 return None
             if report_id in seen_reports or volunteer_id in seen_volunteers:
                 return None
@@ -618,12 +627,17 @@ def _solve_pass(
     vroom_result = get_optimization(vroom_request)
     if vroom_result.status != "complete":
         return None
+    job_id_to_location_index = {
+        job.id: job.location_index for job in vroom_request.jobs
+    }
     return _translate_and_validate(
         vroom_result,
         vehicle_id_to_volunteer,
         job_id_to_report,
+        job_id_to_location_index,
         candidates_by_pair,
         distance_by_pair,
+        allowed_tiers,
     )
 
 

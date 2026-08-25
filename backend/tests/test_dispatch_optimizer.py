@@ -501,7 +501,7 @@ def build_request(pairs, urgency_by_report=None, policy=None):
 
 
 def vroom_result_for(*asignaciones, unassigned_job_ids=None):
-    """asignaciones: tuplas (vehicle_id, job_id, arrival_seconds)."""
+    """Tuplas (vehicle_id, job_id, location_index, arrival_seconds)."""
     return VroomOptimizationResult(
         status="complete",
         routes=[
@@ -511,13 +511,13 @@ def vroom_result_for(*asignaciones, unassigned_job_ids=None):
                     VroomRouteStep(type="start", location_index=0, arrival=0),
                     VroomRouteStep(
                         type="job",
-                        location_index=1,
+                        location_index=location_index,
                         job_id=job_id,
                         arrival=arrival,
                     ),
                 ],
             )
-            for vehicle_id, job_id, arrival in asignaciones
+            for vehicle_id, job_id, location_index, arrival in asignaciones
         ],
         unassigned_job_ids=unassigned_job_ids or [],
         calculated_at=NOW,
@@ -555,7 +555,7 @@ def test_diferencia_7_minutos_gana_el_mas_cercano_fuera_de_ventana():
     with patch.object(
         dispatch_optimizer,
         "get_optimization",
-        return_value=vroom_result_for((1, 1, 300)),
+        return_value=vroom_result_for((1, 1, 2, 300)),
     ) as get_optimization:
         resultado = dispatch_optimizer.optimize_dispatch(request)
 
@@ -595,7 +595,7 @@ def test_diferencia_3_minutos_gana_mejor_matching_score_dentro_de_ventana():
     with patch.object(
         dispatch_optimizer,
         "get_optimization",
-        return_value=vroom_result_for((2, 1, 480)),
+        return_value=vroom_result_for((2, 1, 2, 480)),
     ) as get_optimization:
         dispatch_optimizer.optimize_dispatch(request)
 
@@ -631,7 +631,7 @@ def test_mismo_score_gana_el_menor_tiempo():
     with patch.object(
         dispatch_optimizer,
         "get_optimization",
-        return_value=vroom_result_for((1, 1, 300)),
+        return_value=vroom_result_for((1, 1, 2, 300)),
     ) as get_optimization:
         dispatch_optimizer.optimize_dispatch(request)
 
@@ -669,7 +669,10 @@ def test_voluntario_candidato_a_dos_reportes_nunca_recibe_ambos():
         patch.object(
             dispatch_optimizer,
             "get_optimization",
-            return_value=vroom_result_for((1, 1, 300), (1, 2, 320)),
+            return_value=vroom_result_for(
+                (1, 1, 1, 300),
+                (1, 2, 2, 320),
+            ),
         ),
         patch.object(
             dispatch_optimizer,
@@ -702,8 +705,8 @@ def test_mas_reportes_que_voluntarios_deja_sobrantes_sin_asignar():
         dispatch_optimizer,
         "get_optimization",
         side_effect=[
-            vroom_result_for((1, 1, 300), unassigned_job_ids=[2, 3]),
-            vroom_result_for((1, 1, 300), unassigned_job_ids=[2, 3]),
+            vroom_result_for((1, 1, 1, 300), unassigned_job_ids=[2, 3]),
+            vroom_result_for((1, 1, 1, 300), unassigned_job_ids=[2, 3]),
         ],
     ):
         resultado = dispatch_optimizer.optimize_dispatch(request)
@@ -741,7 +744,7 @@ def test_prioridad_rojo_sobre_verde_en_job_priority():
     with patch.object(
         dispatch_optimizer,
         "get_optimization",
-        return_value=vroom_result_for((1, 1, 300), unassigned_job_ids=[2]),
+        return_value=vroom_result_for((1, 1, 1, 300), unassigned_job_ids=[2]),
     ) as get_optimization:
         dispatch_optimizer.optimize_dispatch(request)
 
@@ -780,7 +783,7 @@ def test_pareja_no_autorizada_recibe_costo_alto_finito_determinista():
     with patch.object(
         dispatch_optimizer,
         "get_optimization",
-        return_value=vroom_result_for((1, 1, 300), (2, 2, 400)),
+        return_value=vroom_result_for((1, 1, 2, 300), (2, 2, 3, 400)),
     ) as get_optimization:
         dispatch_optimizer.optimize_dispatch(request)
 
@@ -830,7 +833,7 @@ def test_externo_ofrecido_nunca_recibe_skill_automatico():
     with patch.object(
         dispatch_optimizer,
         "get_optimization",
-        side_effect=[vroom_result_for((vehicle_id_int, 1, 300))],
+        side_effect=[vroom_result_for((vehicle_id_int, 1, 2, 300))],
     ) as get_optimization:
         resultado = dispatch_optimizer.optimize_dispatch(request)
 
@@ -882,8 +885,8 @@ def test_expanded_mejora_cobertura_se_acepta_used_secondary_true():
         dispatch_optimizer,
         "get_optimization",
         side_effect=[
-            vroom_result_for((1, 1, 300), unassigned_job_ids=[2]),
-            vroom_result_for((1, 1, 300), (2, 2, 1200)),
+            vroom_result_for((1, 1, 3, 300), unassigned_job_ids=[2]),
+            vroom_result_for((1, 1, 3, 300), (2, 2, 4, 1200)),
         ],
     ) as get_optimization:
         resultado = dispatch_optimizer.optimize_dispatch(request)
@@ -940,8 +943,8 @@ def test_expanded_no_mejora_se_descarta_y_queda_primary():
         dispatch_optimizer,
         "get_optimization",
         side_effect=[
-            vroom_result_for((1, 1, 300), unassigned_job_ids=[2]),
-            vroom_result_for((1, 1, 300), unassigned_job_ids=[2]),
+            vroom_result_for((1, 1, 2, 300), unassigned_job_ids=[2]),
+            vroom_result_for((1, 1, 2, 300), unassigned_job_ids=[2]),
         ],
     ) as get_optimization:
         resultado = dispatch_optimizer.optimize_dispatch(request)
@@ -1015,7 +1018,83 @@ def test_respuesta_inconsistente_pareja_inventada_cae_a_fallback():
         patch.object(
             dispatch_optimizer,
             "get_optimization",
-            return_value=vroom_result_for((2, 1, 300)),
+            return_value=vroom_result_for((2, 1, 2, 300)),
+        ),
+        patch.object(
+            dispatch_optimizer,
+            "optimize_dispatch_fallback",
+            return_value=resultado_fallback,
+        ) as fallback,
+    ):
+        resultado = dispatch_optimizer.optimize_dispatch(request)
+
+    fallback.assert_called_once_with(request)
+    assert resultado is resultado_fallback
+
+
+def test_primary_rechaza_asignacion_secondary_devuelta_por_vroom():
+    request = build_request(
+        [
+            {
+                "volunteer_id": "vol-primary",
+                "report_id": "rep-1",
+                "duration": 300,
+                "distance": 2000,
+                "score": 60,
+            },
+            {
+                "volunteer_id": "vol-secondary",
+                "report_id": "rep-1",
+                "duration": 900,
+                "distance": 6000,
+                "score": 95,
+            },
+        ]
+    )
+    secondary = next(
+        candidate
+        for candidate in request.candidates
+        if candidate.volunteer_id == "vol-secondary"
+    )
+    assert secondary.route_tier == CandidateRouteTier.secondary
+
+    resultado_fallback = MagicMock()
+    with (
+        patch.object(
+            dispatch_optimizer,
+            "get_optimization",
+            return_value=vroom_result_for((2, 1, 2, 900)),
+        ),
+        patch.object(
+            dispatch_optimizer,
+            "optimize_dispatch_fallback",
+            return_value=resultado_fallback,
+        ) as fallback,
+    ):
+        resultado = dispatch_optimizer.optimize_dispatch(request)
+
+    fallback.assert_called_once_with(request)
+    assert resultado is resultado_fallback
+
+
+def test_respuesta_con_location_index_inconsistente_cae_a_fallback():
+    request = build_request(
+        [
+            {
+                "volunteer_id": "vol-1",
+                "report_id": "rep-1",
+                "duration": 300,
+                "distance": 2000,
+                "score": 80,
+            },
+        ]
+    )
+    resultado_fallback = MagicMock()
+    with (
+        patch.object(
+            dispatch_optimizer,
+            "get_optimization",
+            return_value=vroom_result_for((1, 1, 0, 300)),
         ),
         patch.object(
             dispatch_optimizer,
@@ -1053,7 +1132,7 @@ def test_manual_only_nunca_recibe_skill_en_ningun_pass():
         dispatch_optimizer,
         "get_optimization",
         side_effect=[
-            vroom_result_for((1, 1, 300)),
+            vroom_result_for((1, 1, 2, 300)),
         ],
     ) as get_optimization:
         dispatch_optimizer.optimize_dispatch(request)
