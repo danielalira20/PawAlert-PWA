@@ -491,3 +491,84 @@ def _build_vroom_request(
     }
     return vroom_request, vehicle_id_to_volunteer, job_id_to_report
 
+
+def _translate_and_validate(
+    vroom_result: VroomOptimizationResult,
+    vehicle_id_to_volunteer: dict[int, str],
+    job_id_to_report: dict[int, str],
+    candidates_by_pair: dict[tuple[str, str], DispatchCandidate],
+    distance_by_pair: dict[tuple[str, str], float],
+) -> list[DispatchAssignment] | None:
+    """Traduce la respuesta de VROOM validando cada regla del contrato
+    (docs/contrato-adaptador-vroom.md). Devuelve None ante CUALQUIER
+    inconsistencia -- el caller lo trata como si VROOM hubiera fallado, sin
+    generar ninguna asignacion parcial de esa respuesta."""
+    assignments: list[DispatchAssignment] = []
+    seen_reports: set[str] = set()
+    seen_volunteers: set[str] = set()
+
+    for route in vroom_result.routes:
+        volunteer_id = vehicle_id_to_volunteer.get(route.vehicle_id)
+        if volunteer_id is None:
+            return None
+        for step in route.steps:
+            if step.type != "job":
+                continue
+            report_id = job_id_to_report.get(step.job_id)
+            if report_id is None:
+                return None
+            candidate = candidates_by_pair.get((volunteer_id, report_id))
+            if candidate is None or not candidate.automatic_eligible:
+                return None
+            if report_id in seen_reports or volunteer_id in seen_volunteers:
+                return None
+            distance = distance_by_pair.get((volunteer_id, report_id))
+            if distance is None:
+                return None
+            seen_reports.add(report_id)
+            seen_volunteers.add(volunteer_id)
+            assignments.append(
+                DispatchAssignment(
+                    report_id=report_id,
+                    volunteer_id=volunteer_id,
+                    arrival_seconds=step.arrival,
+                    distance_meters=distance,
+                    route_tier=candidate.route_tier,
+                )
+            )
+    return assignments
+
+
+def _solve_pass(
+    request: DispatchOptimizationRequest,
+    allowed_tiers: frozenset[CandidateRouteTier],
+    candidates_by_pair: dict[tuple[str, str], DispatchCandidate],
+    distance_by_pair: dict[tuple[str, str], float],
+    volunteer_ids: list[str],
+    report_ids: list[str],
+    forbidden_cost: float,
+) -> list[DispatchAssignment] | None:
+    """None = VROOM no disponible o su respuesta no paso la validacion --
+    fallo total para este pass. Lista (posiblemente vacia) = VROOM respondio
+    de forma valida."""
+    vroom_request, vehicle_id_to_volunteer, job_id_to_report = _build_vroom_request(
+        request, allowed_tiers, volunteer_ids, report_ids, forbidden_cost
+    )
+    vroom_result = get_optimization(vroom_request)
+    if vroom_result.status != "complete":
+        return None
+    return _translate_and_validate(
+        vroom_result,
+        vehicle_id_to_volunteer,
+        job_id_to_report,
+        candidates_by_pair,
+        distance_by_pair,
+    )
+
+
+def _unassigned_report_ids(
+    report_ids: list[str], assignments: list[DispatchAssignment]
+) -> list[str]:
+    assigned = {assignment.report_id for assignment in assignments}
+    return [report_id for report_id in report_ids if report_id not in assigned]
+
