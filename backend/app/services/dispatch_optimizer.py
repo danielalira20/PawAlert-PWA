@@ -394,6 +394,67 @@ def _distance_lookup(
     return lookup
 
 
+def _duration_lookup(
+    request: DispatchOptimizationRequest,
+) -> dict[tuple[str, str], float]:
+    """(volunteer_id, report_id) -> duracion real de travel_matrix. Mismo
+    patron que _distance_lookup; usado por _rank_lookup para ordenar
+    candidatos por (score, duracion, id)."""
+    origin_index = {
+        volunteer_id: index
+        for index, volunteer_id in enumerate(request.travel_matrix.origin_ids)
+    }
+    destination_index = {
+        report_id: index
+        for index, report_id in enumerate(request.travel_matrix.destination_ids)
+    }
+    lookup = {}
+    for candidate in request.candidates:
+        row = origin_index[candidate.volunteer_id]
+        column = destination_index[candidate.report_id]
+        lookup[(candidate.volunteer_id, candidate.report_id)] = (
+            request.travel_matrix.durations_seconds[row][column]
+        )
+    return lookup
+
+
+def _rank_lookup(
+    request: DispatchOptimizationRequest,
+    allowed_tiers: frozenset[CandidateRouteTier],
+    duration_by_pair: dict[tuple[str, str], float],
+) -> dict[tuple[str, str], int]:
+    """Espejo de dispatch_fallback_service._eligible_routes
+    (dispatch_fallback_service.py:201-221): rank 0-based POR REPORTE, entre
+    los candidatos automatic_eligible cuyo route_tier esta en allowed_tiers
+    para este pass, ordenados por (-matching_score, duration_seconds,
+    volunteer_id). El pool de candidatos -- y por lo tanto el rank de un
+    mismo (volunteer_id, report_id) -- cambia entre pass primary y pass
+    expanded (expanded suma los candidatos secondary al pool), asi que este
+    lookup se recalcula por pass y nunca se reutiliza entre pasadas."""
+    candidates_by_report: dict[str, list[DispatchCandidate]] = {}
+    for candidate in request.candidates:
+        if (
+            not candidate.automatic_eligible
+            or candidate.route_tier not in allowed_tiers
+        ):
+            continue
+        candidates_by_report.setdefault(candidate.report_id, []).append(candidate)
+
+    rank_by_pair: dict[tuple[str, str], int] = {}
+    for report_id, candidates in candidates_by_report.items():
+        ordered = sorted(
+            candidates,
+            key=lambda candidate: (
+                -candidate.matching_score,
+                duration_by_pair[(candidate.volunteer_id, candidate.report_id)],
+                candidate.volunteer_id,
+            ),
+        )
+        for rank, candidate in enumerate(ordered):
+            rank_by_pair[(candidate.volunteer_id, report_id)] = rank
+    return rank_by_pair
+
+
 def _build_vroom_request(
     request: DispatchOptimizationRequest,
     allowed_tiers: frozenset[CandidateRouteTier],
@@ -576,11 +637,14 @@ def _unassigned_report_ids(
 def _quality(
     assignments: list[DispatchAssignment],
     urgency_by_report: dict[str, Decimal],
-) -> tuple[Decimal, int, int, Decimal]:
-    """Espejo de dispatch_fallback_service._Solution.quality, sin el criterio
-    adicional `candidate_rank_sum` que ese modulo agrega -- ese criterio no
-    esta en el texto de docs/contrato-adaptador-vroom.md (ver aviso en el
-    resumen de la implementacion)."""
+    rank_by_pair: dict[tuple[str, str], int],
+) -> tuple[Decimal, int, int, int, Decimal]:
+    """Espejo exacto de dispatch_fallback_service._Solution.quality
+    (dispatch_fallback_service.py:47-55), incluido `candidate_rank_sum`
+    (calculo del rank: lineas 201-221; agregacion por asignacion: linea
+    312). `rank_by_pair` debe venir de _rank_lookup calculado para el MISMO
+    pass que produjo `assignments` -- el rank no es transferible entre
+    pasadas."""
     urgency_sum = sum(
         (urgency_by_report[assignment.report_id] for assignment in assignments),
         Decimal(0),
@@ -590,11 +654,21 @@ def _quality(
         for assignment in assignments
         if assignment.route_tier == CandidateRouteTier.secondary
     )
+    candidate_rank_sum = sum(
+        rank_by_pair[(assignment.volunteer_id, assignment.report_id)]
+        for assignment in assignments
+    )
     duration_sum = sum(
         (Decimal(assignment.arrival_seconds) for assignment in assignments),
         Decimal(0),
     )
-    return (urgency_sum, len(assignments), -secondary_count, -duration_sum)
+    return (
+        urgency_sum,
+        len(assignments),
+        -secondary_count,
+        -candidate_rank_sum,
+        -duration_sum,
+    )
 
 
 def _stable_signature(
@@ -609,21 +683,42 @@ def _stable_signature(
 
 
 def _expanded_is_better(
+    request: DispatchOptimizationRequest,
     primary_assignments: list[DispatchAssignment],
     expanded_assignments: list[DispatchAssignment],
     urgency_by_report: dict[str, Decimal],
+    duration_by_pair: dict[tuple[str, str], float],
 ) -> bool:
     """docs/contrato-adaptador-vroom.md, seccion "Dos soluciones sobre el
-    lote completo": B solo reemplaza a A si mejora prioridad cubierta,
-    cobertura, cantidad de secondary o costo vial total, en ese orden; un
-    empate total se resuelve por identificadores estables."""
+    lote completo", mas el criterio candidate_rank_sum que agrega
+    dispatch_fallback_service._Solution.quality (dispatch_fallback_service.py
+    :47-55) entre "menos secondary" y "menor costo vial total": B solo
+    reemplaza a A si mejora prioridad cubierta, cobertura, cantidad de
+    secondary, ranking promedio de candidatos elegidos o costo vial total,
+    en ese orden; un empate total se resuelve por identificadores estables.
+
+    El rank se recalcula por pass (_rank_lookup) porque el pool de
+    candidatos elegibles de primary y expanded es distinto -- nunca se
+    reutiliza el ranking de una pasada para evaluar la otra."""
     if not any(
         assignment.route_tier == CandidateRouteTier.secondary
         for assignment in expanded_assignments
     ):
         return False
-    primary_quality = _quality(primary_assignments, urgency_by_report)
-    expanded_quality = _quality(expanded_assignments, urgency_by_report)
+    primary_rank_by_pair = _rank_lookup(
+        request, frozenset({CandidateRouteTier.primary}), duration_by_pair
+    )
+    expanded_rank_by_pair = _rank_lookup(
+        request,
+        frozenset({CandidateRouteTier.primary, CandidateRouteTier.secondary}),
+        duration_by_pair,
+    )
+    primary_quality = _quality(
+        primary_assignments, urgency_by_report, primary_rank_by_pair
+    )
+    expanded_quality = _quality(
+        expanded_assignments, urgency_by_report, expanded_rank_by_pair
+    )
     if expanded_quality != primary_quality:
         return expanded_quality > primary_quality
     return _stable_signature(expanded_assignments) < _stable_signature(
@@ -669,6 +764,7 @@ def optimize_dispatch(
         for candidate in request.candidates
     }
     distance_by_pair = _distance_lookup(request)
+    duration_by_pair = _duration_lookup(request)
     urgency_by_report = {
         job.report_id: Decimal(str(job.urgency.score)) for job in request.jobs
     }
@@ -716,7 +812,11 @@ def optimize_dispatch(
         return optimize_dispatch_fallback(request)
 
     if _expanded_is_better(
-        primary_assignments, expanded_assignments, urgency_by_report
+        request,
+        primary_assignments,
+        expanded_assignments,
+        urgency_by_report,
+        duration_by_pair,
     ):
         return _finalize_vroom(
             expanded_assignments,
