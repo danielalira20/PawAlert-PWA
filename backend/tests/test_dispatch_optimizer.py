@@ -1,9 +1,11 @@
 import logging
 from datetime import datetime, timezone
+from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 from app.models.dispatch import (
     CandidateRouteTier,
+    DispatchAssignment,
     DispatchCandidate,
     DispatchJob,
     DispatchOptimizationPass,
@@ -1061,3 +1063,188 @@ def test_manual_only_nunca_recibe_skill_en_ningun_pass():
         v.skills for v in primary_request.vehicles if v.start_index == 1
     )
     assert skills_manual_only == []
+
+
+def test_candidate_rank_sum_decide_empate_en_los_primeros_criterios():
+    """_expanded_is_better/_quality: si urgency_sum, cobertura y
+    secondary_count empatan entre A y B, candidate_rank_sum debe decidir --
+    y debe pesar mas que duration_sum (posicion siguiente en la tupla),
+    aunque duration_sum favorezca al otro lado.
+
+    NOTA: en optimize_dispatch() real esta situacion no puede surgir de un
+    par de llamadas a VROOM -- pass A solo usa candidatos primary, asi que
+    su secondary_count SIEMPRE es 0 por construccion, y el guard inicial de
+    _expanded_is_better exige que el secondary_count de expanded sea >=1
+    para siquiera evaluar la comparacion. Esos dos hechos juntos garantizan
+    que la posicion 2 (-secondary_count) nunca empata cuando 0 y 1 si
+    empatan -- siempre gana A ahi. Por eso esta prueba llama
+    _expanded_is_better directamente con listas de asignaciones armadas a
+    mano (tageando secondary_count=1 en ambos lados) para aislar el
+    mecanismo de comparacion en la posicion de candidate_rank_sum, en vez de
+    intentar (imposible) llegar a este empate a traves de dos corridas
+    reales de VROOM."""
+    request = build_request(
+        [
+            {
+                "volunteer_id": "vol-1",
+                "report_id": "rep-1",
+                "duration": 100,
+                "distance": 1000,
+                "score": 95,
+            },
+            {
+                "volunteer_id": "vol-2",
+                "report_id": "rep-1",
+                "duration": 100,
+                "distance": 1000,
+                "score": 40,
+            },
+            {
+                "volunteer_id": "vol-3",
+                "report_id": "rep-2",
+                "duration": 100,
+                "distance": 1000,
+                "score": 95,
+            },
+            {
+                "volunteer_id": "vol-4",
+                "report_id": "rep-2",
+                "duration": 100,
+                "distance": 1000,
+                "score": 40,
+            },
+        ],
+        urgency_by_report={"rep-1": 50.0, "rep-2": 50.0},
+    )
+    duration_by_pair = dispatch_optimizer._duration_lookup(request)
+    urgency_by_report = {
+        job.report_id: Decimal(str(job.urgency.score)) for job in request.jobs
+    }
+
+    # A usa los candidatos peor rankeados (vol-2, vol-4: score 40, rank 1 en
+    # cada reporte) pero con arrival_seconds bajo -> duration_sum favorece a
+    # A si esa posicion decidiera.
+    peor_rankeado = [
+        DispatchAssignment(
+            report_id="rep-1",
+            volunteer_id="vol-2",
+            arrival_seconds=100,
+            distance_meters=1000,
+            route_tier=CandidateRouteTier.secondary,
+        ),
+        DispatchAssignment(
+            report_id="rep-2",
+            volunteer_id="vol-4",
+            arrival_seconds=100,
+            distance_meters=1000,
+            route_tier=CandidateRouteTier.secondary,
+        ),
+    ]
+    # B usa los candidatos mejor rankeados (vol-1, vol-3: score 95, rank 0
+    # en cada reporte) pero con arrival_seconds alto -> duration_sum NO
+    # favorece a B; si B gana, fue por candidate_rank_sum, no por costo.
+    mejor_rankeado = [
+        DispatchAssignment(
+            report_id="rep-1",
+            volunteer_id="vol-1",
+            arrival_seconds=500,
+            distance_meters=1000,
+            route_tier=CandidateRouteTier.secondary,
+        ),
+        DispatchAssignment(
+            report_id="rep-2",
+            volunteer_id="vol-3",
+            arrival_seconds=500,
+            distance_meters=1000,
+            route_tier=CandidateRouteTier.secondary,
+        ),
+    ]
+
+    quality_peor = dispatch_optimizer._quality(
+        peor_rankeado,
+        urgency_by_report,
+        dispatch_optimizer._rank_lookup(
+            request, frozenset({CandidateRouteTier.primary}), duration_by_pair
+        ),
+    )
+    quality_mejor = dispatch_optimizer._quality(
+        mejor_rankeado,
+        urgency_by_report,
+        dispatch_optimizer._rank_lookup(
+            request, frozenset({CandidateRouteTier.primary}), duration_by_pair
+        ),
+    )
+    # primeras 3 posiciones empatadas (urgency, cobertura, secondary_count);
+    # candidate_rank_sum (posicion 3) desempata a favor del mejor rankeado,
+    # pese a que duration_sum (posicion 4) lo hubiera penalizado.
+    assert quality_peor[:3] == quality_mejor[:3]
+    assert quality_mejor[3] > quality_peor[3]
+    assert quality_mejor[4] < quality_peor[4]
+    assert quality_mejor > quality_peor
+
+    assert dispatch_optimizer._expanded_is_better(
+        request, peor_rankeado, mejor_rankeado, urgency_by_report, duration_by_pair
+    )
+
+
+def test_rank_cambia_entre_pass_primary_y_pass_expanded():
+    """El pool de candidatos elegibles de _rank_lookup cambia entre pass
+    primary y pass expanded (expanded suma los secondary), asi que el rank
+    de un mismo voluntario para el mismo reporte puede cambiar entre
+    pasadas -- nunca se reutiliza el ranking de una para evaluar la otra."""
+    request = build_request(
+        [
+            {
+                "volunteer_id": "vol-a",
+                "report_id": "rep-1",
+                "duration": 300,
+                "distance": 2000,
+                "score": 95,
+            },
+            {
+                "volunteer_id": "vol-b",
+                "report_id": "rep-1",
+                "duration": 350,
+                "distance": 2300,
+                "score": 70,
+            },
+            {
+                "volunteer_id": "vol-c",
+                "report_id": "rep-1",
+                "duration": 900,
+                "distance": 6000,
+                "score": 85,
+            },
+        ]
+    )
+    # vol-a y vol-b caen naturalmente en primary (dentro de la ventana de 5
+    # min respecto al minimo de 300s); vol-c cae en secondary (900s > 600s
+    # pero <= 1800s). Confirma la premisa antes de comparar los rankings.
+    tier_by_volunteer = {c.volunteer_id: c.route_tier for c in request.candidates}
+    assert tier_by_volunteer["vol-a"] == CandidateRouteTier.primary
+    assert tier_by_volunteer["vol-b"] == CandidateRouteTier.primary
+    assert tier_by_volunteer["vol-c"] == CandidateRouteTier.secondary
+
+    duration_by_pair = dispatch_optimizer._duration_lookup(request)
+    rank_primary = dispatch_optimizer._rank_lookup(
+        request, frozenset({CandidateRouteTier.primary}), duration_by_pair
+    )
+    rank_expanded = dispatch_optimizer._rank_lookup(
+        request,
+        frozenset({CandidateRouteTier.primary, CandidateRouteTier.secondary}),
+        duration_by_pair,
+    )
+
+    # pool primary: solo vol-a (score 95) y vol-b (score 70) -> vol-b es
+    # rank 1 (el peor de los dos).
+    assert rank_primary[("vol-a", "rep-1")] == 0
+    assert rank_primary[("vol-b", "rep-1")] == 1
+    assert ("vol-c", "rep-1") not in rank_primary
+
+    # pool expanded: se suma vol-c (score 85), que queda ENTRE vol-a y
+    # vol-b por score -> vol-b baja a rank 2. El mismo par
+    # (vol-b, rep-1) cambia de rank entre pasadas.
+    assert rank_expanded[("vol-a", "rep-1")] == 0
+    assert rank_expanded[("vol-c", "rep-1")] == 1
+    assert rank_expanded[("vol-b", "rep-1")] == 2
+    assert rank_primary[("vol-b", "rep-1")] != rank_expanded[("vol-b", "rep-1")]
