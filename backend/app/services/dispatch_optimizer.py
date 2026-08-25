@@ -15,20 +15,28 @@ evita repetir voluntario dentro del mismo lote.
 
 import logging
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from app.db.supabase import supabase_admin
 from app.models.dispatch import (
+    CandidateRouteTier,
     DispatchAssignment,
+    DispatchCandidate,
+    DispatchOptimizationPass,
+    DispatchOptimizationRequest,
     DispatchOptimizationResult,
     RoutingStatus,
 )
 from app.services import matching
+from app.services.dispatch_fallback_service import optimize_dispatch_fallback
 from app.services.dispatch_route_matrix_service import (
     calculate_dispatch_route_matrix,
 )
 from app.services.vroom_service import (
     VroomJob,
     VroomOptimizationRequest,
+    VroomOptimizationResult,
+    VroomProfileMatrix,
     VroomVehicle,
     get_optimization,
 )
@@ -308,3 +316,178 @@ def _fallback_local(
         calculated_at=datetime.now(timezone.utc),
     )
     return resultado, voluntarios_info
+
+
+# ---------------------------------------------------------------------------
+# Fase 3: optimize_dispatch(request) -- funcion pura sobre un
+# DispatchOptimizationRequest ya preparado. No consulta matching, Supabase,
+# coverage_service ni OSRM (docs/contrato-adaptador-vroom.md, seccion
+# "Responsabilidades" de `dispatch_optimizer`). Coexiste con
+# optimizar_lote_reportes() de arriba -- esa sigue siendo la que llama
+# escalamiento.py hasta que Daniela la reescriba en Fase 5.
+# ---------------------------------------------------------------------------
+
+# Cualquier cruce de la matriz cuadrada que no corresponda a una pareja
+# autorizada para el pass en curso (o que sea voluntario<->voluntario,
+# reporte<->reporte, o reporte->voluntario) recibe este costo en vez de 0 o
+# inf/NaN -- docs/contrato-adaptador-vroom.md, seccion "Matriz e indices de
+# VROOM". Se calcula por lote: el mayor entre un piso absoluto (24h, muy por
+# encima de cualquier ETA real de despacho) y un multiplo grande del mayor
+# valor real presente en la matriz rectangular del lote, para que domine
+# incluso lotes con ETAs manual_only inusualmente altos. `skills` ya es la
+# barrera estructural que impide que VROOM elija estas parejas; el costo alto
+# es una segunda barrera, no la unica.
+_FORBIDDEN_PAIR_COST_FLOOR_SECONDS = 86_400
+_FORBIDDEN_PAIR_COST_MULTIPLIER = 1_000
+
+# El score decide "con todo su peso" entre candidatos primary del mismo
+# reporte (docs/contrato-ranking-despacho.md), pero el mismo contrato prohibe
+# convertirlo en un descuento continuo de minutos. Para lograr ambas cosas,
+# el score domina LEXICOGRAFICAMENTE sobre la duracion real en el costo que
+# ve VROOM: no se resta score de la duracion, se escala para que ninguna
+# diferencia de duracion realista (acotada por secondary_max_eta_minutes,
+# tipicamente <=1800s) pueda compensar una diferencia de score. Esto solo
+# afecta el campo `costs` (la funcion objetivo de VROOM); `durations` y
+# `distances` viajan sin modificar porque arrival_seconds/distance_meters
+# deben reflejar el ETA/distancia real, no el costo ajustado por score.
+_SCORE_COST_SCALE_SECONDS = 100_000
+
+_VROOM_VEHICLE_CAPACITY = [1]
+_VROOM_JOB_DELIVERY = [1]
+
+
+def _forbidden_pair_cost(durations_seconds: list[list[float | None]]) -> float:
+    real_values = [
+        value
+        for row in durations_seconds
+        for value in row
+        if value is not None
+    ]
+    largest_real_value = max(real_values, default=0.0)
+    return max(
+        float(_FORBIDDEN_PAIR_COST_FLOOR_SECONDS),
+        largest_real_value * _FORBIDDEN_PAIR_COST_MULTIPLIER,
+    )
+
+
+def _distance_lookup(
+    request: DispatchOptimizationRequest,
+) -> dict[tuple[str, str], float]:
+    """(volunteer_id, report_id) -> distancia real de travel_matrix. Solo se
+    construye para parejas en `candidates`; DispatchOptimizationRequest ya
+    garantiza que esas celdas no son None."""
+    origin_index = {
+        volunteer_id: index
+        for index, volunteer_id in enumerate(request.travel_matrix.origin_ids)
+    }
+    destination_index = {
+        report_id: index
+        for index, report_id in enumerate(request.travel_matrix.destination_ids)
+    }
+    lookup = {}
+    for candidate in request.candidates:
+        row = origin_index[candidate.volunteer_id]
+        column = destination_index[candidate.report_id]
+        lookup[(candidate.volunteer_id, candidate.report_id)] = (
+            request.travel_matrix.distances_meters[row][column]
+        )
+    return lookup
+
+
+def _build_vroom_request(
+    request: DispatchOptimizationRequest,
+    allowed_tiers: frozenset[CandidateRouteTier],
+    volunteer_ids: list[str],
+    report_ids: list[str],
+    forbidden_cost: float,
+) -> tuple[VroomOptimizationRequest, dict[int, str], dict[int, str]]:
+    """Construye la matriz cuadrada (V+R)x(V+R) -- voluntarios 0..V-1,
+    reportes V..V+R-1 -- y los skills que autorizan cada pareja para este
+    pass. Siempre incluye TODOS los voluntarios/reportes del request (no solo
+    los que tienen candidatos autorizados): si un pass no autoriza ninguna
+    pareja para un reporte, ese reporte simplemente no tendra ningun
+    voluntario con el skill requerido y VROOM lo reportara sin asignar --
+    no hace falta un caso especial aqui."""
+    volunteer_index = {vid: i for i, vid in enumerate(volunteer_ids)}
+    report_index = {
+        rid: len(volunteer_ids) + i for i, rid in enumerate(report_ids)
+    }
+    origin_index = {
+        vid: i for i, vid in enumerate(request.travel_matrix.origin_ids)
+    }
+    destination_index = {
+        rid: i for i, rid in enumerate(request.travel_matrix.destination_ids)
+    }
+
+    size = len(volunteer_ids) + len(report_ids)
+    durations = [[forbidden_cost] * size for _ in range(size)]
+    distances = [[forbidden_cost] * size for _ in range(size)]
+    costs = [[forbidden_cost] * size for _ in range(size)]
+    for index in range(size):
+        durations[index][index] = 0.0
+        distances[index][index] = 0.0
+        costs[index][index] = 0.0
+
+    skill_id_by_report = {rid: index + 1 for index, rid in enumerate(report_ids)}
+    skills_by_volunteer: dict[str, set[int]] = {vid: set() for vid in volunteer_ids}
+
+    for candidate in request.candidates:
+        if (
+            not candidate.automatic_eligible
+            or candidate.route_tier not in allowed_tiers
+        ):
+            continue
+        volunteer_id = candidate.volunteer_id
+        report_id = candidate.report_id
+        row = volunteer_index[volunteer_id]
+        column = report_index[report_id]
+        matrix_row = origin_index[volunteer_id]
+        matrix_column = destination_index[report_id]
+        duration = request.travel_matrix.durations_seconds[matrix_row][matrix_column]
+        distance = request.travel_matrix.distances_meters[matrix_row][matrix_column]
+        durations[row][column] = duration
+        distances[row][column] = distance
+        costs[row][column] = (
+            (100 - candidate.matching_score) * _SCORE_COST_SCALE_SECONDS
+            + duration
+        )
+        skills_by_volunteer[volunteer_id].add(skill_id_by_report[report_id])
+
+    vehicles = [
+        VroomVehicle(
+            id=index + 1,
+            start_index=volunteer_index[volunteer_id],
+            capacity=list(_VROOM_VEHICLE_CAPACITY),
+            skills=sorted(skills_by_volunteer[volunteer_id]),
+        )
+        for index, volunteer_id in enumerate(volunteer_ids)
+    ]
+    job_by_report = {job.report_id: job for job in request.jobs}
+    jobs = [
+        VroomJob(
+            id=index + 1,
+            location_index=report_index[report_id],
+            priority=int(round(job_by_report[report_id].urgency.score)),
+            delivery=list(_VROOM_JOB_DELIVERY),
+            skills=[skill_id_by_report[report_id]],
+        )
+        for index, report_id in enumerate(report_ids)
+    ]
+
+    vroom_request = VroomOptimizationRequest(
+        vehicles=vehicles,
+        jobs=jobs,
+        matrices={
+            "car": VroomProfileMatrix(
+                durations=durations, distances=distances, costs=costs
+            )
+        },
+    )
+    vehicle_id_to_volunteer = {
+        index + 1: volunteer_id for index, volunteer_id in enumerate(volunteer_ids)
+    }
+    job_id_to_report = {
+        index + 1: report_id for index, report_id in enumerate(report_ids)
+    }
+    return vroom_request, vehicle_id_to_volunteer, job_id_to_report
+
