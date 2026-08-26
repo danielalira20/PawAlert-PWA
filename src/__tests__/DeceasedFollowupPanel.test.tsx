@@ -101,6 +101,20 @@ describe('DeceasedFollowupPanel', () => {
     expect(view.getByText('Centro, Puebla')).toBeTruthy();
   });
 
+  it('usa la bandeja administrativa para expedientes escalados', async () => {
+    const view = await render(<DeceasedFollowupPanel visible mode="admin" />);
+
+    await waitFor(() => {
+      expect(view.getByText(
+        'Resuelve expedientes escalados sin cerrar el caso antes de completar su revisión.',
+      )).toBeTruthy();
+    });
+    expect(mockedAxios.get).toHaveBeenCalledWith(
+      expect.stringContaining('/admin/seguimientos-fallecimiento'),
+      { headers: { Authorization: 'Bearer token-asociacion' } },
+    );
+  });
+
   it('mantiene oculta la evidencia hasta que se solicita verla', async () => {
     const view = await render(<DeceasedFollowupPanel visible />);
     await waitFor(() => {

@@ -130,6 +130,7 @@ interface DetalleSeguimiento {
 
 interface Props {
   visible: boolean;
+  mode?: 'association' | 'admin';
 }
 
 const DECISIONES: {
@@ -197,7 +198,7 @@ function estadoSeguimiento(estado: string): string {
   return 'Seguimiento en curso';
 }
 
-export function DeceasedFollowupPanel({ visible }: Props) {
+export function DeceasedFollowupPanel({ visible, mode = 'association' }: Props) {
   const { token } = useAuth();
   const { toast, translateY, showToast } = useToast();
   const [seguimientos, setSeguimientos] = useState<SeguimientoResumen[]>([]);
@@ -220,13 +221,16 @@ export function DeceasedFollowupPanel({ visible }: Props) {
     () => ({ Authorization: `Bearer ${token}` }),
     [token],
   );
+  const seguimientoBase = mode === 'admin'
+    ? `${API_URL}/admin/seguimientos-fallecimiento`
+    : `${API_URL}/associations/me/seguimientos-fallecimiento`;
 
   const cargarSeguimientos = useCallback(async () => {
     if (!token) return;
     setIsLoading(true);
     try {
       const response = await axios.get<SeguimientoResumen[]>(
-        `${API_URL}/associations/me/seguimientos-fallecimiento`,
+        seguimientoBase,
         { headers },
       );
       setSeguimientos(response.data || []);
@@ -239,7 +243,7 @@ export function DeceasedFollowupPanel({ visible }: Props) {
     } finally {
       setIsLoading(false);
     }
-  }, [headers, showToast, token]);
+  }, [headers, seguimientoBase, showToast, token]);
 
   const cargarDetalle = useCallback(
     async (reporteId: string) => {
@@ -251,7 +255,7 @@ export function DeceasedFollowupPanel({ visible }: Props) {
       setResultadoGestion(null);
       try {
         const response = await axios.get<DetalleSeguimiento>(
-          `${API_URL}/associations/me/seguimientos-fallecimiento/${reporteId}`,
+          `${seguimientoBase}/${reporteId}`,
           { headers },
         );
         setDetalle(response.data);
@@ -265,7 +269,7 @@ export function DeceasedFollowupPanel({ visible }: Props) {
         setIsLoadingDetalle(false);
       }
     },
-    [headers, showToast],
+    [headers, seguimientoBase, showToast],
   );
 
   useEffect(() => {
@@ -307,8 +311,8 @@ export function DeceasedFollowupPanel({ visible }: Props) {
     setIsSubmitting(true);
     try {
       await axios.post(
-        `${API_URL}/associations/me/seguimientos-fallecimiento/`
-          + `${detalle.reporte.id}/resultados/${resultadoRevision}/revision`,
+        `${seguimientoBase}/${detalle.reporte.id}`
+          + `/resultados/${resultadoRevision}/revision`,
         { decision, notas: notas.trim() },
         { headers },
       );
@@ -350,7 +354,9 @@ export function DeceasedFollowupPanel({ visible }: Props) {
 
       <View style={styles.toolbar}>
         <Text style={styles.helperText}>
-          Revisa evidencias sensibles y coordina el seguimiento sin cerrar el caso antes de tiempo.
+          {mode === 'admin'
+            ? 'Resuelve expedientes escalados sin cerrar el caso antes de completar su revisión.'
+            : 'Revisa evidencias sensibles y coordina el seguimiento sin cerrar el caso antes de tiempo.'}
         </Text>
         <TouchableOpacity
           accessibilityRole="button"
@@ -380,7 +386,10 @@ export function DeceasedFollowupPanel({ visible }: Props) {
         <View style={styles.list}>
           {seguimientos.map((seguimiento) => {
             const ubicacion = seguimiento.reportes;
-            const vencido = new Date(seguimiento.asociacion_deadline_at).getTime() < Date.now();
+            const deadline = mode === 'admin'
+              ? seguimiento.administracion_deadline_at
+              : seguimiento.asociacion_deadline_at;
+            const vencido = new Date(deadline).getTime() < Date.now();
             return (
               <TouchableOpacity
                 key={seguimiento.id}
@@ -407,10 +416,12 @@ export function DeceasedFollowupPanel({ visible }: Props) {
                 </View>
                 <View style={styles.deadlineRow}>
                   <Text style={[styles.deadlineText, vencido && styles.deadlineDanger]}>
-                    {vencido ? 'Plazo de asociación vencido' : 'Revisión de asociación'}
+                    {mode === 'admin'
+                      ? 'Revisión administrativa requerida'
+                      : vencido ? 'Plazo de asociación vencido' : 'Revisión de asociación'}
                   </Text>
                   <Text style={styles.deadlineText}>
-                    {formatDistanceToNow(new Date(seguimiento.asociacion_deadline_at), {
+                    {formatDistanceToNow(new Date(deadline), {
                       addSuffix: true,
                       locale: es,
                     })}
