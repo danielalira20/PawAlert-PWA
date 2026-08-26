@@ -677,7 +677,10 @@ def test_voluntario_externo_bloqueado_no_puede_crear_ofrecimiento():
     mock_perfil.assert_not_called()
 
 
-@pytest.mark.parametrize("origen", ["equipo_interno", "ofrecimiento_externo"])
+@pytest.mark.parametrize(
+    "origen",
+    ["equipo_interno", "ofrecimiento_externo", "escalamiento_automatico"],
+)
 def test_reserva_revalida_bloqueo_antes_de_la_operacion_atomica(origen):
     supabase_admin = MagicMock()
     with (
