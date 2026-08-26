@@ -124,6 +124,20 @@ def correr_push_dispatch(x_cron_secret: Optional[str] = Header(None)):
     from app.services.push_notification_service import dispatch_pending_pushes
     return dispatch_pending_pushes(limit=100)
 
+
+@router.post("/deceased-followups/run")
+def correr_escalamiento_seguimientos_fallecimiento(
+    x_cron_secret: Optional[str] = Header(None),
+):
+    if not settings.cron_secret or x_cron_secret != settings.cron_secret:
+        raise HTTPException(status_code=401, detail="No autorizado")
+
+    from app.services.deceased_followup_service import (
+        escalar_seguimientos_vencidos,
+    )
+
+    return escalar_seguimientos_vencidos(limit=100)
+
 @router.post("/reporter-confirmations/run")
 def correr_confirmaciones_permanencia(x_cron_secret: Optional[str] = Header(None)):
     if not settings.cron_secret or x_cron_secret != settings.cron_secret:

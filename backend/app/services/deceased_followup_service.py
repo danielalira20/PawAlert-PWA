@@ -78,6 +78,49 @@ class SeguimientoFallecimientoError(Exception):
         super().__init__(codigo)
 
 
+def escalar_seguimientos_vencidos(limit: int = 100) -> dict[str, int]:
+    """Escala los seguimientos vencidos mediante la operacion atomica SQL."""
+    if limit < 1 or limit > 500:
+        raise ValueError("limit debe estar entre 1 y 500")
+
+    try:
+        respuesta = supabase_admin.rpc(
+            "escalar_seguimientos_fallecimiento",
+            {"p_limit": limit},
+        ).execute()
+    except Exception as error:
+        logger.exception("No se pudieron escalar seguimientos de fallecimiento")
+        raise SeguimientoFallecimientoError(
+            "escalamiento_fallecimiento_no_disponible"
+        ) from error
+
+    datos = respuesta.data
+    if isinstance(datos, list):
+        datos = datos[0] if datos else None
+
+    claves = (
+        "procesados",
+        "escalados_asociacion",
+        "escalados_administracion",
+        "notificaciones_encoladas",
+    )
+    if not isinstance(datos, dict) or any(
+        not isinstance(datos.get(clave), int) or datos[clave] < 0
+        for clave in claves
+    ):
+        raise SeguimientoFallecimientoError(
+            "respuesta_escalamiento_fallecimiento_invalida"
+        )
+    if datos["procesados"] != (
+        datos["escalados_asociacion"]
+        + datos["escalados_administracion"]
+    ):
+        raise SeguimientoFallecimientoError(
+            "respuesta_escalamiento_fallecimiento_invalida"
+        )
+    return {clave: datos[clave] for clave in claves}
+
+
 def _ejecutar_rpc(nombre: str, parametros: dict) -> Any:
     try:
         respuesta = supabase_admin.rpc(nombre, parametros).execute()
