@@ -227,6 +227,29 @@ class SeguimientoRetiroAnimalRequest(BaseModel):
         return self
 
 
+class CerrarSeguimientoFallecimientoRequest(BaseModel):
+    resultado_final: Literal[
+        "contacto_realizado",
+        "autoridad_atendio",
+        "retiro_reportado",
+        "retiro_confirmado",
+        "sin_contacto_disponible",
+        "voluntario_se_retiro_por_seguridad",
+    ]
+    idempotency_key: str = Field(min_length=8, max_length=100)
+    nota_cierre: str = Field(min_length=5, max_length=1000)
+
+    @model_validator(mode="after")
+    def validar_cierre(self):
+        self.idempotency_key = self.idempotency_key.strip()
+        self.nota_cierre = self.nota_cierre.strip()
+        if len(self.idempotency_key) < 8:
+            raise ValueError("idempotency_key debe tener al menos 8 caracteres")
+        if len(self.nota_cierre) < 5:
+            raise ValueError("nota_cierre debe tener al menos 5 caracteres")
+        return self
+
+
 class ResolverBusquedaNoLocalizadoRequest(BaseModel):
     decision: str
     instrucciones: Optional[str] = Field(default=None, max_length=1000)
