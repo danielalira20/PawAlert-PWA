@@ -36,6 +36,7 @@ class EstadoReporteEnum(str, Enum):
     asignado = "asignado"
     en_camino = "en_camino"
     en_atencion = "en_atencion"
+    pendiente_seguimiento_fallecimiento = "pendiente_seguimiento_fallecimiento"
     rescatado = "rescatado"
     cerrado = "cerrado"
     sin_cobertura = "sin_cobertura"
