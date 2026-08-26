@@ -143,7 +143,7 @@ def revisar_resultado(
     reporte_id: str,
     resultado_id: str,
     usuario_id: str,
-    asociacion_id: str,
+    asociacion_id: str | None,
     body: RevisionResultadoSinVidaRequest,
 ) -> dict:
     datos = _ejecutar_rpc(
@@ -318,7 +318,7 @@ def finalizar_reactivacion_pendiente(reporte_id: str) -> dict:
 
 def _obtener_seguimiento_autorizado(
     reporte_id: str,
-    asociacion_id: str,
+    asociacion_id: str | None,
 ) -> dict:
     consulta = (
         supabase_admin.table("seguimientos_fallecimiento_reporte")
@@ -328,9 +328,12 @@ def _obtener_seguimiento_autorizado(
             "resultado_final, conclusion_rescate, cerrado_at, actualizado_at"
         )
         .eq("reporte_id", reporte_id)
-        .eq("asociacion_coordinadora_id", asociacion_id)
-        .execute()
     )
+    if asociacion_id is None:
+        consulta = consulta.is_("asociacion_coordinadora_id", "null")
+    else:
+        consulta = consulta.eq("asociacion_coordinadora_id", asociacion_id)
+    consulta = consulta.execute()
     if not consulta.data:
         raise SeguimientoFallecimientoError("seguimiento_no_encontrado")
     return consulta.data[0]
@@ -350,6 +353,61 @@ def listar_seguimientos_asociacion(asociacion_id: str) -> list[dict]:
         .execute()
     )
     return resultado.data or []
+
+
+def listar_seguimientos_administracion() -> list[dict]:
+    resultado = (
+        supabase_admin.table("seguimientos_fallecimiento_reporte")
+        .select(
+            "id, reporte_id, asociacion_coordinadora_id, estado, iniciado_at, "
+            "asociacion_deadline_at, administracion_deadline_at, actualizado_at, "
+            "reportes(municipio, colonia, created_at)"
+        )
+        .eq("estado", "escalado_administracion")
+        .order("administracion_deadline_at", desc=False)
+        .execute()
+    )
+    return resultado.data or []
+
+
+def obtener_detalle_seguimiento_administracion(reporte_id: str) -> dict:
+    consulta = (
+        supabase_admin.table("seguimientos_fallecimiento_reporte")
+        .select("asociacion_coordinadora_id, estado")
+        .eq("reporte_id", reporte_id)
+        .eq("estado", "escalado_administracion")
+        .execute()
+    )
+    if not consulta.data:
+        raise SeguimientoFallecimientoError("seguimiento_no_encontrado")
+    return obtener_detalle_seguimiento(
+        reporte_id,
+        consulta.data[0].get("asociacion_coordinadora_id"),
+    )
+
+
+def revisar_resultado_administracion(
+    reporte_id: str,
+    resultado_id: str,
+    usuario_id: str,
+    body: RevisionResultadoSinVidaRequest,
+) -> dict:
+    consulta = (
+        supabase_admin.table("seguimientos_fallecimiento_reporte")
+        .select("asociacion_coordinadora_id")
+        .eq("reporte_id", reporte_id)
+        .eq("estado", "escalado_administracion")
+        .execute()
+    )
+    if not consulta.data:
+        raise SeguimientoFallecimientoError("seguimiento_no_encontrado")
+    return revisar_resultado(
+        reporte_id,
+        resultado_id,
+        usuario_id,
+        consulta.data[0].get("asociacion_coordinadora_id"),
+        body,
+    )
 
 
 def _listar_resultados_propios(
@@ -511,7 +569,7 @@ def obtener_detalle_seguimiento_voluntario(
 
 def obtener_detalle_seguimiento(
     reporte_id: str,
-    asociacion_id: str,
+    asociacion_id: str | None,
 ) -> dict:
     seguimiento = _obtener_seguimiento_autorizado(reporte_id, asociacion_id)
 
