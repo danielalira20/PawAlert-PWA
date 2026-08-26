@@ -77,7 +77,18 @@ def test_candidatos_para_reporte_usa_ultima_ubicacion_confirmada():
 
 
 def test_matching_conserva_limites_y_contrato_operativo():
-    assert "LEAST(c.radio_max_km, 30) * 1000" in MIGRACION_0073
-    assert "v.estado IN ('activo_nivel_1', 'activo_nivel_2')" in MIGRACION_0073
-    assert "c.max_casos_simultaneos" in MIGRACION_0073
-    assert "r.nombre = 'voluntario_externo'" in MIGRACION_0073
+    """La misma trampa de falsa confianza que
+    test_candidatos_para_reporte_usa_ultima_ubicacion_confirmada: el cap de
+    30km cambio de formula en 0074 (LEAST(c.radio_max_km, 30) ->
+    LEAST(COALESCE(c.radio_max_km, 30), 30), para que radio_max_km NULL
+    signifique "sin limite configurado" en vez de excluir), pero este test
+    seguia comparando contra el texto de 0073, que tiene la formula vieja --
+    pasaba siempre sin verificar nada sobre el comportamiento vigente. Se
+    resuelve la migracion vigente igual que en el test de arriba."""
+    contenido = _ultima_migracion_de_candidatos_para_reporte().read_text(
+        encoding="utf-8"
+    )
+    assert "LEAST(COALESCE(c.radio_max_km, 30), 30) * 1000" in contenido
+    assert "v.estado IN ('activo_nivel_1', 'activo_nivel_2')" in contenido
+    assert "c.max_casos_simultaneos" in contenido
+    assert "r.nombre = 'voluntario_externo'" in contenido
