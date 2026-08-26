@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Literal, Optional
 from enum import Enum
 
@@ -195,6 +195,36 @@ class RevisionResultadoSinVidaRequest(BaseModel):
         "evidencia_insuficiente",
     ]
     notas: str = Field(min_length=5, max_length=1000)
+
+
+class SeguimientoRetiroAnimalRequest(BaseModel):
+    accion: Literal[
+        "contacto_oficial_realizado",
+        "autoridad_se_presento",
+        "tercero_responsable_se_hizo_cargo",
+        "retiro_gestionado_con_indicaciones",
+        "sin_comunicacion",
+        "sin_contacto_disponible",
+        "retiro_por_seguridad",
+    ]
+    idempotency_key: str = Field(min_length=8, max_length=100)
+    folio: Optional[str] = Field(default=None, max_length=200)
+    nombre_servicio: Optional[str] = Field(default=None, max_length=200)
+    destino_informado: Optional[str] = Field(default=None, max_length=500)
+    nota: Optional[str] = Field(default=None, max_length=1000)
+    evidencia_lugar_id: Optional[UUID] = None
+
+    @model_validator(mode="after")
+    def validar_seguimiento(self):
+        self.idempotency_key = self.idempotency_key.strip()
+        if len(self.idempotency_key) < 8:
+            raise ValueError("idempotency_key debe tener al menos 8 caracteres")
+        if (
+            self.accion == "retiro_gestionado_con_indicaciones"
+            and not (self.nombre_servicio or "").strip()
+        ):
+            raise ValueError("nombre_servicio es requerido para esta acción")
+        return self
 
 
 class ResolverBusquedaNoLocalizadoRequest(BaseModel):
