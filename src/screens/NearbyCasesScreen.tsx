@@ -42,6 +42,7 @@ interface Oferta {
   id: string;
   estado: 'vigente' | 'seleccionado';
   ofrecido_at: string;
+  expira_at?: string;
 }
 
 export interface CasoCercano {
@@ -126,7 +127,7 @@ function CaseCard({
           <View style={styles.distanceRow}>
             <Ionicons name="navigate" size={15} color={C.accent} />
             <Text style={styles.distanceText}>
-              A unos {caso.distancia_km} km · {caso.colonia || caso.municipio || 'Tu zona'}
+              A unos {caso.distancia_km} km (ruta aproximada) · {caso.colonia || caso.municipio || 'Tu zona'}
             </Text>
           </View>
         </View>
@@ -153,7 +154,7 @@ function CaseCard({
             <View style={{ flex: 1 }}>
               <Text style={styles.offeredTitle}>Ya te ofreciste</Text>
               <Text style={styles.offeredCaption}>
-                La asociación revisará tu perfil. El caso todavía no está asignado.
+                La asociación revisará tu perfil. {caso.ofrecimiento?.expira_at ? `Tu ofrecimiento expira en ${formatDistanceToNow(new Date(caso.ofrecimiento.expira_at), { locale: es })}.` : 'El caso todavía no está asignado.'}
               </Text>
             </View>
           </View>

@@ -1,4 +1,6 @@
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
+
 
 class Settings(BaseSettings):
     supabase_url: str
@@ -27,6 +29,8 @@ class Settings(BaseSettings):
     osrm_max_coordinates: int = 100
     vroom_base_url: str = ""
     vroom_timeout_seconds: int = 10
+    vroom_candidate_window_minutes: int = Field(default=5, ge=0)
+    vroom_secondary_max_eta_minutes: int = Field(default=30, gt=0)
     clip_validation_enabled: bool = False
     huggingface_token: str = ""
     clip_endpoint_url: str = ""
@@ -36,6 +40,17 @@ class Settings(BaseSettings):
     clip_high_threshold: float = 0.94
     firebase_service_account_json: str = ""
     google_application_credentials: str = ""
+
+    @model_validator(mode="after")
+    def validate_vroom_route_windows(self):
+        if (
+            self.vroom_secondary_max_eta_minutes
+            <= self.vroom_candidate_window_minutes
+        ):
+            raise ValueError(
+                "VROOM secondary ETA must be greater than the candidate window"
+            )
+        return self
 
     class Config:
         env_file = ".env"

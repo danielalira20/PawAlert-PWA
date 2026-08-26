@@ -117,6 +117,11 @@ def test_matching_envia_solo_el_top_tres_a_osrm(reporte_multi_animal):
             return_value=reporte_multi_animal,
         ),
         patch.object(matching, "_voluntarios_que_rechazaron", return_value=set()),
+        patch.object(
+            matching,
+            "_voluntarios_con_propuesta_activa",
+            return_value=set(),
+        ),
         patch.object(matching, "supabase") as supabase,
         patch.object(
             matching,
@@ -146,6 +151,11 @@ def test_matching_por_lotes_omite_rutas_individuales(reporte_multi_animal):
             return_value=reporte_multi_animal,
         ),
         patch.object(matching, "_voluntarios_que_rechazaron", return_value=set()),
+        patch.object(
+            matching,
+            "_voluntarios_con_propuesta_activa",
+            return_value=set(),
+        ),
         patch.object(matching, "supabase") as supabase,
         patch.object(
             matching,

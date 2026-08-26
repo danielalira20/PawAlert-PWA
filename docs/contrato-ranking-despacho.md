@@ -43,6 +43,13 @@ varios reportes, la lista `candidates` del contrato VROOM conserva el score
 por pareja reporte-voluntario; el score incluido en `volunteers` es solo un
 resumen compatible.
 
+El score decide con todo su peso solamente entre candidatos cuya diferencia
+vial respecto al mas cercano sea de hasta 5 minutos. Fuera de esa ventana se
+aplica la clasificacion primaria, secundaria y manual definida en
+[`contrato-adaptador-vroom.md`](./contrato-adaptador-vroom.md). No se convierte
+el score en un descuento continuo de minutos y nunca puede rescatar una ruta
+mayor al limite automatico absoluto.
+
 ## Estimacion vial de candidatos
 
 Despues de ordenar el top 3 interno, OSRM anade `ruta_estimada` a cada

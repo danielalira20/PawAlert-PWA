@@ -32,6 +32,62 @@ import { DatePickerChip } from '../../components/red-aliados/DatePickerChip';
 import { DateRangePickerChip } from '../../components/red-aliados/DateRangePickerChip';
 import { AssocAvatar } from '../../components/admin-dashboard/AssocAvatar';
 import LocationPickerMap from '../LocationPickerMap';
+import { getFormDraft, removeFormDraft, setFormDraft } from '../../services/formDraftStorage';
+import { createFormDraftEnvelope, parseFormDraftEnvelope } from '../../utils/formDraft';
+import { getDeviceToken } from '../../utils/deviceToken';
+
+const APORTACION_DRAFT_VERSION = 1;
+const APORTACION_DRAFT_TTL_MS = 2 * 60 * 60 * 1000;
+const APORTACION_DRAFT_SAVE_DELAY_MS = 800;
+const APORTACION_DRAFT_KEY_PREFIX = '@pawalert:draft:aportacion';
+
+interface AportacionFormDraftData {
+  paso: number;
+  modo: 'reactiva' | 'proactiva';
+  haElegidoProactiva: boolean;
+  categoria: CatalogoItem | null;
+  subcategoria: CatalogoItem | null;
+  especiesAplica: Especie[];
+  tamanio: string | null;
+  detalleValores: Record<string, string>;
+  detalleFechasStr: Record<string, string | null>;
+  detalleFechasNoAplica: Record<string, boolean>;
+  detalleMulti: Record<string, string[]>;
+  tipoApoyo: string[];
+  areaServicio: string | null;
+  areaOtro: string;
+  contactoNombre: string;
+  contactoCargo: string;
+  contactoTelefono: string;
+  contactoCorreo: string;
+  cantidadValor: string;
+  cantidadUnidad: string;
+  unidadEsOtra: boolean;
+  contenidoPorUnidad: string;
+  fechaDisponibilidadStr: string | null;
+  ubicacion: { latitud: number; longitud: number } | null;
+  direccionBusqueda: string;
+  direccionConfirmada: string;
+  direccionEstado: string;
+  direccionMunicipio: string;
+  direccionCalle: string;
+  direccionCodigoPostal: string;
+  direccionColonia: string;
+  formaEntrega: string | null;
+  vigenciaStr: string | null;
+  frecuencia: string | null;
+  fotoUrl: string | null;
+  esLote: boolean;
+  tipoEmpaque: string;
+  divisible: string | null;
+  maxAsociaciones: string;
+}
+
+function isAportacionFormDraftData(value: unknown): value is AportacionFormDraftData {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<AportacionFormDraftData>;
+  return typeof candidate.paso === 'number';
+}
 
 // Misma paleta que CapacidadesFormScreen.tsx
 const COLORS = {
@@ -341,10 +397,97 @@ export default function AportacionFormScreen({ onClose, onOpenNeeds }: Props) {
   // indefinidamente. El estado necesidadId ya quedó capturado arriba, así
   // que esto es solo higiene de la barra de direcciones.
   useEffect(() => {
-    if (necesidad_id) {
-      router.setParams({ necesidad_id: undefined });
-    }
-  }, []);
+    if (draftInitializationStartedRef.current) return;
+    draftInitializationStartedRef.current = true;
+    let active = true;
+
+    (async () => {
+      // Diferenciamos si es una oferta abierta o respondiendo a una necesidad específica
+      const idPart = vieneDeNecesidad ? (necesidadId || 'reactiva') : 'proactiva';
+      const storageKey = `${APORTACION_DRAFT_KEY_PREFIX}:${user?.id || await getDeviceToken()}:${idPart}:v${APORTACION_DRAFT_VERSION}`;
+      
+      if (!active) return;
+      setDraftStorageKey(storageKey);
+
+      const raw = await getFormDraft(storageKey);
+      if (!active || !raw) {
+        if (active) setIsDraftReady(true);
+        return;
+      }
+
+      const parsed = parseFormDraftEnvelope<AportacionFormDraftData>(raw, APORTACION_DRAFT_VERSION);
+      if (parsed.status !== 'valid' || !isAportacionFormDraftData(parsed.draft.data)) {
+        await removeFormDraft(storageKey);
+        if (active) setIsDraftReady(true);
+        return;
+      }
+
+      const d = parsed.draft.data;
+      
+      setPaso(d.paso || 1);
+      setModo(d.modo || 'reactiva');
+      setHaElegidoProactiva(!!d.haElegidoProactiva);
+      
+      // Si viene de una necesidad (solo lectura), no sobreescribimos la categoría/subcategoría local 
+      // porque el API de backend ya nos mandó la data oficial en otro useEffect.
+      if (!vieneDeNecesidad) {
+        setCategoria(d.categoria || null);
+        setSubcategoria(d.subcategoria || null);
+        setEspeciesAplica(d.especiesAplica || []);
+        setCantidadValor(d.cantidadValor || '');
+        setCantidadUnidad(d.cantidadUnidad || '');
+        if (d.fechaDisponibilidadStr) setFechaDisponibilidad(new Date(d.fechaDisponibilidadStr));
+      }
+      
+      setTamanio(d.tamanio || null);
+      setDetalleValores(d.detalleValores || {});
+      
+      // Reconstruir fechas serializadas
+      const rebuiltFechas: Record<string, Date | null> = {};
+      if (d.detalleFechasStr) {
+        Object.keys(d.detalleFechasStr).forEach(k => {
+          const val = d.detalleFechasStr[k];
+          rebuiltFechas[k] = val ? new Date(val) : null;
+        });
+      }
+      setDetalleFechas(rebuiltFechas);
+      setDetalleFechasNoAplica(d.detalleFechasNoAplica || {});
+      setDetalleMulti(d.detalleMulti || {});
+      setTipoApoyo(d.tipoApoyo || []);
+      setAreaServicio(d.areaServicio || null);
+      setAreaOtro(d.areaOtro || '');
+      setContactoNombre(d.contactoNombre || '');
+      setContactoCargo(d.contactoCargo || '');
+      setContactoTelefono(d.contactoTelefono || '');
+      setContactoCorreo(d.contactoCorreo || '');
+      
+      setUnidadEsOtra(!!d.unidadEsOtra);
+      setContenidoPorUnidad(d.contenidoPorUnidad || '');
+      setUbicacion(d.ubicacion || null);
+      setDireccionBusqueda(d.direccionBusqueda || '');
+      setDireccionConfirmada(d.direccionConfirmada || '');
+      setDireccionEstado(d.direccionEstado || '');
+      setDireccionMunicipio(d.direccionMunicipio || '');
+      setDireccionCalle(d.direccionCalle || '');
+      setDireccionCodigoPostal(d.direccionCodigoPostal || '');
+      setDireccionColonia(d.direccionColonia || '');
+      setFormaEntrega(d.formaEntrega || null);
+      if (d.vigenciaStr) setVigencia(new Date(d.vigenciaStr));
+      setFrecuencia(d.frecuencia || null);
+      setFotoUrl(d.fotoUrl || null);
+      setEsLote(!!d.esLote);
+      setTipoEmpaque(d.tipoEmpaque || '');
+      setDivisible(d.divisible || null);
+      setMaxAsociaciones(d.maxAsociaciones || '1');
+      
+      setShowDraftNotice(true);
+      setIsDraftReady(true);
+    })().catch(() => {
+      if (active) setIsDraftReady(true);
+    });
+
+    return () => { active = false; };
+  }, [vieneDeNecesidad, necesidadId, user?.id]);
 
   const [categoria, setCategoria] = useState<CatalogoItem | null>(null);
   const [subcategoria, setSubcategoria] = useState<CatalogoItem | null>(null);
@@ -501,6 +644,13 @@ export default function AportacionFormScreen({ onClose, onOpenNeeds }: Props) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const formScrollRef = useRef<ScrollView>(null);
+
+  // ─── Borrador (guardar progreso al recargar) ───
+  const [isDraftReady, setIsDraftReady] = useState(false);
+  const [draftStorageKey, setDraftStorageKey] = useState<string | null>(null);
+  const [showDraftNotice, setShowDraftNotice] = useState(false);
+  const draftInitializationStartedRef = useRef(false);
+  const draftPersistenceDisabledRef = useRef(false);
 
   useEffect(() => {
     formScrollRef.current?.scrollTo({ y: 0, animated: false });
@@ -935,6 +1085,65 @@ useEffect(() => {
   direccionColonia, fechaDisponibilidad, vigencia,
 ]);
 
+  // ─── Lógica de Auto-Guardado ───
+  const aportacionDraftData = React.useMemo<AportacionFormDraftData>(() => {
+    const detalleFechasStr: Record<string, string | null> = {};
+    Object.keys(detalleFechas).forEach(k => {
+      detalleFechasStr[k] = detalleFechas[k] ? detalleFechas[k]!.toISOString() : null;
+    });
+
+    return {
+      paso, modo, haElegidoProactiva,
+      categoria, subcategoria, especiesAplica, tamanio,
+      detalleValores, detalleFechasStr, detalleFechasNoAplica, detalleMulti,
+      tipoApoyo, areaServicio, areaOtro,
+      contactoNombre, contactoCargo, contactoTelefono, contactoCorreo,
+      cantidadValor, cantidadUnidad, unidadEsOtra, contenidoPorUnidad,
+      fechaDisponibilidadStr: fechaDisponibilidad ? fechaDisponibilidad.toISOString() : null,
+      ubicacion, direccionBusqueda, direccionConfirmada,
+      direccionEstado, direccionMunicipio, direccionCalle, direccionCodigoPostal, direccionColonia,
+      formaEntrega, vigenciaStr: vigencia ? vigencia.toISOString() : null, frecuencia,
+      fotoUrl, esLote, tipoEmpaque, divisible, maxAsociaciones,
+    };
+  }, [
+    paso, modo, haElegidoProactiva, categoria, subcategoria, especiesAplica, tamanio,
+    detalleValores, detalleFechas, detalleFechasNoAplica, detalleMulti,
+    tipoApoyo, areaServicio, areaOtro, contactoNombre, contactoCargo, contactoTelefono, contactoCorreo,
+    cantidadValor, cantidadUnidad, unidadEsOtra, contenidoPorUnidad,
+    fechaDisponibilidad, ubicacion, direccionBusqueda, direccionConfirmada,
+    direccionEstado, direccionMunicipio, direccionCalle, direccionCodigoPostal, direccionColonia,
+    formaEntrega, vigencia, frecuencia, fotoUrl, esLote, tipoEmpaque, divisible, maxAsociaciones
+  ]);
+
+  const hasMeaningfulDraft = paso > 1 
+    || haElegidoProactiva 
+    || categoria !== null 
+    || cantidadValor.trim() !== '' 
+    || ubicacion !== null;
+
+  useEffect(() => {
+    if (!isDraftReady || !draftStorageKey || !hasMeaningfulDraft || draftPersistenceDisabledRef.current || mostrarPostEnvio) {
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      if (draftPersistenceDisabledRef.current) return;
+      const envelope = createFormDraftEnvelope(
+        aportacionDraftData,
+        APORTACION_DRAFT_VERSION,
+        APORTACION_DRAFT_TTL_MS,
+      );
+      void setFormDraft(draftStorageKey, JSON.stringify(envelope));
+    }, APORTACION_DRAFT_SAVE_DELAY_MS);
+
+    return () => clearTimeout(timeout);
+  }, [aportacionDraftData, draftStorageKey, hasMeaningfulDraft, isDraftReady, mostrarPostEnvio]);
+
+  const clearAportacionDraft = () => {
+    draftPersistenceDisabledRef.current = true;
+    if (draftStorageKey) void removeFormDraft(draftStorageKey);
+  };
+
   const resetForm = () => {
     setPaso(1);
     setNecesidadId(necesidad_id || '');
@@ -1139,6 +1348,7 @@ useEffect(() => {
         showToast({ type: 'success', title: 'Lote registrado', message: 'Ahora invita a las asociaciones que quieras.' });
         cargarAsociacionesCompatibles(res.data.id);
         setMostrarInvitar(true);
+        clearAportacionDraft();
         return;
       }
 
@@ -1183,6 +1393,7 @@ useEffect(() => {
         message: 'Gracias por tu apoyo a la Red de Aliados.',
       });
       setMostrarPostEnvio(true);
+      clearAportacionDraft();
     } catch (error: any) {
       showToast({
         type: 'error',
@@ -1997,9 +2208,20 @@ useEffect(() => {
   return (
     <View style={styles.outerContainer}>
       <Toast toast={toast} translateY={translateY} />
-      <View style={styles.centeredContent}>
-        <View style={styles.card}>
-          <View style={styles.header}>
+      {(!isDraftReady) ? (
+        <View style={[styles.centeredContent, { maxWidth: 500 }]}>
+          <View style={[styles.card, { padding: 40, alignItems: 'center', justifyContent: 'center' }]}>
+            <ActivityIndicator size="large" color={COLORS.primary} />
+            <Text style={{ marginTop: 16, color: COLORS.textLight, fontWeight: '700' }}>
+              Recuperando tu información…
+            </Text>
+          </View>
+        </View>
+      ) : (
+      <>
+        <View style={styles.centeredContent}>
+          <View style={styles.card}>
+            <View style={styles.header}>
             {estadoPantalla === 'paso' && (
               <TouchableOpacity style={styles.headerButton} onPress={retroceder}>
                 <Ionicons name="chevron-back" size={22} color={COLORS.bgWhite} />
@@ -2126,6 +2348,31 @@ useEffect(() => {
           ) : (
             <>
               <ScrollView ref={formScrollRef} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+                {showDraftNotice && estadoPantalla === 'paso' && paso === 1 && (
+                  <View style={{
+                    backgroundColor: '#EAF6FF',
+                    borderWidth: 1,
+                    borderColor: '#C9E6FF',
+                    borderRadius: 12,
+                    paddingHorizontal: 12,
+                    paddingVertical: 10,
+                    marginBottom: 16,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                  }}>
+                    <Text style={{ color: COLORS.textDark, fontSize: 13, flex: 1, marginRight: 10 }}>
+                      Recuperamos tu progreso guardado para que continúes donde te quedaste.
+                    </Text>
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      onPress={() => setShowDraftNotice(false)}
+                      style={{ padding: 4 }}
+                    >
+                      <Ionicons name="close" size={16} color={COLORS.textDark} />
+                    </TouchableOpacity>
+                  </View>
+                )}
                 {renderPaso()}
               </ScrollView>
               <View style={styles.fixedFooter}>
@@ -2165,6 +2412,7 @@ useEffect(() => {
               <TouchableOpacity
                 style={[styles.primaryButton, { backgroundColor: COLORS.danger }]}
                 onPress={() => {
+                  clearAportacionDraft();
                   setShowCloseConfirm(false);
                   if (onClose) onClose();
                   else router.back();
@@ -2176,6 +2424,8 @@ useEffect(() => {
           </View>
         </View>
       </Modal>
+      </>
+      )}
     </View>
   );
 }

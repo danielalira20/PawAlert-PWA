@@ -3,16 +3,20 @@
 import logging
 from datetime import datetime, timezone
 
+from app.config import settings
 from app.db.supabase import supabase_admin
 from app.models.dispatch import (
+    CandidateRouteTier,
     DispatchCandidate,
     DispatchJob,
     DispatchOptimizationRequest,
     DispatchPreparationErrorCode,
     DispatchPreparationResult,
     DispatchPreparationStatus,
+    DispatchRoutingPolicy,
     DispatchUrgency,
     DispatchVolunteer,
+    RouteMatrixResult,
     RoutingPoint,
     RoutingStatus,
 )
@@ -292,17 +296,79 @@ def _build_volunteers(
     return volunteers
 
 
-def _build_candidate_contracts(pairs: list[dict]) -> list[DispatchCandidate]:
+def _route_tier(
+    duration_seconds: float,
+    minimum_duration_seconds: float,
+    policy: DispatchRoutingPolicy,
+) -> CandidateRouteTier:
+    if duration_seconds > policy.secondary_max_eta_minutes * 60:
+        return CandidateRouteTier.manual_only
+    if duration_seconds <= (
+        minimum_duration_seconds + policy.candidate_window_minutes * 60
+    ):
+        return CandidateRouteTier.primary
+    return CandidateRouteTier.secondary
+
+
+def _build_candidate_contracts(
+    pairs: list[dict],
+    volunteers: list[DispatchVolunteer],
+    matrix: RouteMatrixResult,
+    policy: DispatchRoutingPolicy,
+) -> list[DispatchCandidate]:
     try:
-        return [
-            DispatchCandidate(
-                report_id=pair["report_id"],
-                volunteer_id=pair["voluntario_id"],
-                matching_score=float(pair["score"]["total"]),
-                offered=bool(pair.get("offered")),
+        origin_index = {
+            volunteer_id: index
+            for index, volunteer_id in enumerate(matrix.origin_ids)
+        }
+        destination_index = {
+            report_id: index
+            for index, report_id in enumerate(matrix.destination_ids)
+        }
+        roles = {
+            volunteer.volunteer_id: volunteer.role
+            for volunteer in volunteers
+        }
+        durations_by_report: dict[str, dict[str, float]] = {}
+        for pair in pairs:
+            report_id = pair["report_id"]
+            volunteer_id = pair["voluntario_id"]
+            duration = matrix.durations_seconds[origin_index[volunteer_id]][
+                destination_index[report_id]
+            ]
+            if duration is None:
+                raise _PreparationFailure(
+                    DispatchPreparationErrorCode.routing_unavailable
+                )
+            durations_by_report.setdefault(report_id, {})[volunteer_id] = duration
+
+        minimum_by_report = {
+            report_id: min(durations.values())
+            for report_id, durations in durations_by_report.items()
+        }
+        candidates = []
+        for pair in pairs:
+            report_id = pair["report_id"]
+            volunteer_id = pair["voluntario_id"]
+            tier = _route_tier(
+                durations_by_report[report_id][volunteer_id],
+                minimum_by_report[report_id],
+                policy,
             )
-            for pair in pairs
-        ]
+            candidates.append(
+                DispatchCandidate(
+                    report_id=report_id,
+                    volunteer_id=volunteer_id,
+                    matching_score=float(pair["score"]["total"]),
+                    offered=bool(pair.get("offered")),
+                    route_tier=tier,
+                    automatic_eligible=(
+                        roles[volunteer_id] == "voluntario_interno"
+                        and tier != CandidateRouteTier.manual_only
+                    ),
+                )
+            )
+        return candidates
     except (KeyError, TypeError, ValueError):
         raise _PreparationFailure(
             DispatchPreparationErrorCode.invalid_candidate_data
@@ -348,7 +414,6 @@ def prepare_dispatch_optimization(
             )
         capacities = _load_capacities(volunteer_ids)
         volunteers = _build_volunteers(pairs, capacities)
-        candidates = _build_candidate_contracts(pairs)
         matrix = calculate_dispatch_route_matrix(
             [volunteer.volunteer_id for volunteer in volunteers],
             normalized_report_ids,
@@ -362,11 +427,24 @@ def prepare_dispatch_optimization(
             raise _PreparationFailure(
                 DispatchPreparationErrorCode.routing_unavailable
             )
+        routing_policy = DispatchRoutingPolicy(
+            candidate_window_minutes=settings.vroom_candidate_window_minutes,
+            secondary_max_eta_minutes=(
+                settings.vroom_secondary_max_eta_minutes
+            ),
+        )
+        candidates = _build_candidate_contracts(
+            pairs,
+            volunteers,
+            matrix,
+            routing_policy,
+        )
         request = DispatchOptimizationRequest(
             jobs=jobs,
             volunteers=volunteers,
             candidates=candidates,
             travel_matrix=matrix,
+            routing_policy=routing_policy,
         )
         return DispatchPreparationResult(
             status=DispatchPreparationStatus.ready,

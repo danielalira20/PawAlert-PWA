@@ -11,6 +11,7 @@ import { Brand } from '../../constants/theme';
 import { AssocAvatar } from '../admin-dashboard/AssocAvatar';
 import { RoleBadge } from './RoleBadge';
 import { AccountDataCard } from './AccountDataCard';
+import { ProfileDataCard } from './ProfileDataCard';
 import { AccessRow } from './AccessRow';
 import { PawPatternBackground } from './PawPatternBackground';
 import { useRecentReports } from '../../hooks/useRecentReports';
@@ -588,6 +589,17 @@ export function LoggedInProfile({
                   <View style={styles.divider} />
 
                   <View style={styles.sectionPadding}>
+                    <ProfileDataCard 
+                      nombre={user.nombre} 
+                      apellidos={`${user.apellido_paterno || ''} ${user.apellido_materno || ''}`.trim()} 
+                      bare 
+                      onEditPress={handleOpenModal} 
+                    />
+                  </View>
+
+                  <View style={styles.divider} />
+
+                  <View style={styles.sectionPadding}>
                     <AccountDataCard telefono={displayTelefono} email={user.email} bare onEditPress={handleOpenModal} />
                   </View>
 
@@ -600,7 +612,7 @@ export function LoggedInProfile({
                 </View>
 
                 <TouchableOpacity onPress={onLogout} activeOpacity={0.8} style={styles.logoutButton}>
-                  <Ionicons name="log-out-outline" size={18} color={Brand.danger} />
+                  <Ionicons name="log-out-outline" size={20} color="#FFFFFF" />
                   <Text style={styles.logoutText}>Cerrar sesión</Text>
                 </TouchableOpacity>
               </View>
@@ -680,6 +692,14 @@ export function LoggedInProfile({
         )}
 
         <View style={styles.section}>
+          <ProfileDataCard 
+            nombre={user.nombre} 
+            apellidos={`${user.apellido_paterno || ''} ${user.apellido_materno || ''}`.trim()} 
+            onEditPress={handleOpenModal} 
+          />
+        </View>
+
+        <View style={styles.section}>
           <AccountDataCard telefono={displayTelefono} email={user.email} onEditPress={handleOpenModal} />
         </View>
 
@@ -695,7 +715,7 @@ export function LoggedInProfile({
         </View>
 
         <TouchableOpacity onPress={onLogout} activeOpacity={0.8} style={styles.logoutButton}>
-          <Ionicons name="log-out-outline" size={18} color={Brand.danger} />
+          <Ionicons name="log-out-outline" size={20} color="#FFFFFF" />
           <Text style={styles.logoutText}>Cerrar sesión</Text>
         </TouchableOpacity>
 
@@ -887,9 +907,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: 'rgba(217,64,37,0.08)',
+    backgroundColor: Brand.danger,
     borderRadius: 20,
     paddingVertical: 15,
+    shadowColor: Brand.danger,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 3,
   },
-  logoutText: { color: Brand.danger, fontWeight: '800', fontSize: 14 },
+  logoutText: { color: '#FFFFFF', fontWeight: '800', fontSize: 15 },
 });
