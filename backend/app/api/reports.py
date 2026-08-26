@@ -12,6 +12,7 @@ from app.models.report import (
     ReportesMapaResponse,
     ResolverBusquedaNoLocalizadoRequest,
     ResultadoRescateSinVidaRequest,
+    SeguimientoRetiroAnimalRequest,
 )
 from app.models.red_aliados import AceptarSugerenciaRequest, AceptarSugerenciaVeterinariaResponse
 from app.services.report_service import crear_reporte, obtener_reportes, cambiar_estado_reporte, obtener_reportes_usuario
@@ -1456,6 +1457,93 @@ def registrar_resultado_rescate_sin_vida(
         permitir_vinculada_mismo_hito=True,
     )
     return resultado
+
+
+@router.post(
+    "/{reporte_id}/resultados/{resultado_id}/seguimiento-retiro",
+    status_code=201,
+)
+def registrar_seguimiento_retiro(
+    reporte_id: str,
+    resultado_id: str,
+    body: SeguimientoRetiroAnimalRequest,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    rol = usuario.get("rol")
+    if rol in ("voluntario_interno", "voluntario_externo"):
+        tipo_actor = "voluntario"
+        asociacion_id = None
+    elif rol in ("asociacion", "staff"):
+        tipo_actor = "asociacion"
+        asociacion_id = usuario.get("asociacion_id")
+        if not asociacion_id:
+            raise HTTPException(
+                status_code=403,
+                detail="No estás vinculado a una asociación",
+            )
+    elif rol == "admin":
+        tipo_actor = "administracion"
+        asociacion_id = None
+    else:
+        raise HTTPException(
+            status_code=403,
+            detail="No tienes permiso para registrar este seguimiento",
+        )
+
+    from app.services import deceased_followup_service
+
+    try:
+        return deceased_followup_service.registrar_seguimiento_retiro(
+            reporte_id,
+            resultado_id,
+            usuario["id"],
+            tipo_actor,
+            asociacion_id,
+            body,
+        )
+    except deceased_followup_service.SeguimientoFallecimientoError as error:
+        if error.codigo in {
+            "seguimiento_fallecimiento_no_encontrado",
+            "resultado_seguimiento_no_encontrado",
+        }:
+            raise HTTPException(
+                status_code=404,
+                detail="Seguimiento no encontrado",
+            ) from error
+        if error.codigo in {
+            "voluntario_seguimiento_no_autorizado",
+            "asociacion_seguimiento_no_autorizada",
+        }:
+            raise HTTPException(
+                status_code=403,
+                detail="No puedes registrar acciones en este seguimiento",
+            ) from error
+        if error.codigo in {
+            "seguimiento_fallecimiento_no_disponible",
+            "resultado_reactivado_no_admite_seguimiento",
+            "idempotency_key_en_conflicto",
+        }:
+            raise HTTPException(
+                status_code=409,
+                detail="El seguimiento ya no admite esta acción",
+            ) from error
+        if error.codigo in {
+            "tipo_actor_seguimiento_invalido",
+            "accion_seguimiento_invalida",
+            "idempotency_key_requerida",
+            "nombre_servicio_requerido",
+            "evidencia_seguimiento_no_disponible",
+            "evidencia_seguimiento_en_conflicto",
+        }:
+            raise HTTPException(
+                status_code=422,
+                detail="Los datos del seguimiento no son válidos",
+            ) from error
+        raise HTTPException(
+            status_code=503,
+            detail="No fue posible registrar el seguimiento. Intenta nuevamente.",
+        ) from error
 
 
 DECISIONES_BUSQUEDA_NO_LOCALIZADO = {

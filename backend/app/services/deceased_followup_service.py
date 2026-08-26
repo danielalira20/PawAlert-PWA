@@ -3,7 +3,10 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.db.supabase import supabase_admin
-from app.models.report import RevisionResultadoSinVidaRequest
+from app.models.report import (
+    RevisionResultadoSinVidaRequest,
+    SeguimientoRetiroAnimalRequest,
+)
 from app.services.storage_service import crear_url_firmada_sensible
 from app.utils.animal_shaping import shape_animal_embed, shape_animal_response
 
@@ -30,6 +33,22 @@ ERRORES_REVISION_CONOCIDOS = (
     "seguimiento_no_preparado_para_reactivar",
     "reporte_no_preparado_para_reactivar",
     "urgency_recalculada_requerida",
+)
+
+ERRORES_SEGUIMIENTO_RETIRO_CONOCIDOS = (
+    "tipo_actor_seguimiento_invalido",
+    "accion_seguimiento_invalida",
+    "idempotency_key_requerida",
+    "idempotency_key_en_conflicto",
+    "nombre_servicio_requerido",
+    "seguimiento_fallecimiento_no_encontrado",
+    "seguimiento_fallecimiento_no_disponible",
+    "resultado_seguimiento_no_encontrado",
+    "resultado_reactivado_no_admite_seguimiento",
+    "voluntario_seguimiento_no_autorizado",
+    "asociacion_seguimiento_no_autorizada",
+    "evidencia_seguimiento_no_disponible",
+    "evidencia_seguimiento_en_conflicto",
 )
 
 
@@ -96,6 +115,60 @@ def revisar_resultado(
         ) from error
 
     datos.update(finalizar_reactivacion_pendiente(reporte_id))
+    return datos
+
+
+def registrar_seguimiento_retiro(
+    reporte_id: str,
+    resultado_id: str,
+    usuario_id: str,
+    tipo_actor: str,
+    asociacion_id: str | None,
+    body: SeguimientoRetiroAnimalRequest,
+) -> dict:
+    parametros = {
+        "p_reporte_id": reporte_id,
+        "p_resultado_id": resultado_id,
+        "p_usuario_id": usuario_id,
+        "p_tipo_actor": tipo_actor,
+        "p_asociacion_id": asociacion_id,
+        "p_accion": body.accion,
+        "p_idempotency_key": body.idempotency_key,
+        "p_folio": body.folio,
+        "p_nombre_servicio": body.nombre_servicio,
+        "p_destino_informado": body.destino_informado,
+        "p_nota": body.nota,
+        "p_evidencia_lugar_id": (
+            str(body.evidencia_lugar_id)
+            if body.evidencia_lugar_id
+            else None
+        ),
+    }
+    try:
+        respuesta = supabase_admin.rpc(
+            "registrar_seguimiento_retiro_animal",
+            parametros,
+        ).execute()
+    except Exception as error:
+        detalle = str(error).lower()
+        for codigo in ERRORES_SEGUIMIENTO_RETIRO_CONOCIDOS:
+            if codigo in detalle:
+                raise SeguimientoFallecimientoError(codigo) from error
+        raise SeguimientoFallecimientoError(
+            "registro_seguimiento_retiro_no_disponible"
+        ) from error
+
+    datos = respuesta.data
+    if isinstance(datos, list):
+        datos = datos[0] if datos else None
+    if (
+        not isinstance(datos, dict)
+        or datos.get("reporte_id") != reporte_id
+        or datos.get("resultado_id") != resultado_id
+    ):
+        raise SeguimientoFallecimientoError(
+            "respuesta_seguimiento_retiro_invalida"
+        )
     return datos
 
 
