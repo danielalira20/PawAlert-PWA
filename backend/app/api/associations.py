@@ -41,6 +41,7 @@ from app.services.video_evidence_service import procesar_evidencia_verificacion
 from app.services.whatsapp_notification_service import (
     notificar_evento_verificacion,
 )
+from app.services import deceased_followup_service
 from app.models.association import NuevoRepresentante
 from app.utils.animal_shaping import shape_animal_embed, shape_animal_response, condicion_mas_grave
 import json
@@ -635,6 +636,55 @@ async def get_reportes_asignados(authorization: str = Header(None)):
         })
 
     return reportes
+
+
+@router.get("/me/seguimientos-fallecimiento", status_code=200)
+async def get_seguimientos_fallecimiento(
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion", "staff"))
+    asociacion_id = usuario.get("asociacion_id")
+    if not asociacion_id:
+        raise HTTPException(
+            status_code=404,
+            detail="Este usuario no está vinculado a ninguna asociación",
+        )
+    _verificar_asociacion_aprobada(asociacion_id)
+    return deceased_followup_service.listar_seguimientos_asociacion(
+        asociacion_id
+    )
+
+
+@router.get(
+    "/me/seguimientos-fallecimiento/{reporte_id}",
+    status_code=200,
+)
+async def get_detalle_seguimiento_fallecimiento(
+    reporte_id: str,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion", "staff"))
+    asociacion_id = usuario.get("asociacion_id")
+    if not asociacion_id:
+        raise HTTPException(
+            status_code=404,
+            detail="Este usuario no está vinculado a ninguna asociación",
+        )
+    _verificar_asociacion_aprobada(asociacion_id)
+    try:
+        return deceased_followup_service.obtener_detalle_seguimiento(
+            reporte_id,
+            asociacion_id,
+        )
+    except deceased_followup_service.SeguimientoFallecimientoError as error:
+        if error.codigo == "reporte_no_encontrado":
+            raise HTTPException(status_code=404, detail="Reporte no encontrado")
+        raise HTTPException(
+            status_code=404,
+            detail="Seguimiento no encontrado para tu asociación",
+        )
 
 
 @router.get("/me/reportes/necesidades-activas", status_code=200)
