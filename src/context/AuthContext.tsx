@@ -9,7 +9,11 @@ import {
   useRef,
   useState,
 } from 'react';
+import * as WebBrowser from 'expo-web-browser';
 import { API_URL } from '../constants/api';
+import { supabase } from '../config/supabase';
+
+WebBrowser.maybeCompleteAuthSession();
 
 export interface Usuario {
   id: string;
@@ -43,10 +47,11 @@ interface AuthContextType {
   isLoggedIn: boolean;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<Usuario>;
+  loginWithGoogle: () => Promise<void>;
   register: (data: RegisterData) => Promise<Usuario>;
   setSession: (usuario: Usuario, accessToken: string, refreshToken?: string) => Promise<void>;
   refreshUser: () => Promise<Usuario | null>;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
 interface RefreshSubscriber {
@@ -129,6 +134,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })();
   }, []);
 
+  useEffect(() => {
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' && session) {
+        // Si el token actual ya coincide con la sesión de Supabase, no hacemos nada 
+        // (ocurre al restaurar sesión o hacer login normal).
+        if (tokenRef.current === session.access_token) return;
+        
+        try {
+          setIsLoading(true);
+          // Si es un token nuevo (ej. viene del redirect de Google OAuth), sincronizamos con backend
+          const res = await axios.post(`${API_URL}/auth/google-sync`, {
+            access_token: session.access_token,
+            refresh_token: session.refresh_token
+          });
+          await setSession(res.data.usuario, res.data.access_token, res.data.refresh_token);
+        } catch (e) {
+          console.error("Error al sincronizar con Google", e);
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    });
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
+
   const setSession = async (usuario: Usuario, accessToken: string, refreshTokenValue?: string) => {
     setUser(usuario);
     setToken(accessToken);
@@ -151,6 +184,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const res = await axios.post(`${API_URL}/auth/login`, { email, password });
     await setSession(res.data.usuario, res.data.access_token, res.data.refresh_token);
     return res.data.usuario as Usuario;
+  };
+
+  const loginWithGoogle = async () => {
+    console.log("Iniciando flujo de Google...");
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        // En un entorno de desarrollo Expo Go, a veces se requiere un deep link personalizado:
+        // redirectTo: 'pawalert://login-callback'
+      }
+    });
+    if (error) {
+      console.error("Error al iniciar sesión con Google:", error.message);
+      throw error;
+    }
   };
 
   const register = async (data: RegisterData) => {
@@ -188,11 +236,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const logout = () => {
+  const logout = async () => {
     setUser(null);
     setToken(null);
     tokenRef.current = null;
     refreshTokenRef.current = null;
+    
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.error("Error al cerrar sesión de Supabase:", e);
+    }
+    
     AsyncStorage.removeItem(STORAGE_KEY_TOKEN).catch(() => {});
     AsyncStorage.removeItem(STORAGE_KEY_REFRESH).catch(() => {});
     AsyncStorage.removeItem(STORAGE_KEY_USER).catch(() => {});
@@ -299,7 +354,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, token, isLoggedIn: !!user, isLoading, login, register, setSession, refreshUser, logout }}
+      value={{ user, token, isLoggedIn: !!user, isLoading, login, loginWithGoogle, register, setSession, refreshUser, logout }}
     >
       {children}
     </AuthContext.Provider>
