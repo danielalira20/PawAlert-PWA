@@ -22,7 +22,10 @@ from app.utils.animal_shaping import shape_animal_embed, shape_animal_response
 
 
 ESTADOS_VOLUNTARIO_ACTIVO = ("activo_nivel_1", "activo_nivel_2")
-PROPUESTA_COBERTURA_MINUTOS = 10
+# Tiempo que tiene el voluntario para aceptar o rechazar la propuesta.
+# Dead Man's Switch: 15 min totales; se avisa a los 12 min (3 min antes de vencer).
+PROPUESTA_COBERTURA_MINUTOS = 15
+_ALERTA_MINUTOS_ANTES_VENCIMIENTO = 3
 logger = logging.getLogger(__name__)
 
 
@@ -466,9 +469,9 @@ def reservar_cobertura(
             status_code=409,
             detail="El caso ya no está disponible. Actualiza la lista.",
         )
-    vence_at = datetime.now(timezone.utc) + timedelta(
-        minutes=PROPUESTA_COBERTURA_MINUTOS
-    )
+    ahora = datetime.now(timezone.utc)
+    vence_at = ahora + timedelta(minutes=PROPUESTA_COBERTURA_MINUTOS)
+    alerta_at = vence_at - timedelta(minutes=_ALERTA_MINUTOS_ANTES_VENCIMIENTO)
     try:
         resultado = supabase_admin.rpc(
             "reservar_cobertura_reporte",
@@ -483,6 +486,17 @@ def reservar_cobertura(
             },
         ).execute()
         propuesta_id = str(resultado.data)
+
+        # Guardar alerta_vencimiento_at para el Dead Man's Switch.
+        # El cron /internal/push/alerta-vencimiento consulta esta columna
+        # cada minuto y avisa al voluntario 3 min antes de que venza.
+        try:
+            supabase_admin.table("propuestas_asignacion").update(
+                {"alerta_vencimiento_at": alerta_at.isoformat()}
+            ).eq("id", propuesta_id).execute()
+        except Exception as e:
+            print(f"[WARN] No se pudo guardar alerta_vencimiento_at para {propuesta_id}: {e}")
+
         ruta_estimada = _obtener_ruta_estimada_propuesta(
             reporte_id,
             voluntario_id,
@@ -490,11 +504,20 @@ def reservar_cobertura(
 
         try:
             from app.services.push_notification_service import queue_and_send_push
+            carga_actual = _carga_activa(usuario_asignado_id)
+            payload_propuesta = _payload_nueva_propuesta(reporte_id, ruta_estimada)
+            if carga_actual >= 3:
+                payload_propuesta["carga_alta"] = True
+                payload_propuesta["mensaje"] = (
+                    f"Tienes {carga_actual} casos activos. "
+                    "¿Confirmas que puedes atender uno más?"
+                )
+                
             queue_and_send_push(
                 usuario_id=usuario_asignado_id,
                 tipo_evento="nueva_propuesta",
                 idempotency_key=f"nueva_propuesta:{propuesta_id}:{usuario_asignado_id}",
-                payload=_payload_nueva_propuesta(reporte_id, ruta_estimada),
+                payload=payload_propuesta,
                 reporte_id=reporte_id,
                 propuesta_id=propuesta_id,
             )
@@ -568,6 +591,54 @@ def expirar_propuestas_vencidas() -> int:
                     reporte_id=reporte_id,
                     propuesta_id=propuesta_id,
                 )
+
+            # Notificar y promover al siguiente en la lista de espera
+            try:
+                siguiente = (
+                    supabase_admin.table("pool_interesados_reporte")
+                    .select("usuario_id, voluntario_id")
+                    .eq("reporte_id", reporte_id)
+                    .eq("estado", "en_espera")
+                    .order("posicion")
+                    .limit(1)
+                    .execute()
+                )
+                if siguiente.data:
+                    uid_sig = siguiente.data[0]["usuario_id"]
+                    vol_id_sig = siguiente.data[0]["voluntario_id"]
+
+                    # Marcar al vencido como 'vencido' en el pool
+                    vol_vencido = prop.get("voluntario_id")
+                    if vol_vencido:
+                        supabase_admin.table("pool_interesados_reporte").update(
+                            {"estado": "vencido"}
+                        ).eq("reporte_id", reporte_id).eq(
+                            "voluntario_id", vol_vencido
+                        ).execute()
+
+                    # Promover al siguiente
+                    supabase_admin.table("pool_interesados_reporte").update(
+                        {"estado": "propuesta_enviada"}
+                    ).eq("reporte_id", reporte_id).eq(
+                        "voluntario_id", vol_id_sig
+                    ).execute()
+
+                    # Push al siguiente
+                    queue_and_send_push(
+                        usuario_id=uid_sig,
+                        tipo_evento="nueva_propuesta",
+                        idempotency_key=f"reemplazo:{reporte_id}:{uid_sig}",
+                        payload={
+                            "mensaje": (
+                                "El voluntario anterior no respondió. "
+                                "Ahora eres el candidato principal para este caso."
+                            ),
+                            "reporte_id": reporte_id,
+                        },
+                        reporte_id=reporte_id,
+                    )
+            except Exception as e:
+                print(f"[WARN] Error promoviendo lista de espera para {reporte_id}: {e}")
 
     return len(propuestas_vencidas)
 
@@ -801,3 +872,68 @@ def notificar_externos_caso_cercano(reporte_id: str, latitud: float, longitud: f
                     )
     except Exception as error:
         logger.error("Error notificando a externos sobre caso cercano %s: %s", reporte_id, error)
+
+
+def enviar_alertas_vencimiento_proximo() -> dict:
+    """Dead Man's Switch: avisa al voluntario 3 minutos antes de que su propuesta venza.
+
+    Diseñado para llamarse desde un cron de 1 minuto (POST /internal/push/alerta-vencimiento).
+    Consulta las propuestas activas cuya alerta_vencimiento_at cae en la ventana
+    [ahora, ahora+1min] y envía el push 'propuesta_por_vencer' una sola vez
+    por propuesta (idempotency_key garantiza que no se duplica si el cron reintenta).
+
+    Fail-safe: si falla la consulta, retorna {"error": ...} sin propagar excepción.
+    El voluntario no pierde la propuesta por un fallo del cron.
+    """
+    from app.services.push_notification_service import (
+        puede_notificar,
+        queue_and_send_push,
+    )
+
+    ahora = datetime.now(timezone.utc)
+    ventana_inicio = ahora.isoformat()
+    ventana_fin = (ahora + timedelta(minutes=1)).isoformat()
+
+    try:
+        res = (
+            supabase_admin.table("propuestas_asignacion")
+            .select("id, reporte_id, usuario_asignado_id, alerta_vencimiento_at")
+            .eq("estado", "activa")
+            .not_.is_("alerta_vencimiento_at", "null")
+            .gte("alerta_vencimiento_at", ventana_inicio)
+            .lte("alerta_vencimiento_at", ventana_fin)
+            .execute()
+        )
+    except Exception as e:
+        logger.error("Dead Man's Switch: error consultando propuestas: %s", e)
+        return {"error": str(e)}
+
+    alertadas = 0
+    for propuesta in res.data or []:
+        uid = propuesta.get("usuario_asignado_id")
+        reporte_id_prop = propuesta.get("reporte_id")
+        pid = propuesta.get("id")
+        if not uid:
+            continue
+        # ventana_horas=1 evita re-enviar si el cron se ejecuta dos veces seguidas
+        if puede_notificar(uid, "propuesta_por_vencer", ventana_horas=1):
+            try:
+                queue_and_send_push(
+                    usuario_id=uid,
+                    tipo_evento="propuesta_por_vencer",
+                    idempotency_key=f"alerta_venc:{pid}",
+                    payload={
+                        "mensaje": (
+                            f"Tienes {_ALERTA_MINUTOS_ANTES_VENCIMIENTO} minutos para confirmar. "
+                            "Después el caso será liberado a otro voluntario."
+                        ),
+                        "reporte_id": reporte_id_prop,
+                    },
+                    reporte_id=reporte_id_prop,
+                    propuesta_id=pid,
+                )
+                alertadas += 1
+            except Exception as e:
+                logger.warning("Dead Man's Switch: error encolando alerta para %s: %s", pid, e)
+
+    return {"alertas_enviadas": alertadas}

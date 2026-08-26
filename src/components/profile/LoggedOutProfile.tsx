@@ -47,7 +47,7 @@ type AuthView = 'landing' | 'auth';
 export function LoggedOutProfile() {
   const { width } = useWindowDimensions();
   const isDesktop = width >= DESKTOP_BREAKPOINT;
-  const { login, register } = useAuth();
+  const { login, register, loginWithGoogle } = useAuth();
   const { toast, translateY, showToast } = useToast();
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [modalCuentaExistente, setModalCuentaExistente] = useState<{ tipo: 'correo' | 'telefono'; valor: string } | null>(null);
@@ -415,11 +415,45 @@ export function LoggedOutProfile() {
               </TouchableOpacity>
               {errors.password ? <Text style={{ ...errorStyle, marginTop: 4 }}>{errors.password}</Text> : <View style={{ marginBottom: 28 }} />}
                   
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 16 }}>
+                <View style={{ flex: 1, height: 1, backgroundColor: `${C.neutralLight}50` }} />
+                <Text style={{ marginHorizontal: 12, color: C.muted, fontFamily: F.bodyRegular, fontSize: 13 }}>O continúa con</Text>
+                <View style={{ flex: 1, height: 1, backgroundColor: `${C.neutralLight}50` }} />
+              </View>
+
+              <TouchableOpacity 
+                onPress={async () => {
+                  try {
+                    setIsLoading(true);
+                    await loginWithGoogle();
+                    const intentStr = await consumeAuthIntent();
+                    if (intentStr) {
+                      const intent = JSON.parse(intentStr);
+                      const dest = getPostAuthDestination(intent);
+                      router.replace(dest as any);
+                    } else {
+                      const returnTo = Array.isArray(params.returnTo) ? params.returnTo[0] : params.returnTo;
+                      if (returnTo) {
+                        router.replace(decodeURIComponent(returnTo) as any);
+                      }
+                    }
+                  } catch (e: any) {
+                    setErrors({ email: e.message || 'Error al conectar con Google' });
+                  } finally {
+                    setIsLoading(false);
+                  }
+                }}
+                style={{
+                  flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: '#FFF', paddingVertical: 14, borderRadius: 30,
+                  borderWidth: 1, borderColor: '#DDD', marginBottom: 20
+                }}
+              >
+                <Ionicons name="logo-google" size={20} color="#DB4437" style={{ marginRight: 10 }} />
+                <Text style={{ color: C.text, fontFamily: F.bodySemiBold, fontSize: 15 }}>Continuar con Google</Text>
+              </TouchableOpacity>
             </View>
 
-            
-
-            
           )}
 
           {/* ── FORMULARIO REGISTRO ── */}
@@ -524,7 +558,52 @@ export function LoggedOutProfile() {
                   <Ionicons name={showRegPassword2 ? 'eye-off-outline' : 'eye-outline'} size={20} color={C.muted} />
                 </TouchableOpacity>
               </View>
-              {errors.regPassword2 ? <Text style={{ ...errorStyle, marginTop: 4 }}>{errors.regPassword2}</Text> : <View style={{ marginBottom: 28 }} />}
+              {errors.regPassword2 ? <Text style={{ ...errorStyle, marginTop: 4 }}>{errors.regPassword2}</Text> : null}
+              
+              <Text style={{ fontSize: 12, color: C.muted, fontFamily: F.bodyRegular, textAlign: 'center', marginVertical: 12 }}>
+                Al registrarte, aceptas nuestros{' '}
+                <Text style={{ color: C.primary, textDecorationLine: 'underline' }} onPress={() => router.push('/TermsAndConditionsScreen' as any)}>Términos</Text>
+                {' '}y el{' '}
+                <Text style={{ color: C.primary, textDecorationLine: 'underline' }} onPress={() => router.push('/PrivacyPolicyScreen' as any)}>Aviso de Privacidad</Text>.
+              </Text>
+              
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 16 }}>
+                <View style={{ flex: 1, height: 1, backgroundColor: `${C.neutralLight}50` }} />
+                <Text style={{ marginHorizontal: 12, color: C.muted, fontFamily: F.bodyRegular, fontSize: 13 }}>O continúa con</Text>
+                <View style={{ flex: 1, height: 1, backgroundColor: `${C.neutralLight}50` }} />
+              </View>
+
+              <TouchableOpacity 
+                onPress={async () => {
+                  try {
+                    setIsLoading(true);
+                    await loginWithGoogle();
+                    const intentStr = await consumeAuthIntent();
+                    if (intentStr) {
+                      const intent = JSON.parse(intentStr);
+                      const dest = getPostAuthDestination(intent);
+                      router.replace(dest as any);
+                    } else {
+                      const returnTo = Array.isArray(params.returnTo) ? params.returnTo[0] : params.returnTo;
+                      if (returnTo) {
+                        router.replace(decodeURIComponent(returnTo) as any);
+                      }
+                    }
+                  } catch (e: any) {
+                    setErrors({ email: e.message || 'Error al conectar con Google' });
+                  } finally {
+                    setIsLoading(false);
+                  }
+                }}
+                style={{
+                  flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: '#FFF', paddingVertical: 14, borderRadius: 30,
+                  borderWidth: 1, borderColor: '#DDD', marginBottom: 20
+                }}
+              >
+                <Ionicons name="logo-google" size={20} color="#DB4437" style={{ marginRight: 10 }} />
+                <Text style={{ color: C.text, fontFamily: F.bodySemiBold, fontSize: 15 }}>Continuar con Google</Text>
+              </TouchableOpacity>
             </View>
           )}
 

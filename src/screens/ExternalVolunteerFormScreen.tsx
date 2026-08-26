@@ -3,13 +3,77 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Image, Modal, ScrollView, Text, TextInput, TouchableOpacity, View, ActivityIndicator, StyleSheet, Platform } from 'react-native';
+import { Image, Modal, ScrollView, Text, TextInput, TouchableOpacity, View, ActivityIndicator, StyleSheet, Platform, SafeAreaView } from 'react-native';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { Toast, useToast } from '../components/Toast';
 import { Input } from '../components/ui/Input';
 import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
 import LocationPickerMap from './LocationPickerMap';
+import { getFormDraft, removeFormDraft, setFormDraft } from '../services/formDraftStorage';
+import { createFormDraftEnvelope, parseFormDraftEnvelope } from '../utils/formDraft';
+import { getDeviceToken } from '../utils/deviceToken';
+
+const EXTERNAL_DRAFT_VERSION = 1;
+const EXTERNAL_DRAFT_TTL_MS = 2 * 60 * 60 * 1000;
+const EXTERNAL_DRAFT_SAVE_DELAY_MS = 800;
+const EXTERNAL_DRAFT_KEY_PREFIX = '@pawalert:draft:external';
+
+interface ExternalFormDraftData {
+  paso: number;
+  pinLocation: { latitud: number; longitud: number };
+  ubicacionConfirmada: boolean;
+  calle: string;
+  numero: string;
+  colonia: string;
+  municipio: string;
+  estado: string;
+  referencia: string;
+  direccionConfirmada: string;
+  tipoVivienda: string;
+  subcategoriaVivienda: string;
+  customViviendaInput: string;
+  autorizacion: string;
+  ubicacionAnimal: string;
+  aceptaVisita: string;
+  numAdultos: string;
+  ninosEdades: string;
+  otrosAnimales: string;
+  vacunados: string;
+  puedeSeparar: string;
+  horasSolo: string;
+  preferenciaEspecie: string[];
+  subcategoriaOtroEspecie: string;
+  customOtroEspecieInput: string;
+  preferenciaTamanio: string[];
+  tiempoResguardo: string;
+  tiempoResguardoDias: string;
+  checkAccesos: boolean;
+  checkBardas: boolean;
+  checkBalcones: boolean;
+  checkEspacio: boolean;
+  checkNingunoSeguridad: boolean;
+  checkAislamiento: boolean;
+  checkCuarentena: boolean;
+  checkNoEntregar: boolean;
+  checkNingunoCompromiso: boolean;
+  nombreEmergencia: string;
+  telEmergencia: string;
+  horario1Dia: string;
+  horario1Hora: string;
+  horario2Dia: string;
+  horario2Hora: string;
+  horario3Dia: string;
+  horario3Hora: string;
+  consentimiento: boolean;
+}
+
+function isExternalFormDraftData(value: unknown): value is ExternalFormDraftData {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<ExternalFormDraftData>;
+  return typeof candidate.paso === 'number';
+}
 
 const COLORS = {
   bgTeal: '#66BCB4',
@@ -43,7 +107,7 @@ interface Props {
 }
 
 export default function ExternalVolunteerFormScreen({ onClose, modoReintento = false }: Props) {
-  const { setSession, token } = useAuth();
+  const { setSession, token, user } = useAuth();
   const { toast, translateY, showToast } = useToast();
 
   const [paso, setPaso] = useState(1);
@@ -77,7 +141,7 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
   const [tipoVivienda, setTipoVivienda] = useState('');
   const [subcategoriaVivienda, setSubcategoriaVivienda] = useState('');
   const [customViviendaInput, setCustomViviendaInput] = useState('');
-  
+
   const [autorizacion, setAutorizacion] = useState('');
   const [ubicacionAnimal, setUbicacionAnimal] = useState('');
   const [aceptaVisita, setAceptaVisita] = useState('');
@@ -131,14 +195,28 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
   const [consentimiento, setConsentimiento] = useState(false);
 
   // ─── Borrador (guardar progreso al recargar) ───
-  const lastPersistedDraftRef = useRef<string | null>(null);
-  const draftSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const [isDraftReady, setIsDraftReady] = useState(false);
+  const [draftStorageKey, setDraftStorageKey] = useState<string | null>(null);
+  const [showDraftNotice, setShowDraftNotice] = useState(false);
+  const draftInitializationStartedRef = useRef(false);
   const draftPersistenceDisabledRef = useRef(false);
 
   useEffect(() => {
     const hasErrors = Object.values(errors).some(e => e !== '');
     if (!hasErrors) setShowSubmitError(false);
   }, [errors]);
+
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [showCameraModal, setShowCameraModal] = useState(false);
+  const cameraRef = useRef<CameraView>(null);
+  const [cameraType, setCameraType] = useState<'back' | 'front'>('back');
+
+  // ─── ERRORES ───
+  const handleRegexChange = (val: string, setter: any, errorKey: string, regex: RegExp, errorMsg: string) => {
+    setter(val);
+    if (val.trim() && !regex.test(val)) setErrors(prev => ({ ...prev, [errorKey]: errorMsg }));
+    else setErrors(prev => ({ ...prev, [errorKey]: '' }));
+  };
 
   useEffect(() => {
     if (!token) {
@@ -147,81 +225,94 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
     }
 
     if (!modoReintento) {
-      // Modo postulación nueva: solo restauramos el borrador local, no el
-      // perfil ya confirmado (ese es exclusivo del flujo de corrección).
-      let cancelado = false;
+      if (draftInitializationStartedRef.current) return;
+      draftInitializationStartedRef.current = true;
+      let active = true;
+
       (async () => {
-        try {
-          const { data } = await axios.get(
-            `${API_URL}/voluntarios/externo/borrador`,
-            { headers: { Authorization: `Bearer ${token}` } },
-          );
-          const borrador = data?.borrador;
-          if (cancelado || !borrador) return;
+        const storageKey = `${EXTERNAL_DRAFT_KEY_PREFIX}:${user?.id || await getDeviceToken()}:v${EXTERNAL_DRAFT_VERSION}`;
+        if (!active) return;
+        setDraftStorageKey(storageKey);
 
-          const d = borrador.datos || {};
-          setPinLocation(d.pinLocation || pinLocation);
-          setUbicacionConfirmada(!!d.ubicacionConfirmada);
-          setCalle(d.calle || '');
-          setNumero(d.numero || '');
-          setColonia(d.colonia || '');
-          setMunicipio(d.municipio || '');
-          setEstado(d.estado || '');
-          setReferencia(d.referencia || '');
-          setDireccionConfirmada(d.direccionConfirmada || '');
-          setTipoVivienda(d.tipoVivienda || '');
-          setSubcategoriaVivienda(d.subcategoriaVivienda || '');
-          setCustomViviendaInput(d.customViviendaInput || '');
-          setAutorizacion(d.autorizacion || '');
-          setUbicacionAnimal(d.ubicacionAnimal || '');
-          setAceptaVisita(d.aceptaVisita || '');
-          setNumAdultos(d.numAdultos || '');
-          setNinosEdades(d.ninosEdades || '');
-          setOtrosAnimales(d.otrosAnimales || '');
-          setVacunados(d.vacunados || '');
-          setPuedeSeparar(d.puedeSeparar || '');
-          setHorasSolo(d.horasSolo || '');
-          setPreferenciaEspecie(d.preferenciaEspecie || []);
-          setSubcategoriaOtroEspecie(d.subcategoriaOtroEspecie || '');
-          setCustomOtroEspecieInput(d.customOtroEspecieInput || '');
-          setPreferenciaTamanio(d.preferenciaTamanio || []);
-          setTiempoResguardo(d.tiempoResguardo || '');
-          setTiempoResguardoDias(d.tiempoResguardoDias || '');
-          setCheckAccesos(!!d.checkAccesos);
-          setCheckBardas(!!d.checkBardas);
-          setCheckBalcones(!!d.checkBalcones);
-          setCheckEspacio(!!d.checkEspacio);
-          setCheckNingunoSeguridad(!!d.checkNingunoSeguridad);
-          setCheckAislamiento(!!d.checkAislamiento);
-          setCheckCuarentena(!!d.checkCuarentena);
-          setCheckNoEntregar(!!d.checkNoEntregar);
-          setCheckNingunoCompromiso(!!d.checkNingunoCompromiso);
-          setNombreEmergencia(d.nombreEmergencia || '');
-          setTelEmergencia(d.telEmergencia || '');
-          setHorario1Dia(d.horario1Dia || '');
-          setHorario1Hora(d.horario1Hora || '');
-          setHorario2Dia(d.horario2Dia || '');
-          setHorario2Hora(d.horario2Hora || '');
-          setHorario3Dia(d.horario3Dia || '');
-          setHorario3Hora(d.horario3Hora || '');
-          setConsentimiento(!!d.consentimiento);
-          setPaso(borrador.paso || 1);
-          lastPersistedDraftRef.current = JSON.stringify(borrador);
-
-          showToast({
-            type: 'success',
-            title: 'Recuperamos tu progreso',
-            message: 'Continúa donde te quedaste. Vuelve a subir las fotos y el video.',
-          });
-        } catch (error) {
-          // Sin borrador o sin conexión: se arranca con el formulario vacío.
-        } finally {
-          if (!cancelado) setIsLoadingExisting(false);
+        const raw = await getFormDraft(storageKey);
+        if (!active || !raw) {
+          if (active) {
+            setIsDraftReady(true);
+            setIsLoadingExisting(false);
+          }
+          return;
         }
-      })();
+
+        const parsed = parseFormDraftEnvelope<ExternalFormDraftData>(raw, EXTERNAL_DRAFT_VERSION);
+        if (parsed.status !== 'valid' || !isExternalFormDraftData(parsed.draft.data)) {
+          await removeFormDraft(storageKey);
+          if (active) {
+            setIsDraftReady(true);
+            setIsLoadingExisting(false);
+          }
+          return;
+        }
+
+        const d = parsed.draft.data;
+        setPaso(d.paso || 1);
+        setPinLocation(d.pinLocation || pinLocation);
+        setUbicacionConfirmada(!!d.ubicacionConfirmada);
+        setCalle(d.calle || '');
+        setNumero(d.numero || '');
+        setColonia(d.colonia || '');
+        setMunicipio(d.municipio || '');
+        setEstado(d.estado || '');
+        setReferencia(d.referencia || '');
+        setDireccionConfirmada(d.direccionConfirmada || '');
+        setTipoVivienda(d.tipoVivienda || '');
+        setSubcategoriaVivienda(d.subcategoriaVivienda || '');
+        setCustomViviendaInput(d.customViviendaInput || '');
+        setAutorizacion(d.autorizacion || '');
+        setUbicacionAnimal(d.ubicacionAnimal || '');
+        setAceptaVisita(d.aceptaVisita || '');
+        setNumAdultos(d.numAdultos || '');
+        setNinosEdades(d.ninosEdades || '');
+        setOtrosAnimales(d.otrosAnimales || '');
+        setVacunados(d.vacunados || '');
+        setPuedeSeparar(d.puedeSeparar || '');
+        setHorasSolo(d.horasSolo || '');
+        setPreferenciaEspecie(d.preferenciaEspecie || []);
+        setSubcategoriaOtroEspecie(d.subcategoriaOtroEspecie || '');
+        setCustomOtroEspecieInput(d.customOtroEspecieInput || '');
+        setPreferenciaTamanio(d.preferenciaTamanio || []);
+        setTiempoResguardo(d.tiempoResguardo || '');
+        setTiempoResguardoDias(d.tiempoResguardoDias || '');
+        setCheckAccesos(!!d.checkAccesos);
+        setCheckBardas(!!d.checkBardas);
+        setCheckBalcones(!!d.checkBalcones);
+        setCheckEspacio(!!d.checkEspacio);
+        setCheckNingunoSeguridad(!!d.checkNingunoSeguridad);
+        setCheckAislamiento(!!d.checkAislamiento);
+        setCheckCuarentena(!!d.checkCuarentena);
+        setCheckNoEntregar(!!d.checkNoEntregar);
+        setCheckNingunoCompromiso(!!d.checkNingunoCompromiso);
+        setNombreEmergencia(d.nombreEmergencia || '');
+        setTelEmergencia(d.telEmergencia || '');
+        setHorario1Dia(d.horario1Dia || '');
+        setHorario1Hora(d.horario1Hora || '');
+        setHorario2Dia(d.horario2Dia || '');
+        setHorario2Hora(d.horario2Hora || '');
+        setHorario3Dia(d.horario3Dia || '');
+        setHorario3Hora(d.horario3Hora || '');
+        setConsentimiento(!!d.consentimiento);
+
+        setShowDraftNotice(true);
+        setIsDraftReady(true);
+        setIsLoadingExisting(false);
+      })().catch(() => {
+        if (active) {
+          setIsDraftReady(true);
+          setIsLoadingExisting(false);
+        }
+      });
 
       return () => {
-        cancelado = true;
+        active = false;
       };
     }
 
@@ -350,7 +441,6 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
     else setPaso(paso - 1);
   };
 
-  // ─── VALIDACIONES ───
   const validarPaso1 = () => {
     const newErrors: { [key: string]: string } = {};
     if (!ubicacionConfirmada) newErrors.ubicacion = 'Ubica tu hogar en el mapa.';
@@ -364,7 +454,7 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
     if (!autorizacion) newErrors.autorizacion = 'Selecciona una opción.';
     if (!ubicacionAnimal) newErrors.ubicacionAnimal = 'Selecciona una opción.';
     if (!aceptaVisita) newErrors.aceptaVisita = 'Selecciona una opción.';
-    
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -377,7 +467,7 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
     if (!vacunados) newErrors.vacunados = 'Selecciona una opción.';
     if (!puedeSeparar) newErrors.puedeSeparar = 'Selecciona una opción.';
     if (!horasSolo) newErrors.horasSolo = 'Obligatorio.';
-    
+
     if (preferenciaEspecie.length === 0) newErrors.preferenciaEspecie = 'Selecciona al menos uno.';
     if (preferenciaEspecie.includes('Otros')) {
       if (!subcategoriaOtroEspecie) newErrors.subcategoriaOtroEspecie = 'Selecciona la categoría.';
@@ -385,10 +475,10 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
     }
 
     if (preferenciaTamanio.length === 0) newErrors.preferenciaTamanio = 'Selecciona al menos uno.';
-    
+
     if (!tiempoResguardoDias.trim()) newErrors.tiempoResguardoDias = 'Obligatorio.';
     else if (isNaN(Number(tiempoResguardoDias))) newErrors.tiempoResguardoDias = 'Debe ser un número válido.';
-    
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -399,7 +489,7 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
     if (!checkAccesos && !checkBardas && !checkBalcones && !checkEspacio && !checkNingunoSeguridad) {
       newErrors.seguridadGeneral = 'Debes marcar al menos una opción o indicar que no cumples con ninguna.';
     }
-    
+
     if (checkAccesos && !fotoAccesos) newErrors.fotoAccesos = 'Sube una foto de evidencia.';
     if (checkBardas && !fotoBardas) newErrors.fotoBardas = 'Sube una foto de evidencia.';
     if (checkBalcones && !fotoBalcones) newErrors.fotoBalcones = 'Sube una foto de evidencia.';
@@ -425,16 +515,9 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
     if (!videoUrl) newErrors.videoUrl = 'Debes subir un video recorrido de tu hogar.';
     if (!horario1Dia || !horario1Hora) newErrors.horarios = 'Ingresa al menos la primera opción completa.';
     if (!consentimiento) newErrors.consentimiento = 'Debes aceptar los términos.';
-    
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
-  };
-
-  // ─── HANDLERS ───
-  const handleRegexChange = (val: string, setter: any, errorKey: string, regex: RegExp, errorMsg: string) => {
-    setter(val);
-    if (val.trim() && !regex.test(val)) setErrors(prev => ({ ...prev, [errorKey]: errorMsg }));
-    else setErrors(prev => ({ ...prev, [errorKey]: '' }));
   };
 
   const toggleArray = (item: string, state: string[], setState: any, errorKey: string) => {
@@ -447,7 +530,7 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
   const handleSeguridadCheck = (setter: any, value: boolean) => {
     setter(value);
     if (value) setCheckNingunoSeguridad(false);
-    setErrors(prev => ({...prev, seguridadGeneral: ''}));
+    setErrors(prev => ({ ...prev, seguridadGeneral: '' }));
   };
 
   const handleNingunoSeguridad = (value: boolean) => {
@@ -455,13 +538,13 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
     if (value) {
       setCheckAccesos(false); setCheckBardas(false); setCheckBalcones(false); setCheckEspacio(false);
     }
-    setErrors(prev => ({...prev, seguridadGeneral: ''}));
+    setErrors(prev => ({ ...prev, seguridadGeneral: '' }));
   };
 
   const handleCompromisoCheck = (setter: any, value: boolean) => {
     setter(value);
     if (value) setCheckNingunoCompromiso(false);
-    setErrors(prev => ({...prev, compromisosGeneral: ''}));
+    setErrors(prev => ({ ...prev, compromisosGeneral: '' }));
   };
 
   const handleNingunoCompromiso = (value: boolean) => {
@@ -469,10 +552,9 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
     if (value) {
       setCheckAislamiento(false); setCheckCuarentena(false); setCheckNoEntregar(false);
     }
-    setErrors(prev => ({...prev, compromisosGeneral: ''}));
+    setErrors(prev => ({ ...prev, compromisosGeneral: '' }));
   };
 
-  // ─── LÓGICA DE SELECTORES MODALES ───
   const getSelectorOptions = () => {
     switch (selectorActivo) {
       case 'adultos': return Array.from({ length: 20 }, (_, i) => String(i + 1));
@@ -490,7 +572,7 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
     if (selectorActivo === 'horasSolo') { setHorasSolo(val); setErrors(prev => ({ ...prev, horasSolo: '' })); }
     if (selectorActivo === 'ninos') { setNinosEdades(val); setErrors(prev => ({ ...prev, ninosEdades: '' })); }
     if (selectorActivo === 'otrosAnimales') { setOtrosAnimales(val); setErrors(prev => ({ ...prev, otrosAnimales: '' })); }
-    
+
     if (selectorActivo === 'dia1') { setHorario1Dia(val); setErrors(prev => ({ ...prev, horarios: '' })); }
     if (selectorActivo === 'hora1') { setHorario1Hora(val); setErrors(prev => ({ ...prev, horarios: '' })); }
     if (selectorActivo === 'dia2') setHorario2Dia(val);
@@ -501,7 +583,6 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
     setSelectorActivo(null);
   };
 
-// ─── MAPAS ───
   const reverseGeocode = async (lat: number, lon: number) => {
     try {
       const res = await axios.get('https://nominatim.openstreetmap.org/reverse', { params: { lat, lon, format: 'json', addressdetails: 1 } });
@@ -512,21 +593,21 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
       setMunicipio(address.city || address.town || address.municipality || address.county || '');
       setEstado(address.state || '');
       setDireccionConfirmada(res.data.display_name || '');
-    } catch (error) {}
+    } catch (error) { }
   };
 
   const handlePinLocationSelect = (latitud: number, longitud: number) => {
     setPinLocation({ latitud, longitud });
     setUbicacionConfirmada(true);
     setErrors((prev) => ({ ...prev, ubicacion: '' }));
-    reverseGeocode(latitud, longitud); 
+    reverseGeocode(latitud, longitud);
   };
 
   const handleSelectSearchResult = (result: any) => {
     const lat = parseFloat(result.lat);
     const lon = parseFloat(result.lon);
     const address = result.address || {};
-    
+
     setPinLocation({ latitud: lat, longitud: lon });
     setUbicacionConfirmada(true);
     setCalle(address.road || address.pedestrian || address.square || address.footway || address.path || result.name || '');
@@ -566,7 +647,6 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
     } else { setIsLoadingGps(false); }
   };
 
-  // ─── MULTIMEDIA ───
   const handlePickSecurityPhoto = async (setter: any, errorKey: string) => {
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 });
     if (!result.canceled) {
@@ -583,6 +663,32 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
     }
   };
 
+  const openCamera = async () => {
+    if (!cameraPermission?.granted) {
+      const { granted } = await requestCameraPermission();
+      if (!granted) {
+        setErrors(prev => ({ ...prev, identificacionUrl: 'Permiso de cámara denegado.' }));
+        return;
+      }
+    }
+    setShowCameraModal(true);
+  };
+
+  const takePicture = async () => {
+    if (cameraRef.current) {
+      try {
+        const photo = await cameraRef.current.takePictureAsync({ quality: 0.8 });
+        if (photo?.uri) {
+          setIdentificacionUrl(photo.uri);
+          setErrors(prev => ({ ...prev, identificacionUrl: '' }));
+          setShowCameraModal(false);
+        }
+      } catch (e) {
+        console.error("Error al tomar la foto:", e);
+      }
+    }
+  };
+
   const handlePickVideo = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Videos, quality: 0.8 });
     if (!result.canceled) {
@@ -592,10 +698,8 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
   };
 
   // ─── BORRADOR: guardar progreso mientras se llena el formulario ───
-  // No incluye fotoAccesos/fotoBardas/fotoBalcones/fotoEspacio/identificacionUrl/videoUrl:
-  // son URIs locales (blob:) que dejan de existir al recargar la página.
-  const draftDatos = useMemo(() => ({
-    pinLocation, ubicacionConfirmada,
+  const externalDraftData = useMemo<ExternalFormDraftData>(() => ({
+    paso, pinLocation, ubicacionConfirmada,
     calle, numero, colonia, municipio, estado, referencia, direccionConfirmada,
     tipoVivienda, subcategoriaVivienda, customViviendaInput,
     autorizacion, ubicacionAnimal, aceptaVisita,
@@ -608,7 +712,7 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
     horario1Dia, horario1Hora, horario2Dia, horario2Hora, horario3Dia, horario3Hora,
     consentimiento,
   }), [
-    pinLocation, ubicacionConfirmada,
+    paso, pinLocation, ubicacionConfirmada,
     calle, numero, colonia, municipio, estado, referencia, direccionConfirmada,
     tipoVivienda, subcategoriaVivienda, customViviendaInput,
     autorizacion, ubicacionAnimal, aceptaVisita,
@@ -622,7 +726,8 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
     consentimiento,
   ]);
 
-  const hasMeaningfulDraft = ubicacionConfirmada
+  const hasMeaningfulDraft = paso > 1
+    || ubicacionConfirmada
     || !!tipoVivienda
     || !!autorizacion
     || !!numAdultos
@@ -630,65 +735,34 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
     || !!nombreEmergencia
     || !!telEmergencia;
 
-  const draftRequest = useMemo(() => ({ paso, datos: draftDatos }), [paso, draftDatos]);
-  const serializedDraft = useMemo(() => JSON.stringify(draftRequest), [draftRequest]);
-
-  const persistDraft = useCallback((request: typeof draftRequest, serialized: string): Promise<void> => {
-    const operation = draftSaveQueueRef.current.catch(() => undefined).then(async () => {
-      if (!token || draftPersistenceDisabledRef.current) return;
-      try {
-        await axios.put(`${API_URL}/voluntarios/externo/borrador`, request, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        lastPersistedDraftRef.current = serialized;
-      } catch {
-        // Falla silenciosa: el usuario sigue llenando el formulario, se
-        // reintentará en el siguiente cambio.
-      }
-    });
-    draftSaveQueueRef.current = operation;
-    return operation;
-  }, [token]);
-
-  const deleteDraft = useCallback(async () => {
-    if (!token) return;
-    draftPersistenceDisabledRef.current = true;
-    await draftSaveQueueRef.current.catch(() => undefined);
-    try {
-      await axios.delete(`${API_URL}/voluntarios/externo/borrador`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-    } catch {
-      // La postulación ya quedó guardada; el borrador expira solo si esto falla.
-    }
-  }, [token]);
-
   useEffect(() => {
     if (
-      modoReintento
-      || isLoadingExisting
-      || !token
-      || registroExitoso
+      !isDraftReady
+      || !draftStorageKey
       || !hasMeaningfulDraft
       || draftPersistenceDisabledRef.current
+      || registroExitoso
     ) {
       return;
     }
 
-    if (lastPersistedDraftRef.current === null) {
-      lastPersistedDraftRef.current = serializedDraft;
-      return;
-    }
-    if (lastPersistedDraftRef.current === serializedDraft) return;
-
     const timeout = setTimeout(() => {
-      if (!draftPersistenceDisabledRef.current) {
-        void persistDraft(draftRequest, serializedDraft);
-      }
-    }, DRAFT_SAVE_DELAY_MS);
+      if (draftPersistenceDisabledRef.current) return;
+      const envelope = createFormDraftEnvelope(
+        externalDraftData,
+        EXTERNAL_DRAFT_VERSION,
+        EXTERNAL_DRAFT_TTL_MS,
+      );
+      void setFormDraft(draftStorageKey, JSON.stringify(envelope));
+    }, EXTERNAL_DRAFT_SAVE_DELAY_MS);
 
     return () => clearTimeout(timeout);
-  }, [draftRequest, hasMeaningfulDraft, isLoadingExisting, modoReintento, persistDraft, registroExitoso, serializedDraft, token]);
+  }, [externalDraftData, draftStorageKey, hasMeaningfulDraft, isDraftReady, registroExitoso]);
+
+  const clearExternalDraft = () => {
+    draftPersistenceDisabledRef.current = true;
+    if (draftStorageKey) void removeFormDraft(draftStorageKey);
+  };
 
   // ─── ENVÍO ───
   const handleSubmit = async () => {
@@ -698,7 +772,6 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
     try {
       const formData = new FormData();
 
-      // 1. Empaquetar todas las respuestas en un solo objeto JSON
       const datosFormulario = {
         latitud: pinLocation.latitud,
         longitud: pinLocation.longitud,
@@ -713,7 +786,6 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
         nombreEmergencia, telEmergencia,
         consentimiento,
         eliminarVideo: videoEliminado,
-        // Agrupamos los horarios en un solo JSON bonito
         horariosVisita: [
           { dia: horario1Dia, hora: horario1Hora },
           ...(horario2Dia ? [{ dia: horario2Dia, hora: horario2Hora }] : []),
@@ -721,10 +793,8 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
         ]
       };
 
-      // Adjuntamos todo el JSON como un solo campo de texto
       formData.append('datos', JSON.stringify(datosFormulario));
 
-      // 2. Adjuntar los archivos multimedia (adaptado para Expo)
       const identificacionEsNueva =
         !!identificacionUrl && identificacionUrl !== identificacionOriginalUrl;
       const videoEsNuevo = !!videoUrl && videoUrl !== videoOriginalUrl;
@@ -747,7 +817,7 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
       }
 
       const addImageToForm = async (uri: string, fieldName: string) => {
-        if (!uri || uri.startsWith('http')) return; // Evita enviar si es URL de BD
+        if (!uri || uri.startsWith('http')) return;
         if (Platform.OS === 'web') {
           const res = await fetch(uri);
           formData.append(fieldName, await res.blob(), `${fieldName}_${Date.now()}.jpg`);
@@ -761,17 +831,16 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
       await addImageToForm(fotoBalcones, 'foto_balcones');
       await addImageToForm(fotoEspacio, 'foto_espacio');
 
-      // 3. Hacer la petición al endpoint que acabamos de crear en FastAPI
       const { data: resultadoGuardado } = await axios.post(`${API_URL}/voluntarios/externo/postular`, formData, {
-        headers: { 
-          Authorization: `Bearer ${token}` 
-        } 
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
       });
 
       setIsSubmitting(false);
       setCorreccionActiva(Boolean(resultadoGuardado?.correccion));
       setRegistroExitoso(true);
-      if (!modoReintento) void deleteDraft();
+      if (!modoReintento) clearExternalDraft();
 
     } catch (error: any) {
       showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'Error al enviar.' });
@@ -779,7 +848,6 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
     }
   };
 
-  // ─── COMPONENTES UI ───
   const SelectInput = ({ label, value, placeholder, onPress, error }: any) => (
     <View style={{ marginBottom: 16 }}>
       {label && <Text style={[styles.sectionLabel, { marginTop: 0 }]}>{label}</Text>}
@@ -819,7 +887,7 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
   const renderChipOptions = (opciones: string[], state: string, setState: any, errorKey: string) => (
     <View style={styles.animalChips}>
       {opciones.map((op) => (
-        <TouchableOpacity key={op} onPress={() => { setState(op); setErrors(prev => ({...prev, [errorKey]: ''})) }} 
+        <TouchableOpacity key={op} onPress={() => { setState(op); setErrors(prev => ({ ...prev, [errorKey]: '' })) }}
           style={[styles.animalChip, { backgroundColor: state === op ? COLORS.primary : COLORS.grayLight }]}>
           <Text style={{ fontWeight: '700', fontSize: 14, color: state === op ? COLORS.bgWhite : COLORS.textLight }}>{op}</Text>
         </TouchableOpacity>
@@ -829,7 +897,7 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
 
   const renderCheckbox = (label: string, value: boolean, setValue: any, errorKey?: string) => (
     <View style={{ marginBottom: 12 }}>
-      <TouchableOpacity onPress={() => { setValue(!value); if (errorKey) setErrors(prev => ({...prev, [errorKey]: ''})) }} style={{ flexDirection: 'row', alignItems: 'center' }}>
+      <TouchableOpacity onPress={() => { setValue(!value); if (errorKey) setErrors(prev => ({ ...prev, [errorKey]: '' })) }} style={{ flexDirection: 'row', alignItems: 'center' }}>
         <Ionicons name={value ? "checkbox" : "square-outline"} size={24} color={value ? COLORS.primary : COLORS.textLight} />
         <Text style={{ marginLeft: 10, color: COLORS.textDark, flex: 1, fontSize: 15, lineHeight: 22 }}>{label}</Text>
       </TouchableOpacity>
@@ -865,7 +933,6 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
         </View>
         {errors.ubicacion && <Text style={styles.errorText}>{errors.ubicacion}</Text>}
 
-        {/* --- NUEVA TARJETA AZUL DE DIRECCIÓN CONFIRMADA --- */}
         {direccionConfirmada !== '' && (
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', backgroundColor: '#EAF6FF', padding: 10, borderRadius: 8, marginTop: 8, marginBottom: 16 }}>
             <Feather name="map-pin" size={14} color="#2C3E50" style={{ marginRight: 6, marginTop: 2 }} />
@@ -894,14 +961,14 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
       <FormSection title="Detalles del Hogar">
         <Text style={styles.sectionLabel}>Tipo de vivienda</Text>
         {renderChipOptions(['Casa', 'Departamento', 'Otro'], tipoVivienda, setTipoVivienda, 'tipoVivienda')}
-        
+
         {tipoVivienda === 'Otro' && (
           <View style={{ marginTop: 12, padding: 12, backgroundColor: COLORS.grayLight, borderRadius: 16 }}>
             <Text style={styles.sectionLabel}>¿Qué tipo de lugar es?</Text>
             {renderChipOptions(['Quinta', 'Local comercial', 'Rancho', 'Terreno/Lote', 'Oficina', 'Otra específica'], subcategoriaVivienda, setSubcategoriaVivienda, 'subcategoriaVivienda')}
             {subcategoriaVivienda === 'Otra específica' && (
               <View style={{ marginTop: 8 }}>
-                <Input placeholder="Especifique el tipo de vivienda" value={customViviendaInput} onChangeText={(v) => {setCustomViviendaInput(v); setErrors(prev=>({...prev, customViviendaInput: ''}))}} error={errors.customViviendaInput} />
+                <Input placeholder="Especifique el tipo de vivienda" value={customViviendaInput} onChangeText={(v) => { setCustomViviendaInput(v); setErrors(prev => ({ ...prev, customViviendaInput: '' })) }} error={errors.customViviendaInput} />
               </View>
             )}
             {errors.subcategoriaVivienda && <Text style={styles.errorText}>{errors.subcategoriaVivienda}</Text>}
@@ -938,10 +1005,10 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
             <SelectInput label="Horas al día que el animal pasaría solo" placeholder="Selecciona" value={horasSolo} onPress={() => setSelectorActivo('horasSolo')} error={errors.horasSolo} />
           </View>
         </View>
-        
+
         <SelectInput label="Niños en el hogar (Edades)" placeholder="Selecciona" value={ninosEdades} onPress={() => setSelectorActivo('ninos')} error={errors.ninosEdades} />
         <SelectInput label="Otros animales en casa" placeholder="Selecciona" value={otrosAnimales} onPress={() => setSelectorActivo('otrosAnimales')} error={errors.otrosAnimales} />
-        
+
         <Text style={styles.sectionLabel}>¿Tus animales están vacunados y esterilizados?</Text>
         {renderChipOptions(['Sí', 'No', 'No aplica (No tengo)'], vacunados, setVacunados, 'vacunados')}
         {errors.vacunados && <Text style={styles.errorText}>{errors.vacunados}</Text>}
@@ -977,7 +1044,7 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
             {renderChipOptions(['Ave', 'Reptil', 'Roedor', 'Fauna silvestre', 'Otro'], subcategoriaOtroEspecie, setSubcategoriaOtroEspecie, 'subcategoriaOtroEspecie')}
             {subcategoriaOtroEspecie === 'Otro' && (
               <View style={{ marginTop: 8 }}>
-                <Input placeholder="Especifica qué animal" value={customOtroEspecieInput} onChangeText={(v) => {setCustomOtroEspecieInput(v); setErrors(prev=>({...prev, customOtroEspecieInput: ''}))}} error={errors.customOtroEspecieInput} />
+                <Input placeholder="Especifica qué animal" value={customOtroEspecieInput} onChangeText={(v) => { setCustomOtroEspecieInput(v); setErrors(prev => ({ ...prev, customOtroEspecieInput: '' })) }} error={errors.customOtroEspecieInput} />
               </View>
             )}
             {errors.subcategoriaOtroEspecie && <Text style={styles.errorText}>{errors.subcategoriaOtroEspecie}</Text>}
@@ -998,15 +1065,15 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
         {errors.preferenciaTamanio && <Text style={styles.errorText}>{errors.preferenciaTamanio}</Text>}
 
         <Text style={styles.sectionLabel}>Tiempo máximo de resguardo ofrecido (Días)</Text>
-        <Input 
-          keyboardType="numeric" 
-          value={tiempoResguardoDias} 
+        <Input
+          keyboardType="numeric"
+          value={tiempoResguardoDias}
           onChangeText={(v) => {
-            setTiempoResguardoDias(v.replace(/[^0-9]/g, '')); 
-            setErrors(prev=>({...prev, tiempoResguardoDias: ''}));
-          }} 
-          error={errors.tiempoResguardoDias} 
-          placeholder="Ej. 5" 
+            setTiempoResguardoDias(v.replace(/[^0-9]/g, ''));
+            setErrors(prev => ({ ...prev, tiempoResguardoDias: '' }));
+          }}
+          error={errors.tiempoResguardoDias}
+          placeholder="Ej. 5"
         />
       </FormSection>
 
@@ -1094,17 +1161,22 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
             </View>
           </View>
         ) : (
-          <TouchableOpacity onPress={handlePickIdentificacion} style={[styles.addPhotoButton, { width: '100%', borderColor: errors.identificacionUrl ? COLORS.danger : COLORS.primary }]}>
-            <Text style={styles.addPhotoText}><Ionicons name="card" size={16}/> Subir Foto de INE/Pasaporte</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 12 }}>
+            <TouchableOpacity onPress={handlePickIdentificacion} style={[styles.addPhotoButton, { flex: 1, borderColor: errors.identificacionUrl ? COLORS.danger : COLORS.primary }]}>
+              <Text style={styles.addPhotoText}><Ionicons name="images" size={16} /> Galería</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={openCamera} style={[styles.addPhotoButton, { flex: 1, borderColor: errors.identificacionUrl ? COLORS.danger : COLORS.primary, backgroundColor: COLORS.primary }]}>
+              <Text style={[styles.addPhotoText, { color: '#FFF' }]}><Ionicons name="camera" size={16} color="#FFF" /> Tomar Foto</Text>
+            </TouchableOpacity>
+          </View>
         )}
         {errors.identificacionUrl && <Text style={styles.errorText}>{errors.identificacionUrl}</Text>}
       </FormSection>
 
       <Divider />
 
-      <FormSection 
-        title="Recorrido del Hogar *" 
+      <FormSection
+        title="Recorrido del Hogar *"
         subtitle="Un video corto mostrando los accesos y el lugar donde dormirá el animal es obligatorio para tu aprobación."
       >
         <View style={{ backgroundColor: 'rgba(236, 128, 43, 0.1)', padding: 12, borderRadius: 12, marginBottom: 16 }}>
@@ -1130,7 +1202,7 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
           </View>
         ) : (
           <TouchableOpacity onPress={handlePickVideo} style={[styles.addPhotoButton, { width: '100%', borderColor: errors.videoUrl ? COLORS.danger : COLORS.bgTeal }]}>
-            <Text style={{ color: errors.videoUrl ? COLORS.danger : COLORS.bgTeal, fontWeight: '700' }}><Ionicons name="videocam" size={16}/> Subir Video Recorrido</Text>
+            <Text style={{ color: errors.videoUrl ? COLORS.danger : COLORS.bgTeal, fontWeight: '700' }}><Ionicons name="videocam" size={16} /> Subir Video Recorrido</Text>
           </TouchableOpacity>
         )}
         {errors.videoUrl && <Text style={styles.errorText}>{errors.videoUrl}</Text>}
@@ -1144,7 +1216,7 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
           <View style={styles.halfWidth}><SelectInput placeholder="Día" value={horario1Dia} onPress={() => setSelectorActivo('dia1')} /></View>
           <View style={styles.halfWidth}><SelectInput placeholder="Hora" value={horario1Hora} onPress={() => setSelectorActivo('hora1')} /></View>
         </View>
-        
+
         <Text style={[styles.sectionLabel, { marginTop: 0 }]}>Opción 2</Text>
         <View style={styles.rowContainer}>
           <View style={styles.halfWidth}><SelectInput placeholder="Día" value={horario2Dia} onPress={() => setSelectorActivo('dia2')} /></View>
@@ -1157,7 +1229,7 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
           <View style={styles.halfWidth}><SelectInput placeholder="Hora" value={horario3Hora} onPress={() => setSelectorActivo('hora3')} /></View>
         </View>
 
-        {errors.horarios && <Text style={[styles.errorText, {marginTop: -10}]}>{errors.horarios}</Text>}
+        {errors.horarios && <Text style={[styles.errorText, { marginTop: -10 }]}>{errors.horarios}</Text>}
       </FormSection>
 
       <FormSection title="Términos Finales">
@@ -1175,7 +1247,7 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
     <View style={[styles.outerContainer, { backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' } as any]}>
       <Toast toast={toast} translateY={translateY} />
 
-      {isLoadingExisting ? (
+      {(!isDraftReady || isLoadingExisting) ? (
         <View style={[styles.centeredContent, { maxWidth: 500 }]}>
           <View style={[styles.cardContainer, { padding: 40, alignItems: 'center', justifyContent: 'center' }]}>
             <ActivityIndicator size="large" color={COLORS.primary} />
@@ -1185,46 +1257,72 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
           </View>
         </View>
       ) : registroExitoso ? (
-         <View style={[styles.centeredContent, { maxWidth: 500 }]}>
-           <View style={[styles.cardContainer, { padding: 40, alignItems: 'center' }]}>
-             <Ionicons name="checkmark-circle" size={80} color={COLORS.bgTeal} style={{ marginBottom: 20 }} />
-             <Text style={{ fontSize: 24, fontWeight: '900', color: COLORS.textDark, textAlign: 'center', marginBottom: 16 }}>
-               {modoReintento ? '¡Información actualizada!' : '¡Información guardada!'}
-             </Text>
-             <Text style={{ fontSize: 16, color: COLORS.textLight, textAlign: 'center', lineHeight: 24, marginBottom: 32 }}>
-               {correccionActiva
-                 ? 'Los cambios quedaron vinculados a la revisión de tu hogar. Puedes consultar el avance desde tu perfil.'
-                 : modoReintento
-                 ? 'Revisa tus capacidades para enviar nuevamente tu postulación.'
-                 : 'Para terminar tu postulación, cuéntanos cómo puedes ayudar.'}
-             </Text>
-             <TouchableOpacity 
-               onPress={() => {
-                 if (onClose) onClose(); 
-                 if (!correccionActiva) {
-                   setTimeout(() => {
-                     router.push('/capacidades' as any);
-                   }, 150);
-                 }
-               }} 
-               style={[styles.submitButton, { width: '100%' }]}
-             >
-               <Text style={styles.submitButtonText}>
-                 {correccionActiva
-                   ? 'Volver a mi perfil'
-                   : modoReintento
-                     ? 'Revisar mis capacidades'
-                     : 'Completar mis capacidades'}
-               </Text>
-             </TouchableOpacity>
-           </View>
-         </View>
+        <View style={[styles.centeredContent, { maxWidth: 500 }]}>
+          <View style={[styles.cardContainer, { padding: 40, alignItems: 'center' }]}>
+            <Ionicons name="checkmark-circle" size={80} color={COLORS.bgTeal} style={{ marginBottom: 20 }} />
+            <Text style={{ fontSize: 24, fontWeight: '900', color: COLORS.textDark, textAlign: 'center', marginBottom: 16 }}>
+              {modoReintento ? '¡Información actualizada!' : '¡Información guardada!'}
+            </Text>
+            <Text style={{ fontSize: 16, color: COLORS.textLight, textAlign: 'center', lineHeight: 24, marginBottom: 32 }}>
+              {correccionActiva
+                ? 'Los cambios quedaron vinculados a la revisión de tu hogar. Puedes consultar el avance desde tu perfil.'
+                : modoReintento
+                  ? 'Revisa tus capacidades para enviar nuevamente tu postulación.'
+                  : 'Para terminar tu postulación, cuéntanos cómo puedes ayudar.'}
+            </Text>
+            <TouchableOpacity
+              onPress={() => {
+                if (onClose) onClose();
+                if (!correccionActiva) {
+                  setTimeout(() => {
+                    router.push('/capacidades' as any);
+                  }, 150);
+                }
+              }}
+              style={[styles.submitButton, { width: '100%' }]}
+            >
+              <Text style={styles.submitButtonText}>
+                {correccionActiva
+                  ? 'Volver a mi perfil'
+                  : modoReintento
+                    ? 'Revisar mis capacidades'
+                    : 'Completar mis capacidades'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       ) : (
         <>
           <View style={[styles.centeredContent]}>
             <View style={styles.cardContainer}>
               {renderHeader()}
               <View style={styles.bodySection}>
+                {showDraftNotice && (
+                  <View style={{
+                    backgroundColor: '#EAF6FF',
+                    borderWidth: 1,
+                    borderColor: '#C9E6FF',
+                    borderRadius: 12,
+                    paddingHorizontal: 12,
+                    paddingVertical: 10,
+                    marginBottom: 12,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                  }}>
+                    <Text style={{ color: COLORS.textDark, fontSize: 13, flex: 1, marginRight: 10 }}>
+                      Recuperamos tu progreso guardado para que continúes donde te quedaste.
+                    </Text>
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel="Cerrar aviso de borrador recuperado"
+                      onPress={() => setShowDraftNotice(false)}
+                      style={{ padding: 4 }}
+                    >
+                      <Ionicons name="close" size={16} color={COLORS.textDark} />
+                    </TouchableOpacity>
+                  </View>
+                )}
                 {paso === 1 && renderPaso1()}
                 {paso === 2 && renderPaso2()}
                 {paso === 3 && renderPaso3()}
@@ -1233,7 +1331,6 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
             </View>
           </View>
 
-          {/* Modal Selectores Genérico */}
           <Modal visible={selectorActivo !== null} transparent animationType="fade" onRequestClose={() => setSelectorActivo(null)}>
             <View style={styles.modalBackdrop}>
               <View style={styles.modalContent}>
@@ -1252,13 +1349,12 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
             </View>
           </Modal>
 
-          {/* Modal Información de Identidad */}
           <Modal visible={showInfoIdentidad} transparent animationType="fade" onRequestClose={() => setShowInfoIdentidad(false)}>
             <View style={styles.modalBackdrop}>
               <View style={styles.modalContent}>
                 <Ionicons name="shield-checkmark" size={48} color={COLORS.primary} style={{ alignSelf: 'center', marginBottom: 16 }} />
                 <Text style={styles.modalTitle}>Verificación de Identidad</Text>
-                
+
                 <Text style={{ fontSize: 15, color: COLORS.textDark, marginBottom: 12, fontWeight: '700' }}>
                   Documentos válidos:
                 </Text>
@@ -1290,12 +1386,62 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
                   <TouchableOpacity onPress={() => setShowCloseConfirm(false)} style={styles.confirmButtonCancel}>
                     <Text style={styles.confirmButtonCancelText}>Me quedo</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={() => { setShowCloseConfirm(false); if (onClose) onClose(); }} style={styles.confirmButtonExit}>
+                  <TouchableOpacity onPress={() => { clearExternalDraft(); setShowCloseConfirm(false); if (onClose) { onClose(); } else { router.back(); } }} style={styles.confirmButtonExit}>
                     <Text style={styles.confirmButtonExitText}>Sí, salir</Text>
                   </TouchableOpacity>
                 </View>
               </View>
             </View>
+          </Modal>
+
+          <Modal visible={showCameraModal} animationType="slide" transparent={false}>
+            <SafeAreaView style={{ flex: 1, backgroundColor: '#000' }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', padding: 16 }}>
+                <TouchableOpacity onPress={() => setShowCameraModal(false)}>
+                  <Ionicons name="close" size={32} color="#FFF" />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setCameraType(prev => prev === 'back' ? 'front' : 'back')}>
+                  <Ionicons name="camera-reverse" size={32} color="#FFF" />
+                </TouchableOpacity>
+              </View>
+
+              <View style={{ flex: 1, position: 'relative' }}>
+                <CameraView
+                  ref={cameraRef}
+                  style={{ flex: 1 }}
+                  facing={cameraType}
+                />
+                <View style={{
+                  position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                  alignItems: 'center', justifyContent: 'center'
+                }}>
+                  <View style={{
+                    width: '85%', height: 220,
+                    borderWidth: 2, borderColor: 'rgba(255,255,255,0.8)',
+                    borderStyle: 'dashed', borderRadius: 16,
+                    alignItems: 'center', justifyContent: 'center'
+                  }}>
+                    <Ionicons name="card-outline" size={80} color="rgba(255,255,255,0.5)" />
+                  </View>
+                  <Text style={{ color: '#FFF', position: 'absolute', bottom: 60, textAlign: 'center', width: '100%', fontSize: 16, fontWeight: '600' }}>
+                    Toma la foto lo más claro posible.
+                  </Text>
+                </View>
+              </View>
+
+              <View style={{ padding: 24, paddingBottom: 40, alignItems: 'center' }}>
+                <TouchableOpacity
+                  onPress={takePicture}
+                  style={{
+                    width: 72, height: 72, borderRadius: 36,
+                    backgroundColor: '#FFF', borderWidth: 4, borderColor: '#DDD',
+                    alignItems: 'center', justifyContent: 'center'
+                  }}
+                >
+                  <View style={{ width: 54, height: 54, borderRadius: 27, backgroundColor: COLORS.primary }} />
+                </TouchableOpacity>
+              </View>
+            </SafeAreaView>
           </Modal>
         </>
       )}
@@ -1303,7 +1449,6 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
   );
 }
 
-// ── Componentes internos ──────
 function FormSection({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   return (
     <View style={styles.formSection}>
@@ -1375,7 +1520,7 @@ const styles = StyleSheet.create({
   submitError: { color: COLORS.danger, textAlign: 'center', marginBottom: 12, fontWeight: '700', fontSize: 14 },
   submitButton: { backgroundColor: COLORS.primary, paddingVertical: 18, borderRadius: 24, alignItems: 'center', marginBottom: 16 },
   submitButtonText: { color: COLORS.bgWhite, fontWeight: '900', fontSize: 18 },
-  
+
   // Estilos Modal Selectores
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 16 },
   modalContent: { backgroundColor: COLORS.bgWhite, width: '100%', maxWidth: 400, borderRadius: 24, padding: 32, maxHeight: '60%' },
@@ -1385,7 +1530,7 @@ const styles = StyleSheet.create({
   horaText: { fontSize: 16, color: COLORS.textDark, textAlign: 'center', fontWeight: '500' },
   modalCancel: { alignItems: 'center', marginTop: 20, backgroundColor: COLORS.grayLight, padding: 16, borderRadius: 20 },
   modalCancelText: { color: COLORS.textDark, fontWeight: '700' },
-  
+
   // Custom Select Input Style
   selectInput: { borderWidth: 1.5, borderColor: COLORS.border, borderRadius: 16, padding: 16, backgroundColor: COLORS.bgWhite, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
 

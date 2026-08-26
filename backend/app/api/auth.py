@@ -50,6 +50,10 @@ class ResetPasswordRequest(BaseModel):
     refresh_token: str
     nueva_password: str
 
+class GoogleSyncRequest(BaseModel):
+    access_token: str
+    refresh_token: str
+
 
 def _cliente_twilio() -> TwilioClient:
     return TwilioClient(
@@ -470,3 +474,76 @@ async def resolver_token_invitacion(token: str):
     if fila["usado"] or datetime.fromisoformat(fila["expira_at"].replace("Z", "+00:00")) < datetime.now(timezone.utc):
         raise HTTPException(status_code=400, detail="Este link ya expiró o ya fue usado.")
     return {"telefono": fila["telefono"]}
+
+@router.post("/google-sync", status_code=200)
+async def google_sync(body: GoogleSyncRequest):
+    try:
+        temp_client = get_fresh_client()
+        user_response = temp_client.auth.get_user(body.access_token)
+        user_auth = user_response.user
+    except Exception:
+        raise HTTPException(status_code=401, detail="Token inválido o expirado.")
+
+    auth_user_id = user_auth.id
+    email = user_auth.email
+    user_metadata = user_auth.user_metadata or {}
+    
+    full_name = user_metadata.get("full_name", "")
+    avatar_url = user_metadata.get("avatar_url", "")
+    
+    nombre_parts = full_name.split(" ")
+    nombre = nombre_parts[0] if len(nombre_parts) > 0 and nombre_parts[0] else "Usuario"
+    apellido_paterno = nombre_parts[1] if len(nombre_parts) > 1 else ""
+    apellido_materno = " ".join(nombre_parts[2:]) if len(nombre_parts) > 2 else None
+
+    # Check if user exists by auth_user_id
+    resultado = supabase.table("usuarios").select("id, rol_id, asociacion_id, roles(nombre)").eq(
+        "auth_user_id", auth_user_id
+    ).execute()
+    
+    if not resultado.data:
+        # Check by email in case they were invited or created an account manually first
+        resultado_email = supabase.table("usuarios").select("id").eq("email", email).execute()
+        if resultado_email.data:
+            usuario_id = resultado_email.data[0]["id"]
+            supabase.table("usuarios").update({
+                "auth_user_id": auth_user_id
+            }).eq("id", usuario_id).execute()
+        else:
+            rol_result = supabase.table("roles").select("id").eq("nombre", "reportante").execute()
+            rol_id = rol_result.data[0]["id"] if rol_result.data else None
+            
+            insert_data = {
+                "auth_user_id": auth_user_id,
+                "email": email,
+                "nombre": nombre,
+                "apellido_paterno": apellido_paterno,
+                "apellido_materno": apellido_materno,
+                "rol_id": rol_id,
+                "telefono": None
+            }
+            supabase.table("usuarios").insert(insert_data).execute()
+
+        # Fetch the complete user after update/insert
+        resultado = supabase.table("usuarios").select("id, rol_id, asociacion_id, roles(nombre)").eq(
+            "auth_user_id", auth_user_id
+        ).execute()
+
+    if not resultado.data:
+        raise HTTPException(status_code=500, detail="Error al sincronizar el usuario.")
+        
+    fila = resultado.data[0]
+    return {
+        "access_token": body.access_token,
+        "refresh_token": body.refresh_token,
+        "usuario": {
+            "id": fila["id"],
+            "rol_id": fila["rol_id"],
+            "asociacion_id": fila["asociacion_id"],
+            "es_admin": fila["roles"]["nombre"] == "admin" if fila.get("roles") else False,
+            "es_admin_asociacion": fila["roles"]["nombre"] == "admin_asociacion" if fila.get("roles") else False,
+            "es_voluntario_externo": fila["roles"]["nombre"] == "voluntario_externo" if fila.get("roles") else False,
+            "es_aliado": fila["roles"]["nombre"] == "aliado" if fila.get("roles") else False,
+            "nombre": nombre
+        }
+    }
