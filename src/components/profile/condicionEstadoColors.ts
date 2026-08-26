@@ -17,6 +17,8 @@ export const ESTADO_PREVIEW: Record<string, { color: string; label: string }> = 
   asignado: { color: '#66BCB4', label: 'Asignado' },
   en_camino: { color: '#64748B', label: 'En camino' },
   en_atencion: { color: '#9B59B6', label: 'En atención' },
+  pendiente_seguimiento_fallecimiento: { color: '#B7791F', label: 'Resultado en revisión' },
+  muerto: { color: '#64748B', label: 'Seguimiento concluido' },
   cerrado: { color: '#64748B', label: 'Cerrado' },
   rescatado: { color: '#27AE60', label: 'Rescatado' },
 };
