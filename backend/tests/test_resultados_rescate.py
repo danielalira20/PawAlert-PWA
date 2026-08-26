@@ -1,9 +1,11 @@
+from io import BytesIO
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from app.api import reports
 from app.main import app
@@ -39,6 +41,56 @@ def _usuario(rol: str = "voluntario_interno") -> dict:
         "asociacion_id": "10000000-0000-0000-0000-000000000001",
         "rol": rol,
     }
+
+
+def _jpeg_simple() -> bytes:
+    salida = BytesIO()
+    Image.new("RGB", (80, 60), "gray").save(salida, format="JPEG")
+    return salida.getvalue()
+
+
+def test_carga_sensible_usa_almacenamiento_privado(make_query) -> None:
+    reportes_query = make_query(data=[{
+        "id": REPORTE_ID,
+        "staff_asignado_id": USUARIO_ID,
+        "asociacion_asignada_id": "10000000-0000-0000-0000-000000000001",
+    }])
+    evidencias_query = make_query(data=[{"id": EVIDENCIA_ID}])
+    cliente = MagicMock()
+    cliente.table.side_effect = lambda tabla: {
+        "reportes": reportes_query,
+        "reporte_evidencias": evidencias_query,
+    }[tabla]
+
+    with (
+        patch.object(reports, "_obtener_usuario_autenticado", return_value=_usuario()),
+        patch.object(reports, "supabase", cliente),
+        patch.object(reports, "supabase_admin", cliente),
+        patch(
+            "app.services.storage_service.subir_bytes_privados",
+            new=AsyncMock(
+                return_value=(
+                    "storage://pawalert-evidencias-privadas/"
+                    "reportes/resultados-sensibles/foto.jpg"
+                )
+            ),
+        ) as subir_privada,
+        patch(
+            "app.services.storage_service.subir_bytes",
+            new=AsyncMock(),
+        ) as subir_publica,
+    ):
+        response = client.post(
+            f"/reports/{REPORTE_ID}/hitos/foto",
+            data={"sensible": "true"},
+            files={"foto": ("evidencia.jpg", _jpeg_simple(), "image/jpeg")},
+            headers=AUTH_HEADERS,
+        )
+
+    assert response.status_code == 200
+    assert response.json()["foto_url"].startswith("storage://")
+    subir_privada.assert_awaited_once()
+    subir_publica.assert_not_awaited()
 
 
 def test_endpoint_registra_resultado_para_voluntario() -> None:

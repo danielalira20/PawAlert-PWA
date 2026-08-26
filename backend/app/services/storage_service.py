@@ -27,6 +27,29 @@ async def subir_bytes(
 
     return supabase_admin.storage.from_(settings.supabase_bucket).get_public_url(ruta)
 
+
+async def subir_bytes_privados(
+    contenido: bytes,
+    *,
+    carpeta: str,
+    content_type: str,
+    extension: str,
+) -> str:
+    """Guarda evidencia sensible sin generar una URL pública."""
+    extension_limpia = extension.lower().lstrip(".") or "bin"
+    nombre_archivo = f"{uuid.uuid4()}.{extension_limpia}"
+    ruta = f"{carpeta}/{nombre_archivo}"
+    bucket = settings.supabase_sensitive_bucket
+
+    await run_in_threadpool(
+        supabase_admin.storage.from_(bucket).upload,
+        path=ruta,
+        file=contenido,
+        file_options={"content-type": content_type},
+    )
+
+    return f"storage://{bucket}/{ruta}"
+
 async def subir_foto(foto: UploadFile, carpeta: str = "reportes") -> str:
     contenido = await foto.read()
     extension = foto.filename.split(".")[-1]

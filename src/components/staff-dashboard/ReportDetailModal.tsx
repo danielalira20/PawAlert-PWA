@@ -25,6 +25,7 @@ interface Props {
   reporte: ReporteStaff | null;
   onClose: () => void;
   onEncontre: () => void;
+  onSinVida: () => void;
   onLlegadaZona: () => void;
   onNoLocalizado: () => void;
   onBajoResguardo: () => void;
@@ -42,6 +43,7 @@ export function ReportDetailModal({
   reporte,
   onClose,
   onEncontre,
+  onSinVida,
   onLlegadaZona,
   onNoLocalizado,
   onBajoResguardo,
@@ -57,6 +59,7 @@ export function ReportDetailModal({
   const condicion = reporte ? normalizeCondicion(grave?.condicion) : null;
   const { width } = useWindowDimensions();
   const isDesktop = width >= DESKTOP_BREAKPOINT;
+  const requiereLlegadaZona = esHogarTemporal || esVoluntarioInterno;
 
   const tieneCoordenadas =
     typeof reporte?.latitud === 'number' &&
@@ -176,7 +179,7 @@ export function ReportDetailModal({
               </View>
 
               {puedeRegistrarHitos &&
-                esHogarTemporal &&
+                requiereLlegadaZona &&
                 reporte.estado_reporte === 'en_camino' &&
                 !reporte.llegada_zona_registrada && (
                   <View style={styles.fieldProgressCard}>
@@ -193,7 +196,7 @@ export function ReportDetailModal({
                 )}
 
               {puedeRegistrarHitos &&
-                esHogarTemporal &&
+                requiereLlegadaZona &&
                 reporte.estado_reporte === 'en_camino' &&
                 !reporte.llegada_zona_registrada && (
                   <TouchableOpacity
@@ -207,7 +210,7 @@ export function ReportDetailModal({
 
               {puedeRegistrarHitos &&
                 reporte.estado_reporte === 'en_camino' &&
-                (!esHogarTemporal || reporte.llegada_zona_registrada) && (
+                (!requiereLlegadaZona || reporte.llegada_zona_registrada) && (
                 <TouchableOpacity style={[styles.actionButton, { backgroundColor: Brand.primary }]} onPress={onEncontre}>
                   <Ionicons name="paw-outline" size={18} color="#fff" />
                   <Text style={styles.actionButtonText}>Encontré al animal</Text>
@@ -216,11 +219,21 @@ export function ReportDetailModal({
 
               {puedeRegistrarHitos &&
                 reporte.estado_reporte === 'en_camino' &&
-                (esVoluntarioInterno ||
-                  (esHogarTemporal && reporte.llegada_zona_registrada)) && (
+                requiereLlegadaZona &&
+                reporte.llegada_zona_registrada && (
                   <TouchableOpacity style={styles.secondaryActionButton} onPress={onNoLocalizado}>
                     <Ionicons name="search-outline" size={18} color="#9A6700" />
                     <Text style={styles.secondaryActionText}>No lo localicé</Text>
+                  </TouchableOpacity>
+                )}
+
+              {puedeRegistrarHitos &&
+                reporte.estado_reporte === 'en_camino' &&
+                requiereLlegadaZona &&
+                reporte.llegada_zona_registrada && (
+                  <TouchableOpacity style={styles.sensitiveActionButton} onPress={onSinVida}>
+                    <Ionicons name="heart-dislike-outline" size={18} color="#6D4C41" />
+                    <Text style={styles.sensitiveActionText}>Lo encontré sin vida</Text>
                   </TouchableOpacity>
                 )}
 
@@ -394,6 +407,19 @@ const styles = StyleSheet.create({
     backgroundColor: `${Brand.accent}0F`,
   },
   secondaryActionText: { color: '#9A6700', fontWeight: '800', fontSize: 14 },
+  sensitiveActionButton: {
+    paddingVertical: 13,
+    borderRadius: 14,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 16,
+    borderWidth: 1.5,
+    borderColor: '#BCAAA4',
+    backgroundColor: '#F3E8E3',
+  },
+  sensitiveActionText: { color: '#6D4C41', fontWeight: '800', fontSize: 14 },
   searchUpdate: {
     flexDirection: 'row',
     gap: 8,

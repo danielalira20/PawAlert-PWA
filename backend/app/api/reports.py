@@ -576,9 +576,10 @@ async def asignar_staff(reporte_id: str, body: dict, authorization: str = Header
 async def subir_foto_hito(
     reporte_id: str,
     foto: UploadFile = File(...),
+    sensible: bool = Form(False),
     authorization: str = Header(None)
 ):
-    """Valida y registra una evidencia; la copia pública se guarda sin EXIF."""
+    """Valida y registra evidencia sanitizada, pública o sensible según el hito."""
     usuario = _obtener_usuario_autenticado(authorization)
 
     reporte = (
@@ -656,7 +657,7 @@ async def subir_foto_hito(
         ImagenEvidenciaInvalida,
         procesar_imagen_evidencia,
     )
-    from app.services.storage_service import subir_bytes
+    from app.services.storage_service import subir_bytes, subir_bytes_privados
 
     contenido = await foto.read()
     try:
@@ -664,12 +665,20 @@ async def subir_foto_hito(
     except ImagenEvidenciaInvalida as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    foto_url = await subir_bytes(
-        procesada.contenido_publico,
-        carpeta="reportes/hitos",
-        content_type=procesada.content_type_publico,
-        extension=procesada.extension_publica,
-    )
+    if sensible:
+        foto_url = await subir_bytes_privados(
+            procesada.contenido_publico,
+            carpeta="reportes/resultados-sensibles",
+            content_type=procesada.content_type_publico,
+            extension=procesada.extension_publica,
+        )
+    else:
+        foto_url = await subir_bytes(
+            procesada.contenido_publico,
+            carpeta="reportes/hitos",
+            content_type=procesada.content_type_publico,
+            extension=procesada.extension_publica,
+        )
 
     evidencia = supabase_admin.table("reporte_evidencias").insert(
         {

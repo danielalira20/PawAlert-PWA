@@ -66,6 +66,7 @@ def shape_animal_response(animal: dict) -> dict:
     fotos = [f["foto_url"] for f in fotos_ordenadas]
     foto_url = fotos[0] if fotos else None
     return {
+        "id": animal.get("id"),
         "tipo_animal": (animal.get("tipo_animal_catalogo") or {}).get("clave"),
         "condicion": _condicion_de(animal),
         "tamanio": (animal.get("tamanio_catalogo") or {}).get("clave"),

@@ -39,12 +39,13 @@ información adicional sobre el resultado.
 ## Registro del hito
 
 El evento canónico es `animal_encontrado_sin_vida`. El request debe incluir
-una lista explícita `animal_ids`; nunca se atribuye el evento al primer animal
-del reporte por omisión.
+una lista explícita `animales`, cuyos elementos contienen `animal_id` y
+`cantidad_reportada`; nunca se atribuye el evento al primer animal del reporte
+por omisión.
 
 Datos obligatorios:
 
-- `animal_ids`, sin duplicados y pertenecientes al reporte;
+- `animales`, sin identificadores duplicados y pertenecientes al reporte;
 - cantidad encontrada sin vida por cada ficha seleccionada; para una ficha de
   grupo nunca puede superar `animal.cantidad`;
 - `latitud` y `longitud` actuales;
