@@ -19,6 +19,7 @@ import { API_URL } from '../../constants/api';
 import { useAuth } from '../../context/AuthContext';
 import { AppModal } from '../AppModal';
 import { Toast, useToast } from '../Toast';
+import { WithdrawalFollowupForm } from './WithdrawalFollowupForm';
 
 const COLORS = {
   primary: '#EC802B',
@@ -98,6 +99,19 @@ interface ContactoRetiro {
   verificado_at?: string | null;
 }
 
+interface AccionRetiroRegistrada {
+  id: string;
+  resultado_rescate_animal_id: string;
+  registrado_por_id: string;
+  tipo_actor: string;
+  accion: string;
+  folio?: string | null;
+  nombre_servicio?: string | null;
+  destino_informado?: string | null;
+  nota?: string | null;
+  registrado_at: string;
+}
+
 interface DetalleSeguimiento {
   seguimiento: SeguimientoResumen;
   reporte: {
@@ -109,7 +123,7 @@ interface DetalleSeguimiento {
     animales: AnimalSeguimiento[];
   };
   resultados: ResultadoSeguimiento[];
-  acciones_retiro: unknown[];
+  acciones_retiro: AccionRetiroRegistrada[];
   contactos_retiro: ContactoRetiro[];
 }
 
@@ -154,6 +168,16 @@ const ESTADOS_RESULTADO: Record<string, { label: string; color: string }> = {
   duda_estado_critico: { label: 'Reactivado por duda', color: COLORS.danger },
 };
 
+const ACCIONES_RETIRO_LABEL: Record<string, string> = {
+  contacto_oficial_realizado: 'Contacto oficial realizado',
+  autoridad_se_presento: 'La autoridad se presentó',
+  tercero_responsable_se_hizo_cargo: 'Un responsable se hizo cargo',
+  retiro_gestionado_con_indicaciones: 'Retiro gestionado con indicaciones',
+  sin_comunicacion: 'Sin comunicación',
+  sin_contacto_disponible: 'Sin contacto disponible',
+  retiro_por_seguridad: 'Retiro por seguridad',
+};
+
 function mensajeError(error: unknown, fallback: string): string {
   if (axios.isAxiosError(error)) {
     const detail = error.response?.data?.detail;
@@ -186,6 +210,8 @@ export function DeceasedFollowupPanel({ visible }: Props) {
   const [decision, setDecision] = useState<DecisionRevision | null>(null);
   const [notas, setNotas] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [resultadoGestion, setResultadoGestion] = useState<string | null>(null);
+  const [isSubmittingGestion, setIsSubmittingGestion] = useState(false);
 
   const headers = useMemo(
     () => ({ Authorization: `Bearer ${token}` }),
@@ -219,6 +245,7 @@ export function DeceasedFollowupPanel({ visible }: Props) {
       setResultadoRevision(null);
       setDecision(null);
       setNotas('');
+      setResultadoGestion(null);
       try {
         const response = await axios.get<DetalleSeguimiento>(
           `${API_URL}/associations/me/seguimientos-fallecimiento/${reporteId}`,
@@ -245,15 +272,18 @@ export function DeceasedFollowupPanel({ visible }: Props) {
   if (!visible) return null;
 
   const cerrarDetalle = (forzar = false) => {
-    if (isSubmitting && !forzar) return;
+    if ((isSubmitting || isSubmittingGestion) && !forzar) return;
     setDetalle(null);
     setResultadoRevision(null);
     setDecision(null);
     setNotas('');
+    setResultadoGestion(null);
+    setIsSubmittingGestion(false);
     setEvidenciasVisibles(new Set());
   };
 
   const abrirRevision = (resultadoId: string) => {
+    setResultadoGestion(null);
     setResultadoRevision(resultadoId);
     setDecision(null);
     setNotas('');
@@ -397,7 +427,7 @@ export function DeceasedFollowupPanel({ visible }: Props) {
         visible={Boolean(detalle)}
         onClose={() => cerrarDetalle()}
         maxWidth={820}
-        dismissable={!isSubmitting}
+        dismissable={!isSubmitting && !isSubmittingGestion}
       >
         {detalle && (
           <ScrollView contentContainerStyle={styles.modalContent}>
@@ -613,6 +643,69 @@ export function DeceasedFollowupPanel({ visible }: Props) {
                       </View>
                     </View>
                   )}
+
+                  {puedeRevisar && resultadoGestion !== resultado.id && (
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel="Registrar gestión de retiro"
+                      onPress={() => {
+                        setResultadoRevision(null);
+                        setDecision(null);
+                        setNotas('');
+                        setResultadoGestion(resultado.id);
+                      }}
+                      style={styles.followupButton}
+                    >
+                      <Ionicons name="call-outline" size={17} color={COLORS.accent} />
+                      <Text style={styles.followupButtonText}>Registrar gestión de retiro</Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {resultadoGestion === resultado.id && (
+                    <WithdrawalFollowupForm
+                      reporteId={detalle.reporte.id}
+                      resultadoId={resultado.id}
+                      onSubmittingChange={setIsSubmittingGestion}
+                      onCancel={() => {
+                        setResultadoGestion(null);
+                      }}
+                      onSaved={async () => {
+                        setResultadoGestion(null);
+                        await cargarDetalle(detalle.reporte.id);
+                        await cargarSeguimientos();
+                        showToast({
+                          type: 'success',
+                          title: 'Gestión registrada',
+                          message: 'El avance quedó disponible para seguimiento.',
+                        });
+                      }}
+                    />
+                  )}
+
+                  {detalle.acciones_retiro
+                    .filter((accion) => accion.resultado_rescate_animal_id === resultado.id)
+                    .map((accion) => (
+                      <View key={accion.id} style={styles.registeredAction}>
+                        <Ionicons
+                          name="checkmark-circle-outline"
+                          size={17}
+                          color={COLORS.success}
+                        />
+                        <View style={styles.registeredActionText}>
+                          <Text style={styles.registeredActionTitle}>
+                            {ACCIONES_RETIRO_LABEL[accion.accion]
+                              || 'Gestión de retiro registrada'}
+                          </Text>
+                          <Text style={styles.registeredActionMeta}>
+                            {[accion.nombre_servicio, accion.folio].filter(Boolean).join(' · ')
+                              || `Registrado por ${accion.tipo_actor}`}
+                          </Text>
+                          {accion.nota && (
+                            <Text style={styles.registeredActionNote}>{accion.nota}</Text>
+                          )}
+                        </View>
+                      </View>
+                    ))}
                 </View>
               );
             })}
@@ -740,6 +833,23 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: COLORS.primary, borderRadius: 12, paddingVertical: 11,
   },
   reviewButtonText: { color: COLORS.primary, fontSize: 12, fontWeight: '800' },
+  followupButton: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
+    marginTop: 9, paddingVertical: 11, borderRadius: 8,
+    borderWidth: 1, borderColor: COLORS.accent,
+  },
+  followupButtonText: { color: COLORS.accent, fontSize: 12, fontWeight: '800' },
+  registeredAction: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 9,
+    marginTop: 10, padding: 11, borderRadius: 8,
+    backgroundColor: 'rgba(39,134,91,0.08)',
+  },
+  registeredActionText: { flex: 1, minWidth: 0 },
+  registeredActionTitle: {
+    color: COLORS.textDark, fontSize: 12, fontWeight: '800', textTransform: 'capitalize',
+  },
+  registeredActionMeta: { color: COLORS.textLight, fontSize: 11, marginTop: 2 },
+  registeredActionNote: { color: COLORS.textDark, fontSize: 11, lineHeight: 16, marginTop: 5 },
   reviewForm: { gap: 10, paddingTop: 4 },
   reviewFormTitle: { color: COLORS.textDark, fontSize: 14, fontWeight: '900' },
   decisionOption: {
