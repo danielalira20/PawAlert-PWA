@@ -4,6 +4,7 @@ from pydantic import ValidationError
 from app.models.report import (
     AnimalInput,
     CancelarReporteRequest,
+    CerrarSeguimientoFallecimientoRequest,
     DenunciarReporteRequest,
     HitoRequest,
     RechazarReporteRequest,
@@ -1544,6 +1545,113 @@ def registrar_seguimiento_retiro(
             status_code=503,
             detail="No fue posible registrar el seguimiento. Intenta nuevamente.",
         ) from error
+
+
+@router.post(
+    "/{reporte_id}/seguimiento-fallecimiento/cerrar",
+    status_code=200,
+)
+def cerrar_seguimiento_fallecimiento(
+    reporte_id: str,
+    body: CerrarSeguimientoFallecimientoRequest,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    rol = usuario.get("rol")
+    if rol in ("asociacion", "staff"):
+        tipo_actor = "asociacion"
+        asociacion_id = usuario.get("asociacion_id")
+        if not asociacion_id:
+            raise HTTPException(
+                status_code=403,
+                detail="No estás vinculado a una asociación",
+            )
+    elif rol == "admin":
+        tipo_actor = "administracion"
+        asociacion_id = None
+    else:
+        raise HTTPException(
+            status_code=403,
+            detail="No tienes permiso para cerrar este seguimiento",
+        )
+
+    from app.services import deceased_followup_service
+
+    try:
+        return deceased_followup_service.cerrar_seguimiento_fallecimiento(
+            reporte_id,
+            usuario["id"],
+            tipo_actor,
+            asociacion_id,
+            body,
+        )
+    except deceased_followup_service.SeguimientoFallecimientoError as error:
+        if error.codigo == "seguimiento_fallecimiento_no_encontrado":
+            raise HTTPException(
+                status_code=404,
+                detail="Seguimiento no encontrado",
+            ) from error
+        if error.codigo == "asociacion_cierre_fallecimiento_no_autorizada":
+            raise HTTPException(
+                status_code=403,
+                detail="Solo la asociación coordinadora puede cerrar este seguimiento",
+            ) from error
+        if error.codigo in {
+            "seguimiento_fallecimiento_ya_cerrado",
+            "seguimiento_fallecimiento_no_disponible",
+            "reporte_no_disponible_para_cierre_fallecimiento",
+            "resultados_fallecimiento_requeridos",
+            "revision_fallecimiento_pendiente",
+            "duda_critica_impide_cierre_fallecimiento",
+            "resultados_fallecimiento_no_confirmados",
+            "seguimiento_retiro_requerido_para_cierre",
+            "resultado_final_sin_seguimiento_compatible",
+        }:
+            raise HTTPException(
+                status_code=409,
+                detail=_mensaje_conflicto_cierre_fallecimiento(error.codigo),
+            ) from error
+        if error.codigo in {
+            "actor_cierre_fallecimiento_invalido",
+            "resultado_final_fallecimiento_invalido",
+            "idempotency_key_cierre_requerida",
+            "nota_cierre_fallecimiento_requerida",
+        }:
+            raise HTTPException(
+                status_code=422,
+                detail="Los datos del cierre no son válidos",
+            ) from error
+        raise HTTPException(
+            status_code=503,
+            detail="No fue posible cerrar el seguimiento. Intenta nuevamente.",
+        ) from error
+
+
+def _mensaje_conflicto_cierre_fallecimiento(codigo: str) -> str:
+    mensajes = {
+        "revision_fallecimiento_pendiente": (
+            "Todos los resultados deben revisarse antes del cierre"
+        ),
+        "duda_critica_impide_cierre_fallecimiento": (
+            "Existe una duda crítica y el caso no puede cerrarse"
+        ),
+        "resultados_fallecimiento_no_confirmados": (
+            "La asociación necesita resultados confirmados para cerrar"
+        ),
+        "seguimiento_retiro_requerido_para_cierre": (
+            "Registra al menos una gestión de retiro antes del cierre"
+        ),
+        "resultado_final_sin_seguimiento_compatible": (
+            "El resultado final no corresponde con las gestiones registradas"
+        ),
+        "seguimiento_fallecimiento_ya_cerrado": (
+            "El seguimiento ya fue cerrado con otra solicitud"
+        ),
+    }
+    return mensajes.get(
+        codigo,
+        "El seguimiento todavía no cumple las condiciones para cerrarse",
+    )
 
 
 DECISIONES_BUSQUEDA_NO_LOCALIZADO = {

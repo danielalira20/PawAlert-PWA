@@ -4,6 +4,7 @@ from typing import Any
 
 from app.db.supabase import supabase_admin
 from app.models.report import (
+    CerrarSeguimientoFallecimientoRequest,
     RevisionResultadoSinVidaRequest,
     SeguimientoRetiroAnimalRequest,
 )
@@ -49,6 +50,25 @@ ERRORES_SEGUIMIENTO_RETIRO_CONOCIDOS = (
     "asociacion_seguimiento_no_autorizada",
     "evidencia_seguimiento_no_disponible",
     "evidencia_seguimiento_en_conflicto",
+)
+
+ERRORES_CIERRE_CONOCIDOS = (
+    "actor_cierre_fallecimiento_invalido",
+    "resultado_final_fallecimiento_invalido",
+    "idempotency_key_cierre_requerida",
+    "nota_cierre_fallecimiento_requerida",
+    "seguimiento_fallecimiento_no_encontrado",
+    "seguimiento_fallecimiento_ya_cerrado",
+    "seguimiento_fallecimiento_no_disponible",
+    "asociacion_cierre_fallecimiento_no_autorizada",
+    "reporte_no_disponible_para_cierre_fallecimiento",
+    "resultados_fallecimiento_requeridos",
+    "revision_fallecimiento_pendiente",
+    "duda_critica_impide_cierre_fallecimiento",
+    "resultados_fallecimiento_no_confirmados",
+    "seguimiento_retiro_requerido_para_cierre",
+    "resultado_final_sin_seguimiento_compatible",
+    "estado_reporte_muerto_no_encontrado",
 )
 
 
@@ -168,6 +188,51 @@ def registrar_seguimiento_retiro(
     ):
         raise SeguimientoFallecimientoError(
             "respuesta_seguimiento_retiro_invalida"
+        )
+    return datos
+
+
+def cerrar_seguimiento_fallecimiento(
+    reporte_id: str,
+    usuario_id: str,
+    tipo_actor: str,
+    asociacion_id: str | None,
+    body: CerrarSeguimientoFallecimientoRequest,
+) -> dict:
+    parametros = {
+        "p_reporte_id": reporte_id,
+        "p_usuario_id": usuario_id,
+        "p_tipo_actor": tipo_actor,
+        "p_asociacion_id": asociacion_id,
+        "p_resultado_final": body.resultado_final,
+        "p_idempotency_key": body.idempotency_key,
+        "p_nota_cierre": body.nota_cierre,
+    }
+    try:
+        respuesta = supabase_admin.rpc(
+            "cerrar_seguimiento_fallecimiento",
+            parametros,
+        ).execute()
+    except Exception as error:
+        detalle = str(error).lower()
+        for codigo in ERRORES_CIERRE_CONOCIDOS:
+            if codigo in detalle:
+                raise SeguimientoFallecimientoError(codigo) from error
+        raise SeguimientoFallecimientoError(
+            "cierre_fallecimiento_no_disponible"
+        ) from error
+
+    datos = respuesta.data
+    if isinstance(datos, list):
+        datos = datos[0] if datos else None
+    if (
+        not isinstance(datos, dict)
+        or datos.get("reporte_id") != reporte_id
+        or datos.get("estado_seguimiento") != "cerrado"
+        or datos.get("estado_reporte") != "muerto"
+    ):
+        raise SeguimientoFallecimientoError(
+            "respuesta_cierre_fallecimiento_invalida"
         )
     return datos
 
