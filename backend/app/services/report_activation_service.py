@@ -466,6 +466,16 @@ def reanudar_activacion_urgency_pendiente(reporte_id: str) -> dict | None:
     reporte = consulta.data[0]
     if reporte.get("estado_validacion_reporte") != "urgency_pendiente":
         return None
+    razones = reporte.get("razones_validacion") or []
+    if any(
+        razon.get("codigo") == "reactivacion_duda_fallecimiento"
+        for razon in razones
+    ):
+        from app.services.deceased_followup_service import (
+            finalizar_reactivacion_pendiente,
+        )
+
+        return finalizar_reactivacion_pendiente(reporte_id)
     especies, condicion_mas_grave, tipo_animal_mas_grave = (
         _contexto_animales_revision(reporte)
     )

@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from app.api import associations
 from app.main import app
+from app.models.report import RevisionResultadoSinVidaRequest
 from app.services import deceased_followup_service, storage_service
 
 
@@ -14,6 +15,7 @@ ASOCIACION_ID = "10000000-0000-0000-0000-000000000001"
 REPORTE_ID = "20000000-0000-0000-0000-000000000003"
 ANIMAL_ID = "30000000-0000-0000-0000-000000000031"
 EVIDENCIA_ID = "40000000-0000-0000-0000-000000000031"
+RESULTADO_ID = "50000000-0000-0000-0000-000000000031"
 
 
 def _usuario(rol: str = "asociacion") -> dict:
@@ -97,6 +99,200 @@ def test_detalle_ajeno_no_revela_si_el_reporte_existe() -> None:
     assert response.json()["detail"] == (
         "Seguimiento no encontrado para tu asociación"
     )
+
+
+def test_endpoint_envia_revision_con_actor_y_asociacion() -> None:
+    respuesta = {
+        "reporte_id": REPORTE_ID,
+        "resultado_id": RESULTADO_ID,
+        "estado_resultado": "sin_vida_confirmado",
+    }
+    with (
+        patch.object(
+            associations,
+            "_obtener_usuario_autenticado",
+            return_value=_usuario(),
+        ),
+        patch.object(associations, "_verificar_asociacion_aprobada"),
+        patch.object(
+            deceased_followup_service,
+            "revisar_resultado",
+            return_value=respuesta,
+        ) as revisar,
+    ):
+        response = client.post(
+            (
+                f"/associations/me/seguimientos-fallecimiento/{REPORTE_ID}/"
+                f"resultados/{RESULTADO_ID}/revision"
+            ),
+            json={
+                "decision": "confirmar",
+                "notas": "La evidencia y el contexto son consistentes.",
+            },
+            headers=AUTH_HEADERS,
+        )
+
+    assert response.status_code == 200
+    assert response.json() == respuesta
+    argumentos = revisar.call_args.args
+    assert argumentos[:4] == (
+        REPORTE_ID,
+        RESULTADO_ID,
+        _usuario()["id"],
+        ASOCIACION_ID,
+    )
+    assert argumentos[4].decision == "confirmar"
+
+
+def test_endpoint_informa_duda_guardada_si_falla_urgency() -> None:
+    with (
+        patch.object(
+            associations,
+            "_obtener_usuario_autenticado",
+            return_value=_usuario(),
+        ),
+        patch.object(associations, "_verificar_asociacion_aprobada"),
+        patch.object(
+            deceased_followup_service,
+            "revisar_resultado",
+            side_effect=(
+                deceased_followup_service.SeguimientoFallecimientoError(
+                    "reactivacion_urgency_pendiente"
+                )
+            ),
+        ),
+    ):
+        response = client.post(
+            (
+                f"/associations/me/seguimientos-fallecimiento/{REPORTE_ID}/"
+                f"resultados/{RESULTADO_ID}/revision"
+            ),
+            json={
+                "decision": "duda_critica",
+                "notas": "Hay señales que requieren tratar el caso como crítico.",
+            },
+            headers=AUTH_HEADERS,
+        )
+
+    assert response.status_code == 503
+    assert "duda quedó registrada" in response.json()["detail"]
+
+
+def test_revision_confirmada_no_recalcula_urgency() -> None:
+    body = RevisionResultadoSinVidaRequest(
+        decision="confirmar",
+        notas="La evidencia es consistente.",
+    )
+    respuesta = {
+        "reporte_id": REPORTE_ID,
+        "resultado_id": RESULTADO_ID,
+        "requiere_reactivacion": False,
+    }
+    with (
+        patch.object(
+            deceased_followup_service,
+            "_ejecutar_rpc",
+            return_value=respuesta,
+        ) as rpc,
+        patch(
+            "app.services.urgency_service.evaluate_report_urgency"
+        ) as urgency,
+    ):
+        resultado = deceased_followup_service.revisar_resultado(
+            REPORTE_ID,
+            RESULTADO_ID,
+            _usuario()["id"],
+            ASOCIACION_ID,
+            body,
+        )
+
+    assert resultado == respuesta
+    assert rpc.call_count == 1
+    urgency.assert_not_called()
+
+
+def test_duda_recalcula_urgency_antes_de_abrir_matching() -> None:
+    body = RevisionResultadoSinVidaRequest(
+        decision="duda_critica",
+        notas="La postura observada podría corresponder a un estado crítico.",
+    )
+    decision = {
+        "reporte_id": REPORTE_ID,
+        "resultado_id": RESULTADO_ID,
+        "requiere_reactivacion": True,
+    }
+    activacion = {
+        "reporte_id": REPORTE_ID,
+        "estado": "reactivado",
+        "estado_cobertura": "abierto",
+    }
+
+    with (
+        patch.object(
+            deceased_followup_service,
+            "_ejecutar_rpc",
+            side_effect=[decision, activacion],
+        ) as rpc,
+        patch(
+            "app.services.urgency_service.evaluate_report_urgency"
+        ) as urgency,
+        patch(
+            "app.services.matching.obtener_candidatos",
+            return_value={"candidatos": []},
+        ) as matching,
+    ):
+        resultado = deceased_followup_service.revisar_resultado(
+            REPORTE_ID,
+            RESULTADO_ID,
+            _usuario()["id"],
+            ASOCIACION_ID,
+            body,
+        )
+
+    assert [llamada.args[0] for llamada in rpc.call_args_list] == [
+        "revisar_resultado_rescate_sin_vida",
+        "finalizar_reactivacion_duda_fallecimiento",
+    ]
+    urgency.assert_called_once_with(REPORTE_ID)
+    matching.assert_called_once_with(REPORTE_ID)
+    assert resultado["reactivacion"] == activacion
+    assert resultado["matching_status"] == "completo"
+
+
+def test_duda_mantiene_cobertura_pausada_si_falla_urgency() -> None:
+    body = RevisionResultadoSinVidaRequest(
+        decision="duda_critica",
+        notas="La evidencia requiere una atención crítica inmediata.",
+    )
+    decision = {
+        "reporte_id": REPORTE_ID,
+        "resultado_id": RESULTADO_ID,
+        "requiere_reactivacion": True,
+    }
+    with (
+        patch.object(
+            deceased_followup_service,
+            "_ejecutar_rpc",
+            return_value=decision,
+        ) as rpc,
+        patch(
+            "app.services.urgency_service.evaluate_report_urgency",
+            side_effect=RuntimeError("weather unavailable"),
+        ),
+        pytest.raises(
+            deceased_followup_service.SeguimientoFallecimientoError,
+            match="reactivacion_urgency_pendiente",
+        ),
+    ):
+        deceased_followup_service.revisar_resultado(
+            REPORTE_ID,
+            RESULTADO_ID,
+            _usuario()["id"],
+            ASOCIACION_ID,
+            body,
+        )
+
+    assert rpc.call_count == 1
 
 
 def test_detalle_firma_evidencia_sin_exponer_localizador(make_query) -> None:

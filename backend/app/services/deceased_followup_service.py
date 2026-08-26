@@ -1,4 +1,9 @@
+import logging
+from datetime import datetime, timezone
+from typing import Any
+
 from app.db.supabase import supabase_admin
+from app.models.report import RevisionResultadoSinVidaRequest
 from app.services.storage_service import crear_url_firmada_sensible
 from app.utils.animal_shaping import shape_animal_embed, shape_animal_response
 
@@ -9,11 +14,125 @@ ESTADOS_SEGUIMIENTO_ABIERTOS = (
     "escalado_administracion",
 )
 
+logger = logging.getLogger(__name__)
+
+ERRORES_REVISION_CONOCIDOS = (
+    "decision_revision_invalida",
+    "notas_revision_requeridas",
+    "seguimiento_no_autorizado",
+    "reporte_no_encontrado",
+    "resultado_no_encontrado",
+    "revision_duda_no_reversible",
+    "seguimiento_ya_reactivado",
+    "reporte_no_disponible_para_reactivar",
+    "asociacion_coordinadora_requerida",
+    "estado_asignado_no_encontrado",
+    "seguimiento_no_preparado_para_reactivar",
+    "reporte_no_preparado_para_reactivar",
+    "urgency_recalculada_requerida",
+)
+
 
 class SeguimientoFallecimientoError(Exception):
     def __init__(self, codigo: str):
         self.codigo = codigo
         super().__init__(codigo)
+
+
+def _ejecutar_rpc(nombre: str, parametros: dict) -> Any:
+    try:
+        respuesta = supabase_admin.rpc(nombre, parametros).execute()
+    except Exception as error:
+        detalle = str(error).lower()
+        for codigo in ERRORES_REVISION_CONOCIDOS:
+            if codigo in detalle:
+                raise SeguimientoFallecimientoError(codigo) from error
+        raise SeguimientoFallecimientoError(
+            "revision_fallecimiento_no_disponible"
+        ) from error
+
+    datos = respuesta.data
+    if isinstance(datos, list):
+        datos = datos[0] if datos else None
+    return datos
+
+
+def revisar_resultado(
+    reporte_id: str,
+    resultado_id: str,
+    usuario_id: str,
+    asociacion_id: str,
+    body: RevisionResultadoSinVidaRequest,
+) -> dict:
+    datos = _ejecutar_rpc(
+        "revisar_resultado_rescate_sin_vida",
+        {
+            "p_reporte_id": reporte_id,
+            "p_resultado_id": resultado_id,
+            "p_usuario_id": usuario_id,
+            "p_asociacion_id": asociacion_id,
+            "p_decision": body.decision,
+            "p_notas": body.notas.strip(),
+        },
+    )
+    if not isinstance(datos, dict) or datos.get("reporte_id") != reporte_id:
+        raise SeguimientoFallecimientoError("respuesta_revision_invalida")
+
+    if not datos.get("requiere_reactivacion"):
+        return datos
+
+    try:
+        from app.services.urgency_service import evaluate_report_urgency
+
+        evaluate_report_urgency(reporte_id)
+    except Exception as error:
+        logger.warning(
+            "La duda del reporte %s quedó pendiente de recalcular Urgency: %s",
+            reporte_id,
+            type(error).__name__,
+        )
+        raise SeguimientoFallecimientoError(
+            "reactivacion_urgency_pendiente"
+        ) from error
+
+    datos.update(finalizar_reactivacion_pendiente(reporte_id))
+    return datos
+
+
+def finalizar_reactivacion_pendiente(reporte_id: str) -> dict:
+    activacion = _ejecutar_rpc(
+        "finalizar_reactivacion_duda_fallecimiento",
+        {"p_reporte_id": reporte_id},
+    )
+    if not isinstance(activacion, dict):
+        raise SeguimientoFallecimientoError("respuesta_reactivacion_invalida")
+
+    matching_status = "completo"
+    candidatos = 0
+    try:
+        from app.services import matching
+
+        resultado_matching = matching.obtener_candidatos(reporte_id)
+        candidatos = len(resultado_matching.get("candidatos") or [])
+        if candidatos:
+            supabase_admin.table("reportes").update({
+                "candidatos_presentados_at": datetime.now(
+                    timezone.utc
+                ).isoformat()
+            }).eq("id", reporte_id).execute()
+    except Exception as error:
+        matching_status = "pendiente_reintento"
+        logger.warning(
+            "El reporte %s se reactivó, pero matching quedó pendiente: %s",
+            reporte_id,
+            type(error).__name__,
+        )
+
+    return {
+        "reactivacion": activacion,
+        "matching_status": matching_status,
+        "candidatos_calculados": candidatos,
+    }
 
 
 def _obtener_seguimiento_autorizado(

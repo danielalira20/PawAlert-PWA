@@ -188,6 +188,15 @@ class ResultadoRescateSinVidaRequest(BaseModel):
     motivo_retiro_seguridad: Optional[str] = Field(default=None, max_length=500)
 
 
+class RevisionResultadoSinVidaRequest(BaseModel):
+    decision: Literal[
+        "confirmar",
+        "duda_critica",
+        "evidencia_insuficiente",
+    ]
+    notas: str = Field(min_length=5, max_length=1000)
+
+
 class ResolverBusquedaNoLocalizadoRequest(BaseModel):
     decision: str
     instrucciones: Optional[str] = Field(default=None, max_length=1000)
