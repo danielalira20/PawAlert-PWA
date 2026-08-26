@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
+from pydantic import ValidationError
 
 from app.services import vroom_service
 
@@ -95,6 +96,22 @@ def test_builds_payload_with_indexes_and_matrices_car():
         }
     }
     assert "matrix" not in body
+
+
+def test_profile_matrix_rejects_fractional_values():
+    """VROOM (rapidjson) exige IsUint() por celda -- entero no negativo
+    exacto (input_parser.cpp:get_matrix, VROOM-Project/vroom) -- y responde
+    400 {"code":2,"error":"Invalid matrix entry."} ante cualquier valor con
+    parte fraccionaria. Un valor real de OSRM como 312.7 casi nunca cae en
+    un segundo exacto, asi que este campo debe rechazarlo aqui mismo, en
+    construccion, antes de que _build_vroom_request pueda mandarlo al
+    proveedor."""
+    with pytest.raises(ValidationError):
+        vroom_service.VroomProfileMatrix(
+            durations=[[0, 312.7], [312.7, 0]],
+            distances=[[0, 2100], [2100, 0]],
+            costs=[[0, 312.7], [312.7, 0]],
+        )
 
 
 def test_matrix_field_removed_in_favor_of_matrices():

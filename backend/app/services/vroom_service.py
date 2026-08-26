@@ -52,9 +52,16 @@ class VroomVehicle(BaseModel):
 
 
 class VroomProfileMatrix(BaseModel):
-    durations: list[list[float]]
-    distances: list[list[float]]
-    costs: list[list[float]]
+    # VROOM (rapidjson) exige IsUint() por celda -- entero no negativo exacto
+    # -- y responde 400 {"code":2,"error":"Invalid matrix entry."} ante
+    # cualquier valor con parte fraccionaria (input_parser.cpp:get_matrix en
+    # VROOM-Project/vroom). int en vez de float aqui hace que un valor sin
+    # redondear (p.ej. una duracion real de OSRM como 312.7) falle en la
+    # construccion de este modelo, localmente y con un error claro, en vez de
+    # descubrirse recien en la respuesta HTTP del proveedor.
+    durations: list[list[int]]
+    distances: list[list[int]]
+    costs: list[list[int]]
 
 
 class VroomOptimizationRequest(BaseModel):

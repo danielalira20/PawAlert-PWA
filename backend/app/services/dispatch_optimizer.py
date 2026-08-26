@@ -37,6 +37,17 @@ logger = logging.getLogger(__name__)
 _FORBIDDEN_PAIR_COST_FLOOR_SECONDS = 86_400
 _FORBIDDEN_PAIR_COST_MULTIPLIER = 1_000
 
+# VROOM (rapidjson) exige que cada celda de matrices.car sea IsUint(): un
+# entero no negativo exacto -- ver input_parser.cpp:get_matrix en el repo de
+# VROOM-Project/vroom. Un valor con parte fraccionaria (cualquier duracion o
+# distancia real de OSRM, que casi nunca cae en un segundo/metro exacto) hace
+# que VROOM responda 400 {"code":2,"error":"Invalid matrix entry."} -- HTTP
+# 200 nunca llega a devolverse, asi que get_optimization ni siquiera entra a
+# _parse_payload. round() se aplica en el punto exacto donde cada celda se
+# escribe (ver _build_vroom_request y _forbidden_pair_cost), nunca antes: los
+# valores reales (arrival_seconds, distance_meters en DispatchAssignment)
+# deben seguir viniendo de travel_matrix sin redondear.
+
 # El score decide "con todo su peso" entre candidatos primary del mismo
 # reporte (docs/contrato-ranking-despacho.md), pero el mismo contrato prohibe
 # convertirlo en un descuento continuo de minutos. Para lograr ambas cosas,
@@ -53,7 +64,7 @@ _VROOM_VEHICLE_CAPACITY = [1]
 _VROOM_JOB_DELIVERY = [1]
 
 
-def _forbidden_pair_cost(durations_seconds: list[list[float | None]]) -> float:
+def _forbidden_pair_cost(durations_seconds: list[list[float | None]]) -> int:
     real_values = [
         value
         for row in durations_seconds
@@ -61,9 +72,11 @@ def _forbidden_pair_cost(durations_seconds: list[list[float | None]]) -> float:
         if value is not None
     ]
     largest_real_value = max(real_values, default=0.0)
-    return max(
-        float(_FORBIDDEN_PAIR_COST_FLOOR_SECONDS),
-        largest_real_value * _FORBIDDEN_PAIR_COST_MULTIPLIER,
+    return round(
+        max(
+            float(_FORBIDDEN_PAIR_COST_FLOOR_SECONDS),
+            largest_real_value * _FORBIDDEN_PAIR_COST_MULTIPLIER,
+        )
     )
 
 
@@ -157,7 +170,7 @@ def _build_vroom_request(
     allowed_tiers: frozenset[CandidateRouteTier],
     volunteer_ids: list[str],
     report_ids: list[str],
-    forbidden_cost: float,
+    forbidden_cost: int,
 ) -> tuple[VroomOptimizationRequest, dict[int, str], dict[int, str]]:
     """Construye la matriz cuadrada (V+R)x(V+R) -- voluntarios 0..V-1,
     reportes V..V+R-1 -- y los skills que autorizan cada pareja para este
@@ -182,9 +195,9 @@ def _build_vroom_request(
     distances = [[forbidden_cost] * size for _ in range(size)]
     costs = [[forbidden_cost] * size for _ in range(size)]
     for index in range(size):
-        durations[index][index] = 0.0
-        distances[index][index] = 0.0
-        costs[index][index] = 0.0
+        durations[index][index] = 0
+        distances[index][index] = 0
+        costs[index][index] = 0
 
     skill_id_by_report = {rid: index + 1 for index, rid in enumerate(report_ids)}
     skills_by_volunteer: dict[str, set[int]] = {vid: set() for vid in volunteer_ids}
@@ -203,9 +216,14 @@ def _build_vroom_request(
         matrix_column = destination_index[report_id]
         duration = request.travel_matrix.durations_seconds[matrix_row][matrix_column]
         distance = request.travel_matrix.distances_meters[matrix_row][matrix_column]
-        durations[row][column] = duration
-        distances[row][column] = distance
-        costs[row][column] = (
+        # VROOM exige enteros exactos (ver comentario junto a
+        # _FORBIDDEN_PAIR_COST_MULTIPLIER) -- duration/distance de OSRM casi
+        # nunca lo son, asi que se redondean solo aqui, al construir la
+        # matriz que viaja a VROOM. arrival_seconds/distance_meters en
+        # DispatchAssignment siguen viniendo de travel_matrix sin redondear.
+        durations[row][column] = round(duration)
+        distances[row][column] = round(distance)
+        costs[row][column] = round(
             (100 - candidate.matching_score) * _SCORE_COST_SCALE_SECONDS
             + duration
         )
@@ -313,7 +331,7 @@ def _solve_pass(
     distance_by_pair: dict[tuple[str, str], float],
     volunteer_ids: list[str],
     report_ids: list[str],
-    forbidden_cost: float,
+    forbidden_cost: int,
     pass_label: str,
 ) -> list[DispatchAssignment] | None:
     """None = VROOM no disponible o su respuesta no paso la validacion --

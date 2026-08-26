@@ -412,6 +412,86 @@ def test_prioridad_rojo_sobre_verde_en_job_priority():
     )
 
 
+def test_matriz_vroom_2x2_con_duraciones_fraccionarias_produce_solo_enteros():
+    """Reproduce el caso real de produccion: VROOM rechazo una matriz de
+    2 voluntarios x 2 reportes con {"code":2,"error":"Invalid matrix
+    entry."} -- confirmado contra el codigo fuente de VROOM
+    (input_parser.cpp:get_matrix, VROOM-Project/vroom): cada celda de
+    matrices.car debe pasar IsUint(), un entero no negativo exacto.
+    _build_vroom_request nunca redondeaba duration/distance/costs antes de
+    escribirlos en la matriz, y una duracion/distancia real de OSRM casi
+    nunca cae en un segundo o metro exacto -- reproducido en vivo contra
+    https://vroom-docker-production-a5ac.up.railway.app/ con este mismo
+    shape (2x2, duraciones 312.7/265.35, distancias 2100.4/1800.65): antes
+    del fix, HTTP 400 {"code":2,"error":"Invalid matrix entry."}; despues,
+    HTTP 200 {"code":0,...}.
+
+    Este test no depende de red -- confirma localmente que la matriz que
+    _build_vroom_request arma para VROOM (durations/distances/costs) solo
+    contiene enteros, sin necesidad de llamar al proveedor real."""
+    request = build_request(
+        [
+            {
+                "volunteer_id": "vol-teresa",
+                "report_id": "rep-382743db",
+                "duration": 312.7,
+                "distance": 2100.4,
+                "score": 78.5,
+            },
+            {
+                "volunteer_id": "vol-otro",
+                "report_id": "rep-3e1b213c",
+                "duration": 265.35,
+                "distance": 1800.65,
+                "score": 62.0,
+            },
+        ]
+    )
+    volunteer_ids = list(request.travel_matrix.origin_ids)
+    report_ids = list(request.travel_matrix.destination_ids)
+    forbidden_cost = dispatch_optimizer._forbidden_pair_cost(
+        request.travel_matrix.durations_seconds
+    )
+    assert isinstance(forbidden_cost, int)
+
+    vroom_request, _, _ = dispatch_optimizer._build_vroom_request(
+        request,
+        frozenset({CandidateRouteTier.primary}),
+        volunteer_ids,
+        report_ids,
+        forbidden_cost,
+    )
+
+    matrix = vroom_request.matrices["car"]
+    for campo_nombre, campo in (
+        ("durations", matrix.durations),
+        ("distances", matrix.distances),
+        ("costs", matrix.costs),
+    ):
+        for fila in campo:
+            for valor in fila:
+                assert isinstance(valor, int), (
+                    f"{campo_nombre} tiene un valor no entero ({valor!r}) -- "
+                    "VROOM lo rechaza con {'code':2,'error':'Invalid matrix "
+                    "entry.'}"
+                )
+                assert valor >= 0
+
+    # Las celdas de las parejas reales quedan redondeadas al segundo/metro
+    # mas cercano, no truncadas. Se resuelven los indices dinamicamente
+    # (en vez de asumir un orden fijo) porque build_request ordena
+    # volunteer_ids/report_ids alfabeticamente -- "vol-otro" < "vol-teresa".
+    teresa_row = volunteer_ids.index("vol-teresa")
+    otro_row = volunteer_ids.index("vol-otro")
+    rep_382_col = len(volunteer_ids) + report_ids.index("rep-382743db")
+    rep_3e1_col = len(volunteer_ids) + report_ids.index("rep-3e1b213c")
+
+    assert matrix.durations[teresa_row][rep_382_col] == 313
+    assert matrix.durations[otro_row][rep_3e1_col] == 265
+    assert matrix.distances[teresa_row][rep_382_col] == 2100
+    assert matrix.distances[otro_row][rep_3e1_col] == 1801
+
+
 def test_pareja_no_autorizada_recibe_costo_alto_finito_determinista():
     """vol-1 solo tiene candidato para rep-1, no para rep-2 -- el cruce
     (vol-1, rep-2) en la matriz cuadrada debe llevar el costo prohibido, no 0
