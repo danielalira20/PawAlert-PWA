@@ -51,6 +51,33 @@ def _supabase_con_tablas(tablas):
     return supabase
 
 
+def test_voluntario_interno_registra_llegada_cercana(make_query):
+    tablas = {
+        "usuarios": make_query(data=[_usuario()]),
+        "reportes": make_query(data=[_reporte()]),
+    }
+    supabase = _supabase_con_tablas(tablas)
+
+    with (
+        patched_supabase_clients(supabase),
+        patch.object(report_service, "registrar_historial") as historial,
+    ):
+        response = client.post(
+            "/reports/reporte-1/hitos",
+            json={
+                "tipo_hito": "llegada_zona_reporte",
+                "latitud": 19.4327,
+                "longitud": -99.1333,
+            },
+            headers=AUTH_HEADERS,
+        )
+
+    assert response.status_code == 201
+    assert response.json()["tipo_hito"] == "llegada_zona_reporte"
+    assert historial.call_args.kwargs["tipo_evento"] == "llegada_zona_reporte"
+    assert historial.call_args.kwargs["datos_extra"]["distancia_reporte_metros"] < 20
+
+
 def test_voluntario_interno_registra_busqueda_cercana(make_query):
     tablas = {
         "usuarios": make_query(data=[_usuario()]),

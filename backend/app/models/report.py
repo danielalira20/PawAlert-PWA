@@ -1,4 +1,5 @@
 from datetime import datetime
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 from typing import Literal, Optional
@@ -167,6 +168,24 @@ class HitoRequest(BaseModel):
     tiempo_busqueda_minutos: Optional[int] = Field(default=None, ge=1, le=1440)
     ruta_resguardo: Optional[str] = None
     fecha_limite_resguardo: Optional[datetime] = None
+
+
+class AnimalResultadoSinVidaInput(BaseModel):
+    animal_id: UUID
+    cantidad_reportada: int = Field(ge=1)
+
+
+class ResultadoRescateSinVidaRequest(BaseModel):
+    animales: list[AnimalResultadoSinVidaInput] = Field(min_length=1)
+    evidencia_id: UUID
+    latitud: float = Field(ge=-90, le=90)
+    longitud: float = Field(ge=-180, le=180)
+    puede_esperar_seguro: bool
+    riesgo_vial: bool = False
+    riesgo_sanitario: bool = False
+    identificacion_observada: Optional[str] = Field(default=None, max_length=500)
+    comentario: Optional[str] = Field(default=None, max_length=1000)
+    motivo_retiro_seguridad: Optional[str] = Field(default=None, max_length=500)
 
 
 class ResolverBusquedaNoLocalizadoRequest(BaseModel):

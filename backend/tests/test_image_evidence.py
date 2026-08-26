@@ -139,3 +139,27 @@ def test_verificacion_sin_gps_exif_no_marca_revision(make_query):
         "distancia_metros": None,
         "requiere_revision": False,
     }
+
+
+def test_verificacion_permite_reintento_del_mismo_hito(make_query):
+    evidencia = _evidencia()
+    evidencia["tipo_hito"] = "animal_encontrado_sin_vida"
+    evidencia["vinculada_at"] = "2026-08-25T12:00:00+00:00"
+    tabla = make_query(data=[evidencia])
+    admin = MagicMock()
+    admin.table.return_value = tabla
+
+    with patch.object(reports, "supabase_admin", admin):
+        resultado = reports._vincular_y_verificar_evidencia(
+            evidencia_id="evidencia-1",
+            reporte_id="reporte-1",
+            usuario_id="usuario-1",
+            tipo_hito="animal_encontrado_sin_vida",
+            foto_url=None,
+            latitud_declarada=19.4327,
+            longitud_declarada=-99.1333,
+            permitir_vinculada_mismo_hito=True,
+        )
+
+    assert resultado["estado"] == "coincidente"
+    assert tabla.update.call_args.args[0]["tipo_hito"] == "animal_encontrado_sin_vida"

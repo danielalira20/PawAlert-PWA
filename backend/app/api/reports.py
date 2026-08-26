@@ -1,7 +1,18 @@
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Header
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
-from app.models.report import ReportResponse, AnimalInput, ReportListItem, ReportesMapaResponse, HitoRequest, RechazarReporteRequest, CancelarReporteRequest, DenunciarReporteRequest, ResolverBusquedaNoLocalizadoRequest
+from app.models.report import (
+    AnimalInput,
+    CancelarReporteRequest,
+    DenunciarReporteRequest,
+    HitoRequest,
+    RechazarReporteRequest,
+    ReportListItem,
+    ReportResponse,
+    ReportesMapaResponse,
+    ResolverBusquedaNoLocalizadoRequest,
+    ResultadoRescateSinVidaRequest,
+)
 from app.models.red_aliados import AceptarSugerenciaRequest, AceptarSugerenciaVeterinariaResponse
 from app.services.report_service import crear_reporte, obtener_reportes, cambiar_estado_reporte, obtener_reportes_usuario
 from app.services import coverage_service
@@ -106,6 +117,7 @@ def _vincular_y_verificar_evidencia(
     foto_url: str | None,
     latitud_declarada: float | None,
     longitud_declarada: float | None,
+    permitir_vinculada_mismo_hito: bool = False,
 ) -> dict:
     """Vincula la evidencia al hito y compara EXIF contra el GPS declarado."""
     resultado = (
@@ -126,7 +138,11 @@ def _vincular_y_verificar_evidencia(
         raise HTTPException(status_code=403, detail="La evidencia no pertenece a este reporte o usuario")
     if foto_url and evidencia.get("foto_url") != foto_url:
         raise HTTPException(status_code=422, detail="La fotografía no coincide con la evidencia registrada")
-    if evidencia.get("vinculada_at"):
+    vinculada_mismo_hito = (
+        permitir_vinculada_mismo_hito
+        and evidencia.get("tipo_hito") == tipo_hito
+    )
+    if evidencia.get("vinculada_at") and not vinculada_mismo_hito:
         raise HTTPException(status_code=409, detail="La evidencia ya fue utilizada en otro hito")
 
     exif_latitud = evidencia.get("exif_latitud")
@@ -758,10 +774,10 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
     fuente_comparacion = None
 
     if tipo_hito == "llegada_zona_reporte":
-        if rol_usuario != "voluntario_externo":
+        if rol_usuario not in ("voluntario_interno", "voluntario_externo"):
             raise HTTPException(
                 status_code=403,
-                detail="Este hito corresponde a un voluntario externo",
+                detail="Este hito corresponde a un voluntario asignado",
             )
         if body.latitud is None or body.longitud is None:
             raise HTTPException(
@@ -1362,6 +1378,75 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
     }
 
 ### FIN endpoind: staff registra avances del rescate
+
+
+@router.post("/{reporte_id}/resultados/sin-vida", status_code=201)
+def registrar_resultado_rescate_sin_vida(
+    reporte_id: str,
+    body: ResultadoRescateSinVidaRequest,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("voluntario_interno", "voluntario_externo"))
+
+    from app.services.rescue_result_service import (
+        ResultadoRescateError,
+        registrar_resultado_sin_vida,
+    )
+
+    try:
+        resultado = registrar_resultado_sin_vida(reporte_id, usuario["id"], body)
+    except ResultadoRescateError as error:
+        if error.codigo == "reporte_no_encontrado":
+            raise HTTPException(status_code=404, detail="Reporte no encontrado") from error
+        if error.codigo == "voluntario_no_asignado":
+            raise HTTPException(
+                status_code=403,
+                detail="No eres el voluntario asignado a este reporte",
+            ) from error
+        if error.codigo == "llegada_zona_requerida":
+            raise HTTPException(
+                status_code=409,
+                detail="Primero debes registrar tu llegada a la zona del reporte",
+            ) from error
+        if error.codigo in {
+            "resultado_rescate_no_disponible",
+            "resultado_no_modificable",
+            "resultado_previo_en_conflicto",
+            "resultado_faltante_en_reintento",
+        }:
+            raise HTTPException(
+                status_code=409,
+                detail="El resultado del rescate ya no puede registrarse o modificarse",
+            ) from error
+        if error.codigo in {
+            "evidencia_no_disponible",
+            "evidencia_vinculada_otro_hito",
+            "animal_resultado_invalido",
+            "animal_duplicado",
+            "animal_no_pertenece_reporte",
+            "cantidad_animal_invalida",
+        }:
+            raise HTTPException(
+                status_code=422,
+                detail="La evidencia o los animales enviados no son válidos para este reporte",
+            ) from error
+        raise HTTPException(
+            status_code=503,
+            detail="No fue posible registrar el resultado. Intenta nuevamente.",
+        ) from error
+
+    resultado["verificacion_evidencia"] = _vincular_y_verificar_evidencia(
+        evidencia_id=str(body.evidencia_id),
+        reporte_id=reporte_id,
+        usuario_id=usuario["id"],
+        tipo_hito="animal_encontrado_sin_vida",
+        foto_url=None,
+        latitud_declarada=body.latitud,
+        longitud_declarada=body.longitud,
+        permitir_vinculada_mismo_hito=True,
+    )
+    return resultado
 
 
 DECISIONES_BUSQUEDA_NO_LOCALIZADO = {
