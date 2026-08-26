@@ -19,6 +19,7 @@ import { ResguardoModal } from '../components/staff-dashboard/ResguardoModal';
 import { RefugioModal } from '../components/staff-dashboard/RefugioModal';
 import { VeterinariaModal } from '../components/staff-dashboard/VeterinariaModal';
 import { SinVidaModal } from '../components/staff-dashboard/SinVidaModal';
+import { VolunteerDeceasedFollowupPanel } from '../components/staff-dashboard/VolunteerDeceasedFollowupPanel';
 import { Brand } from '../constants/theme';
 import type { AceptarSugerenciaResponse, ReporteStaff, SugerenciaAliado } from '../types/reportestaff';
 import { getAnimales, animalMasGrave, totalAnimales } from '../types/reporte';
@@ -149,6 +150,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
   const [reporteAConfirmar, setReporteAConfirmar] = useState<ReporteStaff | null>(null);
   const [showAceptarModal, setShowAceptarModal] = useState(false);
   const [showRechazarModal, setShowRechazarModal] = useState(false);
+  const [seguimientosRefreshKey, setSeguimientosRefreshKey] = useState(0);
 
   useEffect(() => {
     cargarReportesAsignados();
@@ -299,6 +301,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
     if (ok) {
       setShowSinVidaModal(false);
       setReporteSeleccionado(null);
+      setSeguimientosRefreshKey((actual) => actual + 1);
     }
   };
 
@@ -519,6 +522,10 @@ export default function StaffDashboardScreen({ onClose }: Props) {
           apellidoPaterno={user?.apellido_paterno ?? ''}
           notificacionesCount={0}
         />
+
+        {(esHogarTemporal || esVoluntarioInterno) && (
+          <VolunteerDeceasedFollowupPanel refreshKey={seguimientosRefreshKey} />
+        )}
 
         {isLoading ? (
           <View style={styles.centered}>
