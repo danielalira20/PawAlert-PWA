@@ -63,6 +63,7 @@ from app.services.video_evidence_service import procesar_evidencia_verificacion
 from app.services.whatsapp_notification_service import (
     notificar_evento_asignacion,
 )
+from app.services import deceased_followup_service
 
 router = APIRouter()
 
@@ -463,6 +464,39 @@ async def get_mis_reportes_voluntario(authorization: str = Header(None)):
 
     # 2. Pasamos el ID del usuario y su rol al servicio
     return await obtener_reportes_voluntario(usuario["id"], usuario["rol"])
+
+
+@router.get("/me/seguimientos-fallecimiento", status_code=200)
+async def get_mis_seguimientos_fallecimiento(
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("voluntario_interno", "voluntario_externo"))
+    return deceased_followup_service.listar_seguimientos_voluntario(
+        usuario["id"]
+    )
+
+
+@router.get(
+    "/me/seguimientos-fallecimiento/{reporte_id}",
+    status_code=200,
+)
+async def get_mi_detalle_seguimiento_fallecimiento(
+    reporte_id: str,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("voluntario_interno", "voluntario_externo"))
+    try:
+        return deceased_followup_service.obtener_detalle_seguimiento_voluntario(
+            reporte_id,
+            usuario["id"],
+        )
+    except deceased_followup_service.SeguimientoFallecimientoError:
+        raise HTTPException(
+            status_code=404,
+            detail="Seguimiento no encontrado",
+        )
 
 
 # ---------------------------------------------------------------------------

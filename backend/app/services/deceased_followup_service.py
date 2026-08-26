@@ -244,6 +244,163 @@ def listar_seguimientos_asociacion(asociacion_id: str) -> list[dict]:
     return resultado.data or []
 
 
+def _listar_resultados_propios(
+    usuario_id: str,
+    reporte_id: str | None = None,
+) -> list[dict]:
+    consulta = (
+        supabase_admin.table("resultados_rescate_animal")
+        .select(
+            "id, reporte_id, animal_id, estado, cantidad_reportada, "
+            "puede_esperar_seguro, riesgo_vial, riesgo_sanitario, "
+            "identificacion_observada, comentario, "
+            "motivo_retiro_seguridad, reportado_at, revisado_at, "
+            "actualizado_at"
+        )
+        .eq("reportado_por_id", usuario_id)
+    )
+    if reporte_id:
+        consulta = consulta.eq("reporte_id", reporte_id)
+    resultado = consulta.order("reportado_at", desc=False).execute()
+    return resultado.data or []
+
+
+def listar_seguimientos_voluntario(usuario_id: str) -> list[dict]:
+    resultados = _listar_resultados_propios(usuario_id)
+    reporte_ids = list({
+        fila["reporte_id"]
+        for fila in resultados
+        if fila.get("reporte_id")
+    })
+    if not reporte_ids:
+        return []
+
+    seguimientos_res = (
+        supabase_admin.table("seguimientos_fallecimiento_reporte")
+        .select(
+            "id, reporte_id, estado, iniciado_at, asociacion_deadline_at, "
+            "administracion_deadline_at, actualizado_at"
+        )
+        .in_("reporte_id", reporte_ids)
+        .in_("estado", list(ESTADOS_SEGUIMIENTO_ABIERTOS))
+        .order("iniciado_at", desc=False)
+        .execute()
+    )
+    seguimientos = seguimientos_res.data or []
+    if not seguimientos:
+        return []
+
+    ids_abiertos = [fila["reporte_id"] for fila in seguimientos]
+    reportes_res = (
+        supabase_admin.table("reportes")
+        .select("id, estado_reporte, municipio, colonia, created_at")
+        .in_("id", ids_abiertos)
+        .execute()
+    )
+    reportes_por_id = {
+        fila["id"]: fila for fila in (reportes_res.data or [])
+    }
+    resultados_por_reporte: dict[str, list[dict]] = {}
+    for fila in resultados:
+        resultados_por_reporte.setdefault(fila["reporte_id"], []).append(fila)
+
+    return [
+        {
+            **seguimiento,
+            "reporte": reportes_por_id.get(seguimiento["reporte_id"]),
+            "resultados": resultados_por_reporte.get(
+                seguimiento["reporte_id"],
+                [],
+            ),
+        }
+        for seguimiento in seguimientos
+    ]
+
+
+def obtener_detalle_seguimiento_voluntario(
+    reporte_id: str,
+    usuario_id: str,
+) -> dict:
+    resultados = _listar_resultados_propios(usuario_id, reporte_id)
+    if not resultados:
+        raise SeguimientoFallecimientoError("seguimiento_no_encontrado")
+
+    seguimiento_res = (
+        supabase_admin.table("seguimientos_fallecimiento_reporte")
+        .select(
+            "id, reporte_id, estado, iniciado_at, asociacion_deadline_at, "
+            "administracion_deadline_at, resultado_final, "
+            "conclusion_rescate, cerrado_at, actualizado_at"
+        )
+        .eq("reporte_id", reporte_id)
+        .execute()
+    )
+    if not seguimiento_res.data:
+        raise SeguimientoFallecimientoError("seguimiento_no_encontrado")
+    seguimiento = seguimiento_res.data[0]
+
+    reporte_res = (
+        supabase_admin.table("reportes")
+        .select(
+            "id, estado_reporte, municipio, colonia, calle, created_at, "
+            "animal(id, orden, es_grupo, cantidad, trae_crias_nacidas, "
+            "numero_crias_nacidas, sexo, edad_aproximada, descripcion, "
+            "tipo_animal_catalogo(clave), condicion_catalogo(clave), "
+            "tamanio_catalogo(clave))"
+        )
+        .eq("id", reporte_id)
+        .execute()
+    )
+    if not reporte_res.data:
+        raise SeguimientoFallecimientoError("seguimiento_no_encontrado")
+
+    reporte = reporte_res.data[0]
+    animales_crudos, _ = shape_animal_embed(reporte.pop("animal", None))
+    animales_propios = {fila["animal_id"] for fila in resultados}
+    reporte["animales"] = [
+        shape_animal_response(animal)
+        for animal in animales_crudos
+        if animal.get("id") in animales_propios
+    ]
+
+    resultado_ids = [fila["id"] for fila in resultados]
+    acciones_res = (
+        supabase_admin.table("seguimientos_retiro_animal")
+        .select(
+            "id, resultado_rescate_animal_id, tipo_actor, accion, folio, "
+            "nombre_servicio, destino_informado, nota, registrado_at"
+        )
+        .eq("reporte_id", reporte_id)
+        .in_("resultado_rescate_animal_id", resultado_ids)
+        .order("registrado_at", desc=True)
+        .execute()
+    )
+
+    contactos = []
+    municipio = reporte.get("municipio")
+    if municipio:
+        contactos_res = (
+            supabase_admin.table("contactos_retiro_animal")
+            .select(
+                "id, municipio_nombre, nombre_servicio, telefono, "
+                "tipo_servicio, horario, fuente, verificado_at"
+            )
+            .eq("municipio_nombre", municipio)
+            .eq("activo", True)
+            .order("prioridad", desc=False)
+            .execute()
+        )
+        contactos = contactos_res.data or []
+
+    return {
+        "seguimiento": seguimiento,
+        "reporte": reporte,
+        "resultados": resultados,
+        "acciones_retiro": acciones_res.data or [],
+        "contactos_retiro": contactos,
+    }
+
+
 def obtener_detalle_seguimiento(
     reporte_id: str,
     asociacion_id: str,
