@@ -146,8 +146,11 @@ La solucion B solo reemplaza a A al comparar, en este orden:
 1. mayor suma de `urgency.score` de los reportes cubiertos;
 2. mayor cantidad total de reportes cubiertos;
 3. menor cantidad de asignaciones `secondary`;
-4. menor costo vial total;
-5. identificadores estables como desempate final.
+4. menor `candidate_rank_sum` (suma del rank de los candidatos efectivamente
+   asignados, recalculado por pass -- rank 0 es el candidato ideal para ese
+   reporte);
+5. menor costo vial total;
+6. identificadores estables como desempate final.
 
 Por tanto, una pareja secundaria nunca desplaza a una primaria si no mejora
 la prioridad cubierta o la cobertura total. Dentro de la ventana primaria,
