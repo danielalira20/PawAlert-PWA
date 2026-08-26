@@ -45,6 +45,8 @@ del reporte por omisión.
 Datos obligatorios:
 
 - `animal_ids`, sin duplicados y pertenecientes al reporte;
+- cantidad encontrada sin vida por cada ficha seleccionada; para una ficha de
+  grupo nunca puede superar `animal.cantidad`;
 - `latitud` y `longitud` actuales;
 - evidencia fotográfica tomada desde la cámara;
 - `puede_esperar_seguro`.
@@ -89,6 +91,10 @@ Mientras exista al menos un animal vivo o sin resolver:
   resultado `sin_vida_reportado` o `sin_vida_confirmado`;
 - el contacto para el animal encontrado sin vida se muestra como una acción
   secundaria que no bloquea el rescate de los demás.
+
+Una ficha con `es_grupo = true` solo se considera completamente resuelta
+cuando `cantidad_reportada` alcanza `animal.cantidad`. Un resultado parcial
+del grupo conserva el reporte y Urgency activos para los individuos restantes.
 
 Cuando todos los animales estén en `sin_vida_reportado` o
 `sin_vida_confirmado`, una operación transaccional debe:
