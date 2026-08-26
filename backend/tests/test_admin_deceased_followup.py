@@ -52,7 +52,7 @@ def test_admin_puede_consultar_detalle_escalado() -> None:
 
     assert response.status_code == 200
     assert response.json() == detalle
-    obtener.assert_called_once_with("reporte-1")
+    obtener.assert_called_once_with("reporte-1", "admin-1")
 
 
 def test_admin_puede_revisar_resultado_escalado() -> None:

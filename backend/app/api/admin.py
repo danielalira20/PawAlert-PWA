@@ -107,10 +107,11 @@ def obtener_seguimiento_fallecimiento_escalado(
     reporte_id: str,
     authorization: str = Header(None),
 ):
-    _verificar_admin(authorization)
+    admin = _verificar_admin(authorization)
     try:
         return deceased_followup_service.obtener_detalle_seguimiento_administracion(
-            reporte_id
+            reporte_id,
+            admin["id"],
         )
     except deceased_followup_service.SeguimientoFallecimientoError as error:
         if error.codigo in ("seguimiento_no_encontrado", "reporte_no_encontrado"):

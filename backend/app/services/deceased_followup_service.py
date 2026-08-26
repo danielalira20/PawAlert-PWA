@@ -139,6 +139,32 @@ def _ejecutar_rpc(nombre: str, parametros: dict) -> Any:
     return datos
 
 
+def _auditar_contactos_retiro_mostrados(
+    reporte_id: str,
+    usuario_id: str | None,
+    tipo_actor: str,
+    total_contactos: int,
+) -> None:
+    if not usuario_id or total_contactos < 1:
+        return
+    try:
+        supabase_admin.rpc(
+            "registrar_contactos_retiro_mostrados",
+            {
+                "p_reporte_id": reporte_id,
+                "p_usuario_id": usuario_id,
+                "p_tipo_actor": tipo_actor,
+                "p_total_contactos": total_contactos,
+            },
+        ).execute()
+    except Exception as error:
+        logger.warning(
+            "No se pudo auditar la entrega de contactos del reporte %s: %s",
+            reporte_id,
+            type(error).__name__,
+        )
+
+
 def revisar_resultado(
     reporte_id: str,
     resultado_id: str,
@@ -370,7 +396,10 @@ def listar_seguimientos_administracion() -> list[dict]:
     return resultado.data or []
 
 
-def obtener_detalle_seguimiento_administracion(reporte_id: str) -> dict:
+def obtener_detalle_seguimiento_administracion(
+    reporte_id: str,
+    usuario_id: str | None = None,
+) -> dict:
     consulta = (
         supabase_admin.table("seguimientos_fallecimiento_reporte")
         .select("asociacion_coordinadora_id, estado")
@@ -383,6 +412,8 @@ def obtener_detalle_seguimiento_administracion(reporte_id: str) -> dict:
     return obtener_detalle_seguimiento(
         reporte_id,
         consulta.data[0].get("asociacion_coordinadora_id"),
+        actor_id=usuario_id,
+        tipo_actor="administracion",
     )
 
 
@@ -558,6 +589,13 @@ def obtener_detalle_seguimiento_voluntario(
         )
         contactos = contactos_res.data or []
 
+    _auditar_contactos_retiro_mostrados(
+        reporte_id,
+        usuario_id,
+        "voluntario",
+        len(contactos),
+    )
+
     return {
         "seguimiento": seguimiento,
         "reporte": reporte,
@@ -570,6 +608,8 @@ def obtener_detalle_seguimiento_voluntario(
 def obtener_detalle_seguimiento(
     reporte_id: str,
     asociacion_id: str | None,
+    actor_id: str | None = None,
+    tipo_actor: str = "asociacion",
 ) -> dict:
     seguimiento = _obtener_seguimiento_autorizado(reporte_id, asociacion_id)
 
@@ -671,6 +711,13 @@ def obtener_detalle_seguimiento(
             .execute()
         )
         contactos = contactos_res.data or []
+
+    _auditar_contactos_retiro_mostrados(
+        reporte_id,
+        actor_id,
+        tipo_actor,
+        len(contactos),
+    )
 
     return {
         "seguimiento": seguimiento,

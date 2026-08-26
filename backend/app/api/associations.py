@@ -678,6 +678,8 @@ async def get_detalle_seguimiento_fallecimiento(
         return deceased_followup_service.obtener_detalle_seguimiento(
             reporte_id,
             asociacion_id,
+            actor_id=usuario["id"],
+            tipo_actor="asociacion",
         )
     except deceased_followup_service.SeguimientoFallecimientoError as error:
         if error.codigo == "reporte_no_encontrado":
