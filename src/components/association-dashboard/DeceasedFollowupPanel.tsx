@@ -20,6 +20,7 @@ import { useAuth } from '../../context/AuthContext';
 import { AppModal } from '../AppModal';
 import { Toast, useToast } from '../Toast';
 import { WithdrawalFollowupForm } from './WithdrawalFollowupForm';
+import { DeceasedClosureForm } from './DeceasedClosureForm';
 
 const COLORS = {
   primary: '#EC802B',
@@ -212,6 +213,8 @@ export function DeceasedFollowupPanel({ visible }: Props) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [resultadoGestion, setResultadoGestion] = useState<string | null>(null);
   const [isSubmittingGestion, setIsSubmittingGestion] = useState(false);
+  const [mostrarCierre, setMostrarCierre] = useState(false);
+  const [isSubmittingCierre, setIsSubmittingCierre] = useState(false);
 
   const headers = useMemo(
     () => ({ Authorization: `Bearer ${token}` }),
@@ -272,13 +275,15 @@ export function DeceasedFollowupPanel({ visible }: Props) {
   if (!visible) return null;
 
   const cerrarDetalle = (forzar = false) => {
-    if ((isSubmitting || isSubmittingGestion) && !forzar) return;
+    if ((isSubmitting || isSubmittingGestion || isSubmittingCierre) && !forzar) return;
     setDetalle(null);
     setResultadoRevision(null);
     setDecision(null);
     setNotas('');
     setResultadoGestion(null);
     setIsSubmittingGestion(false);
+    setMostrarCierre(false);
+    setIsSubmittingCierre(false);
     setEvidenciasVisibles(new Set());
   };
 
@@ -427,7 +432,7 @@ export function DeceasedFollowupPanel({ visible }: Props) {
         visible={Boolean(detalle)}
         onClose={() => cerrarDetalle()}
         maxWidth={820}
-        dismissable={!isSubmitting && !isSubmittingGestion}
+        dismissable={!isSubmitting && !isSubmittingGestion && !isSubmittingCierre}
       >
         {detalle && (
           <ScrollView contentContainerStyle={styles.modalContent}>
@@ -733,9 +738,118 @@ export function DeceasedFollowupPanel({ visible }: Props) {
                 ))}
               </View>
             )}
+
+            <ClosureSection
+              detalle={detalle}
+              mostrarFormulario={mostrarCierre}
+              onMostrar={() => setMostrarCierre(true)}
+              onCancel={() => setMostrarCierre(false)}
+              onSubmittingChange={setIsSubmittingCierre}
+              onClosed={async () => {
+                cerrarDetalle(true);
+                await cargarSeguimientos();
+                showToast({
+                  type: 'success',
+                  title: 'Seguimiento cerrado',
+                  message: 'La conclusión quedó documentada y el reporte terminó.',
+                });
+              }}
+            />
           </ScrollView>
         )}
       </AppModal>
+    </View>
+  );
+}
+
+function ClosureSection({
+  detalle,
+  mostrarFormulario,
+  onMostrar,
+  onCancel,
+  onClosed,
+  onSubmittingChange,
+}: {
+  detalle: DetalleSeguimiento;
+  mostrarFormulario: boolean;
+  onMostrar: () => void;
+  onCancel: () => void;
+  onClosed: () => Promise<void>;
+  onSubmittingChange: (isSubmitting: boolean) => void;
+}) {
+  const pendientes = detalle.resultados.filter(
+    (resultado) => resultado.estado === 'sin_vida_reportado',
+  ).length;
+  const noConfirmados = detalle.resultados.filter(
+    (resultado) => resultado.estado !== 'sin_vida_confirmado',
+  ).length;
+  const tieneGestion = detalle.acciones_retiro.length > 0;
+  const puedeCerrar = pendientes === 0 && noConfirmados === 0 && tieneGestion;
+
+  if (mostrarFormulario && puedeCerrar) {
+    return (
+      <DeceasedClosureForm
+        reporteId={detalle.reporte.id}
+        accionesRegistradas={detalle.acciones_retiro.map((accion) => accion.accion)}
+        onCancel={onCancel}
+        onClosed={onClosed}
+        onSubmittingChange={onSubmittingChange}
+      />
+    );
+  }
+
+  return (
+    <View style={styles.closureSection}>
+      <View style={styles.closureHeader}>
+        <Ionicons
+          name={puedeCerrar ? 'checkmark-done-outline' : 'lock-closed-outline'}
+          size={20}
+          color={puedeCerrar ? COLORS.success : COLORS.textLight}
+        />
+        <View style={styles.closureHeaderText}>
+          <Text style={styles.closureTitle}>Cierre del seguimiento</Text>
+          <Text style={styles.closureHelper}>
+            {puedeCerrar
+              ? 'El expediente cumple las condiciones para una conclusión humana.'
+              : 'El caso seguirá abierto hasta completar todas las condiciones.'}
+          </Text>
+        </View>
+      </View>
+
+      {!puedeCerrar && (
+        <View style={styles.closureRequirements}>
+          <RequirementRow complete={pendientes === 0} label="Todos los resultados revisados" />
+          <RequirementRow complete={noConfirmados === 0} label="Todos los resultados confirmados" />
+          <RequirementRow complete={tieneGestion} label="Al menos una gestión de retiro registrada" />
+        </View>
+      )}
+
+      {puedeCerrar && (
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="Preparar cierre del seguimiento"
+          onPress={onMostrar}
+          style={styles.closeFollowupButton}
+        >
+          <Ionicons name="document-text-outline" size={17} color={COLORS.white} />
+          <Text style={styles.closeFollowupText}>Preparar cierre</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+}
+
+function RequirementRow({ complete, label }: { complete: boolean; label: string }) {
+  return (
+    <View style={styles.requirementRow}>
+      <Ionicons
+        name={complete ? 'checkmark-circle' : 'ellipse-outline'}
+        size={16}
+        color={complete ? COLORS.success : COLORS.textLight}
+      />
+      <Text style={[styles.requirementText, complete && styles.requirementComplete]}>
+        {label}
+      </Text>
     </View>
   );
 }
@@ -889,4 +1003,21 @@ const styles = StyleSheet.create({
   callButton: {
     width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.accent,
   },
+  closureSection: {
+    gap: 12, padding: 15, borderRadius: 8, backgroundColor: COLORS.white,
+    borderWidth: 1, borderColor: COLORS.border,
+  },
+  closureHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  closureHeaderText: { flex: 1, minWidth: 0 },
+  closureTitle: { color: COLORS.textDark, fontSize: 15, fontWeight: '900' },
+  closureHelper: { color: COLORS.textLight, fontSize: 12, lineHeight: 18, marginTop: 3 },
+  closureRequirements: { gap: 7 },
+  requirementRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  requirementText: { color: COLORS.textLight, fontSize: 12 },
+  requirementComplete: { color: COLORS.success },
+  closeFollowupButton: {
+    minHeight: 42, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center',
+    gap: 7, paddingHorizontal: 14, borderRadius: 8, backgroundColor: COLORS.primary,
+  },
+  closeFollowupText: { color: COLORS.white, fontSize: 13, fontWeight: '800' },
 });
