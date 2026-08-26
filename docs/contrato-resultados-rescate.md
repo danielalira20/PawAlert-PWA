@@ -299,3 +299,32 @@ mediante actualizaciones directas.
 - fotos sensibles no aparecen en endpoints públicos, mapas ni push;
 - el cierre terminal exige revisión y seguimiento;
 - Trust Score y puntos permanecen sin cambios.
+
+## Despliegue de la implementación
+
+La implementación completa vive en las migraciones `0077` a `0085`. Si las
+migraciones `0077` a `0082` ya fueron aplicadas, deben ejecutarse en orden:
+
+1. `0083_escalar_seguimientos_fallecimiento.sql`;
+2. `0084_notificar_resultados_fallecimiento.sql`;
+3. `0085_auditar_contactos_retiro.sql`.
+
+Después del despliegue del backend se programa cada 15 minutos:
+
+```text
+POST /internal/deceased-followups/run
+X-Cron-Secret: <CRON_SECRET>
+```
+
+El job solo encola avisos. Para entregarlos deben continuar activos los jobs
+generales:
+
+```text
+POST /internal/push/run
+POST /internal/whatsapp/run
+```
+
+Antes de habilitar el cron en producción se debe comprobar manualmente una
+ejecución con respuesta `200`, aplicar el mismo `CRON_SECRET` del backend y
+verificar que una segunda ejecución no duplique historial ni notificaciones.
+Ninguno de estos jobs realiza cierre automático.
