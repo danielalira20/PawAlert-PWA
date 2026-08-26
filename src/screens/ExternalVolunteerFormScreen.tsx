@@ -11,6 +11,69 @@ import { Input } from '../components/ui/Input';
 import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
 import LocationPickerMap from './LocationPickerMap';
+import { getFormDraft, removeFormDraft, setFormDraft } from '../services/formDraftStorage';
+import { createFormDraftEnvelope, parseFormDraftEnvelope } from '../utils/formDraft';
+import { getDeviceToken } from '../utils/deviceToken';
+
+const EXTERNAL_DRAFT_VERSION = 1;
+const EXTERNAL_DRAFT_TTL_MS = 2 * 60 * 60 * 1000;
+const EXTERNAL_DRAFT_SAVE_DELAY_MS = 800;
+const EXTERNAL_DRAFT_KEY_PREFIX = '@pawalert:draft:external';
+
+interface ExternalFormDraftData {
+  paso: number;
+  pinLocation: { latitud: number; longitud: number };
+  ubicacionConfirmada: boolean;
+  calle: string;
+  numero: string;
+  colonia: string;
+  municipio: string;
+  estado: string;
+  referencia: string;
+  direccionConfirmada: string;
+  tipoVivienda: string;
+  subcategoriaVivienda: string;
+  customViviendaInput: string;
+  autorizacion: string;
+  ubicacionAnimal: string;
+  aceptaVisita: string;
+  numAdultos: string;
+  ninosEdades: string;
+  otrosAnimales: string;
+  vacunados: string;
+  puedeSeparar: string;
+  horasSolo: string;
+  preferenciaEspecie: string[];
+  subcategoriaOtroEspecie: string;
+  customOtroEspecieInput: string;
+  preferenciaTamanio: string[];
+  tiempoResguardo: string;
+  tiempoResguardoDias: string;
+  checkAccesos: boolean;
+  checkBardas: boolean;
+  checkBalcones: boolean;
+  checkEspacio: boolean;
+  checkNingunoSeguridad: boolean;
+  checkAislamiento: boolean;
+  checkCuarentena: boolean;
+  checkNoEntregar: boolean;
+  checkNingunoCompromiso: boolean;
+  nombreEmergencia: string;
+  telEmergencia: string;
+  horario1Dia: string;
+  horario1Hora: string;
+  horario2Dia: string;
+  horario2Hora: string;
+  horario3Dia: string;
+  horario3Hora: string;
+  consentimiento: boolean;
+}
+
+function isExternalFormDraftData(value: unknown): value is ExternalFormDraftData {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<ExternalFormDraftData>;
+  return typeof candidate.paso === 'number';
+}
 
 const COLORS = {
   bgTeal: '#66BCB4',
@@ -44,7 +107,7 @@ interface Props {
 }
 
 export default function ExternalVolunteerFormScreen({ onClose, modoReintento = false }: Props) {
-  const { setSession, token } = useAuth();
+  const { setSession, token, user } = useAuth();
   const { toast, translateY, showToast } = useToast();
 
   const [paso, setPaso] = useState(1);
@@ -132,8 +195,10 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
   const [consentimiento, setConsentimiento] = useState(false);
 
   // ─── Borrador (guardar progreso al recargar) ───
-  const lastPersistedDraftRef = useRef<string | null>(null);
-  const draftSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const [isDraftReady, setIsDraftReady] = useState(false);
+  const [draftStorageKey, setDraftStorageKey] = useState<string | null>(null);
+  const [showDraftNotice, setShowDraftNotice] = useState(false);
+  const draftInitializationStartedRef = useRef(false);
   const draftPersistenceDisabledRef = useRef(false);
 
   useEffect(() => {
@@ -160,78 +225,94 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
     }
 
     if (!modoReintento) {
-      let cancelado = false;
+      if (draftInitializationStartedRef.current) return;
+      draftInitializationStartedRef.current = true;
+      let active = true;
+
       (async () => {
-        try {
-          const { data } = await axios.get(
-            `${API_URL}/voluntarios/externo/borrador`,
-            { headers: { Authorization: `Bearer ${token}` } },
-          );
-          const borrador = data?.borrador;
-          if (cancelado || !borrador) return;
+        const storageKey = `${EXTERNAL_DRAFT_KEY_PREFIX}:${user?.id || await getDeviceToken()}:v${EXTERNAL_DRAFT_VERSION}`;
+        if (!active) return;
+        setDraftStorageKey(storageKey);
 
-          const d = borrador.datos || {};
-          setPinLocation(d.pinLocation || pinLocation);
-          setUbicacionConfirmada(!!d.ubicacionConfirmada);
-          setCalle(d.calle || '');
-          setNumero(d.numero || '');
-          setColonia(d.colonia || '');
-          setMunicipio(d.municipio || '');
-          setEstado(d.estado || '');
-          setReferencia(d.referencia || '');
-          setDireccionConfirmada(d.direccionConfirmada || '');
-          setTipoVivienda(d.tipoVivienda || '');
-          setSubcategoriaVivienda(d.subcategoriaVivienda || '');
-          setCustomViviendaInput(d.customViviendaInput || '');
-          setAutorizacion(d.autorizacion || '');
-          setUbicacionAnimal(d.ubicacionAnimal || '');
-          setAceptaVisita(d.aceptaVisita || '');
-          setNumAdultos(d.numAdultos || '');
-          setNinosEdades(d.ninosEdades || '');
-          setOtrosAnimales(d.otrosAnimales || '');
-          setVacunados(d.vacunados || '');
-          setPuedeSeparar(d.puedeSeparar || '');
-          setHorasSolo(d.horasSolo || '');
-          setPreferenciaEspecie(d.preferenciaEspecie || []);
-          setSubcategoriaOtroEspecie(d.subcategoriaOtroEspecie || '');
-          setCustomOtroEspecieInput(d.customOtroEspecieInput || '');
-          setPreferenciaTamanio(d.preferenciaTamanio || []);
-          setTiempoResguardo(d.tiempoResguardo || '');
-          setTiempoResguardoDias(d.tiempoResguardoDias || '');
-          setCheckAccesos(!!d.checkAccesos);
-          setCheckBardas(!!d.checkBardas);
-          setCheckBalcones(!!d.checkBalcones);
-          setCheckEspacio(!!d.checkEspacio);
-          setCheckNingunoSeguridad(!!d.checkNingunoSeguridad);
-          setCheckAislamiento(!!d.checkAislamiento);
-          setCheckCuarentena(!!d.checkCuarentena);
-          setCheckNoEntregar(!!d.checkNoEntregar);
-          setCheckNingunoCompromiso(!!d.checkNingunoCompromiso);
-          setNombreEmergencia(d.nombreEmergencia || '');
-          setTelEmergencia(d.telEmergencia || '');
-          setHorario1Dia(d.horario1Dia || '');
-          setHorario1Hora(d.horario1Hora || '');
-          setHorario2Dia(d.horario2Dia || '');
-          setHorario2Hora(d.horario2Hora || '');
-          setHorario3Dia(d.horario3Dia || '');
-          setHorario3Hora(d.horario3Hora || '');
-          setConsentimiento(!!d.consentimiento);
-          setPaso(borrador.paso || 1);
-          lastPersistedDraftRef.current = JSON.stringify(borrador);
-
-          showToast({
-            type: 'success',
-            title: 'Recuperamos tu progreso',
-            message: 'Continúa donde te quedaste. Vuelve a subir las fotos y el video.',
-          });
-        } catch (error) {
-        } finally {
-          if (!cancelado) setIsLoadingExisting(false);
+        const raw = await getFormDraft(storageKey);
+        if (!active || !raw) {
+          if (active) {
+            setIsDraftReady(true);
+            setIsLoadingExisting(false);
+          }
+          return;
         }
-      })();
+
+        const parsed = parseFormDraftEnvelope<ExternalFormDraftData>(raw, EXTERNAL_DRAFT_VERSION);
+        if (parsed.status !== 'valid' || !isExternalFormDraftData(parsed.draft.data)) {
+          await removeFormDraft(storageKey);
+          if (active) {
+            setIsDraftReady(true);
+            setIsLoadingExisting(false);
+          }
+          return;
+        }
+
+        const d = parsed.draft.data;
+        setPaso(d.paso || 1);
+        setPinLocation(d.pinLocation || pinLocation);
+        setUbicacionConfirmada(!!d.ubicacionConfirmada);
+        setCalle(d.calle || '');
+        setNumero(d.numero || '');
+        setColonia(d.colonia || '');
+        setMunicipio(d.municipio || '');
+        setEstado(d.estado || '');
+        setReferencia(d.referencia || '');
+        setDireccionConfirmada(d.direccionConfirmada || '');
+        setTipoVivienda(d.tipoVivienda || '');
+        setSubcategoriaVivienda(d.subcategoriaVivienda || '');
+        setCustomViviendaInput(d.customViviendaInput || '');
+        setAutorizacion(d.autorizacion || '');
+        setUbicacionAnimal(d.ubicacionAnimal || '');
+        setAceptaVisita(d.aceptaVisita || '');
+        setNumAdultos(d.numAdultos || '');
+        setNinosEdades(d.ninosEdades || '');
+        setOtrosAnimales(d.otrosAnimales || '');
+        setVacunados(d.vacunados || '');
+        setPuedeSeparar(d.puedeSeparar || '');
+        setHorasSolo(d.horasSolo || '');
+        setPreferenciaEspecie(d.preferenciaEspecie || []);
+        setSubcategoriaOtroEspecie(d.subcategoriaOtroEspecie || '');
+        setCustomOtroEspecieInput(d.customOtroEspecieInput || '');
+        setPreferenciaTamanio(d.preferenciaTamanio || []);
+        setTiempoResguardo(d.tiempoResguardo || '');
+        setTiempoResguardoDias(d.tiempoResguardoDias || '');
+        setCheckAccesos(!!d.checkAccesos);
+        setCheckBardas(!!d.checkBardas);
+        setCheckBalcones(!!d.checkBalcones);
+        setCheckEspacio(!!d.checkEspacio);
+        setCheckNingunoSeguridad(!!d.checkNingunoSeguridad);
+        setCheckAislamiento(!!d.checkAislamiento);
+        setCheckCuarentena(!!d.checkCuarentena);
+        setCheckNoEntregar(!!d.checkNoEntregar);
+        setCheckNingunoCompromiso(!!d.checkNingunoCompromiso);
+        setNombreEmergencia(d.nombreEmergencia || '');
+        setTelEmergencia(d.telEmergencia || '');
+        setHorario1Dia(d.horario1Dia || '');
+        setHorario1Hora(d.horario1Hora || '');
+        setHorario2Dia(d.horario2Dia || '');
+        setHorario2Hora(d.horario2Hora || '');
+        setHorario3Dia(d.horario3Dia || '');
+        setHorario3Hora(d.horario3Hora || '');
+        setConsentimiento(!!d.consentimiento);
+
+        setShowDraftNotice(true);
+        setIsDraftReady(true);
+        setIsLoadingExisting(false);
+      })().catch(() => {
+        if (active) {
+          setIsDraftReady(true);
+          setIsLoadingExisting(false);
+        }
+      });
 
       return () => {
-        cancelado = true;
+        active = false;
       };
     }
 
@@ -616,8 +697,9 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
     }
   };
 
-  const draftDatos = useMemo(() => ({
-    pinLocation, ubicacionConfirmada,
+  // ─── BORRADOR: guardar progreso mientras se llena el formulario ───
+  const externalDraftData = useMemo<ExternalFormDraftData>(() => ({
+    paso, pinLocation, ubicacionConfirmada,
     calle, numero, colonia, municipio, estado, referencia, direccionConfirmada,
     tipoVivienda, subcategoriaVivienda, customViviendaInput,
     autorizacion, ubicacionAnimal, aceptaVisita,
@@ -630,7 +712,7 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
     horario1Dia, horario1Hora, horario2Dia, horario2Hora, horario3Dia, horario3Hora,
     consentimiento,
   }), [
-    pinLocation, ubicacionConfirmada,
+    paso, pinLocation, ubicacionConfirmada,
     calle, numero, colonia, municipio, estado, referencia, direccionConfirmada,
     tipoVivienda, subcategoriaVivienda, customViviendaInput,
     autorizacion, ubicacionAnimal, aceptaVisita,
@@ -644,7 +726,8 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
     consentimiento,
   ]);
 
-  const hasMeaningfulDraft = ubicacionConfirmada
+  const hasMeaningfulDraft = paso > 1
+    || ubicacionConfirmada
     || !!tipoVivienda
     || !!autorizacion
     || !!numAdultos
@@ -652,63 +735,36 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
     || !!nombreEmergencia
     || !!telEmergencia;
 
-  const draftRequest = useMemo(() => ({ paso, datos: draftDatos }), [paso, draftDatos]);
-  const serializedDraft = useMemo(() => JSON.stringify(draftRequest), [draftRequest]);
-
-  const persistDraft = useCallback((request: typeof draftRequest, serialized: string): Promise<void> => {
-    const operation = draftSaveQueueRef.current.catch(() => undefined).then(async () => {
-      if (!token || draftPersistenceDisabledRef.current) return;
-      try {
-        await axios.put(`${API_URL}/voluntarios/externo/borrador`, request, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        lastPersistedDraftRef.current = serialized;
-      } catch {
-      }
-    });
-    draftSaveQueueRef.current = operation;
-    return operation;
-  }, [token]);
-
-  const deleteDraft = useCallback(async () => {
-    if (!token) return;
-    draftPersistenceDisabledRef.current = true;
-    await draftSaveQueueRef.current.catch(() => undefined);
-    try {
-      await axios.delete(`${API_URL}/voluntarios/externo/borrador`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-    } catch {
-    }
-  }, [token]);
-
   useEffect(() => {
     if (
-      modoReintento
-      || isLoadingExisting
-      || !token
-      || registroExitoso
+      !isDraftReady
+      || !draftStorageKey
       || !hasMeaningfulDraft
       || draftPersistenceDisabledRef.current
+      || registroExitoso
     ) {
       return;
     }
 
-    if (lastPersistedDraftRef.current === null) {
-      lastPersistedDraftRef.current = serializedDraft;
-      return;
-    }
-    if (lastPersistedDraftRef.current === serializedDraft) return;
-
     const timeout = setTimeout(() => {
-      if (!draftPersistenceDisabledRef.current) {
-        void persistDraft(draftRequest, serializedDraft);
-      }
-    }, DRAFT_SAVE_DELAY_MS);
+      if (draftPersistenceDisabledRef.current) return;
+      const envelope = createFormDraftEnvelope(
+        externalDraftData,
+        EXTERNAL_DRAFT_VERSION,
+        EXTERNAL_DRAFT_TTL_MS,
+      );
+      void setFormDraft(draftStorageKey, JSON.stringify(envelope));
+    }, EXTERNAL_DRAFT_SAVE_DELAY_MS);
 
     return () => clearTimeout(timeout);
-  }, [draftRequest, hasMeaningfulDraft, isLoadingExisting, modoReintento, persistDraft, registroExitoso, serializedDraft, token]);
+  }, [externalDraftData, draftStorageKey, hasMeaningfulDraft, isDraftReady, registroExitoso]);
 
+  const clearExternalDraft = () => {
+    draftPersistenceDisabledRef.current = true;
+    if (draftStorageKey) void removeFormDraft(draftStorageKey);
+  };
+
+  // ─── ENVÍO ───
   const handleSubmit = async () => {
     if (!validarPaso4()) { setShowSubmitError(true); return; }
     setShowSubmitError(false);
@@ -784,7 +840,7 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
       setIsSubmitting(false);
       setCorreccionActiva(Boolean(resultadoGuardado?.correccion));
       setRegistroExitoso(true);
-      if (!modoReintento) void deleteDraft();
+      if (!modoReintento) clearExternalDraft();
 
     } catch (error: any) {
       showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'Error al enviar.' });
@@ -1191,7 +1247,7 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
     <View style={[styles.outerContainer, { backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' } as any]}>
       <Toast toast={toast} translateY={translateY} />
 
-      {isLoadingExisting ? (
+      {(!isDraftReady || isLoadingExisting) ? (
         <View style={[styles.centeredContent, { maxWidth: 500 }]}>
           <View style={[styles.cardContainer, { padding: 40, alignItems: 'center', justifyContent: 'center' }]}>
             <ActivityIndicator size="large" color={COLORS.primary} />
@@ -1241,6 +1297,32 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
             <View style={styles.cardContainer}>
               {renderHeader()}
               <View style={styles.bodySection}>
+                {showDraftNotice && (
+                  <View style={{
+                    backgroundColor: '#EAF6FF',
+                    borderWidth: 1,
+                    borderColor: '#C9E6FF',
+                    borderRadius: 12,
+                    paddingHorizontal: 12,
+                    paddingVertical: 10,
+                    marginBottom: 12,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                  }}>
+                    <Text style={{ color: COLORS.textDark, fontSize: 13, flex: 1, marginRight: 10 }}>
+                      Recuperamos tu progreso guardado para que continúes donde te quedaste.
+                    </Text>
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel="Cerrar aviso de borrador recuperado"
+                      onPress={() => setShowDraftNotice(false)}
+                      style={{ padding: 4 }}
+                    >
+                      <Ionicons name="close" size={16} color={COLORS.textDark} />
+                    </TouchableOpacity>
+                  </View>
+                )}
                 {paso === 1 && renderPaso1()}
                 {paso === 2 && renderPaso2()}
                 {paso === 3 && renderPaso3()}
@@ -1304,7 +1386,7 @@ export default function ExternalVolunteerFormScreen({ onClose, modoReintento = f
                   <TouchableOpacity onPress={() => setShowCloseConfirm(false)} style={styles.confirmButtonCancel}>
                     <Text style={styles.confirmButtonCancelText}>Me quedo</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={() => { setShowCloseConfirm(false); if (onClose) onClose(); }} style={styles.confirmButtonExit}>
+                  <TouchableOpacity onPress={() => { clearExternalDraft(); setShowCloseConfirm(false); if (onClose) { onClose(); } else { router.back(); } }} style={styles.confirmButtonExit}>
                     <Text style={styles.confirmButtonExitText}>Sí, salir</Text>
                   </TouchableOpacity>
                 </View>
