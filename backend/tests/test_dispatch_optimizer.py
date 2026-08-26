@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
@@ -639,6 +640,102 @@ def test_vroom_no_disponible_cae_a_optimize_dispatch_fallback():
     assert get_optimization.call_count == 1
     fallback.assert_called_once_with(request)
     assert resultado is resultado_fallback
+
+
+def test_vroom_no_disponible_loguea_error_code_y_pasada(caplog):
+    """El log generico ("VROOM no disponible o respuesta invalida en la
+    pasada primary; usando fallback local") no dice por que fallo VROOM --
+    era el problema reportado en produccion. _solve_pass debe loguear el
+    error_code real (timeout, provider_error, invalid_response, etc.) junto
+    con la pasada exacta (primary/expanded) en el punto donde decide caer a
+    fallback, no descartarlo en silencio."""
+    request = build_request(
+        [
+            {
+                "volunteer_id": "vol-1",
+                "report_id": "rep-1",
+                "duration": 300,
+                "distance": 2000,
+                "score": 80,
+            },
+        ]
+    )
+    with (
+        patch.object(
+            dispatch_optimizer,
+            "get_optimization",
+            return_value=vroom_unavailable(error_code="timeout"),
+        ),
+        patch.object(
+            dispatch_optimizer,
+            "optimize_dispatch_fallback",
+            return_value=MagicMock(),
+        ),
+        caplog.at_level(logging.WARNING),
+    ):
+        dispatch_optimizer.optimize_dispatch(request)
+
+    detalle_logs = [
+        record.message
+        for record in caplog.records
+        if "error_code=timeout" in record.message
+    ]
+    assert detalle_logs, (
+        "esperaba un log con el error_code real de VROOM, no solo el "
+        "mensaje generico de 'usando fallback local'"
+    )
+    assert any("primary" in message for message in detalle_logs)
+
+
+def test_vroom_no_disponible_en_expanded_loguea_esa_pasada(caplog):
+    """Misma cobertura que arriba pero para la pasada expanded -- confirma
+    que el label no queda fijo en 'primary' por error de copiar/pegar entre
+    las dos llamadas a _solve_pass."""
+    request = build_request(
+        [
+            {
+                "volunteer_id": "vol-1",
+                "report_id": "rep-1",
+                "duration": 300,
+                "distance": 2000,
+                "score": 80,
+            },
+            {
+                "volunteer_id": "vol-2",
+                "report_id": "rep-2",
+                "duration": 400,
+                "distance": 2500,
+                "score": 80,
+            },
+        ]
+    )
+    with (
+        patch.object(
+            dispatch_optimizer,
+            "get_optimization",
+            side_effect=[
+                vroom_result_for(
+                    (1, 1, 2, 300), unassigned_job_ids=[2]
+                ),
+                vroom_unavailable(error_code="invalid_response"),
+            ],
+        ),
+        patch.object(
+            dispatch_optimizer,
+            "optimize_dispatch_fallback",
+            return_value=MagicMock(),
+        ),
+        caplog.at_level(logging.WARNING),
+    ):
+        dispatch_optimizer.optimize_dispatch(request)
+
+    detalle_logs = [
+        record.message
+        for record in caplog.records
+        if "error_code=invalid_response" in record.message
+    ]
+    assert detalle_logs
+    assert any("expanded" in message for message in detalle_logs)
 
 
 def test_respuesta_inconsistente_pareja_inventada_cae_a_fallback():

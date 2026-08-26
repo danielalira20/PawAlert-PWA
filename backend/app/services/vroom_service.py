@@ -272,14 +272,28 @@ def get_optimization(
         return _unavailable("not_configured", calculated_at)
 
     last_error = "provider_error"
-    for _attempt in range(_MAX_ATTEMPTS):
+    for attempt in range(1, _MAX_ATTEMPTS + 1):
         try:
             response = _request_optimization(request)
-        except httpx.TimeoutException:
+        except httpx.TimeoutException as error:
             last_error = "timeout"
+            logger.warning(
+                "VROOM no respondio a tiempo (intento %s/%s): %s: %s",
+                attempt,
+                _MAX_ATTEMPTS,
+                type(error).__name__,
+                error,
+            )
             continue
-        except httpx.HTTPError:
+        except httpx.HTTPError as error:
             last_error = "provider_error"
+            logger.warning(
+                "Fallo de conexion llamando a VROOM (intento %s/%s): %s: %s",
+                attempt,
+                _MAX_ATTEMPTS,
+                type(error).__name__,
+                error,
+            )
             continue
 
         if response.status_code == 200:
@@ -289,5 +303,13 @@ def get_optimization(
                 return _unavailable("invalid_response", calculated_at)
 
         last_error = "provider_error"
+        logger.warning(
+            "VROOM respondio con status inesperado (intento %s/%s): %s -- "
+            "cuerpo: %s",
+            attempt,
+            _MAX_ATTEMPTS,
+            response.status_code,
+            response.text,
+        )
 
     return _unavailable(last_error, calculated_at)

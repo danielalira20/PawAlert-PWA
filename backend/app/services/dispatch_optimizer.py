@@ -314,6 +314,7 @@ def _solve_pass(
     volunteer_ids: list[str],
     report_ids: list[str],
     forbidden_cost: float,
+    pass_label: str,
 ) -> list[DispatchAssignment] | None:
     """None = VROOM no disponible o su respuesta no paso la validacion --
     fallo total para este pass. Lista (posiblemente vacia) = VROOM respondio
@@ -323,6 +324,11 @@ def _solve_pass(
     )
     vroom_result = get_optimization(vroom_request)
     if vroom_result.status != "complete":
+        logger.warning(
+            "VROOM no completo la pasada %s (error_code=%s)",
+            pass_label,
+            vroom_result.error_code,
+        )
         return None
     job_id_to_location_index = {
         job.id: job.location_index for job in vroom_request.jobs
@@ -489,6 +495,7 @@ def optimize_dispatch(
         volunteer_ids,
         report_ids,
         forbidden_cost,
+        "primary",
     )
     if primary_assignments is None:
         logger.warning(
@@ -514,6 +521,7 @@ def optimize_dispatch(
         volunteer_ids,
         report_ids,
         forbidden_cost,
+        "expanded",
     )
     if expanded_assignments is None:
         logger.warning(
