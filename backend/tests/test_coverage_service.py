@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -82,7 +83,11 @@ def test_ofrecimiento_usa_funcion_transaccional_e_idempotente():
     ):
         oferta = coverage_service.crear_ofrecimiento("user-1", "rep-1")
 
-    assert oferta == {"id": "oferta-1", "estado": "vigente"}
+    assert oferta["id"] == "oferta-1"
+    assert oferta["estado"] == "vigente"
+    assert datetime.fromisoformat(oferta["expira_at"]) > datetime.now(
+        timezone.utc
+    )
     supabase_admin.rpc.assert_called_once_with(
         "crear_ofrecimiento_externo",
         {
@@ -353,9 +358,13 @@ def test_expiracion_notifica_roles_reales_con_claves_idempotentes(make_query):
             {"id": "externo-1", "roles": {"nombre": "voluntario_externo"}},
         ]
     )
+    pool = make_query(data=[])
     supabase_admin = MagicMock()
     supabase_admin.rpc.return_value = ejecucion
-    supabase_admin.table.return_value = usuarios
+    supabase_admin.table.side_effect = lambda tabla: {
+        "usuarios": usuarios,
+        "pool_interesados_reporte": pool,
+    }[tabla]
 
     with (
         patch.object(coverage_service, "supabase_admin", supabase_admin),
@@ -375,7 +384,7 @@ def test_expiracion_notifica_roles_reales_con_claves_idempotentes(make_query):
         "propuesta_vencida:propuesta-1:voluntario-1",
         "propuesta_vencida_asoc:propuesta-1:staff-1",
     ]
-    usuarios.select.assert_called_with("id, roles(nombre)")
+    usuarios.select.assert_called_once_with("id, roles(nombre)")
 
 
 def test_nueva_propuesta_usa_id_de_rpc_en_push():
@@ -386,6 +395,7 @@ def test_nueva_propuesta_usa_id_de_rpc_en_push():
 
     with (
         patch.object(coverage_service, "supabase_admin", supabase_admin),
+        patch.object(coverage_service, "_carga_activa", return_value=0),
         patch(
             "app.services.push_notification_service.queue_and_send_push"
         ) as push,
@@ -426,6 +436,7 @@ def test_nueva_propuesta_incluye_tiempo_y_distancia_osrm():
             "_obtener_ruta_estimada_propuesta",
             return_value=ruta_estimada,
         ),
+        patch.object(coverage_service, "_carga_activa", return_value=0),
         patch(
             "app.services.push_notification_service.queue_and_send_push"
         ) as push,
