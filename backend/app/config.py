@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     firebase_service_account_json: str = ""
     google_application_credentials: str = ""
 
+    # Avistamientos: filtro de cercanía para poder INTENTAR registrar uno.
+    # Solo aplica a reportante del caso y voluntario verificado cercano;
+    # asociación/staff quedan exentos (pueden registrar info de terceros).
+    radio_entrada_avistamiento_metros: int = Field(default=500, gt=0)
+
     @model_validator(mode="after")
     def validate_vroom_route_windows(self):
         if (
