@@ -958,3 +958,217 @@ def test_registrar_hito_animal_no_localizado_no_crea_avistamiento(
 
     assert resultado["tipo_hito"] == "animal_no_localizado"
     derivado.assert_not_called()
+
+
+# --- filtro de entrada por cercania (RADIO_ENTRADA_AVISTAMIENTO_METROS) -----
+#
+# El pin del reporte de prueba esta en (19.0, -98.0). El radio por defecto es
+# 500 m. _avistamiento_create(latitud=19.0001, longitud=-98.0001) cae a ~14 m
+# del pin (dentro); (19.05, -98.0) cae a ~5.5 km (fuera).
+
+
+def _db_entrada(make_query, *, reporte, usuario, voluntarios=None, fila=None):
+    tablas = {
+        "reportes": make_query(data=[reporte]),
+        "usuarios": make_query(data=[usuario]),
+        "animal": make_query(data=[{"id": "animal-1"}]),
+        "avistamientos_animal": make_query(data=[fila or _fila_insertada()]),
+    }
+    if voluntarios is not None:
+        tablas["voluntarios"] = make_query(data=voluntarios)
+    return _armar_db(tablas)
+
+
+def test_entrada_reportante_dentro_del_radio_pasa(monkeypatch, make_query):
+    db = _db_entrada(
+        make_query,
+        reporte=_reporte(usuario_id="user-reportante"),
+        usuario=_usuario(id="user-reportante"),
+        fila=_fila_insertada(fuente="confirmacion_reportante"),
+    )
+    monkeypatch.setattr(svc, "supabase_admin", db)
+
+    resultado = svc.registrar_avistamiento(
+        "rep-1",
+        "user-reportante",
+        _avistamiento_create(latitud=19.0001, longitud=-98.0001),
+    )
+
+    assert resultado.estado_validacion == "pendiente"
+
+
+def test_entrada_reportante_fuera_del_radio_es_422(monkeypatch, make_query):
+    db = _db_entrada(
+        make_query,
+        reporte=_reporte(usuario_id="user-reportante"),
+        usuario=_usuario(id="user-reportante"),
+    )
+    monkeypatch.setattr(svc, "supabase_admin", db)
+
+    with pytest.raises(HTTPException) as error:
+        svc.registrar_avistamiento(
+            "rep-1",
+            "user-reportante",
+            _avistamiento_create(latitud=19.05, longitud=-98.0),
+        )
+
+    assert error.value.status_code == 422
+    assert "metros del caso" in error.value.detail
+    db.table("avistamientos_animal").insert.assert_not_called()
+
+
+def test_entrada_voluntario_verificado_dentro_del_radio_pasa(monkeypatch, make_query):
+    db = _db_entrada(
+        make_query,
+        reporte=_reporte(usuario_id="user-reportante", staff_asignado_id="user-staff"),
+        usuario=_usuario(id="user-ext", roles={"nombre": "voluntario_externo"}),
+        voluntarios=[
+            {
+                "estado": "activo_nivel_2",
+                "capacidades": {"latitud": 19.001, "longitud": -98.001, "radio_max_km": 5},
+            }
+        ],
+        fila=_fila_insertada(fuente="voluntario_verificado"),
+    )
+    monkeypatch.setattr(svc, "supabase_admin", db)
+
+    resultado = svc.registrar_avistamiento(
+        "rep-1", "user-ext", _avistamiento_create(latitud=19.0001, longitud=-98.0001)
+    )
+
+    assert resultado.fuente == LocationSource.voluntario_verificado
+
+
+def test_entrada_voluntario_verificado_fuera_del_radio_es_422(monkeypatch, make_query):
+    db = _db_entrada(
+        make_query,
+        reporte=_reporte(usuario_id="user-reportante", staff_asignado_id="user-staff"),
+        usuario=_usuario(id="user-ext", roles={"nombre": "voluntario_externo"}),
+        voluntarios=[
+            {
+                "estado": "activo_nivel_2",
+                "capacidades": {"latitud": 19.001, "longitud": -98.001, "radio_max_km": 5},
+            }
+        ],
+    )
+    monkeypatch.setattr(svc, "supabase_admin", db)
+
+    with pytest.raises(HTTPException) as error:
+        svc.registrar_avistamiento(
+            "rep-1", "user-ext", _avistamiento_create(latitud=19.05, longitud=-98.0)
+        )
+
+    assert error.value.status_code == 422
+    db.table("avistamientos_animal").insert.assert_not_called()
+
+
+def test_entrada_asociacion_lejos_no_se_rechaza_por_distancia(monkeypatch, make_query):
+    reporte = _reporte()
+    fila = _fila_insertada(fuente="asociacion", estado_validacion="validado")
+    reportes_mock = make_query(execute_results=[[reporte], [{"id": "rep-1"}]])
+    db = _armar_db(
+        {
+            "reportes": reportes_mock,
+            "usuarios": make_query(
+                data=[
+                    _usuario(
+                        id="user-aso",
+                        asociacion_id="aso-1",
+                        roles={"nombre": "asociacion"},
+                    )
+                ]
+            ),
+            "animal": make_query(data=[{"id": "animal-1"}]),
+            "avistamientos_animal": make_query(data=[fila]),
+            "historial_reporte": make_query(data=[{"id": "hist-1"}]),
+        }
+    )
+    monkeypatch.setattr(svc, "supabase_admin", db)
+
+    # GPS a cientos de km del caso: para asociacion no aplica el filtro.
+    resultado = svc.registrar_avistamiento(
+        "rep-1", "user-aso", _avistamiento_create(latitud=21.5, longitud=-100.5)
+    )
+
+    assert resultado.fuente == LocationSource.asociacion
+    assert resultado.estado_validacion == "validado"
+
+
+# --- evaluar_elegibilidad -------------------------------------------------------
+
+
+def test_elegibilidad_asociacion_es_true_sin_calcular_distancia(monkeypatch, make_query):
+    db = _armar_db(
+        {
+            "reportes": make_query(data=[_reporte()]),
+            "usuarios": make_query(
+                data=[
+                    _usuario(
+                        id="user-aso",
+                        asociacion_id="aso-1",
+                        roles={"nombre": "asociacion"},
+                    )
+                ]
+            ),
+        }
+    )
+    monkeypatch.setattr(svc, "supabase_admin", db)
+
+    # coordenadas absurdas: si calculara distancia, no serian "elegibles".
+    resultado = svc.evaluar_elegibilidad("rep-1", "user-aso", 1.0, 1.0)
+
+    assert resultado == {"elegible": True, "motivo": None, "fuente": "asociacion"}
+
+
+def test_elegibilidad_reportante_dentro_y_fuera(monkeypatch, make_query):
+    db = _armar_db(
+        {
+            "reportes": make_query(data=[_reporte(usuario_id="user-reportante")]),
+            "usuarios": make_query(data=[_usuario(id="user-reportante")]),
+        }
+    )
+    monkeypatch.setattr(svc, "supabase_admin", db)
+
+    dentro = svc.evaluar_elegibilidad("rep-1", "user-reportante", 19.0001, -98.0001)
+    assert dentro["elegible"] is True
+    assert dentro["distancia_metros"] < 500
+    assert dentro["radio_metros"] == 500
+
+    fuera = svc.evaluar_elegibilidad("rep-1", "user-reportante", 19.05, -98.0)
+    assert fuera["elegible"] is False
+    assert fuera["distancia_metros"] > 500
+
+
+def test_elegibilidad_mide_contra_ultima_ubicacion_confirmada_no_el_pin(
+    monkeypatch, make_query
+):
+    reporte = _reporte(
+        usuario_id="user-reportante", ultima_ubicacion_confirmada_id="av-previo"
+    )
+    db = _armar_db(
+        {
+            "reportes": make_query(data=[reporte]),
+            "usuarios": make_query(data=[_usuario(id="user-reportante")]),
+        }
+    )
+    monkeypatch.setattr(svc, "supabase_admin", db)
+
+    # _resolver_punto_referencia() (reports.py) consulta avistamientos_animal
+    # con SU propio supabase_admin: la ubicacion confirmada esta en (19.05, -98.0),
+    # lejos del pin original (19.0, -98.0).
+    db_reports = MagicMock()
+    db_reports.table.return_value = make_query(
+        data=[{"latitud": 19.05, "longitud": -98.0}]
+    )
+    monkeypatch.setattr(reports_api, "supabase_admin", db_reports)
+
+    # GPS pegado al PIN ORIGINAL -> lejos de la ubicacion confirmada -> no elegible
+    contra_pin = svc.evaluar_elegibilidad("rep-1", "user-reportante", 19.0, -98.0)
+    assert contra_pin["elegible"] is False
+    assert contra_pin["distancia_metros"] > 5000
+
+    # GPS pegado a la UBICACION CONFIRMADA -> elegible
+    contra_confirmada = svc.evaluar_elegibilidad(
+        "rep-1", "user-reportante", 19.0501, -98.0
+    )
+    assert contra_confirmada["elegible"] is True
