@@ -105,6 +105,30 @@ En producción, los mensajes iniciados fuera de la ventana de atención de
 WhatsApp deberán migrarse a templates de utilidad aprobados. El Sandbox se
 usa únicamente para pruebas.
 
+### Reportes conversacionales con WhatsApp Cloud API
+
+El canal de Meta recibe mensajes en:
+
+```text
+GET  /webhooks/meta/whatsapp
+POST /webhooks/meta/whatsapp
+```
+
+Aplica `migrations/0079_whatsapp_report_conversations.sql` y configura en el
+backend (nunca en el frontend):
+
+```env
+WHATSAPP_META_VERIFY_TOKEN=un-secreto-elegido-por-ti
+WHATSAPP_META_ACCESS_TOKEN=token-de-sistema-de-meta
+WHATSAPP_META_APP_SECRET=secreto-de-la-app-de-meta
+WHATSAPP_META_PHONE_NUMBER_ID=id-del-numero
+WHATSAPP_META_GRAPH_VERSION=v25.0
+```
+
+En Meta registra como URL de devolución:
+`https://pawalert-pwa-production.up.railway.app/webhooks/meta/whatsapp`, usa el
+mismo `WHATSAPP_META_VERIFY_TOKEN` y suscribe el campo `messages`.
+
 ### Notificaciones Push con Firebase
 
 El backend escribe el outbox con la llave `service_role` y Firebase Admin
