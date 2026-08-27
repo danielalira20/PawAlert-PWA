@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 
 from fastapi import HTTPException
 
+from app.config import settings
 from app.db.supabase import supabase_admin
 from app.models.dispatch import (
     AvistamientoCreate,
@@ -148,6 +149,104 @@ def _resolver_fuente(reporte: dict, usuario: dict) -> LocationSource | None:
     if _voluntario_verificado_cerca(usuario_id, reporte):
         return LocationSource.voluntario_verificado
     return None
+
+
+# Fuentes a las que se les exige estar físicamente cerca del caso para poder
+# INTENTAR registrar un avistamiento. asociacion / administracion / el
+# voluntario ya asignado quedan exentos: pueden registrar información que
+# alguien más les compartió sin estar en el lugar.
+FUENTES_CON_FILTRO_ENTRADA = (
+    LocationSource.confirmacion_reportante,
+    LocationSource.voluntario_verificado,
+)
+
+
+def _distancia_a_referencia(
+    reporte: dict, latitud: float, longitud: float
+) -> float | None:
+    """Metros entre el GPS recibido y el punto de referencia actual del reporte.
+
+    Reusa _resolver_punto_referencia() de reports.py (la misma función que usan
+    los hitos de rescate: llegada_zona_reporte, llegue_refugio, etc.) en vez de
+    _ubicacion_referencia() de este módulo. Ambas resuelven al mismo punto: las
+    columnas denormalizadas ultima_latitud/longitud_confirmada y la fila de
+    avistamientos_animal referida por ultima_ubicacion_confirmada_id se escriben
+    SIEMPRE juntas en _confirmar_avistamiento() (UPDATE atómico), así que son
+    intercambiables. Se elige _resolver_punto_referencia() por consistencia con
+    el resto de validaciones de cercanía del proyecto.
+
+    Devuelve None si el reporte no tiene ningún punto contra el cual medir.
+    """
+    from app.api.reports import _distancia_metros, _resolver_punto_referencia
+
+    if not reporte.get("ultima_ubicacion_confirmada_id") and (
+        reporte.get("latitud") is None or reporte.get("longitud") is None
+    ):
+        return None
+
+    try:
+        lat_ref, lon_ref, _ = _resolver_punto_referencia(reporte)
+    except (TypeError, KeyError):
+        # ultima_ubicacion_confirmada_id colgado y sin pin original: nada contra
+        # qué medir.
+        return None
+    return _distancia_metros(latitud, longitud, lat_ref, lon_ref)
+
+
+def _validar_cercania_entrada(
+    reporte: dict, fuente: LocationSource, latitud: float, longitud: float
+) -> None:
+    """Rechaza con 422 si la fuente exige cercanía y el GPS recibido está más
+    lejos del caso que settings.radio_entrada_avistamiento_metros."""
+    if fuente not in FUENTES_CON_FILTRO_ENTRADA:
+        return
+
+    distancia = _distancia_a_referencia(reporte, latitud, longitud)
+    if distancia is None:
+        return
+
+    radio = settings.radio_entrada_avistamiento_metros
+    if distancia > radio:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Debes estar dentro de {radio} metros del caso para registrar "
+                f"un avistamiento. Estás a {round(distancia)} metros."
+            ),
+        )
+
+
+def evaluar_elegibilidad(
+    reporte_id: str, usuario_id: str, latitud: float, longitud: float
+) -> dict:
+    """Elegibilidad del usuario autenticado para registrar un avistamiento en
+    este reporte desde el GPS dado. La Pantalla A (frontend) la consulta para
+    mostrar/ocultar el botón sin duplicar el cálculo de distancia."""
+    reporte = _obtener_reporte(reporte_id)
+    usuario = _obtener_usuario(usuario_id)
+
+    fuente = _resolver_fuente(reporte, usuario)
+    if fuente is None:
+        raise HTTPException(
+            status_code=403,
+            detail="No tienes permiso para registrar un avistamiento en este reporte",
+        )
+
+    radio = settings.radio_entrada_avistamiento_metros
+    if fuente not in FUENTES_CON_FILTRO_ENTRADA:
+        return {"elegible": True, "motivo": None, "fuente": fuente.value}
+
+    distancia = _distancia_a_referencia(reporte, latitud, longitud)
+    if distancia is None:
+        # Sin punto de referencia no se puede filtrar por distancia; se permite.
+        return {"elegible": True, "motivo": None, "fuente": fuente.value}
+
+    return {
+        "elegible": distancia <= radio,
+        "distancia_metros": round(distancia, 1),
+        "radio_metros": radio,
+        "fuente": fuente.value,
+    }
 
 
 def _a_resultado(fila: dict) -> AvistamientoResult:
@@ -365,6 +464,8 @@ def registrar_avistamiento(
             status_code=403,
             detail="No tienes permiso para registrar un avistamiento en este reporte",
         )
+
+    _validar_cercania_entrada(reporte, fuente, data.latitud, data.longitud)
 
     animal = (
         supabase_admin.table("animal")
