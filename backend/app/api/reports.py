@@ -1327,19 +1327,16 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
         if nivel_urgencia:
             sugerencia_aliado = sugerir_aliado_veterinario(reporte_id, nivel_urgencia)
 
-    # Avistamiento derivado (Capa 8, Entrega A): el voluntario asignado que
-    # registra uno de estos hitos ya confirmó dónde está el animal en ese
-    # momento. Nunca debe bloquear el registro del hito -- mismo patrón
-    # fail-open que usa report_activation_service.py con
-    # evaluate_report_urgency().
+    # Avistamiento derivado (Capa 8, Entrega A): solo "animal_encontrado".
+    # Un avistamiento aporta información sobre dónde buscar a un animal que
+    # SIGUE PERDIDO. Los hitos posteriores (llegada_veterinaria,
+    # llegue_refugio, animal_bajo_resguardo, llegada_hogar_temporal) ocurren
+    # cuando el animal YA fue encontrado: son seguimiento de custodia
+    # interna, no "dónde buscar", así que no generan avistamiento.
+    # Nunca debe bloquear el registro del hito -- mismo patrón fail-open que
+    # usa report_activation_service.py con evaluate_report_urgency().
     if (
-        tipo_hito in (
-            "animal_encontrado",
-            "llegada_veterinaria",
-            "llegue_refugio",
-            "animal_bajo_resguardo",
-            "llegada_hogar_temporal",
-        )
+        tipo_hito == "animal_encontrado"
         and body.latitud is not None
         and body.longitud is not None
     ):
