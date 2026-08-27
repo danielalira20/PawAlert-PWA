@@ -449,6 +449,7 @@ def reservar_cobertura(
 ) -> str:
     rol_reputacion = {
         "equipo_interno": reputacion_service.ROL_VOLUNTARIO_INTERNO,
+        "escalamiento_automatico": reputacion_service.ROL_VOLUNTARIO_INTERNO,
         "ofrecimiento_externo": reputacion_service.ROL_VOLUNTARIO_EXTERNO,
     }.get(origen)
     if rol_reputacion:

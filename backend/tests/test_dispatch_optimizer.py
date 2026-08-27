@@ -1,23 +1,28 @@
 import logging
 from datetime import datetime, timezone
+from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
-from app.models.dispatch import RouteMatrixResult, RoutingErrorCode, RoutingStatus
+from app.models.dispatch import (
+    CandidateRouteTier,
+    DispatchAssignment,
+    DispatchCandidate,
+    DispatchJob,
+    DispatchOptimizationPass,
+    DispatchOptimizationRequest,
+    DispatchRoutingPolicy,
+    DispatchUrgency,
+    DispatchVolunteer,
+    RouteMatrixResult,
+    RoutingPoint,
+    RoutingStatus,
+)
 from app.services import dispatch_optimizer
 from app.services.vroom_service import (
     VroomOptimizationResult,
     VroomRoute,
     VroomRouteStep,
 )
-
-
-def candidato(voluntario_id, usuario_id=None, nombre=None):
-    return {
-        "voluntario_id": voluntario_id,
-        "usuario_id": usuario_id or f"user-{voluntario_id}",
-        "nombre": nombre or f"Nombre {voluntario_id}",
-        "score": {"total": 90},
-    }
 
 
 def matriz_completa(origin_ids, destination_ids, durations, distances):
@@ -30,329 +35,1125 @@ def matriz_completa(origin_ids, destination_ids, durations, distances):
         calculated_at=datetime(2026, 8, 23, 12, 0, tzinfo=timezone.utc),
     )
 
+NOW = datetime(2026, 8, 24, 12, 0, tzinfo=timezone.utc)
 
-def matriz_no_disponible(origin_ids, destination_ids):
-    return RouteMatrixResult(
-        origin_ids=origin_ids,
-        destination_ids=destination_ids,
-        durations_seconds=[],
-        distances_meters=[],
-        status=RoutingStatus.unavailable,
-        error_code=RoutingErrorCode.missing_coordinates,
-        calculated_at=datetime(2026, 8, 23, 12, 0, tzinfo=timezone.utc),
+
+def _tier_for(duration, minimum_duration, policy):
+    if duration > policy.secondary_max_eta_minutes * 60:
+        return CandidateRouteTier.manual_only
+    if duration <= minimum_duration + policy.candidate_window_minutes * 60:
+        return CandidateRouteTier.primary
+    return CandidateRouteTier.secondary
+
+
+def _point(entity_id, seed):
+    return RoutingPoint(
+        id=entity_id, latitude=19.0 + seed * 0.001, longitude=-98.0 + seed * 0.001
     )
 
 
-def vroom_completo(routes, unassigned=None):
-    return VroomOptimizationResult(
-        status="complete",
-        routes=routes,
-        unassigned_job_ids=unassigned or [],
-        calculated_at=datetime(2026, 8, 23, 12, 0, tzinfo=timezone.utc),
-    )
+def build_request(pairs, urgency_by_report=None, policy=None):
+    """pairs: lista de dicts con volunteer_id, report_id, duration (s),
+    distance (m), score, role ('voluntario_interno' por defecto). Deriva
+    route_tier/automatic_eligible/matching_score/offered_report_ids
+    exactamente como lo exige el validador de DispatchOptimizationRequest,
+    para no tener que repetir esa aritmetica en cada prueba."""
+    policy = policy or DispatchRoutingPolicy()
+    urgency_by_report = urgency_by_report or {}
 
+    report_ids = sorted({p["report_id"] for p in pairs})
+    volunteer_ids = sorted({p["volunteer_id"] for p in pairs})
 
-def vroom_no_disponible():
-    return VroomOptimizationResult(
-        status="unavailable",
-        error_code="provider_error",
-        calculated_at=datetime(2026, 8, 23, 12, 0, tzinfo=timezone.utc),
-    )
-
-
-def ruta(vehicle_id, job_id, location_index, arrival):
-    return VroomRoute(
-        vehicle_id=vehicle_id,
-        steps=[
-            VroomRouteStep(type="start", location_index=0, arrival=0),
-            VroomRouteStep(
-                type="job",
-                location_index=location_index,
-                job_id=job_id,
-                arrival=arrival,
-            ),
-            VroomRouteStep(type="end", location_index=0, arrival=arrival + 60),
-        ],
-    )
-
-
-def db_admin(make_query, capacidades=None, reportes=None):
-    tables = {
-        "capacidades": make_query(data=capacidades or []),
-        "reportes": make_query(data=reportes or []),
+    durations_by_report = {}
+    distances_by_report = {}
+    for p in pairs:
+        durations_by_report.setdefault(p["report_id"], {})[p["volunteer_id"]] = p[
+            "duration"
+        ]
+        distances_by_report.setdefault(p["report_id"], {})[p["volunteer_id"]] = p[
+            "distance"
+        ]
+    minimum_by_report = {
+        rid: min(d.values()) for rid, d in durations_by_report.items()
     }
-    admin = MagicMock()
-    admin.table.side_effect = lambda nombre: tables[nombre]
-    return admin
 
+    candidates = []
+    for p in pairs:
+        role = p.get("role", "voluntario_interno")
+        tier = p.get("tier") or _tier_for(
+            p["duration"], minimum_by_report[p["report_id"]], policy
+        )
+        automatic_eligible = (
+            role == "voluntario_interno" and tier != CandidateRouteTier.manual_only
+        )
+        candidates.append(
+            DispatchCandidate(
+                report_id=p["report_id"],
+                volunteer_id=p["volunteer_id"],
+                matching_score=p["score"],
+                offered=(role == "voluntario_externo"),
+                route_tier=tier,
+                automatic_eligible=automatic_eligible,
+            )
+        )
 
-def coordenadas(*voluntario_ids):
-    return [
-        {"voluntario_id": vid, "latitud": 19.0, "longitud": -98.0}
-        for vid in voluntario_ids
+    role_by_volunteer = {}
+    score_by_volunteer = {}
+    offered_by_volunteer = {}
+    for p in pairs:
+        vid = p["volunteer_id"]
+        role_by_volunteer[vid] = p.get("role", "voluntario_interno")
+        score_by_volunteer[vid] = max(score_by_volunteer.get(vid, 0.0), p["score"])
+        if role_by_volunteer[vid] == "voluntario_externo":
+            offered_by_volunteer.setdefault(vid, set()).add(p["report_id"])
+
+    volunteers = [
+        DispatchVolunteer(
+            volunteer_id=vid,
+            location=_point(vid, index),
+            matching_score=score_by_volunteer[vid],
+            capacity=5,
+            current_load=0,
+            role=role_by_volunteer[vid],
+            offered_report_ids=sorted(offered_by_volunteer.get(vid, set())),
+        )
+        for index, vid in enumerate(volunteer_ids)
     ]
 
+    jobs = [
+        DispatchJob(
+            report_id=rid,
+            location=_point(rid, index + 100),
+            urgency=DispatchUrgency(
+                score=urgency_by_report.get(rid, 50.0),
+                level="amarillo",
+                calculated_at=NOW,
+            ),
+        )
+        for index, rid in enumerate(report_ids)
+    ]
 
-def test_dos_reportes_sin_overlap_asignan_voluntarios_distintos(make_query):
-    candidatos_por_reporte = {
-        "rep-1": [candidato("vol-1")],
-        "rep-2": [candidato("vol-2")],
-    }
-    admin = db_admin(make_query, capacidades=coordenadas("vol-1", "vol-2"))
-    matriz = matriz_completa(
-        ["vol-1", "vol-2"], ["rep-1", "rep-2"],
-        durations=[[100, 500], [500, 100]],
-        distances=[[900, 4500], [4500, 900]],
-    )
-    resultado_vroom = vroom_completo([
-        ruta(vehicle_id=1, job_id=1, location_index=0, arrival=300),
-        ruta(vehicle_id=2, job_id=2, location_index=1, arrival=400),
-    ])
-
-    with (
-        patch.object(dispatch_optimizer, "supabase_admin", admin),
-        patch.object(
-            dispatch_optimizer.matching,
-            "obtener_candidatos",
-            side_effect=lambda rid: {"candidatos": candidatos_por_reporte[rid]},
-        ),
-        patch.object(
-            dispatch_optimizer, "calculate_dispatch_route_matrix", return_value=matriz
-        ),
-        patch.object(
-            dispatch_optimizer, "get_optimization", return_value=resultado_vroom
-        ),
-    ):
-        resultado, info = dispatch_optimizer.optimizar_lote_reportes(["rep-1", "rep-2"])
-
-    assert resultado.source == "vroom"
-    assert resultado.unassigned_report_ids == []
-    asignados = {(a.report_id, a.volunteer_id) for a in resultado.assignments}
-    assert asignados == {("rep-1", "vol-1"), ("rep-2", "vol-2")}
-    assert info["vol-1"]["usuario_id"] == "user-vol-1"
-    assert info["vol-2"]["nombre"] == "Nombre vol-2"
-
-
-def test_overlap_nunca_duplica_voluntario_en_assignments(make_query):
-    candidatos_por_reporte = {
-        "rep-1": [candidato("vol-1"), candidato("vol-2")],
-        "rep-2": [candidato("vol-1")],
-    }
-    admin = db_admin(make_query, capacidades=coordenadas("vol-1", "vol-2"))
-    matriz = matriz_completa(
-        ["vol-1", "vol-2"], ["rep-1", "rep-2"],
-        durations=[[100, 200], [300, 400]],
-        distances=[[900, 1800], [2700, 3600]],
-    )
-    # VROOM decide: vol-1 (vehicle 1) atiende rep-2 (job 2), vol-2 (vehicle 2)
-    # atiende rep-1 (job 1) -- nadie se repite aunque vol-1 calificaba para
-    # ambos reportes.
-    resultado_vroom = vroom_completo([
-        ruta(vehicle_id=1, job_id=2, location_index=1, arrival=400),
-        ruta(vehicle_id=2, job_id=1, location_index=0, arrival=300),
-    ])
-
-    with (
-        patch.object(dispatch_optimizer, "supabase_admin", admin),
-        patch.object(
-            dispatch_optimizer.matching,
-            "obtener_candidatos",
-            side_effect=lambda rid: {"candidatos": candidatos_por_reporte[rid]},
-        ),
-        patch.object(
-            dispatch_optimizer, "calculate_dispatch_route_matrix", return_value=matriz
-        ),
-        patch.object(
-            dispatch_optimizer, "get_optimization", return_value=resultado_vroom
-        ),
-    ):
-        resultado, _ = dispatch_optimizer.optimizar_lote_reportes(["rep-1", "rep-2"])
-
-    voluntarios_usados = [a.volunteer_id for a in resultado.assignments]
-    assert len(voluntarios_usados) == len(set(voluntarios_usados))
-    assert {(a.report_id, a.volunteer_id) for a in resultado.assignments} == {
-        ("rep-2", "vol-1"),
-        ("rep-1", "vol-2"),
-    }
-
-
-def test_matriz_no_disponible_cae_a_fallback_local(make_query):
-    candidatos_por_reporte = {
-        "rep-1": [candidato("vol-1")],
-        "rep-2": [candidato("vol-2")],
-    }
-    admin = db_admin(make_query, capacidades=coordenadas("vol-1", "vol-2"))
-
-    with (
-        patch.object(dispatch_optimizer, "supabase_admin", admin),
-        patch.object(
-            dispatch_optimizer.matching,
-            "obtener_candidatos",
-            side_effect=lambda rid: {"candidatos": candidatos_por_reporte[rid]},
-        ),
-        patch.object(
-            dispatch_optimizer,
-            "calculate_dispatch_route_matrix",
-            return_value=matriz_no_disponible(["vol-1", "vol-2"], ["rep-1", "rep-2"]),
-        ),
-        patch.object(dispatch_optimizer, "get_optimization") as get_optimization,
-    ):
-        resultado, info = dispatch_optimizer.optimizar_lote_reportes(["rep-1", "rep-2"])
-
-    get_optimization.assert_not_called()
-    assert resultado.source == "local_fallback"
-    assert {(a.report_id, a.volunteer_id) for a in resultado.assignments} == {
-        ("rep-1", "vol-1"),
-        ("rep-2", "vol-2"),
-    }
-    assert info["vol-1"]["usuario_id"] == "user-vol-1"
-
-
-def test_vroom_no_disponible_cae_a_fallback_local(make_query):
-    candidatos_por_reporte = {
-        "rep-1": [candidato("vol-1")],
-        "rep-2": [candidato("vol-2")],
-    }
-    admin = db_admin(make_query, capacidades=coordenadas("vol-1", "vol-2"))
-    matriz = matriz_completa(
-        ["vol-1", "vol-2"], ["rep-1", "rep-2"],
-        durations=[[100, 200], [300, 400]],
-        distances=[[900, 1800], [2700, 3600]],
+    durations_matrix = [
+        [durations_by_report.get(rid, {}).get(vid) for rid in report_ids]
+        for vid in volunteer_ids
+    ]
+    distances_matrix = [
+        [distances_by_report.get(rid, {}).get(vid) for rid in report_ids]
+        for vid in volunteer_ids
+    ]
+    travel_matrix = matriz_completa(
+        volunteer_ids, report_ids, durations_matrix, distances_matrix
     )
 
-    with (
-        patch.object(dispatch_optimizer, "supabase_admin", admin),
-        patch.object(
-            dispatch_optimizer.matching,
-            "obtener_candidatos",
-            side_effect=lambda rid: {"candidatos": candidatos_por_reporte[rid]},
-        ),
-        patch.object(
-            dispatch_optimizer, "calculate_dispatch_route_matrix", return_value=matriz
-        ),
-        patch.object(
-            dispatch_optimizer, "get_optimization", return_value=vroom_no_disponible()
-        ),
-    ):
-        resultado, _ = dispatch_optimizer.optimizar_lote_reportes(["rep-1", "rep-2"])
-
-    assert resultado.source == "local_fallback"
-    assert {(a.report_id, a.volunteer_id) for a in resultado.assignments} == {
-        ("rep-1", "vol-1"),
-        ("rep-2", "vol-2"),
-    }
-
-
-def test_excepcion_inesperada_cae_a_fallback_sin_propagar(make_query):
-    candidatos_por_reporte = {
-        "rep-1": [candidato("vol-1")],
-        "rep-2": [candidato("vol-2")],
-    }
-    admin = db_admin(make_query, capacidades=coordenadas("vol-1", "vol-2"))
-
-    with (
-        patch.object(dispatch_optimizer, "supabase_admin", admin),
-        patch.object(
-            dispatch_optimizer.matching,
-            "obtener_candidatos",
-            side_effect=lambda rid: {"candidatos": candidatos_por_reporte[rid]},
-        ),
-        patch.object(
-            dispatch_optimizer,
-            "calculate_dispatch_route_matrix",
-            side_effect=RuntimeError("boom inesperado"),
-        ),
-    ):
-        resultado, _ = dispatch_optimizer.optimizar_lote_reportes(["rep-1", "rep-2"])
-
-    assert resultado.source == "local_fallback"
-    assert {(a.report_id, a.volunteer_id) for a in resultado.assignments} == {
-        ("rep-1", "vol-1"),
-        ("rep-2", "vol-2"),
-    }
-
-
-def test_voluntario_sin_coordenadas_se_excluye_sin_tumbar_el_batch(make_query, caplog):
-    candidatos_por_reporte = {
-        "rep-1": [candidato("vol-1")],
-        "rep-2": [candidato("vol-2")],
-    }
-    # vol-2 no tiene fila en capacidades con coordenadas -- solo vol-1 califica.
-    admin = db_admin(make_query, capacidades=coordenadas("vol-1"))
-    matriz = matriz_completa(
-        ["vol-1"], ["rep-1", "rep-2"],
-        durations=[[100, 200]],
-        distances=[[900, 1800]],
-    )
-    resultado_vroom = vroom_completo(
-        [ruta(vehicle_id=1, job_id=1, location_index=0, arrival=300)],
-        unassigned=[2],
+    return DispatchOptimizationRequest(
+        jobs=jobs,
+        volunteers=volunteers,
+        candidates=candidates,
+        travel_matrix=travel_matrix,
+        routing_policy=policy,
     )
 
-    with (
-        patch.object(dispatch_optimizer, "supabase_admin", admin),
-        patch.object(
-            dispatch_optimizer.matching,
-            "obtener_candidatos",
-            side_effect=lambda rid: {"candidatos": candidatos_por_reporte[rid]},
-        ),
-        patch.object(
-            dispatch_optimizer, "calculate_dispatch_route_matrix", return_value=matriz
-        ) as calcular_matriz,
-        patch.object(
-            dispatch_optimizer, "get_optimization", return_value=resultado_vroom
-        ),
-        caplog.at_level(logging.WARNING, logger="app.services.dispatch_optimizer"),
-    ):
-        resultado, _ = dispatch_optimizer.optimizar_lote_reportes(["rep-1", "rep-2"])
 
-    assert calcular_matriz.call_args.args[0] == ["vol-1"]
-    assert resultado.source == "vroom"
+def vroom_result_for(*asignaciones, unassigned_job_ids=None):
+    """Tuplas (vehicle_id, job_id, location_index, arrival_seconds)."""
+    return VroomOptimizationResult(
+        status="complete",
+        routes=[
+            VroomRoute(
+                vehicle_id=vehicle_id,
+                steps=[
+                    VroomRouteStep(type="start", location_index=0, arrival=0),
+                    VroomRouteStep(
+                        type="job",
+                        location_index=location_index,
+                        job_id=job_id,
+                        arrival=arrival,
+                    ),
+                ],
+            )
+            for vehicle_id, job_id, location_index, arrival in asignaciones
+        ],
+        unassigned_job_ids=unassigned_job_ids or [],
+        calculated_at=NOW,
+    )
+
+
+def vroom_unavailable(error_code="provider_error"):
+    return VroomOptimizationResult(
+        status="unavailable", error_code=error_code, calculated_at=NOW
+    )
+
+
+def test_diferencia_7_minutos_gana_el_mas_cercano_fuera_de_ventana():
+    """rep-1: vol-1 a 5 min (score bajo), vol-2 a 12 min (score alto). La
+    ventana primaria es de 5 min -> vol-2 cae en secondary, fuera del pass A.
+    El score de vol-2 no lo salva: solo vol-1 recibe el skill en pass A."""
+    request = build_request(
+        [
+            {
+                "volunteer_id": "vol-1",
+                "report_id": "rep-1",
+                "duration": 300,
+                "distance": 2000,
+                "score": 60,
+            },
+            {
+                "volunteer_id": "vol-2",
+                "report_id": "rep-1",
+                "duration": 300 + 7 * 60,
+                "distance": 9000,
+                "score": 95,
+            },
+        ]
+    )
+    with patch.object(
+        dispatch_optimizer,
+        "get_optimization",
+        return_value=vroom_result_for((1, 1, 2, 300)),
+    ) as get_optimization:
+        resultado = dispatch_optimizer.optimize_dispatch(request)
+
+    primary_request = get_optimization.call_args_list[0].args[0]
+    skills_vol1 = next(v.skills for v in primary_request.vehicles if v.id == 1)
+    skills_vol2 = next(v.skills for v in primary_request.vehicles if v.id == 2)
+    assert skills_vol1 != []
+    assert skills_vol2 == []
+    assert get_optimization.call_count == 1
     assert {(a.report_id, a.volunteer_id) for a in resultado.assignments} == {
         ("rep-1", "vol-1")
     }
-    assert resultado.unassigned_report_ids == ["rep-2"]
-    assert any("vol-2" in mensaje for mensaje in caplog.messages)
 
 
-def test_urgency_score_nulo_no_rompe_el_batch(make_query):
-    candidatos_por_reporte = {
-        "rep-1": [candidato("vol-1")],
-        "rep-2": [candidato("vol-2")],
-    }
-    admin = db_admin(
-        make_query,
-        capacidades=coordenadas("vol-1", "vol-2"),
-        # rep-1 trae urgency_score; rep-2 no aparece -> None -> priority 0.
-        reportes=[{"id": "rep-1", "urgency_score": 80}],
+def test_diferencia_3_minutos_gana_mejor_matching_score_dentro_de_ventana():
+    """rep-1: vol-1 a 5 min (score 60), vol-2 a 8 min (score 95) -- ambos
+    caen dentro de la ventana primaria de 5 min (8-5=3 <= 5), mismo tier. El
+    costo que ve VROOM debe preferir a vol-2 pese a ser mas lejano."""
+    request = build_request(
+        [
+            {
+                "volunteer_id": "vol-1",
+                "report_id": "rep-1",
+                "duration": 300,
+                "distance": 2000,
+                "score": 60,
+            },
+            {
+                "volunteer_id": "vol-2",
+                "report_id": "rep-1",
+                "duration": 300 + 3 * 60,
+                "distance": 5000,
+                "score": 95,
+            },
+        ]
     )
-    matriz = matriz_completa(
-        ["vol-1", "vol-2"], ["rep-1", "rep-2"],
-        durations=[[100, 200], [300, 400]],
-        distances=[[900, 1800], [2700, 3600]],
-    )
-    resultado_vroom = vroom_completo([
-        ruta(vehicle_id=1, job_id=1, location_index=0, arrival=300),
-        ruta(vehicle_id=2, job_id=2, location_index=1, arrival=400),
-    ])
+    with patch.object(
+        dispatch_optimizer,
+        "get_optimization",
+        return_value=vroom_result_for((2, 1, 2, 480)),
+    ) as get_optimization:
+        dispatch_optimizer.optimize_dispatch(request)
 
+    primary_request = get_optimization.call_args_list[0].args[0]
+    matrix = primary_request.matrices["car"]
+    cost_vol1 = matrix.costs[0][2]
+    cost_vol2 = matrix.costs[1][2]
+    assert cost_vol2 < cost_vol1
+
+
+def test_mismo_score_gana_el_menor_tiempo():
+    """rep-1: vol-1 y vol-2 con el mismo score pero distinta duracion, ambos
+    primary. El termino de score es identico -> el costo debe decidirse por
+    duracion real, favoreciendo al mas cercano."""
+    request = build_request(
+        [
+            {
+                "volunteer_id": "vol-1",
+                "report_id": "rep-1",
+                "duration": 300,
+                "distance": 2000,
+                "score": 80,
+            },
+            {
+                "volunteer_id": "vol-2",
+                "report_id": "rep-1",
+                "duration": 500,
+                "distance": 3500,
+                "score": 80,
+            },
+        ]
+    )
+    with patch.object(
+        dispatch_optimizer,
+        "get_optimization",
+        return_value=vroom_result_for((1, 1, 2, 300)),
+    ) as get_optimization:
+        dispatch_optimizer.optimize_dispatch(request)
+
+    primary_request = get_optimization.call_args_list[0].args[0]
+    matrix = primary_request.matrices["car"]
+    cost_vol1 = matrix.costs[0][2]
+    cost_vol2 = matrix.costs[1][2]
+    assert cost_vol1 < cost_vol2
+
+
+def test_voluntario_candidato_a_dos_reportes_nunca_recibe_ambos():
+    """Respuesta de VROOM adversaria: el mismo vehicle_id aparece asignado a
+    dos jobs distintos (violacion de capacity=1). Debe rechazarse por
+    completo y caer a fallback -- nunca producir una asignacion duplicada."""
+    request = build_request(
+        [
+            {
+                "volunteer_id": "vol-1",
+                "report_id": "rep-1",
+                "duration": 300,
+                "distance": 2000,
+                "score": 80,
+            },
+            {
+                "volunteer_id": "vol-1",
+                "report_id": "rep-2",
+                "duration": 320,
+                "distance": 2100,
+                "score": 80,
+            },
+        ]
+    )
+    resultado_fallback = MagicMock()
     with (
-        patch.object(dispatch_optimizer, "supabase_admin", admin),
         patch.object(
-            dispatch_optimizer.matching,
-            "obtener_candidatos",
-            side_effect=lambda rid: {"candidatos": candidatos_por_reporte[rid]},
+            dispatch_optimizer,
+            "get_optimization",
+            return_value=vroom_result_for(
+                (1, 1, 1, 300),
+                (1, 2, 2, 320),
+            ),
         ),
         patch.object(
-            dispatch_optimizer, "calculate_dispatch_route_matrix", return_value=matriz
-        ),
-        patch.object(
-            dispatch_optimizer, "get_optimization", return_value=resultado_vroom
-        ) as get_optimization,
+            dispatch_optimizer,
+            "optimize_dispatch_fallback",
+            return_value=resultado_fallback,
+        ) as fallback,
     ):
-        resultado, _ = dispatch_optimizer.optimizar_lote_reportes(["rep-1", "rep-2"])
+        resultado = dispatch_optimizer.optimize_dispatch(request)
 
-    request = get_optimization.call_args.args[0]
-    prioridad_por_job = {job.id: job.priority for job in request.jobs}
-    assert prioridad_por_job == {1: 80, 2: 0}
+    fallback.assert_called_once_with(request)
+    assert resultado is resultado_fallback
+
+
+def test_mas_reportes_que_voluntarios_deja_sobrantes_sin_asignar():
+    request = build_request(
+        [
+            {
+                "volunteer_id": "vol-1",
+                "report_id": rid,
+                "duration": 300,
+                "distance": 2000,
+                "score": 80,
+            }
+            for rid in ("rep-1", "rep-2", "rep-3")
+        ]
+    )
+    # VROOM (capacity=1 por vehiculo) solo puede atender un reporte con el
+    # unico voluntario disponible.
+    with patch.object(
+        dispatch_optimizer,
+        "get_optimization",
+        side_effect=[
+            vroom_result_for((1, 1, 1, 300), unassigned_job_ids=[2, 3]),
+            vroom_result_for((1, 1, 1, 300), unassigned_job_ids=[2, 3]),
+        ],
+    ):
+        resultado = dispatch_optimizer.optimize_dispatch(request)
+
+    assert set(resultado.unassigned_report_ids) == {"rep-2", "rep-3"}
+    assert {(a.report_id, a.volunteer_id) for a in resultado.assignments} == {
+        ("rep-1", "vol-1")
+    }
+
+
+def test_prioridad_rojo_sobre_verde_en_job_priority():
+    """Con un solo voluntario para dos reportes, la unica palanca que tiene
+    dispatch_optimizer para que VROOM prefiera el mas urgente es el campo
+    `priority` del job -- confirma que rojo (mayor urgency.score) produce una
+    prioridad mayor que verde."""
+    request = build_request(
+        [
+            {
+                "volunteer_id": "vol-1",
+                "report_id": "rep-rojo",
+                "duration": 300,
+                "distance": 2000,
+                "score": 80,
+            },
+            {
+                "volunteer_id": "vol-1",
+                "report_id": "rep-verde",
+                "duration": 320,
+                "distance": 2100,
+                "score": 80,
+            },
+        ],
+        urgency_by_report={"rep-rojo": 90.0, "rep-verde": 20.0},
+    )
+    with patch.object(
+        dispatch_optimizer,
+        "get_optimization",
+        return_value=vroom_result_for((1, 1, 1, 300), unassigned_job_ids=[2]),
+    ) as get_optimization:
+        dispatch_optimizer.optimize_dispatch(request)
+
+    primary_request = get_optimization.call_args_list[0].args[0]
+    priority_by_job = {job.id: job.priority for job in primary_request.jobs}
+    report_by_job_id = {1: "rep-rojo", 2: "rep-verde"}
+    assert (
+        priority_by_job[1] > priority_by_job[2]
+        if report_by_job_id[1] == "rep-rojo"
+        else priority_by_job[2] > priority_by_job[1]
+    )
+
+
+def test_matriz_vroom_2x2_con_duraciones_fraccionarias_produce_solo_enteros():
+    """Reproduce el caso real de produccion: VROOM rechazo una matriz de
+    2 voluntarios x 2 reportes con {"code":2,"error":"Invalid matrix
+    entry."} -- confirmado contra el codigo fuente de VROOM
+    (input_parser.cpp:get_matrix, VROOM-Project/vroom): cada celda de
+    matrices.car debe pasar IsUint(), un entero no negativo exacto.
+    _build_vroom_request nunca redondeaba duration/distance/costs antes de
+    escribirlos en la matriz, y una duracion/distancia real de OSRM casi
+    nunca cae en un segundo o metro exacto -- reproducido en vivo contra
+    https://vroom-docker-production-a5ac.up.railway.app/ con este mismo
+    shape (2x2, duraciones 312.7/265.35, distancias 2100.4/1800.65): antes
+    del fix, HTTP 400 {"code":2,"error":"Invalid matrix entry."}; despues,
+    HTTP 200 {"code":0,...}.
+
+    Este test no depende de red -- confirma localmente que la matriz que
+    _build_vroom_request arma para VROOM (durations/distances/costs) solo
+    contiene enteros, sin necesidad de llamar al proveedor real."""
+    request = build_request(
+        [
+            {
+                "volunteer_id": "vol-teresa",
+                "report_id": "rep-382743db",
+                "duration": 312.7,
+                "distance": 2100.4,
+                "score": 78.5,
+            },
+            {
+                "volunteer_id": "vol-otro",
+                "report_id": "rep-3e1b213c",
+                "duration": 265.35,
+                "distance": 1800.65,
+                "score": 62.0,
+            },
+        ]
+    )
+    volunteer_ids = list(request.travel_matrix.origin_ids)
+    report_ids = list(request.travel_matrix.destination_ids)
+    forbidden_cost = dispatch_optimizer._forbidden_pair_cost(
+        request.travel_matrix.durations_seconds
+    )
+    assert isinstance(forbidden_cost, int)
+
+    vroom_request, _, _ = dispatch_optimizer._build_vroom_request(
+        request,
+        frozenset({CandidateRouteTier.primary}),
+        volunteer_ids,
+        report_ids,
+        forbidden_cost,
+    )
+
+    matrix = vroom_request.matrices["car"]
+    for campo_nombre, campo in (
+        ("durations", matrix.durations),
+        ("distances", matrix.distances),
+        ("costs", matrix.costs),
+    ):
+        for fila in campo:
+            for valor in fila:
+                assert isinstance(valor, int), (
+                    f"{campo_nombre} tiene un valor no entero ({valor!r}) -- "
+                    "VROOM lo rechaza con {'code':2,'error':'Invalid matrix "
+                    "entry.'}"
+                )
+                assert valor >= 0
+
+    # Las celdas de las parejas reales quedan redondeadas al segundo/metro
+    # mas cercano, no truncadas. Se resuelven los indices dinamicamente
+    # (en vez de asumir un orden fijo) porque build_request ordena
+    # volunteer_ids/report_ids alfabeticamente -- "vol-otro" < "vol-teresa".
+    teresa_row = volunteer_ids.index("vol-teresa")
+    otro_row = volunteer_ids.index("vol-otro")
+    rep_382_col = len(volunteer_ids) + report_ids.index("rep-382743db")
+    rep_3e1_col = len(volunteer_ids) + report_ids.index("rep-3e1b213c")
+
+    assert matrix.durations[teresa_row][rep_382_col] == 313
+    assert matrix.durations[otro_row][rep_3e1_col] == 265
+    assert matrix.distances[teresa_row][rep_382_col] == 2100
+    assert matrix.distances[otro_row][rep_3e1_col] == 1801
+
+
+def test_pareja_no_autorizada_recibe_costo_alto_finito_determinista():
+    """vol-1 solo tiene candidato para rep-1, no para rep-2 -- el cruce
+    (vol-1, rep-2) en la matriz cuadrada debe llevar el costo prohibido, no 0
+    ni la duracion real (que ni siquiera existe para ese par)."""
+    request = build_request(
+        [
+            {
+                "volunteer_id": "vol-1",
+                "report_id": "rep-1",
+                "duration": 300,
+                "distance": 2000,
+                "score": 80,
+            },
+            {
+                "volunteer_id": "vol-2",
+                "report_id": "rep-2",
+                "duration": 400,
+                "distance": 2500,
+                "score": 80,
+            },
+        ]
+    )
+    with patch.object(
+        dispatch_optimizer,
+        "get_optimization",
+        return_value=vroom_result_for((1, 1, 2, 300), (2, 2, 3, 400)),
+    ) as get_optimization:
+        dispatch_optimizer.optimize_dispatch(request)
+
+    primary_request = get_optimization.call_args_list[0].args[0]
+    matrix = primary_request.matrices["car"]
+    # size = 2 voluntarios + 2 reportes = 4; indices: vol-1=0, vol-2=1,
+    # rep-1=2, rep-2=3. (vol-1, rep-2) = [0][3] no esta autorizado.
+    forbidden = matrix.durations[0][3]
+    assert forbidden > 0
+    assert forbidden != 0
+    assert forbidden == matrix.distances[0][3] == matrix.costs[0][3]
+    # nunca cero ni negativo, y mucho mayor que cualquier duracion real
+    assert forbidden > 400 * dispatch_optimizer._FORBIDDEN_PAIR_COST_MULTIPLIER / 2
+
+
+def test_externo_ofrecido_nunca_recibe_skill_automatico():
+    """Un externo con ofrecimiento vigente aparece en candidates pero
+    automatic_eligible=False siempre -- nunca debe recibir el skill del
+    reporte en ningun pass, primary ni expanded."""
+    request = build_request(
+        [
+            {
+                "volunteer_id": "vol-int",
+                "report_id": "rep-1",
+                "duration": 300,
+                "distance": 2000,
+                "score": 60,
+            },
+            {
+                "volunteer_id": "vol-ext",
+                "report_id": "rep-1",
+                "duration": 320,
+                "distance": 2100,
+                "score": 99,
+                "role": "voluntario_externo",
+                "tier": CandidateRouteTier.primary,
+            },
+        ]
+    )
+    externo = next(
+        c for c in request.candidates if c.volunteer_id == "vol-ext"
+    )
+    assert externo.automatic_eligible is False
+
+    sorted_volunteers = sorted(["vol-ext", "vol-int"])
+    vehicle_id_int = sorted_volunteers.index("vol-int") + 1
+    with patch.object(
+        dispatch_optimizer,
+        "get_optimization",
+        side_effect=[vroom_result_for((vehicle_id_int, 1, 2, 300))],
+    ) as get_optimization:
+        resultado = dispatch_optimizer.optimize_dispatch(request)
+
+    primary_request = get_optimization.call_args_list[0].args[0]
+    vol_ext_index = sorted_volunteers.index("vol-ext")
+    skills_ext = next(
+        v.skills for v in primary_request.vehicles if v.start_index == vol_ext_index
+    )
+    assert skills_ext == []
+    assert "vol-ext" not in {a.volunteer_id for a in resultado.assignments}
+
+
+def test_expanded_mejora_cobertura_se_acepta_used_secondary_true():
+    """primary deja rep-2 sin cubrir (su unico candidato interno, vol-2, cae
+    en secondary); expanded lo cubre con esa pareja secondary -- debe
+    aceptarse. rep-2 tambien lleva un externo mas cercano (vol-2-closer,
+    nunca automatic_eligible) solo para que la ventana primaria de rep-2 se
+    calcule contra un minimo real y vol-2 caiga en secondary de forma
+    natural -- con un solo candidato para un reporte, ese candidato siempre
+    seria primary por comparacion consigo mismo."""
+    request = build_request(
+        [
+            {
+                "volunteer_id": "vol-1",
+                "report_id": "rep-1",
+                "duration": 300,
+                "distance": 2000,
+                "score": 80,
+            },
+            {
+                "volunteer_id": "vol-2",
+                "report_id": "rep-2",
+                "duration": 1200,
+                "distance": 8000,
+                "score": 70,
+            },
+            {
+                "volunteer_id": "vol-2-closer",
+                "report_id": "rep-2",
+                "duration": 200,
+                "distance": 1000,
+                "score": 50,
+                "role": "voluntario_externo",
+            },
+        ],
+        urgency_by_report={"rep-1": 50.0, "rep-2": 50.0},
+    )
+    with patch.object(
+        dispatch_optimizer,
+        "get_optimization",
+        side_effect=[
+            vroom_result_for((1, 1, 3, 300), unassigned_job_ids=[2]),
+            vroom_result_for((1, 1, 3, 300), (2, 2, 4, 1200)),
+        ],
+    ) as get_optimization:
+        resultado = dispatch_optimizer.optimize_dispatch(request)
+
+    assert get_optimization.call_count == 2
     assert resultado.source == "vroom"
+    assert resultado.optimization_pass == DispatchOptimizationPass.expanded
+    assert resultado.used_secondary is True
+    assert {(a.report_id, a.volunteer_id) for a in resultado.assignments} == {
+        ("rep-1", "vol-1"),
+        ("rep-2", "vol-2"),
+    }
+
+
+def test_expanded_no_mejora_se_descarta_y_queda_primary():
+    """primary deja rep-2 sin cubrir y NO existe ninguna pareja secondary
+    para el (solo hay un candidato, ya primary, para rep-1) -- expanded no
+    puede aportar nada nuevo, VROOM devuelve la misma cobertura sin
+    secondary. Debe quedarse con A."""
+    request = build_request(
+        [
+            {
+                "volunteer_id": "vol-1",
+                "report_id": "rep-1",
+                "duration": 300,
+                "distance": 2000,
+                "score": 80,
+            },
+        ]
+    )
+    # rep-2 no tiene ningun candidato -- espera, el contrato exige que TODO
+    # job tenga al menos un candidato. Se usa un candidato manual_only para
+    # rep-2 en su lugar, que nunca es automatic_eligible en ningun pass.
+    request = build_request(
+        [
+            {
+                "volunteer_id": "vol-1",
+                "report_id": "rep-1",
+                "duration": 300,
+                "distance": 2000,
+                "score": 80,
+            },
+            {
+                "volunteer_id": "vol-2",
+                "report_id": "rep-2",
+                "duration": 3000,
+                "distance": 20000,
+                "score": 80,
+                "tier": CandidateRouteTier.manual_only,
+            },
+        ]
+    )
+    with patch.object(
+        dispatch_optimizer,
+        "get_optimization",
+        side_effect=[
+            vroom_result_for((1, 1, 2, 300), unassigned_job_ids=[2]),
+            vroom_result_for((1, 1, 2, 300), unassigned_job_ids=[2]),
+        ],
+    ) as get_optimization:
+        resultado = dispatch_optimizer.optimize_dispatch(request)
+
+    assert get_optimization.call_count == 2
+    assert resultado.source == "vroom"
+    assert resultado.optimization_pass == DispatchOptimizationPass.primary
+    assert resultado.used_secondary is False
+    assert resultado.unassigned_report_ids == ["rep-2"]
+
+
+def test_vroom_no_disponible_cae_a_optimize_dispatch_fallback():
+    request = build_request(
+        [
+            {
+                "volunteer_id": "vol-1",
+                "report_id": "rep-1",
+                "duration": 300,
+                "distance": 2000,
+                "score": 80,
+            },
+        ]
+    )
+    resultado_fallback = MagicMock()
+    with (
+        patch.object(
+            dispatch_optimizer,
+            "get_optimization",
+            return_value=vroom_unavailable(),
+        ) as get_optimization,
+        patch.object(
+            dispatch_optimizer,
+            "optimize_dispatch_fallback",
+            return_value=resultado_fallback,
+        ) as fallback,
+    ):
+        resultado = dispatch_optimizer.optimize_dispatch(request)
+
+    assert get_optimization.call_count == 1
+    fallback.assert_called_once_with(request)
+    assert resultado is resultado_fallback
+
+
+def test_vroom_no_disponible_loguea_error_code_y_pasada(caplog):
+    """El log generico ("VROOM no disponible o respuesta invalida en la
+    pasada primary; usando fallback local") no dice por que fallo VROOM --
+    era el problema reportado en produccion. _solve_pass debe loguear el
+    error_code real (timeout, provider_error, invalid_response, etc.) junto
+    con la pasada exacta (primary/expanded) en el punto donde decide caer a
+    fallback, no descartarlo en silencio."""
+    request = build_request(
+        [
+            {
+                "volunteer_id": "vol-1",
+                "report_id": "rep-1",
+                "duration": 300,
+                "distance": 2000,
+                "score": 80,
+            },
+        ]
+    )
+    with (
+        patch.object(
+            dispatch_optimizer,
+            "get_optimization",
+            return_value=vroom_unavailable(error_code="timeout"),
+        ),
+        patch.object(
+            dispatch_optimizer,
+            "optimize_dispatch_fallback",
+            return_value=MagicMock(),
+        ),
+        caplog.at_level(logging.WARNING),
+    ):
+        dispatch_optimizer.optimize_dispatch(request)
+
+    detalle_logs = [
+        record.message
+        for record in caplog.records
+        if "error_code=timeout" in record.message
+    ]
+    assert detalle_logs, (
+        "esperaba un log con el error_code real de VROOM, no solo el "
+        "mensaje generico de 'usando fallback local'"
+    )
+    assert any("primary" in message for message in detalle_logs)
+
+
+def test_vroom_no_disponible_en_expanded_loguea_esa_pasada(caplog):
+    """Misma cobertura que arriba pero para la pasada expanded -- confirma
+    que el label no queda fijo en 'primary' por error de copiar/pegar entre
+    las dos llamadas a _solve_pass."""
+    request = build_request(
+        [
+            {
+                "volunteer_id": "vol-1",
+                "report_id": "rep-1",
+                "duration": 300,
+                "distance": 2000,
+                "score": 80,
+            },
+            {
+                "volunteer_id": "vol-2",
+                "report_id": "rep-2",
+                "duration": 400,
+                "distance": 2500,
+                "score": 80,
+            },
+        ]
+    )
+    with (
+        patch.object(
+            dispatch_optimizer,
+            "get_optimization",
+            side_effect=[
+                vroom_result_for(
+                    (1, 1, 2, 300), unassigned_job_ids=[2]
+                ),
+                vroom_unavailable(error_code="invalid_response"),
+            ],
+        ),
+        patch.object(
+            dispatch_optimizer,
+            "optimize_dispatch_fallback",
+            return_value=MagicMock(),
+        ),
+        caplog.at_level(logging.WARNING),
+    ):
+        dispatch_optimizer.optimize_dispatch(request)
+
+    detalle_logs = [
+        record.message
+        for record in caplog.records
+        if "error_code=invalid_response" in record.message
+    ]
+    assert detalle_logs
+    assert any("expanded" in message for message in detalle_logs)
+
+
+def test_respuesta_inconsistente_pareja_inventada_cae_a_fallback():
+    """VROOM responde con un job_id valido pero devuelto en una ruta cuyo
+    vehicle_id no corresponde a ningun candidato autorizado para ese
+    reporte -- se rechaza por completo, no se arma ninguna asignacion
+    parcial."""
+    request = build_request(
+        [
+            {
+                "volunteer_id": "vol-1",
+                "report_id": "rep-1",
+                "duration": 300,
+                "distance": 2000,
+                "score": 80,
+            },
+            {
+                "volunteer_id": "vol-2",
+                "report_id": "rep-2",
+                "duration": 400,
+                "distance": 2500,
+                "score": 80,
+            },
+        ]
+    )
+    # vol-2 (vehicle_id=2) no es candidato de rep-1 (job_id=1) -- pareja
+    # inventada.
+    resultado_fallback = MagicMock()
+    with (
+        patch.object(
+            dispatch_optimizer,
+            "get_optimization",
+            return_value=vroom_result_for((2, 1, 2, 300)),
+        ),
+        patch.object(
+            dispatch_optimizer,
+            "optimize_dispatch_fallback",
+            return_value=resultado_fallback,
+        ) as fallback,
+    ):
+        resultado = dispatch_optimizer.optimize_dispatch(request)
+
+    fallback.assert_called_once_with(request)
+    assert resultado is resultado_fallback
+
+
+def test_primary_rechaza_asignacion_secondary_devuelta_por_vroom():
+    request = build_request(
+        [
+            {
+                "volunteer_id": "vol-primary",
+                "report_id": "rep-1",
+                "duration": 300,
+                "distance": 2000,
+                "score": 60,
+            },
+            {
+                "volunteer_id": "vol-secondary",
+                "report_id": "rep-1",
+                "duration": 900,
+                "distance": 6000,
+                "score": 95,
+            },
+        ]
+    )
+    secondary = next(
+        candidate
+        for candidate in request.candidates
+        if candidate.volunteer_id == "vol-secondary"
+    )
+    assert secondary.route_tier == CandidateRouteTier.secondary
+
+    resultado_fallback = MagicMock()
+    with (
+        patch.object(
+            dispatch_optimizer,
+            "get_optimization",
+            return_value=vroom_result_for((2, 1, 2, 900)),
+        ),
+        patch.object(
+            dispatch_optimizer,
+            "optimize_dispatch_fallback",
+            return_value=resultado_fallback,
+        ) as fallback,
+    ):
+        resultado = dispatch_optimizer.optimize_dispatch(request)
+
+    fallback.assert_called_once_with(request)
+    assert resultado is resultado_fallback
+
+
+def test_respuesta_con_location_index_inconsistente_cae_a_fallback():
+    request = build_request(
+        [
+            {
+                "volunteer_id": "vol-1",
+                "report_id": "rep-1",
+                "duration": 300,
+                "distance": 2000,
+                "score": 80,
+            },
+        ]
+    )
+    resultado_fallback = MagicMock()
+    with (
+        patch.object(
+            dispatch_optimizer,
+            "get_optimization",
+            return_value=vroom_result_for((1, 1, 0, 300)),
+        ),
+        patch.object(
+            dispatch_optimizer,
+            "optimize_dispatch_fallback",
+            return_value=resultado_fallback,
+        ) as fallback,
+    ):
+        resultado = dispatch_optimizer.optimize_dispatch(request)
+
+    fallback.assert_called_once_with(request)
+    assert resultado is resultado_fallback
+
+
+def test_manual_only_nunca_recibe_skill_en_ningun_pass():
+    request = build_request(
+        [
+            {
+                "volunteer_id": "vol-1",
+                "report_id": "rep-1",
+                "duration": 300,
+                "distance": 2000,
+                "score": 80,
+            },
+            {
+                "volunteer_id": "vol-2",
+                "report_id": "rep-1",
+                "duration": 3000,
+                "distance": 20000,
+                "score": 80,
+                "tier": CandidateRouteTier.manual_only,
+            },
+        ]
+    )
+    with patch.object(
+        dispatch_optimizer,
+        "get_optimization",
+        side_effect=[
+            vroom_result_for((1, 1, 2, 300)),
+        ],
+    ) as get_optimization:
+        dispatch_optimizer.optimize_dispatch(request)
+
+    primary_request = get_optimization.call_args_list[0].args[0]
+    skills_manual_only = next(
+        v.skills for v in primary_request.vehicles if v.start_index == 1
+    )
+    assert skills_manual_only == []
+
+
+def test_candidate_rank_sum_decide_empate_en_los_primeros_criterios():
+    """_expanded_is_better/_quality: si urgency_sum, cobertura y
+    secondary_count empatan entre A y B, candidate_rank_sum debe decidir --
+    y debe pesar mas que duration_sum (posicion siguiente en la tupla),
+    aunque duration_sum favorezca al otro lado.
+
+    NOTA: en optimize_dispatch() real esta situacion no puede surgir de un
+    par de llamadas a VROOM -- pass A solo usa candidatos primary, asi que
+    su secondary_count SIEMPRE es 0 por construccion, y el guard inicial de
+    _expanded_is_better exige que el secondary_count de expanded sea >=1
+    para siquiera evaluar la comparacion. Esos dos hechos juntos garantizan
+    que la posicion 2 (-secondary_count) nunca empata cuando 0 y 1 si
+    empatan -- siempre gana A ahi. Por eso esta prueba llama
+    _expanded_is_better directamente con listas de asignaciones armadas a
+    mano (tageando secondary_count=1 en ambos lados) para aislar el
+    mecanismo de comparacion en la posicion de candidate_rank_sum, en vez de
+    intentar (imposible) llegar a este empate a traves de dos corridas
+    reales de VROOM."""
+    request = build_request(
+        [
+            {
+                "volunteer_id": "vol-1",
+                "report_id": "rep-1",
+                "duration": 100,
+                "distance": 1000,
+                "score": 95,
+            },
+            {
+                "volunteer_id": "vol-2",
+                "report_id": "rep-1",
+                "duration": 100,
+                "distance": 1000,
+                "score": 40,
+            },
+            {
+                "volunteer_id": "vol-3",
+                "report_id": "rep-2",
+                "duration": 100,
+                "distance": 1000,
+                "score": 95,
+            },
+            {
+                "volunteer_id": "vol-4",
+                "report_id": "rep-2",
+                "duration": 100,
+                "distance": 1000,
+                "score": 40,
+            },
+        ],
+        urgency_by_report={"rep-1": 50.0, "rep-2": 50.0},
+    )
+    duration_by_pair = dispatch_optimizer._duration_lookup(request)
+    urgency_by_report = {
+        job.report_id: Decimal(str(job.urgency.score)) for job in request.jobs
+    }
+
+    # A usa los candidatos peor rankeados (vol-2, vol-4: score 40, rank 1 en
+    # cada reporte) pero con arrival_seconds bajo -> duration_sum favorece a
+    # A si esa posicion decidiera.
+    peor_rankeado = [
+        DispatchAssignment(
+            report_id="rep-1",
+            volunteer_id="vol-2",
+            arrival_seconds=100,
+            distance_meters=1000,
+            route_tier=CandidateRouteTier.secondary,
+        ),
+        DispatchAssignment(
+            report_id="rep-2",
+            volunteer_id="vol-4",
+            arrival_seconds=100,
+            distance_meters=1000,
+            route_tier=CandidateRouteTier.secondary,
+        ),
+    ]
+    # B usa los candidatos mejor rankeados (vol-1, vol-3: score 95, rank 0
+    # en cada reporte) pero con arrival_seconds alto -> duration_sum NO
+    # favorece a B; si B gana, fue por candidate_rank_sum, no por costo.
+    mejor_rankeado = [
+        DispatchAssignment(
+            report_id="rep-1",
+            volunteer_id="vol-1",
+            arrival_seconds=500,
+            distance_meters=1000,
+            route_tier=CandidateRouteTier.secondary,
+        ),
+        DispatchAssignment(
+            report_id="rep-2",
+            volunteer_id="vol-3",
+            arrival_seconds=500,
+            distance_meters=1000,
+            route_tier=CandidateRouteTier.secondary,
+        ),
+    ]
+
+    quality_peor = dispatch_optimizer._quality(
+        peor_rankeado,
+        urgency_by_report,
+        dispatch_optimizer._rank_lookup(
+            request, frozenset({CandidateRouteTier.primary}), duration_by_pair
+        ),
+    )
+    quality_mejor = dispatch_optimizer._quality(
+        mejor_rankeado,
+        urgency_by_report,
+        dispatch_optimizer._rank_lookup(
+            request, frozenset({CandidateRouteTier.primary}), duration_by_pair
+        ),
+    )
+    # primeras 3 posiciones empatadas (urgency, cobertura, secondary_count);
+    # candidate_rank_sum (posicion 3) desempata a favor del mejor rankeado,
+    # pese a que duration_sum (posicion 4) lo hubiera penalizado.
+    assert quality_peor[:3] == quality_mejor[:3]
+    assert quality_mejor[3] > quality_peor[3]
+    assert quality_mejor[4] < quality_peor[4]
+    assert quality_mejor > quality_peor
+
+    assert dispatch_optimizer._expanded_is_better(
+        request, peor_rankeado, mejor_rankeado, urgency_by_report, duration_by_pair
+    )
+
+
+def test_rank_cambia_entre_pass_primary_y_pass_expanded():
+    """El pool de candidatos elegibles de _rank_lookup cambia entre pass
+    primary y pass expanded (expanded suma los secondary), asi que el rank
+    de un mismo voluntario para el mismo reporte puede cambiar entre
+    pasadas -- nunca se reutiliza el ranking de una para evaluar la otra."""
+    request = build_request(
+        [
+            {
+                "volunteer_id": "vol-a",
+                "report_id": "rep-1",
+                "duration": 300,
+                "distance": 2000,
+                "score": 95,
+            },
+            {
+                "volunteer_id": "vol-b",
+                "report_id": "rep-1",
+                "duration": 350,
+                "distance": 2300,
+                "score": 70,
+            },
+            {
+                "volunteer_id": "vol-c",
+                "report_id": "rep-1",
+                "duration": 900,
+                "distance": 6000,
+                "score": 85,
+            },
+        ]
+    )
+    # vol-a y vol-b caen naturalmente en primary (dentro de la ventana de 5
+    # min respecto al minimo de 300s); vol-c cae en secondary (900s > 600s
+    # pero <= 1800s). Confirma la premisa antes de comparar los rankings.
+    tier_by_volunteer = {c.volunteer_id: c.route_tier for c in request.candidates}
+    assert tier_by_volunteer["vol-a"] == CandidateRouteTier.primary
+    assert tier_by_volunteer["vol-b"] == CandidateRouteTier.primary
+    assert tier_by_volunteer["vol-c"] == CandidateRouteTier.secondary
+
+    duration_by_pair = dispatch_optimizer._duration_lookup(request)
+    rank_primary = dispatch_optimizer._rank_lookup(
+        request, frozenset({CandidateRouteTier.primary}), duration_by_pair
+    )
+    rank_expanded = dispatch_optimizer._rank_lookup(
+        request,
+        frozenset({CandidateRouteTier.primary, CandidateRouteTier.secondary}),
+        duration_by_pair,
+    )
+
+    # pool primary: solo vol-a (score 95) y vol-b (score 70) -> vol-b es
+    # rank 1 (el peor de los dos).
+    assert rank_primary[("vol-a", "rep-1")] == 0
+    assert rank_primary[("vol-b", "rep-1")] == 1
+    assert ("vol-c", "rep-1") not in rank_primary
+
+    # pool expanded: se suma vol-c (score 85), que queda ENTRE vol-a y
+    # vol-b por score -> vol-b baja a rank 2. El mismo par
+    # (vol-b, rep-1) cambia de rank entre pasadas.
+    assert rank_expanded[("vol-a", "rep-1")] == 0
+    assert rank_expanded[("vol-c", "rep-1")] == 1
+    assert rank_expanded[("vol-b", "rep-1")] == 2
+    assert rank_primary[("vol-b", "rep-1")] != rank_expanded[("vol-b", "rep-1")]

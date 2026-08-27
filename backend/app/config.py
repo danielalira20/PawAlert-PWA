@@ -26,12 +26,13 @@ class Settings(BaseSettings):
     gemini_file_timeout_seconds: int = 180
     openweather_api_key: str = ""
     osrm_base_url: str = "https://router.project-osrm.org"
-    osrm_timeout_seconds: float = 8.0
-    osrm_max_coordinates: int = 100
+    osrm_timeout_seconds: float = Field(default=8.0, gt=0)
+    osrm_max_coordinates: int = Field(default=100, ge=2)
     vroom_base_url: str = ""
     vroom_timeout_seconds: int = 10
     vroom_candidate_window_minutes: int = Field(default=5, ge=0)
     vroom_secondary_max_eta_minutes: int = Field(default=30, gt=0)
+    vroom_max_locations: int = Field(default=50, gt=0)
     clip_validation_enabled: bool = False
     huggingface_token: str = ""
     clip_endpoint_url: str = ""
