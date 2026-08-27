@@ -49,6 +49,22 @@ def crear_avistamiento(
     )
 
 
+@router.get("/{reporte_id}/avistamientos/elegible")
+def avistamiento_elegible(
+    reporte_id: str,
+    latitud: float,
+    longitud: float,
+    authorization: Optional[str] = Header(None),
+) -> dict:
+    """Elegibilidad para registrar un avistamiento desde el GPS dado, sin crear
+    nada. asociacion/staff -> elegible:true sin cálculo de distancia; reportante
+    / voluntario verificado -> elegible + distancia_metros + radio_metros."""
+    usuario = _obtener_usuario_autenticado(authorization)
+    return avistamiento_service.evaluar_elegibilidad(
+        reporte_id, usuario["id"], latitud, longitud
+    )
+
+
 @router.post("/{reporte_id}/avistamientos/{avistamiento_id}/validar")
 def validar_avistamiento(
     reporte_id: str,
