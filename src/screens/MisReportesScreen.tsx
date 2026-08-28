@@ -34,6 +34,7 @@ import { petzen } from '../constants/petzenTheme';
 import { useAuth } from '../context/AuthContext';
 import { Animal, getAnimales, condicionMasGrave, totalAnimales, animalMasGrave } from '../types/reporte';
 import { AnimalCarousel } from '../components/common/AnimalCarousel';
+import { AvistamientoEntryButton } from '../components/avistamientos/AvistamientoEntryButton';
 
 interface ReporteItem {
   id: string;
@@ -622,6 +623,19 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
                         )}
                         <View style={{ flex: 1, gap: 11, minWidth: 0 }}>{detailRows}</View>
                       </View>
+                    )}
+                    {/* Avistamiento (Capa 8): solo tiene sentido mientras el
+                        animal siga sin ser localizado. `usuario_id` se pasa
+                        desde la sesión porque GET /reports/me devuelve
+                        únicamente reportes del propio usuario. */}
+                    {!estaCancelado && ['pendiente', 'asignado'].includes(reporte.estado_reporte) && (
+                      <AvistamientoEntryButton
+                        reporte={{
+                          id: reporte.id,
+                          usuario_id: user?.id,
+                          animales: reporte.animales,
+                        }}
+                      />
                     )}
                   </View>
                 );

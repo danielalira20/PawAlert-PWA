@@ -10,6 +10,7 @@ import { ActivityIndicator, Dimensions, Image, Linking, Modal, Platform, ScrollV
 import { Ionicons } from '@expo/vector-icons';
 import { Toast, useToast } from '../components/Toast';
 import { BusquedaNoLocalizadoPanel } from '../components/association-dashboard/BusquedaNoLocalizadoPanel';
+import { AvistamientoEntryButton } from '../components/avistamientos/AvistamientoEntryButton';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
@@ -2125,6 +2126,19 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                   }}
                   onError={(message) => showToast({ type: 'warning', title: 'Revisa la decisión', message })}
                 />
+
+                {/* Avistamiento (Capa 8). `asociacion_asignada_id` se toma de
+                    la sesión porque GET /associations/me/reportes solo trae
+                    casos asignados a la asociación del usuario. */}
+                {['pendiente', 'asignado'].includes(reporteSeleccionado.estado_reporte) && (
+                  <AvistamientoEntryButton
+                    reporte={{
+                      id: reporteSeleccionado.reporte_id,
+                      asociacion_asignada_id: user?.asociacion_id,
+                      animales: getAnimales(reporteSeleccionado),
+                    }}
+                  />
+                )}
 
                 {/* ── Línea de tiempo: sub-filtros "Por cerrar" y "Completados" ── */}
                 {(subFiltroAceptadas === 'por_cerrar' || subFiltroAceptadas === 'completados') && (
