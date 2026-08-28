@@ -1,6 +1,8 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from app.api import recompensas as recompensas_api
@@ -73,6 +75,16 @@ def _supabase_con_tablas(tablas: dict) -> MagicMock:
     supabase.table.side_effect = lambda nombre: tablas[nombre]
     supabase.auth.get_user.return_value = SimpleNamespace(user=SimpleNamespace(id="auth-user-1"))
     return supabase
+
+
+def test_auth_malformada_no_expone_el_encabezado_en_logs(caplog):
+    token_sensible = "Basic credencial-que-no-debe-aparecer"
+
+    with pytest.raises(HTTPException) as error:
+        recompensas_api._obtener_usuario_autenticado(token_sensible)
+
+    assert error.value.status_code == 401
+    assert token_sensible not in caplog.text
 
 
 # ─── Catálogo público para Persona 5 ─────────────────────────────────────

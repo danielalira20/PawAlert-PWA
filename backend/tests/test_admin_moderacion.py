@@ -93,6 +93,62 @@ def _incidentes_supabase_ok(make_query) -> tuple[MagicMock, dict, MagicMock]:
 REPORTE_BASE = {"id": "rep-1", "usuario_id": "user-1", "estado_moderacion": "en_revision", "estado_reporte": "pendiente"}
 
 
+def test_adjuntar_coincidencias_visuales_no_expone_embeddings(make_query):
+    coincidencias = make_query(
+        data=[
+            {
+                "reporte_id": "rep-1",
+                "animal_foto_id": "foto-nueva",
+                "reporte_coincidente_id": "rep-anterior",
+                "animal_foto_coincidente_id": "foto-anterior",
+                "similitud": 0.96,
+                "nivel": "high",
+                "modelo": "openai/clip-vit-base-patch32",
+            }
+        ]
+    )
+    fotos = make_query(
+        data=[{"id": "foto-anterior", "foto_url": "https://x/foto.jpg"}]
+    )
+    supabase_admin = MagicMock()
+    supabase_admin.table.side_effect = lambda tabla: {
+        "reporte_imagen_coincidencias": coincidencias,
+        "animal_fotos": fotos,
+    }[tabla]
+    reportes = [{"id": "rep-1"}]
+
+    with patch.object(admin, "supabase_admin", supabase_admin):
+        admin._adjuntar_coincidencias_visuales(reportes)
+
+    assert reportes[0]["coincidencias_visuales"] == [
+        {
+            "reporte_id": "rep-1",
+            "animal_foto_id": "foto-nueva",
+            "reporte_coincidente_id": "rep-anterior",
+            "animal_foto_coincidente_id": "foto-anterior",
+            "similitud": 0.96,
+            "nivel": "high",
+            "modelo": "openai/clip-vit-base-patch32",
+            "foto_coincidente_url": "https://x/foto.jpg",
+        }
+    ]
+    campos = coincidencias.select.call_args.args[0]
+    assert "embedding" not in campos
+
+
+def test_adjuntar_coincidencias_visuales_degrada_sin_romper_panel(make_query):
+    consulta = make_query(data=[])
+    consulta.execute.side_effect = RuntimeError("tabla no disponible")
+    supabase_admin = MagicMock()
+    supabase_admin.table.return_value = consulta
+    reportes = [{"id": "rep-1"}]
+
+    with patch.object(admin, "supabase_admin", supabase_admin):
+        admin._adjuntar_coincidencias_visuales(reportes)
+
+    assert reportes[0]["coincidencias_visuales"] == []
+
+
 # ─── decision="rechazar" ────────────────────────────────────────────────
 
 def test_rechazar_llama_procesar_reporte_falso_confirmado_con_datos_correctos(make_query):

@@ -36,7 +36,7 @@ const F = {
 type Tab = 'login' | 'register';
 
 export default function LoginScreen() {
-  const { login, register } = useAuth();
+  const { login, register, loginWithGoogle } = useAuth();
   const { toast, translateY, showToast } = useToast();
   const params = useLocalSearchParams<{ tab?: string; returnTo?: string }>();
   const [tab, setTab] = useState<Tab>(params.tab === 'register' ? 'register' : 'login');
@@ -361,13 +361,23 @@ export default function LoginScreen() {
                 {errors.regEmail ? <Text style={errorStyle}>{errors.regEmail}</Text> : null}
 
                 <Text style={labelStyle}>Contraseña *</Text>
+                <Text style={{ fontSize: 11, color: C.muted, fontFamily: F.bodyRegular, marginBottom: 6, marginTop: -2 }}>
+                  Mínimo 8 caracteres, incluye una mayúscula, una minúscula y un número.
+                </Text>
                 <TextInput placeholder="8+ caracteres, mayúscula, minúscula y número" placeholderTextColor={C.muted} secureTextEntry value={regPassword} onChangeText={handleRegPasswordChange} style={errors.regPassword ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC' } : inputStyle} />
                 {errors.regPassword ? <Text style={errorStyle}>{errors.regPassword}</Text> : null}
 
                 <Text style={labelStyle}>Confirmar Contraseña *</Text>
                 <TextInput placeholder="Repite tu contraseña" placeholderTextColor={C.muted} secureTextEntry value={regPassword2} onChangeText={handleRegPassword2Change}
-                  style={errors.regPassword2 ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC', marginBottom: 24 } : { ...inputStyle, marginBottom: 32 }} />
+                  style={errors.regPassword2 ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC', marginBottom: 12 } : { ...inputStyle, marginBottom: 12 }} />
                 {errors.regPassword2 ? <Text style={errorStyle}>{errors.regPassword2}</Text> : null}
+                
+                <Text style={{ fontSize: 12, color: C.muted, fontFamily: F.bodyRegular, textAlign: 'center', marginVertical: 12 }}>
+                  Al registrarte, aceptas nuestros{' '}
+                  <Text style={{ color: C.primary, textDecorationLine: 'underline' }} onPress={() => router.push('/TermsAndConditionsScreen' as any)}>Términos</Text>
+                  {' '}y el{' '}
+                  <Text style={{ color: C.primary, textDecorationLine: 'underline' }} onPress={() => router.push('/PrivacyPolicyScreen' as any)}>Aviso de Privacidad</Text>.
+                </Text>
               </View>
             )}
 
@@ -389,6 +399,29 @@ export default function LoginScreen() {
               }
             </TouchableOpacity>
       
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 24 }}>
+              <View style={{ flex: 1, height: 1, backgroundColor: `${C.neutralLight}60` }} />
+              <Text style={{ marginHorizontal: 12, color: C.muted, fontFamily: F.bodyMedium, fontSize: 13 }}>o continuar con</Text>
+              <View style={{ flex: 1, height: 1, backgroundColor: `${C.neutralLight}60` }} />
+            </View>
+
+            <TouchableOpacity
+              onPress={() => {
+                loginWithGoogle();
+              }}
+              style={{
+                flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+                backgroundColor: C.bg, paddingVertical: 14, borderRadius: 30,
+                borderWidth: 1.5, borderColor: `${C.neutralLight}60`,
+                ...(Platform.OS === 'web' ? { boxShadow: '0 2px 8px rgba(46,42,38,0.04)' } : { elevation: 1 })
+              }}
+            >
+              <Ionicons name="logo-google" size={20} color="#DB4437" style={{ marginRight: 10 }} />
+              <Text style={{ color: C.text, fontFamily: F.bodySemiBold, fontSize: 15 }}>
+                Google
+              </Text>
+            </TouchableOpacity>
+
           </View>
 
           <TouchableOpacity onPress={() => router.replace('/')} style={{ alignItems: 'center', marginTop: 32, padding: 12 }}>

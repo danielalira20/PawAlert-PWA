@@ -97,7 +97,11 @@ export function ImpactStatsBase({ impacto, isLoading, copy }: Props) {
             <View style={[styles.innerRow, !isWide && styles.innerRowStacked]}>
               <View style={[styles.ringSection, !isWide && styles.stackedCardReset]}>
                 <View style={styles.ringWrap}>
-                  <Svg width={RING_SIZE} height={RING_SIZE}>
+                  <Svg 
+                    width={RING_SIZE} 
+                    height={RING_SIZE} 
+                    style={{ transform: [{ rotate: '-90deg' }] }}
+                  >
                     <Circle
                       cx={RING_SIZE / 2}
                       cy={RING_SIZE / 2}
@@ -116,8 +120,6 @@ export function ImpactStatsBase({ impacto, isLoading, copy }: Props) {
                       strokeDashoffset={dashOffset}
                       strokeLinecap="round"
                       fill="none"
-                      rotation="-90"
-                      origin={`${RING_SIZE / 2}, ${RING_SIZE / 2}`}
                     />
                   </Svg>
                   <View style={styles.ringLabel}>

@@ -18,6 +18,8 @@ import { NoLocalizadoModal } from '../components/staff-dashboard/NoLocalizadoMod
 import { ResguardoModal } from '../components/staff-dashboard/ResguardoModal';
 import { RefugioModal } from '../components/staff-dashboard/RefugioModal';
 import { VeterinariaModal } from '../components/staff-dashboard/VeterinariaModal';
+import { SinVidaModal } from '../components/staff-dashboard/SinVidaModal';
+import { VolunteerDeceasedFollowupPanel } from '../components/staff-dashboard/VolunteerDeceasedFollowupPanel';
 import { Brand } from '../constants/theme';
 import type { AceptarSugerenciaResponse, ReporteStaff, SugerenciaAliado } from '../types/reportestaff';
 import { getAnimales, animalMasGrave, totalAnimales } from '../types/reporte';
@@ -40,6 +42,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
 
   const esHogarTemporal = user?.rol === 'voluntario_externo';
   const esVoluntarioInterno = user?.rol === 'voluntario_interno';
+  const requiereLlegadaZona = esHogarTemporal || esVoluntarioInterno;
   const puedeRegistrarHitos =
     esVoluntarioInterno ||
     user?.rol === 'voluntario_externo' ||
@@ -70,6 +73,25 @@ export default function StaffDashboardScreen({ onClose }: Props) {
     resetEncontre,
     OPCIONES_ENCONTRE,
     OPCIONES_ENCONTRE_EXTERNO,
+    cantidadesSinVida,
+    seleccionarAnimalSinVida,
+    cambiarCantidadSinVida,
+    fotoSinVida,
+    setFotoSinVida,
+    puedeEsperarSeguro,
+    setPuedeEsperarSeguro,
+    riesgoVialSinVida,
+    setRiesgoVialSinVida,
+    riesgoSanitarioSinVida,
+    setRiesgoSanitarioSinVida,
+    identificacionSinVida,
+    setIdentificacionSinVida,
+    notasSinVida,
+    setNotasSinVida,
+    motivoRetiroSeguridad,
+    setMotivoRetiroSeguridad,
+    registrarSinVida,
+    resetSinVida,
     registrarLlegadaZona,
     resetLlegadaZona,
     minutosBusqueda,
@@ -114,6 +136,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
   const [reporteSeleccionado, setReporteSeleccionado] = useState<ReporteStaff | null>(null);
   const [showDetalles, setShowDetalles] = useState(false);
   const [showEncontreModal, setShowEncontreModal] = useState(false);
+  const [showSinVidaModal, setShowSinVidaModal] = useState(false);
   const [showLlegadaZonaModal, setShowLlegadaZonaModal] = useState(false);
   const [showNoLocalizadoModal, setShowNoLocalizadoModal] = useState(false);
   const [showResguardoModal, setShowResguardoModal] = useState(false);
@@ -127,6 +150,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
   const [reporteAConfirmar, setReporteAConfirmar] = useState<ReporteStaff | null>(null);
   const [showAceptarModal, setShowAceptarModal] = useState(false);
   const [showRechazarModal, setShowRechazarModal] = useState(false);
+  const [seguimientosRefreshKey, setSeguimientosRefreshKey] = useState(0);
 
   useEffect(() => {
     cargarReportesAsignados();
@@ -153,6 +177,12 @@ export default function StaffDashboardScreen({ onClose }: Props) {
     setReporteSeleccionado(reporte);
     setShowDetalles(false);
     setShowNoLocalizadoModal(true);
+  };
+
+  const abrirSinVida = (reporte: ReporteStaff) => {
+    setReporteSeleccionado(reporte);
+    setShowDetalles(false);
+    setShowSinVidaModal(true);
   };
 
   const abrirResguardo = (reporte: ReporteStaff) => {
@@ -265,6 +295,22 @@ export default function StaffDashboardScreen({ onClose }: Props) {
     setReporteSeleccionado(null);
   };
 
+  const confirmarSinVida = async () => {
+    if (!reporteSeleccionado) return;
+    const ok = await registrarSinVida(reporteSeleccionado.id);
+    if (ok) {
+      setShowSinVidaModal(false);
+      setReporteSeleccionado(null);
+      setSeguimientosRefreshKey((actual) => actual + 1);
+    }
+  };
+
+  const cancelarSinVida = () => {
+    setShowSinVidaModal(false);
+    resetSinVida();
+    setReporteSeleccionado(null);
+  };
+
   const confirmarResguardo = async () => {
     if (!reporteSeleccionado) return;
     const ok = await registrarAnimalBajoResguardo(reporteSeleccionado.id);
@@ -313,6 +359,11 @@ export default function StaffDashboardScreen({ onClose }: Props) {
   const capturarFotoEncontre = async () => {
     const uri = esHogarTemporal ? await usarCamara() : await handlePickFoto();
     if (uri) setFotoEncontre(uri);
+  };
+
+  const capturarFotoSinVida = async () => {
+    const uri = await usarCamara();
+    if (uri) setFotoSinVida(uri);
   };
 
   const capturarFotoRefugio = async () => {
@@ -472,6 +523,10 @@ export default function StaffDashboardScreen({ onClose }: Props) {
           notificacionesCount={0}
         />
 
+        {(esHogarTemporal || esVoluntarioInterno) && (
+          <VolunteerDeceasedFollowupPanel refreshKey={seguimientosRefreshKey} />
+        )}
+
         {isLoading ? (
           <View style={styles.centered}>
             <ActivityIndicator size="large" color={Brand.primary} />
@@ -520,6 +575,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
                   layout="grid"
                   puedeRegistrarHitos={puedeRegistrarHitos}
                   esHogarTemporal={esHogarTemporal}
+                  requiereLlegadaZona={requiereLlegadaZona}
                 />
                 <ReportesGroup
                   titulo="En atención"
@@ -533,6 +589,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
                   layout="grid"
                   puedeRegistrarHitos={puedeRegistrarHitos}
                   esHogarTemporal={esHogarTemporal}
+                  requiereLlegadaZona={requiereLlegadaZona}
                 />
                 <ReportesGroup
                   titulo="Completados"
@@ -547,6 +604,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
                   esUltimo
                   puedeRegistrarHitos={puedeRegistrarHitos}
                   esHogarTemporal={esHogarTemporal}
+                  requiereLlegadaZona={requiereLlegadaZona}
                 />
               </View>
             </View>
@@ -575,6 +633,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
               layout="stack"
               puedeRegistrarHitos={puedeRegistrarHitos}
               esHogarTemporal={esHogarTemporal}
+              requiereLlegadaZona={requiereLlegadaZona}
             />
             <ReportesGroup
               titulo="En acción"
@@ -588,6 +647,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
               layout="stack"
               puedeRegistrarHitos={puedeRegistrarHitos}
               esHogarTemporal={esHogarTemporal}
+              requiereLlegadaZona={requiereLlegadaZona}
             />
             <ReportesGroup
               titulo="Completados"
@@ -602,6 +662,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
               esUltimo
               puedeRegistrarHitos={puedeRegistrarHitos}
               esHogarTemporal={esHogarTemporal}
+              requiereLlegadaZona={requiereLlegadaZona}
             />
           </ScrollView>
         )}
@@ -613,6 +674,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
         onClose={() => setShowDetalles(false)}
         onLlegadaZona={() => reporteSeleccionado && abrirLlegadaZona(reporteSeleccionado)}
         onEncontre={() => reporteSeleccionado && abrirEncontre(reporteSeleccionado)}
+        onSinVida={() => reporteSeleccionado && abrirSinVida(reporteSeleccionado)}
         onNoLocalizado={() => reporteSeleccionado && abrirNoLocalizado(reporteSeleccionado)}
         onBajoResguardo={() => reporteSeleccionado && abrirResguardo(reporteSeleccionado)}
         onRefugio={() => reporteSeleccionado && abrirRefugio(reporteSeleccionado)}
@@ -641,6 +703,34 @@ export default function StaffDashboardScreen({ onClose }: Props) {
         onDescartarSugerencia={descartarSugerenciaAliado}
         seguimientoAliado={seguimientoAliado}
         onCerrarSeguimiento={cerrarSeguimientoAliado}
+      />
+
+      <SinVidaModal
+        visible={showSinVidaModal}
+        animales={reporteSeleccionado ? getAnimales(reporteSeleccionado) : []}
+        cantidades={cantidadesSinVida}
+        fotoLista={!!fotoSinVida}
+        ubicacionLista={!!ubicacionActual}
+        obteniendoGPS={obteniendoGPS}
+        puedeEsperarSeguro={puedeEsperarSeguro}
+        riesgoVial={riesgoVialSinVida}
+        riesgoSanitario={riesgoSanitarioSinVida}
+        identificacion={identificacionSinVida}
+        notas={notasSinVida}
+        motivoRetiro={motivoRetiroSeguridad}
+        isSubmitting={isSubmitting}
+        onSeleccionarAnimal={seleccionarAnimalSinVida}
+        onCambiarCantidad={cambiarCantidadSinVida}
+        onCapturarFoto={capturarFotoSinVida}
+        onCapturarUbicacion={obtenerUbicacionGPS}
+        onCambiarPuedeEsperar={setPuedeEsperarSeguro}
+        onCambiarRiesgoVial={setRiesgoVialSinVida}
+        onCambiarRiesgoSanitario={setRiesgoSanitarioSinVida}
+        onCambiarIdentificacion={setIdentificacionSinVida}
+        onCambiarNotas={setNotasSinVida}
+        onCambiarMotivoRetiro={setMotivoRetiroSeguridad}
+        onCancel={cancelarSinVida}
+        onConfirm={confirmarSinVida}
       />
 
       <LlegadaZonaModal
@@ -812,6 +902,7 @@ function ReportesGroup({
   esUltimo,
   puedeRegistrarHitos,
   esHogarTemporal,
+  requiereLlegadaZona,
 }: {
   titulo: string;
   color: string;
@@ -825,6 +916,7 @@ function ReportesGroup({
   esUltimo?: boolean;
   puedeRegistrarHitos: boolean;
   esHogarTemporal: boolean;
+  requiereLlegadaZona: boolean;
 }) {
   if (reportes.length === 0) return null;
 
@@ -851,6 +943,7 @@ function ReportesGroup({
               onQuickRefugio={onQuickRefugio}
               puedeRegistrarHitos={puedeRegistrarHitos}
               esHogarTemporal={esHogarTemporal}
+              requiereLlegadaZona={requiereLlegadaZona}
             />
           </View>
         ))}

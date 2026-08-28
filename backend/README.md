@@ -49,7 +49,8 @@ cp .env.example .env
 
 ```
 SUPABASE_URL=https://tu-proyecto.supabase.co
-SUPABASE_KEY=tu-service-role-key
+SUPABASE_KEY=tu-anon-key
+SUPABASE_SERVICE_KEY=tu-service-role-key
 SUPABASE_BUCKET=pawalert-fotos
 ```
 
@@ -146,6 +147,20 @@ despacho del outbox se ejecuta con:
 POST /internal/push/run
 X-Cron-Secret: <CRON_SECRET>
 ```
+
+### Escalamiento de resultados sensibles
+
+Los seguimientos por animales encontrados sin vida se escalan a la asociación
+a las 24 horas y a administración a las 48 horas. Configura una llamada cada
+15 minutos:
+
+```text
+POST /internal/deceased-followups/run
+X-Cron-Secret: <CRON_SECRET>
+```
+
+Este proceso no cierra reportes: únicamente actualiza la responsabilidad,
+registra historial y encola notificaciones idempotentes.
 
 ## Correr el servidor
 
@@ -378,14 +393,19 @@ equipo la apruebe manualmente en Supabase.
 | Variable | Descripción | Requerida |
 |---|---|---|
 | SUPABASE_URL | URL del proyecto en Supabase | Sí |
-| SUPABASE_KEY | service_role key de Supabase | Sí |
+| SUPABASE_KEY | Clave pública `anon` de Supabase | Sí |
+| SUPABASE_SERVICE_KEY | Clave privada `service_role`; solo backend | Sí |
 | SUPABASE_BUCKET | Nombre del bucket en Storage | No (default: pawalert-fotos) |
+| FRONTEND_URL | Origen principal del frontend y base de enlaces | Sí |
+| CORS_ORIGINS | Orígenes adicionales permitidos, separados por comas | No |
+| CRON_SECRET | Secreto compartido para endpoints internos | Sí en producción |
+| BREVO_API_KEY | Clave para correos transaccionales | Si se enviarán correos |
+| FIREBASE_SERVICE_ACCOUNT_JSON | JSON de Firebase Admin en una sola variable | Si se enviarán push |
 
 ## Notas importantes
 
-- Usar siempre la `service_role key` de Supabase, no la `anon key`
+- Usar `SUPABASE_SERVICE_KEY` solo en operaciones administrativas del backend;
+  nunca compartirla con el frontend ni colocarla en `SUPABASE_KEY`
 - El archivo `.env` nunca se sube a git
 - El bucket `pawalert-fotos` debe existir en Supabase Storage antes de subir fotos
 - La verificación de asociaciones se hace manualmente en Supabase por el equipo PawAlert
-:333
-

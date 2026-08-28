@@ -224,7 +224,7 @@ export default function ProfileScreen() {
         )}
       </Modal>
 
-      <AppModal visible={isCapacidadesVisible} onClose={() => setIsCapacidadesVisible(false)}>
+      <AppModal visible={isCapacidadesVisible} onClose={() => setIsCapacidadesVisible(false)} dismissable={false}>
         {isCapacidadesVisible && (
           <CapacidadesFormScreen
             onClose={() => {

@@ -1,6 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';import { Ionicons } from '@expo/vector-icons';
 import { Brand } from '../../constants/theme';
 
 interface Row {
@@ -17,10 +16,10 @@ interface Props {
   // "bare" = sin su propia card blanca (para cuando ya vive dentro de una
   // card unificada más grande, como en el layout de escritorio nuevo).
   bare?: boolean;
+  onEditPress?: () => void;
 }
 
-export function AccountDataCard({ telefono, email, bare }: Props) {
-  const rows: Row[] = [
+export function AccountDataCard({ telefono, email, bare, onEditPress }: Props) {  const rows: Row[] = [
     {
       icon: 'call-outline',
       label: 'Teléfono',
@@ -39,7 +38,14 @@ export function AccountDataCard({ telefono, email, bare }: Props) {
 
   const content = (
     <>
-      <Text style={styles.title}>Datos de cuenta</Text>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+        <Text style={[styles.title, { marginBottom: 0 }]}>Datos de cuenta</Text>
+        {onEditPress && (
+          <TouchableOpacity onPress={onEditPress}>
+            <Text style={{ color: Brand.primary, fontSize: 12, fontWeight: '700' }}>Editar</Text>
+          </TouchableOpacity>
+        )}
+      </View>
       {rows.map((row, i) => (
         <View key={row.label} style={[styles.row, i > 0 && styles.rowDivider]}>
           <View style={[styles.iconCircle, { backgroundColor: row.bgColor }]}>

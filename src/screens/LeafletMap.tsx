@@ -1,10 +1,10 @@
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import { useEffect } from 'react';
 import 'leaflet/dist/leaflet.css';
-import { MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
+import { Circle, MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import { ReportContentMenu } from '../components/reports/ReportContentMenu';
-import { Reporte, getAnimales, condicionMasGrave, especieMasGrave, totalAnimales } from '../types/reporte';
+import { Reporte, ZonaAgregada, getAnimales, condicionMasGrave, especieMasGrave, totalAnimales } from '../types/reporte';
 import { ICON_MULTIPLE } from '../constants/mapIcons';
 
 const INITIAL_CENTER: [number, number] = [19.0414, -98.2063];
@@ -71,9 +71,9 @@ const DARK: Record<string, string> = {
 const createPin = (condicion: string, tipoAnimal: string, selected = false, count = 1) => {
   const cfg = getCfg(condicion);
   const dark = DARK[cfg.border] ?? cfg.border;
-  const size = selected ? 54 : 46;
+  const size = 46;
   const shadow = selected
-    ? `0 6px 24px ${cfg.border}BB, 0 0 0 3px white, 0 0 0 5px ${dark}66`
+    ? `0 3px 12px ${cfg.border}88, 0 0 0 2px #FFFFFF, 0 0 0 4px ${dark}`
     : `0 3px 12px ${cfg.border}88`;
 
   // Badge de conteo — solo si el caso trae más de un animal. Vive fuera del
@@ -94,9 +94,7 @@ const createPin = (condicion: string, tipoAnimal: string, selected = false, coun
   const html = `
     <div style="
       display:flex; flex-direction:column; align-items:center;
-      transform:scale(${selected ? 1.1 : 1});
       transform-origin:bottom center;
-      transition:transform 0.2s cubic-bezier(0.34,1.56,0.64,1);
     ">
       <!-- Wrapper con overflow visible, para que el badge no se recorte -->
       <div style="position:relative; display:flex; align-items:center; justify-content:center;">
@@ -135,6 +133,91 @@ const createPin = (condicion: string, tipoAnimal: string, selected = false, coun
   });
 };
 
+// Cobertura aproximada del caso seleccionado. Los círculos se dibujan en
+// metros (no en píxeles), por lo que representan una zona real al cambiar el
+// zoom. La superposición crea un borde difuminado sin agrandar el pin.
+const REPORT_COVERAGE_RINGS = [
+  { radius: 520, opacity: 0.025 },
+  { radius: 420, opacity: 0.04 },
+  { radius: 320, opacity: 0.065 },
+  { radius: 225, opacity: 0.09 },
+  { radius: 135, opacity: 0.12 },
+];
+
+function ReportCoverageGlow({ reporte }: { reporte: Reporte & { latitud: number; longitud: number } }) {
+  const condicion = condicionMasGrave(getAnimales(reporte)) ?? '';
+  const color = getCfg(condicion).border;
+
+  return (
+    <>
+      {REPORT_COVERAGE_RINGS.map(({ radius, opacity }) => (
+        <Circle
+          key={radius}
+          center={[reporte.latitud, reporte.longitud]}
+          radius={radius}
+          interactive={false}
+          pathOptions={{ stroke: false, fillColor: color, fillOpacity: opacity }}
+        />
+      ))}
+    </>
+  );
+}
+
+
+// ─── Pin de zona agregada (visitantes sin sesión: densidad, no reportes) ──────
+const NIVEL_URGENCIA_COLOR: Record<string, { border: string; bg: string }> = {
+  rojo:     { border: '#E74C3C', bg: '#FDEDEC' },
+  amarillo: { border: '#F39C12', bg: '#FEF9E7' },
+  verde:    { border: '#27AE60', bg: '#EAFAF1' },
+};
+
+const createZonaPin = (cantidad: number, nivel: string | null) => {
+  const cfg = NIVEL_URGENCIA_COLOR[nivel ?? ''] ?? { border: '#95A5A6', bg: '#F2F3F4' };
+  const size = 40;
+  const html = `
+    <div style="
+      width:${size}px; height:${size}px; border-radius:50%;
+      background:${cfg.bg};
+      border:2px solid ${cfg.border};
+      display:flex; align-items:center; justify-content:center;
+      font-size:13px; font-weight:800; color:${cfg.border}; font-family:sans-serif;
+      box-shadow:0 2px 8px ${cfg.border}55;
+    ">${cantidad}</div>`;
+  return L.divIcon({
+    className: 'pawalert-zona-marker',
+    html,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+};
+
+// Anillos concéntricos con opacidad decreciente — Leaflet no soporta un
+// fillColor con degradado radial nativo, así que se simula apilando varios
+// círculos. El radio depende de la cantidad de reportes: zonas con más
+// casos se ven "más calientes" (círculo más grande).
+const ANILLOS_GLOW = [
+  { factor: 1, opacity: 0.05 },
+  { factor: 0.7, opacity: 0.09 },
+  { factor: 0.45, opacity: 0.16 },
+  { factor: 0.22, opacity: 0.3 },
+];
+
+function ZonaGlow({ zona }: { zona: { latitud: number; longitud: number; cantidad: number; nivel_urgencia_max: string | null } }) {
+  const color = NIVEL_URGENCIA_COLOR[zona.nivel_urgencia_max ?? '']?.border ?? '#95A5A6';
+  const radioBase = 500 + zona.cantidad * 180;
+  return (
+    <>
+      {ANILLOS_GLOW.map((anillo) => (
+        <Circle
+          key={anillo.factor}
+          center={[zona.latitud, zona.longitud]}
+          radius={radioBase * anillo.factor}
+          pathOptions={{ stroke: false, fillColor: color, fillOpacity: anillo.opacity }}
+        />
+      ))}
+    </>
+  );
+}
 
 // ─── Config por estado del reporte ───────────────────────────────────────────
 const ESTADO: Record<string, { color: string; bg: string; label: string }> = {
@@ -261,6 +344,7 @@ export interface AsociacionMapa {
   contacto_email?: string | null;
   tipos_animales?: string[];
   horario_atencion?: string | null;
+  acerca_de?: string | null;
   radio_km?: number | null;
 }
 
@@ -270,6 +354,26 @@ function MapClickHandler({ onMapClick }: { onMapClick: () => void }) {
   ref.current = onMapClick;
   useMapEvents({ click: () => ref.current() });
   return null;
+}
+
+// Botón "×" propio (Leaflet trae uno por defecto, pero closeButton está
+// desactivado en todos los popups de este archivo para usar el diseño
+// pp-* en su lugar) — cierra el popup abierto vía el mapa, sin necesitar
+// una ref al Marker.
+function PopupCloseButton() {
+  const map = useMap();
+  return (
+    <button
+      className="pp-close"
+      onClick={(event) => {
+        event.stopPropagation();
+        map.closePopup();
+      }}
+      aria-label="Cerrar"
+    >
+      ×
+    </button>
+  );
 }
 
 function FitToMarkers({
@@ -301,6 +405,7 @@ function FitToMarkers({
 // ─── Props ────────────────────────────────────────────────────────────────────
 interface LeafletMapProps {
   reportes: Reporte[];
+  zonas?: ZonaAgregada[];
   asociaciones?: AsociacionMapa[];
   aliados?: AliadoMapa[];
   selectedReportId?: string | null;
@@ -319,6 +424,7 @@ interface LeafletMapProps {
 // ─── Componente ───────────────────────────────────────────────────────────────
 export default function LeafletMap({
   reportes,
+  zonas = [],
   asociaciones = [],
   aliados = [],
   getMarkerColor,
@@ -333,17 +439,23 @@ export default function LeafletMap({
   fitToMarkers = false,
   showReportMenuInPopup = true,
 }: LeafletMapProps) {
+  // Zona seleccionada (visitantes sin sesión): al hacer click en un pin de
+  // zona se muestra un círculo difuminado alrededor, solo esa — no todas a
+  // la vez, para no saturar el mapa.
+  const [zonaSeleccionada, setZonaSeleccionada] = useState<string | null>(null);
+
   const markerPositions = useMemo(
     () =>
       [
         ...reportes.map((reporte) => [reporte.latitud, reporte.longitud]),
+        ...zonas.map((zona) => [zona.latitud, zona.longitud]),
         ...asociaciones.map((asociacion) => [asociacion.latitud, asociacion.longitud]),
         ...aliados.map((aliado) => [aliado.latitud, aliado.longitud]),
       ].filter(
         (position): position is [number, number] =>
           typeof position[0] === 'number' && typeof position[1] === 'number',
       ),
-    [aliados, asociaciones, reportes],
+    [aliados, asociaciones, reportes, zonas],
   );
 
   useEffect(() => {
@@ -385,7 +497,16 @@ export default function LeafletMap({
         .pp-accent { height:5px; width:100%; }
         .pp-body { position:relative; padding:13px 14px 14px; font-family:'Segoe UI',Arial,sans-serif; }
         .pp-title { padding-right:32px; font-size:14px; font-weight:900; color:#1A1A1A; margin-bottom:8px; letter-spacing:-0.3px; }
-        .pp-menu { position:absolute; top:9px; right:10px; z-index:10; }
+        .pp-menu { position:absolute; top:9px; right:42px; z-index:10; }
+        .pp-close {
+          position:absolute; top:8px; right:9px; z-index:11;
+          width:22px; height:22px; border-radius:11px; border:none;
+          background:#F2F0EC; color:#5C4A3A;
+          font-size:16px; line-height:1; font-weight:700;
+          display:flex; align-items:center; justify-content:center;
+          cursor:pointer; padding:0;
+        }
+        .pp-close:hover { background:#E5E1D9; }
         .pp-badges { display:flex; gap:5px; flex-wrap:wrap; margin-bottom:9px; }
         .pp-badge { padding:3px 9px; border-radius:20px; font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:0.4px; }
         .pp-loc { display:flex; align-items:center; gap:5px; font-size:10px; color:#9B8B7A; margin-bottom:11px; padding:5px 8px; background:#FAFAFA; border-radius:8px; }
@@ -404,6 +525,15 @@ export default function LeafletMap({
         />
         <MapClickHandler onMapClick={onMapClick} />
         <FitToMarkers enabled={fitToMarkers} positions={markerPositions} />
+        {(() => {
+          const reporteSeleccionado = reportes.find(
+            (reporte): reporte is Reporte & { latitud: number; longitud: number } =>
+              reporte.id === selectedReportId &&
+              reporte.latitud !== null &&
+              reporte.longitud !== null,
+          );
+          return reporteSeleccionado ? <ReportCoverageGlow reporte={reporteSeleccionado} /> : null;
+        })()}
         {reportes
           .filter((r): r is typeof r & { latitud: number; longitud: number } =>
             r.latitud !== null && r.longitud !== null)
@@ -430,6 +560,7 @@ export default function LeafletMap({
                   {/* Barra de acento del color de condición */}
                   <div className="pp-accent" style={{ background: cond.border }} />
                   <div className="pp-body">
+                    <PopupCloseButton />
                     {showReportMenuInPopup && (
                       <div className="pp-menu" onClick={(event) => event.stopPropagation()}>
                         <ReportContentMenu
@@ -440,7 +571,7 @@ export default function LeafletMap({
                       </div>
                     )}
                     {/* Título */}
-                    <div className="pp-title" style={{ paddingRight: showReportMenuInPopup ? 32 : 0 }}>
+                    <div className="pp-title" style={{ paddingRight: showReportMenuInPopup ? 64 : 32 }}>
                       {tipoLabel}{tamanioLabel ? ` · ${tamanioLabel}` : ''}{total > 1 ? ` · ${total} animales` : ''}
                     </div>
                     {/* Badges de condición y estado */}
@@ -536,6 +667,43 @@ export default function LeafletMap({
               </Popup>
             </Marker>
           ))}
+        {(() => {
+          const zonasValidas = zonas.filter(
+            (z): z is ZonaAgregada & { latitud: number; longitud: number } =>
+              z.latitud !== null && z.longitud !== null,
+          );
+          const zonaActiva = zonasValidas.find(
+            (z) => `${z.latitud}-${z.longitud}` === zonaSeleccionada,
+          );
+          return (
+            <>
+              {zonaActiva && <ZonaGlow zona={zonaActiva} />}
+              {zonasValidas.map((zona) => {
+                const clave = `${zona.latitud}-${zona.longitud}`;
+                return (
+                  <Marker
+                    key={`zona-${clave}`}
+                    position={[zona.latitud, zona.longitud]}
+                    icon={createZonaPin(zona.cantidad, zona.nivel_urgencia_max)}
+                    eventHandlers={{
+                      click: () =>
+                        setZonaSeleccionada((actual) => (actual === clave ? null : clave)),
+                    }}
+                  >
+                    <Popup closeButton={false} className="pp-wrap" offset={[0, -6]}>
+                      <div className="pp-body">
+                        <div className="pp-title">
+                          {zona.cantidad} {zona.cantidad === 1 ? 'reporte' : 'reportes'} en esta zona
+                        </div>
+                        <div className="pp-loc">Inicia sesión para ver el detalle de cada reporte</div>
+                      </div>
+                    </Popup>
+                  </Marker>
+                );
+              })}
+            </>
+          );
+        })()}
       </MapContainer>
     </>
   );

@@ -9,11 +9,14 @@ from fastapi import (
 )
 from app.db.supabase import supabase
 from app.models.voluntario import (
+    CapacidadesDraftContextEnum,
+    CapacidadesDraftRequest,
     CapacidadesRequest,
     CheckInVisitaRequest,
     ChecklistVisitaRequest,
     DisponibilidadOperativaRequest,
     FinalizarPostulacionInternoRequest,
+    PostulacionExternaDraftRequest,
     PostulacionRequest,
     ProponerHorarioVisitaRequest,
     ResponderHorarioPostulanteRequest,
@@ -28,11 +31,17 @@ from app.services.voluntario_service import (
     obtener_mi_voluntario,
     obtener_capacidades,
     guardar_capacidades,
+    obtener_borrador_capacidades,
+    guardar_borrador_capacidades,
+    eliminar_borrador_capacidades,
     obtener_disponibilidad_operativa,
     actualizar_disponibilidad_operativa,
     obtener_reportes_voluntario,
     crear_perfil_externo,
     obtener_perfil_externo,
+    obtener_borrador_postulacion_externa,
+    guardar_borrador_postulacion_externa,
+    eliminar_borrador_postulacion_externa,
 )
 from app.services.home_verification_service import (
     enviar_evidencia_solicitada,
@@ -54,6 +63,7 @@ from app.services.video_evidence_service import procesar_evidencia_verificacion
 from app.services.whatsapp_notification_service import (
     notificar_evento_asignacion,
 )
+from app.services import deceased_followup_service
 
 router = APIRouter()
 
@@ -371,6 +381,37 @@ async def patch_responder_horario_postulante(
     return resultado
 
 
+@router.get("/me/capacidades/borrador", status_code=200)
+async def get_mi_borrador_capacidades(
+    contexto: CapacidadesDraftContextEnum = CapacidadesDraftContextEnum.perfil,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    return await obtener_borrador_capacidades(usuario["id"], contexto.value)
+
+
+@router.put("/me/capacidades/borrador", status_code=200)
+async def put_mi_borrador_capacidades(
+    body: CapacidadesDraftRequest,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    return await guardar_borrador_capacidades(
+        usuario["id"],
+        body.contexto.value,
+        body.model_dump(mode="json"),
+    )
+
+
+@router.delete("/me/capacidades/borrador", status_code=200)
+async def delete_mi_borrador_capacidades(
+    contexto: CapacidadesDraftContextEnum = CapacidadesDraftContextEnum.perfil,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    return await eliminar_borrador_capacidades(usuario["id"], contexto.value)
+
+
 @router.get("/me/capacidades", status_code=200)
 async def get_mis_capacidades(authorization: str = Header(None)):
     usuario = _obtener_usuario_autenticado(authorization)
@@ -425,6 +466,39 @@ async def get_mis_reportes_voluntario(authorization: str = Header(None)):
     return await obtener_reportes_voluntario(usuario["id"], usuario["rol"])
 
 
+@router.get("/me/seguimientos-fallecimiento", status_code=200)
+async def get_mis_seguimientos_fallecimiento(
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("voluntario_interno", "voluntario_externo"))
+    return deceased_followup_service.listar_seguimientos_voluntario(
+        usuario["id"]
+    )
+
+
+@router.get(
+    "/me/seguimientos-fallecimiento/{reporte_id}",
+    status_code=200,
+)
+async def get_mi_detalle_seguimiento_fallecimiento(
+    reporte_id: str,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("voluntario_interno", "voluntario_externo"))
+    try:
+        return deceased_followup_service.obtener_detalle_seguimiento_voluntario(
+            reporte_id,
+            usuario["id"],
+        )
+    except deceased_followup_service.SeguimientoFallecimientoError:
+        raise HTTPException(
+            status_code=404,
+            detail="Seguimiento no encontrado",
+        )
+
+
 # ---------------------------------------------------------------------------
 # NUEVO ENDPOINT: POSTULACIÓN VOLUNTARIO EXTERNO (CASA TEMPORAL)
 # ---------------------------------------------------------------------------
@@ -436,6 +510,30 @@ async def get_perfil_voluntario_externo(
     usuario = _obtener_usuario_autenticado(authorization)
     voluntario_id = _obtener_voluntario_id_propio(usuario["id"])
     return await obtener_perfil_externo(voluntario_id)
+
+
+@router.get("/externo/borrador", status_code=200)
+async def get_mi_borrador_postulacion_externa(authorization: str = Header(None)):
+    usuario = _obtener_usuario_autenticado(authorization)
+    return await obtener_borrador_postulacion_externa(usuario["id"])
+
+
+@router.put("/externo/borrador", status_code=200)
+async def put_mi_borrador_postulacion_externa(
+    body: PostulacionExternaDraftRequest,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    return await guardar_borrador_postulacion_externa(
+        usuario["id"],
+        body.model_dump(mode="json"),
+    )
+
+
+@router.delete("/externo/borrador", status_code=200)
+async def delete_mi_borrador_postulacion_externa(authorization: str = Header(None)):
+    usuario = _obtener_usuario_autenticado(authorization)
+    return await eliminar_borrador_postulacion_externa(usuario["id"])
 
 
 @router.post("/externo/postular", status_code=201)

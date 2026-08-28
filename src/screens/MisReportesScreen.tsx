@@ -71,6 +71,8 @@ const ESTADO_LABELS: Record<string, string> = {
   pendiente: 'Pendiente',
   asignado: 'Asignado',
   en_atencion: 'En atención',
+  pendiente_seguimiento_fallecimiento: 'Resultado en revisión',
+  muerto: 'Seguimiento concluido',
   cerrado: 'Cerrado',
   cancelado_por_reportante: 'Cancelado',
 };
@@ -79,6 +81,8 @@ const ESTADO_COLORES: Record<string, string> = {
   pendiente: '#F39C12',
   asignado: petzen.colors.teal,
   en_atencion: '#9B59B6',
+  pendiente_seguimiento_fallecimiento: '#B7791F',
+  muerto: '#64748B',
   rescatado: '#27AE60',
   cerrado: '#64748B',
   cancelado_por_reportante: '#A84335',

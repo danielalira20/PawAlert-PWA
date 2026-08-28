@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.models.voluntario import CapacidadesRequest
+from app.models.voluntario import CapacidadesDraftRequest, CapacidadesRequest
 
 
 def test_capacidades_v2_acepta_radio_maximo_de_30_km():
@@ -117,3 +117,24 @@ def test_capacidades_v2_no_sobrescribe_campos_legado_si_no_llegan_en_payload():
     assert "capacidad_animales" not in datos
     assert "otros_animales_en_casa" not in datos
     assert "ninos_en_casa" not in datos
+
+
+def test_borrador_capacidades_admite_un_formulario_incompleto():
+    borrador = CapacidadesDraftRequest(
+        contexto="interno",
+        paso=3,
+        ubicacion_confirmada=False,
+        datos={
+            "disponibilidad": {"dias": ["lun"], "franjas": []},
+            "acepto_terminos": False,
+        },
+    )
+
+    assert borrador.paso == 3
+    assert borrador.datos.disponibilidad.dias == ["lun"]
+    assert borrador.datos.acepto_terminos is False
+
+
+def test_borrador_capacidades_rechaza_versiones_desconocidas():
+    with pytest.raises(ValidationError, match="version"):
+        CapacidadesDraftRequest(contexto="perfil", version=2)

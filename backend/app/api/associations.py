@@ -41,7 +41,9 @@ from app.services.video_evidence_service import procesar_evidencia_verificacion
 from app.services.whatsapp_notification_service import (
     notificar_evento_verificacion,
 )
+from app.services import deceased_followup_service
 from app.models.association import NuevoRepresentante
+from app.models.report import RevisionResultadoSinVidaRequest
 from app.utils.animal_shaping import shape_animal_embed, shape_animal_response, condicion_mas_grave
 import json
 from app.services.email_service import email_bienvenida_staff
@@ -306,7 +308,7 @@ async def create_association(
 async def get_associations():
     resultado = supabase.table("asociaciones").select(
         "id, nombre, contacto_telefono, contacto_email, "
-        "latitud, longitud, radio_km, horario_atencion, activo, "
+        "latitud, longitud, radio_km, horario_atencion, acerca_de, activo, "
         "asociacion_tipo_animal(tipo_animal_catalogo(clave, descripcion))"
     ).eq("verificado", True).eq("activo", True).execute()
 
@@ -330,6 +332,7 @@ async def get_associations():
             "longitud": a["longitud"],
             "radio_km": a["radio_km"],
             "horario_atencion": a.get("horario_atencion"),
+            "acerca_de": a.get("acerca_de"),
             "activo": a["activo"],
         })
 
@@ -580,9 +583,6 @@ async def get_reportes_asignados(authorization: str = Header(None)):
             for f in (a.get("animal_fotos") or [])
         )
 
-        # ==========================================
-        # NUEVO: ASIGNAR URGENCIAS AL FRONTEND
-        # ==========================================
         urgency_components = None
         eval_reciente = evaluaciones_por_reporte.get(rep["id"])
         
@@ -596,7 +596,7 @@ async def get_reportes_asignados(authorization: str = Header(None)):
                 "time_score": eval_reciente.get("tiempo_score"),
                 "weather_score": eval_reciente.get("clima_score"),
                 "road_risk_score": eval_reciente.get("riesgo_vial_score"),
-                "discrepancia_alerta": bool((ia_val - dec_val) > 40)
+                "discrepancia_alerta": abs(ia_val - dec_val) > 40,
             }
 
         reportes.append({
@@ -615,7 +615,7 @@ async def get_reportes_asignados(authorization: str = Header(None)):
             "created_at": str(rep["created_at"]),
             "urgency_score": rep.get("urgency_score"),
             "urgency_nivel": rep.get("urgency_nivel"),
-            "urgency_components": urgency_components,  # <-- ¡Aquí van los datos!
+            "urgency_components": urgency_components,
             "urgency_calculado_at": (
                 str(rep["urgency_calculado_at"])
                 if rep.get("urgency_calculado_at")
@@ -637,6 +637,127 @@ async def get_reportes_asignados(authorization: str = Header(None)):
         })
 
     return reportes
+
+
+@router.get("/me/seguimientos-fallecimiento", status_code=200)
+async def get_seguimientos_fallecimiento(
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion", "staff"))
+    asociacion_id = usuario.get("asociacion_id")
+    if not asociacion_id:
+        raise HTTPException(
+            status_code=404,
+            detail="Este usuario no está vinculado a ninguna asociación",
+        )
+    _verificar_asociacion_aprobada(asociacion_id)
+    return deceased_followup_service.listar_seguimientos_asociacion(
+        asociacion_id
+    )
+
+
+@router.get(
+    "/me/seguimientos-fallecimiento/{reporte_id}",
+    status_code=200,
+)
+async def get_detalle_seguimiento_fallecimiento(
+    reporte_id: str,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion", "staff"))
+    asociacion_id = usuario.get("asociacion_id")
+    if not asociacion_id:
+        raise HTTPException(
+            status_code=404,
+            detail="Este usuario no está vinculado a ninguna asociación",
+        )
+    _verificar_asociacion_aprobada(asociacion_id)
+    try:
+        return deceased_followup_service.obtener_detalle_seguimiento(
+            reporte_id,
+            asociacion_id,
+            actor_id=usuario["id"],
+            tipo_actor="asociacion",
+        )
+    except deceased_followup_service.SeguimientoFallecimientoError as error:
+        if error.codigo == "reporte_no_encontrado":
+            raise HTTPException(status_code=404, detail="Reporte no encontrado")
+        raise HTTPException(
+            status_code=404,
+            detail="Seguimiento no encontrado para tu asociación",
+        )
+
+
+@router.post(
+    "/me/seguimientos-fallecimiento/{reporte_id}/resultados/"
+    "{resultado_id}/revision",
+    status_code=200,
+)
+async def post_revision_resultado_fallecimiento(
+    reporte_id: str,
+    resultado_id: str,
+    body: RevisionResultadoSinVidaRequest,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion", "staff"))
+    asociacion_id = usuario.get("asociacion_id")
+    if not asociacion_id:
+        raise HTTPException(
+            status_code=404,
+            detail="Este usuario no está vinculado a ninguna asociación",
+        )
+    _verificar_asociacion_aprobada(asociacion_id)
+
+    try:
+        return deceased_followup_service.revisar_resultado(
+            reporte_id,
+            resultado_id,
+            usuario["id"],
+            asociacion_id,
+            body,
+        )
+    except deceased_followup_service.SeguimientoFallecimientoError as error:
+        if error.codigo in (
+            "seguimiento_no_autorizado",
+            "reporte_no_encontrado",
+            "resultado_no_encontrado",
+        ):
+            raise HTTPException(
+                status_code=404,
+                detail="Resultado no encontrado para tu asociación",
+            )
+        if error.codigo in (
+            "decision_revision_invalida",
+            "notas_revision_requeridas",
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="La decisión o las notas de revisión no son válidas",
+            )
+        if error.codigo == "reactivacion_urgency_pendiente":
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "La duda quedó registrada. El reporte seguirá pausado "
+                    "hasta recalcular su urgencia; vuelve a intentarlo."
+                ),
+            )
+        if error.codigo in (
+            "revision_fallecimiento_no_disponible",
+            "respuesta_revision_invalida",
+            "respuesta_reactivacion_invalida",
+        ):
+            raise HTTPException(
+                status_code=503,
+                detail="La revisión no está disponible temporalmente",
+            )
+        raise HTTPException(
+            status_code=409,
+            detail="El resultado ya no admite esa decisión",
+        )
 
 
 @router.get("/me/reportes/necesidades-activas", status_code=200)

@@ -61,8 +61,9 @@ def test_complete_y_cached_es_updated():
 @patch("app.services.urgency_scheduler_service._claim_sublote")
 @patch("app.services.urgency_scheduler_service._release_claim")
 @patch("app.services.urgency_scheduler_service._finalizar_run")
+@patch("app.services.urgency_scheduler_service.reanudar_activacion_urgency_pendiente")
 @patch("app.services.urgency_scheduler_service.evaluate_report_urgency")
-def test_lote_vacio(mock_eval, mock_fin, mock_rel, mock_claim, mock_crear):
+def test_lote_vacio(mock_eval, mock_reanudar, mock_fin, mock_rel, mock_claim, mock_crear):
     mock_crear.return_value = {"id": "run_1"}
     mock_claim.return_value = []
     
@@ -70,14 +71,16 @@ def test_lote_vacio(mock_eval, mock_fin, mock_rel, mock_claim, mock_crear):
     
     assert res == {}
     mock_eval.assert_not_called()
+    mock_reanudar.assert_not_called()
     mock_fin.assert_called_once()
 
 @patch("app.services.urgency_scheduler_service._crear_run")
 @patch("app.services.urgency_scheduler_service._claim_sublote")
 @patch("app.services.urgency_scheduler_service._release_claim")
 @patch("app.services.urgency_scheduler_service._finalizar_run")
+@patch("app.services.urgency_scheduler_service.reanudar_activacion_urgency_pendiente")
 @patch("app.services.urgency_scheduler_service.evaluate_report_urgency")
-def test_un_reporte_falla_otros_continuan(mock_eval, mock_fin, mock_rel, mock_claim, mock_crear):
+def test_un_reporte_falla_otros_continuan(mock_eval, mock_reanudar, mock_fin, mock_rel, mock_claim, mock_crear):
     mock_crear.return_value = {"id": "run_1"}
     # claim_sublote is called multiple times due to loop. We need side_effect.
     mock_claim.side_effect = [["rep1", "rep2"], []]
@@ -106,3 +109,4 @@ def test_un_reporte_falla_otros_continuan(mock_eval, mock_fin, mock_rel, mock_cl
     assert res.get("updated") == 1
     assert res.get("examined") == 2
     assert mock_rel.call_count == 2
+    mock_reanudar.assert_called_once_with("rep2")

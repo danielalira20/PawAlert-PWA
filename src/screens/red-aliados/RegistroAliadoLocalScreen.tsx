@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Modal, TextInput } from 'react-native';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { Input } from '../../components/ui/Input';
@@ -12,6 +12,9 @@ import * as DocumentPicker from 'expo-document-picker';
 import { useRouter } from 'expo-router';
 import { validarNombre } from '../../utils/validators';
 import { separarNombreCompleto } from '../../utils/nombreCompleto';
+import { getFormDraft, removeFormDraft, setFormDraft } from '../../services/formDraftStorage';
+import { createFormDraftEnvelope, parseFormDraftEnvelope } from '../../utils/formDraft';
+import { getDeviceToken } from '../../utils/deviceToken';
 
 const COLORS = {
   bgTeal: '#66BCB4',
@@ -26,6 +29,66 @@ const COLORS = {
 };
 
 const FORM_MAX_WIDTH = 750;
+const ALLY_DRAFT_VERSION = 1;
+const ALLY_DRAFT_TTL_MS = 2 * 60 * 60 * 1000;
+const ALLY_DRAFT_SAVE_DELAY_MS = 800;
+const ALLY_DRAFT_KEY_PREFIX = '@pawalert:draft:ally';
+
+interface AllyFormDraftData {
+  paso: number;
+  tipoAliado: string;
+  email: string;
+  telefono: string;
+  nombreNegocio: string;
+  nombreContacto: string;
+  formaColaboracion: string;
+  logistica: string;
+  diasSeleccionados: string[];
+  horaApertura: string;
+  horaCierre: string;
+  descripcion: string;
+  medicoResponsable: string;
+  cedulaProfesional: string;
+  tipoDocumento: string;
+  tipoDocumentoOtro: string;
+  requiereCita: boolean;
+  nivelesUrgencia: string[];
+  especiesAtendidas: string[];
+  tipoApoyoDifusion: string[];
+  areaServicio: string;
+  areaServicioOtro: string;
+  nombreContactoCampana: string;
+  cargoContactoCampana: string;
+  tipoEstablecimiento: string;
+  otroEstablecimiento: string;
+  razonSocial: string;
+  tipoInstitucion: string;
+  otroInstitucion: string;
+  nombreRepresentante: string;
+  cargoRepresentante: string;
+  rfc: string;
+  categorias: string[];
+  subcategorias: string[];
+  latitud: number | null;
+  longitud: number | null;
+  direccionConfirmada: string;
+  calleNombre: string;
+  numero: string;
+  colonia: string;
+  municipio: string;
+  estadoUbicacion: string;
+  referencia: string;
+  radio: number;
+  visibilidad: string;
+  checkMural: boolean;
+  checkReglas: boolean;
+}
+
+function isAllyFormDraftData(value: unknown): value is AllyFormDraftData {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<AllyFormDraftData>;
+  return typeof candidate.paso === 'number' && typeof candidate.tipoAliado === 'string';
+}
 
 interface Props {
   onClose?: () => void;
@@ -121,6 +184,13 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
   const [emailConflict, setEmailConflict] = useState(false);
   const [phoneConflict, setPhoneConflict] = useState(false);
 
+  // Borrador recuperable
+  const [isDraftReady, setIsDraftReady] = useState(false);
+  const [draftStorageKey, setDraftStorageKey] = useState<string | null>(null);
+  const [showDraftNotice, setShowDraftNotice] = useState(false);
+  const draftInitializationStartedRef = useRef(false);
+  const draftPersistenceDisabledRef = useRef(false);
+
   // ─── Obtener categorías y subcategorías ───
   useEffect(() => {
     const fetchCategorias = async () => {
@@ -143,6 +213,228 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
     };
     fetchSubcategorias();
   }, []);
+
+  useEffect(() => {
+    if (draftInitializationStartedRef.current) return;
+    draftInitializationStartedRef.current = true;
+    let active = true;
+
+    (async () => {
+      const storageKey = `${ALLY_DRAFT_KEY_PREFIX}:guest:${await getDeviceToken()}:v${ALLY_DRAFT_VERSION}`;
+      if (!active) return;
+      setDraftStorageKey(storageKey);
+
+      const raw = await getFormDraft(storageKey);
+      if (!active || !raw) {
+        if (active) setIsDraftReady(true);
+        return;
+      }
+
+      const parsed = parseFormDraftEnvelope<AllyFormDraftData>(raw, ALLY_DRAFT_VERSION);
+      if (parsed.status !== 'valid' || !isAllyFormDraftData(parsed.draft.data)) {
+        await removeFormDraft(storageKey);
+        if (active) setIsDraftReady(true);
+        return;
+      }
+
+      const d = parsed.draft.data;
+      setPaso(d.paso || 1);
+      setTipoAliado(d.tipoAliado || (initialTipoAliado || 'aliado_local'));
+      setEmail(d.email || '');
+      setTelefono(d.telefono || '');
+      setNombreNegocio(d.nombreNegocio || '');
+      setNombreContacto(d.nombreContacto || '');
+      setFormaColaboracion(d.formaColaboracion || 'Donaciones ocasionales');
+      setLogistica(d.logistica || 'Puedo entregar');
+      setDiasSeleccionados(d.diasSeleccionados || []);
+      setHoraApertura(d.horaApertura || '');
+      setHoraCierre(d.horaCierre || '');
+      setDescripcion(d.descripcion || '');
+
+      setMedicoResponsable(d.medicoResponsable || '');
+      setCedulaProfesional(d.cedulaProfesional || '');
+      setTipoDocumento(d.tipoDocumento || '');
+      setTipoDocumentoOtro(d.tipoDocumentoOtro || '');
+      setRequiereCita(Boolean(d.requiereCita));
+      setNivelesUrgencia(d.nivelesUrgencia || []);
+      setEspeciesAtendidas(d.especiesAtendidas || []);
+
+      setTipoApoyoDifusion(d.tipoApoyoDifusion || []);
+      setAreaServicio(d.areaServicio || '');
+      setAreaServicioOtro(d.areaServicioOtro || '');
+      setNombreContactoCampana(d.nombreContactoCampana || '');
+      setCargoContactoCampana(d.cargoContactoCampana || '');
+
+      setTipoEstablecimiento(d.tipoEstablecimiento || '');
+      setOtroEstablecimiento(d.otroEstablecimiento || '');
+      setRazonSocial(d.razonSocial || '');
+      setTipoInstitucion(d.tipoInstitucion || '');
+      setOtroInstitucion(d.otroInstitucion || '');
+      setNombreRepresentante(d.nombreRepresentante || '');
+      setCargoRepresentante(d.cargoRepresentante || '');
+      setRfc(d.rfc || '');
+
+      setCategorias(d.categorias || []);
+      setSubcategorias(d.subcategorias || []);
+      setLatitud(d.latitud ?? null);
+      setLongitud(d.longitud ?? null);
+      setDireccionConfirmada(d.direccionConfirmada || '');
+      setCalleNombre(d.calleNombre || '');
+      setNumero(d.numero || '');
+      setColonia(d.colonia || '');
+      setMunicipio(d.municipio || '');
+      setEstadoUbicacion(d.estadoUbicacion || '');
+      setReferencia(d.referencia || '');
+      setRadio(typeof d.radio === 'number' ? d.radio : 5);
+      setVisibilidad(d.visibilidad || 'mostrar mi nombre');
+      setCheckMural(Boolean(d.checkMural));
+      setCheckReglas(Boolean(d.checkReglas));
+
+      setShowDraftNotice(true);
+      setIsDraftReady(true);
+    })().catch(() => {
+      if (active) setIsDraftReady(true);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [initialTipoAliado]);
+
+  const allyDraftData = useMemo<AllyFormDraftData>(() => ({
+    paso,
+    tipoAliado,
+    email,
+    telefono,
+    nombreNegocio,
+    nombreContacto,
+    formaColaboracion,
+    logistica,
+    diasSeleccionados,
+    horaApertura,
+    horaCierre,
+    descripcion,
+    medicoResponsable,
+    cedulaProfesional,
+    tipoDocumento,
+    tipoDocumentoOtro,
+    requiereCita,
+    nivelesUrgencia,
+    especiesAtendidas,
+    tipoApoyoDifusion,
+    areaServicio,
+    areaServicioOtro,
+    nombreContactoCampana,
+    cargoContactoCampana,
+    tipoEstablecimiento,
+    otroEstablecimiento,
+    razonSocial,
+    tipoInstitucion,
+    otroInstitucion,
+    nombreRepresentante,
+    cargoRepresentante,
+    rfc,
+    categorias,
+    subcategorias,
+    latitud,
+    longitud,
+    direccionConfirmada,
+    calleNombre,
+    numero,
+    colonia,
+    municipio,
+    estadoUbicacion,
+    referencia,
+    radio,
+    visibilidad,
+    checkMural,
+    checkReglas,
+  }), [
+    paso,
+    tipoAliado,
+    email,
+    telefono,
+    nombreNegocio,
+    nombreContacto,
+    formaColaboracion,
+    logistica,
+    diasSeleccionados,
+    horaApertura,
+    horaCierre,
+    descripcion,
+    medicoResponsable,
+    cedulaProfesional,
+    tipoDocumento,
+    tipoDocumentoOtro,
+    requiereCita,
+    nivelesUrgencia,
+    especiesAtendidas,
+    tipoApoyoDifusion,
+    areaServicio,
+    areaServicioOtro,
+    nombreContactoCampana,
+    cargoContactoCampana,
+    tipoEstablecimiento,
+    otroEstablecimiento,
+    razonSocial,
+    tipoInstitucion,
+    otroInstitucion,
+    nombreRepresentante,
+    cargoRepresentante,
+    rfc,
+    categorias,
+    subcategorias,
+    latitud,
+    longitud,
+    direccionConfirmada,
+    calleNombre,
+    numero,
+    colonia,
+    municipio,
+    estadoUbicacion,
+    referencia,
+    radio,
+    visibilidad,
+    checkMural,
+    checkReglas,
+  ]);
+
+  const hasMeaningfulDraft = paso > 1
+    || email.trim() !== ''
+    || telefono.trim() !== ''
+    || nombreNegocio.trim() !== ''
+    || nombreContacto.trim() !== ''
+    || categorias.length > 0
+    || direccionConfirmada.trim() !== '';
+
+  useEffect(() => {
+    if (
+      !isDraftReady
+      || !draftStorageKey
+      || !hasMeaningfulDraft
+      || draftPersistenceDisabledRef.current
+      || registroExitoso
+    ) {
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      if (draftPersistenceDisabledRef.current) return;
+      const envelope = createFormDraftEnvelope(
+        allyDraftData,
+        ALLY_DRAFT_VERSION,
+        ALLY_DRAFT_TTL_MS,
+      );
+      void setFormDraft(draftStorageKey, JSON.stringify(envelope));
+    }, ALLY_DRAFT_SAVE_DELAY_MS);
+
+    return () => clearTimeout(timeout);
+  }, [allyDraftData, draftStorageKey, hasMeaningfulDraft, isDraftReady, registroExitoso]);
+
+  const clearAllyDraft = () => {
+    draftPersistenceDisabledRef.current = true;
+    if (draftStorageKey) void removeFormDraft(draftStorageKey);
+  };
 
   // ─── Búsqueda Nominatim ───
   useEffect(() => {
@@ -637,6 +929,7 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
 
       await refreshUser();
       setRegistroExitoso(true);
+      clearAllyDraft();
     } catch (error: any) {
       showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'Error al guardar.' });
     } finally {
@@ -687,6 +980,32 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
             <View style={{ height: 6, backgroundColor: COLORS.grayLight, width: '100%', marginBottom: 16, borderRadius: 3, overflow: 'hidden' }}>
               <View style={{ height: '100%', backgroundColor: COLORS.primary, width: `${(paso / 5) * 100}%`, borderRadius: 3 }} />
             </View>
+            {showDraftNotice && (
+              <View style={{
+                backgroundColor: '#EAF6FF',
+                borderWidth: 1,
+                borderColor: '#C9E6FF',
+                borderRadius: 12,
+                paddingHorizontal: 12,
+                paddingVertical: 10,
+                marginBottom: 12,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}>
+                <Text style={{ color: COLORS.textDark, fontSize: 13, flex: 1, marginRight: 10 }}>
+                  Recuperamos tu progreso guardado para que continúes donde te quedaste.
+                </Text>
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Cerrar aviso de borrador recuperado"
+                  onPress={() => setShowDraftNotice(false)}
+                  style={{ padding: 4 }}
+                >
+                  <Ionicons name="close" size={16} color={COLORS.textDark} />
+                </TouchableOpacity>
+              </View>
+            )}
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
 
               {/* ====== PASO 1 ====== */}
@@ -1246,7 +1565,7 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
                   <TouchableOpacity onPress={() => setShowCloseConfirm(false)} style={styles.confirmButtonCancel}>
                     <Text style={styles.confirmButtonCancelText}>Me quedo</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={() => { setShowCloseConfirm(false); if (onClose) { onClose(); } else { router.back(); } }} style={styles.confirmButtonExit}>
+                  <TouchableOpacity onPress={() => { clearAllyDraft(); setShowCloseConfirm(false); if (onClose) { onClose(); } else { router.back(); } }} style={styles.confirmButtonExit}>
                     <Text style={styles.confirmButtonExitText}>Sí, salir</Text>
                   </TouchableOpacity>
                 </View>

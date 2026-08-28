@@ -32,10 +32,14 @@ interface QuickActionConfig {
 // detalle (no lo salta) — solo evita el paso extra de tocar la card y luego
 // buscar el botón. Para externos, el primer gesto en campo es validar la
 // llegada; solo después se habilita "Encontré al animal".
-function getQuickAction(reporte: ReporteStaff, esHogarTemporal = false): QuickActionConfig {
+function getQuickAction(
+  reporte: ReporteStaff,
+  esHogarTemporal = false,
+  requiereLlegadaZona = esHogarTemporal,
+): QuickActionConfig {
   switch (reporte.estado_reporte) {
     case 'en_camino':
-      if (esHogarTemporal && !reporte.llegada_zona_registrada) {
+      if (requiereLlegadaZona && !reporte.llegada_zona_registrada) {
         return {
           label: 'Llegué a la zona',
           icon: 'location-outline',
@@ -83,6 +87,7 @@ interface Props {
   // acciones rápidas de campo.
   puedeRegistrarHitos?: boolean;
   esHogarTemporal?: boolean;
+  requiereLlegadaZona?: boolean;
 }
 
 export function ReportCard({
@@ -95,11 +100,12 @@ export function ReportCard({
   onQuickRefugio,
   puedeRegistrarHitos = true,
   esHogarTemporal = false,
+  requiereLlegadaZona = esHogarTemporal,
 }: Props) {
   const translateX = useSharedValue(0);
   const action = useMemo(
-    () => getQuickAction(reporte, esHogarTemporal),
-    [esHogarTemporal, reporte],
+    () => getQuickAction(reporte, esHogarTemporal, requiereLlegadaZona),
+    [esHogarTemporal, reporte, requiereLlegadaZona],
   );
   const animales = useMemo(() => getAnimales(reporte), [reporte]);
   const grave = animalMasGrave(animales);

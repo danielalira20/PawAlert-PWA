@@ -1,12 +1,97 @@
 import uuid
 from fastapi import UploadFile, HTTPException
+from app.config import settings
 from app.db.supabase import supabase, supabase_admin
 from app.services.storage_service import subir_bytes, eliminar_por_url
 from app.services.assignment_service import obtener_contactos_emergencia
-from datetime import datetime, timezone
-from app.models.report import AnimalInput
+from datetime import datetime, timedelta, timezone
+from app.models.report import AnimalInput, EstadoReporteEnum
+from app.models.urgency import ExternalSignalErrorCode, ExternalSignalStatus
+from app.models.visual_similarity import (
+    VisualSimilarityLevel,
+    VisualSimilaritySearchResult,
+)
 from app.utils.animal_shaping import shape_animal_embed, shape_animal_response, CONDICION_SEVERIDAD
 import json
+
+
+def _analizar_similitud_visual_si_habilitada(
+    *,
+    reporte_id: str,
+    animal_foto_id: str | None,
+    contenido: bytes,
+    content_type: str,
+) -> VisualSimilaritySearchResult | None:
+    """Registra la senal CLIP sin convertir su disponibilidad en un fallo del reporte."""
+    if not settings.clip_validation_enabled or not animal_foto_id:
+        return None
+
+    try:
+        from app.services.visual_similarity_service import analyze_visual_similarity
+
+        return analyze_visual_similarity(
+            report_id=reporte_id,
+            animal_photo_id=animal_foto_id,
+            image_bytes=contenido,
+            content_type=content_type,
+        )
+    except Exception as error:
+        print(
+            f"[WARN] No se pudo registrar similitud visual para la foto "
+            f"{animal_foto_id} del reporte {reporte_id}: {error}"
+        )
+        return VisualSimilaritySearchResult(
+            status=ExternalSignalStatus.unavailable,
+            model=settings.clip_model,
+            calculated_at=datetime.now(timezone.utc),
+            error_code=ExternalSignalErrorCode.provider_error,
+        )
+
+
+def _resumir_resultados_clip(
+    resultados: list[VisualSimilaritySearchResult],
+) -> tuple[VisualSimilarityLevel | None, float | None, str | None, str | None]:
+    """Obtiene la coincidencia mas fuerte y conserva un fallo parcial."""
+    candidatos = [
+        candidato
+        for resultado in resultados
+        if resultado.status == ExternalSignalStatus.complete
+        for candidato in resultado.candidates
+    ]
+    mas_fuerte = max(candidatos, key=lambda item: item.similarity, default=None)
+
+    nivel = None
+    similitud = None
+    reporte_coincidente_id = None
+    if mas_fuerte:
+        similitud = mas_fuerte.similarity
+        reporte_coincidente_id = mas_fuerte.report_id
+        if similitud >= settings.clip_high_threshold:
+            nivel = VisualSimilarityLevel.high
+        elif similitud >= settings.clip_gray_threshold:
+            nivel = VisualSimilarityLevel.gray
+        else:
+            nivel = VisualSimilarityLevel.low
+    elif resultados and all(
+        resultado.status == ExternalSignalStatus.complete
+        for resultado in resultados
+    ):
+        nivel = VisualSimilarityLevel.low
+
+    no_disponible = next(
+        (
+            resultado
+            for resultado in resultados
+            if resultado.status == ExternalSignalStatus.unavailable
+        ),
+        None,
+    )
+    error_code = (
+        no_disponible.error_code.value
+        if no_disponible and no_disponible.error_code
+        else None
+    )
+    return nivel, similitud, reporte_coincidente_id, error_code
 
 def _condicion_str(condicion) -> str:
     return condicion.value if hasattr(condicion, "value") else str(condicion)
@@ -297,6 +382,7 @@ async def crear_reporte(
     gemini_error_detalle: str | None = None
     exif_discrepancia = False
     phash_alerta = False
+    resultados_clip: list[VisualSimilaritySearchResult] = []
     try:
         for resuelto in animales_resueltos:
             animal_in = resuelto["animal_in"]
@@ -431,14 +517,23 @@ async def crear_reporte(
                             descripcion="El análisis automático de una fotografía falló técnicamente; requiere revisión manual.",
                         )
 
+                    animal_foto_id = (foto_insertada.data or [{}])[0].get("id")
                     resultado_phash = registrar_phash_reporte(
                         reporte_id=reporte_id,
-                        animal_foto_id=(foto_insertada.data or [{}])[0].get("id"),
+                        animal_foto_id=animal_foto_id,
                         phash=phash,
                     )
                     phash_alerta = phash_alerta or bool(
                         resultado_phash.get("alerta")
                     )
+                    resultado_clip = _analizar_similitud_visual_si_habilitada(
+                        reporte_id=reporte_id,
+                        animal_foto_id=animal_foto_id,
+                        contenido=contenido_a_subir,
+                        content_type=content_type_subida,
+                    )
+                    if resultado_clip:
+                        resultados_clip.append(resultado_clip)
                     fotos_procesadas += 1
 
             for animal_id, condiciones in condiciones_ia_por_animal.items():
@@ -497,6 +592,10 @@ async def crear_reporte(
 
     from app.services.report_validation_service import evaluate_initial_validation
 
+    clip_nivel, clip_similitud, clip_reporte_coincidente, clip_error = (
+        _resumir_resultados_clip(resultados_clip)
+    )
+
     decision_validacion = evaluate_initial_validation(
         has_photos=fotos_procesadas > 0,
         gemini_technical_error=gemini_error_tecnico,
@@ -506,6 +605,10 @@ async def crear_reporte(
         reporter_requires_prior_review=requiere_revision_trust,
         reporter_trust_check_error=error_consulta_trust,
         linked_duplicate_report_id=reporte_original_id,
+        clip_level=clip_nivel,
+        clip_similarity=clip_similitud,
+        clip_matching_report_id=clip_reporte_coincidente,
+        clip_error_code=clip_error,
     )
 
     from app.services.report_activation_service import (
@@ -527,12 +630,19 @@ async def crear_reporte(
             ),
         )
     elif decision_validacion.outcome == "revision_manual":
+        revision_expira_at = None
+        if decision_validacion.review_expires_in_minutes:
+            revision_expira_at = (
+                datetime.now(timezone.utc)
+                + timedelta(minutes=decision_validacion.review_expires_in_minutes)
+            ).isoformat()
         activacion = enviar_reporte_a_revision(
             reporte_id=reporte_id,
             razones=decision_validacion.reasons,
             razones_exclusion_urgency=(
                 decision_validacion.urgency_exclusion_reasons
             ),
+            revision_expira_at=revision_expira_at,
         )
     else:
         activacion = activar_reporte(
@@ -543,6 +653,7 @@ async def crear_reporte(
             condicion_mas_grave=_condicion_mas_grave_de(animales),
             tipo_animal_mas_grave=_tipo_animal_mas_grave_de(animales),
             municipio=municipio,
+            razones_validacion=decision_validacion.reasons,
         )
     asociacion = activacion["asociacion"]
     asociacion_id = asociacion.get("id") if asociacion else None
@@ -563,14 +674,19 @@ async def crear_reporte(
         "estado": activacion["estado"],
         "asociacion_asignada": asociacion["nombre"] if asociacion else None,
         "contactos_emergencia": contactos if contactos else None,
-        "created_at": str(created_at)
+        "motivos_revision": (
+            [razon["codigo"] for razon in decision_validacion.reasons]
+            if activacion["estado"] == "revision_manual"
+            else None
+        ),
+        "created_at": str(created_at),
     }
 
 
 ESTADOS_VALIDOS = [
     "pendiente", "asignado", "en_camino", "en_atencion", "cerrado",
     "sin_cobertura", "duplicado_vinculable", "duplicado_informativo",
-    "cancelado_por_reportante",
+    "cancelado_por_reportante", EstadoReporteEnum.rescatado.value,
 ]
 
 TRANSICIONES_PERMITIDAS = {
@@ -582,10 +698,40 @@ TRANSICIONES_PERMITIDAS = {
     "sin_cobertura": ["pendiente"],
 }
 
-async def obtener_reportes() -> list:
+NIVEL_URGENCY_SEVERIDAD = {"rojo": 3, "amarillo": 2, "verde": 1}
+
+# Grid de agregacion para el mapa publico sin sesion (~0.01 grado ~ 1.1km):
+# visitantes anonimos no reciben marcadores individuales, solo densidad por
+# zona, para no exponer la ubicacion aproximada de un reporte especifico.
+GRID_MAPA_PUBLICO = 2
+
+
+def _agregar_por_zona(filas: list) -> list[dict]:
+    celdas: dict[tuple[float, float], dict] = {}
+    for r in filas:
+        lat, lng = r.get("latitud"), r.get("longitud")
+        if lat is None or lng is None:
+            continue
+        clave = (round(lat, GRID_MAPA_PUBLICO), round(lng, GRID_MAPA_PUBLICO))
+        celda = celdas.setdefault(
+            clave, {"latitud": clave[0], "longitud": clave[1], "cantidad": 0, "nivel_urgencia_max": None}
+        )
+        celda["cantidad"] += 1
+        nivel = r.get("urgency_nivel")
+        if nivel and (
+            celda["nivel_urgencia_max"] is None
+            or NIVEL_URGENCY_SEVERIDAD.get(nivel, 0)
+            > NIVEL_URGENCY_SEVERIDAD.get(celda["nivel_urgencia_max"], 0)
+        ):
+            celda["nivel_urgencia_max"] = nivel
+    return list(celdas.values())
+
+
+async def obtener_reportes(usuario_id: str | None = None) -> dict:
     resultado = supabase.table("reportes").select(
         "id, estado_reporte, estado_id, latitud, longitud, municipio, colonia, created_at, "
         "urgency_score, urgency_nivel, estado_validacion_reporte, estado_moderacion, "
+        "staff_asignado_id, "
         "animal(orden, es_grupo, cantidad, trae_crias_nacidas, numero_crias_nacidas, "
         "tipo_animal_id, condicion_id, tamanio_id, sexo, edad_aproximada, descripcion, "
         "tipo_animal_catalogo(clave), condicion_catalogo(clave), tamanio_catalogo(clave), "
@@ -596,6 +742,9 @@ async def obtener_reportes() -> list:
     ).in_(
         "estado_moderacion", ["visible", "aprobado"]
     ).execute()
+
+    if usuario_id is None:
+        return {"modo": "agregado", "reportes": [], "zonas": _agregar_por_zona(resultado.data)}
 
     reportes = []
     for r in resultado.data:
@@ -609,15 +758,17 @@ async def obtener_reportes() -> list:
                 fotos_ordenadas = sorted(fotos, key=lambda f: f.get("orden", 0))
                 foto_url = fotos_ordenadas[0]["foto_url"]
 
-        # Endpoint público sin auth — se redondea a ~100m de precisión para no
-        # exponer la ubicación exacta (posible domicilio) del reportante.
+        # Solo quien esta asignado como voluntario/staff a ESTE reporte ve la
+        # coordenada exacta. El resto (reportante, otros voluntarios, staff de
+        # otra asociacion) sigue viendo la ubicacion redondeada a ~100m.
         lat = r.get("latitud")
         lng = r.get("longitud")
+        es_asignado = usuario_id is not None and r.get("staff_asignado_id") == usuario_id
         reportes.append({
             "id": r["id"],
             "estado_reporte": r.get("estado_reporte"),
-            "latitud": round(lat, 3) if lat is not None else None,
-            "longitud": round(lng, 3) if lng is not None else None,
+            "latitud": (lat if es_asignado else round(lat, 3)) if lat is not None else None,
+            "longitud": (lng if es_asignado else round(lng, 3)) if lng is not None else None,
             "municipio": r.get("municipio"),
             "colonia": r.get("colonia"),
             "created_at": str(r["created_at"]),
@@ -629,7 +780,7 @@ async def obtener_reportes() -> list:
             "estado_moderacion": r.get("estado_moderacion"),
         })
 
-    return reportes
+    return {"modo": "detallado", "reportes": reportes, "zonas": []}
 
 async def cambiar_estado_reporte(
     reporte_id: str,
@@ -804,6 +955,10 @@ async def obtener_reportes_usuario(usuario_id: str) -> list:
         cobertura = r.get("estado_cobertura")
         if estado == "cancelado_por_reportante":
             estado_publico = "Reporte cancelado"
+        elif estado == "pendiente_seguimiento_fallecimiento":
+            estado_publico = "Resultado en revisión"
+        elif estado == "muerto":
+            estado_publico = "Seguimiento concluido"
         elif estado == "cerrado":
             estado_publico = "Resolución final"
         elif estado == "rescatado" or eventos.intersection(
@@ -843,6 +998,8 @@ async def obtener_reportes_usuario(usuario_id: str) -> list:
                 "cerrado",
                 "cancelado_por_reportante",
                 "rescatado",
+                "pendiente_seguimiento_fallecimiento",
+                "muerto",
             ),
         })
 

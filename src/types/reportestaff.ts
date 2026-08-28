@@ -17,6 +17,18 @@ export interface ReporteStaff {
     telefono: string | null;
   };
   distancia_km?: number | null;
+  distancia_linea_recta_km?: number | null;
+  ruta?: {
+    status: 'complete' | 'unavailable' | null;
+    duration_seconds: number | null;
+    distance_meters: number | null;
+    geometry: {
+      type: 'LineString';
+      coordinates: [number, number][];
+    } | null;
+    error_code: string | null;
+    calculated_at: string | null;
+  } | null;
   // Motor de sugerencias Ruta 1 (BACK01/BACK02) — controlan si se muestra
   // el botón "Registrar llegada a veterinaria": solo aplica cuando ya se
   // aceptó una sugerencia y esa llegada todavía no se registró.
@@ -78,4 +90,21 @@ export interface AceptarSugerenciaResponse {
   };
   contacto_aliado: ContactoAliado;
   ubicacion_aliado: UbicacionAliado;
+}
+
+export interface ResultadoRescateSinVidaResponse {
+  reporte_id: string;
+  estado_reporte: string;
+  todos_animales_reportados: boolean;
+  transicion_realizada: boolean;
+  seguimiento_id: string | null;
+  asociacion_deadline_at: string | null;
+  administracion_deadline_at: string | null;
+  requiere_recalculo_urgency: boolean;
+  verificacion_evidencia: {
+    evidencia_id: string;
+    estado: 'coincidente' | 'discrepancia' | 'sin_gps_exif';
+    distancia_metros: number | null;
+    requiere_revision: boolean;
+  };
 }

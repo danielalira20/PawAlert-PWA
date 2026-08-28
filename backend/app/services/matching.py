@@ -5,10 +5,14 @@ pausas, distancia y carga. Este módulo aplica compatibilidad segura y genera
 un ranking entendible para la asociación.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-from app.db.supabase import supabase
+from app.db.supabase import supabase, supabase_admin
+from app.models.dispatch import MATCHING_WEIGHTS
+from app.services.candidate_route_estimation_service import (
+    enrich_candidates_with_route_estimates,
+)
 from app.services.reputacion_service import (
     ROL_VOLUNTARIO_INTERNO,
     usuarios_bloqueados_nuevas_asignaciones,
@@ -20,13 +24,7 @@ TZ_MEXICO = ZoneInfo("America/Mexico_City")
 DIAS = ["lun", "mar", "mie", "jue", "vie", "sab", "dom"]
 MAX_RADIO_KM = 30
 
-PESOS = {
-    "proximidad": 0.30,
-    "disponibilidad": 0.25,
-    "experiencia": 0.20,
-    "movilidad": 0.15,
-    "carga": 0.10,
-}
+PESOS = MATCHING_WEIGHTS
 
 ETIQUETAS_EXPERIENCIA = {
     "docil_estable": "Manejo de animales dóciles o estables",
@@ -37,7 +35,11 @@ ETIQUETAS_EXPERIENCIA = {
 }
 
 
-def obtener_candidatos(reporte_id: str) -> dict:
+def obtener_candidatos(
+    reporte_id: str,
+    *,
+    incluir_rutas: bool = True,
+) -> dict:
     """Devuelve el top 3 vigente con filtros y desglose de puntuación."""
     reporte = _obtener_reporte(reporte_id)
     especies_caso = {
@@ -67,6 +69,7 @@ def obtener_candidatos(reporte_id: str) -> dict:
         },
         ROL_VOLUNTARIO_INTERNO,
     )
+    con_propuesta_activa = _voluntarios_con_propuesta_activa()
 
     candidatos = []
     for candidato in crudos:
@@ -78,6 +81,8 @@ def obtener_candidatos(reporte_id: str) -> dict:
         if candidato["usuario_id"] in rechazaron:
             continue
         if candidato["usuario_id"] in bloqueados:
+            continue
+        if candidato["usuario_id"] in con_propuesta_activa:
             continue
 
         especies = set(
@@ -136,7 +141,15 @@ def obtener_candidatos(reporte_id: str) -> dict:
         ),
         reverse=True,
     )
-    return {"candidatos": candidatos[:3]}
+    top_candidates = candidatos[:3]
+    if not incluir_rutas:
+        return {"candidatos": top_candidates}
+    return {
+        "candidatos": enrich_candidates_with_route_estimates(
+            reporte_id,
+            top_candidates,
+        )
+    }
 
 
 def evaluar_candidato_externo(
@@ -441,6 +454,29 @@ def _obtener_reporte(reporte_id: str) -> dict:
         for animal in animales_crudos
     ]
     return data
+
+
+def _voluntarios_con_propuesta_activa() -> set:
+    """Voluntarios con una propuesta activa y sin vencer en cualquier
+    reporte -- no deben volver a salir como candidatos disponibles
+    mientras esa propuesta siga sin resolverse. Sin esto, el mismo
+    voluntario puede salir como top-1 en dos llamadas a
+    obtener_candidatos() antes de que la primera propuesta se resuelva
+    (dos reportes en la misma corrida de escalamiento, o un staff
+    procesando dos reportes manualmente en pocos minutos)."""
+    ahora = datetime.now(timezone.utc).isoformat()
+    resultado = (
+        supabase_admin.table("propuestas_asignacion")
+        .select("usuario_asignado_id")
+        .eq("estado", "activa")
+        .gt("vence_at", ahora)
+        .execute()
+    )
+    return {
+        fila["usuario_asignado_id"]
+        for fila in (resultado.data or [])
+        if fila.get("usuario_asignado_id")
+    }
 
 
 def _voluntarios_que_rechazaron(reporte_id: str) -> set:

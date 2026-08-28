@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+from fastapi import HTTPException
 
 from app.services import report_activation_service
 
@@ -81,7 +82,11 @@ def test_activar_reporte_abre_cobertura_despues_de_validacion(
         tipos_animales=["perro", "gato"],
         es_critico=False,
     )
-    actualizacion = tablas["reportes"].update.call_args_list[0].args[0]
+    preparacion = tablas["reportes"].update.call_args_list[0].args[0]
+    assert preparacion["estado_validacion_reporte"] == "urgency_pendiente"
+    assert preparacion["estado_cobertura"] is None
+    assert preparacion["activado_at"] is None
+    actualizacion = tablas["reportes"].update.call_args_list[1].args[0]
     assert actualizacion["estado_validacion_reporte"] == "aprobado"
     assert actualizacion["estado_reporte"] == "asignado"
     assert actualizacion["estado_cobertura"] == "abierto"
@@ -131,10 +136,10 @@ def test_activar_reporte_informa_si_el_caso_es_critico(
     )
 
 
-def test_fallo_interno_de_urgencia_no_rompe_activacion(
+def test_fallo_interno_de_urgencia_detiene_activacion(
     make_query, _mock_initial_urgency
 ):
-    supabase, supabase_admin, _, _, asociacion = _clientes(
+    supabase, supabase_admin, tablas, _, asociacion = _clientes(
         make_query, asociacion=True
     )
     _mock_initial_urgency.side_effect = RuntimeError("fallo de persistencia")
@@ -155,8 +160,21 @@ def test_fallo_interno_de_urgencia_no_rompe_activacion(
     ):
         resultado = _activar()
 
-    assert resultado["estado"] == "asignado"
-    obtener_candidatos.assert_called_once_with("reporte-1")
+    assert resultado == {"estado": "urgency_pendiente", "asociacion": None}
+    obtener_candidatos.assert_not_called()
+    assert not tablas["reporte_asignaciones"].insert.called
+    preparacion = tablas["reportes"].update.call_args_list[0].args[0]
+    assert preparacion["estado_validacion_reporte"] == "urgency_pendiente"
+    assert preparacion["estado_cobertura"] is None
+    assert preparacion["asociacion_asignada_id"] is None
+    assert preparacion["activado_at"] is None
+    assert "urgency_proximo_recalculo_at" in preparacion
+
+    eventos = [
+        llamada.args[0]["tipo_evento"]
+        for llamada in tablas["historial_reporte"].insert.call_args_list
+    ]
+    assert "urgency_inicial_fallida" in eventos
 
 
 def test_activar_reporte_sin_asociacion_crea_caso_administrativo(make_query):
@@ -195,7 +213,10 @@ def test_activar_reporte_compensa_preparacion_si_falla_actualizacion(make_query)
     supabase, supabase_admin, tablas, _, asociacion = _clientes(
         make_query, asociacion=True
     )
-    tablas["reportes"].execute.side_effect = RuntimeError("fallo de escritura")
+    tablas["reportes"].execute.side_effect = [
+        MagicMock(data=[{"id": "reporte-1"}]),
+        RuntimeError("fallo de escritura"),
+    ]
 
     with (
         patch.object(report_activation_service, "supabase", supabase),
@@ -242,6 +263,7 @@ def test_enviar_reporte_a_revision_no_abre_cobertura(make_query):
             reporte_id="reporte-1",
             razones=razones,
             razones_exclusion_urgency=[{"codigo": "gemini_error_tecnico"}],
+            revision_expira_at="2026-08-21T12:15:00+00:00",
         )
 
     assert resultado == {"estado": "revision_manual", "asociacion": None}
@@ -252,6 +274,9 @@ def test_enviar_reporte_a_revision_no_abre_cobertura(make_query):
     assert actualizacion["asociacion_asignada_id"] is None
     assert actualizacion["urgency_excluido"] is True
     assert actualizacion["razones_validacion"] == razones
+    assert actualizacion["validacion_revision_expira_at"] == (
+        "2026-08-21T12:15:00+00:00"
+    )
     asignar.assert_not_called()
     obtener_candidatos.assert_not_called()
     assert not tablas["reporte_asignaciones"].insert.called
@@ -294,6 +319,7 @@ def test_marcar_duplicado_vinculable_no_crea_trabajo_operativo(make_query):
     assert actualizacion["estado_cobertura"] is None
     assert actualizacion["asociacion_asignada_id"] is None
     assert actualizacion["activado_at"] is None
+    assert actualizacion["validacion_revision_expira_at"] is None
     assert actualizacion["urgency_excluido"] is True
     asignar.assert_not_called()
     obtener_candidatos.assert_not_called()
@@ -350,3 +376,144 @@ def test_activar_reporte_desde_revision_reconstruye_contexto_y_aprobacion(make_q
     assert argumentos["razones_validacion"][-1]["codigo"] == (
         "revision_manual_aprobada"
     )
+
+
+def test_reanudar_urgency_pendiente_completa_activacion_sin_recalcular(make_query):
+    reporte = {
+        "id": "reporte-1",
+        "latitud": 19.04,
+        "longitud": -98.20,
+        "municipio": "Puebla",
+        "estado_validacion_reporte": "urgency_pendiente",
+        "razones_validacion": [
+            {"codigo": "validacion_inicial_aprobada", "resultado": "aprobado"}
+        ],
+        "animal": [
+            {
+                "tipo_animal_catalogo": {"clave": "perro"},
+                "condicion_catalogo": {"clave": "grave"},
+            }
+        ],
+    }
+    supabase_admin = MagicMock()
+    supabase_admin.table.return_value = make_query(data=[reporte])
+
+    with (
+        patch.object(report_activation_service, "supabase_admin", supabase_admin),
+        patch.object(
+            report_activation_service,
+            "activar_reporte",
+            return_value={"estado": "asignado", "asociacion": {"id": "a-1"}},
+        ) as activar,
+    ):
+        resultado = report_activation_service.reanudar_activacion_urgency_pendiente(
+            "reporte-1"
+        )
+
+    assert resultado["estado"] == "asignado"
+    argumentos = activar.call_args.kwargs
+    assert argumentos["estado_validacion_esperado"] == "urgency_pendiente"
+    assert argumentos["urgency_inicial_calculada"] is True
+    assert argumentos["condicion_mas_grave"] == "grave"
+
+
+def test_reanudar_duda_conserva_asociacion_coordinadora(make_query):
+    reporte = {
+        "id": "reporte-1",
+        "estado_validacion_reporte": "urgency_pendiente",
+        "razones_validacion": [
+            {
+                "codigo": "reactivacion_duda_fallecimiento",
+                "resultado": "urgency_pendiente",
+            }
+        ],
+        "animal": [],
+    }
+    supabase_admin = MagicMock()
+    supabase_admin.table.return_value = make_query(data=[reporte])
+
+    with (
+        patch.object(report_activation_service, "supabase_admin", supabase_admin),
+        patch(
+            "app.services.deceased_followup_service."
+            "finalizar_reactivacion_pendiente",
+            return_value={"estado": "reactivado"},
+        ) as finalizar,
+        patch.object(report_activation_service, "activar_reporte") as activar,
+    ):
+        resultado = report_activation_service.reanudar_activacion_urgency_pendiente(
+            "reporte-1"
+        )
+
+    assert resultado == {"estado": "reactivado"}
+    finalizar.assert_called_once_with("reporte-1")
+    activar.assert_not_called()
+
+
+def test_activar_reporte_por_vencimiento_clip_exige_unico_bloqueo(make_query):
+    reporte = {
+        "id": "reporte-1",
+        "latitud": 19.04,
+        "longitud": -98.20,
+        "municipio": "Puebla",
+        "estado_validacion_reporte": "revision_manual",
+        "validacion_revision_expira_at": "2026-08-21T00:00:00+00:00",
+        "razones_validacion": [
+            {"codigo": "clip_zona_gris", "resultado": "revision_temporal"}
+        ],
+        "animal": [
+            {
+                "tipo_animal_catalogo": {"clave": "perro"},
+                "condicion_catalogo": {"clave": "estable"},
+            }
+        ],
+    }
+    supabase_admin = MagicMock()
+    supabase_admin.table.return_value = make_query(data=[reporte])
+
+    with (
+        patch.object(report_activation_service, "supabase_admin", supabase_admin),
+        patch.object(
+            report_activation_service,
+            "activar_reporte",
+            return_value={"estado": "asignado", "asociacion": {"id": "a-1"}},
+        ) as activar,
+    ):
+        resultado = report_activation_service.activar_reporte_por_vencimiento_clip(
+            "reporte-1"
+        )
+
+    assert resultado["estado"] == "asignado"
+    argumentos = activar.call_args.kwargs
+    assert argumentos["estado_validacion_esperado"] == "revision_manual"
+    assert argumentos["moderacion_aprobada_automaticamente"] is True
+    assert argumentos["razones_validacion"][-1]["codigo"] == (
+        "clip_zona_gris_expirada"
+    )
+
+
+def test_activar_reporte_por_vencimiento_clip_rechaza_otro_bloqueo(make_query):
+    reporte = {
+        "id": "reporte-1",
+        "estado_validacion_reporte": "revision_manual",
+        "validacion_revision_expira_at": "2026-08-21T00:00:00+00:00",
+        "razones_validacion": [
+            {"codigo": "clip_zona_gris", "resultado": "revision_temporal"},
+            {"codigo": "phash_coincidencia", "resultado": "revision_manual"},
+        ],
+        "animal": [],
+    }
+    supabase_admin = MagicMock()
+    supabase_admin.table.return_value = make_query(data=[reporte])
+
+    with (
+        patch.object(report_activation_service, "supabase_admin", supabase_admin),
+        patch.object(report_activation_service, "activar_reporte") as activar,
+    ):
+        with pytest.raises(HTTPException) as exc_info:
+            report_activation_service.activar_reporte_por_vencimiento_clip(
+                "reporte-1"
+            )
+
+    assert exc_info.value.status_code == 409
+    activar.assert_not_called()

@@ -156,6 +156,7 @@ def _report_row(**overrides):
         "created_at": (NOW - timedelta(hours=5)).isoformat(),
         "latitud": 19.04,
         "longitud": -98.20,
+        "estado_reporte": "asignado",
         "estado_validacion_reporte": "aprobado",
         "urgency_excluido": False,
         "animal": [
@@ -224,6 +225,47 @@ def test_evaluates_and_persists_multi_animal_report(make_query):
     assert current["urgency_formula_version"] == "urgency_v1"
 
 
+def test_apply_operational_confirmation_reduces_score_without_touching_clinical(
+    make_query,
+):
+    tables = {
+        "reportes": make_query(data=[{"urgency_score": 80.0, "urgency_nivel": "rojo"}]),
+        "historial_reporte": make_query(data=[]),
+    }
+    client = MagicMock()
+    client.table.side_effect = lambda name: tables[name]
+
+    with patch.object(urgency_service, "_get_admin_client", return_value=client):
+        urgency_service.apply_operational_confirmation("reporte-1")
+
+    actualizacion = tables["reportes"].update.call_args.args[0]
+    assert actualizacion["urgency_score_operativo"] == 56.0
+    assert actualizacion["urgency_nivel_operativo"] == "amarillo"
+    assert actualizacion["urgency_operativo_actualizado_at"] is not None
+    assert "urgency_score" not in actualizacion
+    assert "urgency_nivel" not in actualizacion
+
+    evento = tables["historial_reporte"].insert.call_args.args[0]
+    assert evento["tipo_evento"] == "urgency_operativo_actualizado"
+    assert evento["datos_extra"]["score_clinico"] == 80.0
+    assert evento["datos_extra"]["score_operativo"] == 56.0
+
+
+def test_apply_operational_confirmation_noop_without_clinical_score(make_query):
+    tables = {
+        "reportes": make_query(data=[{"urgency_score": None, "urgency_nivel": None}]),
+        "historial_reporte": make_query(data=[]),
+    }
+    client = MagicMock()
+    client.table.side_effect = lambda name: tables[name]
+
+    with patch.object(urgency_service, "_get_admin_client", return_value=client):
+        urgency_service.apply_operational_confirmation("reporte-1")
+
+    tables["reportes"].update.assert_not_called()
+    tables["historial_reporte"].insert.assert_not_called()
+
+
 def test_reuses_persisted_road_result_in_recalculations(make_query):
     previous = [
         {
@@ -282,6 +324,8 @@ def test_missing_coordinates_persist_unavailable_signals_with_provisional_score(
     [
         _report_row(estado_validacion_reporte="revision_manual"),
         _report_row(urgency_excluido=True),
+        _report_row(estado_reporte="rescatado"),
+        _report_row(estado_reporte="cerrado"),
     ],
 )
 def test_persistence_rejects_non_operational_reports(make_query, report):

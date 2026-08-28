@@ -34,6 +34,8 @@ import { ActionBar } from '../components/admin-dashboard/ActionBar';
 import { AdminActionButton } from '../components/admin-dashboard/AdminActionButton';
 import { ReportModerationPanel } from '../components/admin-dashboard/ReportModerationPanel';
 import { ProblemasCanjesPanel } from '../components/admin-dashboard/ProblemasCanjesPanel';
+import { AdminStatsPanel } from '../components/admin-dashboard/AdminStatsPanel';
+import { DeceasedFollowupPanel } from '../components/association-dashboard/DeceasedFollowupPanel';
 import { StatsRow, type StatItem } from '../components/staff-dashboard/StatsRow';
 import { Brand } from '../constants/theme';
 import type { AsociacionDetalle } from '../types/asociacionAdmin';
@@ -42,7 +44,7 @@ interface Props {
   onClose?: () => void;
 }
 
-type Tab = 'solicitudes' | 'apelaciones' | 'apelaciones-aliados' | 'aliados' | 'operativos' | 'moderacion' | 'problemas-canjes';
+type Tab = 'solicitudes' | 'apelaciones' | 'apelaciones-aliados' | 'aliados' | 'operativos' | 'fallecimientos' | 'moderacion' | 'problemas-canjes' | 'estadisticas';
 type DetailScreenState = 'list' | 'detail';
 
 interface CasoOperativo {
@@ -441,6 +443,15 @@ export default function AdminDashboardScreen({ onClose }: Props) {
           </TouchableOpacity>
 
           <TouchableOpacity
+            onPress={() => setTab('fallecimientos')}
+            style={[styles.tab, tab === 'fallecimientos' && styles.tabActiva]}
+          >
+            <Text style={[styles.tabText, tab === 'fallecimientos' && styles.tabTextActiva]}>
+              Seguimientos sensibles
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
             onPress={() => setTab('problemas-canjes')}
             style={[styles.tab, tab === 'problemas-canjes' && styles.tabActiva]}
           >
@@ -452,6 +463,15 @@ export default function AdminDashboardScreen({ onClose }: Props) {
                 <Text style={styles.tabBadgeText}>{problemasCanjes.length}</Text>
               </View>
             )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => setTab('estadisticas')}
+            style={[styles.tab, tab === 'estadisticas' && styles.tabActiva]}
+          >
+            <Text style={[styles.tabText, tab === 'estadisticas' && styles.tabTextActiva]}>
+              Estadísticas
+            </Text>
           </TouchableOpacity>
         </ScrollView>
       </View>
@@ -579,6 +599,12 @@ export default function AdminDashboardScreen({ onClose }: Props) {
           onCountChange={setModeracionPendiente}
           showToast={showToast}
         />
+      ) : tab === 'fallecimientos' ? (
+        <ScrollView contentContainerStyle={styles.followupsContent}>
+          <DeceasedFollowupPanel visible mode="admin" />
+        </ScrollView>
+      ) : tab === 'estadisticas' ? (
+        <AdminStatsPanel />
       ) : (
         <ProblemasCanjesPanel
           problemas={problemasCanjes}
@@ -1244,6 +1270,7 @@ function DetailDesktopBody({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Brand.backgroundWarm },
+  followupsContent: { padding: 20, paddingBottom: 40 },
   header: { backgroundColor: Brand.primary, paddingHorizontal: 20, paddingVertical: 16 },
   headerEyebrow: {
     color: 'rgba(255,255,255,0.75)',

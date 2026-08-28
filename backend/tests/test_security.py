@@ -1,13 +1,31 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from app.api import associations, reports
+from app import main
 from app.main import app
 from app.services import report_service, reputacion_service, voluntario_service
 
 
 client = TestClient(app)
+
+
+def test_cors_usa_origenes_configurados_sin_comodin(monkeypatch):
+    monkeypatch.setattr(main.settings, "frontend_url", "https://pawalert.example/")
+    monkeypatch.setattr(
+        main.settings,
+        "cors_origins",
+        "https://preview.example, https://pawalert.example",
+    )
+
+    origins = main._allowed_cors_origins()
+
+    assert "*" not in origins
+    assert origins.count("https://pawalert.example") == 1
+    assert "https://preview.example" in origins
+    assert "http://localhost:8081" in origins
 
 
 def test_cambio_estado_sin_token_devuelve_401():
@@ -280,13 +298,41 @@ def test_transicion_no_cerrado_mantiene_historial_generico(make_query):
     )
 
 
+def test_servicio_generico_permite_marcar_reporte_rescatado(make_query):
+    tablas = {
+        "reportes": make_query(data=[{
+            "id": "rep-1",
+            "estado_reporte": "en_atencion",
+            "usuario_id": None,
+            "updated_at": "2026-08-20T12:00:00+00:00",
+        }]),
+        "reporte_estados": make_query(data=[{"id": "estado-rescatado"}]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+
+    with (
+        patch.object(report_service, "supabase", supabase),
+        patch.object(report_service, "registrar_historial"),
+    ):
+        import asyncio
+
+        resultado = asyncio.run(
+            report_service.cambiar_estado_reporte("rep-1", "rescatado")
+        )
+
+    assert resultado["estado"] == "rescatado"
+    actualizacion = tablas["reportes"].update.call_args.args[0]
+    assert actualizacion["estado_reporte"] == "rescatado"
+
+
 def test_busqueda_telefono_sin_token_devuelve_401():
     response = client.get("/users/phone/5512345678")
     assert response.status_code == 401
 
 
-def test_mapa_publico_redondea_coordenadas(make_query):
-    query = make_query(data=[{
+def _fila_mapa(**overrides):
+    fila = {
         "id": "rep-1",
         "estado_reporte": "pendiente",
         "latitud": 19.0432167,
@@ -294,22 +340,103 @@ def test_mapa_publico_redondea_coordenadas(make_query):
         "municipio": "Puebla",
         "colonia": "Centro",
         "created_at": "2026-07-19T10:00:00+00:00",
+        "urgency_nivel": "amarillo",
+        "staff_asignado_id": None,
         "animal": [],
-    }])
+    }
+    fila.update(overrides)
+    return fila
+
+
+def test_mapa_sin_sesion_devuelve_zonas_agregadas_sin_datos_individuales(make_query):
+    query = make_query(data=[_fila_mapa()])
     supabase = MagicMock()
     supabase.table.return_value = query
 
     with patch.object(report_service, "supabase", supabase):
         import asyncio
-        resultado = asyncio.run(report_service.obtener_reportes())
+        resultado = asyncio.run(report_service.obtener_reportes(None))
 
-    assert resultado[0]["latitud"] == 19.043
-    assert resultado[0]["longitud"] == -98.199
+    assert resultado["modo"] == "agregado"
+    assert resultado["reportes"] == []
+    zona = resultado["zonas"][0]
+    assert zona["latitud"] == 19.04
+    assert zona["longitud"] == -98.2
+    assert zona["cantidad"] == 1
+    assert zona["nivel_urgencia_max"] == "amarillo"
+    assert "id" not in zona and "calle" not in zona
     query.eq.assert_any_call("estado_validacion_reporte", "aprobado")
     query.in_.assert_any_call(
         "estado_reporte",
         ["pendiente", "asignado", "en_camino", "en_atencion", "sin_cobertura"],
     )
+
+
+def test_mapa_con_sesion_no_asignado_redondea_coordenadas(make_query):
+    query = make_query(data=[_fila_mapa()])
+    supabase = MagicMock()
+    supabase.table.return_value = query
+
+    with patch.object(report_service, "supabase", supabase):
+        import asyncio
+        resultado = asyncio.run(report_service.obtener_reportes("usuario-cualquiera"))
+
+    assert resultado["modo"] == "detallado"
+    assert resultado["reportes"][0]["latitud"] == 19.043
+    assert resultado["reportes"][0]["longitud"] == -98.199
+
+
+def test_mapa_voluntario_asignado_recibe_coordenadas_exactas(make_query):
+    query = make_query(data=[_fila_mapa(staff_asignado_id="voluntario-1")])
+    supabase = MagicMock()
+    supabase.table.return_value = query
+
+    with patch.object(report_service, "supabase", supabase):
+        import asyncio
+        resultado = asyncio.run(report_service.obtener_reportes("voluntario-1"))
+
+    assert resultado["modo"] == "detallado"
+    assert resultado["reportes"][0]["latitud"] == 19.0432167
+    assert resultado["reportes"][0]["longitud"] == -98.1987654
+
+
+def _query_mapa_vacio():
+    query = MagicMock()
+    for metodo in ("select", "eq", "in_"):
+        getattr(query, metodo).return_value = query
+    query.execute.return_value = MagicMock(data=[])
+    return query
+
+
+def test_get_reports_sin_header_no_truena():
+    supabase = MagicMock()
+    supabase.table.return_value = _query_mapa_vacio()
+
+    with patch.object(report_service, "supabase", supabase):
+        response = client.get("/reports")
+
+    assert response.status_code == 200
+    assert response.json()["modo"] == "agregado"
+
+
+def test_get_reports_con_token_invalido_se_trata_como_anonimo():
+    supabase = MagicMock()
+    supabase.table.return_value = _query_mapa_vacio()
+
+    with (
+        patch.object(report_service, "supabase", supabase),
+        patch.object(
+            reports,
+            "_obtener_usuario_autenticado",
+            side_effect=HTTPException(status_code=401, detail="Token inválido o expirado"),
+        ),
+    ):
+        response = client.get(
+            "/reports", headers={"Authorization": "Bearer token-vencido"}
+        )
+
+    assert response.status_code == 200
+    assert response.json()["modo"] == "agregado"
 
 
 def test_reportes_asociacion_conservan_coordenadas_exactas(make_query):
@@ -365,13 +492,19 @@ def test_reportes_voluntario_conservan_coordenadas_exactas(make_query):
     }
     supabase = MagicMock()
     supabase.table.side_effect = lambda nombre: tablas[nombre]
+    supabase_admin = MagicMock()
+    supabase_admin.table.return_value = make_query(data=[])
 
-    with patch.object(voluntario_service, "supabase", supabase):
+    with (
+        patch.object(voluntario_service, "supabase", supabase),
+        patch.object(voluntario_service, "supabase_admin", supabase_admin),
+    ):
         import asyncio
         resultado = asyncio.run(voluntario_service.obtener_reportes_voluntario("user-vol-1"))
 
     assert resultado["en_accion"][0]["latitud"] == 19.0432167
     assert resultado["en_accion"][0]["longitud"] == -98.1987654
+    assert resultado["en_accion"][0]["distancia_linea_recta_km"] == 21.4
 
 
 def _reporte_embed(reporte_id: str) -> dict:
@@ -445,8 +578,13 @@ def test_reportes_voluntario_incluye_flags_sugerencia_veterinaria(make_query):
     }
     supabase = MagicMock()
     supabase.table.side_effect = lambda nombre: tablas[nombre]
+    supabase_admin = MagicMock()
+    supabase_admin.table.return_value = make_query(data=[])
 
-    with patch.object(voluntario_service, "supabase", supabase):
+    with (
+        patch.object(voluntario_service, "supabase", supabase),
+        patch.object(voluntario_service, "supabase_admin", supabase_admin),
+    ):
         import asyncio
         resultado = asyncio.run(voluntario_service.obtener_reportes_voluntario("user-vol-1"))
 
@@ -461,3 +599,51 @@ def test_reportes_voluntario_incluye_flags_sugerencia_veterinaria(make_query):
     assert por_reporte["rep-2"]["llegada_zona_registrada"] is False
     assert por_reporte["rep-2"]["animal_no_localizado_registrado"] is False
     assert por_reporte["rep-2"]["animal_bajo_resguardo_registrado"] is False
+
+
+def test_reportes_voluntario_recupera_ruta_confirmada(make_query):
+    tablas = {
+        "voluntarios": make_query(data=[{"id": "vol-1", "estado": "activo_nivel_1"}]),
+        "capacidades": make_query(data=[{"latitud": 19.0, "longitud": -98.0}]),
+        "reportes": make_query(data=[{
+            **_reporte_embed("rep-1"),
+            "referencia": None,
+            "asociaciones": {"nombre": "Patitas", "contacto_telefono": "5512345678"},
+        }]),
+        "contribuciones": make_query(data=[]),
+        "historial_reporte": make_query(data=[]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    rutas = make_query(data=[{
+        "reporte_id": "rep-1",
+        "ruta_status": "complete",
+        "ruta_duracion_segundos": 420,
+        "ruta_distancia_metros": 3100,
+        "ruta_geometria": {
+            "type": "LineString",
+            "coordinates": [[-98.0, 19.0], [-98.2, 19.04]],
+        },
+        "ruta_error_codigo": None,
+        "ruta_calculada_at": "2026-08-20T12:00:00+00:00",
+    }])
+    supabase_admin = MagicMock()
+    supabase_admin.table.return_value = rutas
+
+    with (
+        patch.object(voluntario_service, "supabase", supabase),
+        patch.object(voluntario_service, "supabase_admin", supabase_admin),
+    ):
+        import asyncio
+
+        resultado = asyncio.run(
+            voluntario_service.obtener_reportes_voluntario("user-vol-1")
+        )
+
+    ruta = resultado["en_accion"][0]["ruta"]
+    assert ruta["status"] == "complete"
+    assert ruta["duration_seconds"] == 420
+    assert ruta["distance_meters"] == 3100
+    assert resultado["en_accion"][0]["distancia_linea_recta_km"] == 0.0
+    rutas.eq.assert_any_call("usuario_asignado_id", "user-vol-1")
+    rutas.eq.assert_any_call("estado", "confirmada")

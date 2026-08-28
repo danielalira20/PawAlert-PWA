@@ -7,6 +7,7 @@ del rescate. La selección definitiva siempre se delega a la función SQL
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 from math import asin, cos, radians, sin, sqrt
 
@@ -14,11 +15,18 @@ from fastapi import HTTPException
 
 from app.db.supabase import supabase, supabase_admin
 from app.services import matching, reputacion_service
+from app.services.candidate_route_estimation_service import (
+    enrich_candidates_with_route_estimates,
+)
 from app.utils.animal_shaping import shape_animal_embed, shape_animal_response
 
 
 ESTADOS_VOLUNTARIO_ACTIVO = ("activo_nivel_1", "activo_nivel_2")
-PROPUESTA_COBERTURA_MINUTOS = 10
+# Tiempo que tiene el voluntario para aceptar o rechazar la propuesta.
+# Dead Man's Switch: 15 min totales; se avisa a los 12 min (3 min antes de vencer).
+PROPUESTA_COBERTURA_MINUTOS = 15
+_ALERTA_MINUTOS_ANTES_VENCIMIENTO = 3
+logger = logging.getLogger(__name__)
 
 
 def _reporte_disponible_para_cobertura(
@@ -151,7 +159,7 @@ def obtener_casos_cercanos(usuario_id: str) -> list[dict]:
             float(reporte["latitud"]),
             float(reporte["longitud"]),
         )
-        radio = min(float(capacidades.get("radio_max_km") or 0), 30)
+        radio = min(float(capacidades.get("radio_max_km") or matching.MAX_RADIO_KM), 30)
         if radio <= 0 or distancia > radio:
             continue
 
@@ -240,11 +248,21 @@ def crear_ofrecimiento(usuario_id: str, reporte_id: str) -> dict:
             detail="No pudimos registrar tu ofrecimiento. Inténtalo nuevamente.",
         ) from exc
 
-    return resultado.data or {
-        "reporte_id": reporte_id,
-        "voluntario_id": perfil["id"],
-        "estado": "vigente",
-    }
+    oferta_data = resultado.data
+    if not isinstance(oferta_data, dict):
+        oferta_data = {
+            "reporte_id": reporte_id,
+            "voluntario_id": perfil["id"],
+            "estado": "vigente",
+            "ofrecido_at": datetime.now(timezone.utc).isoformat()
+        }
+    
+    # El ofrecimiento expira en 30 minutos
+    ofrecido_at_str = oferta_data.get("ofrecido_at", datetime.now(timezone.utc).isoformat())
+    ofrecido_at = datetime.fromisoformat(ofrecido_at_str.replace("Z", "+00:00"))
+    oferta_data["expira_at"] = (ofrecido_at + timedelta(minutes=30)).isoformat()
+
+    return oferta_data
 
 
 def retirar_ofrecimiento(usuario_id: str, reporte_id: str) -> dict:
@@ -271,7 +289,11 @@ def retirar_ofrecimiento(usuario_id: str, reporte_id: str) -> dict:
     return {"ok": True, "ofrecimiento": resultado.data}
 
 
-def obtener_ofrecimientos_reporte(reporte_id: str) -> list[dict]:
+def obtener_ofrecimientos_reporte(
+    reporte_id: str,
+    *,
+    incluir_rutas: bool = True,
+) -> list[dict]:
     resultado = (
         supabase_admin.table("voluntario_ofrecimientos")
         .select(
@@ -316,6 +338,10 @@ def obtener_ofrecimientos_reporte(reporte_id: str) -> list[dict]:
             carga_actual,
             max_casos,
         )
+        ofrecido_at_str = oferta.get("ofrecido_at", datetime.now(timezone.utc).isoformat())
+        ofrecido_at_dt = datetime.fromisoformat(ofrecido_at_str.replace("Z", "+00:00"))
+        expira_at_str = (ofrecido_at_dt + timedelta(minutes=30)).isoformat()
+
         ofrecimientos.append(
             {
                 **oferta,
@@ -331,10 +357,13 @@ def obtener_ofrecimientos_reporte(reporte_id: str) -> list[dict]:
                 "foto_url": None,
                 "etiqueta": "Se ofreció",
                 "tipo": "voluntario_externo",
+                "expira_at": expira_at_str,
                 **evaluacion,
             }
         )
-    return ofrecimientos
+    if not incluir_rutas:
+        return ofrecimientos
+    return enrich_candidates_with_route_estimates(reporte_id, ofrecimientos)
 
 
 def obtener_propuestas_pendientes(usuario_id: str) -> list[dict]:
@@ -365,6 +394,50 @@ def _usuarios_coordinacion(asociacion_id: str | None) -> list[str]:
     ]
 
 
+def _obtener_ruta_estimada_propuesta(
+    reporte_id: str,
+    voluntario_id: str | None,
+) -> dict | None:
+    if not voluntario_id:
+        return None
+    try:
+        candidates = enrich_candidates_with_route_estimates(
+            reporte_id,
+            [{"voluntario_id": voluntario_id}],
+        )
+        return candidates[0].get("ruta_estimada") if candidates else None
+    except Exception:
+        logger.warning(
+            "No se pudo estimar la ruta de la propuesta para el reporte %s",
+            reporte_id,
+            exc_info=True,
+        )
+        return None
+
+
+def _payload_nueva_propuesta(
+    reporte_id: str,
+    ruta_estimada: dict | None,
+) -> dict:
+    payload = {
+        "mensaje": "Has recibido una nueva propuesta de asignación para un caso.",
+        "reporte_id": reporte_id,
+        "route_status": (
+            ruta_estimada.get("status") if ruta_estimada else "unavailable"
+        ),
+    }
+    if ruta_estimada and ruta_estimada.get("status") == "complete":
+        duration_seconds = ruta_estimada.get("duration_seconds")
+        distance_meters = ruta_estimada.get("distance_meters")
+        if duration_seconds is not None:
+            payload["duration_seconds"] = float(duration_seconds)
+            minutes = max(1, round(float(duration_seconds) / 60))
+            payload["mensaje"] += f" Tiempo estimado al caso: {minutes} min."
+        if distance_meters is not None:
+            payload["distance_meters"] = float(distance_meters)
+    return payload
+
+
 def reservar_cobertura(
     *,
     reporte_id: str,
@@ -376,6 +449,7 @@ def reservar_cobertura(
 ) -> str:
     rol_reputacion = {
         "equipo_interno": reputacion_service.ROL_VOLUNTARIO_INTERNO,
+        "escalamiento_automatico": reputacion_service.ROL_VOLUNTARIO_INTERNO,
         "ofrecimiento_externo": reputacion_service.ROL_VOLUNTARIO_EXTERNO,
     }.get(origen)
     if rol_reputacion:
@@ -396,9 +470,9 @@ def reservar_cobertura(
             status_code=409,
             detail="El caso ya no está disponible. Actualiza la lista.",
         )
-    vence_at = datetime.now(timezone.utc) + timedelta(
-        minutes=PROPUESTA_COBERTURA_MINUTOS
-    )
+    ahora = datetime.now(timezone.utc)
+    vence_at = ahora + timedelta(minutes=PROPUESTA_COBERTURA_MINUTOS)
+    alerta_at = vence_at - timedelta(minutes=_ALERTA_MINUTOS_ANTES_VENCIMIENTO)
     try:
         resultado = supabase_admin.rpc(
             "reservar_cobertura_reporte",
@@ -414,16 +488,37 @@ def reservar_cobertura(
         ).execute()
         propuesta_id = str(resultado.data)
 
+        # Guardar alerta_vencimiento_at para el Dead Man's Switch.
+        # El cron /internal/push/alerta-vencimiento consulta esta columna
+        # cada minuto y avisa al voluntario 3 min antes de que venza.
+        try:
+            supabase_admin.table("propuestas_asignacion").update(
+                {"alerta_vencimiento_at": alerta_at.isoformat()}
+            ).eq("id", propuesta_id).execute()
+        except Exception as e:
+            print(f"[WARN] No se pudo guardar alerta_vencimiento_at para {propuesta_id}: {e}")
+
+        ruta_estimada = _obtener_ruta_estimada_propuesta(
+            reporte_id,
+            voluntario_id,
+        )
+
         try:
             from app.services.push_notification_service import queue_and_send_push
+            carga_actual = _carga_activa(usuario_asignado_id)
+            payload_propuesta = _payload_nueva_propuesta(reporte_id, ruta_estimada)
+            if carga_actual >= 3:
+                payload_propuesta["carga_alta"] = True
+                payload_propuesta["mensaje"] = (
+                    f"Tienes {carga_actual} casos activos. "
+                    "¿Confirmas que puedes atender uno más?"
+                )
+                
             queue_and_send_push(
                 usuario_id=usuario_asignado_id,
                 tipo_evento="nueva_propuesta",
                 idempotency_key=f"nueva_propuesta:{propuesta_id}:{usuario_asignado_id}",
-                payload={
-                    "mensaje": "Has recibido una nueva propuesta de asignación para un caso.",
-                    "reporte_id": reporte_id,
-                },
+                payload=payload_propuesta,
                 reporte_id=reporte_id,
                 propuesta_id=propuesta_id,
             )
@@ -498,6 +593,54 @@ def expirar_propuestas_vencidas() -> int:
                     propuesta_id=propuesta_id,
                 )
 
+            # Notificar y promover al siguiente en la lista de espera
+            try:
+                siguiente = (
+                    supabase_admin.table("pool_interesados_reporte")
+                    .select("usuario_id, voluntario_id")
+                    .eq("reporte_id", reporte_id)
+                    .eq("estado", "en_espera")
+                    .order("posicion")
+                    .limit(1)
+                    .execute()
+                )
+                if siguiente.data:
+                    uid_sig = siguiente.data[0]["usuario_id"]
+                    vol_id_sig = siguiente.data[0]["voluntario_id"]
+
+                    # Marcar al vencido como 'vencido' en el pool
+                    vol_vencido = prop.get("voluntario_id")
+                    if vol_vencido:
+                        supabase_admin.table("pool_interesados_reporte").update(
+                            {"estado": "vencido"}
+                        ).eq("reporte_id", reporte_id).eq(
+                            "voluntario_id", vol_vencido
+                        ).execute()
+
+                    # Promover al siguiente
+                    supabase_admin.table("pool_interesados_reporte").update(
+                        {"estado": "propuesta_enviada"}
+                    ).eq("reporte_id", reporte_id).eq(
+                        "voluntario_id", vol_id_sig
+                    ).execute()
+
+                    # Push al siguiente
+                    queue_and_send_push(
+                        usuario_id=uid_sig,
+                        tipo_evento="nueva_propuesta",
+                        idempotency_key=f"reemplazo:{reporte_id}:{uid_sig}",
+                        payload={
+                            "mensaje": (
+                                "El voluntario anterior no respondió. "
+                                "Ahora eres el candidato principal para este caso."
+                            ),
+                            "reporte_id": reporte_id,
+                        },
+                        reporte_id=reporte_id,
+                    )
+            except Exception as e:
+                print(f"[WARN] Error promoviendo lista de espera para {reporte_id}: {e}")
+
     return len(propuestas_vencidas)
 
 
@@ -509,6 +652,7 @@ def responder_propuesta(
     rol: str | None = None,
 ) -> dict:
     propuesta_id = None
+    ruta = None
     try:
         propuesta = (
             supabase_admin.table("propuestas_asignacion")
@@ -577,7 +721,38 @@ def responder_propuesta(
                 "[WARN] no se pudo procesar la respuesta oportuna "
                 f"(propuesta={propuesta_id}): {error}"
             )
-    return {"ok": True, "estado_cobertura": resultado.data}
+
+    if acepta and propuesta_id:
+        try:
+            from app.services.assignment_route_service import (
+                calculate_assignment_route,
+            )
+
+            ruta_resultado = calculate_assignment_route(
+                propuesta_id, reporte_id, usuario_id
+            )
+            ruta = ruta_resultado.model_dump(mode="json")
+        except Exception as error:
+            print(
+                "[WARN] no se pudo calcular la ruta confirmada "
+                f"(propuesta={propuesta_id}): {error}"
+            )
+
+        try:
+            from app.services.urgency_service import apply_operational_confirmation
+
+            apply_operational_confirmation(reporte_id)
+        except Exception as error:
+            print(
+                "[WARN] no se pudo actualizar la prioridad operativa "
+                f"(reporte={reporte_id}): {error}"
+            )
+
+    return {
+        "ok": True,
+        "estado_cobertura": resultado.data,
+        "ruta": ruta,
+    }
 
 
 def _ofrecimientos_del_voluntario(voluntario_id: str) -> dict[str, dict]:
@@ -588,7 +763,17 @@ def _ofrecimientos_del_voluntario(voluntario_id: str) -> dict[str, dict]:
         .in_("estado", ["vigente", "seleccionado"])
         .execute()
     )
-    return {fila["reporte_id"]: fila for fila in (resultado.data or [])}
+    
+    ofrecimientos_map = {}
+    for fila in (resultado.data or []):
+        # Calcular el tiempo de expiración (30 minutos)
+        ofrecido_at_str = fila.get("ofrecido_at", datetime.now(timezone.utc).isoformat())
+        ofrecido_at_dt = datetime.fromisoformat(ofrecido_at_str.replace("Z", "+00:00"))
+        fila["expira_at"] = (ofrecido_at_dt + timedelta(minutes=30)).isoformat()
+        
+        ofrecimientos_map[fila["reporte_id"]] = fila
+        
+    return ofrecimientos_map
 
 
 def _carga_activa(usuario_id: str) -> int:
@@ -649,3 +834,107 @@ def _distancia_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
         + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2
     )
     return 2 * radio_tierra * asin(sqrt(a))
+
+def notificar_externos_caso_cercano(reporte_id: str, latitud: float, longitud: float) -> None:
+    """Busca voluntarios externos activos en la zona y les envía un Push cuando surge un caso."""
+    try:
+        voluntarios = supabase_admin.table("voluntarios").select(
+            "usuario_id, capacidades(latitud, longitud, radio_max_km)"
+        ).eq("estado", "activo_nivel_2").eq("disponible_operativamente", True).execute()
+        
+        from app.services.push_notification_service import queue_and_send_push, puede_notificar
+        
+        for vol in (voluntarios.data or []):
+            cap = vol.get("capacidades") or {}
+            if isinstance(cap, list): 
+                cap = cap[0] if cap else {}
+            
+            v_lat = cap.get("latitud")
+            v_lon = cap.get("longitud")
+            v_radio = cap.get("radio_max_km") or matching.MAX_RADIO_KM
+            
+            if v_lat is None or v_lon is None:
+                continue
+                
+            distancia = _distancia_km(float(v_lat), float(v_lon), latitud, longitud)
+            if distancia <= float(v_radio):
+                usuario_id = vol["usuario_id"]
+                # Limitamos el spam: maximo 1 notificación de caso cercano por hora
+                if puede_notificar(usuario_id, "caso_cercano", ventana_horas=1):
+                    queue_and_send_push(
+                        usuario_id=usuario_id,
+                        tipo_evento="caso_cercano",
+                        idempotency_key=f"caso_cercano:{reporte_id}:{usuario_id}",
+                        payload={
+                            "mensaje": "¡Tu ayuda puede empezar cerca! Hay un nuevo caso en tu radio de acción.",
+                            "reporte_id": reporte_id
+                        },
+                        reporte_id=reporte_id
+                    )
+    except Exception as error:
+        logger.error("Error notificando a externos sobre caso cercano %s: %s", reporte_id, error)
+
+
+def enviar_alertas_vencimiento_proximo() -> dict:
+    """Dead Man's Switch: avisa al voluntario 3 minutos antes de que su propuesta venza.
+
+    Diseñado para llamarse desde un cron de 1 minuto (POST /internal/push/alerta-vencimiento).
+    Consulta las propuestas activas cuya alerta_vencimiento_at cae en la ventana
+    [ahora, ahora+1min] y envía el push 'propuesta_por_vencer' una sola vez
+    por propuesta (idempotency_key garantiza que no se duplica si el cron reintenta).
+
+    Fail-safe: si falla la consulta, retorna {"error": ...} sin propagar excepción.
+    El voluntario no pierde la propuesta por un fallo del cron.
+    """
+    from app.services.push_notification_service import (
+        puede_notificar,
+        queue_and_send_push,
+    )
+
+    ahora = datetime.now(timezone.utc)
+    ventana_inicio = ahora.isoformat()
+    ventana_fin = (ahora + timedelta(minutes=1)).isoformat()
+
+    try:
+        res = (
+            supabase_admin.table("propuestas_asignacion")
+            .select("id, reporte_id, usuario_asignado_id, alerta_vencimiento_at")
+            .eq("estado", "activa")
+            .not_.is_("alerta_vencimiento_at", "null")
+            .gte("alerta_vencimiento_at", ventana_inicio)
+            .lte("alerta_vencimiento_at", ventana_fin)
+            .execute()
+        )
+    except Exception as e:
+        logger.error("Dead Man's Switch: error consultando propuestas: %s", e)
+        return {"error": str(e)}
+
+    alertadas = 0
+    for propuesta in res.data or []:
+        uid = propuesta.get("usuario_asignado_id")
+        reporte_id_prop = propuesta.get("reporte_id")
+        pid = propuesta.get("id")
+        if not uid:
+            continue
+        # ventana_horas=1 evita re-enviar si el cron se ejecuta dos veces seguidas
+        if puede_notificar(uid, "propuesta_por_vencer", ventana_horas=1):
+            try:
+                queue_and_send_push(
+                    usuario_id=uid,
+                    tipo_evento="propuesta_por_vencer",
+                    idempotency_key=f"alerta_venc:{pid}",
+                    payload={
+                        "mensaje": (
+                            f"Tienes {_ALERTA_MINUTOS_ANTES_VENCIMIENTO} minutos para confirmar. "
+                            "Después el caso será liberado a otro voluntario."
+                        ),
+                        "reporte_id": reporte_id_prop,
+                    },
+                    reporte_id=reporte_id_prop,
+                    propuesta_id=pid,
+                )
+                alertadas += 1
+            except Exception as e:
+                logger.warning("Dead Man's Switch: error encolando alerta para %s: %s", pid, e)
+
+    return {"alertas_enviadas": alertadas}

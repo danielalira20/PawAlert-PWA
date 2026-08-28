@@ -71,3 +71,37 @@ test('tres denuncias envían a moderación y el admin puede aprobar', async ({ r
   const visibleAgain = await request.get('/reports');
   expect((await visibleAgain.json()).some((item: { id: string }) => item.id === report.id)).toBeTruthy();
 });
+
+test.describe('Capa 3 - Protección de Concurrencia en Asignaciones', () => {
+  
+  test('Debe prevenir que el Cron y una Asociación modifiquen el reporte simultáneamente', async ({ request }) => {
+    // 1. SETUP: Iniciamos sesión y creamos el reporte usando tus helpers
+    // Utilizamos las credenciales del AUTHOR que te pide tu entorno
+    const account = credentials('E2E_AUTHOR');
+    const session = await login(request, account);
+    const reporte = await createReport(request, session.access_token);
+
+    // 2. LA CARRERA: Disparamos ambas peticiones exactamente al mismo tiempo
+    const [respuestaAsociacion, respuestaCron] = await Promise.all([
+      request.post(`/api/reportes/${reporte.id}/asignar-staff`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+        data: { staff_id: session.usuario.id } // Simulamos asignar al mismo usuario
+      }),
+      request.post(`/api/cron/procesar-timeouts`)
+    ]);
+
+    const statusAsociacion = respuestaAsociacion.status();
+    const statusCron = respuestaCron.status();
+
+    // 3. VALIDACIÓN: Ninguna condición de carrera debe permitir dos 200 OK
+    expect(
+      statusAsociacion === 200 && statusCron === 200, 
+      '¡Fallo de concurrencia! Ambas operaciones cruzaron el bloqueo.'
+    ).toBeFalsy();
+
+    // Verificamos que al menos uno haya sido bloqueado por el sistema (error 4xx)
+    const huboBloqueo = [statusAsociacion, statusCron].some(status => status >= 400 && status < 500);
+    expect(huboBloqueo).toBeTruthy();
+  });
+
+});

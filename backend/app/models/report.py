@@ -1,7 +1,8 @@
 from datetime import datetime
+from uuid import UUID
 
-from pydantic import BaseModel, Field
-from typing import Optional
+from pydantic import BaseModel, Field, model_validator
+from typing import Literal, Optional
 from enum import Enum
 
 class CondicionEnum(str, Enum):
@@ -36,6 +37,7 @@ class EstadoReporteEnum(str, Enum):
     asignado = "asignado"
     en_camino = "en_camino"
     en_atencion = "en_atencion"
+    pendiente_seguimiento_fallecimiento = "pendiente_seguimiento_fallecimiento"
     rescatado = "rescatado"
     cerrado = "cerrado"
     sin_cobertura = "sin_cobertura"
@@ -44,7 +46,29 @@ class EstadoReporteEnum(str, Enum):
     cancelado_por_reportante = "cancelado_por_reportante"
     duplicado_vinculable = "duplicado_vinculable"
     duplicado_informativo = "duplicado_informativo"
-    
+
+
+# Contrato compartido por los servicios que calculan o programan trabajo
+# operativo. `duplicado` y `muerto` se conservan como terminales por
+# compatibilidad con registros anteriores, aunque los flujos nuevos usan una
+# conclusion estructurada.
+ESTADOS_REPORTE_OPERATIVOS = frozenset({
+    EstadoReporteEnum.pendiente.value,
+    EstadoReporteEnum.asignado.value,
+    EstadoReporteEnum.en_camino.value,
+    EstadoReporteEnum.en_atencion.value,
+    EstadoReporteEnum.sin_cobertura.value,
+})
+
+ESTADOS_REPORTE_TERMINALES = frozenset({
+    EstadoReporteEnum.rescatado.value,
+    EstadoReporteEnum.cerrado.value,
+    EstadoReporteEnum.duplicado.value,
+    EstadoReporteEnum.muerto.value,
+    EstadoReporteEnum.cancelado_por_reportante.value,
+    EstadoReporteEnum.duplicado_vinculable.value,
+    EstadoReporteEnum.duplicado_informativo.value,
+})
 
 class ContactoEmergencia(BaseModel):
     nombre: str
@@ -117,6 +141,19 @@ class ReportListItem(BaseModel):
     estado_validacion_reporte: Optional[str] = None
     estado_moderacion: Optional[str] = None
 
+class ZonaAgregada(BaseModel):
+    """Punto agregado por zona para el mapa publico sin sesion: no expone
+    ningun reporte individual, solo densidad y severidad dominante."""
+    latitud: float
+    longitud: float
+    cantidad: int
+    nivel_urgencia_max: Optional[str] = None
+
+class ReportesMapaResponse(BaseModel):
+    modo: Literal["agregado", "detallado"]
+    reportes: list[ReportListItem] = []
+    zonas: list[ZonaAgregada] = []
+
 ## Lo usa el staff para registrar el avance del rescate
 class HitoRequest(BaseModel):
     tipo_hito: str
@@ -131,6 +168,86 @@ class HitoRequest(BaseModel):
     tiempo_busqueda_minutos: Optional[int] = Field(default=None, ge=1, le=1440)
     ruta_resguardo: Optional[str] = None
     fecha_limite_resguardo: Optional[datetime] = None
+
+
+class AnimalResultadoSinVidaInput(BaseModel):
+    animal_id: UUID
+    cantidad_reportada: int = Field(ge=1)
+
+
+class ResultadoRescateSinVidaRequest(BaseModel):
+    animales: list[AnimalResultadoSinVidaInput] = Field(min_length=1)
+    evidencia_id: UUID
+    latitud: float = Field(ge=-90, le=90)
+    longitud: float = Field(ge=-180, le=180)
+    puede_esperar_seguro: bool
+    riesgo_vial: bool = False
+    riesgo_sanitario: bool = False
+    identificacion_observada: Optional[str] = Field(default=None, max_length=500)
+    comentario: Optional[str] = Field(default=None, max_length=1000)
+    motivo_retiro_seguridad: Optional[str] = Field(default=None, max_length=500)
+
+
+class RevisionResultadoSinVidaRequest(BaseModel):
+    decision: Literal[
+        "confirmar",
+        "duda_critica",
+        "evidencia_insuficiente",
+    ]
+    notas: str = Field(min_length=5, max_length=1000)
+
+
+class SeguimientoRetiroAnimalRequest(BaseModel):
+    accion: Literal[
+        "contacto_oficial_realizado",
+        "autoridad_se_presento",
+        "tercero_responsable_se_hizo_cargo",
+        "retiro_gestionado_con_indicaciones",
+        "sin_comunicacion",
+        "sin_contacto_disponible",
+        "retiro_por_seguridad",
+    ]
+    idempotency_key: str = Field(min_length=8, max_length=100)
+    folio: Optional[str] = Field(default=None, max_length=200)
+    nombre_servicio: Optional[str] = Field(default=None, max_length=200)
+    destino_informado: Optional[str] = Field(default=None, max_length=500)
+    nota: Optional[str] = Field(default=None, max_length=1000)
+    evidencia_lugar_id: Optional[UUID] = None
+
+    @model_validator(mode="after")
+    def validar_seguimiento(self):
+        self.idempotency_key = self.idempotency_key.strip()
+        if len(self.idempotency_key) < 8:
+            raise ValueError("idempotency_key debe tener al menos 8 caracteres")
+        if (
+            self.accion == "retiro_gestionado_con_indicaciones"
+            and not (self.nombre_servicio or "").strip()
+        ):
+            raise ValueError("nombre_servicio es requerido para esta acción")
+        return self
+
+
+class CerrarSeguimientoFallecimientoRequest(BaseModel):
+    resultado_final: Literal[
+        "contacto_realizado",
+        "autoridad_atendio",
+        "retiro_reportado",
+        "retiro_confirmado",
+        "sin_contacto_disponible",
+        "voluntario_se_retiro_por_seguridad",
+    ]
+    idempotency_key: str = Field(min_length=8, max_length=100)
+    nota_cierre: str = Field(min_length=5, max_length=1000)
+
+    @model_validator(mode="after")
+    def validar_cierre(self):
+        self.idempotency_key = self.idempotency_key.strip()
+        self.nota_cierre = self.nota_cierre.strip()
+        if len(self.idempotency_key) < 8:
+            raise ValueError("idempotency_key debe tener al menos 8 caracteres")
+        if len(self.nota_cierre) < 5:
+            raise ValueError("nota_cierre debe tener al menos 5 caracteres")
+        return self
 
 
 class ResolverBusquedaNoLocalizadoRequest(BaseModel):

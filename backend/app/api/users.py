@@ -2,6 +2,8 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException,Header
 from app.db.supabase import supabase, supabase_admin
+from pydantic import BaseModel
+from typing import Literal
 
 router = APIRouter()
 
@@ -49,7 +51,7 @@ async def get_usuario_actual(authorization: str = Header(None)):
         raise HTTPException(status_code=401, detail="Token inválido o expirado")
  
     resultado = supabase.table("usuarios").select(
-        "id, nombre, apellido_paterno, apellido_materno, email, telefono, asociacion_id, roles(nombre)"
+        "id, nombre, apellido_paterno, apellido_materno, email, telefono, asociacion_id, avatar_id, roles(nombre)"
     ).eq("auth_user_id", auth_response.user.id).execute()
  
     if not resultado.data:
@@ -76,8 +78,65 @@ async def get_usuario_actual(authorization: str = Header(None)):
  
     return usuario_data
 
-from pydantic import BaseModel
-from typing import Literal
+
+class UpdateProfileRequest(BaseModel):
+    nombre: str
+    apellido_paterno: str
+    apellido_materno: str | None = None
+    telefono: str
+
+@router.patch("/me", status_code=200)
+async def update_usuario_actual(body: UpdateProfileRequest, authorization: str = Header(None)):
+    """Actualiza los datos personales del usuario logueado."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="No autenticado")
+
+    token = authorization.replace("Bearer ", "")
+    try:
+        auth_response = supabase.auth.get_user(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Token inválido o expirado")
+
+    telefono_limpio = body.telefono.replace(" ", "").replace("-", "")
+
+    update_data = {
+        "nombre": body.nombre.strip(),
+        "apellido_paterno": body.apellido_paterno.strip(),
+        "apellido_materno": body.apellido_materno.strip() if body.apellido_materno else None,
+        "telefono": telefono_limpio
+    }
+
+    # Se actualizan los datos usando supabase_admin para evitar bloqueos de RLS
+    resultado = supabase_admin.table("usuarios").update(update_data).eq("auth_user_id", auth_response.user.id).execute()
+
+    if not resultado.data:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    return {"status": "ok", "message": "Perfil actualizado correctamente"}
+
+class UpdateAvatarRequest(BaseModel):
+    avatar_id: str | None
+
+@router.put("/me/avatar", status_code=200)
+async def update_avatar(body: UpdateAvatarRequest, authorization: str = Header(None)):
+    """Actualiza el avatar predeterminado del usuario actual."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="No autenticado")
+        
+    token = authorization.replace("Bearer ", "")
+    try:
+        auth_response = supabase.auth.get_user(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Token inválido o expirado")
+        
+    resultado = supabase.table("usuarios").update({
+        "avatar_id": body.avatar_id
+    }).eq("auth_user_id", auth_response.user.id).execute()
+    
+    if not resultado.data:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        
+    return {"status": "ok", "message": "Avatar actualizado correctamente"}
 
 class PushDeviceRequest(BaseModel):
     token: str

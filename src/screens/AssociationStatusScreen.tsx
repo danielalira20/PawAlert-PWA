@@ -19,6 +19,7 @@ import { validarNombre } from '../utils/validators';
 import { useWindowDimensions } from 'react-native';
 import { PostulacionesPanel } from '../components/association-dashboard/PostulacionesPanel';
 import { LotesInvitacionesPanel } from '../components/association-dashboard/LotesInvitacionesPanel';
+import { DeceasedFollowupPanel } from '../components/association-dashboard/DeceasedFollowupPanel';
 import { Animated } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Animal, getAnimales, totalAnimales, animalMasGrave, ReportUrgencySnapshot } from '../types/reporte';
@@ -61,6 +62,15 @@ interface AsociacionInfo {
   motivo_rechazo: string | null;
 }
 
+interface UrgencyComponents {
+  ia_score: number | null;
+  declared_score: number | null;
+  time_score: number | null;
+  weather_score: number | null;
+  road_risk_score: number | null;
+  discrepancia_alerta: boolean;
+}
+
 interface ReporteAsignado extends ReportUrgencySnapshot {
   asignacion_id: string;
   reporte_id: string;
@@ -80,7 +90,7 @@ interface ReporteAsignado extends ReportUrgencySnapshot {
   requiere_revision?: boolean;
   estado_validacion_reporte?: string;
   urgency_data_status?: string;
-  urgency_components?: any;
+  urgency_components?: UrgencyComponents | null;
 }
 
 interface HistorialEvento {
@@ -93,7 +103,7 @@ interface HistorialEvento {
 }
 
 type FiltroAsignacion = 'todas' | 'pendientes' | 'aceptadas' | 'rechazadas';
-type ActiveTab = 'reportes' | 'postulaciones' | 'voluntarios' | 'lotes' | 'configuracion';
+type ActiveTab = 'reportes' | 'seguimientos' | 'postulaciones' | 'voluntarios' | 'lotes' | 'configuracion';
 
 type TabAsignacion = 'staff' | 'voluntarios';
 type EstadoVoluntarios = 'cargando' | 'candidatos' | 'esperando_confirmacion' | 'confirmado' | 'rechazado_mostrando_siguiente' | 'sin_candidatos';
@@ -142,6 +152,7 @@ interface OfrecimientoExterno {
   alertas: string[];
   score: ScoreCandidato;
   ofrecido_at: string;
+  expira_at?: string;
   foto_url?: string | null;
 }
 
@@ -1299,6 +1310,25 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                 </TouchableOpacity>
 
                 <TouchableOpacity
+                  onPress={() => setActiveTab('seguimientos')}
+                  style={{
+                    paddingBottom: 12,
+                    marginRight: 24,
+                    flexShrink: 0,
+                    borderBottomWidth: activeTab === 'seguimientos' ? 3 : 0,
+                    borderBottomColor: COLORS.primary
+                  }}
+                >
+                  <Text style={{
+                    fontSize: 16,
+                    fontWeight: activeTab === 'seguimientos' ? '800' : '600',
+                    color: activeTab === 'seguimientos' ? COLORS.primary : COLORS.textLight
+                  }}>
+                    Seguimientos
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
                   onPress={() => setActiveTab('postulaciones')}
                   style={{
                     paddingBottom: 12,
@@ -1383,6 +1413,8 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                 <Text style={{ fontSize: 22, fontWeight: 'bold', color: COLORS.textDark }}>
                   {activeTab === 'reportes'
                     ? 'Reportes asignados'
+                    : activeTab === 'seguimientos'
+                      ? 'Seguimientos sensibles'
                     : activeTab === 'postulaciones'
                       ? 'Postulaciones de voluntarios'
                       : activeTab === 'lotes'
@@ -1677,6 +1709,8 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                   )}
                 </>
 
+              ) : activeTab === 'seguimientos' ? (
+                <DeceasedFollowupPanel visible={activeTab === 'seguimientos'} />
               ) : activeTab === 'postulaciones' ? (
                 <PostulacionesPanel visible={activeTab === 'postulaciones'} />
               ) : activeTab === 'lotes' ? (
@@ -2721,6 +2755,7 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                                     </Text>
                                     <Text style={{ color: COLORS.textLight, fontSize: 10, marginTop: 3 }}>
                                       Se ofreció hace {formatDistanceToNow(new Date(oferta.ofrecido_at), { locale: es })}
+                                      {oferta.expira_at ? ` · expira en ${formatDistanceToNow(new Date(oferta.expira_at), { locale: es })}` : ''}
                                     </Text>
                                   </View>
                                   <View style={{ alignItems: 'center', marginLeft: 8 }}>

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from math import radians, sin, cos, asin, sqrt
 from fastapi import HTTPException
 from app.db.supabase import supabase, supabase_admin
@@ -706,6 +706,138 @@ async def listar_voluntarios_asociacion(asociacion_id: str) -> list:
 # B2 — Formulario de capacidades
 # ---------------------------------------------------------------------------
 
+CAPACIDADES_DRAFT_TTL_DAYS = 30
+
+
+def _nombre_borrador_capacidades(contexto: str) -> str:
+    return f"capacidades_voluntario:{contexto}"
+
+
+async def obtener_borrador_capacidades(usuario_id: str, contexto: str) -> dict:
+    supabase_admin.rpc("purgar_borradores_formulario_vencidos").execute()
+    formulario = _nombre_borrador_capacidades(contexto)
+    resultado = supabase_admin.table("borradores_formulario").select(
+        "version, datos, updated_at, expires_at"
+    ).eq("usuario_id", usuario_id).eq("formulario", formulario).limit(1).execute()
+
+    if not resultado.data:
+        return {"borrador": None}
+
+    fila = resultado.data[0]
+    expires_at = _fecha_utc(fila.get("expires_at"))
+    if expires_at is None or expires_at <= datetime.now(timezone.utc):
+        supabase_admin.table("borradores_formulario").delete().eq(
+            "usuario_id", usuario_id
+        ).eq("formulario", formulario).execute()
+        return {"borrador": None}
+
+    return {
+        "borrador": fila.get("datos") or {},
+        "version": fila.get("version", 1),
+        "updated_at": fila.get("updated_at"),
+        "expires_at": fila.get("expires_at"),
+    }
+
+
+async def guardar_borrador_capacidades(
+    usuario_id: str,
+    contexto: str,
+    datos: dict,
+) -> dict:
+    ahora = datetime.now(timezone.utc)
+    expires_at = ahora + timedelta(days=CAPACIDADES_DRAFT_TTL_DAYS)
+    formulario = _nombre_borrador_capacidades(contexto)
+    payload = {
+        "usuario_id": usuario_id,
+        "formulario": formulario,
+        "version": datos.get("version", 1),
+        "datos": datos,
+        "expires_at": expires_at.isoformat(),
+        "updated_at": ahora.isoformat(),
+    }
+    supabase_admin.table("borradores_formulario").upsert(
+        payload,
+        on_conflict="usuario_id,formulario",
+    ).execute()
+    return {
+        "mensaje": "Borrador guardado",
+        "updated_at": payload["updated_at"],
+        "expires_at": payload["expires_at"],
+    }
+
+
+async def eliminar_borrador_capacidades(usuario_id: str, contexto: str) -> dict:
+    formulario = _nombre_borrador_capacidades(contexto)
+    supabase_admin.table("borradores_formulario").delete().eq(
+        "usuario_id", usuario_id
+    ).eq("formulario", formulario).execute()
+    return {"mensaje": "Borrador eliminado"}
+
+
+# ---------------------------------------------------------------------------
+# B3 — Postulación de voluntario externo (casa temporal)
+# ---------------------------------------------------------------------------
+
+POSTULACION_EXTERNA_DRAFT_TTL_DAYS = 30
+_FORMULARIO_POSTULACION_EXTERNA = "postulacion_externa"
+
+
+async def obtener_borrador_postulacion_externa(usuario_id: str) -> dict:
+    supabase_admin.rpc("purgar_borradores_formulario_vencidos").execute()
+    resultado = supabase_admin.table("borradores_formulario").select(
+        "version, datos, updated_at, expires_at"
+    ).eq("usuario_id", usuario_id).eq(
+        "formulario", _FORMULARIO_POSTULACION_EXTERNA
+    ).limit(1).execute()
+
+    if not resultado.data:
+        return {"borrador": None}
+
+    fila = resultado.data[0]
+    expires_at = _fecha_utc(fila.get("expires_at"))
+    if expires_at is None or expires_at <= datetime.now(timezone.utc):
+        supabase_admin.table("borradores_formulario").delete().eq(
+            "usuario_id", usuario_id
+        ).eq("formulario", _FORMULARIO_POSTULACION_EXTERNA).execute()
+        return {"borrador": None}
+
+    return {
+        "borrador": fila.get("datos") or {},
+        "version": fila.get("version", 1),
+        "updated_at": fila.get("updated_at"),
+        "expires_at": fila.get("expires_at"),
+    }
+
+
+async def guardar_borrador_postulacion_externa(usuario_id: str, datos: dict) -> dict:
+    ahora = datetime.now(timezone.utc)
+    expires_at = ahora + timedelta(days=POSTULACION_EXTERNA_DRAFT_TTL_DAYS)
+    payload = {
+        "usuario_id": usuario_id,
+        "formulario": _FORMULARIO_POSTULACION_EXTERNA,
+        "version": datos.get("version", 1),
+        "datos": datos,
+        "expires_at": expires_at.isoformat(),
+        "updated_at": ahora.isoformat(),
+    }
+    supabase_admin.table("borradores_formulario").upsert(
+        payload,
+        on_conflict="usuario_id,formulario",
+    ).execute()
+    return {
+        "mensaje": "Borrador guardado",
+        "updated_at": payload["updated_at"],
+        "expires_at": payload["expires_at"],
+    }
+
+
+async def eliminar_borrador_postulacion_externa(usuario_id: str) -> dict:
+    supabase_admin.table("borradores_formulario").delete().eq(
+        "usuario_id", usuario_id
+    ).eq("formulario", _FORMULARIO_POSTULACION_EXTERNA).execute()
+    return {"mensaje": "Borrador eliminado"}
+
+
 async def obtener_capacidades(voluntario_id: str) -> dict:
     perfil = supabase.table("voluntarios").select(
         "disponible_operativamente, pausa_operativa_hasta, "
@@ -942,6 +1074,7 @@ async def obtener_reportes_voluntario(usuario_id: str, rol: str = None) -> dict:
     reportes_con_llegada_zona = set()
     reportes_con_busqueda_sin_resultado = set()
     reportes_con_animal_bajo_resguardo = set()
+    rutas_confirmadas: dict[str, dict] = {}
     if reporte_ids_todos:
         contribs = supabase.table("contribuciones").select("reporte_id").in_(
             "reporte_id", reporte_ids_todos
@@ -984,6 +1117,35 @@ async def obtener_reportes_voluntario(usuario_id: str, rol: str = None) -> dict:
             elif tipo_evento == "animal_bajo_resguardo":
                 reportes_con_animal_bajo_resguardo.add(reporte_id_evento)
 
+        rutas = (
+            supabase_admin.table("propuestas_asignacion")
+            .select(
+                "reporte_id, ruta_status, ruta_duracion_segundos, "
+                "ruta_distancia_metros, ruta_geometria, ruta_error_codigo, "
+                "ruta_calculada_at"
+            )
+            .eq("usuario_asignado_id", usuario_id)
+            .eq("estado", "confirmada")
+            .in_("reporte_id", reporte_ids_todos)
+            .order("ruta_calculada_at", desc=True)
+            .execute()
+        )
+        for ruta in rutas.data or []:
+            reporte_id_ruta = ruta.get("reporte_id")
+            if reporte_id_ruta and reporte_id_ruta not in rutas_confirmadas:
+                rutas_confirmadas[reporte_id_ruta] = {
+                    "status": ruta.get("ruta_status"),
+                    "duration_seconds": ruta.get("ruta_duracion_segundos"),
+                    "distance_meters": ruta.get("ruta_distancia_metros"),
+                    "geometry": ruta.get("ruta_geometria"),
+                    "error_code": ruta.get("ruta_error_codigo"),
+                    "calculated_at": (
+                        str(ruta["ruta_calculada_at"])
+                        if ruta.get("ruta_calculada_at")
+                        else None
+                    ),
+                }
+
     esperando_confirmacion = []
     pendientes = []
     en_accion = []
@@ -1019,6 +1181,17 @@ async def obtener_reportes_voluntario(usuario_id: str, rol: str = None) -> dict:
             "llegada_zona_registrada": r["id"] in reportes_con_llegada_zona,
             "animal_no_localizado_registrado": r["id"] in reportes_con_busqueda_sin_resultado,
             "animal_bajo_resguardo_registrado": r["id"] in reportes_con_animal_bajo_resguardo,
+            "ruta": rutas_confirmadas.get(r["id"]),
+            "distancia_linea_recta_km": (
+                _distancia_km(
+                    lat_voluntario,
+                    lon_voluntario,
+                    r.get("latitud"),
+                    r.get("longitud"),
+                )
+                if r.get("confirmacion_voluntario") == "confirmado"
+                else None
+            ),
         }
 
         estado = r.get("estado_reporte")

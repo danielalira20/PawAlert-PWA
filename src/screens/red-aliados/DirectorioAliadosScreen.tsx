@@ -64,6 +64,7 @@ interface Aliado {
   tipo: string;
   categorias: string[];
   sello_verificado: boolean;
+  telefono?: string;
   latitud: number | null;
   longitud: number | null;
 }
@@ -231,6 +232,34 @@ export default function DirectorioAliadosScreen({ onClose, embedded }: Props) {
                           </View>
                         ))}
                       </View>
+                      
+                      {a.telefono && (
+                        <View style={{ flexDirection: 'row', gap: 12, marginTop: 16 }}>
+                          <TouchableOpacity 
+                            onPress={() => {
+                              import('react-native').then(({ Linking }) => {
+                                Linking.openURL(`whatsapp://send?phone=+52${a.telefono}`);
+                              });
+                            }}
+                            style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#25D366', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 12, gap: 6 }}
+                          >
+                            <Ionicons name="logo-whatsapp" size={14} color="#FFF" />
+                            <Text style={{ color: '#FFF', fontSize: 12, fontWeight: '700' }}>WhatsApp</Text>
+                          </TouchableOpacity>
+                          
+                          <TouchableOpacity 
+                            onPress={() => {
+                              import('react-native').then(({ Linking }) => {
+                                Linking.openURL(`tel:+52${a.telefono}`);
+                              });
+                            }}
+                            style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.bgTeal, paddingVertical: 6, paddingHorizontal: 12, borderRadius: 12, gap: 6 }}
+                          >
+                            <Ionicons name="call" size={14} color="#FFF" />
+                            <Text style={{ color: '#FFF', fontSize: 12, fontWeight: '700' }}>Llamar</Text>
+                          </TouchableOpacity>
+                        </View>
+                      )}
                     </View>
                   </View>
                 ))}

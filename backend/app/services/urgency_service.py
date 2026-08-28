@@ -8,6 +8,7 @@ from app.models.urgency import (
     RoadRiskResult,
     WeatherResult,
 )
+from app.models.report import ESTADOS_REPORTE_TERMINALES
 
 
 FORMULA_VERSION = "urgency_v1"
@@ -323,7 +324,8 @@ def evaluate_report_urgency(
     query = (
         database.table("reportes")
         .select(
-            "id, created_at, latitud, longitud, estado_validacion_reporte, "
+            "id, created_at, latitud, longitud, estado_reporte, "
+            "estado_validacion_reporte, "
             "urgency_excluido, animal(condicion_estimada_ia, condicion_catalogo(clave))"
         )
         .eq("id", reporte_id)
@@ -334,8 +336,11 @@ def evaluate_report_urgency(
         raise ValueError("Report not found")
 
     report = query.data[0]
-    if report.get("estado_validacion_reporte") != "aprobado":
-        raise ValueError("Urgency can only be calculated for an approved report")
+    estado_validacion = report.get("estado_validacion_reporte")
+    if estado_validacion not in ("aprobado", "urgency_pendiente"):
+        raise ValueError("Urgency can only be calculated for a validated report")
+    if report.get("estado_reporte") in ESTADOS_REPORTE_TERMINALES:
+        raise ValueError("Urgency cannot be calculated for a terminal report")
     if report.get("urgency_excluido"):
         raise ValueError("Report is excluded from urgency calculation")
 
@@ -399,7 +404,7 @@ def evaluate_report_urgency(
             }
         )
         .eq("id", reporte_id)
-        .eq("estado_validacion_reporte", "aprobado")
+        .eq("estado_validacion_reporte", estado_validacion)
         .eq("urgency_excluido", False)
         .execute()
     )
@@ -421,3 +426,53 @@ def evaluate_report_urgency(
         ).execute()
 
     return result
+
+
+OPERATIONAL_REDUCTION_FACTOR = 0.7
+
+
+def apply_operational_confirmation(reporte_id: str) -> None:
+    """Reduce la prioridad operativa al confirmar cobertura, sin tocar el score clinico."""
+    database = _get_admin_client()
+    query = (
+        database.table("reportes")
+        .select("urgency_score, urgency_nivel")
+        .eq("id", reporte_id)
+        .limit(1)
+        .execute()
+    )
+    if not query.data:
+        return
+
+    score_clinico = query.data[0].get("urgency_score")
+    if score_clinico is None:
+        return
+
+    now = datetime.now(timezone.utc)
+    score_operativo = round(float(score_clinico) * OPERATIONAL_REDUCTION_FACTOR, 2)
+    nivel_operativo = _level_for(score_operativo)
+
+    database.table("reportes").update(
+        {
+            "urgency_score_operativo": score_operativo,
+            "urgency_nivel_operativo": nivel_operativo,
+            "urgency_operativo_actualizado_at": now.isoformat(),
+        }
+    ).eq("id", reporte_id).execute()
+
+    database.table("historial_reporte").insert(
+        {
+            "reporte_id": reporte_id,
+            "tipo_evento": "urgency_operativo_actualizado",
+            "descripcion": (
+                "Se redujo la prioridad operativa al confirmar cobertura; "
+                "el score clinico se conserva sin cambios."
+            ),
+            "datos_extra": {
+                "score_clinico": score_clinico,
+                "nivel_clinico": query.data[0].get("urgency_nivel"),
+                "score_operativo": score_operativo,
+                "nivel_operativo": nivel_operativo,
+            },
+        }
+    ).execute()

@@ -2,17 +2,17 @@ import { Feather, Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Dimensions, Image, Modal, Text, TouchableOpacity, View } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
-import MapView, { Callout, Region } from 'react-native-maps';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import MapView, { Callout, Circle, Region } from 'react-native-maps';
 import { TrackedMarker } from './TrackedMarker';
 import AuthGateModal from '../components/AuthGateModal';
 import { ReportContentMenu } from '../components/reports/ReportContentMenu';
 import { ICON_CAT, ICON_CLOCK, ICON_CALENDAR, ICON_DOG, ICON_PAW, ICON_WARNING, ICON_MULTIPLE } from '../constants/mapIcons';
 import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
-import { Reporte, getAnimales, condicionMasGrave, especieMasGrave, totalAnimales, animalMasGrave } from '../types/reporte';
+import { Reporte, ZonaAgregada, getAnimales, condicionMasGrave, especieMasGrave, totalAnimales, animalMasGrave } from '../types/reporte';
 import { AnimalCarousel } from '../components/common/AnimalCarousel';
 import ReportFormScreen from './ReportFormScreen';
 
@@ -128,6 +128,60 @@ function AnimalMarker({ condicion, tipoAnimal, selected, count = 1 }: {
   );
 }
 
+// ─── Marcador de zona agregada (visitantes sin sesión: densidad, no reportes) ─
+const NIVEL_URGENCIA_CONFIG: Record<string, { color: string; bg: string }> = {
+  rojo:     { color: '#E74C3C', bg: '#FDEDEC' },
+  amarillo: { color: '#F39C12', bg: '#FEF9E7' },
+  verde:    { color: '#27AE60', bg: '#EAFAF1' },
+};
+
+// Anillos concéntricos con opacidad decreciente — react-native-maps no
+// soporta un fillColor con degradado radial nativo, así que se simula
+// apilando varios círculos (mismo criterio que LeafletMap.tsx en web).
+const ANILLOS_GLOW = [
+  { factor: 1, opacity: 0.05 },
+  { factor: 0.7, opacity: 0.09 },
+  { factor: 0.45, opacity: 0.16 },
+  { factor: 0.22, opacity: 0.3 },
+];
+
+const alphaHex = (opacity: number) =>
+  Math.round(opacity * 255).toString(16).padStart(2, '0');
+
+function ZonaGlow({ zona }: { zona: { latitud: number; longitud: number; cantidad: number; nivel_urgencia_max: string | null } }) {
+  const color = NIVEL_URGENCIA_CONFIG[zona.nivel_urgencia_max ?? '']?.color ?? '#95A5A6';
+  const radioBase = 500 + zona.cantidad * 180;
+  return (
+    <>
+      {ANILLOS_GLOW.map((anillo) => (
+        <Circle
+          key={anillo.factor}
+          center={{ latitude: zona.latitud, longitude: zona.longitud }}
+          radius={radioBase * anillo.factor}
+          strokeWidth={0}
+          fillColor={`${color}${alphaHex(anillo.opacity)}`}
+        />
+      ))}
+    </>
+  );
+}
+
+function ZonaMarker({ cantidad, nivel }: { cantidad: number; nivel: string | null }) {
+  const cfg = NIVEL_URGENCIA_CONFIG[nivel ?? ''] ?? { color: '#95A5A6', bg: '#F2F3F4' };
+  const size = 40;
+  return (
+    <View style={{
+      width: size, height: size, borderRadius: size / 2,
+      backgroundColor: cfg.bg,
+      borderWidth: 2, borderColor: cfg.color,
+      alignItems: 'center', justifyContent: 'center',
+      shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 5, elevation: 4,
+    }}>
+      <Text style={{ fontSize: 13, fontWeight: '800', color: cfg.color }}>{cantidad}</Text>
+    </View>
+  );
+}
+
 interface AsociacionMapa {
   id: string;
   nombre: string;
@@ -174,9 +228,13 @@ function AssocMarker({ selected }: { selected: boolean }) {
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 export default function MapScreen() {
-  const { isLoggedIn } = useAuth();
+  const { isLoggedIn, token } = useAuth();
   const params = useLocalSearchParams<{ action?: string }>();
   const [reportes, setReportes] = useState<Reporte[]>([]);
+  const [zonasAgregadas, setZonasAgregadas] = useState<ZonaAgregada[]>([]);
+  // Zona seleccionada (visitantes sin sesión): al tocar un pin de zona se
+  // muestra un círculo difuminado alrededor, solo esa.
+  const [zonaSeleccionada, setZonaSeleccionada] = useState<string | null>(null);
   const [asociaciones, setAsociaciones] = useState<AsociacionMapa[]>([]);
   const [mostrarAsociaciones, setMostrarAsociaciones] = useState(false);
   const [selectedReport, setSelectedReport] = useState<Reporte | null>(null);
@@ -190,6 +248,31 @@ export default function MapScreen() {
   const [filtroEspecie, setFiltroEspecie] = useState('todos');
   const [ordenar, setOrdenar] = useState('reciente');
 
+  // Exclusión mutua: capa de asociaciones vs filtros de reporte
+  // (gravedad/especie), mismo patrón que MapScreen.web.tsx. Cualquier
+  // clic explícito en gravedad/especie (incluyendo "todos") apaga
+  // Asociaciones.
+  const handleSetFiltro = (f: string) => {
+    setFiltro(f);
+    setMostrarAsociaciones(false);
+  };
+
+  const handleSetFiltroEspecie = (key: string) => {
+    setFiltroEspecie(key);
+    setMostrarAsociaciones(false);
+  };
+
+  const handleToggleAsociaciones = () => {
+    setMostrarAsociaciones(v => {
+      const next = !v;
+      if (next) {
+        setFiltro('todos');
+        setFiltroEspecie('todos');
+      }
+      return next;
+    });
+  };
+
   const sheetY = useRef(new Animated.Value(300)).current;
 
   const showSheet = () =>
@@ -198,14 +281,54 @@ export default function MapScreen() {
   const hideSheet = () =>
     Animated.timing(sheetY, { toValue: 300, duration: 220, useNativeDriver: true }).start(() => setSelectedReport(null));
 
-  const fetchReportes = async () => {
+  const hideSheetImmediate = () => {
+    sheetY.setValue(300);
+    setSelectedReport(null);
+  };
+
+  // Cierra el bottom sheet de detalle antes de abrir el formulario — evita
+  // que ambos queden visibles a la vez (el Modal del formulario es
+  // transparent, así que el bottom sheet de atrás se alcanzaba a ver).
+  const handleCrearReporte = () => {
+    if (isLoggedIn) {
+      hideSheetImmediate();
+      setIsFormVisible(true);
+    } else {
+      setIsAuthGateVisible(true);
+    }
+  };
+
+  // Al salir de la pestaña "Mapa" (blur), limpia cualquier overlay que se
+  // haya quedado abierto — bottom sheet de reporte, auth gate — para que
+  // al regresar la pantalla arranque limpia. El formulario "Nuevo reporte"
+  // es la única excepción: si el usuario lo dejó a medias, se conserva.
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        hideSheetImmediate();
+        setIsAuthGateVisible(false);
+        // isFormVisible NO se toca aquí a propósito: si el usuario lo dejó
+        // a medias, se conserva tal cual al regresar a esta pantalla.
+      };
+    }, [])
+  );
+
+  const fetchReportes = useCallback(async () => {
     try {
-      const response = await axios.get(`${API_URL}/reports`);
-      const validReports = response.data.filter((r: Reporte) => r.latitud && r.longitud);
-      setReportes(validReports);
+      const response = await axios.get(
+        `${API_URL}/reports`,
+        token ? { headers: { Authorization: `Bearer ${token}` } } : undefined
+      );
+      if (response.data.modo === 'agregado') {
+        setReportes([]);
+        setZonasAgregadas(response.data.zonas.filter((z: ZonaAgregada) => z.latitud && z.longitud));
+      } else {
+        setReportes(response.data.reportes.filter((r: Reporte) => r.latitud && r.longitud));
+        setZonasAgregadas([]);
+      }
       setLastUpdated(new Date());
     } catch {}
-  };
+  }, [token]);
 
   const fetchAsociaciones = async () => {
     try {
@@ -220,15 +343,11 @@ export default function MapScreen() {
     const fetchInterval = setInterval(fetchReportes, 600000);
     const tickInterval = setInterval(() => setTick(t => t + 1), 60000);
     return () => { clearInterval(fetchInterval); clearInterval(tickInterval); };
-  }, []);
+  }, [fetchReportes]);
 
   useEffect(() => {
     if (params.action === 'create') {
-      if (isLoggedIn) {
-        setIsFormVisible(true);
-      } else {
-        setIsAuthGateVisible(true);
-      }
+      handleCrearReporte();
       router.setParams({ action: undefined });
     }
   }, [params.action, isLoggedIn]);
@@ -345,6 +464,41 @@ export default function MapScreen() {
             </Callout>
           </TrackedMarker>
         ))}
+        {(() => {
+          const zonasVisibles = mostrarAsociaciones ? [] : zonasAgregadas;
+          const zonaActiva = zonasVisibles.find(
+            (z) => `${z.latitud}-${z.longitud}` === zonaSeleccionada,
+          );
+          return (
+            <>
+              {zonaActiva && <ZonaGlow zona={zonaActiva} />}
+              {zonasVisibles.map((zona, index) => {
+                const clave = `${zona.latitud}-${zona.longitud}`;
+                return (
+                  <TrackedMarker
+                    key={`zona-${index}-${clave}`}
+                    coordinate={{ latitude: zona.latitud, longitude: zona.longitud }}
+                    onPress={() =>
+                      setZonaSeleccionada((actual) => (actual === clave ? null : clave))
+                    }
+                  >
+                    <ZonaMarker cantidad={zona.cantidad} nivel={zona.nivel_urgencia_max} />
+                    <Callout tooltip={false}>
+                      <View style={{ minWidth: 170, maxWidth: 220, padding: 12, borderRadius: 12 }}>
+                        <Text style={{ fontSize: 13, fontWeight: '900', color: '#1A1A1A', marginBottom: 4 }}>
+                          {zona.cantidad} {zona.cantidad === 1 ? 'reporte' : 'reportes'} en esta zona
+                        </Text>
+                        <Text style={{ fontSize: 10, color: '#9B8B7A' }}>
+                          Inicia sesión para ver el detalle de cada reporte
+                        </Text>
+                      </View>
+                    </Callout>
+                  </TrackedMarker>
+                );
+              })}
+            </>
+          );
+        })()}
       </MapView>
 
       {/* Barra de filtros interactivos — portada de MapScreen.web.tsx.
@@ -368,7 +522,7 @@ export default function MapScreen() {
             { key: 'herido',  label: 'Herido',  color: '#F39C12' },
             { key: 'grave',   label: 'Grave',   color: '#E74C3C' },
           ].map(({ key, label, color }, idx, arr) => {
-            const isActive = filtro === key;
+            const isActive = filtro === key && !mostrarAsociaciones;
             // Cuenta desde el total (respetando especie) sin aplicar el
             // filtro de condición activo — así el número no "desaparece"
             // al elegir esa misma pestaña.
@@ -382,7 +536,7 @@ export default function MapScreen() {
               ? base.length
               : base.filter(r => getAnimales(r).some(a => a.condicion?.toLowerCase() === key)).length;
             return (
-              <TouchableOpacity key={key} onPress={() => setFiltro(key)}
+              <TouchableOpacity key={key} onPress={() => handleSetFiltro(key)}
                 style={{ flex: 1, paddingVertical: 8, alignItems: 'center',
                   backgroundColor: isActive ? color : 'transparent',
                   borderRightWidth: idx < arr.length - 1 ? 1 : 0, borderRightColor: '#F0E8DC' }}>
@@ -398,15 +552,18 @@ export default function MapScreen() {
             { key: 'todos', icon: ICON_PAW, label: 'Todos'  },
             { key: 'perro', icon: ICON_DOG, label: 'Perros' },
             { key: 'gato',  icon: ICON_CAT, label: 'Gatos'  },
-          ].map(({ key, icon, label }) => (
-            <TouchableOpacity key={key} onPress={() => setFiltroEspecie(key)}
+          ].map(({ key, icon, label }) => {
+            const especieActiva = filtroEspecie === key && !mostrarAsociaciones;
+            return (
+            <TouchableOpacity key={key} onPress={() => handleSetFiltroEspecie(key)}
               style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12, borderWidth: 1.5,
-                borderColor: COLORS.teal, backgroundColor: filtroEspecie === key ? COLORS.teal : 'transparent',
+                borderColor: COLORS.teal, backgroundColor: especieActiva ? COLORS.teal : 'transparent',
                 flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <Image source={{ uri: icon }} style={{ width: 14, height: 14, tintColor: filtroEspecie === key ? '#FFF' : COLORS.teal }} />
-              <Text style={{ fontSize: 10, fontWeight: '700', color: filtroEspecie === key ? '#FFF' : COLORS.teal }}>{label}</Text>
+              <Image source={{ uri: icon }} style={{ width: 14, height: 14, tintColor: especieActiva ? '#FFF' : COLORS.teal }} />
+              <Text style={{ fontSize: 10, fontWeight: '700', color: especieActiva ? '#FFF' : COLORS.teal }}>{label}</Text>
             </TouchableOpacity>
-          ))}
+            );
+          })}
           <View style={{ flex: 1 }} />
           {[
             { key: 'reciente', icon: ICON_CLOCK    },
@@ -420,7 +577,7 @@ export default function MapScreen() {
               <Image source={{ uri: icon }} style={{ width: 16, height: 16, tintColor: ordenar === key ? '#FFF' : '#B0A090' }} />
             </TouchableOpacity>
           ))}
-          <TouchableOpacity onPress={() => setMostrarAsociaciones(v => !v)}
+          <TouchableOpacity onPress={handleToggleAsociaciones}
             style={{ width: 28, height: 28, borderRadius: 14, borderWidth: 1.5,
               borderColor: ASOC_COLOR, alignItems: 'center', justifyContent: 'center',
               backgroundColor: mostrarAsociaciones ? ASOC_COLOR : 'transparent' }}>
@@ -464,7 +621,7 @@ export default function MapScreen() {
 
       {/* FAB */}
       <TouchableOpacity
-        onPress={() => isLoggedIn ? setIsFormVisible(true) : setIsAuthGateVisible(true)}
+        onPress={handleCrearReporte}
         style={{
           position: 'absolute', bottom: selectedReport ? 230 : 100, right: 20,
           width: 56, height: 56, borderRadius: 28,
@@ -573,7 +730,7 @@ export default function MapScreen() {
       <AuthGateModal
         visible={isAuthGateVisible}
         onClose={() => setIsAuthGateVisible(false)}
-        onGuest={() => setIsFormVisible(true)}
+        onGuest={() => { hideSheetImmediate(); setIsFormVisible(true); }}
       />
 
       <Modal visible={isFormVisible} animationType="slide" transparent onRequestClose={() => setIsFormVisible(false)}>

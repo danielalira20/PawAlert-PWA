@@ -1,7 +1,20 @@
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Header
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
-from app.models.report import ReportResponse, AnimalInput, ReportListItem, HitoRequest, RechazarReporteRequest, CancelarReporteRequest, DenunciarReporteRequest, ResolverBusquedaNoLocalizadoRequest
+from app.models.report import (
+    AnimalInput,
+    CancelarReporteRequest,
+    CerrarSeguimientoFallecimientoRequest,
+    DenunciarReporteRequest,
+    HitoRequest,
+    RechazarReporteRequest,
+    ReportListItem,
+    ReportResponse,
+    ReportesMapaResponse,
+    ResolverBusquedaNoLocalizadoRequest,
+    ResultadoRescateSinVidaRequest,
+    SeguimientoRetiroAnimalRequest,
+)
 from app.models.red_aliados import AceptarSugerenciaRequest, AceptarSugerenciaVeterinariaResponse
 from app.services.report_service import crear_reporte, obtener_reportes, cambiar_estado_reporte, obtener_reportes_usuario
 from app.services import coverage_service
@@ -62,6 +75,34 @@ def _distancia_metros(
     return radio_tierra * 2 * math.asin(math.sqrt(haversine))
 
 
+def _resolver_punto_referencia(reporte: dict) -> tuple[float, float, str]:
+    """Punto contra el que se valida la cercania del voluntario: la ultima
+    ubicacion confirmada (avistamientos_animal) si el reporte ya tiene una
+    via ultima_ubicacion_confirmada_id, o el punto original del reporte
+    mientras no exista ninguna todavia. avistamientos_animal solo tiene
+    GRANT para service_role (migracion 0071) -- se consulta con
+    supabase_admin, nunca con el cliente anon."""
+    ultima_id = reporte.get("ultima_ubicacion_confirmada_id")
+    if ultima_id:
+        avistamiento = (
+            supabase_admin.table("avistamientos_animal")
+            .select("latitud, longitud")
+            .eq("id", ultima_id)
+            .limit(1)
+            .execute()
+        )
+        if avistamiento.data:
+            fila = avistamiento.data[0]
+            if fila.get("latitud") is not None and fila.get("longitud") is not None:
+                return (
+                    float(fila["latitud"]),
+                    float(fila["longitud"]),
+                    "ubicacion_confirmada",
+                )
+
+    return float(reporte["latitud"]), float(reporte["longitud"]), "punto_original"
+
+
 def _fecha_utc(fecha: datetime) -> datetime:
     """Normaliza fechas del cliente sin depender de la zona horaria del servidor."""
     if fecha.tzinfo is None:
@@ -78,6 +119,7 @@ def _vincular_y_verificar_evidencia(
     foto_url: str | None,
     latitud_declarada: float | None,
     longitud_declarada: float | None,
+    permitir_vinculada_mismo_hito: bool = False,
 ) -> dict:
     """Vincula la evidencia al hito y compara EXIF contra el GPS declarado."""
     resultado = (
@@ -98,7 +140,11 @@ def _vincular_y_verificar_evidencia(
         raise HTTPException(status_code=403, detail="La evidencia no pertenece a este reporte o usuario")
     if foto_url and evidencia.get("foto_url") != foto_url:
         raise HTTPException(status_code=422, detail="La fotografía no coincide con la evidencia registrada")
-    if evidencia.get("vinculada_at"):
+    vinculada_mismo_hito = (
+        permitir_vinculada_mismo_hito
+        and evidencia.get("tipo_hito") == tipo_hito
+    )
+    if evidencia.get("vinculada_at") and not vinculada_mismo_hito:
         raise HTTPException(status_code=409, detail="La evidencia ya fue utilizada en otro hito")
 
     exif_latitud = evidencia.get("exif_latitud")
@@ -532,9 +578,10 @@ async def asignar_staff(reporte_id: str, body: dict, authorization: str = Header
 async def subir_foto_hito(
     reporte_id: str,
     foto: UploadFile = File(...),
+    sensible: bool = Form(False),
     authorization: str = Header(None)
 ):
-    """Valida y registra una evidencia; la copia pública se guarda sin EXIF."""
+    """Valida y registra evidencia sanitizada, pública o sensible según el hito."""
     usuario = _obtener_usuario_autenticado(authorization)
 
     reporte = (
@@ -612,7 +659,7 @@ async def subir_foto_hito(
         ImagenEvidenciaInvalida,
         procesar_imagen_evidencia,
     )
-    from app.services.storage_service import subir_bytes
+    from app.services.storage_service import subir_bytes, subir_bytes_privados
 
     contenido = await foto.read()
     try:
@@ -620,12 +667,20 @@ async def subir_foto_hito(
     except ImagenEvidenciaInvalida as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    foto_url = await subir_bytes(
-        procesada.contenido_publico,
-        carpeta="reportes/hitos",
-        content_type=procesada.content_type_publico,
-        extension=procesada.extension_publica,
-    )
+    if sensible:
+        foto_url = await subir_bytes_privados(
+            procesada.contenido_publico,
+            carpeta="reportes/resultados-sensibles",
+            content_type=procesada.content_type_publico,
+            extension=procesada.extension_publica,
+        )
+    else:
+        foto_url = await subir_bytes(
+            procesada.contenido_publico,
+            carpeta="reportes/hitos",
+            content_type=procesada.content_type_publico,
+            extension=procesada.extension_publica,
+        )
 
     evidencia = supabase_admin.table("reporte_evidencias").insert(
         {
@@ -678,7 +733,8 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
     # Verificar que el reporte existe y está asignado a este staff
     reporte = supabase.table("reportes").select(
         "id, estado_reporte, estado_cobertura, staff_asignado_id, "
-        "asociacion_asignada_id, latitud, longitud"
+        "asociacion_asignada_id, latitud, longitud, "
+        "ultima_ubicacion_confirmada_id"
     ).eq("id", reporte_id).execute()
 
     if not reporte.data:
@@ -726,12 +782,13 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
 
     rol_usuario = (usuario.get("roles") or {}).get("nombre")
     distancia_reporte_metros = None
+    fuente_comparacion = None
 
     if tipo_hito == "llegada_zona_reporte":
-        if rol_usuario != "voluntario_externo":
+        if rol_usuario not in ("voluntario_interno", "voluntario_externo"):
             raise HTTPException(
                 status_code=403,
-                detail="Este hito corresponde a un voluntario externo",
+                detail="Este hito corresponde a un voluntario asignado",
             )
         if body.latitud is None or body.longitud is None:
             raise HTTPException(
@@ -743,11 +800,12 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
                 status_code=409,
                 detail="El reporte no tiene coordenadas para validar la llegada",
             )
+        lat_referencia, lon_referencia, fuente_comparacion = _resolver_punto_referencia(reporte)
         distancia_reporte_metros = _distancia_metros(
             body.latitud,
             body.longitud,
-            reporte["latitud"],
-            reporte["longitud"],
+            lat_referencia,
+            lon_referencia,
         )
         if distancia_reporte_metros > RADIO_LLEGADA_ZONA_METROS:
             raise HTTPException(
@@ -802,11 +860,12 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
                     status_code=409,
                     detail="El reporte no tiene coordenadas para validar la búsqueda",
                 )
+            lat_referencia, lon_referencia, fuente_comparacion = _resolver_punto_referencia(reporte)
             distancia_reporte_metros = _distancia_metros(
                 body.latitud,
                 body.longitud,
-                reporte["latitud"],
-                reporte["longitud"],
+                lat_referencia,
+                lon_referencia,
             )
             if distancia_reporte_metros > RADIO_LLEGADA_ZONA_METROS:
                 raise HTTPException(
@@ -1150,6 +1209,7 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
                 if distancia_reporte_metros is not None
                 else None
             ),
+            "fuente_comparacion": fuente_comparacion,
             "verificacion_ubicacion": verificacion_ubicacion,
             "ruta_resguardo": body.ruta_resguardo,
             "fecha_limite_resguardo": (
@@ -1267,6 +1327,58 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
         if nivel_urgencia:
             sugerencia_aliado = sugerir_aliado_veterinario(reporte_id, nivel_urgencia)
 
+    # Avistamiento derivado (Capa 8, Entrega A): el voluntario asignado que
+    # registra uno de estos hitos ya confirmó dónde está el animal en ese
+    # momento. Nunca debe bloquear el registro del hito -- mismo patrón
+    # fail-open que usa report_activation_service.py con
+    # evaluate_report_urgency().
+    if (
+        tipo_hito in (
+            "animal_encontrado",
+            "llegada_veterinaria",
+            "llegue_refugio",
+            "animal_bajo_resguardo",
+            "llegada_hogar_temporal",
+        )
+        and body.latitud is not None
+        and body.longitud is not None
+    ):
+        try:
+            from app.services.avistamiento_service import (
+                registrar_avistamiento_desde_hito,
+            )
+
+            # limit(2), no limit(1): solo lo suficiente para detectar si el
+            # reporte tiene mas de un animal sin traer la lista completa.
+            animal_hito = (
+                supabase.table("animal")
+                .select("id")
+                .eq("reporte_id", reporte_id)
+                .order("orden")
+                .limit(2)
+                .execute()
+            )
+            if len(animal_hito.data or []) > 1:
+                print(
+                    "[WARN] avistamiento derivado con reporte multi-animal: "
+                    f"se atribuyo al animal de orden=1, puede no ser el "
+                    f"correcto (reporte={reporte_id}, hito={tipo_hito})"
+                )
+            if animal_hito.data:
+                registrar_avistamiento_desde_hito(
+                    reporte_id=reporte_id,
+                    animal_id=animal_hito.data[0]["id"],
+                    usuario_id=usuario["id"],
+                    latitud=body.latitud,
+                    longitud=body.longitud,
+                    tipo_hito=tipo_hito,
+                )
+        except Exception as error:
+            print(
+                "[WARN] no se pudo registrar el avistamiento derivado del hito "
+                f"(reporte={reporte_id}, hito={tipo_hito}): {error}"
+            )
+
     return {
         "mensaje": f"Hito '{tipo_hito}' registrado correctamente.",
         "tipo_hito": tipo_hito,
@@ -1277,6 +1389,269 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
     }
 
 ### FIN endpoind: staff registra avances del rescate
+
+
+@router.post("/{reporte_id}/resultados/sin-vida", status_code=201)
+def registrar_resultado_rescate_sin_vida(
+    reporte_id: str,
+    body: ResultadoRescateSinVidaRequest,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("voluntario_interno", "voluntario_externo"))
+
+    from app.services.rescue_result_service import (
+        ResultadoRescateError,
+        registrar_resultado_sin_vida,
+    )
+
+    try:
+        resultado = registrar_resultado_sin_vida(reporte_id, usuario["id"], body)
+    except ResultadoRescateError as error:
+        if error.codigo == "reporte_no_encontrado":
+            raise HTTPException(status_code=404, detail="Reporte no encontrado") from error
+        if error.codigo == "voluntario_no_asignado":
+            raise HTTPException(
+                status_code=403,
+                detail="No eres el voluntario asignado a este reporte",
+            ) from error
+        if error.codigo == "llegada_zona_requerida":
+            raise HTTPException(
+                status_code=409,
+                detail="Primero debes registrar tu llegada a la zona del reporte",
+            ) from error
+        if error.codigo in {
+            "resultado_rescate_no_disponible",
+            "resultado_no_modificable",
+            "resultado_previo_en_conflicto",
+            "resultado_faltante_en_reintento",
+        }:
+            raise HTTPException(
+                status_code=409,
+                detail="El resultado del rescate ya no puede registrarse o modificarse",
+            ) from error
+        if error.codigo in {
+            "evidencia_no_disponible",
+            "evidencia_vinculada_otro_hito",
+            "animal_resultado_invalido",
+            "animal_duplicado",
+            "animal_no_pertenece_reporte",
+            "cantidad_animal_invalida",
+        }:
+            raise HTTPException(
+                status_code=422,
+                detail="La evidencia o los animales enviados no son válidos para este reporte",
+            ) from error
+        raise HTTPException(
+            status_code=503,
+            detail="No fue posible registrar el resultado. Intenta nuevamente.",
+        ) from error
+
+    resultado["verificacion_evidencia"] = _vincular_y_verificar_evidencia(
+        evidencia_id=str(body.evidencia_id),
+        reporte_id=reporte_id,
+        usuario_id=usuario["id"],
+        tipo_hito="animal_encontrado_sin_vida",
+        foto_url=None,
+        latitud_declarada=body.latitud,
+        longitud_declarada=body.longitud,
+        permitir_vinculada_mismo_hito=True,
+    )
+    return resultado
+
+
+@router.post(
+    "/{reporte_id}/resultados/{resultado_id}/seguimiento-retiro",
+    status_code=201,
+)
+def registrar_seguimiento_retiro(
+    reporte_id: str,
+    resultado_id: str,
+    body: SeguimientoRetiroAnimalRequest,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    rol = usuario.get("rol")
+    if rol in ("voluntario_interno", "voluntario_externo"):
+        tipo_actor = "voluntario"
+        asociacion_id = None
+    elif rol in ("asociacion", "staff"):
+        tipo_actor = "asociacion"
+        asociacion_id = usuario.get("asociacion_id")
+        if not asociacion_id:
+            raise HTTPException(
+                status_code=403,
+                detail="No estás vinculado a una asociación",
+            )
+    elif rol == "admin":
+        tipo_actor = "administracion"
+        asociacion_id = None
+    else:
+        raise HTTPException(
+            status_code=403,
+            detail="No tienes permiso para registrar este seguimiento",
+        )
+
+    from app.services import deceased_followup_service
+
+    try:
+        return deceased_followup_service.registrar_seguimiento_retiro(
+            reporte_id,
+            resultado_id,
+            usuario["id"],
+            tipo_actor,
+            asociacion_id,
+            body,
+        )
+    except deceased_followup_service.SeguimientoFallecimientoError as error:
+        if error.codigo in {
+            "seguimiento_fallecimiento_no_encontrado",
+            "resultado_seguimiento_no_encontrado",
+        }:
+            raise HTTPException(
+                status_code=404,
+                detail="Seguimiento no encontrado",
+            ) from error
+        if error.codigo in {
+            "voluntario_seguimiento_no_autorizado",
+            "asociacion_seguimiento_no_autorizada",
+        }:
+            raise HTTPException(
+                status_code=403,
+                detail="No puedes registrar acciones en este seguimiento",
+            ) from error
+        if error.codigo in {
+            "seguimiento_fallecimiento_no_disponible",
+            "resultado_reactivado_no_admite_seguimiento",
+            "idempotency_key_en_conflicto",
+        }:
+            raise HTTPException(
+                status_code=409,
+                detail="El seguimiento ya no admite esta acción",
+            ) from error
+        if error.codigo in {
+            "tipo_actor_seguimiento_invalido",
+            "accion_seguimiento_invalida",
+            "idempotency_key_requerida",
+            "nombre_servicio_requerido",
+            "evidencia_seguimiento_no_disponible",
+            "evidencia_seguimiento_en_conflicto",
+        }:
+            raise HTTPException(
+                status_code=422,
+                detail="Los datos del seguimiento no son válidos",
+            ) from error
+        raise HTTPException(
+            status_code=503,
+            detail="No fue posible registrar el seguimiento. Intenta nuevamente.",
+        ) from error
+
+
+@router.post(
+    "/{reporte_id}/seguimiento-fallecimiento/cerrar",
+    status_code=200,
+)
+def cerrar_seguimiento_fallecimiento(
+    reporte_id: str,
+    body: CerrarSeguimientoFallecimientoRequest,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    rol = usuario.get("rol")
+    if rol in ("asociacion", "staff"):
+        tipo_actor = "asociacion"
+        asociacion_id = usuario.get("asociacion_id")
+        if not asociacion_id:
+            raise HTTPException(
+                status_code=403,
+                detail="No estás vinculado a una asociación",
+            )
+    elif rol == "admin":
+        tipo_actor = "administracion"
+        asociacion_id = None
+    else:
+        raise HTTPException(
+            status_code=403,
+            detail="No tienes permiso para cerrar este seguimiento",
+        )
+
+    from app.services import deceased_followup_service
+
+    try:
+        return deceased_followup_service.cerrar_seguimiento_fallecimiento(
+            reporte_id,
+            usuario["id"],
+            tipo_actor,
+            asociacion_id,
+            body,
+        )
+    except deceased_followup_service.SeguimientoFallecimientoError as error:
+        if error.codigo == "seguimiento_fallecimiento_no_encontrado":
+            raise HTTPException(
+                status_code=404,
+                detail="Seguimiento no encontrado",
+            ) from error
+        if error.codigo == "asociacion_cierre_fallecimiento_no_autorizada":
+            raise HTTPException(
+                status_code=403,
+                detail="Solo la asociación coordinadora puede cerrar este seguimiento",
+            ) from error
+        if error.codigo in {
+            "seguimiento_fallecimiento_ya_cerrado",
+            "seguimiento_fallecimiento_no_disponible",
+            "reporte_no_disponible_para_cierre_fallecimiento",
+            "resultados_fallecimiento_requeridos",
+            "revision_fallecimiento_pendiente",
+            "duda_critica_impide_cierre_fallecimiento",
+            "resultados_fallecimiento_no_confirmados",
+            "seguimiento_retiro_requerido_para_cierre",
+            "resultado_final_sin_seguimiento_compatible",
+        }:
+            raise HTTPException(
+                status_code=409,
+                detail=_mensaje_conflicto_cierre_fallecimiento(error.codigo),
+            ) from error
+        if error.codigo in {
+            "actor_cierre_fallecimiento_invalido",
+            "resultado_final_fallecimiento_invalido",
+            "idempotency_key_cierre_requerida",
+            "nota_cierre_fallecimiento_requerida",
+        }:
+            raise HTTPException(
+                status_code=422,
+                detail="Los datos del cierre no son válidos",
+            ) from error
+        raise HTTPException(
+            status_code=503,
+            detail="No fue posible cerrar el seguimiento. Intenta nuevamente.",
+        ) from error
+
+
+def _mensaje_conflicto_cierre_fallecimiento(codigo: str) -> str:
+    mensajes = {
+        "revision_fallecimiento_pendiente": (
+            "Todos los resultados deben revisarse antes del cierre"
+        ),
+        "duda_critica_impide_cierre_fallecimiento": (
+            "Existe una duda crítica y el caso no puede cerrarse"
+        ),
+        "resultados_fallecimiento_no_confirmados": (
+            "La asociación necesita resultados confirmados para cerrar"
+        ),
+        "seguimiento_retiro_requerido_para_cierre": (
+            "Registra al menos una gestión de retiro antes del cierre"
+        ),
+        "resultado_final_sin_seguimiento_compatible": (
+            "El resultado final no corresponde con las gestiones registradas"
+        ),
+        "seguimiento_fallecimiento_ya_cerrado": (
+            "El seguimiento ya fue cerrado con otra solicitud"
+        ),
+    }
+    return mensajes.get(
+        codigo,
+        "El seguimiento todavía no cumple las condiciones para cerrarse",
+    )
 
 
 DECISIONES_BUSQUEDA_NO_LOCALIZADO = {
@@ -1710,9 +2085,15 @@ async def marcar_notificacion_moderacion_leida(
         raise HTTPException(status_code=404, detail="Notificación no encontrada")
     return {"mensaje": "Notificación marcada como leída"}
 
-@router.get("", response_model=list[ReportListItem], status_code=200)
-async def get_reports():
-    return await obtener_reportes()
+@router.get("", response_model=ReportesMapaResponse, status_code=200)
+async def get_reports(authorization: str = Header(None)):
+    usuario_id = None
+    if authorization and authorization.startswith("Bearer "):
+        try:
+            usuario_id = _obtener_usuario_autenticado(authorization)["id"]
+        except HTTPException:
+            pass  # token invalido/expirado -> se trata como anonimo, no se rompe el mapa
+    return await obtener_reportes(usuario_id)
 
 @router.patch("/{reporte_id}/status", status_code=200)
 async def update_report_status(reporte_id: str, body: dict, authorization: str = Header(None)):

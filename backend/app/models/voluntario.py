@@ -477,6 +477,37 @@ class CapacidadesRequest(BaseModel):
         return self
 
 
+class CapacidadesDraftContextEnum(str, Enum):
+    perfil = "perfil"
+    interno = "interno"
+    externo = "externo"
+
+
+class CapacidadesDraftRequest(BaseModel):
+    """Estado temporal del formulario, separado de capacidades confirmadas."""
+
+    contexto: CapacidadesDraftContextEnum
+    version: int = Field(default=1, ge=1, le=1)
+    paso: int = Field(default=1, ge=1, le=6)
+    mostrar_confirmacion: bool = False
+    ubicacion_confirmada: bool = False
+    sin_tratamientos: bool = False
+    asociacion_id: Optional[str] = None
+    datos: CapacidadesRequest = Field(default_factory=CapacidadesRequest)
+
+
+class PostulacionExternaDraftRequest(BaseModel):
+    """Borrador temporal de la postulación de casa temporal (voluntario externo).
+
+    No incluye evidencia multimedia (foto/video): esas URIs son locales al
+    dispositivo/sesión y no sobreviven una recarga de página.
+    """
+
+    version: int = Field(default=1, ge=1, le=1)
+    paso: int = Field(default=1, ge=1, le=4)
+    datos: dict = Field(default_factory=dict)
+
+
 class DisponibilidadOperativaRequest(BaseModel):
     """Control mutable del pool, separado del formulario de capacidades."""
 
