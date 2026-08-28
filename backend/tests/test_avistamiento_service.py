@@ -20,7 +20,19 @@ from app.models.urgency import DuplicateCandidate
 from app.services import avistamiento_service as svc
 from app.services import assignment_route_service
 from app.services import duplicate_service
+from app.services import push_notification_service
 from app.services import urgency_service
+
+
+@pytest.fixture(autouse=True)
+def _stub_push(monkeypatch):
+    """_confirmar_avistamiento encola un push al voluntario asignado (Fase 5)
+    via import diferido de push_notification_service. Se neutraliza por
+    defecto en todo el modulo -- los tests que verifican el push toman este
+    fixture como parametro y assertean sobre el MagicMock."""
+    stub = MagicMock(return_value={"status": "queued", "id": "push-1"})
+    monkeypatch.setattr(push_notification_service, "queue_and_send_push", stub)
+    return stub
 
 
 def _reporte(**cambios):
@@ -1913,3 +1925,197 @@ def test_rechazar_no_supera_a_nadie(monkeypatch, make_query):
 
     assert resultado.estado_validacion == "rechazado"
     assert _estados_actualizados(avistamientos_mock) == ["rechazado"]
+
+
+# --- Fase 5: notificacion push al voluntario asignado --------------------------
+#
+# _confirmar_avistamiento encola un push "ubicacion_actualizada" para el
+# voluntario asignado cuando ALGUIEN MAS confirma una nueva ubicacion. El
+# push real lo dispara /internal/push/run; aqui solo se verifica el encolado.
+
+
+def test_confirmar_con_voluntario_asignado_encola_push(
+    monkeypatch, make_query, _stub_push
+):
+    # _armar_validar usa _reporte(), que trae staff_asignado_id="user-staff".
+    _, _, _, _, usuario_id = _armar_validar(monkeypatch, make_query)
+    monkeypatch.setattr(
+        duplicate_service, "find_geographic_duplicates", MagicMock(return_value=[])
+    )
+    monkeypatch.setattr(
+        urgency_service,
+        "evaluate_report_urgency",
+        MagicMock(side_effect=RuntimeError("no aplica en este test")),
+    )
+
+    svc.validar_avistamiento("av-1", usuario_id, aprobar=True)
+
+    _stub_push.assert_called_once()
+    kwargs = _stub_push.call_args.kwargs
+    assert kwargs["usuario_id"] == "user-staff"
+    assert kwargs["tipo_evento"] == "ubicacion_actualizada"
+    assert kwargs["reporte_id"] == "rep-1"
+    assert kwargs["idempotency_key"] == "ubicacion_actualizada:av-1:user-staff"
+    assert kwargs["payload"]["reporte_id"] == "rep-1"
+    assert "cambió" in kwargs["payload"]["mensaje"]
+    # payload sin coordenadas (lo prohibe _assert_safe_payload)
+    assert "latitud" not in kwargs["payload"]
+    assert "longitud" not in kwargs["payload"]
+
+
+def test_confirmar_sin_voluntario_asignado_no_encola_push(
+    monkeypatch, make_query, _stub_push
+):
+    reporte_sin_vol = _reporte(staff_asignado_id=None)
+    # El guard de rol de validar_avistamiento exige staff o asociacion; se usa
+    # la asociacion asignada para poder aprobar sin staff_asignado_id.
+    usuario_aso = _usuario(
+        id="user-aso", asociacion_id="aso-1", roles={"nombre": "asociacion"}
+    )
+    _armar_validar(
+        monkeypatch, make_query, reporte=reporte_sin_vol, usuario=usuario_aso
+    )
+    monkeypatch.setattr(
+        duplicate_service, "find_geographic_duplicates", MagicMock(return_value=[])
+    )
+    monkeypatch.setattr(
+        urgency_service,
+        "evaluate_report_urgency",
+        MagicMock(side_effect=RuntimeError("no aplica en este test")),
+    )
+
+    resultado = svc.validar_avistamiento("av-1", "user-aso", aprobar=True)
+
+    assert resultado.estado_validacion == "validado"
+    _stub_push.assert_not_called()
+
+
+def test_confirmar_no_se_rompe_si_encolado_del_push_falla(
+    monkeypatch, make_query, _stub_push
+):
+    _stub_push.side_effect = RuntimeError("outbox caido")
+    _, _, reportes_mock, historial_mock, usuario_id = _armar_validar(
+        monkeypatch, make_query
+    )
+    monkeypatch.setattr(
+        duplicate_service, "find_geographic_duplicates", MagicMock(return_value=[])
+    )
+    monkeypatch.setattr(
+        urgency_service,
+        "evaluate_report_urgency",
+        MagicMock(side_effect=RuntimeError("no aplica en este test")),
+    )
+
+    resultado = svc.validar_avistamiento("av-1", usuario_id, aprobar=True)
+
+    # La confirmacion completa igual: estado, ultima_ubicacion y evento historial.
+    assert resultado.estado_validacion == "validado"
+    reportes_mock.update.assert_called_once_with(
+        {
+            "ultima_ubicacion_confirmada_id": "av-1",
+            "ultima_latitud_confirmada": 19.0,
+            "ultima_longitud_confirmada": -98.0,
+        }
+    )
+    eventos = [
+        llamada.args[0]["tipo_evento"]
+        for llamada in historial_mock.insert.call_args_list
+    ]
+    assert "ubicacion_confirmada" in eventos
+    _stub_push.assert_called_once()
+
+
+def _db_confirmar_directo(monkeypatch, make_query):
+    db = _armar_db(
+        {
+            "reportes": make_query(data=[_reporte()]),
+            "historial_reporte": make_query(data=[{"id": "hist-1"}]),
+            "avistamientos_animal": make_query(data=[]),
+        }
+    )
+    monkeypatch.setattr(svc, "supabase_admin", db)
+    monkeypatch.setattr(
+        assignment_route_service,
+        "recalculate_confirmed_assignment_route",
+        MagicMock(),
+    )
+    monkeypatch.setattr(
+        duplicate_service, "find_geographic_duplicates", MagicMock(return_value=[])
+    )
+    monkeypatch.setattr(
+        urgency_service,
+        "evaluate_report_urgency",
+        MagicMock(side_effect=RuntimeError("no aplica")),
+    )
+    return db
+
+
+def test_idempotency_key_es_unica_por_avistamiento_y_voluntario(
+    monkeypatch, make_query, _stub_push
+):
+    """Dos avistamientos distintos del mismo reporte -> claves distintas, para
+    que cada cambio de ubicacion notifique (no colisionan y se omiten)."""
+    claves = []
+
+    def _capturar(**kwargs):
+        claves.append(kwargs["idempotency_key"])
+        return {"status": "queued", "id": "push-x"}
+
+    _stub_push.side_effect = _capturar
+
+    for av_id in ("av-100", "av-200"):
+        _db_confirmar_directo(monkeypatch, make_query)
+        svc._confirmar_avistamiento(
+            reporte_id="rep-1",
+            avistamiento_id=av_id,
+            latitud=19.0,
+            longitud=-98.0,
+            fuente=LocationSource.confirmacion_reportante,
+            staff_asignado_id="user-staff",
+        )
+
+    assert claves == [
+        "ubicacion_actualizada:av-100:user-staff",
+        "ubicacion_actualizada:av-200:user-staff",
+    ]
+    assert claves[0] != claves[1]
+
+
+def test_camino_hito_no_auto_notifica_al_voluntario(
+    monkeypatch, make_query, _stub_push
+):
+    """registrar_avistamiento_desde_hito omite staff_asignado_id a proposito:
+    el que dispara ES el voluntario asignado."""
+    fila = _fila_insertada(fuente="voluntario_asignado", estado_validacion="validado")
+    db = _armar_db(
+        {
+            "avistamientos_animal": make_query(data=[fila]),
+            "reportes": make_query(data=[{"id": "rep-1"}]),
+            "historial_reporte": make_query(data=[{"id": "hist-1"}]),
+        }
+    )
+    monkeypatch.setattr(svc, "supabase_admin", db)
+    monkeypatch.setattr(
+        assignment_route_service,
+        "recalculate_confirmed_assignment_route",
+        MagicMock(),
+    )
+    monkeypatch.setattr(
+        duplicate_service, "find_geographic_duplicates", MagicMock(return_value=[])
+    )
+    monkeypatch.setattr(
+        urgency_service,
+        "evaluate_report_urgency",
+        MagicMock(side_effect=RuntimeError("no aplica")),
+    )
+
+    svc.registrar_avistamiento_desde_hito(
+        reporte_id="rep-1",
+        animal_id="animal-1",
+        usuario_id="user-vol",
+        latitud=19.0,
+        longitud=-98.0,
+        tipo_hito="animal_encontrado",
+    )
+
+    _stub_push.assert_not_called()
