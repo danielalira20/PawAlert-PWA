@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Toast, useToast } from '../components/Toast';
 import { BusquedaNoLocalizadoPanel } from '../components/association-dashboard/BusquedaNoLocalizadoPanel';
 import { AvistamientoEntryButton } from '../components/avistamientos/AvistamientoEntryButton';
+import { AvistamientosPendientesPanel } from '../components/association-dashboard/AvistamientosPendientesPanel';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
@@ -105,7 +106,7 @@ interface HistorialEvento {
 }
 
 type FiltroAsignacion = 'todas' | 'pendientes' | 'aceptadas' | 'rechazadas';
-type ActiveTab = 'reportes' | 'seguimientos' | 'postulaciones' | 'voluntarios' | 'lotes' | 'configuracion';
+type ActiveTab = 'reportes' | 'avistamientos' | 'seguimientos' | 'postulaciones' | 'voluntarios' | 'lotes' | 'configuracion';
 
 type TabAsignacion = 'staff' | 'voluntarios';
 type EstadoVoluntarios = 'cargando' | 'candidatos' | 'esperando_confirmacion' | 'confirmado' | 'rechazado_mostrando_siguiente' | 'sin_candidatos';
@@ -1312,6 +1313,25 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                 </TouchableOpacity>
 
                 <TouchableOpacity
+                  onPress={() => setActiveTab('avistamientos')}
+                  style={{
+                    paddingBottom: 12,
+                    marginRight: 24,
+                    flexShrink: 0,
+                    borderBottomWidth: activeTab === 'avistamientos' ? 3 : 0,
+                    borderBottomColor: COLORS.primary
+                  }}
+                >
+                  <Text style={{
+                    fontSize: 16,
+                    fontWeight: activeTab === 'avistamientos' ? '800' : '600',
+                    color: activeTab === 'avistamientos' ? COLORS.primary : COLORS.textLight
+                  }}>
+                    Avistamientos
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
                   onPress={() => setActiveTab('seguimientos')}
                   style={{
                     paddingBottom: 12,
@@ -1415,6 +1435,8 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                 <Text style={{ fontSize: 22, fontWeight: 'bold', color: COLORS.textDark }}>
                   {activeTab === 'reportes'
                     ? 'Reportes asignados'
+                    : activeTab === 'avistamientos'
+                      ? 'Avistamientos por validar'
                     : activeTab === 'seguimientos'
                       ? 'Seguimientos sensibles'
                     : activeTab === 'postulaciones'
@@ -1711,6 +1733,8 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                   )}
                 </>
 
+              ) : activeTab === 'avistamientos' ? (
+                <AvistamientosPendientesPanel visible={activeTab === 'avistamientos'} />
               ) : activeTab === 'seguimientos' ? (
                 <DeceasedFollowupPanel visible={activeTab === 'seguimientos'} />
               ) : activeTab === 'postulaciones' ? (
