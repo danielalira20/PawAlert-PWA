@@ -116,6 +116,7 @@ def test_animal_encontrado_si_genera_avistamiento(derivado, make_query):
         latitud=19.4327,
         longitud=-99.1333,
         tipo_hito="animal_encontrado",
+        evidencia_id=None,
     )
 
 

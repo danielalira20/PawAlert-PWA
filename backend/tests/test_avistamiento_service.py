@@ -838,6 +838,7 @@ def test_registrar_hito_crea_avistamiento_derivado_en_animal_encontrado(
         latitud=19.0001,
         longitud=-98.0001,
         tipo_hito="animal_encontrado",
+        evidencia_id=None,
     )
 
 
@@ -895,6 +896,7 @@ def test_registrar_hito_multi_animal_loguea_advertencia(monkeypatch, make_query,
         latitud=19.0001,
         longitud=-98.0001,
         tipo_hito="animal_encontrado",
+        evidencia_id=None,
     )
 
 
@@ -1157,6 +1159,7 @@ def test_no_localizado_con_direccion_genera_avistamiento_oficial(
         longitud=-98.001,
         tipo_hito="animal_no_localizado",
         direccion_observada="Cruzo hacia el parque, rumbo sur.",
+        evidencia_id=None,
     )
     # Fase 4, test 4: la RPC de la busqueda tambien corrio, en la misma llamada.
     db_admin.rpc.assert_called_once()
@@ -2119,3 +2122,256 @@ def test_camino_hito_no_auto_notifica_al_voluntario(
     )
 
     _stub_push.assert_not_called()
+
+
+# --- Fase 6.5: foto de evidencia en avistamientos -------------------------
+
+
+def _evidencia_row(**cambios):
+    datos = {
+        "id": "evi-1",
+        "reporte_id": "rep-1",
+        "usuario_id": "user-reportante",
+        "foto_url": "https://pawalert.test/evi.jpg",
+        "tipo_hito": None,
+        "vinculada_at": None,
+        "exif_latitud": None,
+        "exif_longitud": None,
+    }
+    datos.update(cambios)
+    return datos
+
+
+def _db_con_evidencia(make_query, evidencias_query, avistamientos_query=None):
+    return _armar_db(
+        {
+            "reportes": make_query(data=[_reporte(usuario_id="user-reportante")]),
+            "usuarios": make_query(data=[_usuario(id="user-reportante")]),
+            "animal": make_query(data=[{"id": "animal-1"}]),
+            "reporte_evidencias": evidencias_query,
+            "avistamientos_animal": avistamientos_query
+            or make_query(data=[_fila_insertada()]),
+        }
+    )
+
+
+def test_autorizar_subida_evidencia_ok_para_reportante(monkeypatch, make_query):
+    db = _armar_db(
+        {
+            "reportes": make_query(data=[_reporte(usuario_id="user-reportante")]),
+            "usuarios": make_query(data=[_usuario(id="user-reportante")]),
+        }
+    )
+    monkeypatch.setattr(svc, "supabase_admin", db)
+
+    svc.autorizar_subida_evidencia("rep-1", "user-reportante")  # no levanta
+
+
+def test_autorizar_subida_evidencia_403_para_ajeno(monkeypatch, make_query):
+    db = _armar_db(
+        {
+            "reportes": make_query(data=[_reporte(usuario_id="otro")]),
+            "usuarios": make_query(data=[_usuario(id="user-ajeno")]),
+            "voluntarios": make_query(data=[]),
+        }
+    )
+    monkeypatch.setattr(svc, "supabase_admin", db)
+
+    with pytest.raises(HTTPException) as error:
+        svc.autorizar_subida_evidencia("rep-1", "user-ajeno")
+
+    assert error.value.status_code == 403
+
+
+def test_registrar_avistamiento_sin_evidencia_no_toca_reporte_evidencias(
+    monkeypatch, make_query
+):
+    """Regresion Fases 1-5: sin evidencia_id el flujo es identico y no se
+    consulta ni escribe reporte_evidencias."""
+    evidencias_mock = make_query(data=[])
+    avistamientos_mock = make_query(data=[_fila_insertada()])
+    db = _db_con_evidencia(make_query, evidencias_mock, avistamientos_mock)
+    monkeypatch.setattr(svc, "supabase_admin", db)
+
+    svc.registrar_avistamiento(
+        "rep-1", "user-reportante", _avistamiento_create()
+    )
+
+    evidencias_mock.select.assert_not_called()
+    evidencias_mock.update.assert_not_called()
+    assert avistamientos_mock.insert.call_args[0][0]["evidencia_id"] is None
+
+
+def test_registrar_avistamiento_con_evidencia_valida_la_vincula_y_guarda(
+    monkeypatch, make_query
+):
+    from app.api import reports as reports_api
+
+    evidencias_mock = make_query(data=[_evidencia_row()])
+    avistamientos_mock = make_query(data=[_fila_insertada()])
+    db = _db_con_evidencia(make_query, evidencias_mock, avistamientos_mock)
+    monkeypatch.setattr(svc, "supabase_admin", db)
+    monkeypatch.setattr(reports_api, "supabase_admin", db)
+
+    svc.registrar_avistamiento(
+        "rep-1",
+        "user-reportante",
+        _avistamiento_create(evidencia_id="evi-1"),
+    )
+
+    vinculacion = evidencias_mock.update.call_args[0][0]
+    assert vinculacion["vinculada_at"] is not None
+    assert vinculacion["tipo_hito"] == "avistamiento"
+    assert avistamientos_mock.insert.call_args[0][0]["evidencia_id"] == "evi-1"
+
+
+def test_registrar_avistamiento_evidencia_exif_discrepante_marca_revision(
+    monkeypatch, make_query
+):
+    from app.api import reports as reports_api
+
+    # EXIF muy lejos del GPS del avistamiento (~19.0001 / -98.0001).
+    evidencias_mock = make_query(
+        data=[_evidencia_row(exif_latitud=19.5, exif_longitud=-98.0)]
+    )
+    db = _db_con_evidencia(make_query, evidencias_mock)
+    monkeypatch.setattr(svc, "supabase_admin", db)
+    monkeypatch.setattr(reports_api, "supabase_admin", db)
+
+    svc.registrar_avistamiento(
+        "rep-1",
+        "user-reportante",
+        _avistamiento_create(evidencia_id="evi-1"),
+    )
+
+    vinculacion = evidencias_mock.update.call_args[0][0]
+    assert vinculacion["estado_verificacion"] == "discrepancia"
+    assert vinculacion["requiere_revision"] is True
+
+
+def test_registrar_avistamiento_evidencia_inexistente_es_422(
+    monkeypatch, make_query
+):
+    from app.api import reports as reports_api
+
+    evidencias_mock = make_query(data=[])
+    avistamientos_mock = make_query(data=[_fila_insertada()])
+    db = _db_con_evidencia(make_query, evidencias_mock, avistamientos_mock)
+    monkeypatch.setattr(svc, "supabase_admin", db)
+    monkeypatch.setattr(reports_api, "supabase_admin", db)
+
+    with pytest.raises(HTTPException) as error:
+        svc.registrar_avistamiento(
+            "rep-1",
+            "user-reportante",
+            _avistamiento_create(evidencia_id="evi-x"),
+        )
+
+    assert error.value.status_code == 422
+    avistamientos_mock.insert.assert_not_called()
+
+
+def test_registrar_avistamiento_evidencia_de_otro_reporte_es_403(
+    monkeypatch, make_query
+):
+    from app.api import reports as reports_api
+
+    evidencias_mock = make_query(data=[_evidencia_row(reporte_id="rep-OTRO")])
+    avistamientos_mock = make_query(data=[_fila_insertada()])
+    db = _db_con_evidencia(make_query, evidencias_mock, avistamientos_mock)
+    monkeypatch.setattr(svc, "supabase_admin", db)
+    monkeypatch.setattr(reports_api, "supabase_admin", db)
+
+    with pytest.raises(HTTPException) as error:
+        svc.registrar_avistamiento(
+            "rep-1",
+            "user-reportante",
+            _avistamiento_create(evidencia_id="evi-1"),
+        )
+
+    assert error.value.status_code == 403
+    avistamientos_mock.insert.assert_not_called()
+
+
+def test_registrar_avistamiento_evidencia_ya_vinculada_es_409(
+    monkeypatch, make_query
+):
+    from app.api import reports as reports_api
+
+    evidencias_mock = make_query(
+        data=[_evidencia_row(vinculada_at="2026-08-01T00:00:00+00:00")]
+    )
+    avistamientos_mock = make_query(data=[_fila_insertada()])
+    db = _db_con_evidencia(make_query, evidencias_mock, avistamientos_mock)
+    monkeypatch.setattr(svc, "supabase_admin", db)
+    monkeypatch.setattr(reports_api, "supabase_admin", db)
+
+    with pytest.raises(HTTPException) as error:
+        svc.registrar_avistamiento(
+            "rep-1",
+            "user-reportante",
+            _avistamiento_create(evidencia_id="evi-1"),
+        )
+
+    assert error.value.status_code == 409
+    avistamientos_mock.insert.assert_not_called()
+
+
+def test_registrar_avistamiento_desde_hito_propaga_evidencia_id(
+    monkeypatch, make_query
+):
+    """El voluntario subio foto al registrar animal_encontrado /
+    animal_no_localizado con direccion: esa evidencia queda vinculada al
+    avistamiento derivado sin pedir una subida aparte."""
+    avistamientos_mock = make_query(
+        data=[_fila_insertada(fuente="voluntario_asignado", estado_validacion="validado")]
+    )
+    db = _armar_db(
+        {
+            "avistamientos_animal": avistamientos_mock,
+            "reportes": make_query(data=[{"id": "rep-1"}]),
+            "historial_reporte": make_query(data=[{"id": "hist-1"}]),
+        }
+    )
+    monkeypatch.setattr(svc, "supabase_admin", db)
+
+    svc.registrar_avistamiento_desde_hito(
+        reporte_id="rep-1",
+        animal_id="animal-1",
+        usuario_id="user-vol",
+        latitud=19.0,
+        longitud=-98.0,
+        tipo_hito="animal_no_localizado",
+        direccion_observada="Rumbo al parque.",
+        evidencia_id="evi-hito-1",
+    )
+
+    assert avistamientos_mock.insert.call_args[0][0]["evidencia_id"] == "evi-hito-1"
+
+
+def test_registrar_avistamiento_desde_hito_sin_evidencia_id_queda_none(
+    monkeypatch, make_query
+):
+    """Regresion del llamador de Fase 1: sin foto, la columna sigue en NULL."""
+    avistamientos_mock = make_query(
+        data=[_fila_insertada(fuente="voluntario_asignado", estado_validacion="validado")]
+    )
+    db = _armar_db(
+        {
+            "avistamientos_animal": avistamientos_mock,
+            "reportes": make_query(data=[{"id": "rep-1"}]),
+            "historial_reporte": make_query(data=[{"id": "hist-1"}]),
+        }
+    )
+    monkeypatch.setattr(svc, "supabase_admin", db)
+
+    svc.registrar_avistamiento_desde_hito(
+        reporte_id="rep-1",
+        animal_id="animal-1",
+        usuario_id="user-vol",
+        latitud=19.0,
+        longitud=-98.0,
+        tipo_hito="animal_encontrado",
+    )
+
+    assert avistamientos_mock.insert.call_args[0][0]["evidencia_id"] is None
