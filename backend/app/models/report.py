@@ -168,6 +168,11 @@ class HitoRequest(BaseModel):
     tiempo_busqueda_minutos: Optional[int] = Field(default=None, ge=1, le=1440)
     ruta_resguardo: Optional[str] = None
     fecha_limite_resguardo: Optional[datetime] = None
+    # Solo aplica a 'animal_no_localizado': si el voluntario indica hacia
+    # donde vio moverse al animal, ese dato SI genera un avistamiento oficial
+    # (fuente voluntario_asignado, auto-validado). Vacio/None -> sin cambios,
+    # la ausencia no es un avistamiento.
+    direccion_movimiento_observada: Optional[str] = Field(default=None, max_length=300)
 
 
 class AnimalResultadoSinVidaInput(BaseModel):
