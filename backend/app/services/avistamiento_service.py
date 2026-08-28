@@ -899,6 +899,145 @@ def registrar_avistamiento(
     return _a_resultado(fila)
 
 
+def _fotos_por_evidencia(evidencia_ids: list[str]) -> dict[str, str]:
+    """foto_url de cada evidencia, en una sola consulta.
+
+    Va aparte y no como embed de PostgREST a proposito: la FK de
+    avistamientos_animal.evidencia_id -> reporte_evidencias es compuesta
+    (evidencia_id, reporte_id), y PostgREST no la expone como relacion
+    embebible. Ademas la migracion que la crea (0087) se aplica a mano, asi
+    que el listado no puede depender de que ya este puesta.
+    """
+    if not evidencia_ids:
+        return {}
+    resultado = (
+        supabase_admin.table("reporte_evidencias")
+        .select("id, foto_url")
+        .in_("id", evidencia_ids)
+        .execute()
+    )
+    return {
+        fila["id"]: fila["foto_url"]
+        for fila in (resultado.data or [])
+        if fila.get("foto_url")
+    }
+
+
+def _nombre_de(usuario: dict | list | None) -> str | None:
+    if isinstance(usuario, list):
+        usuario = usuario[0] if usuario else None
+    if not usuario:
+        return None
+    nombre = " ".join(
+        parte
+        for parte in (usuario.get("nombre"), usuario.get("apellido_paterno"))
+        if parte
+    ).strip()
+    return nombre or None
+
+
+def listar_pendientes_asociacion(asociacion_id: str) -> list[dict]:
+    """Avistamientos 'pendiente' de los reportes que coordina esta asociacion,
+    AGRUPADOS por reporte.
+
+    La agrupacion no es cosmetica: la Pantalla B decide con ella si muestra
+    una tarjeta simple (1 pendiente) o la vista comparativa (2+ compitiendo
+    por la misma ubicacion), asi que el backend la resuelve una vez en vez de
+    que cada cliente reagrupe una lista plana.
+
+    Orden: los reportes que llevan mas tiempo esperando van primero (FIFO de
+    bandeja, igual que listar_seguimientos_asociacion); dentro de cada
+    reporte, el avistamiento observado mas recientemente va primero.
+    """
+    resultado = (
+        supabase_admin.table("avistamientos_animal")
+        .select(
+            "id, reporte_id, animal_id, latitud, longitud, precision_metros, "
+            "observado_at, registrado_at, fuente, movilidad_observada, "
+            "direccion_observada, comentario, evidencia_id, usuario_id, "
+            "usuarios(nombre, apellido_paterno), "
+            "animal(orden, tipo_animal_catalogo(clave)), "
+            # El nombre de la FK es obligatorio: hay DOS relaciones entre
+            # avistamientos_animal y reportes (reporte_id -> reportes.id, y
+            # reportes.ultima_ubicacion_confirmada_id -> avistamientos.id, ambas
+            # de la migracion 0071). Sin desambiguar, PostgREST responde
+            # PGRST201. El !inner es lo que hace que el filtro por asociacion
+            # se aplique en la base y no solo al post-procesar.
+            "reportes!avistamientos_animal_reporte_id_fkey!inner("
+            "id, estado_reporte, municipio, colonia, calle, "
+            "created_at, asociacion_asignada_id)"
+        )
+        .eq("estado_validacion", "pendiente")
+        .eq("reportes.asociacion_asignada_id", asociacion_id)
+        .order("registrado_at", desc=False)
+        .execute()
+    )
+    filas = resultado.data or []
+
+    fotos = _fotos_por_evidencia(
+        list({fila["evidencia_id"] for fila in filas if fila.get("evidencia_id")})
+    )
+
+    grupos: dict[str, dict] = {}
+    for fila in filas:
+        reporte = fila.get("reportes") or {}
+        # Defensa por si el !inner no filtrara: nunca devolver un caso ajeno.
+        if reporte.get("asociacion_asignada_id") != asociacion_id:
+            continue
+
+        reporte_id = fila["reporte_id"]
+        if reporte_id not in grupos:
+            grupos[reporte_id] = {
+                "reporte_id": reporte_id,
+                "reporte": {
+                    "estado_reporte": reporte.get("estado_reporte"),
+                    "municipio": reporte.get("municipio"),
+                    "colonia": reporte.get("colonia"),
+                    "calle": reporte.get("calle"),
+                    "created_at": reporte.get("created_at"),
+                },
+                "avistamientos": [],
+            }
+
+        animal = fila.get("animal")
+        if isinstance(animal, list):
+            animal = animal[0] if animal else None
+        animal = animal or {}
+
+        grupos[reporte_id]["avistamientos"].append(
+            {
+                "id": fila["id"],
+                "animal_id": fila.get("animal_id"),
+                "animal": {
+                    "orden": animal.get("orden"),
+                    "tipo_animal": (animal.get("tipo_animal_catalogo") or {}).get(
+                        "clave"
+                    ),
+                },
+                "latitud": fila.get("latitud"),
+                "longitud": fila.get("longitud"),
+                "precision_metros": fila.get("precision_metros"),
+                "observado_at": fila.get("observado_at"),
+                "registrado_at": fila.get("registrado_at"),
+                "fuente": fila.get("fuente"),
+                "movilidad_observada": fila.get("movilidad_observada"),
+                "direccion_observada": fila.get("direccion_observada"),
+                "comentario": fila.get("comentario"),
+                "evidencia_id": fila.get("evidencia_id"),
+                "foto_url": fotos.get(fila.get("evidencia_id")),
+                "registrado_por": _nombre_de(fila.get("usuarios")),
+            }
+        )
+
+    for grupo in grupos.values():
+        grupo["avistamientos"].sort(
+            key=lambda a: a.get("observado_at") or "", reverse=True
+        )
+        grupo["en_conflicto"] = len(grupo["avistamientos"]) > 1
+
+    return list(grupos.values())
+
+
 def validar_avistamiento(
     avistamiento_id: str, usuario_id: str, aprobar: bool
 ) -> AvistamientoResult:

@@ -41,7 +41,7 @@ from app.services.video_evidence_service import procesar_evidencia_verificacion
 from app.services.whatsapp_notification_service import (
     notificar_evento_verificacion,
 )
-from app.services import deceased_followup_service
+from app.services import avistamiento_service, deceased_followup_service
 from app.models.association import NuevoRepresentante
 from app.models.report import RevisionResultadoSinVidaRequest
 from app.utils.animal_shaping import shape_animal_embed, shape_animal_response, condicion_mas_grave
@@ -641,6 +641,29 @@ async def get_reportes_asignados(authorization: str = Header(None)):
         })
 
     return reportes
+
+
+@router.get("/me/avistamientos-pendientes", status_code=200)
+async def get_avistamientos_pendientes(
+    authorization: str = Header(None),
+):
+    """Bandeja de avistamientos por validar (Capa 8, Pantalla B).
+
+    Devuelve los pendientes AGRUPADOS por reporte: el cliente usa
+    `en_conflicto` para decidir entre tarjeta simple y vista comparativa.
+    Resolver cada uno se sigue haciendo con
+    POST /reports/{id}/avistamientos/{avistamiento_id}/validar.
+    """
+    usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion", "staff"))
+    asociacion_id = usuario.get("asociacion_id")
+    if not asociacion_id:
+        raise HTTPException(
+            status_code=404,
+            detail="Este usuario no está vinculado a ninguna asociación",
+        )
+    _verificar_asociacion_aprobada(asociacion_id)
+    return avistamiento_service.listar_pendientes_asociacion(asociacion_id)
 
 
 @router.get("/me/seguimientos-fallecimiento", status_code=200)
