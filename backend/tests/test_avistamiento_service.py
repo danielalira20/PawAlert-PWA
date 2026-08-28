@@ -2422,3 +2422,180 @@ def test_registrar_avistamiento_desde_hito_sin_evidencia_id_queda_none(
     )
 
     assert avistamientos_mock.insert.call_args[0][0]["evidencia_id"] is None
+
+
+# --- Fase 8: bandeja de pendientes de la asociacion -------------------------
+
+
+def _pendiente(
+    *,
+    id: str,
+    reporte_id: str = "rep-1",
+    animal_id: str = "animal-1",
+    observado_at: str = "2026-08-27T12:00:00+00:00",
+    registrado_at: str = "2026-08-27T12:05:00+00:00",
+    fuente: str = "confirmacion_reportante",
+    evidencia_id: str | None = None,
+    asociacion_asignada_id: str = "aso-1",
+    tipo_animal: str = "perro",
+) -> dict:
+    """Fila tal como la devuelve el SELECT de listar_pendientes_asociacion,
+    con los embeds de PostgREST ya anidados."""
+    return {
+        "id": id,
+        "reporte_id": reporte_id,
+        "animal_id": animal_id,
+        "latitud": 19.0,
+        "longitud": -98.0,
+        "precision_metros": 12,
+        "observado_at": observado_at,
+        "registrado_at": registrado_at,
+        "fuente": fuente,
+        "movilidad_observada": "limitada",
+        "direccion_observada": None,
+        "comentario": None,
+        "evidencia_id": evidencia_id,
+        "usuario_id": "user-x",
+        "usuarios": {"nombre": "Ana", "apellido_paterno": "Pérez"},
+        "animal": {"orden": 1, "tipo_animal_catalogo": {"clave": tipo_animal}},
+        "reportes": {
+            "id": reporte_id,
+            "estado_reporte": "asignado",
+            "municipio": "Puebla",
+            "colonia": "Centro",
+            "calle": "Reforma",
+            "created_at": "2026-08-27T10:00:00+00:00",
+            "asociacion_asignada_id": asociacion_asignada_id,
+        },
+    }
+
+
+def _db_pendientes(make_query, filas, evidencias=None):
+    avistamientos = make_query(data=filas)
+    db = _armar_db(
+        {
+            "avistamientos_animal": avistamientos,
+            "reporte_evidencias": make_query(data=evidencias or []),
+        }
+    )
+    return db, avistamientos
+
+
+def test_pendientes_filtra_por_la_asociacion_del_usuario(monkeypatch, make_query):
+    """El !inner filtra en la base; ademas el service descarta cualquier fila
+    de otra asociacion que llegara a colarse."""
+    db, avistamientos = _db_pendientes(
+        make_query,
+        [
+            _pendiente(id="av-mio", reporte_id="rep-1"),
+            _pendiente(
+                id="av-ajeno", reporte_id="rep-9", asociacion_asignada_id="aso-OTRA"
+            ),
+        ],
+    )
+    monkeypatch.setattr(svc, "supabase_admin", db)
+
+    grupos = svc.listar_pendientes_asociacion("aso-1")
+
+    ids = [a["id"] for g in grupos for a in g["avistamientos"]]
+    assert ids == ["av-mio"]
+    assert [g["reporte_id"] for g in grupos] == ["rep-1"]
+    # el filtro tambien viaja a la consulta, no solo al post-procesado
+    avistamientos.eq.assert_any_call("estado_validacion", "pendiente")
+    avistamientos.eq.assert_any_call("reportes.asociacion_asignada_id", "aso-1")
+
+
+def test_pendientes_agrupa_por_reporte_y_marca_conflicto(monkeypatch, make_query):
+    """Un reporte con 1 pendiente y otro con 3 compitiendo: ambos casos
+    presentes y diferenciados por `en_conflicto`."""
+    db, _ = _db_pendientes(
+        make_query,
+        [
+            _pendiente(id="av-solo", reporte_id="rep-solo"),
+            _pendiente(
+                id="av-a",
+                reporte_id="rep-conflicto",
+                observado_at="2026-08-27T11:00:00+00:00",
+            ),
+            _pendiente(
+                id="av-b",
+                reporte_id="rep-conflicto",
+                observado_at="2026-08-27T13:00:00+00:00",
+            ),
+            _pendiente(
+                id="av-c",
+                reporte_id="rep-conflicto",
+                observado_at="2026-08-27T12:00:00+00:00",
+            ),
+        ],
+    )
+    monkeypatch.setattr(svc, "supabase_admin", db)
+
+    grupos = {g["reporte_id"]: g for g in svc.listar_pendientes_asociacion("aso-1")}
+
+    assert len(grupos) == 2
+    assert grupos["rep-solo"]["en_conflicto"] is False
+    assert len(grupos["rep-solo"]["avistamientos"]) == 1
+
+    conflicto = grupos["rep-conflicto"]
+    assert conflicto["en_conflicto"] is True
+    # dentro del grupo, el observado mas reciente va primero
+    assert [a["id"] for a in conflicto["avistamientos"]] == ["av-b", "av-c", "av-a"]
+
+
+def test_pendientes_incluye_lo_necesario_para_comparar(monkeypatch, make_query):
+    db, _ = _db_pendientes(
+        make_query,
+        [_pendiente(id="av-1", evidencia_id="evi-1")],
+        evidencias=[{"id": "evi-1", "foto_url": "https://x/evi.jpg"}],
+    )
+    monkeypatch.setattr(svc, "supabase_admin", db)
+
+    grupo = svc.listar_pendientes_asociacion("aso-1")[0]
+    avistamiento = grupo["avistamientos"][0]
+
+    assert avistamiento["foto_url"] == "https://x/evi.jpg"
+    assert avistamiento["registrado_por"] == "Ana Pérez"
+    assert avistamiento["fuente"] == "confirmacion_reportante"
+    assert avistamiento["observado_at"] == "2026-08-27T12:00:00+00:00"
+    assert (avistamiento["latitud"], avistamiento["longitud"]) == (19.0, -98.0)
+    assert avistamiento["animal"] == {"orden": 1, "tipo_animal": "perro"}
+    assert grupo["reporte"]["municipio"] == "Puebla"
+
+
+def test_pendientes_sin_evidencia_no_consulta_fotos(monkeypatch, make_query):
+    evidencias = make_query(data=[])
+    db = _armar_db(
+        {
+            "avistamientos_animal": make_query(data=[_pendiente(id="av-1")]),
+            "reporte_evidencias": evidencias,
+        }
+    )
+    monkeypatch.setattr(svc, "supabase_admin", db)
+
+    grupo = svc.listar_pendientes_asociacion("aso-1")[0]
+
+    assert grupo["avistamientos"][0]["foto_url"] is None
+    evidencias.select.assert_not_called()
+
+
+def test_pendientes_sin_resultados_devuelve_lista_vacia(monkeypatch, make_query):
+    db, _ = _db_pendientes(make_query, [])
+    monkeypatch.setattr(svc, "supabase_admin", db)
+
+    assert svc.listar_pendientes_asociacion("aso-1") == []
+
+
+def test_pendientes_desambigua_la_fk_con_reportes(monkeypatch, make_query):
+    """Regresion de un fallo que solo aparecio contra Supabase real (PGRST201):
+    hay DOS relaciones entre avistamientos_animal y reportes (reporte_id ->
+    reportes.id, y reportes.ultima_ubicacion_confirmada_id -> avistamientos.id,
+    ambas de la migracion 0071). El embed debe nombrar la FK explicitamente o
+    PostgREST rechaza la consulta."""
+    db, avistamientos = _db_pendientes(make_query, [_pendiente(id="av-1")])
+    monkeypatch.setattr(svc, "supabase_admin", db)
+
+    svc.listar_pendientes_asociacion("aso-1")
+
+    select = avistamientos.select.call_args.args[0]
+    assert "reportes!avistamientos_animal_reporte_id_fkey!inner(" in select

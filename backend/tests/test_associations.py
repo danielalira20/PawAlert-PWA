@@ -912,3 +912,92 @@ def test_verificar_aliado_con_solo_contribucion_de_lote_confirmada(make_query):
 
     assert response.status_code == 200
     assert response.json()["perfil"]["aliado_verificado_por"] == "aso-1"
+
+
+# ---------------------------------------------------------------------------
+# GET /associations/me/avistamientos-pendientes (Capa 8, Pantalla B)
+# ---------------------------------------------------------------------------
+
+
+def _mock_supabase_asociacion(make_query, rol: str = "asociacion"):
+    tablas = {
+        "usuarios": make_query(
+            data=[{"id": "user-1", "asociacion_id": "aso-1", "roles": {"nombre": rol}}]
+        ),
+        "asociaciones": make_query(data=[{"verificado": True, "nombre": "Huellitas"}]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    supabase.auth.get_user.return_value = SimpleNamespace(
+        user=SimpleNamespace(id="auth-user-1")
+    )
+    return supabase
+
+
+def test_avistamientos_pendientes_delega_con_la_asociacion_del_usuario(make_query):
+    supabase = _mock_supabase_asociacion(make_query)
+    grupos = [{"reporte_id": "rep-1", "en_conflicto": False, "avistamientos": []}]
+
+    with (
+        patch("app.api.associations.supabase", supabase),
+        patch.object(
+            associations.avistamiento_service,
+            "listar_pendientes_asociacion",
+            return_value=grupos,
+        ) as listar,
+    ):
+        response = client.get(
+            "/associations/me/avistamientos-pendientes",
+            headers={"Authorization": "Bearer token-valido"},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == grupos
+    listar.assert_called_once_with("aso-1")
+
+
+def test_avistamientos_pendientes_permite_staff(make_query):
+    supabase = _mock_supabase_asociacion(make_query, rol="staff")
+
+    with (
+        patch("app.api.associations.supabase", supabase),
+        patch.object(
+            associations.avistamiento_service,
+            "listar_pendientes_asociacion",
+            return_value=[],
+        ),
+    ):
+        response = client.get(
+            "/associations/me/avistamientos-pendientes",
+            headers={"Authorization": "Bearer token-valido"},
+        )
+
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize(
+    "rol", ["reportante", "voluntario_interno", "voluntario_externo", "aliado_local"]
+)
+def test_avistamientos_pendientes_rechaza_roles_ajenos(rol, make_query):
+    supabase = _mock_supabase_asociacion(make_query, rol=rol)
+
+    with (
+        patch("app.api.associations.supabase", supabase),
+        patch.object(
+            associations.avistamiento_service,
+            "listar_pendientes_asociacion",
+            return_value=[],
+        ) as listar,
+    ):
+        response = client.get(
+            "/associations/me/avistamientos-pendientes",
+            headers={"Authorization": "Bearer token-valido"},
+        )
+
+    assert response.status_code == 403
+    listar.assert_not_called()
+
+
+def test_avistamientos_pendientes_sin_token():
+    response = client.get("/associations/me/avistamientos-pendientes")
+    assert response.status_code == 401
