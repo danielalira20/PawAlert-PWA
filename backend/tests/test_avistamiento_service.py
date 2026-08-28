@@ -347,7 +347,13 @@ def _armar_validar(monkeypatch, make_query, *, reporte=None, usuario=None, avist
         "registrado_at": datetime.now(timezone.utc).isoformat(),
     }
     avistamientos_mock = make_query(
-        execute_results=[[avistamiento], [{**avistamiento, "estado_validacion": "validado"}]]
+        execute_results=[
+            [avistamiento],
+            [{**avistamiento, "estado_validacion": "validado"}],
+            # Tercera ejecucion: el UPDATE de _superar_pendientes_del_caso,
+            # que corre tras aprobar. Vacia = no habia otros pendientes.
+            [],
+        ]
     )
     reportes_mock = make_query(data=[reporte])
     historial_mock = make_query(data=[{"id": "hist-1"}])
@@ -357,6 +363,7 @@ def _armar_validar(monkeypatch, make_query, *, reporte=None, usuario=None, avist
             "reportes": reportes_mock,
             "usuarios": make_query(data=[usuario]),
             "historial_reporte": historial_mock,
+            "animal": make_query(data=[{"id": "animal-1"}]),
         }
     )
     monkeypatch.setattr(svc, "supabase_admin", db)
@@ -1172,3 +1179,528 @@ def test_elegibilidad_mide_contra_ultima_ubicacion_confirmada_no_el_pin(
         "rep-1", "user-reportante", 19.0501, -98.0
     )
     assert contra_confirmada["elegible"] is True
+
+
+# --- Fase 3: auto-validacion combinada -------------------------------------
+#
+# Geometria de referencia: el pin de _reporte() esta en (19.0, -98.0) y
+# 1 grado de latitud = 111194.9 m, asi que los desplazamientos usados abajo
+# son: 0.00027 -> 30m, 0.0004 -> 44m, 0.0007 -> 78m, 0.005 -> 556m,
+# 0.01 -> 1112m. Radios de la fase: coherencia 800m, corroboracion 50m,
+# ventana 5min.
+
+from app.services import reputacion_service  # noqa: E402
+
+OBSERVADO_BASE = "2026-08-27T12:00:00+00:00"
+
+
+def _fila_completa(**cambios):
+    """Fila tal como la devuelve el INSERT real de avistamientos_animal,
+    con las columnas que la logica de auto-validacion necesita leer
+    (a diferencia de _fila_insertada(), que es el minimo del contrato)."""
+    datos = {
+        "id": "av-nuevo",
+        "reporte_id": "rep-1",
+        "animal_id": "animal-1",
+        "fuente": "confirmacion_reportante",
+        "usuario_id": "user-reportante",
+        "latitud": 19.0,
+        "longitud": -98.0,
+        "observado_at": OBSERVADO_BASE,
+        "estado_validacion": "pendiente",
+        "registrado_at": datetime.now(timezone.utc).isoformat(),
+    }
+    datos.update(cambios)
+    return datos
+
+
+def _mockear_trust(monkeypatch, puntaje: int):
+    monkeypatch.setattr(
+        reputacion_service,
+        "consultar_restricciones",
+        lambda usuario_id, rol: {"puntaje": puntaje, "rol": rol},
+    )
+
+
+def _db_auto(monkeypatch, make_query, *, fila, resultados_avistamientos):
+    """Escenario de registrar_avistamiento para el reportante del caso,
+    parametrizado por lo que devuelve cada ejecucion sobre
+    avistamientos_animal (INSERT, luego SELECT/UPDATE segun la condicion)."""
+    reportes_mock = make_query(data=[_reporte(usuario_id="user-reportante")])
+    avistamientos_mock = make_query(execute_results=resultados_avistamientos)
+    db = _armar_db(
+        {
+            "reportes": reportes_mock,
+            "usuarios": make_query(data=[_usuario(id="user-reportante")]),
+            "animal": make_query(data=[{"id": "animal-1"}]),
+            "avistamientos_animal": avistamientos_mock,
+            "historial_reporte": make_query(data=[{"id": "hist-1"}]),
+        }
+    )
+    monkeypatch.setattr(svc, "supabase_admin", db)
+    return db, reportes_mock, avistamientos_mock
+
+
+def _crear(latitud=19.0, longitud=-98.0, observado_at=OBSERVADO_BASE):
+    return _avistamiento_create(
+        latitud=latitud,
+        longitud=longitud,
+        observado_at=datetime.fromisoformat(observado_at),
+    )
+
+
+def _estados_actualizados(avistamientos_mock) -> list[str]:
+    return [
+        llamada[0][0]["estado_validacion"]
+        for llamada in avistamientos_mock.update.call_args_list
+    ]
+
+
+def _args_eq(mock) -> list[tuple]:
+    return [llamada[0] for llamada in mock.eq.call_args_list]
+
+
+# 1. Trust score en el umbral + dentro del radio -> auto-valida.
+
+
+def test_auto_valida_por_trust_en_umbral_dentro_del_radio(monkeypatch, make_query):
+    _mockear_trust(monkeypatch, 60)
+    fila = _fila_completa(latitud=19.003, longitud=-98.0)
+    _, reportes_mock, avistamientos_mock = _db_auto(
+        monkeypatch,
+        make_query,
+        fila=fila,
+        resultados_avistamientos=[[fila], [{**fila, "estado_validacion": "validado"}]],
+    )
+
+    resultado = svc.registrar_avistamiento(
+        "rep-1", "user-reportante", _crear(latitud=19.003)
+    )
+
+    assert resultado.estado_validacion == "validado"
+    assert _estados_actualizados(avistamientos_mock) == ["validado"]
+    # La ubicacion confirmada se movio al avistamiento nuevo.
+    reportes_mock.update.assert_called_once_with(
+        {
+            "ultima_ubicacion_confirmada_id": "av-nuevo",
+            "ultima_latitud_confirmada": 19.003,
+            "ultima_longitud_confirmada": -98.0,
+        }
+    )
+
+
+def test_condiciones_reportan_motivo_trust_y_radio(monkeypatch, make_query):
+    """El motivo viaja para logging/auditoria, no solo el booleano."""
+    _mockear_trust(monkeypatch, 60)
+    fila = _fila_completa(latitud=19.003, longitud=-98.0)
+    _db_auto(monkeypatch, make_query, fila=fila, resultados_avistamientos=[[fila]])
+
+    se_auto_valida, motivo = svc._validar_condiciones_auto_validacion(
+        _reporte(usuario_id="user-reportante"), fila
+    )
+
+    assert se_auto_valida is True
+    assert motivo == svc.MOTIVO_TRUST_Y_RADIO
+
+
+# 2. Trust score justo debajo del umbral -> no auto-valida.
+
+
+def test_no_auto_valida_con_trust_59_aunque_este_dentro_del_radio(
+    monkeypatch, make_query
+):
+    _mockear_trust(monkeypatch, 59)
+    fila = _fila_completa(latitud=19.003, longitud=-98.0)
+    _, reportes_mock, avistamientos_mock = _db_auto(
+        monkeypatch,
+        make_query,
+        fila=fila,
+        # 2a ejecucion: SELECT de corroboracion, sin candidatos.
+        resultados_avistamientos=[[fila], []],
+    )
+
+    resultado = svc.registrar_avistamiento(
+        "rep-1", "user-reportante", _crear(latitud=19.003)
+    )
+
+    assert resultado.estado_validacion == "pendiente"
+    avistamientos_mock.update.assert_not_called()
+    reportes_mock.update.assert_not_called()
+
+
+# 3. Trust suficiente pero fuera del radio de coherencia -> no auto-valida.
+
+
+def test_no_auto_valida_con_trust_60_fuera_del_radio_de_coherencia(
+    monkeypatch, make_query
+):
+    """Se prueba la condicion 2 directamente, no via registrar_avistamiento:
+    para reportante/voluntario_verificado el filtro de ENTRADA de Fase 2
+    (500m) es mas estricto que el radio de coherencia de Fase 3 (800m), asi
+    que por el endpoint es imposible llegar aqui a 1112m -- se rechaza antes
+    con 422. Ver test_radio_de_entrada_fase2_corta_antes_que_la_coherencia."""
+    _mockear_trust(monkeypatch, 60)
+    # 0.01 grados = ~1112m, por encima de los 800m de coherencia.
+    fila = _fila_completa(latitud=19.01, longitud=-98.0)
+    db = _armar_db({"avistamientos_animal": make_query(data=[])})
+    monkeypatch.setattr(svc, "supabase_admin", db)
+
+    se_auto_valida, motivo = svc._validar_condiciones_auto_validacion(
+        _reporte(usuario_id="user-reportante"), fila
+    )
+
+    assert se_auto_valida is False
+    assert motivo is None
+
+
+def test_radio_de_entrada_fase2_corta_antes_que_la_coherencia(
+    monkeypatch, make_query
+):
+    """Documenta la interaccion entre fases: con entrada=500m y
+    coherencia=800m, la franja 500-800m nunca llega a evaluarse por este
+    camino. Si algun dia se sube el radio de entrada, este test cambia."""
+    _mockear_trust(monkeypatch, 100)
+    fila = _fila_completa(latitud=19.006, longitud=-98.0)  # ~667m
+    _db_auto(monkeypatch, make_query, fila=fila, resultados_avistamientos=[[fila]])
+
+    with pytest.raises(HTTPException) as error:
+        svc.registrar_avistamiento(
+            "rep-1", "user-reportante", _crear(latitud=19.006)
+        )
+
+    assert error.value.status_code == 422
+    assert "metros del caso" in error.value.detail
+
+
+# 4. Reportante sin fila en trust_score -> el default 60 SI califica.
+
+
+def test_reportante_sin_fila_en_trust_score_usa_default_60_y_auto_valida(
+    monkeypatch, make_query
+):
+    """El caso mas comun en la practica. Se ejercita la consultar_restricciones
+    REAL con trust_score vacio, no un mock del puntaje -- lo que se esta
+    verificando es justamente que la ausencia de fila vale 60."""
+    trust_db = MagicMock()
+    trust_db.table.return_value = make_query(data=[])
+    monkeypatch.setattr(reputacion_service, "supabase", trust_db)
+
+    fila = _fila_completa(latitud=19.003, longitud=-98.0)
+    _, reportes_mock, avistamientos_mock = _db_auto(
+        monkeypatch,
+        make_query,
+        fila=fila,
+        resultados_avistamientos=[[fila], [{**fila, "estado_validacion": "validado"}]],
+    )
+
+    resultado = svc.registrar_avistamiento(
+        "rep-1", "user-reportante", _crear(latitud=19.003)
+    )
+
+    assert resultado.estado_validacion == "validado"
+    assert _estados_actualizados(avistamientos_mock) == ["validado"]
+
+
+def test_fallo_consultando_trust_score_deja_pendiente_sin_romper(
+    monkeypatch, make_query
+):
+    """consultar_restricciones no atrapa sus excepciones; el avistamiento no
+    puede caerse por un problema del motor de reputacion."""
+
+    def _explota(usuario_id, rol):
+        raise RuntimeError("trust_score no disponible")
+
+    monkeypatch.setattr(reputacion_service, "consultar_restricciones", _explota)
+    fila = _fila_completa(latitud=19.003, longitud=-98.0)
+    _, _, avistamientos_mock = _db_auto(
+        monkeypatch,
+        make_query,
+        fila=fila,
+        resultados_avistamientos=[[fila], []],
+    )
+
+    resultado = svc.registrar_avistamiento(
+        "rep-1", "user-reportante", _crear(latitud=19.003)
+    )
+
+    assert resultado.estado_validacion == "pendiente"
+    avistamientos_mock.update.assert_not_called()
+
+
+# 5. Corroboracion: 44m y 4min -> ambos se validan.
+
+
+def test_corroboracion_dentro_de_ambas_ventanas_valida_los_dos(
+    monkeypatch, make_query
+):
+    _mockear_trust(monkeypatch, 59)  # cond. 2 descartada: decide la 3.
+    fila = _fila_completa(latitud=19.0, longitud=-98.0)
+    previo = {
+        "id": "av-previo",
+        "latitud": 19.0004,  # ~44m
+        "longitud": -98.0,
+        "observado_at": "2026-08-27T12:04:00+00:00",  # 4 min
+        "estado_validacion": "pendiente",
+    }
+    _, reportes_mock, avistamientos_mock = _db_auto(
+        monkeypatch,
+        make_query,
+        fila=fila,
+        resultados_avistamientos=[
+            [fila],  # INSERT
+            [previo],  # SELECT candidatos
+            [{**previo, "estado_validacion": "validado"}],  # UPDATE corroborante
+            [{**fila, "estado_validacion": "validado"}],  # UPDATE nuevo
+        ],
+    )
+
+    resultado = svc.registrar_avistamiento("rep-1", "user-reportante", _crear())
+
+    assert resultado.estado_validacion == "validado"
+    # Los DOS pasaron a validado, no solo el nuevo.
+    assert _estados_actualizados(avistamientos_mock) == ["validado", "validado"]
+    assert ("id", "av-previo") in _args_eq(avistamientos_mock)
+    assert ("id", "av-nuevo") in _args_eq(avistamientos_mock)
+
+
+def test_corroboracion_reporta_motivo_corroboracion(monkeypatch, make_query):
+    _mockear_trust(monkeypatch, 59)
+    fila = _fila_completa()
+    previo = {
+        "id": "av-previo",
+        "latitud": 19.0004,
+        "longitud": -98.0,
+        "observado_at": "2026-08-27T12:04:00+00:00",
+        "estado_validacion": "validado",
+    }
+    _db_auto(
+        monkeypatch,
+        make_query,
+        fila=fila,
+        resultados_avistamientos=[[fila], [previo]],
+    )
+
+    se_auto_valida, motivo = svc._validar_condiciones_auto_validacion(
+        _reporte(usuario_id="user-reportante"), fila
+    )
+
+    assert se_auto_valida is True
+    assert motivo == svc.MOTIVO_CORROBORACION
+
+
+# 6. Fuera del radio de corroboracion aunque el tiempo si califique.
+
+
+def test_no_corrobora_si_la_distancia_excede_aunque_el_tiempo_califique(
+    monkeypatch, make_query
+):
+    _mockear_trust(monkeypatch, 59)
+    fila = _fila_completa()
+    previo = {
+        "id": "av-previo",
+        "latitud": 19.0007,  # ~78m, por encima de los 50m
+        "longitud": -98.0,
+        "observado_at": "2026-08-27T12:01:00+00:00",  # 1 min: si califica
+        "estado_validacion": "pendiente",
+    }
+    _, _, avistamientos_mock = _db_auto(
+        monkeypatch,
+        make_query,
+        fila=fila,
+        resultados_avistamientos=[[fila], [previo]],
+    )
+
+    resultado = svc.registrar_avistamiento("rep-1", "user-reportante", _crear())
+
+    assert resultado.estado_validacion == "pendiente"
+    avistamientos_mock.update.assert_not_called()
+
+
+# 7. Fuera de la ventana de tiempo aunque la distancia si califique.
+
+
+def test_no_corrobora_si_el_tiempo_excede_aunque_la_distancia_califique(
+    monkeypatch, make_query
+):
+    _mockear_trust(monkeypatch, 59)
+    fila = _fila_completa()
+    previo = {
+        "id": "av-previo",
+        "latitud": 19.00027,  # ~30m: si califica
+        "longitud": -98.0,
+        "observado_at": "2026-08-27T12:06:00+00:00",  # 6 min, ventana de 5
+        "estado_validacion": "pendiente",
+    }
+    _, _, avistamientos_mock = _db_auto(
+        monkeypatch,
+        make_query,
+        fila=fila,
+        resultados_avistamientos=[[fila], [previo]],
+    )
+
+    resultado = svc.registrar_avistamiento("rep-1", "user-reportante", _crear())
+
+    assert resultado.estado_validacion == "pendiente"
+    avistamientos_mock.update.assert_not_called()
+
+
+def test_corroboracion_solo_considera_estados_vigentes(monkeypatch, make_query):
+    """El filtro de rechazados/superados se aplica en la consulta, no despues."""
+    _mockear_trust(monkeypatch, 59)
+    fila = _fila_completa()
+    _, _, avistamientos_mock = _db_auto(
+        monkeypatch,
+        make_query,
+        fila=fila,
+        resultados_avistamientos=[[fila], []],
+    )
+
+    svc.registrar_avistamiento("rep-1", "user-reportante", _crear())
+
+    avistamientos_mock.in_.assert_called_once_with(
+        "estado_validacion", ["pendiente", "validado"]
+    )
+
+
+# 8. Ninguna de las 3 condiciones -> queda pendiente.
+
+
+def test_sin_ninguna_condicion_queda_pendiente(monkeypatch, make_query):
+    _mockear_trust(monkeypatch, 30)
+    # Trust por debajo del umbral y sin ningun avistamiento previo con que
+    # corroborar. La distancia si califica: lo que falla son las 3 condiciones.
+    fila = _fila_completa(latitud=19.003, longitud=-98.0)
+    _, reportes_mock, avistamientos_mock = _db_auto(
+        monkeypatch,
+        make_query,
+        fila=fila,
+        resultados_avistamientos=[[fila], []],
+    )
+
+    resultado = svc.registrar_avistamiento(
+        "rep-1", "user-reportante", _crear(latitud=19.003)
+    )
+
+    assert resultado.estado_validacion == "pendiente"
+    avistamientos_mock.update.assert_not_called()
+    reportes_mock.update.assert_not_called()
+
+
+# 9/10. Conflictos: aprobacion manual y superado_por_otro.
+
+
+def _armar_conflicto(monkeypatch, make_query, *, animales, superados):
+    avistamiento = {
+        "id": "av-1",
+        "reporte_id": "rep-1",
+        "animal_id": "animal-1",
+        "fuente": "confirmacion_reportante",
+        "estado_validacion": "pendiente",
+        "latitud": 19.0,
+        "longitud": -98.0,
+        "registrado_at": datetime.now(timezone.utc).isoformat(),
+    }
+    avistamientos_mock = make_query(
+        execute_results=[
+            [avistamiento],  # SELECT
+            [{**avistamiento, "estado_validacion": "validado"}],  # UPDATE aprobar
+            superados,  # UPDATE superar
+        ]
+    )
+    animal_mock = make_query(data=animales)
+    db = _armar_db(
+        {
+            "avistamientos_animal": avistamientos_mock,
+            "reportes": make_query(data=[_reporte()]),
+            "usuarios": make_query(
+                data=[_usuario(id="user-staff", roles={"nombre": "staff"})]
+            ),
+            "historial_reporte": make_query(data=[{"id": "hist-1"}]),
+            "animal": animal_mock,
+        }
+    )
+    monkeypatch.setattr(svc, "supabase_admin", db)
+    return avistamientos_mock, animal_mock
+
+
+def test_aprobar_marca_los_demas_pendientes_como_superado_por_otro(
+    monkeypatch, make_query
+):
+    """3 pendientes del mismo reporte, se aprueba uno: los otros 2 salen de
+    'pendiente' hacia 'superado_por_otro'."""
+    avistamientos_mock, _ = _armar_conflicto(
+        monkeypatch,
+        make_query,
+        animales=[{"id": "animal-1"}],
+        superados=[{"id": "av-2"}, {"id": "av-3"}],
+    )
+
+    svc.validar_avistamiento("av-1", "user-staff", aprobar=True)
+
+    estados = _estados_actualizados(avistamientos_mock)
+    assert estados == ["validado", "superado_por_otro"]
+    # El barrido apunta a los pendientes del reporte distintos del aprobado.
+    assert ("estado_validacion", "pendiente") in _args_eq(avistamientos_mock)
+    assert ("reporte_id", "rep-1") in _args_eq(avistamientos_mock)
+    avistamientos_mock.neq.assert_called_with("id", "av-1")
+
+
+def test_aprobado_manualmente_termina_en_validado(monkeypatch, make_query):
+    """El que se aprueba no debe contagiarse del barrido de superados."""
+    avistamientos_mock, _ = _armar_conflicto(
+        monkeypatch,
+        make_query,
+        animales=[{"id": "animal-1"}],
+        superados=[{"id": "av-2"}, {"id": "av-3"}],
+    )
+
+    resultado = svc.validar_avistamiento("av-1", "user-staff", aprobar=True)
+
+    assert resultado.estado_validacion == "validado"
+    assert resultado.id == "av-1"
+
+
+def test_superado_por_otro_no_cruza_animales_en_reporte_multi_animal(
+    monkeypatch, make_query
+):
+    """Aprobar un avistamiento del perro no puede descartar en silencio los
+    del gato: con 2+ animales el barrido se limita al mismo animal_id."""
+    avistamientos_mock, _ = _armar_conflicto(
+        monkeypatch,
+        make_query,
+        animales=[{"id": "animal-1"}, {"id": "animal-2"}],
+        superados=[{"id": "av-2"}],
+    )
+
+    svc.validar_avistamiento("av-1", "user-staff", aprobar=True)
+
+    assert ("animal_id", "animal-1") in _args_eq(avistamientos_mock)
+
+
+def test_superado_por_otro_barre_todo_el_reporte_si_es_mono_animal(
+    monkeypatch, make_query
+):
+    avistamientos_mock, _ = _armar_conflicto(
+        monkeypatch,
+        make_query,
+        animales=[{"id": "animal-1"}],
+        superados=[{"id": "av-2"}],
+    )
+
+    svc.validar_avistamiento("av-1", "user-staff", aprobar=True)
+
+    assert ("animal_id", "animal-1") not in _args_eq(avistamientos_mock)
+
+
+def test_rechazar_no_supera_a_nadie(monkeypatch, make_query):
+    avistamientos_mock, _ = _armar_conflicto(
+        monkeypatch,
+        make_query,
+        animales=[{"id": "animal-1"}],
+        superados=[],
+    )
+
+    resultado = svc.validar_avistamiento("av-1", "user-staff", aprobar=False)
+
+    assert resultado.estado_validacion == "rechazado"
+    assert _estados_actualizados(avistamientos_mock) == ["rechazado"]
