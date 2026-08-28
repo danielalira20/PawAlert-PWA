@@ -540,6 +540,10 @@ class AvistamientoCreate(BaseModel):
     movilidad_observada: ObservedMobility | None = None
     direccion_observada: str | None = None
     comentario: str | None = None
+    # Evidencia fotografica opcional, subida antes via
+    # POST /reports/{id}/avistamientos/foto. El body sigue siendo JSON: solo
+    # viaja la referencia, no el archivo.
+    evidencia_id: str | None = None
 
 
 class AvistamientoResult(BaseModel):
