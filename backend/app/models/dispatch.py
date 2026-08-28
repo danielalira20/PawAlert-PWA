@@ -547,5 +547,7 @@ class AvistamientoResult(BaseModel):
     reporte_id: str
     animal_id: str
     fuente: LocationSource
-    estado_validacion: Literal["pendiente", "validado", "rechazado"]
+    estado_validacion: Literal[
+        "pendiente", "validado", "rechazado", "superado_por_otro"
+    ]
     registrado_at: datetime
