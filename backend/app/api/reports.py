@@ -652,58 +652,20 @@ async def subir_foto_hito(
     if not es_staff_asignado and not es_representante_asignado and not es_asociacion_receptora and not es_voluntario_custodia:
         raise HTTPException(status_code=403, detail="No puedes agregar evidencias a este reporte")
 
-    if foto.content_type not in ["image/jpeg", "image/png", "image/jpg", "image/webp"]:
-        raise HTTPException(status_code=422, detail="La foto debe ser JPG, PNG o WEBP")
+    # El procesamiento de imagen + subida + insert de la fila suelta en
+    # reporte_evidencias vive en evidence_service para compartirlo con el
+    # endpoint de foto de avistamientos. La carpeta sigue siendo la misma
+    # convencion por-tipo-de-evento de siempre.
+    from app.services.evidence_service import subir_evidencia_suelta
 
-    from app.services.image_evidence_service import (
-        ImagenEvidenciaInvalida,
-        procesar_imagen_evidencia,
+    carpeta = "reportes/resultados-sensibles" if sensible else "reportes/hitos"
+    return await subir_evidencia_suelta(
+        foto,
+        reporte_id=reporte_id,
+        usuario_id=usuario["id"],
+        carpeta=carpeta,
+        sensible=sensible,
     )
-    from app.services.storage_service import subir_bytes, subir_bytes_privados
-
-    contenido = await foto.read()
-    try:
-        procesada = procesar_imagen_evidencia(contenido)
-    except ImagenEvidenciaInvalida as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-    if sensible:
-        foto_url = await subir_bytes_privados(
-            procesada.contenido_publico,
-            carpeta="reportes/resultados-sensibles",
-            content_type=procesada.content_type_publico,
-            extension=procesada.extension_publica,
-        )
-    else:
-        foto_url = await subir_bytes(
-            procesada.contenido_publico,
-            carpeta="reportes/hitos",
-            content_type=procesada.content_type_publico,
-            extension=procesada.extension_publica,
-        )
-
-    evidencia = supabase_admin.table("reporte_evidencias").insert(
-        {
-            "reporte_id": reporte_id,
-            "usuario_id": usuario["id"],
-            "foto_url": foto_url,
-            "formato_original": procesada.formato_original,
-            "ancho": procesada.ancho,
-            "alto": procesada.alto,
-            "size_bytes_original": procesada.size_bytes_original,
-            "exif_latitud": procesada.exif_latitud,
-            "exif_longitud": procesada.exif_longitud,
-            "exif_captured_at": procesada.exif_captured_at,
-        }
-    ).execute()
-    if not evidencia.data:
-        raise HTTPException(status_code=500, detail="No se pudo registrar la evidencia fotográfica")
-
-    return {
-        "foto_url": foto_url,
-        "evidencia_id": evidencia.data[0]["id"],
-        "exif_gps_disponible": procesada.tiene_gps_exif,
-    }
 
 #FIN: endpoind hitos fotos
 
@@ -1369,6 +1331,7 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
                     latitud=body.latitud,
                     longitud=body.longitud,
                     tipo_hito=tipo_hito,
+                    evidencia_id=body.evidencia_id,
                 )
         except Exception as error:
             print(
@@ -1418,6 +1381,7 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
                     longitud=body.longitud,
                     tipo_hito=tipo_hito,
                     direccion_observada=body.direccion_movimiento_observada.strip(),
+                    evidencia_id=body.evidencia_id,
                 )
         except Exception as error:
             print(
