@@ -1,6 +1,7 @@
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { MapContainer, Marker, Polyline, TileLayer, useMap } from 'react-leaflet';
+import { CARTO_LIGHT_TILE_URL } from '@/constants/mapTiles';
 import { useEffect } from 'react';
 
 const homeIcon = L.divIcon({
@@ -69,7 +70,7 @@ export default function VisitSafetyLeafletMap({
       />
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-        url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+        url={CARTO_LIGHT_TILE_URL}
       />
       <Polyline
         positions={[

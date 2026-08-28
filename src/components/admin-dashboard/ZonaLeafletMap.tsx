@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { MapContainer, Marker, Circle, Popup, TileLayer } from 'react-leaflet';
+import { CARTO_LIGHT_TILE_URL } from '@/constants/mapTiles';
 import type { ZonaStat } from './ZonaHeatMap.web';
 
 const NIVEL_COLOR: Record<string, string> = {
@@ -79,7 +80,7 @@ export default function ZonaLeafletMap({ zonas, width, height }: Props) {
     >
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-        url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+        url={CARTO_LIGHT_TILE_URL}
       />
       {/* Zona seleccionada: circulo difuminado tipo "mapa de calor",
           solo aparece al hacer click en un pin — no todas a la vez, para
