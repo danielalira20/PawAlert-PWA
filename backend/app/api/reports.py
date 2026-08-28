@@ -1376,6 +1376,55 @@ async def registrar_hito(reporte_id: str, body: HitoRequest, authorization: str 
                 f"(reporte={reporte_id}, hito={tipo_hito}): {error}"
             )
 
+    # Avistamiento derivado de "animal_no_localizado" (Capa 8, Fase 4):
+    # SOLO cuando el voluntario indica hacia dónde vio moverse al animal.
+    # Sin ese dato, una búsqueda sin resultado no es un avistamiento (así
+    # quedó desde la Fase 1). Con el dato, sí lo es: la RPC
+    # registrar_busqueda_no_localizado ya corrió arriba y no se toca --
+    # esto es una operación aparte, mismo patrón fail-open que
+    # "animal_encontrado".
+    if (
+        tipo_hito == "animal_no_localizado"
+        and body.direccion_movimiento_observada
+        and body.direccion_movimiento_observada.strip()
+        and body.latitud is not None
+        and body.longitud is not None
+    ):
+        try:
+            from app.services.avistamiento_service import (
+                registrar_avistamiento_desde_hito,
+            )
+
+            animal_hito = (
+                supabase.table("animal")
+                .select("id")
+                .eq("reporte_id", reporte_id)
+                .order("orden")
+                .limit(2)
+                .execute()
+            )
+            if len(animal_hito.data or []) > 1:
+                print(
+                    "[WARN] avistamiento derivado con reporte multi-animal: "
+                    f"se atribuyo al animal de orden=1, puede no ser el "
+                    f"correcto (reporte={reporte_id}, hito={tipo_hito})"
+                )
+            if animal_hito.data:
+                registrar_avistamiento_desde_hito(
+                    reporte_id=reporte_id,
+                    animal_id=animal_hito.data[0]["id"],
+                    usuario_id=usuario["id"],
+                    latitud=body.latitud,
+                    longitud=body.longitud,
+                    tipo_hito=tipo_hito,
+                    direccion_observada=body.direccion_movimiento_observada.strip(),
+                )
+        except Exception as error:
+            print(
+                "[WARN] no se pudo registrar el avistamiento derivado del hito "
+                f"(reporte={reporte_id}, hito={tipo_hito}): {error}"
+            )
+
     return {
         "mensaje": f"Hito '{tipo_hito}' registrado correctamente.",
         "tipo_hito": tipo_hito,

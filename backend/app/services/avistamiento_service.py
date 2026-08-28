@@ -860,10 +860,16 @@ def registrar_avistamiento_desde_hito(
     latitud: float,
     longitud: float,
     tipo_hito: str,
+    direccion_observada: str | None = None,
 ) -> AvistamientoResult:
     """Avistamiento derivado de un hito de rescate ya registrado -- quien lo
     dispara ya es el voluntario asignado al caso, así que se inserta
-    validado de inmediato, sin pasar por aprobación manual."""
+    validado de inmediato, sin pasar por aprobación manual.
+
+    `direccion_observada` solo lo pasa 'animal_no_localizado' (hacia dónde
+    vio moverse el voluntario al animal antes de perderlo). 'animal_encontrado'
+    no lo pasa y la columna queda NULL, igual que hasta ahora.
+    """
     ahora = datetime.now(timezone.utc).isoformat()
     insertado = (
         supabase_admin.table("avistamientos_animal")
@@ -876,6 +882,7 @@ def registrar_avistamiento_desde_hito(
                 "observado_at": ahora,
                 "fuente": LocationSource.voluntario_asignado.value,
                 "usuario_id": usuario_id,
+                "direccion_observada": direccion_observada,
                 "comentario": f"Registrado automáticamente desde el hito '{tipo_hito}'.",
                 "estado_validacion": "validado",
             }
