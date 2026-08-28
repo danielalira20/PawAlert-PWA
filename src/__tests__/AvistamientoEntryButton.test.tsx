@@ -61,6 +61,19 @@ describe('puedeRegistrarAvistamiento — visibilidad por rol', () => {
     ).toBe(false);
   });
 
+  it('lo oculta a la asociación vieja de un caso ya reasignado a otra', () => {
+    // El panel de la asociación aso-1 sigue mostrando este caso por una fila
+    // histórica de asignación, pero la coordinadora vigente es aso-2.
+    const reasignado = { ...REPORTE, asociacion_asignada_id: 'aso-2' };
+    expect(
+      puedeRegistrarAvistamiento(reasignado, {
+        id: 'user-aso',
+        rol: 'asociacion',
+        asociacion_id: 'aso-1',
+      }),
+    ).toBe(false);
+  });
+
   it('lo muestra al voluntario externo verificado', () => {
     expect(
       puedeRegistrarAvistamiento(REPORTE, { id: 'user-ext', rol: 'voluntario_externo' }),
@@ -131,5 +144,14 @@ describe('AvistamientoEntryButton', () => {
     const view = await render(<AvistamientoEntryButton reporte={REPORTE} />);
 
     expect(view.getByLabelText('Registrar avistamiento')).toBeTruthy();
+  });
+
+  it('no renderiza nada para la asociación vieja de un caso reasignado', async () => {
+    mockUsuario = { id: 'user-aso', rol: 'asociacion', asociacion_id: 'aso-1' };
+    const view = await render(
+      <AvistamientoEntryButton reporte={{ ...REPORTE, asociacion_asignada_id: 'aso-2' }} />,
+    );
+
+    expect(view.queryByLabelText('Registrar avistamiento')).toBeNull();
   });
 });

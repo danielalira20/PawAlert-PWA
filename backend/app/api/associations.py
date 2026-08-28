@@ -469,7 +469,7 @@ async def get_reportes_asignados(authorization: str = Header(None)):
     resultado = supabase.table("reporte_asignaciones").select(
         "id, assigned_at, accepted_at, closed_at, notas, "
         "asignacion_estados!reporte_asignaciones_estado_id_fkey(clave, descripcion), "
-        "reportes(id, estado_reporte, estado_validacion_reporte, confirmacion_voluntario, municipio, colonia, calle, latitud, longitud, created_at, "
+        "reportes(id, estado_reporte, estado_validacion_reporte, confirmacion_voluntario, asociacion_asignada_id, municipio, colonia, calle, latitud, longitud, created_at, "
         "urgency_score, urgency_nivel, urgency_calculado_at, "
         "urgency_proximo_recalculo_at, urgency_excluido, "
         "animal(id, orden, es_grupo, cantidad, trae_crias_nacidas, numero_crias_nacidas, "
@@ -603,6 +603,10 @@ async def get_reportes_asignados(authorization: str = Header(None)):
             "asignacion_id": r["id"],
             "reporte_id": rep["id"],
             "estado_asignacion_clave": estado_asignacion_clave,
+            # Coordinadora vigente del caso. Puede diferir de la asociación que
+            # consulta cuando el reporte fue reasignado y sigue apareciendo
+            # aquí por una fila histórica de reporte_asignaciones.
+            "asociacion_asignada_id": rep.get("asociacion_asignada_id"),
             "estado_reporte": rep.get("estado_reporte"),
             "estado_validacion_reporte": rep.get("estado_validacion_reporte"),
             "confirmacion_voluntario": rep.get("confirmacion_voluntario"),

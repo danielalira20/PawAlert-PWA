@@ -76,6 +76,7 @@ interface ReporteAsignado extends ReportUrgencySnapshot {
   asignacion_id: string;
   reporte_id: string;
   estado_asignacion_clave: string;
+  asociacion_asignada_id?: string | null;
   estado_reporte: string;
   confirmacion_voluntario?: string | null;
   ultimo_rechazo?: { nombre_voluntario: string; creado_at: string } | null;
@@ -2127,14 +2128,17 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                   onError={(message) => showToast({ type: 'warning', title: 'Revisa la decisión', message })}
                 />
 
-                {/* Avistamiento (Capa 8). `asociacion_asignada_id` se toma de
-                    la sesión porque GET /associations/me/reportes solo trae
-                    casos asignados a la asociación del usuario. */}
+                {/* Avistamiento (Capa 8). Se pasa la coordinadora vigente real
+                    del reporte (no `user.asociacion_id`): un caso reasignado
+                    sigue apareciendo aquí por su fila histórica de asignación,
+                    y el botón debe ocultarse porque esta asociación ya no lo
+                    coordina — el pre-filtro de AvistamientoEntryButton lo
+                    resuelve al comparar contra este valor. */}
                 {['pendiente', 'asignado'].includes(reporteSeleccionado.estado_reporte) && (
                   <AvistamientoEntryButton
                     reporte={{
                       id: reporteSeleccionado.reporte_id,
-                      asociacion_asignada_id: user?.asociacion_id,
+                      asociacion_asignada_id: reporteSeleccionado.asociacion_asignada_id,
                       animales: getAnimales(reporteSeleccionado),
                     }}
                   />

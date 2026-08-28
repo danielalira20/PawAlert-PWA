@@ -376,6 +376,7 @@ def _mock_reporte_asignado(make_query, *, fotos: list[dict]) -> dict:
                 "id": "reporte-1",
                 "estado_reporte": "asignado",
                 "confirmacion_voluntario": None,
+                "asociacion_asignada_id": "aso-1",
                 "municipio": "Puebla",
                 "colonia": "Centro",
                 "calle": None,
@@ -445,6 +446,33 @@ def test_me_reportes_requiere_revision_false_si_ninguna_foto_lo_tiene(make_query
 
     assert response.status_code == 200
     assert response.json()[0]["requiere_revision"] is False
+
+
+def test_me_reportes_expone_coordinadora_vigente_del_reporte(make_query):
+    """El frontend necesita `asociacion_asignada_id` real para no ofrecer
+    acciones (p. ej. registrar avistamiento) sobre casos que ya se
+    reasignaron a otra asociación y siguen apareciendo aquí por una fila
+    histórica de reporte_asignaciones."""
+    tablas = _mock_reporte_asignado(make_query, fotos=[])
+    # El caso ya no lo coordina esta asociación (aso-1): pasó a aso-2.
+    tablas["reporte_asignaciones"].execute.return_value.data[0]["reportes"][
+        "asociacion_asignada_id"
+    ] = "aso-2"
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    supabase.auth.get_user.return_value = SimpleNamespace(
+        user=SimpleNamespace(id="auth-user-1")
+    )
+
+    with patch("app.api.associations.supabase", supabase):
+        response = client.get(
+            "/associations/me/reportes",
+            headers={"Authorization": "Bearer token-valido"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()[0]["asociacion_asignada_id"] == "aso-2"
+    assert "asociacion_asignada_id" in tablas["reporte_asignaciones"].select.call_args.args[0]
 
 
 def test_me_reportes_expone_urgencia_operativa(make_query):
