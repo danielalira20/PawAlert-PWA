@@ -249,6 +249,208 @@ def evaluar_elegibilidad(
     }
 
 
+# --- Auto-validacion combinada (Fase 3) ------------------------------------
+#
+# Condicion 1 (fuente oficial) la resuelve el flujo existente ANTES de que
+# nada de esto corra: `animal_encontrado` entra por
+# registrar_avistamiento_desde_hito (ya validado), y asociacion/
+# administracion se insertan validados desde registrar_avistamiento. Lo de
+# abajo solo aplica a los que llegan como 'pendiente' por defecto, es decir
+# reportante del caso y voluntario verificado cercano.
+
+MOTIVO_TRUST_Y_RADIO = "trust_score_y_radio"
+MOTIVO_CORROBORACION = "corroboracion"
+
+# Rol con el que se consulta trust_score segun quien registra. Son los
+# valores reales del CHECK de trust_score.rol (migracion 0047).
+ROL_TRUST_POR_FUENTE = {
+    LocationSource.confirmacion_reportante: "reportante",
+    LocationSource.voluntario_verificado: "voluntario_externo",
+}
+
+ESTADOS_CORROBORABLES = ["pendiente", "validado"]
+
+
+def _a_utc(valor: str | datetime) -> datetime:
+    """Normaliza un observado_at (ISO de PostgREST o datetime del cliente) a
+    UTC consciente de zona, para poder restar dos fechas sin que una naive y
+    una aware revienten."""
+    if isinstance(valor, str):
+        fecha = datetime.fromisoformat(valor.replace("Z", "+00:00"))
+    else:
+        fecha = valor
+    if fecha.tzinfo is None:
+        return fecha.replace(tzinfo=timezone.utc)
+    return fecha.astimezone(timezone.utc)
+
+
+def _cumple_trust_y_radio(
+    reporte: dict, avistamiento_nuevo: dict, latitud: float, longitud: float
+) -> bool:
+    """Condicion 2: trust score >= umbral Y distancia al punto de referencia
+    del caso <= radio de coherencia. Las dos juntas, no una sola."""
+    try:
+        fuente = LocationSource(avistamiento_nuevo["fuente"])
+    except (KeyError, ValueError):
+        return False
+
+    rol = ROL_TRUST_POR_FUENTE.get(fuente)
+    usuario_id = avistamiento_nuevo.get("usuario_id")
+    if rol is None or not usuario_id:
+        return False
+
+    # consultar_restricciones no atrapa sus propias excepciones: si la
+    # consulta a trust_score falla, la deja subir. Aqui se degrada a "no
+    # auto-valida" para que un problema del motor de reputacion nunca tumbe
+    # el registro de un avistamiento -- mismo criterio fail-safe que el
+    # resto del modulo.
+    try:
+        from app.services.reputacion_service import consultar_restricciones
+
+        puntaje = int(consultar_restricciones(usuario_id, rol)["puntaje"])
+    except Exception:
+        logger.warning(
+            "No se pudo consultar el trust score de %s (rol=%s); el "
+            "avistamiento queda pendiente",
+            usuario_id,
+            rol,
+            exc_info=True,
+        )
+        return False
+
+    if puntaje < settings.trust_score_minimo_auto_validacion:
+        return False
+
+    distancia = _distancia_a_referencia(reporte, latitud, longitud)
+    if distancia is None:
+        return False
+    return distancia <= settings.radio_coherencia_avistamiento_metros
+
+
+def _buscar_corroboracion(
+    avistamiento_nuevo: dict, latitud: float, longitud: float
+) -> dict | None:
+    """Condicion 3: otro avistamiento del MISMO animal, todavia vigente
+    (pendiente o validado), que caiga dentro de AMBAS ventanas -- distancia
+    y tiempo. Con una sola coincidencia basta; se devuelve la primera."""
+    from app.api.reports import _distancia_metros
+
+    animal_id = avistamiento_nuevo.get("animal_id")
+    observado_at = avistamiento_nuevo.get("observado_at")
+    if not animal_id or not observado_at:
+        return None
+
+    try:
+        momento_nuevo = _a_utc(observado_at)
+    except (TypeError, ValueError):
+        return None
+
+    candidatos = (
+        supabase_admin.table("avistamientos_animal")
+        .select("id, latitud, longitud, observado_at, estado_validacion")
+        .eq("animal_id", animal_id)
+        .neq("id", avistamiento_nuevo["id"])
+        .in_("estado_validacion", ESTADOS_CORROBORABLES)
+        .execute()
+    )
+
+    radio = settings.radio_corroboracion_avistamiento_metros
+    ventana = settings.ventana_corroboracion_avistamiento_minutos
+    for fila in candidatos.data or []:
+        if fila.get("latitud") is None or fila.get("longitud") is None:
+            continue
+        distancia = _distancia_metros(
+            latitud, longitud, float(fila["latitud"]), float(fila["longitud"])
+        )
+        if distancia > radio:
+            continue
+        try:
+            minutos = abs(
+                (momento_nuevo - _a_utc(fila["observado_at"])).total_seconds()
+            ) / 60
+        except (KeyError, TypeError, ValueError):
+            continue
+        if minutos > ventana:
+            continue
+        return fila
+    return None
+
+
+def _validar_condiciones_auto_validacion(
+    reporte: dict, avistamiento_nuevo: dict
+) -> tuple[bool, str | None]:
+    """Decide si un avistamiento recien insertado como 'pendiente' se
+    auto-valida. Retorna (se_auto_valida, motivo) -- motivo para
+    logging/auditoria: MOTIVO_TRUST_Y_RADIO, MOTIVO_CORROBORACION, o None
+    si queda pendiente.
+
+    NO reevalua la condicion 1 (fuente oficial): esos avistamientos ya
+    entraron validados y nunca llegan aqui.
+
+    EFECTO LATERAL en el camino de corroboracion: cuando encuentra un
+    avistamiento que corrobora, promueve TAMBIEN a ese a 'validado' antes
+    de retornar -- la regla es que ambos se validan juntos, y hacerlo aqui
+    evita repetir la busqueda desde el llamador.
+    """
+    latitud = avistamiento_nuevo.get("latitud")
+    longitud = avistamiento_nuevo.get("longitud")
+    if latitud is None or longitud is None:
+        return False, None
+    latitud = float(latitud)
+    longitud = float(longitud)
+
+    if _cumple_trust_y_radio(reporte, avistamiento_nuevo, latitud, longitud):
+        return True, MOTIVO_TRUST_Y_RADIO
+
+    corroborante = _buscar_corroboracion(avistamiento_nuevo, latitud, longitud)
+    if corroborante is not None:
+        if corroborante.get("estado_validacion") == "pendiente":
+            supabase_admin.table("avistamientos_animal").update(
+                {"estado_validacion": "validado"}
+            ).eq("id", corroborante["id"]).eq(
+                "estado_validacion", "pendiente"
+            ).execute()
+        return True, MOTIVO_CORROBORACION
+
+    return False, None
+
+
+def _superar_pendientes_del_caso(
+    *, reporte_id: str, animal_id: str | None, avistamiento_id: str
+) -> list[str]:
+    """Marca como 'superado_por_otro' los avistamientos que seguian
+    pendientes cuando este gano.
+
+    Alcance deliberadamente hibrido: en un reporte de un solo animal barre
+    todo el reporte (todos los pendientes competian por la misma ubicacion).
+    En un reporte multi-animal se limita al mismo animal_id -- aprobar un
+    avistamiento del perro no puede descartar en silencio los del gato, que
+    no lo contradicen. La ambiguedad multi-animal ya esta reconocida en el
+    codigo (ver el [WARN] de reports.py al derivar avistamientos de hitos).
+    """
+    animales = (
+        supabase_admin.table("animal")
+        .select("id")
+        .eq("reporte_id", reporte_id)
+        .limit(2)
+        .execute()
+    )
+    es_mono_animal = len(animales.data or []) <= 1
+
+    consulta = (
+        supabase_admin.table("avistamientos_animal")
+        .update({"estado_validacion": "superado_por_otro"})
+        .eq("reporte_id", reporte_id)
+        .eq("estado_validacion", "pendiente")
+        .neq("id", avistamiento_id)
+    )
+    if not es_mono_animal and animal_id:
+        consulta = consulta.eq("animal_id", animal_id)
+
+    resultado = consulta.execute()
+    return [fila["id"] for fila in (resultado.data or []) if fila.get("id")]
+
+
 def _a_resultado(fila: dict) -> AvistamientoResult:
     return AvistamientoResult(
         id=fila["id"],
@@ -523,7 +725,51 @@ def registrar_avistamiento(
             longitud=data.longitud,
             fuente=fuente,
         )
+        return _a_resultado(fila)
 
+    # Condiciones 2 y 3 (Fase 3): la fila ya existe como 'pendiente'; si
+    # alguna se cumple, se promueve aqui. Nunca debe tumbar el registro --
+    # un fallo evaluando las condiciones deja el avistamiento pendiente,
+    # que es exactamente donde ya estaba.
+    try:
+        se_auto_valida, motivo = _validar_condiciones_auto_validacion(
+            reporte, fila
+        )
+    except Exception:
+        logger.warning(
+            "No se pudieron evaluar las condiciones de auto-validacion del "
+            "avistamiento %s; queda pendiente",
+            fila["id"],
+            exc_info=True,
+        )
+        return _a_resultado(fila)
+
+    if not se_auto_valida:
+        return _a_resultado(fila)
+
+    promovido = (
+        supabase_admin.table("avistamientos_animal")
+        .update({"estado_validacion": "validado"})
+        .eq("id", fila["id"])
+        .eq("estado_validacion", "pendiente")
+        .execute()
+    )
+    if not promovido.data:
+        # Alguien lo resolvio entre el INSERT y este UPDATE; se respeta lo
+        # que haya quedado en la base en vez de pisarlo.
+        return _a_resultado(fila)
+
+    logger.info(
+        "Avistamiento %s auto-validado (motivo=%s)", fila["id"], motivo
+    )
+    fila["estado_validacion"] = "validado"
+    _confirmar_avistamiento(
+        reporte_id=reporte_id,
+        avistamiento_id=fila["id"],
+        latitud=data.latitud,
+        longitud=data.longitud,
+        fuente=fuente,
+    )
     return _a_resultado(fila)
 
 
@@ -576,6 +822,24 @@ def validar_avistamiento(
         )
 
     if aprobar:
+        # Los demas pendientes del caso dejan de estar en espera: este gano.
+        # Secundario al hecho principal (la aprobacion), asi que un fallo
+        # aqui se loguea pero no revierte ni bloquea la aprobacion.
+        try:
+            _superar_pendientes_del_caso(
+                reporte_id=avistamiento["reporte_id"],
+                animal_id=avistamiento.get("animal_id"),
+                avistamiento_id=avistamiento_id,
+            )
+        except Exception:
+            logger.warning(
+                "No se pudieron marcar como superados los pendientes del "
+                "reporte %s tras aprobar el avistamiento %s",
+                avistamiento["reporte_id"],
+                avistamiento_id,
+                exc_info=True,
+            )
+
         _confirmar_avistamiento(
             reporte_id=avistamiento["reporte_id"],
             avistamiento_id=avistamiento_id,
