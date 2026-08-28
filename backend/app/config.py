@@ -48,6 +48,15 @@ class Settings(BaseSettings):
     # asociación/staff quedan exentos (pueden registrar info de terceros).
     radio_entrada_avistamiento_metros: int = Field(default=500, gt=0)
 
+    # Avistamientos, auto-validación (Fase 3). Condición 2: trust score
+    # mínimo Y distancia máxima al punto de referencia del caso, ambas
+    # juntas. Condición 3: dos avistamientos del mismo animal que caigan
+    # dentro de AMBAS ventanas (distancia y tiempo) se corroboran entre sí.
+    trust_score_minimo_auto_validacion: int = Field(default=60, ge=0, le=100)
+    radio_coherencia_avistamiento_metros: int = Field(default=800, gt=0)
+    radio_corroboracion_avistamiento_metros: int = Field(default=50, gt=0)
+    ventana_corroboracion_avistamiento_minutos: int = Field(default=5, gt=0)
+
     @model_validator(mode="after")
     def validate_vroom_route_windows(self):
         if (
