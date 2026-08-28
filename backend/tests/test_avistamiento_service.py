@@ -751,6 +751,7 @@ class HitoRequestFake:
             "tiempo_busqueda_minutos": None,
             "ruta_resguardo": None,
             "fecha_limite_resguardo": None,
+            "direccion_movimiento_observada": None,
         }
         base.update(campos)
         for clave, valor in base.items():
@@ -965,6 +966,214 @@ def test_registrar_hito_animal_no_localizado_no_crea_avistamiento(
 
     assert resultado["tipo_hito"] == "animal_no_localizado"
     derivado.assert_not_called()
+
+
+# --- Fase 4: animal_no_localizado con direccion observada ------------------
+
+
+def test_registrar_avistamiento_desde_hito_pasa_direccion_observada(
+    monkeypatch, make_query
+):
+    """2b: la firma acepta direccion_observada opcional y la escribe en la
+    columna. animal_encontrado no la pasa y sigue quedando NULL."""
+    fila = _fila_insertada(fuente="voluntario_asignado", estado_validacion="validado")
+    avistamientos_mock = make_query(data=[fila])
+    db = _armar_db(
+        {
+            "avistamientos_animal": avistamientos_mock,
+            "reportes": make_query(data=[{"id": "rep-1"}]),
+            "historial_reporte": make_query(data=[{"id": "hist-1"}]),
+        }
+    )
+    monkeypatch.setattr(svc, "supabase_admin", db)
+
+    svc.registrar_avistamiento_desde_hito(
+        reporte_id="rep-1",
+        animal_id="animal-1",
+        usuario_id="user-vol",
+        latitud=19.0,
+        longitud=-98.0,
+        tipo_hito="animal_no_localizado",
+        direccion_observada="Se fue corriendo hacia el norte, por la avenida.",
+    )
+
+    datos = avistamientos_mock.insert.call_args[0][0]
+    assert datos["direccion_observada"] == (
+        "Se fue corriendo hacia el norte, por la avenida."
+    )
+    assert datos["fuente"] == "voluntario_asignado"
+    assert datos["estado_validacion"] == "validado"
+
+
+def test_registrar_avistamiento_desde_hito_sin_direccion_deja_columna_none(
+    monkeypatch, make_query
+):
+    """Regresion del llamador de Fase 1 (animal_encontrado): sin el nuevo
+    parametro, direccion_observada debe seguir entrando como None."""
+    fila = _fila_insertada(fuente="voluntario_asignado", estado_validacion="validado")
+    avistamientos_mock = make_query(data=[fila])
+    db = _armar_db(
+        {
+            "avistamientos_animal": avistamientos_mock,
+            "reportes": make_query(data=[{"id": "rep-1"}]),
+            "historial_reporte": make_query(data=[{"id": "hist-1"}]),
+        }
+    )
+    monkeypatch.setattr(svc, "supabase_admin", db)
+
+    svc.registrar_avistamiento_desde_hito(
+        reporte_id="rep-1",
+        animal_id="animal-1",
+        usuario_id="user-vol",
+        latitud=19.0,
+        longitud=-98.0,
+        tipo_hito="animal_encontrado",
+    )
+
+    assert avistamientos_mock.insert.call_args[0][0]["direccion_observada"] is None
+
+
+def _db_no_localizado(monkeypatch, make_query, *, con_animal=False):
+    reporte = _reporte_para_hito()
+    tablas = {
+        "usuarios": make_query(
+            data=[
+                {
+                    "id": "user-vol",
+                    "asociacion_id": None,
+                    "roles": {"nombre": "voluntario_interno"},
+                }
+            ]
+        ),
+        "reportes": make_query(data=[reporte]),
+    }
+    if con_animal:
+        tablas["animal"] = make_query(data=[{"id": "animal-1"}])
+    db = _armar_reports_db(tablas)
+    db.auth.get_user.return_value = SimpleNamespace(
+        user=SimpleNamespace(id="auth-uid-1")
+    )
+    rpc_mock = MagicMock()
+    rpc_mock.execute.return_value = SimpleNamespace(data={"intento": 1})
+    db_admin = MagicMock()
+    db_admin.rpc.return_value = rpc_mock
+    monkeypatch.setattr(reports_api, "supabase", db)
+    monkeypatch.setattr(reports_api, "supabase_admin", db_admin)
+
+    derivado = MagicMock(return_value=SimpleNamespace(id="av-derivado"))
+    monkeypatch.setattr(avs_module, "registrar_avistamiento_desde_hito", derivado)
+    return db_admin, derivado
+
+
+def test_no_localizado_sin_direccion_no_genera_avistamiento(monkeypatch, make_query):
+    """Fase 4, test 1: regresion explicita. Sin el campo de direccion, una
+    busqueda sin resultado sigue sin generar ningun avistamiento."""
+    db_admin, derivado = _db_no_localizado(monkeypatch, make_query)
+
+    body = HitoRequestFake(
+        tipo_hito="animal_no_localizado",
+        latitud=19.0001,
+        longitud=-98.0001,
+        tiempo_busqueda_minutos=15,
+        comentario="Recorri la cuadra, no lo encontre.",
+        direccion_movimiento_observada=None,
+    )
+
+    resultado = asyncio.run(
+        reports_api.registrar_hito("rep-1", body, authorization="Bearer token-valido")
+    )
+
+    assert resultado["tipo_hito"] == "animal_no_localizado"
+    derivado.assert_not_called()
+    # La RPC de la busqueda si corre igual.
+    db_admin.rpc.assert_called_once()
+    assert db_admin.rpc.call_args[0][0] == "registrar_busqueda_no_localizado"
+
+
+def test_no_localizado_con_direccion_solo_espacios_no_genera_avistamiento(
+    monkeypatch, make_query
+):
+    db_admin, derivado = _db_no_localizado(monkeypatch, make_query)
+
+    body = HitoRequestFake(
+        tipo_hito="animal_no_localizado",
+        latitud=19.0001,
+        longitud=-98.0001,
+        tiempo_busqueda_minutos=15,
+        comentario="Recorri la cuadra, no lo encontre.",
+        direccion_movimiento_observada="   ",
+    )
+
+    asyncio.run(
+        reports_api.registrar_hito("rep-1", body, authorization="Bearer token-valido")
+    )
+
+    derivado.assert_not_called()
+
+
+def test_no_localizado_con_direccion_genera_avistamiento_oficial(
+    monkeypatch, make_query
+):
+    """Fase 4, tests 2 y 3: con el campo lleno se genera el avistamiento con
+    fuente voluntario_asignado, auto-validado, direccion correcta y las
+    coordenadas del cuerpo del hito."""
+    db_admin, derivado = _db_no_localizado(monkeypatch, make_query, con_animal=True)
+
+    # ~157m del pin del reporte (19.0, -98.0): dentro del radio que
+    # voluntario_interno debe respetar para el hito, pero distinto tanto
+    # del pin como de las coords de los otros tests -> prueba que se usan
+    # body.latitud/body.longitud, no otras.
+    body = HitoRequestFake(
+        tipo_hito="animal_no_localizado",
+        latitud=19.001,
+        longitud=-98.001,
+        tiempo_busqueda_minutos=20,
+        comentario="Lo vi alejarse pero lo perdi.",
+        direccion_movimiento_observada="Cruzo hacia el parque, rumbo sur.",
+    )
+
+    resultado = asyncio.run(
+        reports_api.registrar_hito("rep-1", body, authorization="Bearer token-valido")
+    )
+
+    assert resultado["tipo_hito"] == "animal_no_localizado"
+    derivado.assert_called_once_with(
+        reporte_id="rep-1",
+        animal_id="animal-1",
+        usuario_id="user-vol",
+        latitud=19.001,
+        longitud=-98.001,
+        tipo_hito="animal_no_localizado",
+        direccion_observada="Cruzo hacia el parque, rumbo sur.",
+    )
+    # Fase 4, test 4: la RPC de la busqueda tambien corrio, en la misma llamada.
+    db_admin.rpc.assert_called_once()
+    assert db_admin.rpc.call_args[0][0] == "registrar_busqueda_no_localizado"
+
+
+def test_no_localizado_con_direccion_no_bloquea_hito_si_avistamiento_falla(
+    monkeypatch, make_query
+):
+    """El bloque nuevo es fail-open, igual que el de animal_encontrado."""
+    db_admin, derivado = _db_no_localizado(monkeypatch, make_query, con_animal=True)
+    derivado.side_effect = RuntimeError("boom")
+
+    body = HitoRequestFake(
+        tipo_hito="animal_no_localizado",
+        latitud=19.0001,
+        longitud=-98.0001,
+        tiempo_busqueda_minutos=15,
+        comentario="Recorri la cuadra.",
+        direccion_movimiento_observada="Hacia el norte.",
+    )
+
+    resultado = asyncio.run(
+        reports_api.registrar_hito("rep-1", body, authorization="Bearer token-valido")
+    )
+
+    assert resultado["tipo_hito"] == "animal_no_localizado"
+    derivado.assert_called_once()
+    db_admin.rpc.assert_called_once()
 
 
 # --- filtro de entrada por cercania (RADIO_ENTRADA_AVISTAMIENTO_METROS) -----
