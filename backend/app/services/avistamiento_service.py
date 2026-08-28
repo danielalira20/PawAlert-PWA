@@ -592,6 +592,40 @@ def _recalcular_urgency(*, reporte_id: str, avistamiento_id: str) -> None:
     ).execute()
 
 
+def _notificar_voluntario_ubicacion_actualizada(
+    *, reporte_id: str, avistamiento_id: str, staff_asignado_id: str | None
+) -> None:
+    """Encola un push para el voluntario asignado cuando alguien MÁS confirma
+    una nueva ubicación del caso que él va atendiendo -- desde Fase 1 ya no
+    puede registrar avistamientos él mismo, así que sin este aviso llegaría
+    al punto viejo sin saber por qué `llegada_zona_reporte` lo rechaza.
+
+    Solo encola (estado 'pendiente'); el envío real lo hace
+    /internal/push/run. Sin voluntario asignado no hace nada -- es el caso
+    normal, no un error.
+    """
+    if not staff_asignado_id:
+        return
+
+    from app.services.push_notification_service import queue_and_send_push
+
+    queue_and_send_push(
+        usuario_id=staff_asignado_id,
+        tipo_evento="ubicacion_actualizada",
+        idempotency_key=(
+            f"ubicacion_actualizada:{avistamiento_id}:{staff_asignado_id}"
+        ),
+        payload={
+            "mensaje": (
+                "La ubicación del caso que atiendes cambió. Revísala antes "
+                "de seguir en camino."
+            ),
+            "reporte_id": reporte_id,
+        },
+        reporte_id=reporte_id,
+    )
+
+
 def _confirmar_avistamiento(
     *,
     reporte_id: str,
@@ -599,6 +633,7 @@ def _confirmar_avistamiento(
     latitud: float,
     longitud: float,
     fuente: LocationSource,
+    staff_asignado_id: str | None = None,
 ) -> None:
     supabase_admin.table("reportes").update(
         {
@@ -649,6 +684,20 @@ def _confirmar_avistamiento(
         logger.warning(
             "No se pudo recalcular urgency del reporte %s tras confirmar "
             "una ubicacion",
+            reporte_id,
+            exc_info=True,
+        )
+
+    try:
+        _notificar_voluntario_ubicacion_actualizada(
+            reporte_id=reporte_id,
+            avistamiento_id=avistamiento_id,
+            staff_asignado_id=staff_asignado_id,
+        )
+    except Exception:
+        logger.warning(
+            "No se pudo encolar la notificacion de cambio de ubicacion del "
+            "reporte %s para el voluntario asignado",
             reporte_id,
             exc_info=True,
         )
@@ -724,6 +773,7 @@ def registrar_avistamiento(
             latitud=data.latitud,
             longitud=data.longitud,
             fuente=fuente,
+            staff_asignado_id=reporte.get("staff_asignado_id"),
         )
         return _a_resultado(fila)
 
@@ -769,6 +819,7 @@ def registrar_avistamiento(
         latitud=data.latitud,
         longitud=data.longitud,
         fuente=fuente,
+        staff_asignado_id=reporte.get("staff_asignado_id"),
     )
     return _a_resultado(fila)
 
@@ -846,6 +897,7 @@ def validar_avistamiento(
             latitud=avistamiento["latitud"],
             longitud=avistamiento["longitud"],
             fuente=LocationSource(avistamiento["fuente"]),
+            staff_asignado_id=reporte.get("staff_asignado_id"),
         )
 
     avistamiento["estado_validacion"] = nuevo_estado
@@ -902,5 +954,8 @@ def registrar_avistamiento_desde_hito(
         latitud=latitud,
         longitud=longitud,
         fuente=LocationSource.voluntario_asignado,
+        # staff_asignado_id se omite a proposito: en este camino quien dispara
+        # ES el voluntario asignado (lo garantiza registrar_hito), asi que
+        # notificarlo del cambio que el mismo causo seria ruido.
     )
     return _a_resultado(fila)
