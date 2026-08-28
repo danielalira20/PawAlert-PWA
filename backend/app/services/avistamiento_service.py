@@ -703,6 +703,46 @@ def _confirmar_avistamiento(
         )
 
 
+def autorizar_subida_evidencia(reporte_id: str, usuario_id: str) -> None:
+    """Autoriza subir una foto de evidencia para un avistamiento de este
+    reporte. Misma regla de acceso que `registrar_avistamiento`: si el usuario
+    no es una fuente valida (`_resolver_fuente`), no puede subir la foto."""
+    reporte = _obtener_reporte(reporte_id)
+    usuario = _obtener_usuario(usuario_id)
+    if _resolver_fuente(reporte, usuario) is None:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "No tienes permiso para registrar un avistamiento en este "
+                "reporte"
+            ),
+        )
+
+
+def _vincular_evidencia_avistamiento(
+    *,
+    evidencia_id: str,
+    reporte_id: str,
+    usuario_id: str,
+    latitud: float,
+    longitud: float,
+) -> None:
+    """Vincula y verifica una evidencia fotografica ya subida contra el GPS
+    del avistamiento. Reusa el helper de la API de hitos -- la columna
+    `tipo_hito` de `reporte_evidencias` guarda 'avistamiento' en este caso."""
+    from app.api.reports import _vincular_y_verificar_evidencia
+
+    _vincular_y_verificar_evidencia(
+        evidencia_id=evidencia_id,
+        reporte_id=reporte_id,
+        usuario_id=usuario_id,
+        tipo_hito="avistamiento",
+        foto_url=None,
+        latitud_declarada=latitud,
+        longitud_declarada=longitud,
+    )
+
+
 def registrar_avistamiento(
     reporte_id: str, usuario_id: str, data: AvistamientoCreate
 ) -> AvistamientoResult:
@@ -732,6 +772,17 @@ def registrar_avistamiento(
             detail="El animal indicado no pertenece a este reporte",
         )
 
+    # Se vincula ANTES del insert: si la evidencia no existe / no es de este
+    # reporte / ya fue usada, el avistamiento no llega a crearse.
+    if data.evidencia_id:
+        _vincular_evidencia_avistamiento(
+            evidencia_id=data.evidencia_id,
+            reporte_id=reporte_id,
+            usuario_id=usuario_id,
+            latitud=data.latitud,
+            longitud=data.longitud,
+        )
+
     auto_validado = fuente in (
         LocationSource.asociacion,
         LocationSource.administracion,
@@ -755,6 +806,7 @@ def registrar_avistamiento(
                 ),
                 "direccion_observada": data.direccion_observada,
                 "comentario": data.comentario,
+                "evidencia_id": data.evidencia_id,
                 "estado_validacion": "validado" if auto_validado else "pendiente",
             }
         )
@@ -913,6 +965,7 @@ def registrar_avistamiento_desde_hito(
     longitud: float,
     tipo_hito: str,
     direccion_observada: str | None = None,
+    evidencia_id: str | None = None,
 ) -> AvistamientoResult:
     """Avistamiento derivado de un hito de rescate ya registrado -- quien lo
     dispara ya es el voluntario asignado al caso, así que se inserta
@@ -921,6 +974,12 @@ def registrar_avistamiento_desde_hito(
     `direccion_observada` solo lo pasa 'animal_no_localizado' (hacia dónde
     vio moverse el voluntario al animal antes de perderlo). 'animal_encontrado'
     no lo pasa y la columna queda NULL, igual que hasta ahora.
+
+    `evidencia_id` es la foto que el voluntario subió al registrar el hito
+    (`HitoRequest.evidencia_id`). Ya quedó vinculada y verificada contra el
+    GPS del hito en `registrar_hito` -> `_vincular_y_verificar_evidencia`, y
+    el hito comparte lat/lon con este avistamiento, así que aquí solo se
+    copia la referencia sin re-verificar (evitando el 409 de "ya vinculada").
     """
     ahora = datetime.now(timezone.utc).isoformat()
     insertado = (
@@ -935,6 +994,7 @@ def registrar_avistamiento_desde_hito(
                 "fuente": LocationSource.voluntario_asignado.value,
                 "usuario_id": usuario_id,
                 "direccion_observada": direccion_observada,
+                "evidencia_id": evidencia_id,
                 "comentario": f"Registrado automáticamente desde el hito '{tipo_hito}'.",
                 "estado_validacion": "validado",
             }
