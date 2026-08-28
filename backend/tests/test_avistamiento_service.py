@@ -1328,6 +1328,15 @@ def test_entrada_asociacion_lejos_no_se_rechaza_por_distancia(monkeypatch, make_
 # --- evaluar_elegibilidad -------------------------------------------------------
 
 
+def _animales_catalogo():
+    """Filas de `animal` con el catálogo embebido, como las devuelve
+    _animales_del_reporte() para poblar el selector de la Pantalla A."""
+    return [
+        {"id": "animal-1", "orden": 1, "tipo_animal_catalogo": {"clave": "perro"}},
+        {"id": "animal-2", "orden": 2, "tipo_animal_catalogo": {"clave": "gato"}},
+    ]
+
+
 def test_elegibilidad_asociacion_es_true_sin_calcular_distancia(monkeypatch, make_query):
     db = _armar_db(
         {
@@ -1341,6 +1350,7 @@ def test_elegibilidad_asociacion_es_true_sin_calcular_distancia(monkeypatch, mak
                     )
                 ]
             ),
+            "animal": make_query(data=_animales_catalogo()),
         }
     )
     monkeypatch.setattr(svc, "supabase_admin", db)
@@ -1348,7 +1358,15 @@ def test_elegibilidad_asociacion_es_true_sin_calcular_distancia(monkeypatch, mak
     # coordenadas absurdas: si calculara distancia, no serian "elegibles".
     resultado = svc.evaluar_elegibilidad("rep-1", "user-aso", 1.0, 1.0)
 
-    assert resultado == {"elegible": True, "motivo": None, "fuente": "asociacion"}
+    assert resultado == {
+        "elegible": True,
+        "motivo": None,
+        "fuente": "asociacion",
+        "animales": [
+            {"id": "animal-1", "tipo_animal": "perro", "orden": 1},
+            {"id": "animal-2", "tipo_animal": "gato", "orden": 2},
+        ],
+    }
 
 
 def test_elegibilidad_reportante_dentro_y_fuera(monkeypatch, make_query):
@@ -1356,6 +1374,7 @@ def test_elegibilidad_reportante_dentro_y_fuera(monkeypatch, make_query):
         {
             "reportes": make_query(data=[_reporte(usuario_id="user-reportante")]),
             "usuarios": make_query(data=[_usuario(id="user-reportante")]),
+            "animal": make_query(data=_animales_catalogo()),
         }
     )
     monkeypatch.setattr(svc, "supabase_admin", db)
@@ -1364,10 +1383,13 @@ def test_elegibilidad_reportante_dentro_y_fuera(monkeypatch, make_query):
     assert dentro["elegible"] is True
     assert dentro["distancia_metros"] < 500
     assert dentro["radio_metros"] == 500
+    assert [a["id"] for a in dentro["animales"]] == ["animal-1", "animal-2"]
 
     fuera = svc.evaluar_elegibilidad("rep-1", "user-reportante", 19.05, -98.0)
     assert fuera["elegible"] is False
     assert fuera["distancia_metros"] > 500
+    # el selector se puebla igual aunque el punto de entrada esté fuera de radio
+    assert [a["id"] for a in fuera["animales"]] == ["animal-1", "animal-2"]
 
 
 def test_elegibilidad_mide_contra_ultima_ubicacion_confirmada_no_el_pin(
@@ -1380,6 +1402,7 @@ def test_elegibilidad_mide_contra_ultima_ubicacion_confirmada_no_el_pin(
         {
             "reportes": make_query(data=[reporte]),
             "usuarios": make_query(data=[_usuario(id="user-reportante")]),
+            "animal": make_query(data=_animales_catalogo()),
         }
     )
     monkeypatch.setattr(svc, "supabase_admin", db)
@@ -1403,6 +1426,30 @@ def test_elegibilidad_mide_contra_ultima_ubicacion_confirmada_no_el_pin(
         "rep-1", "user-reportante", 19.0501, -98.0
     )
     assert contra_confirmada["elegible"] is True
+
+
+def test_elegibilidad_sin_animales_devuelve_lista_vacia(monkeypatch, make_query):
+    db = _armar_db(
+        {
+            "reportes": make_query(data=[_reporte()]),
+            "usuarios": make_query(
+                data=[
+                    _usuario(
+                        id="user-aso",
+                        asociacion_id="aso-1",
+                        roles={"nombre": "asociacion"},
+                    )
+                ]
+            ),
+            "animal": make_query(data=[]),
+        }
+    )
+    monkeypatch.setattr(svc, "supabase_admin", db)
+
+    resultado = svc.evaluar_elegibilidad("rep-1", "user-aso", 1.0, 1.0)
+
+    assert resultado["elegible"] is True
+    assert resultado["animales"] == []
 
 
 # --- Fase 3: auto-validacion combinada -------------------------------------

@@ -216,12 +216,34 @@ def _validar_cercania_entrada(
         )
 
 
+def _animales_del_reporte(reporte_id: str) -> list[dict]:
+    """Animales del reporte en la forma mínima que la Pantalla A necesita para
+    su selector: id + especie + orden. No hay GET /reports/{id}, así que este
+    dato viaja en la respuesta de elegibilidad en vez de serializado en la URL."""
+    resultado = (
+        supabase_admin.table("animal")
+        .select("id, orden, tipo_animal_catalogo(clave)")
+        .eq("reporte_id", reporte_id)
+        .order("orden")
+        .execute()
+    )
+    return [
+        {
+            "id": fila["id"],
+            "tipo_animal": (fila.get("tipo_animal_catalogo") or {}).get("clave"),
+            "orden": fila.get("orden"),
+        }
+        for fila in (resultado.data or [])
+    ]
+
+
 def evaluar_elegibilidad(
     reporte_id: str, usuario_id: str, latitud: float, longitud: float
 ) -> dict:
     """Elegibilidad del usuario autenticado para registrar un avistamiento en
     este reporte desde el GPS dado. La Pantalla A (frontend) la consulta para
-    mostrar/ocultar el botón sin duplicar el cálculo de distancia."""
+    mostrar/ocultar el botón sin duplicar el cálculo de distancia, y para
+    poblar su selector de animal sin recibirlos por la URL."""
     reporte = _obtener_reporte(reporte_id)
     usuario = _obtener_usuario(usuario_id)
 
@@ -232,20 +254,21 @@ def evaluar_elegibilidad(
             detail="No tienes permiso para registrar un avistamiento en este reporte",
         )
 
+    base = {"fuente": fuente.value, "animales": _animales_del_reporte(reporte_id)}
     radio = settings.radio_entrada_avistamiento_metros
     if fuente not in FUENTES_CON_FILTRO_ENTRADA:
-        return {"elegible": True, "motivo": None, "fuente": fuente.value}
+        return {**base, "elegible": True, "motivo": None}
 
     distancia = _distancia_a_referencia(reporte, latitud, longitud)
     if distancia is None:
         # Sin punto de referencia no se puede filtrar por distancia; se permite.
-        return {"elegible": True, "motivo": None, "fuente": fuente.value}
+        return {**base, "elegible": True, "motivo": None}
 
     return {
+        **base,
         "elegible": distancia <= radio,
         "distancia_metros": round(distancia, 1),
         "radio_metros": radio,
-        "fuente": fuente.value,
     }
 
 
