@@ -9,12 +9,12 @@ import {
   Image,
   Platform,
   ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Toast, useToast } from '../components/Toast';
 import { API_URL } from '../constants/api';
@@ -63,6 +63,7 @@ interface Elegibilidad {
   fuente?: string | null;
   distancia_metros?: number | null;
   radio_metros?: number | null;
+  animales?: AnimalParam[] | null;
 }
 
 interface Gps {
@@ -74,18 +75,6 @@ interface Gps {
 
 type FaseGps = 'consultando' | 'listo' | 'denegado' | 'error';
 
-function parsearAnimales(crudo: string | string[] | undefined): AnimalParam[] {
-  const texto = Array.isArray(crudo) ? crudo[0] : crudo;
-  if (!texto) return [];
-  try {
-    const parseado = JSON.parse(texto);
-    if (!Array.isArray(parseado)) return [];
-    return parseado.filter((animal) => animal && typeof animal.id === 'string');
-  } catch {
-    return [];
-  }
-}
-
 function etiquetaAnimal(animal: AnimalParam, indice: number): string {
   const especie = animal.tipo_animal
     ? animal.tipo_animal.charAt(0).toUpperCase() + animal.tipo_animal.slice(1)
@@ -94,12 +83,14 @@ function etiquetaAnimal(animal: AnimalParam, indice: number): string {
 }
 
 export default function RegistrarAvistamientoScreen() {
-  const params = useLocalSearchParams<{ reporteId?: string; animales?: string }>();
+  const params = useLocalSearchParams<{ reporteId?: string }>();
   const reporteId = Array.isArray(params.reporteId) ? params.reporteId[0] : params.reporteId;
   const { token } = useAuth();
   const { toast, translateY, showToast } = useToast();
 
-  const [animales] = useState<AnimalParam[]>(() => parsearAnimales(params.animales));
+  // Los animales llegan en la respuesta de elegibilidad (no por la URL): no
+  // hay GET /reports/{id} y el endpoint de elegibilidad ya carga el reporte.
+  const [animales, setAnimales] = useState<AnimalParam[]>([]);
   const [animalId, setAnimalId] = useState<string | null>(null);
 
   const [faseGps, setFaseGps] = useState<FaseGps>('consultando');
@@ -118,6 +109,7 @@ export default function RegistrarAvistamientoScreen() {
   const [errorEnvio, setErrorEnvio] = useState<string | null>(null);
   const [resultado, setResultado] = useState<{ estado_validacion: string } | null>(null);
 
+  // Con un solo animal no hay nada que elegir: se preselecciona.
   useEffect(() => {
     if (animales.length === 1) setAnimalId(animales[0].id);
   }, [animales]);
@@ -165,6 +157,7 @@ export default function RegistrarAvistamientoScreen() {
         },
       );
       setElegibilidad(respuesta.data);
+      setAnimales(respuesta.data.animales || []);
     } catch (error: any) {
       setElegibilidad(null);
       setErrorElegibilidad(
@@ -321,22 +314,53 @@ export default function RegistrarAvistamientoScreen() {
     </View>
   );
 
+  // Scrim + tarjeta centrada — mismo lenguaje visual que las demás rutas
+  // transparentModal del proyecto (CreateNeedScreen, AyudaScreen, …), para que
+  // se vea como una tarjeta flotante y no como una pantalla completa apilada
+  // sobre el modal desde el que se abrió.
   const tarjeta = (children: React.ReactNode) => (
-    <SafeAreaView style={{ flex: 1, backgroundColor: C.background }}>
-      <ScrollView
-        contentContainerStyle={{
-          padding: 22,
-          paddingBottom: 60,
-          width: '100%',
-          maxWidth: 560,
-          alignSelf: 'center',
-        }}
-      >
-        {encabezado}
-        {children}
-      </ScrollView>
+    <View
+      style={{
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20,
+      }}
+    >
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel="Cerrar tocando el fondo"
+        activeOpacity={1}
+        onPress={cerrar}
+        style={StyleSheet.absoluteFill}
+      />
+      <View style={{ width: '100%', maxWidth: 560, maxHeight: '90%' }}>
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: C.background,
+            borderRadius: 28,
+            overflow: 'hidden',
+            ...(Platform.OS === 'web'
+              ? ({ boxShadow: '0 20px 60px rgba(0,0,0,0.25)' } as any)
+              : {
+                  elevation: 14,
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 12 },
+                  shadowOpacity: 0.25,
+                  shadowRadius: 30,
+                }),
+          }}
+        >
+          <ScrollView contentContainerStyle={{ padding: 22, paddingBottom: 28 }}>
+            {encabezado}
+            {children}
+          </ScrollView>
+        </View>
+      </View>
       <Toast toast={toast} translateY={translateY} />
-    </SafeAreaView>
+    </View>
   );
 
   // Resultado final — mensaje diferenciado por estado de validación. Un
@@ -532,7 +556,19 @@ export default function RegistrarAvistamientoScreen() {
     );
   }
 
-  if (!elegibilidad) return tarjeta(<View />);
+  // GPS listo pero la consulta de elegibilidad aún no arrancó (o no puede,
+  // p. ej. sin sesión): mismo spinner que `cargandoElegibilidad`, nunca una
+  // tarjeta vacía.
+  if (!elegibilidad) {
+    return tarjeta(
+      <View style={{ alignItems: 'center', paddingVertical: 40 }}>
+        <ActivityIndicator size="large" color={C.orange} />
+        <Text style={{ color: C.muted, fontSize: 13, marginTop: 14, fontWeight: '600' }}>
+          Verificando el caso…
+        </Text>
+      </View>,
+    );
+  }
 
   // ─── Formulario ───────────────────────────────────────────────────────────
   const puedeEnviar = !!animalId && !enviando;

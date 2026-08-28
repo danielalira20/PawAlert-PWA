@@ -627,14 +627,16 @@ export default function MisReportesScreen({ onClose }: MisReportesScreenProps) {
                     {/* Avistamiento (Capa 8): solo tiene sentido mientras el
                         animal siga sin ser localizado. `usuario_id` se pasa
                         desde la sesión porque GET /reports/me devuelve
-                        únicamente reportes del propio usuario. */}
+                        únicamente reportes del propio usuario. `onClose` cierra
+                        este modal antes de navegar, para no apilar la pantalla
+                        nueva encima. */}
                     {!estaCancelado && ['pendiente', 'asignado'].includes(reporte.estado_reporte) && (
                       <AvistamientoEntryButton
                         reporte={{
                           id: reporte.id,
                           usuario_id: user?.id,
-                          animales: reporte.animales,
                         }}
+                        onBeforeNavigate={onClose}
                       />
                     )}
                   </View>

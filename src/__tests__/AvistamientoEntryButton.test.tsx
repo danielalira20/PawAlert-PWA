@@ -19,10 +19,6 @@ const REPORTE = {
   usuario_id: 'user-reportante',
   staff_asignado_id: 'user-voluntario-asignado',
   asociacion_asignada_id: 'aso-1',
-  animales: [
-    { id: 'animal-1', tipo_animal: 'perro', orden: 1 } as never,
-    { id: 'animal-2', tipo_animal: 'gato', orden: 2 } as never,
-  ],
 };
 
 describe('puedeRegistrarAvistamiento — visibilidad por rol', () => {
@@ -120,7 +116,7 @@ describe('AvistamientoEntryButton', () => {
     expect(view.queryByLabelText('Registrar avistamiento')).toBeNull();
   });
 
-  it('renderiza para el reportante dueño y navega con reporteId y animales', async () => {
+  it('renderiza para el reportante dueño y navega solo con reporteId en la URL', async () => {
     mockUsuario = { id: 'user-reportante', rol: 'reportante' };
     const view = await render(<AvistamientoEntryButton reporte={REPORTE} />);
 
@@ -132,11 +128,22 @@ describe('AvistamientoEntryButton', () => {
     expect(mockPush).toHaveBeenCalledTimes(1);
     const destino = mockPush.mock.calls[0][0];
     expect(destino.pathname).toBe('/registrar-avistamiento');
-    expect(destino.params.reporteId).toBe('rep-1');
-    expect(JSON.parse(destino.params.animales)).toEqual([
-      { id: 'animal-1', tipo_animal: 'perro', orden: 1 },
-      { id: 'animal-2', tipo_animal: 'gato', orden: 2 },
-    ]);
+    expect(destino.params).toEqual({ reporteId: 'rep-1' });
+  });
+
+  it('llama onBeforeNavigate antes de navegar (cerrar el modal padre)', async () => {
+    mockUsuario = { id: 'user-reportante', rol: 'reportante' };
+    const orden: string[] = [];
+    const onBeforeNavigate = jest.fn(() => orden.push('cerrar'));
+    mockPush.mockImplementation(() => orden.push('push'));
+
+    const view = await render(
+      <AvistamientoEntryButton reporte={REPORTE} onBeforeNavigate={onBeforeNavigate} />,
+    );
+    fireEvent.press(view.getByLabelText('Registrar avistamiento'));
+
+    expect(onBeforeNavigate).toHaveBeenCalledTimes(1);
+    expect(orden).toEqual(['cerrar', 'push']);
   });
 
   it('renderiza para la asociación asignada', async () => {

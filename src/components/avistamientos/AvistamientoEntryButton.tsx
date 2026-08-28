@@ -3,7 +3,6 @@ import { router } from 'expo-router';
 import { Text, TouchableOpacity, View } from 'react-native';
 
 import { useAuth } from '../../context/AuthContext';
-import { Animal } from '../../types/reporte';
 
 const C = {
   teal: '#66BCB4',
@@ -22,7 +21,6 @@ export interface ReporteParaAvistamiento {
   usuario_id?: string | null;
   staff_asignado_id?: string | null;
   asociacion_asignada_id?: string | null;
-  animales?: Animal[] | null;
 }
 
 export interface UsuarioParaAvistamiento {
@@ -64,39 +62,30 @@ export function puedeRegistrarAvistamiento(
   return false;
 }
 
-/** Payload compacto de animales que viaja como parámetro de ruta. La pantalla
- * necesita un `animal_id` y no existe un GET /reports/{id} para consultarlo,
- * así que se pasa lo mínimo desde la pantalla que ya lo tiene cargado. */
-export function serializarAnimales(animales?: Animal[] | null): string {
-  return JSON.stringify(
-    (animales ?? [])
-      .filter((animal) => !!animal.id)
-      .map((animal) => ({
-        id: animal.id,
-        tipo_animal: animal.tipo_animal,
-        orden: animal.orden ?? null,
-      })),
-  );
-}
-
 export function AvistamientoEntryButton({
   reporte,
   compacto = false,
+  onBeforeNavigate,
 }: {
   reporte: ReporteParaAvistamiento;
   compacto?: boolean;
+  /** Se llama justo antes de navegar. Los hosts que viven dentro de un modal
+   * (MisReportes, panel de asociación) lo usan para cerrarlo primero y no
+   * dejar la pantalla nueva apilada encima — mismo patrón que
+   * `if (onClose) onClose(); router.push(...)` de "crear necesidad". */
+  onBeforeNavigate?: () => void;
 }) {
   const { user } = useAuth();
 
   if (!puedeRegistrarAvistamiento(reporte, user)) return null;
 
   const abrir = () => {
+    onBeforeNavigate?.();
+    // Solo el id en la URL: la pantalla resuelve el resto (animales incluidos)
+    // vía GET .../avistamientos/elegible, que ya consulta como paso previo.
     router.push({
       pathname: '/registrar-avistamiento',
-      params: {
-        reporteId: reporte.id,
-        animales: serializarAnimales(reporte.animales),
-      },
+      params: { reporteId: reporte.id },
     } as never);
   };
 

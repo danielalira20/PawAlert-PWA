@@ -37,7 +37,7 @@ const mockedAxios = axios as jest.Mocked<typeof axios>;
 const mockedLocation = Location as jest.Mocked<typeof Location>;
 const mockedPicker = ImagePicker as jest.Mocked<typeof ImagePicker>;
 
-const ANIMALES = JSON.stringify([{ id: 'animal-1', tipo_animal: 'perro', orden: 1 }]);
+const UN_ANIMAL = [{ id: 'animal-1', tipo_animal: 'perro', orden: 1 }];
 
 function permitirGps() {
   mockedLocation.requestForegroundPermissionsAsync.mockResolvedValue({
@@ -49,14 +49,19 @@ function permitirGps() {
   } as never);
 }
 
+// GET .../elegible ahora también devuelve los animales del reporte (así no
+// viajan por la URL). Por defecto un solo animal -> el selector no aparece y
+// animal_id queda preseleccionado.
 function elegible(respuesta: Record<string, unknown>) {
-  mockedAxios.get.mockResolvedValue({ data: respuesta } as never);
+  mockedAxios.get.mockResolvedValue({
+    data: { animales: UN_ANIMAL, ...respuesta },
+  } as never);
 }
 
 describe('RegistrarAvistamientoScreen', () => {
   beforeEach(() => {
     jest.resetAllMocks();
-    mockParams = { reporteId: 'rep-1', animales: ANIMALES };
+    mockParams = { reporteId: 'rep-1' };
     permitirGps();
     elegible({ elegible: true, fuente: 'confirmacion_reportante' });
   });
@@ -108,6 +113,33 @@ describe('RegistrarAvistamientoScreen', () => {
         params: { latitud: 19.0001, longitud: -98.0001 },
       }),
     );
+  });
+
+  it('en reporte multi-animal exige elegir un animal antes de poder enviar', async () => {
+    elegible({
+      elegible: true,
+      fuente: 'confirmacion_reportante',
+      animales: [
+        { id: 'animal-1', tipo_animal: 'perro', orden: 1 },
+        { id: 'animal-2', tipo_animal: 'gato', orden: 2 },
+      ],
+    });
+    mockedAxios.post.mockResolvedValue({
+      data: { estado_validacion: 'pendiente' },
+    } as never);
+
+    const view = await render(<RegistrarAvistamientoScreen />);
+    await waitFor(() => expect(view.getByLabelText('Enviar avistamiento')).toBeTruthy());
+
+    // sin selección: enviar no dispara la petición
+    await fireEvent.press(view.getByLabelText('Enviar avistamiento'));
+    expect(mockedAxios.post).not.toHaveBeenCalled();
+
+    await fireEvent.press(view.getByLabelText('Seleccionar Gato 2'));
+    await fireEvent.press(view.getByLabelText('Enviar avistamiento'));
+
+    await waitFor(() => expect(mockedAxios.post).toHaveBeenCalledTimes(1));
+    expect(mockedAxios.post.mock.calls[0][1]).toMatchObject({ animal_id: 'animal-2' });
   });
 
   // ─── Envío ──────────────────────────────────────────────────────────────

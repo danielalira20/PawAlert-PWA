@@ -2139,8 +2139,8 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                     reporte={{
                       id: reporteSeleccionado.reporte_id,
                       asociacion_asignada_id: reporteSeleccionado.asociacion_asignada_id,
-                      animales: getAnimales(reporteSeleccionado),
                     }}
+                    onBeforeNavigate={() => { setReporteSeleccionado(null); onClose?.(); }}
                   />
                 )}
 

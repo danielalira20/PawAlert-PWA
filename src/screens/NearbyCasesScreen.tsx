@@ -214,15 +214,11 @@ function CaseCard({
 
       {/* Lista de exclusión (no de inclusión): `estado_reporte` es opcional en
           CasoCercano y no queremos esconder el botón solo porque el campo no
-          venga. Un caso ya cerrado sí deja de aceptar avistamientos. */}
+          venga. Un caso ya cerrado sí deja de aceptar avistamientos. Sin
+          onBeforeNavigate: esta tarjeta vive en un tab, no en un modal. */}
       {!['cerrado', 'cancelado_por_reportante', 'rechazado', 'rescatado'].includes(
         caso.estado_reporte ?? '',
-      ) && (
-        <AvistamientoEntryButton
-          reporte={{ id: caso.id, animales: caso.animales }}
-          compacto
-        />
-      )}
+      ) && <AvistamientoEntryButton reporte={{ id: caso.id }} compacto />}
     </View>
   );
 }
