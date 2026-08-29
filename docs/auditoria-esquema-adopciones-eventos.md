@@ -201,9 +201,18 @@ durante la primera version.
 - ejecuciones y claims idempotentes para cron;
 - permisos de funciones.
 
+### `0091_adopciones_ingreso_perfiles_operaciones.sql`
+
+- propuesta idempotente desde una custodia activa;
+- respuesta de aclaraciones y cancelacion por el custodio;
+- resolucion por la asociacion, con un solo borrador al aprobar;
+- creacion de perfiles por ingreso formal de la asociacion;
+- publicacion con foto, revision y requisitos versionados;
+- pausa y reanudacion auditadas;
+- avisos de ingreso vinculados al outbox.
+
 ### Migraciones operativas posteriores
 
-- ingreso y publicacion de perfiles de adopcion;
 - solicitudes, seleccion, entregas y seguimientos;
 - publicacion, cambios y ciclo de vida de eventos.
 
