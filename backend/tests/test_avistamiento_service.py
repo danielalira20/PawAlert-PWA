@@ -18,6 +18,7 @@ os.environ.setdefault("SUPABASE_SERVICE_KEY", JWT_DUMMY)
 from app.models.dispatch import AvistamientoCreate, LocationSource
 from app.models.urgency import DuplicateCandidate
 from app.services import avistamiento_service as svc
+from app.services import avistamiento_vision_service
 from app.services import assignment_route_service
 from app.services import duplicate_service
 from app.services import push_notification_service
@@ -2189,7 +2190,9 @@ def _evidencia_row(**cambios):
     return datos
 
 
-def _db_con_evidencia(make_query, evidencias_query, avistamientos_query=None):
+def _db_con_evidencia(
+    make_query, evidencias_query, avistamientos_query=None, animal_fotos_query=None
+):
     return _armar_db(
         {
             "reportes": make_query(data=[_reporte(usuario_id="user-reportante")]),
@@ -2198,6 +2201,10 @@ def _db_con_evidencia(make_query, evidencias_query, avistamientos_query=None):
             "reporte_evidencias": evidencias_query,
             "avistamientos_animal": avistamientos_query
             or make_query(data=[_fila_insertada()]),
+            # Sin fotos de referencia por defecto: _verificar_coherencia_visual
+            # se sale temprano ("sin_referencia") sin llamar a Gemini, asi
+            # las pruebas que no les interesa esto no hacen red de verdad.
+            "animal_fotos": animal_fotos_query or make_query(data=[]),
         }
     )
 
@@ -2270,6 +2277,211 @@ def test_registrar_avistamiento_con_evidencia_valida_la_vincula_y_guarda(
     assert vinculacion["vinculada_at"] is not None
     assert vinculacion["tipo_hito"] == "avistamiento"
     assert avistamientos_mock.insert.call_args[0][0]["evidencia_id"] == "evi-1"
+
+
+# --- registrar_avistamiento: verificacion visual contra las fotos del
+# animal reportado (Gemini) -----------------------------------------------
+
+
+def test_registrar_avistamiento_bloquea_si_la_foto_no_es_animal(
+    monkeypatch, make_query
+):
+    from app.api import reports as reports_api
+
+    evidencias_mock = make_query(data=[_evidencia_row()])
+    db = _db_con_evidencia(
+        make_query,
+        evidencias_mock,
+        animal_fotos_query=make_query(data=[{"foto_url": "https://pawalert.test/original.jpg"}]),
+    )
+    monkeypatch.setattr(svc, "supabase_admin", db)
+    monkeypatch.setattr(reports_api, "supabase_admin", db)
+    monkeypatch.setattr(
+        avistamiento_vision_service,
+        "verificar_coherencia_avistamiento",
+        MagicMock(return_value={
+            "estado": "completado",
+            "es_animal_real": False,
+            "probabilidad_mismo_animal": 0.0,
+        }),
+    )
+
+    with pytest.raises(HTTPException) as error:
+        svc.registrar_avistamiento(
+            "rep-1", "user-reportante", _avistamiento_create(evidencia_id="evi-1")
+        )
+
+    assert error.value.status_code == 422
+    db.table("avistamientos_animal").insert.assert_not_called()
+
+
+def test_registrar_avistamiento_bloquea_si_la_especie_no_coincide(
+    monkeypatch, make_query
+):
+    from app.api import reports as reports_api
+
+    evidencias_mock = make_query(data=[_evidencia_row()])
+    db = _db_con_evidencia(
+        make_query,
+        evidencias_mock,
+        animal_fotos_query=make_query(data=[{"foto_url": "https://pawalert.test/original.jpg"}]),
+    )
+    monkeypatch.setattr(svc, "supabase_admin", db)
+    monkeypatch.setattr(reports_api, "supabase_admin", db)
+    monkeypatch.setattr(
+        avistamiento_vision_service,
+        "verificar_coherencia_avistamiento",
+        MagicMock(return_value={
+            "estado": "completado",
+            "es_animal_real": True,
+            "especie_coincide": False,
+            "probabilidad_mismo_animal": 0.1,
+        }),
+    )
+
+    with pytest.raises(HTTPException) as error:
+        svc.registrar_avistamiento(
+            "rep-1", "user-reportante", _avistamiento_create(evidencia_id="evi-1")
+        )
+
+    assert error.value.status_code == 422
+    db.table("avistamientos_animal").insert.assert_not_called()
+
+
+def test_registrar_avistamiento_probabilidad_baja_advierte_pero_no_bloquea(
+    monkeypatch, make_query
+):
+    """No es un bloqueo -- casos 'de coincidencia' solo dejan una
+    advertencia para quien revise el caso (Fase 8)."""
+    from app.api import reports as reports_api
+
+    evidencias_mock = make_query(data=[_evidencia_row()])
+    avistamientos_mock = make_query(data=[_fila_insertada()])
+    db = _db_con_evidencia(
+        make_query,
+        evidencias_mock,
+        avistamientos_mock,
+        animal_fotos_query=make_query(data=[{"foto_url": "https://pawalert.test/original.jpg"}]),
+    )
+    monkeypatch.setattr(svc, "supabase_admin", db)
+    monkeypatch.setattr(reports_api, "supabase_admin", db)
+    monkeypatch.setattr(
+        avistamiento_vision_service,
+        "verificar_coherencia_avistamiento",
+        MagicMock(return_value={
+            "estado": "completado",
+            "es_animal_real": True,
+            "especie_coincide": True,
+            "probabilidad_mismo_animal": 0.2,
+            "modelo": "gemini-3.5-flash-lite",
+        }),
+    )
+
+    resultado = svc.registrar_avistamiento(
+        "rep-1", "user-reportante", _avistamiento_create(evidencia_id="evi-1")
+    )
+
+    insertado = avistamientos_mock.insert.call_args[0][0]
+    assert insertado["advertencia_visual"]
+    assert insertado["analisis_ia_probabilidad_mismo_animal"] == 0.2
+    assert resultado.estado_validacion == "pendiente"
+
+
+def test_registrar_avistamiento_probabilidad_alta_no_advierte(
+    monkeypatch, make_query
+):
+    from app.api import reports as reports_api
+
+    evidencias_mock = make_query(data=[_evidencia_row()])
+    avistamientos_mock = make_query(data=[_fila_insertada()])
+    db = _db_con_evidencia(
+        make_query,
+        evidencias_mock,
+        avistamientos_mock,
+        animal_fotos_query=make_query(data=[{"foto_url": "https://pawalert.test/original.jpg"}]),
+    )
+    monkeypatch.setattr(svc, "supabase_admin", db)
+    monkeypatch.setattr(reports_api, "supabase_admin", db)
+    monkeypatch.setattr(
+        avistamiento_vision_service,
+        "verificar_coherencia_avistamiento",
+        MagicMock(return_value={
+            "estado": "completado",
+            "es_animal_real": True,
+            "especie_coincide": True,
+            "probabilidad_mismo_animal": 0.95,
+        }),
+    )
+
+    svc.registrar_avistamiento(
+        "rep-1", "user-reportante", _avistamiento_create(evidencia_id="evi-1")
+    )
+
+    insertado = avistamientos_mock.insert.call_args[0][0]
+    assert insertado["advertencia_visual"] is None
+
+
+def test_registrar_avistamiento_fallo_tecnico_de_vision_no_bloquea(
+    monkeypatch, make_query
+):
+    """Mismo criterio fail-safe que el resto del modulo: un problema
+    externo (Gemini caido, timeout) deja el avistamiento donde ya iba a
+    quedar, nunca lo tumba ni le agrega una advertencia inventada."""
+    from app.api import reports as reports_api
+
+    evidencias_mock = make_query(data=[_evidencia_row()])
+    avistamientos_mock = make_query(data=[_fila_insertada()])
+    db = _db_con_evidencia(
+        make_query,
+        evidencias_mock,
+        avistamientos_mock,
+        animal_fotos_query=make_query(data=[{"foto_url": "https://pawalert.test/original.jpg"}]),
+    )
+    monkeypatch.setattr(svc, "supabase_admin", db)
+    monkeypatch.setattr(reports_api, "supabase_admin", db)
+    monkeypatch.setattr(
+        avistamiento_vision_service,
+        "verificar_coherencia_avistamiento",
+        MagicMock(return_value={"estado": "error_tecnico", "detalle": "503"}),
+    )
+
+    resultado = svc.registrar_avistamiento(
+        "rep-1", "user-reportante", _avistamiento_create(evidencia_id="evi-1")
+    )
+
+    insertado = avistamientos_mock.insert.call_args[0][0]
+    assert "advertencia_visual" not in insertado
+    assert resultado.estado_validacion == "pendiente"
+
+
+def test_registrar_avistamiento_sin_fotos_de_referencia_no_llama_a_la_red(
+    monkeypatch, make_query
+):
+    """Sin fotos del animal en el reporte no hay nada contra que comparar:
+    verificar_coherencia_avistamiento (sin mockear) debe salir por
+    'sin_referencia' antes de tocar la red -- animal_fotos vacio es el
+    default de _db_con_evidencia."""
+    from app.api import reports as reports_api
+
+    def _falla_si_se_llama(*args, **kwargs):
+        raise AssertionError("no deberia intentarse ninguna llamada de red")
+
+    monkeypatch.setattr(avistamiento_vision_service.httpx, "get", _falla_si_se_llama)
+    monkeypatch.setattr(avistamiento_vision_service.httpx, "post", _falla_si_se_llama)
+
+    evidencias_mock = make_query(data=[_evidencia_row()])
+    avistamientos_mock = make_query(data=[_fila_insertada()])
+    db = _db_con_evidencia(make_query, evidencias_mock, avistamientos_mock)
+    monkeypatch.setattr(svc, "supabase_admin", db)
+    monkeypatch.setattr(reports_api, "supabase_admin", db)
+
+    resultado = svc.registrar_avistamiento(
+        "rep-1", "user-reportante", _avistamiento_create(evidencia_id="evi-1")
+    )
+
+    insertado = avistamientos_mock.insert.call_args[0][0]
+    assert insertado.get("advertencia_visual") is None
+    assert resultado.estado_validacion == "pendiente"
 
 
 def test_registrar_avistamiento_evidencia_exif_discrepante_marca_revision(
