@@ -63,6 +63,16 @@ class Settings(BaseSettings):
     radio_corroboracion_avistamiento_metros: int = Field(default=50, gt=0)
     ventana_corroboracion_avistamiento_minutos: int = Field(default=5, gt=0)
 
+    # Avistamientos: verificacion visual contra la(s) foto(s) originales del
+    # animal reportado (Gemini multimodal). Si la probabilidad de que sea el
+    # mismo animal cae por debajo de este umbral, se adjunta una advertencia
+    # NO bloqueante para quien revise el caso -- solo se bloquea el registro
+    # si Gemini determina que la foto no muestra un animal real o que la
+    # especie no es compatible con la reportada.
+    avistamiento_umbral_probabilidad_mismo_animal: float = Field(
+        default=0.5, ge=0, le=1
+    )
+
     @model_validator(mode="after")
     def validate_vroom_route_windows(self):
         if (
