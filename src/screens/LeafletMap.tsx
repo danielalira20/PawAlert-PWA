@@ -1,8 +1,7 @@
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import { useEffect } from 'react';
-import 'leaflet/dist/leaflet.css';
-import { Circle, MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
+import { Circle, GeoJSON, MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import { CARTO_LIGHT_TILE_URL } from '@/constants/mapTiles';
 import { ReportContentMenu } from '../components/reports/ReportContentMenu';
 import { Reporte, ZonaAgregada, getAnimales, condicionMasGrave, especieMasGrave, totalAnimales } from '../types/reporte';
@@ -403,6 +402,154 @@ function FitToMarkers({
   return null;
 }
 
+// ─── Capa de colonias (división por código postal del municipio de Puebla) ────
+const COLONIA_COLORS = {
+  default: { color: '#8C6B4D', fillColor: '#8C6B4D', weight: 1.2, fillOpacity: 0.05 },
+  hover:   { color: '#5C4A3A', fillColor: '#5C4A3A', weight: 2,   fillOpacity: 0.15 },
+  active:  { color: '#E99039', fillColor: '#E99039', weight: 2.5, fillOpacity: 0.25 },
+};
+
+interface ColoniaFeature {
+  type: 'Feature';
+  properties: { cp: number; nombre: string };
+  geometry: { type: string; coordinates: number[][][] };
+}
+
+function ColoniasLayer({
+  reportes,
+  visible,
+  coloniaSeleccionada,
+  onSelectColonia,
+}: {
+  reportes: Reporte[];
+  visible: boolean;
+  coloniaSeleccionada: number | null;
+  onSelectColonia: (cp: number | null) => void;
+}) {
+  const [data, setData] = useState<GeoJSON.FeatureCollection | null>(null);
+  const geoJsonRef = useRef<L.GeoJSON | null>(null);
+
+  useEffect(() => {
+    if (!visible) return;
+    if (data) return;
+    fetch('/data/colonias-puebla.geojson')
+      .then(r => r.json())
+      .then(setData)
+      .catch(() => {});
+  }, [visible, data]);
+
+  // Count reports per postal code
+  const reportesPorCP = useMemo(() => {
+    const map = new Map<string, number>();
+    reportes.forEach(r => {
+      // Use colonia field or 'unknown'
+      const cp = r.colonia ?? '';
+      if (cp) map.set(cp, (map.get(cp) ?? 0) + 1);
+    });
+    return map;
+  }, [reportes]);
+
+  const style = useCallback((feature: any) => {
+    const cp = feature?.properties?.cp;
+    if (cp === coloniaSeleccionada) {
+      return { ...COLONIA_COLORS.active, dashArray: '' };
+    }
+    return { ...COLONIA_COLORS.default, dashArray: '6 3' };
+  }, [coloniaSeleccionada]);
+
+  const onEachFeature = useCallback((feature: any, layer: L.Layer) => {
+    const cp = feature.properties?.cp;
+    const nombre = feature.properties?.nombre ?? `CP ${cp}`;
+
+    layer.bindTooltip(nombre, {
+      sticky: true,
+      direction: 'top',
+      className: 'colonia-tooltip',
+    });
+
+    (layer as L.Path).on({
+      mouseover: (e: L.LeafletMouseEvent) => {
+        const target = e.target as L.Path;
+        if (cp !== coloniaSeleccionada) {
+          target.setStyle(COLONIA_COLORS.hover);
+        }
+        target.bringToFront();
+      },
+      mouseout: (e: L.LeafletMouseEvent) => {
+        const target = e.target as L.Path;
+        if (cp !== coloniaSeleccionada) {
+          target.setStyle({ ...COLONIA_COLORS.default, dashArray: '6 3' });
+        }
+      },
+      click: () => {
+        onSelectColonia(cp === coloniaSeleccionada ? null : cp);
+      },
+    });
+  }, [coloniaSeleccionada, onSelectColonia]);
+
+  if (!visible || !data) return null;
+
+  return (
+    <GeoJSON
+      key={`colonias-${coloniaSeleccionada}`}
+      ref={(r) => { geoJsonRef.current = r as any; }}
+      data={data}
+      style={style}
+      onEachFeature={onEachFeature}
+    />
+  );
+}
+
+// Panel de información de la colonia seleccionada
+function ColoniaInfoPanel({
+  cp,
+  reportes,
+  onClose,
+}: {
+  cp: number;
+  reportes: Reporte[];
+  onClose: () => void;
+}) {
+  // Count reports that are geographically within Puebla
+  const reportesEnZona = reportes.filter(r =>
+    r.latitud !== null && r.longitud !== null &&
+    r.municipio?.toLowerCase()?.includes('puebla'),
+  );
+
+  const totalReportes = reportesEnZona.length;
+  const pendientes = reportesEnZona.filter(r => r.estado_reporte === 'pendiente').length;
+  const enAtencion = reportesEnZona.filter(r =>
+    ['asignado', 'en_camino', 'en_atencion'].includes(r.estado_reporte ?? ''),
+  ).length;
+
+  return (
+    <div className="colonia-info-panel">
+      <button className="colonia-info-close" onClick={onClose} aria-label="Cerrar">×</button>
+      <div className="colonia-info-header">
+        <div className="colonia-info-icon">📍</div>
+        <div>
+          <div className="colonia-info-title">CP {cp}</div>
+          <div className="colonia-info-subtitle">Municipio de Puebla</div>
+        </div>
+      </div>
+      <div className="colonia-info-stats">
+        <div className="colonia-stat">
+          <span className="colonia-stat-num">{totalReportes}</span>
+          <span className="colonia-stat-label">Reportes en Puebla</span>
+        </div>
+        <div className="colonia-stat">
+          <span className="colonia-stat-num" style={{ color: '#7B68EE' }}>{pendientes}</span>
+          <span className="colonia-stat-label">Pendientes</span>
+        </div>
+        <div className="colonia-stat">
+          <span className="colonia-stat-num" style={{ color: '#16A085' }}>{enAtencion}</span>
+          <span className="colonia-stat-label">En atención</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Props ────────────────────────────────────────────────────────────────────
 interface LeafletMapProps {
   reportes: Reporte[];
@@ -444,6 +591,8 @@ export default function LeafletMap({
   // zona se muestra un círculo difuminado alrededor, solo esa — no todas a
   // la vez, para no saturar el mapa.
   const [zonaSeleccionada, setZonaSeleccionada] = useState<string | null>(null);
+  const [mostrarColonias, setMostrarColonias] = useState(false);
+  const [coloniaSeleccionada, setColoniaSeleccionada] = useState<number | null>(null);
 
   const markerPositions = useMemo(
     () =>
@@ -471,7 +620,7 @@ export default function LeafletMap({
     }
   }, []);
   return (
-    <>
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <style>{`
         .pawalert-marker { background:none !important; border:none !important; }
         .leaflet-container { font-family:'Segoe UI',Arial,sans-serif; }
@@ -514,7 +663,133 @@ export default function LeafletMap({
         .pp-btn { width:100%; padding:9px 0; border-radius:10px; border:none; cursor:pointer; font-size:11px; font-weight:800; letter-spacing:0.5px; transition:opacity 0.1s,transform 0.1s; }
         .pp-btn:hover { opacity:0.88; transform:scale(0.98); }
         .pp-btn:active { transform:scale(0.95); }
+
+        /* ── Colonias toggle button ──────────────────── */
+        .colonias-toggle {
+          position:absolute; top:12px; right:12px; z-index:1000;
+          display:flex; align-items:center; gap:7px;
+          padding:8px 14px; border-radius:14px; border:none;
+          font-family:'Segoe UI',Arial,sans-serif;
+          font-size:12px; font-weight:800; letter-spacing:0.2px;
+          cursor:pointer;
+          transition:all 0.25s cubic-bezier(0.4,0,0.2,1);
+          box-shadow:0 2px 12px rgba(92,74,58,0.12), 0 1px 3px rgba(0,0,0,0.06);
+        }
+        .colonias-toggle.active {
+          background:linear-gradient(135deg,#8C6B4D,#5C4A3A);
+          color:#fff;
+        }
+        .colonias-toggle.inactive {
+          background:#FFF5EE;
+          color:#5C4A3A;
+          border:1.5px solid #F2F0EC;
+        }
+        .colonias-toggle:hover {
+          transform:translateY(-1px);
+          box-shadow:0 4px 16px rgba(92,74,58,0.25), 0 2px 6px rgba(0,0,0,0.08);
+        }
+        .colonias-toggle:active { transform:translateY(0); }
+        .colonias-toggle-icon { font-size:15px; line-height:1; }
+
+        /* ── Colonia tooltip ─────────────────────────── */
+        .colonia-tooltip {
+          background:rgba(92,74,58,0.92) !important;
+          color:#fff !important;
+          border:none !important;
+          border-radius:8px !important;
+          padding:6px 12px !important;
+          font-size:11px !important;
+          font-weight:700 !important;
+          letter-spacing:0.3px !important;
+          box-shadow:0 4px 14px rgba(0,0,0,0.2) !important;
+        }
+        .colonia-tooltip::before {
+          border-top-color:rgba(92,74,58,0.92) !important;
+        }
+
+        /* ── Colonia info panel ──────────────────────── */
+        .colonia-info-panel {
+          position:absolute; bottom:85px; left:50%; transform:translateX(-50%); z-index:1000;
+          background:rgba(255,245,238,0.96);
+          backdrop-filter:blur(12px);
+          border-radius:20px;
+          padding:16px 18px;
+          width:calc(100% - 32px); max-width:320px;
+          box-shadow:0 8px 32px rgba(92,74,58,0.12), 0 2px 8px rgba(0,0,0,0.06);
+          border:1.5px solid #F2F0EC;
+          font-family:'Segoe UI',Arial,sans-serif;
+          animation:coloniaSlideIn 0.3s cubic-bezier(0.34,1.56,0.64,1);
+        }
+        @keyframes coloniaSlideIn {
+          from { opacity:0; transform:translate(-50%, 12px) scale(0.96); }
+          to   { opacity:1; transform:translate(-50%, 0) scale(1); }
+        }
+        .colonia-info-close {
+          position:absolute; top:10px; right:10px;
+          width:24px; height:24px; border-radius:12px; border:none;
+          background:#F2F0EC; color:#5C4A3A;
+          font-size:16px; font-weight:700; line-height:1;
+          display:flex; align-items:center; justify-content:center;
+          cursor:pointer; padding:0;
+        }
+        .colonia-info-close:hover { background:#E5E1D9; }
+        .colonia-info-header {
+          display:flex; align-items:center; gap:12px; margin-bottom:14px;
+        }
+        .colonia-info-icon {
+          width:40px; height:40px; border-radius:12px;
+          background:linear-gradient(135deg,#F2F0EC,#E5E1D9);
+          display:flex; align-items:center; justify-content:center;
+          font-size:20px;
+        }
+        .colonia-info-title {
+          font-size:16px; font-weight:900; color:#1A1A1A;
+          letter-spacing:-0.3px;
+        }
+        .colonia-info-subtitle {
+          font-size:11px; color:#9B8B7A; font-weight:700;
+          text-transform:uppercase; letter-spacing:0.5px;
+        }
+        .colonia-info-stats {
+          display:flex; gap:8px;
+        }
+        .colonia-stat {
+          flex:1; text-align:center;
+          padding:10px 4px; border-radius:12px;
+          background:#FAFAFA;
+        }
+        .colonia-stat-num {
+          display:block; font-size:18px; font-weight:900;
+          color:#5C4A3A; line-height:1.2;
+        }
+        .colonia-stat-label {
+          display:block; font-size:9px; font-weight:800;
+          color:#9B8B7A; text-transform:uppercase;
+          letter-spacing:0.4px; margin-top:3px;
+        }
       `}</style>
+      {/* Botón toggle de colonias */}
+      <button
+        className={`colonias-toggle ${mostrarColonias ? 'active' : 'inactive'}`}
+        onClick={() => {
+          setMostrarColonias(v => !v);
+          if (mostrarColonias) setColoniaSeleccionada(null);
+        }}
+        title={mostrarColonias ? 'Ocultar colonias' : 'Ver colonias'}
+      >
+        <span className="colonias-toggle-icon">{mostrarColonias ? '🗺️' : '🏘️'}</span>
+        {mostrarColonias ? 'Ocultar colonias' : 'Ver colonias'}
+      </button>
+
+      {/* Panel de info de colonia seleccionada */}
+      {coloniaSeleccionada !== null && mostrarColonias && (
+        <ColoniaInfoPanel
+          cp={coloniaSeleccionada}
+          reportes={reportes}
+          onClose={() => setColoniaSeleccionada(null)}
+        />
+      )}
+
       <MapContainer
         center={INITIAL_CENTER}
         zoom={INITIAL_ZOOM}
@@ -526,6 +801,12 @@ export default function LeafletMap({
         />
         <MapClickHandler onMapClick={onMapClick} />
         <FitToMarkers enabled={fitToMarkers} positions={markerPositions} />
+        <ColoniasLayer
+          reportes={reportes}
+          visible={mostrarColonias}
+          coloniaSeleccionada={coloniaSeleccionada}
+          onSelectColonia={setColoniaSeleccionada}
+        />
         {(() => {
           const reporteSeleccionado = reportes.find(
             (reporte): reporte is Reporte & { latitud: number; longitud: number } =>
@@ -706,6 +987,6 @@ export default function LeafletMap({
           );
         })()}
       </MapContainer>
-    </>
+    </div>
   );
 }
