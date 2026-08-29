@@ -216,7 +216,7 @@ def test_validar_avistamiento_endpoint_caso_feliz(monkeypatch, make_query):
     )
 
     assert resultado.estado_validacion == "validado"
-    validar.assert_called_once_with("av-1", "user-staff", True)
+    validar.assert_called_once_with("av-1", "user-staff", True, False)
 
 
 def test_validar_avistamiento_endpoint_propaga_403_por_rol(monkeypatch, make_query):

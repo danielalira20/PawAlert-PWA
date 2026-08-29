@@ -2798,6 +2798,360 @@ def test_pendientes_sin_resultados_devuelve_lista_vacia(monkeypatch, make_query)
     assert svc.listar_pendientes_asociacion("aso-1") == []
 
 
+
+
+
+# --- Entrega C: fuente testigo_cercano (rol + trust_score, sin auto-valida) -
+
+
+def _reporte_ajeno(**cambios):
+    """Reporte de alguien mas: ni usuario_id ni staff_asignado_id coinciden
+    con quien intenta registrar el avistamiento como testigo_cercano, asi
+    que _resolver_fuente tiene que llegar hasta el ultimo camino posible."""
+    datos = _reporte(usuario_id="otro-reportante", staff_asignado_id="otro-staff")
+    datos.update(cambios)
+    return datos
+
+
+def _db_testigo_cercano(monkeypatch, make_query, *, rol, cap_count=0):
+    """Escenario minimo para que _resolver_fuente llegue a evaluar
+    testigo_cercano: reporte ajeno, usuario con el rol dado, sin voluntario
+    verificado (tabla voluntarios vacia), con la foto obligatoria ya
+    vinculable y sin fotos de referencia (asi _verificar_coherencia_visual
+    se sale temprano sin llamar a Gemini de verdad)."""
+    from app.api import reports as reports_api
+
+    reporte = _reporte_ajeno()
+    evidencias_mock = make_query(data=[_evidencia_row(usuario_id="user-testigo")])
+    avistamientos_mock = make_query(
+        execute_results=[
+            SimpleNamespace(data=[], count=cap_count),  # chequeo de cap
+            [_fila_insertada(fuente="testigo_cercano", usuario_id="user-testigo")],  # INSERT
+        ]
+    )
+    db = _armar_db(
+        {
+            "reportes": make_query(data=[reporte]),
+            "usuarios": make_query(data=[_usuario(id="user-testigo", roles={"nombre": rol})]),
+            "voluntarios": make_query(data=[]),
+            "animal": make_query(data=[{"id": "animal-1"}]),
+            "reporte_evidencias": evidencias_mock,
+            "animal_fotos": make_query(data=[]),
+            "avistamientos_animal": avistamientos_mock,
+        }
+    )
+    monkeypatch.setattr(svc, "supabase_admin", db)
+    monkeypatch.setattr(reports_api, "supabase_admin", db)
+    return db, avistamientos_mock, evidencias_mock
+
+
+def test_testigo_cercano_resuelve_por_rol_y_trust_score_suficiente(
+    monkeypatch, make_query
+):
+    """voluntario_interno, sin ningun camino propio en _resolver_fuente y
+    con trust_score en el umbral: se le resuelve testigo_cercano y el
+    avistamiento entra pendiente."""
+    _mockear_trust(monkeypatch, 60)
+    _, avistamientos_mock, _ = _db_testigo_cercano(
+        monkeypatch, make_query, rol="voluntario_interno"
+    )
+
+    resultado = svc.registrar_avistamiento(
+        "rep-1", "user-testigo", _avistamiento_create(evidencia_id="evi-1")
+    )
+
+    assert resultado.fuente == LocationSource.testigo_cercano
+    assert resultado.estado_validacion == "pendiente"
+    # Solo dos ejecuciones sobre avistamientos_animal: el chequeo de cap y
+    # el INSERT -- nunca llega a evaluar condiciones de auto-validacion
+    # (eso se prueba aparte, directo sobre la funcion).
+    assert avistamientos_mock.execute.call_count == 2
+
+
+def test_testigo_cercano_reportante_de_caso_ajeno_tambien_resuelve(
+    monkeypatch, make_query
+):
+    """El reportante SI entra a testigo_cercano, pero solo para un caso que
+    no es el suyo -- si lo fuera, ya habria salido por
+    confirmacion_reportante antes de llegar aqui."""
+    _mockear_trust(monkeypatch, 60)
+    _, _, _ = _db_testigo_cercano(monkeypatch, make_query, rol="reportante")
+
+    resultado = svc.registrar_avistamiento(
+        "rep-1", "user-testigo", _avistamiento_create(evidencia_id="evi-1")
+    )
+
+    assert resultado.fuente == LocationSource.testigo_cercano
+
+
+def test_testigo_cercano_rol_no_habilitado_no_resuelve_fuente(monkeypatch, make_query):
+    """aliado_local no esta en ROLES_TESTIGO_CERCANO (decision explicita del
+    equipo): sin ruta propia, se niega el acceso con 403 aunque el trust
+    score fuera perfecto."""
+    _mockear_trust(monkeypatch, 100)
+    reporte = _reporte_ajeno()
+    db = _armar_db(
+        {
+            "reportes": make_query(data=[reporte]),
+            "usuarios": make_query(
+                data=[_usuario(id="user-aliado", roles={"nombre": "aliado_local"})]
+            ),
+            "voluntarios": make_query(data=[]),
+        }
+    )
+    monkeypatch.setattr(svc, "supabase_admin", db)
+
+    with pytest.raises(HTTPException) as error:
+        svc.registrar_avistamiento("rep-1", "user-aliado", _avistamiento_create())
+
+    assert error.value.status_code == 403
+
+
+def test_testigo_cercano_trust_score_insuficiente_no_resuelve_fuente(
+    monkeypatch, make_query
+):
+    """Rol habilitado pero trust_score bajo el umbral: a diferencia de
+    _cumple_trust_y_radio (que solo afecta que tan rapido se auto-valida),
+    aqui el trust bajo bloquea el registro en si mismo."""
+    _mockear_trust(monkeypatch, 59)
+    reporte = _reporte_ajeno()
+    db = _armar_db(
+        {
+            "reportes": make_query(data=[reporte]),
+            "usuarios": make_query(
+                data=[_usuario(id="user-donante", roles={"nombre": "donante_comunitario"})]
+            ),
+            "voluntarios": make_query(data=[]),
+        }
+    )
+    monkeypatch.setattr(svc, "supabase_admin", db)
+
+    with pytest.raises(HTTPException) as error:
+        svc.registrar_avistamiento("rep-1", "user-donante", _avistamiento_create())
+
+    assert error.value.status_code == 403
+
+
+def test_testigo_cercano_fallo_consultando_trust_score_niega_acceso(
+    monkeypatch, make_query
+):
+    """A diferencia del resto del modulo (fail-open cuando el motor de
+    reputacion falla), aqui un fallo NIEGA el acceso: es un limite de
+    seguridad de entrada, no una optimizacion de auto-validacion."""
+    def _explota(usuario_id, rol):
+        raise RuntimeError("trust_score no disponible")
+
+    monkeypatch.setattr(reputacion_service, "consultar_restricciones", _explota)
+    reporte = _reporte_ajeno()
+    db = _armar_db(
+        {
+            "reportes": make_query(data=[reporte]),
+            "usuarios": make_query(
+                data=[_usuario(id="user-patro", roles={"nombre": "patrocinador_institucional"})]
+            ),
+            "voluntarios": make_query(data=[]),
+        }
+    )
+    monkeypatch.setattr(svc, "supabase_admin", db)
+
+    with pytest.raises(HTTPException) as error:
+        svc.registrar_avistamiento("rep-1", "user-patro", _avistamiento_create())
+
+    assert error.value.status_code == 403
+
+
+def test_testigo_cercano_exige_foto_obligatoria(monkeypatch, make_query):
+    """A diferencia de las demas fuentes (foto opcional), testigo_cercano
+    la exige: sin evidencia_id el registro nunca llega a intentarse."""
+    _mockear_trust(monkeypatch, 60)
+    reporte = _reporte_ajeno()
+    avistamientos_mock = make_query(data=[])
+    db = _armar_db(
+        {
+            "reportes": make_query(data=[reporte]),
+            "usuarios": make_query(
+                data=[_usuario(id="user-testigo", roles={"nombre": "voluntario_interno"})]
+            ),
+            "voluntarios": make_query(data=[]),
+            "avistamientos_animal": avistamientos_mock,
+        }
+    )
+    monkeypatch.setattr(svc, "supabase_admin", db)
+
+    with pytest.raises(HTTPException) as error:
+        svc.registrar_avistamiento("rep-1", "user-testigo", _avistamiento_create())
+
+    assert error.value.status_code == 422
+    assert "fotografía" in error.value.detail
+    avistamientos_mock.insert.assert_not_called()
+
+
+def test_testigo_cercano_cap_de_pendientes_bloquea_nuevo_registro(
+    monkeypatch, make_query
+):
+    """Anti-spam (Entrega C): al llegar al cap (3 por defecto) de
+    pendientes propios de esta fuente, un nuevo intento se rechaza antes de
+    tocar evidencia o el INSERT."""
+    _mockear_trust(monkeypatch, 60)
+    reporte = _reporte_ajeno()
+    avistamientos_mock = make_query(data=[], count=3)
+    db = _armar_db(
+        {
+            "reportes": make_query(data=[reporte]),
+            "usuarios": make_query(
+                data=[_usuario(id="user-testigo", roles={"nombre": "voluntario_interno"})]
+            ),
+            "voluntarios": make_query(data=[]),
+            "avistamientos_animal": avistamientos_mock,
+        }
+    )
+    monkeypatch.setattr(svc, "supabase_admin", db)
+
+    with pytest.raises(HTTPException) as error:
+        svc.registrar_avistamiento(
+            "rep-1", "user-testigo", _avistamiento_create(evidencia_id="evi-1")
+        )
+
+    assert error.value.status_code == 422
+    assert "esperando revisión" in error.value.detail
+    avistamientos_mock.insert.assert_not_called()
+
+
+def test_testigo_cercano_nunca_auto_valida_ni_por_corroboracion(monkeypatch, make_query):
+    """Condicion central de la fuente: ni siquiera la corroboracion
+    (condicion 3, fuente-agnostica por diseno) puede auto-validar un
+    testigo_cercano. Se prueba la funcion directo y sin montar NINGUN mock
+    de base de datos -- si el codigo intentara consultar trust_score o
+    corroboracion igual, esta prueba fallaria al golpear una conexion real
+    en vez de pasar limpiamente."""
+    fila = _fila_completa(fuente="testigo_cercano")
+
+    se_auto_valida, motivo = svc._validar_condiciones_auto_validacion(
+        _reporte_ajeno(), fila
+    )
+
+    assert se_auto_valida is False
+    assert motivo is None
+
+
+# --- Entrega C: rechazar como falso -> incidente confirmado (trust_score) -
+
+
+def _pendiente_testigo_cercano(**cambios):
+    datos = {
+        "id": "av-1",
+        "reporte_id": "rep-1",
+        "animal_id": "animal-1",
+        "fuente": "testigo_cercano",
+        "estado_validacion": "pendiente",
+        "latitud": 19.0,
+        "longitud": -98.0,
+        "registrado_at": datetime.now(timezone.utc).isoformat(),
+        "usuario_id": "user-testigo",
+    }
+    datos.update(cambios)
+    return datos
+
+
+def test_validar_avistamiento_es_falso_dispara_incidente_confirmado(
+    monkeypatch, make_query
+):
+    from app.services import incidentes_service
+
+    avistamiento = _pendiente_testigo_cercano()
+    db = _armar_db(
+        {
+            "avistamientos_animal": make_query(
+                execute_results=[[avistamiento], [{"id": "av-1"}]]
+            ),
+            "reportes": make_query(data=[_reporte(asociacion_asignada_id="aso-1")]),
+            "usuarios": make_query(
+                execute_results=[
+                    [_usuario(id="user-aso", asociacion_id="aso-1", roles={"nombre": "asociacion"})],
+                    [_usuario(id="user-testigo", roles={"nombre": "voluntario_interno"})],
+                ]
+            ),
+        }
+    )
+    monkeypatch.setattr(svc, "supabase_admin", db)
+    registrar_mock = MagicMock(return_value={"id": "inc-1"})
+    confirmar_mock = MagicMock(return_value={"id": "inc-1", "estado": "confirmado"})
+    monkeypatch.setattr(incidentes_service, "registrar_incidente", registrar_mock)
+    monkeypatch.setattr(incidentes_service, "confirmar_incidente", confirmar_mock)
+
+    resultado = svc.validar_avistamiento("av-1", "user-aso", False, True)
+
+    assert resultado.estado_validacion == "rechazado"
+    registrar_mock.assert_called_once()
+    kwargs = registrar_mock.call_args.kwargs
+    assert kwargs["usuario_id"] == "user-testigo"
+    assert kwargs["rol"] == "voluntario_interno"
+    assert kwargs["tipo_incidente"] == "avistamiento_falso"
+    assert kwargs["registrado_por"] == "user-aso"
+    assert kwargs["actor_tipo"] == "asociacion"
+    assert kwargs["reporte_id"] == "rep-1"
+    confirmar_mock.assert_called_once_with(
+        incidente_id="inc-1", confirmado_por="user-aso", actor_tipo="asociacion"
+    )
+
+
+def test_validar_avistamiento_rechazo_normal_no_dispara_incidente(monkeypatch, make_query):
+    """Sin es_falso=True (el default), rechazar sigue siendo pura
+    transicion de estado -- ningun cambio de comportamiento para el resto
+    de rechazos que ya existian."""
+    from app.services import incidentes_service
+
+    avistamiento = _pendiente_testigo_cercano()
+    db = _armar_db(
+        {
+            "avistamientos_animal": make_query(
+                execute_results=[[avistamiento], [{"id": "av-1"}]]
+            ),
+            "reportes": make_query(data=[_reporte(asociacion_asignada_id="aso-1")]),
+            "usuarios": make_query(
+                data=[_usuario(id="user-aso", asociacion_id="aso-1", roles={"nombre": "asociacion"})]
+            ),
+        }
+    )
+    monkeypatch.setattr(svc, "supabase_admin", db)
+    registrar_mock = MagicMock()
+    monkeypatch.setattr(incidentes_service, "registrar_incidente", registrar_mock)
+
+    resultado = svc.validar_avistamiento("av-1", "user-aso", False)
+
+    assert resultado.estado_validacion == "rechazado"
+    registrar_mock.assert_not_called()
+
+
+def test_validar_avistamiento_es_falso_ignorado_si_fuente_no_es_testigo_cercano(
+    monkeypatch, make_query
+):
+    """El incidente es exclusivo de testigo_cercano: para las demas
+    fuentes, es_falso=True no hace nada distinto de un rechazo normal."""
+    from app.services import incidentes_service
+
+    avistamiento = _pendiente_testigo_cercano(fuente="confirmacion_reportante")
+    db = _armar_db(
+        {
+            "avistamientos_animal": make_query(
+                execute_results=[[avistamiento], [{"id": "av-1"}]]
+            ),
+            "reportes": make_query(data=[_reporte(asociacion_asignada_id="aso-1")]),
+            "usuarios": make_query(
+                data=[_usuario(id="user-aso", asociacion_id="aso-1", roles={"nombre": "asociacion"})]
+            ),
+        }
+    )
+    monkeypatch.setattr(svc, "supabase_admin", db)
+    registrar_mock = MagicMock()
+    monkeypatch.setattr(incidentes_service, "registrar_incidente", registrar_mock)
+
+    resultado = svc.validar_avistamiento("av-1", "user-aso", False, True)
+
+    assert resultado.estado_validacion == "rechazado"
+    registrar_mock.assert_not_called()
+
+
 def test_pendientes_desambigua_la_fk_con_reportes(monkeypatch, make_query):
     """Regresion de un fallo que solo aparecio contra Supabase real (PGRST201):
     hay DOS relaciones entre avistamientos_animal y reportes (reporte_id ->
