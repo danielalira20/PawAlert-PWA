@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
+  Linking,
   ScrollView,
   StyleSheet,
   Text,
@@ -156,10 +157,19 @@ function DetalleAvistamiento({
           Visto {tiempoRelativo(avistamiento.observado_at)}
         </Text>
       </View>
-      <View style={styles.datoFila}>
+      <TouchableOpacity
+        style={styles.datoFila}
+        activeOpacity={avistamiento.latitud != null && avistamiento.longitud != null ? 0.6 : 1}
+        disabled={avistamiento.latitud == null || avistamiento.longitud == null}
+        onPress={() => Linking.openURL(
+          `https://www.google.com/maps/search/?api=1&query=${avistamiento.latitud},${avistamiento.longitud}`,
+        )}
+      >
         <Ionicons name="location-outline" size={14} color={COLORS.textLight} />
-        <Text style={styles.datoTexto}>{coordenadas(avistamiento)}</Text>
-      </View>
+        <Text style={[styles.datoTexto, avistamiento.latitud != null && avistamiento.longitud != null && styles.datoTextoEnlace]}>
+          {coordenadas(avistamiento)}
+        </Text>
+      </TouchableOpacity>
       <View style={styles.datoFila}>
         <Ionicons name="person-outline" size={14} color={COLORS.textLight} />
         <Text style={styles.datoTexto} numberOfLines={1}>
@@ -463,6 +473,7 @@ const styles = StyleSheet.create({
   fotoVaciaTexto: { color: COLORS.textLight, fontSize: 10, fontWeight: '700' },
   datoFila: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
   datoTexto: { flex: 1, color: COLORS.textLight, fontSize: 12 },
+  datoTextoEnlace: { color: COLORS.primary, fontWeight: '700', textDecorationLine: 'underline' },
   notaTexto: { color: COLORS.textDark, fontSize: 12, lineHeight: 17, marginTop: 4 },
   accionesFila: { flexDirection: 'row', gap: 10, marginTop: 10 },
   accionFlex: { flex: 1 },
