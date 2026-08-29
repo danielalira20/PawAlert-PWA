@@ -1,7 +1,8 @@
+import asyncio
 import os
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import HTTPException
@@ -91,6 +92,114 @@ def test_crear_avistamiento_propaga_403_del_servicio(monkeypatch, make_query):
     assert error.value.status_code == 403
 
 
+# --- POST /{reporte_id}/avistamientos/foto -------------------------------
+
+
+def _foto_falsa():
+    return SimpleNamespace(content_type="image/jpeg", filename="evi.jpg")
+
+
+def test_subir_foto_avistamiento_autoriza_y_delega(monkeypatch, make_query):
+    _mockear_auth(monkeypatch, make_query, usuario_id="user-1")
+    autorizar = MagicMock()
+    monkeypatch.setattr(
+        api.avistamiento_service, "autorizar_subida_evidencia", autorizar
+    )
+    subir = AsyncMock(
+        return_value={
+            "foto_url": "https://x/y.jpg",
+            "evidencia_id": "evi-1",
+            "exif_gps_disponible": False,
+        }
+    )
+    monkeypatch.setattr(
+        "app.services.evidence_service.subir_evidencia_suelta", subir
+    )
+
+    resultado = asyncio.run(
+        api.subir_foto_avistamiento(
+            "rep-1", _foto_falsa(), authorization="Bearer token-valido"
+        )
+    )
+
+    assert resultado["evidencia_id"] == "evi-1"
+    autorizar.assert_called_once_with("rep-1", "user-1")
+    assert subir.call_args.kwargs["carpeta"] == "reportes/avistamientos"
+    assert subir.call_args.kwargs["reporte_id"] == "rep-1"
+    assert subir.call_args.kwargs["usuario_id"] == "user-1"
+
+
+def test_subir_foto_avistamiento_sin_token_es_401(monkeypatch, make_query):
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(
+            api.subir_foto_avistamiento(
+                "rep-1", _foto_falsa(), authorization=None
+            )
+        )
+
+    assert error.value.status_code == 401
+
+
+def test_subir_foto_avistamiento_sin_permiso_es_403(monkeypatch, make_query):
+    _mockear_auth(monkeypatch, make_query, usuario_id="user-1")
+    monkeypatch.setattr(
+        api.avistamiento_service,
+        "autorizar_subida_evidencia",
+        MagicMock(
+            side_effect=HTTPException(status_code=403, detail="No calificas")
+        ),
+    )
+
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(
+            api.subir_foto_avistamiento(
+                "rep-1", _foto_falsa(), authorization="Bearer token-valido"
+            )
+        )
+
+    assert error.value.status_code == 403
+
+
+# --- GET /{reporte_id}/avistamientos/elegible -----------------------------
+
+
+def test_elegible_endpoint_delega_en_servicio(monkeypatch, make_query):
+    _mockear_auth(monkeypatch, make_query, usuario_id="user-1")
+    evaluar = MagicMock(
+        return_value={"elegible": True, "motivo": None, "fuente": "asociacion"}
+    )
+    monkeypatch.setattr(api.avistamiento_service, "evaluar_elegibilidad", evaluar)
+
+    resultado = api.avistamiento_elegible(
+        "rep-1", 19.0, -98.0, authorization="Bearer token-valido"
+    )
+
+    assert resultado["elegible"] is True
+    evaluar.assert_called_once_with("rep-1", "user-1", 19.0, -98.0)
+
+
+def test_elegible_endpoint_sin_token_es_401(monkeypatch, make_query):
+    with pytest.raises(HTTPException) as error:
+        api.avistamiento_elegible("rep-1", 19.0, -98.0, authorization=None)
+
+    assert error.value.status_code == 401
+
+
+def test_elegible_endpoint_propaga_403_del_servicio(monkeypatch, make_query):
+    _mockear_auth(monkeypatch, make_query, usuario_id="user-1")
+    evaluar = MagicMock(
+        side_effect=HTTPException(status_code=403, detail="No calificas")
+    )
+    monkeypatch.setattr(api.avistamiento_service, "evaluar_elegibilidad", evaluar)
+
+    with pytest.raises(HTTPException) as error:
+        api.avistamiento_elegible(
+            "rep-1", 19.0, -98.0, authorization="Bearer token-valido"
+        )
+
+    assert error.value.status_code == 403
+
+
 # --- POST /{reporte_id}/avistamientos/{avistamiento_id}/validar ------------
 
 
@@ -107,7 +216,7 @@ def test_validar_avistamiento_endpoint_caso_feliz(monkeypatch, make_query):
     )
 
     assert resultado.estado_validacion == "validado"
-    validar.assert_called_once_with("av-1", "user-staff", True)
+    validar.assert_called_once_with("av-1", "user-staff", True, False)
 
 
 def test_validar_avistamiento_endpoint_propaga_403_por_rol(monkeypatch, make_query):

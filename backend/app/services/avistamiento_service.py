@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 
 from fastapi import HTTPException
 
+from app.config import settings
 from app.db.supabase import supabase_admin
 from app.models.dispatch import (
     AvistamientoCreate,
@@ -137,6 +138,54 @@ def _voluntario_verificado_cerca(usuario_id: str, reporte: dict) -> bool:
     return distancia <= radio
 
 
+# Roles elegibles para la fuente testigo_cercano (Entrega C): cualquiera
+# que no tenga ya un camino propio en _resolver_fuente, salvo aliado_local,
+# staff y asociacion (decision explicita del equipo). El reportante SI
+# entra aqui -- pero solo llega a evaluarse cuando el reporte no es el
+# suyo, porque si lo fuera ya habria salido por confirmacion_reportante.
+ROLES_TESTIGO_CERCANO = (
+    "reportante",
+    "voluntario_interno",
+    "donante_comunitario",
+    "patrocinador_institucional",
+)
+
+
+def _es_testigo_cercano_elegible(usuario: dict) -> bool:
+    """Condicion de ENTRADA (no de auto-validacion) para testigo_cercano: el
+    rol debe estar habilitado Y su trust_score debe alcanzar el mismo
+    umbral que ya se usa para auto-validar otras fuentes
+    (settings.trust_score_minimo_auto_validacion).
+
+    A diferencia de _cumple_trust_y_radio (que solo acelera la
+    auto-validacion de un avistamiento que YA se va a crear), esto decide
+    si la persona puede intentar registrar uno. Por eso, a diferencia del
+    resto del modulo, un fallo consultando trust_score aqui NIEGA el
+    acceso en vez de dejarlo pasar: es un limite de seguridad, no una
+    optimizacion, y esta fuente ya es mas abierta que las demas.
+    """
+    rol = usuario.get("rol")
+    usuario_id = usuario.get("id")
+    if rol not in ROLES_TESTIGO_CERCANO or not usuario_id:
+        return False
+
+    try:
+        from app.services.reputacion_service import consultar_restricciones
+
+        puntaje = int(consultar_restricciones(usuario_id, rol)["puntaje"])
+    except Exception:
+        logger.warning(
+            "No se pudo consultar trust_score de %s (rol=%s) para "
+            "testigo_cercano; se niega el acceso",
+            usuario_id,
+            rol,
+            exc_info=True,
+        )
+        return False
+
+    return puntaje >= settings.trust_score_minimo_auto_validacion
+
+
 def _resolver_fuente(reporte: dict, usuario: dict) -> LocationSource | None:
     usuario_id = usuario["id"]
     if reporte.get("usuario_id") == usuario_id:
@@ -147,7 +196,367 @@ def _resolver_fuente(reporte: dict, usuario: dict) -> LocationSource | None:
         return LocationSource.asociacion
     if _voluntario_verificado_cerca(usuario_id, reporte):
         return LocationSource.voluntario_verificado
+    if _es_testigo_cercano_elegible(usuario):
+        return LocationSource.testigo_cercano
     return None
+
+
+# Fuentes a las que se les exige estar físicamente cerca del caso para poder
+# INTENTAR registrar un avistamiento. asociacion / administracion / el
+# voluntario ya asignado quedan exentos: pueden registrar información que
+# alguien más les compartió sin estar en el lugar.
+FUENTES_CON_FILTRO_ENTRADA = (
+    LocationSource.confirmacion_reportante,
+    LocationSource.voluntario_verificado,
+    LocationSource.testigo_cercano,
+)
+
+
+def _distancia_a_referencia(
+    reporte: dict, latitud: float, longitud: float
+) -> float | None:
+    """Metros entre el GPS recibido y el punto de referencia actual del reporte.
+
+    Reusa _resolver_punto_referencia() de reports.py (la misma función que usan
+    los hitos de rescate: llegada_zona_reporte, llegue_refugio, etc.) en vez de
+    _ubicacion_referencia() de este módulo. Ambas resuelven al mismo punto: las
+    columnas denormalizadas ultima_latitud/longitud_confirmada y la fila de
+    avistamientos_animal referida por ultima_ubicacion_confirmada_id se escriben
+    SIEMPRE juntas en _confirmar_avistamiento() (UPDATE atómico), así que son
+    intercambiables. Se elige _resolver_punto_referencia() por consistencia con
+    el resto de validaciones de cercanía del proyecto.
+
+    Devuelve None si el reporte no tiene ningún punto contra el cual medir.
+    """
+    from app.api.reports import _distancia_metros, _resolver_punto_referencia
+
+    if not reporte.get("ultima_ubicacion_confirmada_id") and (
+        reporte.get("latitud") is None or reporte.get("longitud") is None
+    ):
+        return None
+
+    try:
+        lat_ref, lon_ref, _ = _resolver_punto_referencia(reporte)
+    except (TypeError, KeyError):
+        # ultima_ubicacion_confirmada_id colgado y sin pin original: nada contra
+        # qué medir.
+        return None
+    return _distancia_metros(latitud, longitud, lat_ref, lon_ref)
+
+
+def _validar_cercania_entrada(
+    reporte: dict, fuente: LocationSource, latitud: float, longitud: float
+) -> None:
+    """Rechaza con 422 si la fuente exige cercanía y el GPS recibido está más
+    lejos del caso que settings.radio_entrada_avistamiento_metros."""
+    if fuente not in FUENTES_CON_FILTRO_ENTRADA:
+        return
+
+    distancia = _distancia_a_referencia(reporte, latitud, longitud)
+    if distancia is None:
+        return
+
+    radio = settings.radio_entrada_avistamiento_metros
+    if distancia > radio:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Debes estar dentro de {radio} metros del caso para registrar "
+                f"un avistamiento. Estás a {round(distancia)} metros."
+            ),
+        )
+
+
+def _validar_cap_pendientes_testigo_cercano(usuario_id: str) -> None:
+    """Limite anti-spam (Entrega C): como testigo_cercano nunca se
+    auto-valida, cada registro se queda apilado en el panel de asociacion
+    hasta que alguien lo revise a mano. Sin este limite, una sola persona
+    podria saturar esa cola -- y la factura de Gemini -- registrando varios
+    de golpe. Se cuenta por usuario, no por reporte, para que no se pueda
+    esquivar reportando el mismo lugar en varios casos distintos. El cupo
+    se libera solo en cuanto asociacion resuelve alguno de sus pendientes.
+    """
+    cap = settings.avistamiento_cap_pendientes_testigo_cercano
+    pendientes = (
+        supabase_admin.table("avistamientos_animal")
+        .select("id", count="exact")
+        .eq("usuario_id", usuario_id)
+        .eq("fuente", LocationSource.testigo_cercano.value)
+        .eq("estado_validacion", "pendiente")
+        .execute()
+    )
+    if (pendientes.count or 0) >= cap:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Ya tienes {cap} avistamientos esperando revisión. Espera "
+                "a que se resuelvan antes de registrar otro."
+            ),
+        )
+
+
+def _animales_del_reporte(reporte_id: str) -> list[dict]:
+    """Animales del reporte en la forma mínima que la Pantalla A necesita para
+    su selector: id + especie + orden. No hay GET /reports/{id}, así que este
+    dato viaja en la respuesta de elegibilidad en vez de serializado en la URL."""
+    resultado = (
+        supabase_admin.table("animal")
+        .select("id, orden, tipo_animal_catalogo(clave)")
+        .eq("reporte_id", reporte_id)
+        .order("orden")
+        .execute()
+    )
+    return [
+        {
+            "id": fila["id"],
+            "tipo_animal": (fila.get("tipo_animal_catalogo") or {}).get("clave"),
+            "orden": fila.get("orden"),
+        }
+        for fila in (resultado.data or [])
+    ]
+
+
+def evaluar_elegibilidad(
+    reporte_id: str, usuario_id: str, latitud: float, longitud: float
+) -> dict:
+    """Elegibilidad del usuario autenticado para registrar un avistamiento en
+    este reporte desde el GPS dado. La Pantalla A (frontend) la consulta para
+    mostrar/ocultar el botón sin duplicar el cálculo de distancia, y para
+    poblar su selector de animal sin recibirlos por la URL."""
+    reporte = _obtener_reporte(reporte_id)
+    usuario = _obtener_usuario(usuario_id)
+
+    fuente = _resolver_fuente(reporte, usuario)
+    if fuente is None:
+        raise HTTPException(
+            status_code=403,
+            detail="No tienes permiso para registrar un avistamiento en este reporte",
+        )
+
+    base = {"fuente": fuente.value, "animales": _animales_del_reporte(reporte_id)}
+    radio = settings.radio_entrada_avistamiento_metros
+    if fuente not in FUENTES_CON_FILTRO_ENTRADA:
+        return {**base, "elegible": True, "motivo": None}
+
+    distancia = _distancia_a_referencia(reporte, latitud, longitud)
+    if distancia is None:
+        # Sin punto de referencia no se puede filtrar por distancia; se permite.
+        return {**base, "elegible": True, "motivo": None}
+
+    return {
+        **base,
+        "elegible": distancia <= radio,
+        "distancia_metros": round(distancia, 1),
+        "radio_metros": radio,
+    }
+
+
+# --- Auto-validacion combinada (Fase 3) ------------------------------------
+#
+# Condicion 1 (fuente oficial) la resuelve el flujo existente ANTES de que
+# nada de esto corra: `animal_encontrado` entra por
+# registrar_avistamiento_desde_hito (ya validado), y asociacion/
+# administracion se insertan validados desde registrar_avistamiento. Lo de
+# abajo solo aplica a los que llegan como 'pendiente' por defecto, es decir
+# reportante del caso y voluntario verificado cercano.
+
+MOTIVO_TRUST_Y_RADIO = "trust_score_y_radio"
+MOTIVO_CORROBORACION = "corroboracion"
+
+# Rol con el que se consulta trust_score segun quien registra. Son los
+# valores reales del CHECK de trust_score.rol (migracion 0047).
+ROL_TRUST_POR_FUENTE = {
+    LocationSource.confirmacion_reportante: "reportante",
+    LocationSource.voluntario_verificado: "voluntario_externo",
+}
+
+ESTADOS_CORROBORABLES = ["pendiente", "validado"]
+
+
+def _a_utc(valor: str | datetime) -> datetime:
+    """Normaliza un observado_at (ISO de PostgREST o datetime del cliente) a
+    UTC consciente de zona, para poder restar dos fechas sin que una naive y
+    una aware revienten."""
+    if isinstance(valor, str):
+        fecha = datetime.fromisoformat(valor.replace("Z", "+00:00"))
+    else:
+        fecha = valor
+    if fecha.tzinfo is None:
+        return fecha.replace(tzinfo=timezone.utc)
+    return fecha.astimezone(timezone.utc)
+
+
+def _cumple_trust_y_radio(
+    reporte: dict, avistamiento_nuevo: dict, latitud: float, longitud: float
+) -> bool:
+    """Condicion 2: trust score >= umbral Y distancia al punto de referencia
+    del caso <= radio de coherencia. Las dos juntas, no una sola."""
+    try:
+        fuente = LocationSource(avistamiento_nuevo["fuente"])
+    except (KeyError, ValueError):
+        return False
+
+    rol = ROL_TRUST_POR_FUENTE.get(fuente)
+    usuario_id = avistamiento_nuevo.get("usuario_id")
+    if rol is None or not usuario_id:
+        return False
+
+    # consultar_restricciones no atrapa sus propias excepciones: si la
+    # consulta a trust_score falla, la deja subir. Aqui se degrada a "no
+    # auto-valida" para que un problema del motor de reputacion nunca tumbe
+    # el registro de un avistamiento -- mismo criterio fail-safe que el
+    # resto del modulo.
+    try:
+        from app.services.reputacion_service import consultar_restricciones
+
+        puntaje = int(consultar_restricciones(usuario_id, rol)["puntaje"])
+    except Exception:
+        logger.warning(
+            "No se pudo consultar el trust score de %s (rol=%s); el "
+            "avistamiento queda pendiente",
+            usuario_id,
+            rol,
+            exc_info=True,
+        )
+        return False
+
+    if puntaje < settings.trust_score_minimo_auto_validacion:
+        return False
+
+    distancia = _distancia_a_referencia(reporte, latitud, longitud)
+    if distancia is None:
+        return False
+    return distancia <= settings.radio_coherencia_avistamiento_metros
+
+
+def _buscar_corroboracion(
+    avistamiento_nuevo: dict, latitud: float, longitud: float
+) -> dict | None:
+    """Condicion 3: otro avistamiento del MISMO animal, todavia vigente
+    (pendiente o validado), que caiga dentro de AMBAS ventanas -- distancia
+    y tiempo. Con una sola coincidencia basta; se devuelve la primera."""
+    from app.api.reports import _distancia_metros
+
+    animal_id = avistamiento_nuevo.get("animal_id")
+    observado_at = avistamiento_nuevo.get("observado_at")
+    if not animal_id or not observado_at:
+        return None
+
+    try:
+        momento_nuevo = _a_utc(observado_at)
+    except (TypeError, ValueError):
+        return None
+
+    candidatos = (
+        supabase_admin.table("avistamientos_animal")
+        .select("id, latitud, longitud, observado_at, estado_validacion")
+        .eq("animal_id", animal_id)
+        .neq("id", avistamiento_nuevo["id"])
+        .in_("estado_validacion", ESTADOS_CORROBORABLES)
+        .execute()
+    )
+
+    radio = settings.radio_corroboracion_avistamiento_metros
+    ventana = settings.ventana_corroboracion_avistamiento_minutos
+    for fila in candidatos.data or []:
+        if fila.get("latitud") is None or fila.get("longitud") is None:
+            continue
+        distancia = _distancia_metros(
+            latitud, longitud, float(fila["latitud"]), float(fila["longitud"])
+        )
+        if distancia > radio:
+            continue
+        try:
+            minutos = abs(
+                (momento_nuevo - _a_utc(fila["observado_at"])).total_seconds()
+            ) / 60
+        except (KeyError, TypeError, ValueError):
+            continue
+        if minutos > ventana:
+            continue
+        return fila
+    return None
+
+
+def _validar_condiciones_auto_validacion(
+    reporte: dict, avistamiento_nuevo: dict
+) -> tuple[bool, str | None]:
+    """Decide si un avistamiento recien insertado como 'pendiente' se
+    auto-valida. Retorna (se_auto_valida, motivo) -- motivo para
+    logging/auditoria: MOTIVO_TRUST_Y_RADIO, MOTIVO_CORROBORACION, o None
+    si queda pendiente.
+
+    NO reevalua la condicion 1 (fuente oficial): esos avistamientos ya
+    entraron validados y nunca llegan aqui.
+
+    EFECTO LATERAL en el camino de corroboracion: cuando encuentra un
+    avistamiento que corrobora, promueve TAMBIEN a ese a 'validado' antes
+    de retornar -- la regla es que ambos se validan juntos, y hacerlo aqui
+    evita repetir la busqueda desde el llamador.
+    """
+    # testigo_cercano nunca se auto-valida, ni siquiera por corroboracion
+    # (condicion 3 no distingue fuente): es la pieza central de que esta
+    # fuente, mas abierta, siempre pase por revision humana de asociacion.
+    if avistamiento_nuevo.get("fuente") == LocationSource.testigo_cercano.value:
+        return False, None
+
+    latitud = avistamiento_nuevo.get("latitud")
+    longitud = avistamiento_nuevo.get("longitud")
+    if latitud is None or longitud is None:
+        return False, None
+    latitud = float(latitud)
+    longitud = float(longitud)
+
+    if _cumple_trust_y_radio(reporte, avistamiento_nuevo, latitud, longitud):
+        return True, MOTIVO_TRUST_Y_RADIO
+
+    corroborante = _buscar_corroboracion(avistamiento_nuevo, latitud, longitud)
+    if corroborante is not None:
+        if corroborante.get("estado_validacion") == "pendiente":
+            supabase_admin.table("avistamientos_animal").update(
+                {"estado_validacion": "validado"}
+            ).eq("id", corroborante["id"]).eq(
+                "estado_validacion", "pendiente"
+            ).execute()
+        return True, MOTIVO_CORROBORACION
+
+    return False, None
+
+
+def _superar_pendientes_del_caso(
+    *, reporte_id: str, animal_id: str | None, avistamiento_id: str
+) -> list[str]:
+    """Marca como 'superado_por_otro' los avistamientos que seguian
+    pendientes cuando este gano.
+
+    Alcance deliberadamente hibrido: en un reporte de un solo animal barre
+    todo el reporte (todos los pendientes competian por la misma ubicacion).
+    En un reporte multi-animal se limita al mismo animal_id -- aprobar un
+    avistamiento del perro no puede descartar en silencio los del gato, que
+    no lo contradicen. La ambiguedad multi-animal ya esta reconocida en el
+    codigo (ver el [WARN] de reports.py al derivar avistamientos de hitos).
+    """
+    animales = (
+        supabase_admin.table("animal")
+        .select("id")
+        .eq("reporte_id", reporte_id)
+        .limit(2)
+        .execute()
+    )
+    es_mono_animal = len(animales.data or []) <= 1
+
+    consulta = (
+        supabase_admin.table("avistamientos_animal")
+        .update({"estado_validacion": "superado_por_otro"})
+        .eq("reporte_id", reporte_id)
+        .eq("estado_validacion", "pendiente")
+        .neq("id", avistamiento_id)
+    )
+    if not es_mono_animal and animal_id:
+        consulta = consulta.eq("animal_id", animal_id)
+
+    resultado = consulta.execute()
+    return [fila["id"] for fila in (resultado.data or []) if fila.get("id")]
 
 
 def _a_resultado(fila: dict) -> AvistamientoResult:
@@ -291,6 +700,40 @@ def _recalcular_urgency(*, reporte_id: str, avistamiento_id: str) -> None:
     ).execute()
 
 
+def _notificar_voluntario_ubicacion_actualizada(
+    *, reporte_id: str, avistamiento_id: str, staff_asignado_id: str | None
+) -> None:
+    """Encola un push para el voluntario asignado cuando alguien MÁS confirma
+    una nueva ubicación del caso que él va atendiendo -- desde Fase 1 ya no
+    puede registrar avistamientos él mismo, así que sin este aviso llegaría
+    al punto viejo sin saber por qué `llegada_zona_reporte` lo rechaza.
+
+    Solo encola (estado 'pendiente'); el envío real lo hace
+    /internal/push/run. Sin voluntario asignado no hace nada -- es el caso
+    normal, no un error.
+    """
+    if not staff_asignado_id:
+        return
+
+    from app.services.push_notification_service import queue_and_send_push
+
+    queue_and_send_push(
+        usuario_id=staff_asignado_id,
+        tipo_evento="ubicacion_actualizada",
+        idempotency_key=(
+            f"ubicacion_actualizada:{avistamiento_id}:{staff_asignado_id}"
+        ),
+        payload={
+            "mensaje": (
+                "La ubicación del caso que atiendes cambió. Revísala antes "
+                "de seguir en camino."
+            ),
+            "reporte_id": reporte_id,
+        },
+        reporte_id=reporte_id,
+    )
+
+
 def _confirmar_avistamiento(
     *,
     reporte_id: str,
@@ -298,6 +741,7 @@ def _confirmar_avistamiento(
     latitud: float,
     longitud: float,
     fuente: LocationSource,
+    staff_asignado_id: str | None = None,
 ) -> None:
     supabase_admin.table("reportes").update(
         {
@@ -352,6 +796,131 @@ def _confirmar_avistamiento(
             exc_info=True,
         )
 
+    try:
+        _notificar_voluntario_ubicacion_actualizada(
+            reporte_id=reporte_id,
+            avistamiento_id=avistamiento_id,
+            staff_asignado_id=staff_asignado_id,
+        )
+    except Exception:
+        logger.warning(
+            "No se pudo encolar la notificacion de cambio de ubicacion del "
+            "reporte %s para el voluntario asignado",
+            reporte_id,
+            exc_info=True,
+        )
+
+
+def autorizar_subida_evidencia(reporte_id: str, usuario_id: str) -> None:
+    """Autoriza subir una foto de evidencia para un avistamiento de este
+    reporte. Misma regla de acceso que `registrar_avistamiento`: si el usuario
+    no es una fuente valida (`_resolver_fuente`), no puede subir la foto."""
+    reporte = _obtener_reporte(reporte_id)
+    usuario = _obtener_usuario(usuario_id)
+    if _resolver_fuente(reporte, usuario) is None:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "No tienes permiso para registrar un avistamiento en este "
+                "reporte"
+            ),
+        )
+
+
+def _fotos_referencia_animal(animal_id: str, limite: int = 2) -> list[str]:
+    """Fotos originales del animal reportado, para comparar contra la foto
+    de un avistamiento. Como mucho `limite` -- no hace falta mandarle a
+    Gemini todas las que haya si el reporte trae varias."""
+    resultado = (
+        supabase_admin.table("animal_fotos")
+        .select("foto_url")
+        .eq("animal_id", animal_id)
+        .order("orden")
+        .limit(limite)
+        .execute()
+    )
+    return [
+        fila["foto_url"]
+        for fila in (resultado.data or [])
+        if fila.get("foto_url")
+    ]
+
+
+def _verificar_coherencia_visual(*, animal_id: str, evidencia_id: str) -> dict:
+    """Compara la foto del avistamiento contra las fotos originales del
+    animal reportado (Gemini). Lanza 422 solo si Gemini determina con
+    claridad que la foto no muestra un animal real o que la especie no
+    coincide -- una coincidencia dudosa nunca bloquea, solo deja una
+    advertencia; un fallo tecnico o la falta de fotos de referencia tampoco
+    bloquean nada (mismo criterio fail-safe que el resto del modulo).
+
+    Devuelve los campos listos para mezclar en el INSERT de
+    avistamientos_animal, o {} si no hay nada que guardar.
+    """
+    fotos_evidencia = _fotos_por_evidencia([evidencia_id])
+    foto_avistamiento_url = fotos_evidencia.get(evidencia_id)
+    if not foto_avistamiento_url:
+        return {}
+
+    fotos_referencia = _fotos_referencia_animal(animal_id)
+
+    from app.services.avistamiento_vision_service import (
+        MENSAJE_ESPECIE_NO_COINCIDE,
+        MENSAJE_NO_ES_ANIMAL,
+        mensaje_advertencia_coincidencia_baja,
+        verificar_coherencia_avistamiento,
+    )
+
+    resultado = verificar_coherencia_avistamiento(
+        foto_avistamiento_url, fotos_referencia
+    )
+    if resultado.get("estado") != "completado":
+        return {}
+
+    if resultado.get("es_animal_real") is False:
+        raise HTTPException(status_code=422, detail=MENSAJE_NO_ES_ANIMAL)
+    if resultado.get("especie_coincide") is False:
+        raise HTTPException(status_code=422, detail=MENSAJE_ESPECIE_NO_COINCIDE)
+
+    probabilidad = resultado.get("probabilidad_mismo_animal")
+    advertencia = None
+    if (
+        isinstance(probabilidad, (int, float))
+        and probabilidad < settings.avistamiento_umbral_probabilidad_mismo_animal
+    ):
+        advertencia = mensaje_advertencia_coincidencia_baja()
+
+    return {
+        "analisis_ia_estado": resultado.get("estado"),
+        "analisis_ia_probabilidad_mismo_animal": probabilidad,
+        "analisis_ia_modelo": resultado.get("modelo"),
+        "advertencia_visual": advertencia,
+    }
+
+
+def _vincular_evidencia_avistamiento(
+    *,
+    evidencia_id: str,
+    reporte_id: str,
+    usuario_id: str,
+    latitud: float,
+    longitud: float,
+) -> None:
+    """Vincula y verifica una evidencia fotografica ya subida contra el GPS
+    del avistamiento. Reusa el helper de la API de hitos -- la columna
+    `tipo_hito` de `reporte_evidencias` guarda 'avistamiento' en este caso."""
+    from app.api.reports import _vincular_y_verificar_evidencia
+
+    _vincular_y_verificar_evidencia(
+        evidencia_id=evidencia_id,
+        reporte_id=reporte_id,
+        usuario_id=usuario_id,
+        tipo_hito="avistamiento",
+        foto_url=None,
+        latitud_declarada=latitud,
+        longitud_declarada=longitud,
+    )
+
 
 def registrar_avistamiento(
     reporte_id: str, usuario_id: str, data: AvistamientoCreate
@@ -366,6 +935,19 @@ def registrar_avistamiento(
             detail="No tienes permiso para registrar un avistamiento en este reporte",
         )
 
+    _validar_cercania_entrada(reporte, fuente, data.latitud, data.longitud)
+
+    if fuente == LocationSource.testigo_cercano:
+        _validar_cap_pendientes_testigo_cercano(usuario_id)
+        if not data.evidencia_id:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Para registrar un avistamiento debes adjuntar una "
+                    "fotografía."
+                ),
+            )
+
     animal = (
         supabase_admin.table("animal")
         .select("id")
@@ -378,6 +960,24 @@ def registrar_avistamiento(
         raise HTTPException(
             status_code=422,
             detail="El animal indicado no pertenece a este reporte",
+        )
+
+    # Se vincula ANTES del insert: si la evidencia no existe / no es de este
+    # reporte / ya fue usada, el avistamiento no llega a crearse.
+    analisis_visual: dict = {}
+    if data.evidencia_id:
+        _vincular_evidencia_avistamiento(
+            evidencia_id=data.evidencia_id,
+            reporte_id=reporte_id,
+            usuario_id=usuario_id,
+            latitud=data.latitud,
+            longitud=data.longitud,
+        )
+        # Igual que la vinculacion de arriba: si Gemini determina que la
+        # foto no es un animal real o no coincide de especie, el
+        # avistamiento no llega a crearse (HTTPException se propaga).
+        analisis_visual = _verificar_coherencia_visual(
+            animal_id=data.animal_id, evidencia_id=data.evidencia_id
         )
 
     auto_validado = fuente in (
@@ -403,7 +1003,9 @@ def registrar_avistamiento(
                 ),
                 "direccion_observada": data.direccion_observada,
                 "comentario": data.comentario,
+                "evidencia_id": data.evidencia_id,
                 "estado_validacion": "validado" if auto_validado else "pendiente",
+                **analisis_visual,
             }
         )
         .execute()
@@ -421,19 +1023,259 @@ def registrar_avistamiento(
             latitud=data.latitud,
             longitud=data.longitud,
             fuente=fuente,
+            staff_asignado_id=reporte.get("staff_asignado_id"),
         )
+        return _a_resultado(fila)
 
+    # Condiciones 2 y 3 (Fase 3): la fila ya existe como 'pendiente'; si
+    # alguna se cumple, se promueve aqui. Nunca debe tumbar el registro --
+    # un fallo evaluando las condiciones deja el avistamiento pendiente,
+    # que es exactamente donde ya estaba.
+    try:
+        se_auto_valida, motivo = _validar_condiciones_auto_validacion(
+            reporte, fila
+        )
+    except Exception:
+        logger.warning(
+            "No se pudieron evaluar las condiciones de auto-validacion del "
+            "avistamiento %s; queda pendiente",
+            fila["id"],
+            exc_info=True,
+        )
+        return _a_resultado(fila)
+
+    if not se_auto_valida:
+        return _a_resultado(fila)
+
+    promovido = (
+        supabase_admin.table("avistamientos_animal")
+        .update({"estado_validacion": "validado"})
+        .eq("id", fila["id"])
+        .eq("estado_validacion", "pendiente")
+        .execute()
+    )
+    if not promovido.data:
+        # Alguien lo resolvio entre el INSERT y este UPDATE; se respeta lo
+        # que haya quedado en la base en vez de pisarlo.
+        return _a_resultado(fila)
+
+    logger.info(
+        "Avistamiento %s auto-validado (motivo=%s)", fila["id"], motivo
+    )
+    fila["estado_validacion"] = "validado"
+    _confirmar_avistamiento(
+        reporte_id=reporte_id,
+        avistamiento_id=fila["id"],
+        latitud=data.latitud,
+        longitud=data.longitud,
+        fuente=fuente,
+        staff_asignado_id=reporte.get("staff_asignado_id"),
+    )
     return _a_resultado(fila)
 
 
+def _fotos_por_evidencia(evidencia_ids: list[str]) -> dict[str, str]:
+    """foto_url de cada evidencia, en una sola consulta.
+
+    Va aparte y no como embed de PostgREST a proposito: la FK de
+    avistamientos_animal.evidencia_id -> reporte_evidencias es compuesta
+    (evidencia_id, reporte_id), y PostgREST no la expone como relacion
+    embebible. Ademas la migracion que la crea (0087) se aplica a mano, asi
+    que el listado no puede depender de que ya este puesta.
+    """
+    if not evidencia_ids:
+        return {}
+    resultado = (
+        supabase_admin.table("reporte_evidencias")
+        .select("id, foto_url")
+        .in_("id", evidencia_ids)
+        .execute()
+    )
+    return {
+        fila["id"]: fila["foto_url"]
+        for fila in (resultado.data or [])
+        if fila.get("foto_url")
+    }
+
+
+def _nombre_de(usuario: dict | list | None) -> str | None:
+    if isinstance(usuario, list):
+        usuario = usuario[0] if usuario else None
+    if not usuario:
+        return None
+    nombre = " ".join(
+        parte
+        for parte in (usuario.get("nombre"), usuario.get("apellido_paterno"))
+        if parte
+    ).strip()
+    return nombre or None
+
+
+def listar_pendientes_asociacion(asociacion_id: str) -> list[dict]:
+    """Avistamientos 'pendiente' de los reportes que coordina esta asociacion,
+    AGRUPADOS por reporte.
+
+    La agrupacion no es cosmetica: la Pantalla B decide con ella si muestra
+    una tarjeta simple (1 pendiente) o la vista comparativa (2+ compitiendo
+    por la misma ubicacion), asi que el backend la resuelve una vez en vez de
+    que cada cliente reagrupe una lista plana.
+
+    Orden: los reportes que llevan mas tiempo esperando van primero (FIFO de
+    bandeja, igual que listar_seguimientos_asociacion); dentro de cada
+    reporte, el avistamiento observado mas recientemente va primero.
+    """
+    resultado = (
+        supabase_admin.table("avistamientos_animal")
+        .select(
+            "id, reporte_id, animal_id, latitud, longitud, precision_metros, "
+            "observado_at, registrado_at, fuente, movilidad_observada, "
+            "direccion_observada, comentario, evidencia_id, usuario_id, "
+            "advertencia_visual, "
+            "usuarios(nombre, apellido_paterno), "
+            "animal(orden, tipo_animal_catalogo(clave)), "
+            # El nombre de la FK es obligatorio: hay DOS relaciones entre
+            # avistamientos_animal y reportes (reporte_id -> reportes.id, y
+            # reportes.ultima_ubicacion_confirmada_id -> avistamientos.id, ambas
+            # de la migracion 0071). Sin desambiguar, PostgREST responde
+            # PGRST201. El !inner es lo que hace que el filtro por asociacion
+            # se aplique en la base y no solo al post-procesar.
+            "reportes!avistamientos_animal_reporte_id_fkey!inner("
+            "id, estado_reporte, municipio, colonia, calle, "
+            "created_at, asociacion_asignada_id)"
+        )
+        .eq("estado_validacion", "pendiente")
+        .eq("reportes.asociacion_asignada_id", asociacion_id)
+        .order("registrado_at", desc=False)
+        .execute()
+    )
+    filas = resultado.data or []
+
+    fotos = _fotos_por_evidencia(
+        list({fila["evidencia_id"] for fila in filas if fila.get("evidencia_id")})
+    )
+
+    grupos: dict[str, dict] = {}
+    for fila in filas:
+        reporte = fila.get("reportes") or {}
+        # Defensa por si el !inner no filtrara: nunca devolver un caso ajeno.
+        if reporte.get("asociacion_asignada_id") != asociacion_id:
+            continue
+
+        reporte_id = fila["reporte_id"]
+        if reporte_id not in grupos:
+            grupos[reporte_id] = {
+                "reporte_id": reporte_id,
+                "reporte": {
+                    "estado_reporte": reporte.get("estado_reporte"),
+                    "municipio": reporte.get("municipio"),
+                    "colonia": reporte.get("colonia"),
+                    "calle": reporte.get("calle"),
+                    "created_at": reporte.get("created_at"),
+                },
+                "avistamientos": [],
+            }
+
+        animal = fila.get("animal")
+        if isinstance(animal, list):
+            animal = animal[0] if animal else None
+        animal = animal or {}
+
+        grupos[reporte_id]["avistamientos"].append(
+            {
+                "id": fila["id"],
+                "animal_id": fila.get("animal_id"),
+                "animal": {
+                    "orden": animal.get("orden"),
+                    "tipo_animal": (animal.get("tipo_animal_catalogo") or {}).get(
+                        "clave"
+                    ),
+                },
+                "latitud": fila.get("latitud"),
+                "longitud": fila.get("longitud"),
+                "precision_metros": fila.get("precision_metros"),
+                "observado_at": fila.get("observado_at"),
+                "registrado_at": fila.get("registrado_at"),
+                "fuente": fila.get("fuente"),
+                "movilidad_observada": fila.get("movilidad_observada"),
+                "direccion_observada": fila.get("direccion_observada"),
+                "comentario": fila.get("comentario"),
+                "evidencia_id": fila.get("evidencia_id"),
+                "foto_url": fotos.get(fila.get("evidencia_id")),
+                "registrado_por": _nombre_de(fila.get("usuarios")),
+                "advertencia_visual": fila.get("advertencia_visual"),
+            }
+        )
+
+    for grupo in grupos.values():
+        grupo["avistamientos"].sort(
+            key=lambda a: a.get("observado_at") or "", reverse=True
+        )
+        grupo["en_conflicto"] = len(grupo["avistamientos"]) > 1
+
+    return list(grupos.values())
+
+
+def _registrar_incidente_avistamiento_falso(*, avistamiento: dict, actor_id: str) -> None:
+    """Unica consecuencia real de reputacion para testigo_cercano (Entrega
+    C): cuando asociacion rechaza uno de estos avistamientos marcandolo
+    explicitamente como falso, se abre y confirma un incidente -- la unica
+    via legitima para bajar trust_score (ver incidentes_service.py, "unica
+    via legitima para reducir trust_score a partir de ahora"). Las demas
+    fuentes no cambian: nunca tuvieron esta consecuencia y siguen sin
+    tenerla.
+
+    Secundario al rechazo en si mismo: un fallo aqui se loguea pero nunca
+    revierte ni bloquea el rechazo, que ya quedo guardado en la base.
+    """
+    if avistamiento.get("fuente") != LocationSource.testigo_cercano.value:
+        return
+    usuario_afectado_id = avistamiento.get("usuario_id")
+    if not usuario_afectado_id:
+        return
+
+    try:
+        from app.services import incidentes_service
+
+        usuario_afectado = _obtener_usuario(usuario_afectado_id)
+        rol = usuario_afectado.get("rol")
+        if not rol:
+            return
+
+        incidente = incidentes_service.registrar_incidente(
+            usuario_id=usuario_afectado_id,
+            rol=rol,
+            tipo_incidente="avistamiento_falso",
+            descripcion=(
+                "Avistamiento marcado como falso por la asociación al "
+                "revisarlo."
+            ),
+            registrado_por=actor_id,
+            actor_tipo="asociacion",
+            reporte_id=avistamiento.get("reporte_id"),
+        )
+        incidentes_service.confirmar_incidente(
+            incidente_id=incidente["id"],
+            confirmado_por=actor_id,
+            actor_tipo="asociacion",
+        )
+    except Exception:
+        logger.warning(
+            "No se pudo registrar/confirmar el incidente de avistamiento "
+            "falso para el usuario %s (avistamiento=%s)",
+            usuario_afectado_id,
+            avistamiento.get("id"),
+            exc_info=True,
+        )
+
+
 def validar_avistamiento(
-    avistamiento_id: str, usuario_id: str, aprobar: bool
+    avistamiento_id: str, usuario_id: str, aprobar: bool, es_falso: bool = False
 ) -> AvistamientoResult:
     resultado = (
         supabase_admin.table("avistamientos_animal")
         .select(
             "id, reporte_id, animal_id, fuente, estado_validacion, "
-            "latitud, longitud, registrado_at"
+            "latitud, longitud, registrado_at, usuario_id"
         )
         .eq("id", avistamiento_id)
         .limit(1)
@@ -475,12 +1317,35 @@ def validar_avistamiento(
         )
 
     if aprobar:
+        # Los demas pendientes del caso dejan de estar en espera: este gano.
+        # Secundario al hecho principal (la aprobacion), asi que un fallo
+        # aqui se loguea pero no revierte ni bloquea la aprobacion.
+        try:
+            _superar_pendientes_del_caso(
+                reporte_id=avistamiento["reporte_id"],
+                animal_id=avistamiento.get("animal_id"),
+                avistamiento_id=avistamiento_id,
+            )
+        except Exception:
+            logger.warning(
+                "No se pudieron marcar como superados los pendientes del "
+                "reporte %s tras aprobar el avistamiento %s",
+                avistamiento["reporte_id"],
+                avistamiento_id,
+                exc_info=True,
+            )
+
         _confirmar_avistamiento(
             reporte_id=avistamiento["reporte_id"],
             avistamiento_id=avistamiento_id,
             latitud=avistamiento["latitud"],
             longitud=avistamiento["longitud"],
             fuente=LocationSource(avistamiento["fuente"]),
+            staff_asignado_id=reporte.get("staff_asignado_id"),
+        )
+    elif es_falso:
+        _registrar_incidente_avistamiento_falso(
+            avistamiento=avistamiento, actor_id=usuario_id
         )
 
     avistamiento["estado_validacion"] = nuevo_estado
@@ -495,10 +1360,23 @@ def registrar_avistamiento_desde_hito(
     latitud: float,
     longitud: float,
     tipo_hito: str,
+    direccion_observada: str | None = None,
+    evidencia_id: str | None = None,
 ) -> AvistamientoResult:
     """Avistamiento derivado de un hito de rescate ya registrado -- quien lo
     dispara ya es el voluntario asignado al caso, así que se inserta
-    validado de inmediato, sin pasar por aprobación manual."""
+    validado de inmediato, sin pasar por aprobación manual.
+
+    `direccion_observada` solo lo pasa 'animal_no_localizado' (hacia dónde
+    vio moverse el voluntario al animal antes de perderlo). 'animal_encontrado'
+    no lo pasa y la columna queda NULL, igual que hasta ahora.
+
+    `evidencia_id` es la foto que el voluntario subió al registrar el hito
+    (`HitoRequest.evidencia_id`). Ya quedó vinculada y verificada contra el
+    GPS del hito en `registrar_hito` -> `_vincular_y_verificar_evidencia`, y
+    el hito comparte lat/lon con este avistamiento, así que aquí solo se
+    copia la referencia sin re-verificar (evitando el 409 de "ya vinculada").
+    """
     ahora = datetime.now(timezone.utc).isoformat()
     insertado = (
         supabase_admin.table("avistamientos_animal")
@@ -511,6 +1389,8 @@ def registrar_avistamiento_desde_hito(
                 "observado_at": ahora,
                 "fuente": LocationSource.voluntario_asignado.value,
                 "usuario_id": usuario_id,
+                "direccion_observada": direccion_observada,
+                "evidencia_id": evidencia_id,
                 "comentario": f"Registrado automáticamente desde el hito '{tipo_hito}'.",
                 "estado_validacion": "validado",
             }
@@ -530,5 +1410,8 @@ def registrar_avistamiento_desde_hito(
         latitud=latitud,
         longitud=longitud,
         fuente=LocationSource.voluntario_asignado,
+        # staff_asignado_id se omite a proposito: en este camino quien dispara
+        # ES el voluntario asignado (lo garantiza registrar_hito), asi que
+        # notificarlo del cambio que el mismo causo seria ruido.
     )
     return _a_resultado(fila)

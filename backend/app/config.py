@@ -49,6 +49,37 @@ class Settings(BaseSettings):
     firebase_service_account_json: str = ""
     google_application_credentials: str = ""
 
+    # Avistamientos: filtro de cercanía para poder INTENTAR registrar uno.
+    # Solo aplica a reportante del caso y voluntario verificado cercano;
+    # asociación/staff quedan exentos (pueden registrar info de terceros).
+    radio_entrada_avistamiento_metros: int = Field(default=500, gt=0)
+
+    # Avistamientos, auto-validación (Fase 3). Condición 2: trust score
+    # mínimo Y distancia máxima al punto de referencia del caso, ambas
+    # juntas. Condición 3: dos avistamientos del mismo animal que caigan
+    # dentro de AMBAS ventanas (distancia y tiempo) se corroboran entre sí.
+    trust_score_minimo_auto_validacion: int = Field(default=60, ge=0, le=100)
+    radio_coherencia_avistamiento_metros: int = Field(default=800, gt=0)
+    radio_corroboracion_avistamiento_metros: int = Field(default=50, gt=0)
+    ventana_corroboracion_avistamiento_minutos: int = Field(default=5, gt=0)
+
+    # Avistamientos, fuente testigo_cercano (Entrega C). Reusa
+    # trust_score_minimo_auto_validacion de arriba como umbral de ENTRADA
+    # (no solo de auto-validacion) para esta fuente mas abierta. El cap
+    # es anti-spam: como testigo_cercano nunca se auto-valida, cada
+    # registro se queda pendiente hasta revision de asociacion.
+    avistamiento_cap_pendientes_testigo_cercano: int = Field(default=3, gt=0)
+
+    # Avistamientos: verificacion visual contra la(s) foto(s) originales del
+    # animal reportado (Gemini multimodal). Si la probabilidad de que sea el
+    # mismo animal cae por debajo de este umbral, se adjunta una advertencia
+    # NO bloqueante para quien revise el caso -- solo se bloquea el registro
+    # si Gemini determina que la foto no muestra un animal real o que la
+    # especie no es compatible con la reportada.
+    avistamiento_umbral_probabilidad_mismo_animal: float = Field(
+        default=0.5, ge=0, le=1
+    )
+
     @model_validator(mode="after")
     def validate_vroom_route_windows(self):
         if (

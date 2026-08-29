@@ -4,7 +4,7 @@ import axios from 'axios';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Dimensions, Image, Modal, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Animated, Dimensions, Image, Modal, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import AuthGateModal from '../components/AuthGateModal';
 import { API_URL } from '../constants/api';
@@ -14,6 +14,9 @@ import { AnimalCarousel } from '../components/common/AnimalCarousel';
 import ReportFormScreen from './ReportFormScreen';
 import type { AsociacionMapa } from './LeafletMap';
 import { ReportContentMenu } from '../components/reports/ReportContentMenu';
+import { AvistamientoEntryButton } from '../components/avistamientos/AvistamientoEntryButton';
+import { Brand } from '../constants/theme';
+import { useUbicacionEnVivo } from '../hooks/useUbicacionEnVivo';
 
 const LeafletMap = lazy(() => import('./LeafletMap'));
 
@@ -69,6 +72,28 @@ export default function MapScreen() {
   const [isAuthGateVisible, setIsAuthGateVisible] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [, setTick] = useState(0);
+
+  // "Estoy aquí" (ver src/hooks/useUbicacionEnVivo.ts): punto personal en el
+  // mapa, puramente visual, no se comparte con nadie. Vive aquí (Mapa de
+  // rescate) y no en "Casos cerca de mí".
+  const {
+    estado: estadoUbicacion,
+    posicion: posicionEnVivo,
+    desactualizado: ubicacionDesactualizada,
+    activar: activarUbicacion,
+    desactivar: desactivarUbicacion,
+  } = useUbicacionEnVivo();
+  const toggleUbicacionEnVivo = () => {
+    if (estadoUbicacion === 'activo') {
+      desactivarUbicacion();
+    } else {
+      activarUbicacion();
+    }
+  };
+  const ubicacionEnVivo =
+    estadoUbicacion === 'activo' && posicionEnVivo
+      ? { latitud: posicionEnVivo.latitud, longitud: posicionEnVivo.longitud, desactualizado: ubicacionDesactualizada }
+      : null;
 
   // Imagen ampliada (modal con soporte de carrusel) — DEBE vivir dentro del componente
   const [imagenAmpliada, setImagenAmpliada] = useState<{ fotos: string[]; index: number } | null>(null);
@@ -519,6 +544,10 @@ export default function MapScreen() {
           <AnimalCarousel key={r.id} animales={animales} onIndexChange={(i) => setFotoIndexPorReporte((prev) => ({ ...prev, [r.id]: i }))} />
         </View>
 
+        {!['cerrado', 'cancelado_por_reportante', 'rechazado', 'rescatado'].includes(r.estado_reporte ?? '') && (
+          <AvistamientoEntryButton reporte={{ id: r.id }} />
+        )}
+
         <View style={{ backgroundColor: '#FFF5EE', borderRadius: 10, padding: 10, marginTop: 4 }}>
           <Text style={{ fontSize: 10, color: C.orange, fontStyle: 'italic' }}>📍 Ubicación exacta protegida por privacidad</Text>
         </View>
@@ -868,6 +897,7 @@ export default function MapScreen() {
             }}
             onSelectAsociacion={handleSelectAsociacion}
             onMapClick={handleMapClick}
+            ubicacionEnVivo={ubicacionEnVivo}
           />
         </Suspense>
       ) : (
@@ -906,6 +936,48 @@ export default function MapScreen() {
               {formatDistanceToNow(lastUpdated, { addSuffix: true, locale: es })}
             </Text>
           )}
+        </TouchableOpacity>
+      )}
+
+      {/* Estoy aquí */}
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel={estadoUbicacion === 'activo' ? 'Dejar de mostrar mi ubicación' : 'Mostrar mi ubicación en el mapa'}
+        onPress={toggleUbicacionEnVivo}
+        style={{
+          position: 'absolute', bottom: TAB_BAR_CLEARANCE + 52 + 12, right: 27,
+          width: 38, height: 38, borderRadius: 19, backgroundColor: '#FFFFFF',
+          alignItems: 'center', justifyContent: 'center',
+          shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 6,
+          zIndex: 1000, elevation: 10,
+        }}
+      >
+        {estadoUbicacion === 'solicitando' ? (
+          <ActivityIndicator size="small" color={Brand.info} />
+        ) : (
+          <Ionicons
+            name={estadoUbicacion === 'activo' ? 'locate' : 'locate-outline'}
+            size={18}
+            color={estadoUbicacion === 'denegado' || estadoUbicacion === 'error' ? '#E74C3C' : estadoUbicacion === 'activo' ? Brand.info : C.mid}
+          />
+        )}
+      </TouchableOpacity>
+      {(estadoUbicacion === 'denegado' || estadoUbicacion === 'error') && (
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="Reintentar activar mi ubicación"
+          onPress={activarUbicacion}
+          style={{
+            position: 'absolute', bottom: TAB_BAR_CLEARANCE + 52 + 12, right: 74, left: 16,
+            backgroundColor: 'rgba(255,255,255,0.96)', borderRadius: 13,
+            paddingHorizontal: 12, paddingVertical: 9, zIndex: 999, elevation: 9,
+          }}
+        >
+          <Text style={{ color: C.dark, fontSize: 10, fontWeight: '700' }}>
+            {estadoUbicacion === 'denegado'
+              ? 'Necesitamos tu ubicación. Actívala en los permisos del navegador y toca para reintentar.'
+              : 'No pudimos obtener tu ubicación. Toca para reintentar.'}
+          </Text>
         </TouchableOpacity>
       )}
 
@@ -1116,6 +1188,9 @@ export default function MapScreen() {
             <View style={{ marginTop: 12 }}>
               <AnimalCarousel key={r.id} animales={animales} compact onIndexChange={(i) => setFotoIndexPorReporte((prev) => ({ ...prev, [r.id]: i }))} />
             </View>
+          )}
+          {!['cerrado', 'cancelado_por_reportante', 'rechazado', 'rescatado'].includes(r.estado_reporte ?? '') && (
+            <AvistamientoEntryButton reporte={{ id: r.id }} onBeforeNavigate={hideSheet} />
           )}
           <View style={{ backgroundColor: '#FFF5EE', borderRadius: 10, padding: 8, marginTop: 12 }}>
             <Text style={{ fontSize: 10, color: C.orange, fontStyle: 'italic' }}>📍 Ubicación exacta protegida por privacidad</Text>

@@ -78,6 +78,7 @@ export const Brand = {
   textMuted: '#7A6A5E', // texto secundario sobre fondos cálidos
   textFaint: '#9B8B7E', // texto terciario (labels chicos)
   danger: '#D94025', // rojo — condición grave, alertas
+  info: '#4285F4', // azul — punto "estoy aquí" (ubicación en vivo, personal), sin otro uso hoy
 } as const;
 
 export const CondicionColors = {
