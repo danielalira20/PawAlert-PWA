@@ -193,9 +193,11 @@ contrato del modulo de adopciones.
 La implementacion debe separar como minimo:
 
 - `eventos_asociacion`;
+- `versiones_evento_asociacion`;
 - `eventos_colaboradores`;
 - `eventos_perfiles_adopcion`;
 - `eventos_guardados`;
+- `reportes_evento_asociacion`;
 - `historial_evento`.
 
 Restricciones minimas:
@@ -227,6 +229,7 @@ Usuario autenticado:
 ```text
 POST   /events/{event_id}/save
 DELETE /events/{event_id}/save
+POST   /events/{event_id}/report
 GET    /me/saved-events
 ```
 
