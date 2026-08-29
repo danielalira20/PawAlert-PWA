@@ -68,6 +68,7 @@ interface AvistamientoPendiente {
   comentario?: string | null;
   evidencia_id?: string | null;
   foto_url?: string | null;
+  advertencia_visual?: string | null;
   registrado_por?: string | null;
 }
 
@@ -191,6 +192,12 @@ function DetalleAvistamiento({
       )}
       {!!avistamiento.comentario && (
         <Text style={styles.notaTexto}>“{avistamiento.comentario}”</Text>
+      )}
+      {!!avistamiento.advertencia_visual && (
+        <View style={styles.avisoVisual}>
+          <Ionicons name="eye-outline" size={14} color={COLORS.warning} />
+          <Text style={styles.avisoVisualTexto}>{avistamiento.advertencia_visual}</Text>
+        </View>
       )}
     </View>
   );
@@ -452,6 +459,12 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: COLORS.warnBorder,
   },
   avisoConflictoTexto: { flex: 1, color: COLORS.textDark, fontSize: 12, lineHeight: 17 },
+  avisoVisual: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 6,
+    backgroundColor: COLORS.warnSoft, borderRadius: 10, padding: 8,
+    borderWidth: 1, borderColor: COLORS.warnBorder, marginTop: 8,
+  },
+  avisoVisualTexto: { flex: 1, color: COLORS.textDark, fontSize: 11, lineHeight: 15 },
   comparativa: { gap: 12, paddingVertical: 2 },
   columnaComparativa: {
     width: 210, backgroundColor: COLORS.white, borderRadius: 14, padding: 12,
