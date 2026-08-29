@@ -211,6 +211,14 @@ durante la primera version.
 - pausa y reanudacion auditadas;
 - avisos de ingreso vinculados al outbox.
 
+### `0092_adopciones_editor_fotografias_operaciones.sql`
+
+- edicion de campos publicables en borrador o pausa;
+- invalidacion de revisiones cuando cambia el perfil;
+- registro privado de fotografias con metadatos verificados;
+- revision explicita de fotografias publicables;
+- retiro auditado y limpieza posterior del objeto en Storage.
+
 ### Migraciones operativas posteriores
 
 - solicitudes, seleccion, entregas y seguimientos;
