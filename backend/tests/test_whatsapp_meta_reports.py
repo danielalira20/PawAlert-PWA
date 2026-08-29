@@ -1,7 +1,9 @@
+import asyncio
 import hashlib
 import hmac
 import json
 
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from app.config import settings
@@ -71,7 +73,12 @@ def test_extrae_texto_y_ubicacion_del_payload():
                     {
                         "value": {
                             "messages": [
-                                {"id": "uno", "from": "5211111111111", "type": "text", "text": {"body": "Hola"}},
+                                {
+                                    "id": "uno",
+                                    "from": "5211111111111",
+                                    "type": "text",
+                                    "text": {"body": "Hola"},
+                                },
                                 {
                                     "id": "dos",
                                     "from": "5211111111111",
@@ -107,6 +114,27 @@ def test_extrae_imagen_de_meta():
     )
 
 
+def test_extrae_respuestas_interactivas_de_meta():
+    assert service._contenido(
+        {
+            "type": "interactive",
+            "interactive": {
+                "type": "button_reply",
+                "button_reply": {"id": "estable", "title": "Estable"},
+            },
+        }
+    ) == ("text", "estable")
+    assert service._contenido(
+        {
+            "type": "interactive",
+            "interactive": {
+                "type": "list_reply",
+                "list_reply": {"id": "corregir:ubicacion", "title": "Ubicación"},
+            },
+        }
+    ) == ("text", "corregir:ubicacion")
+
+
 def test_valida_opciones_con_acentos():
     assert service._validar_respuesta("tamanio", "text", "Pequeño") == (
         True,
@@ -140,3 +168,110 @@ def test_foto_es_aceptada_y_omitir_se_distingue():
     foto = {"media_id": "media-1", "mime_type": "image/jpeg"}
     assert service._validar_respuesta("foto", "image", foto) == (True, foto, None)
     assert service._validar_respuesta("foto", "text", "OMITIR") == (True, None, None)
+
+
+def test_opciones_interactivas_respetan_limites_de_meta():
+    assert all(
+        len(opciones) <= 10 for opciones in service.OPCIONES_INTERACTIVAS.values()
+    )
+    assert all(
+        len(titulo) <= 24
+        for opciones in service.OPCIONES_INTERACTIVAS.values()
+        for _, titulo in opciones
+    )
+    assert len(service.ETIQUETAS_CORRECCION) + 1 <= 10
+
+
+def test_foto_rechazada_conserva_respuestas_y_regresa_a_foto(monkeypatch):
+    guardado = {}
+    enviados = []
+    respuestas = {
+        "nombre": "Miguel",
+        "cantidad": 1,
+        "foto": {"media_id": "mala"},
+        "tipo_animal": "perro",
+    }
+
+    async def crear(*_args, **_kwargs):
+        raise HTTPException(status_code=422, detail="No se ve un animal real.")
+
+    async def enviar(_wa_id, texto, **_kwargs):
+        enviados.append(texto)
+
+    def guardar(_wa_id, estado, datos):
+        guardado.update(estado=estado, respuestas=dict(datos))
+
+    monkeypatch.setattr(service, "_crear_desde_respuestas", crear)
+    monkeypatch.setattr(service, "enviar_texto", enviar)
+    monkeypatch.setattr(service, "_guardar_sesion", guardar)
+
+    resultado = asyncio.run(
+        service._crear_reporte_con_recuperacion("5212210000000", respuestas)
+    )
+
+    assert resultado is None
+    assert guardado["estado"] == "foto"
+    assert "foto" not in guardado["respuestas"]
+    assert guardado["respuestas"]["nombre"] == "Miguel"
+    assert guardado["respuestas"]["_corrigiendo"] == "foto"
+    assert "No perdiste tus demás respuestas" in enviados[0]
+
+
+def test_despedida_incluye_folio_sitio_y_vista_previa(monkeypatch):
+    enviado = {}
+
+    async def enviar(_wa_id, texto, *, preview_url=False):
+        enviado.update(texto=texto, preview_url=preview_url)
+
+    monkeypatch.setattr(service, "enviar_texto", enviar)
+    asyncio.run(service._enviar_reporte_creado("5212210000000", "folio-123"))
+
+    assert "folio-123" in enviado["texto"]
+    assert service.SITIO_PAWALERT in enviado["texto"]
+    assert enviado["preview_url"] is True
+
+
+def test_es_reinicio_reconoce_ordenes_de_nuevo_reporte():
+    assert service._es_reinicio("Quiero hacer un reporte")
+    assert service._es_reinicio("  NUEVO   REPORTE ")
+    assert service._es_reinicio("Quiero hacer otro reporte")
+    assert not service._es_reinicio("Miguel")
+    assert not service._es_reinicio("estable")
+
+
+def test_comando_de_reinicio_borra_sesion_atorada_y_reinicia(monkeypatch):
+    eliminadas = []
+    guardado = {}
+    preguntas = []
+
+    monkeypatch.setattr(service, "_registrar_mensaje", lambda *_a: True)
+    monkeypatch.setattr(
+        service,
+        "_sesion",
+        lambda _wa_id: {"estado": "cantidad", "respuestas": {"nombre": "Miguel"}},
+    )
+    monkeypatch.setattr(service, "_eliminar_sesion", lambda wa_id: eliminadas.append(wa_id))
+
+    def guardar(_wa_id, estado, datos):
+        guardado.update(estado=estado, respuestas=dict(datos))
+
+    async def enviar_pregunta(_wa_id, estado):
+        preguntas.append(estado)
+
+    monkeypatch.setattr(service, "_guardar_sesion", guardar)
+    monkeypatch.setattr(service, "enviar_pregunta", enviar_pregunta)
+
+    asyncio.run(
+        service._procesar_mensaje(
+            {
+                "id": "msg-1",
+                "from": "5212210000000",
+                "type": "text",
+                "text": {"body": "Quiero hacer un reporte"},
+            }
+        )
+    )
+
+    assert eliminadas == ["5212210000000"]
+    assert guardado == {"estado": service.INICIO, "respuestas": {}}
+    assert preguntas == [service.INICIO]
