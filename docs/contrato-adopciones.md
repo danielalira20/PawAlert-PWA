@@ -7,7 +7,8 @@ confundir la adopcion con el cierre de un reporte o de una custodia temporal.
 
 ## Decisiones obligatorias
 
-- Solo una asociacion verificada puede coordinar y publicar una adopcion.
+- Solo una asociacion verificada y activa puede coordinar y publicar una
+  adopcion.
 - Cada perfil de adopcion representa a un solo animal. Un reporte grupal debe
   individualizar a cada animal antes de publicarlo.
 - Un voluntario o casa temporal puede proponer un ingreso, pero no publicar,
@@ -56,9 +57,9 @@ perfil publico.
 | Suspender por seguridad | No | No | No | Perfil propio | Si |
 
 `Asociacion` incluye al rol `asociacion` y a su `staff`, siempre que el usuario
-pertenezca a la misma asociacion y esta conserve `verificado = true`. El
-backend debe comprobar rol, pertenencia y verificacion en cada accion; no es
-suficiente ocultar botones.
+pertenezca a la misma asociacion y esta conserve `verificado = true` y
+`activo = true`. El backend debe comprobar rol, pertenencia, verificacion y
+actividad en cada accion; no es suficiente ocultar botones.
 
 Administracion modera y resuelve incidentes. No sustituye a la asociacion en
 la evaluacion ordinaria ni selecciona adoptantes, salvo una intervencion
@@ -75,6 +76,12 @@ existente. Solo se habilita si:
 - el animal esta localizado, con vida y no tiene un resultado incompatible;
 - no hay otra solicitud de ingreso abierta para el mismo animal;
 - el animal no tiene ya un perfil no terminal.
+
+Como `custodias_temporales` pertenece al reporte completo, la propuesta debe
+incluir siempre el `animal_id`. Si la ficha de origen tiene `es_grupo = true`,
+tambien incluye `origen_individuo`, un numero entre 1 y `animal.cantidad`. La
+pareja permite identificar a cada integrante sin publicar al grupo como una
+sola adopcion.
 
 Si no existe coordinadora, la interfaz muestra `Solicitar coordinacion para
 adopcion`. Esa accion crea un caso administrativo de vinculacion, pero no una
@@ -302,7 +309,7 @@ La asociacion responsable siempre es obligatoria.
 Restricciones minimas de base de datos:
 
 - una solicitud de ingreso abierta por animal;
-- un perfil no terminal por animal de PawAlert;
+- un perfil no terminal por pareja `animal_id` y `origen_individuo`;
 - una solicitud no terminal por persona y perfil;
 - una solicitud seleccionada por perfil;
 - una entrega activa por perfil;

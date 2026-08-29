@@ -11,7 +11,7 @@ estados completamente independientes.
 
 ## Decisiones obligatorias
 
-- Solo asociaciones verificadas y su staff pueden crear eventos.
+- Solo asociaciones verificadas y activas, y su staff, pueden crear eventos.
 - El evento pertenece a una asociacion organizadora responsable.
 - La ubicacion publicada debe ser un establecimiento o punto autorizado para
   recibir asistentes; nunca se reutiliza la ubicacion de una custodia.
@@ -49,13 +49,16 @@ identificable ni actividades incompatibles con bienestar animal.
 | Vincular colaborador | No | No | Propios | No | Acepta |
 | Suspender por seguridad | No | No | No | Si | No |
 
-El backend comprueba rol, `asociacion_id` y `verificado = true` para cada
-escritura. Un `staff` solo opera eventos de su asociacion. Perder la
-verificacion pausa las publicaciones hasta una revision administrativa.
+El backend comprueba rol, `asociacion_id`, `verificado = true` y
+`activo = true` para cada escritura. Un `staff` solo opera eventos de su
+asociacion. Perder la verificacion o quedar inactiva pausa las publicaciones
+hasta una revision administrativa.
 
 Un aliado puede aportar espacio, insumos o servicios mediante la Red de
 Aliados, pero no se convierte por ello en organizador. Para aparecer como
-colaborador debe existir una invitacion aceptada por su perfil verificado.
+colaborador debe existir una invitacion aceptada por su registro en
+`perfil_apoyo`, con `verificado_admin = true`. No se usa `usuarios.rol_id`
+para comprobar esta capacidad.
 
 ## Datos del evento
 
