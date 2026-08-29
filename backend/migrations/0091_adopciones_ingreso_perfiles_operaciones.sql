@@ -288,17 +288,20 @@ BEGIN
     );
   END IF;
 
-  SELECT custodia, voluntario.usuario_id
-  INTO v_custodia, v_usuario_custodio_id
+  SELECT custodia.*
+  INTO v_custodia
   FROM public.custodias_temporales custodia
-  LEFT JOIN public.voluntarios voluntario
-    ON voluntario.id = custodia.voluntario_id
   WHERE custodia.id = p_custodia_id
-  FOR UPDATE OF custodia;
+  FOR UPDATE;
 
   IF NOT FOUND THEN
     RAISE EXCEPTION 'custodia_no_encontrada' USING ERRCODE = 'P0002';
   END IF;
+
+  SELECT voluntario.usuario_id
+  INTO v_usuario_custodio_id
+  FROM public.voluntarios voluntario
+  WHERE voluntario.id = v_custodia.voluntario_id;
 
   IF v_usuario_custodio_id IS DISTINCT FROM p_actor_usuario_id THEN
     RAISE EXCEPTION 'actor_no_es_custodio_activo' USING ERRCODE = '42501';

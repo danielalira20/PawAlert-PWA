@@ -20,6 +20,8 @@ def test_completa_aclaraciones_revision_y_version_de_requisitos():
 def test_propuesta_exige_custodio_activo_asociacion_y_animal_compatible():
     assert "proponer_ingreso_adopcion_desde_custodia" in MIGRACION
     assert "voluntario.usuario_id" in MIGRACION
+    assert "SELECT custodia.*\n  INTO v_custodia" in MIGRACION
+    assert "INTO v_custodia, v_usuario_custodio_id" not in MIGRACION
     assert "actor_no_es_custodio_activo" in MIGRACION
     assert "('activo', 'extension_pendiente')" in MIGRACION
     assert "asociacion_coordinadora_no_operativa" in MIGRACION
