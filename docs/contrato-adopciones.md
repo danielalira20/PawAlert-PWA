@@ -162,6 +162,11 @@ Los estados `adoptado`, `retirado` y `fallecido` son terminales. Una correccion
 posterior requiere una operacion administrativa auditada, no una edicion
 directa.
 
+La moderacion se guarda por separado en `estado_moderacion`, con valores
+`visible` o `suspendido`. Suspender oculta el perfil, pero no cambia su estado
+de adopcion ni cancela una seleccion o entrega en curso. La accion exige actor,
+fecha y motivo, y restaurarla exige un nuevo evento administrativo.
+
 Antes de publicar, la asociacion debe confirmar que reviso la situacion medica
 y juridica disponible. `Desconocido` es valido para un dato clinico que aun no
 se conoce, pero debe mostrarse como tal; nunca se convierte en `completo` por
