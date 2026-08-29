@@ -742,6 +742,77 @@ def autorizar_subida_evidencia(reporte_id: str, usuario_id: str) -> None:
         )
 
 
+def _fotos_referencia_animal(animal_id: str, limite: int = 2) -> list[str]:
+    """Fotos originales del animal reportado, para comparar contra la foto
+    de un avistamiento. Como mucho `limite` -- no hace falta mandarle a
+    Gemini todas las que haya si el reporte trae varias."""
+    resultado = (
+        supabase_admin.table("animal_fotos")
+        .select("foto_url")
+        .eq("animal_id", animal_id)
+        .order("orden")
+        .limit(limite)
+        .execute()
+    )
+    return [
+        fila["foto_url"]
+        for fila in (resultado.data or [])
+        if fila.get("foto_url")
+    ]
+
+
+def _verificar_coherencia_visual(*, animal_id: str, evidencia_id: str) -> dict:
+    """Compara la foto del avistamiento contra las fotos originales del
+    animal reportado (Gemini). Lanza 422 solo si Gemini determina con
+    claridad que la foto no muestra un animal real o que la especie no
+    coincide -- una coincidencia dudosa nunca bloquea, solo deja una
+    advertencia; un fallo tecnico o la falta de fotos de referencia tampoco
+    bloquean nada (mismo criterio fail-safe que el resto del modulo).
+
+    Devuelve los campos listos para mezclar en el INSERT de
+    avistamientos_animal, o {} si no hay nada que guardar.
+    """
+    fotos_evidencia = _fotos_por_evidencia([evidencia_id])
+    foto_avistamiento_url = fotos_evidencia.get(evidencia_id)
+    if not foto_avistamiento_url:
+        return {}
+
+    fotos_referencia = _fotos_referencia_animal(animal_id)
+
+    from app.services.avistamiento_vision_service import (
+        MENSAJE_ESPECIE_NO_COINCIDE,
+        MENSAJE_NO_ES_ANIMAL,
+        mensaje_advertencia_coincidencia_baja,
+        verificar_coherencia_avistamiento,
+    )
+
+    resultado = verificar_coherencia_avistamiento(
+        foto_avistamiento_url, fotos_referencia
+    )
+    if resultado.get("estado") != "completado":
+        return {}
+
+    if resultado.get("es_animal_real") is False:
+        raise HTTPException(status_code=422, detail=MENSAJE_NO_ES_ANIMAL)
+    if resultado.get("especie_coincide") is False:
+        raise HTTPException(status_code=422, detail=MENSAJE_ESPECIE_NO_COINCIDE)
+
+    probabilidad = resultado.get("probabilidad_mismo_animal")
+    advertencia = None
+    if (
+        isinstance(probabilidad, (int, float))
+        and probabilidad < settings.avistamiento_umbral_probabilidad_mismo_animal
+    ):
+        advertencia = mensaje_advertencia_coincidencia_baja()
+
+    return {
+        "analisis_ia_estado": resultado.get("estado"),
+        "analisis_ia_probabilidad_mismo_animal": probabilidad,
+        "analisis_ia_modelo": resultado.get("modelo"),
+        "advertencia_visual": advertencia,
+    }
+
+
 def _vincular_evidencia_avistamiento(
     *,
     evidencia_id: str,
@@ -797,6 +868,7 @@ def registrar_avistamiento(
 
     # Se vincula ANTES del insert: si la evidencia no existe / no es de este
     # reporte / ya fue usada, el avistamiento no llega a crearse.
+    analisis_visual: dict = {}
     if data.evidencia_id:
         _vincular_evidencia_avistamiento(
             evidencia_id=data.evidencia_id,
@@ -804,6 +876,12 @@ def registrar_avistamiento(
             usuario_id=usuario_id,
             latitud=data.latitud,
             longitud=data.longitud,
+        )
+        # Igual que la vinculacion de arriba: si Gemini determina que la
+        # foto no es un animal real o no coincide de especie, el
+        # avistamiento no llega a crearse (HTTPException se propaga).
+        analisis_visual = _verificar_coherencia_visual(
+            animal_id=data.animal_id, evidencia_id=data.evidencia_id
         )
 
     auto_validado = fuente in (
@@ -831,6 +909,7 @@ def registrar_avistamiento(
                 "comentario": data.comentario,
                 "evidencia_id": data.evidencia_id,
                 "estado_validacion": "validado" if auto_validado else "pendiente",
+                **analisis_visual,
             }
         )
         .execute()
@@ -955,6 +1034,7 @@ def listar_pendientes_asociacion(asociacion_id: str) -> list[dict]:
             "id, reporte_id, animal_id, latitud, longitud, precision_metros, "
             "observado_at, registrado_at, fuente, movilidad_observada, "
             "direccion_observada, comentario, evidencia_id, usuario_id, "
+            "advertencia_visual, "
             "usuarios(nombre, apellido_paterno), "
             "animal(orden, tipo_animal_catalogo(clave)), "
             # El nombre de la FK es obligatorio: hay DOS relaciones entre
@@ -1026,6 +1106,7 @@ def listar_pendientes_asociacion(asociacion_id: str) -> list[dict]:
                 "evidencia_id": fila.get("evidencia_id"),
                 "foto_url": fotos.get(fila.get("evidencia_id")),
                 "registrado_por": _nombre_de(fila.get("usuarios")),
+                "advertencia_visual": fila.get("advertencia_visual"),
             }
         )
 
