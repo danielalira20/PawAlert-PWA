@@ -40,6 +40,7 @@ const FUENTE_LABEL: Record<string, string> = {
   confirmacion_reportante: 'Reportante del caso',
   voluntario_asignado: 'Voluntario asignado',
   voluntario_verificado: 'Voluntario verificado',
+  testigo_cercano: 'Testigo cercano',
   asociacion: 'Asociación',
   administracion: 'Administración',
 };
@@ -247,21 +248,28 @@ export function AvistamientosPendientesPanel({ visible }: Props) {
     grupo: GrupoPendiente,
     avistamiento: AvistamientoPendiente,
     aprobar: boolean,
+    esFalso = false,
   ) => {
     if (resolviendoId) return;
     setResolviendoId(avistamiento.id);
     try {
       await axios.post(
         `${API_URL}/reports/${grupo.reporte_id}/avistamientos/${avistamiento.id}/validar`,
-        { aprobar },
+        { aprobar, es_falso: esFalso },
         { headers },
       );
       showToast({
         type: 'success',
-        title: aprobar ? 'Avistamiento aprobado' : 'Avistamiento rechazado',
+        title: aprobar
+          ? 'Avistamiento aprobado'
+          : esFalso
+            ? 'Avistamiento marcado como falso'
+            : 'Avistamiento rechazado',
         message: aprobar
           ? 'La ubicación del caso quedó actualizada.'
-          : 'El avistamiento quedó descartado.',
+          : esFalso
+            ? 'Se descartó y se registró un incidente contra quien lo reportó.'
+            : 'El avistamiento quedó descartado.',
       });
       await cargar();
     } catch (error) {
@@ -382,6 +390,17 @@ export function AvistamientosPendientesPanel({ visible }: Props) {
                         >
                           <Text style={styles.botonTextoDangerLabel}>Rechazar</Text>
                         </TouchableOpacity>
+                        {avistamiento.fuente === 'testigo_cercano' && (
+                          <TouchableOpacity
+                            accessibilityRole="button"
+                            accessibilityLabel={`Marcar como falso avistamiento ${avistamiento.id}`}
+                            disabled={!!resolviendoId}
+                            onPress={() => void resolver(grupo, avistamiento, false, true)}
+                            style={styles.botonTextoDanger}
+                          >
+                            <Text style={styles.botonTextoDangerLabel}>Es falso</Text>
+                          </TouchableOpacity>
+                        )}
                       </View>
                     ))}
                   </ScrollView>
@@ -414,6 +433,17 @@ export function AvistamientosPendientesPanel({ visible }: Props) {
                       >
                         <Text style={styles.botonSecundarioTexto}>Rechazar</Text>
                       </TouchableOpacity>
+                      {avistamiento.fuente === 'testigo_cercano' && (
+                        <TouchableOpacity
+                          accessibilityRole="button"
+                          accessibilityLabel={`Marcar como falso avistamiento ${avistamiento.id}`}
+                          disabled={!!resolviendoId}
+                          onPress={() => void resolver(grupo, avistamiento, false, true)}
+                          style={styles.botonTextoDanger}
+                        >
+                          <Text style={styles.botonTextoDangerLabel}>Es falso</Text>
+                        </TouchableOpacity>
+                      )}
                     </View>
                   </View>
                 ))

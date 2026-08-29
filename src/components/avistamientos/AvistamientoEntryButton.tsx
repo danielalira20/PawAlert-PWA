@@ -29,13 +29,25 @@ export interface UsuarioParaAvistamiento {
   asociacion_id?: string | null;
 }
 
+/** Roles que pueden registrar un avistamiento como "testigo cercano" de un
+ * caso que no es el suyo (backend: LocationSource.testigo_cercano),
+ * siempre que además cumplan el trust_score mínimo -- eso solo lo valida
+ * el backend, aquí no se duplica. Aliado_local, staff y asociación quedan
+ * fuera a propósito. */
+const ROLES_TESTIGO_CERCANO = [
+  'voluntario_interno',
+  'donante_comunitario',
+  'patrocinador_institucional',
+];
+
 /**
  * Pre-filtro barato en cliente para decidir si se ofrece el punto de entrada.
  *
- * Deliberadamente NO calcula distancias: la verdad sobre el radio de entrada
- * la da `GET /reports/{id}/avistamientos/elegible` una vez dentro de la
- * pantalla. Aquí solo se descartan los casos que ni siquiera tiene sentido
- * ofrecer, para no mandar a nadie a una pantalla que le va a responder 403.
+ * Deliberadamente NO calcula distancias ni trust_score: la verdad sobre el
+ * radio de entrada y la elegibilidad real la da
+ * `GET /reports/{id}/avistamientos/elegible` una vez dentro de la pantalla.
+ * Aquí solo se descartan los casos que ni siquiera tiene sentido ofrecer,
+ * para no mandar a nadie a una pantalla que le va a responder 403 o 422.
  *
  * El voluntario asignado queda fuera a propósito: su camino para reportar
  * dónde está el animal son los hitos de rescate, no esta pantalla.
@@ -58,6 +70,11 @@ export function puedeRegistrarAvistamiento(
     return true;
   }
   if (usuario.rol === 'voluntario_externo') return true;
+  // Testigo cercano (Entrega C): el reportante SÍ entra aquí, pero solo
+  // para un caso que no es el suyo -- si lo fuera, ya habría salido true
+  // arriba. El resto de roles habilitados no tiene ese matiz.
+  if (usuario.rol === 'reportante') return true;
+  if (usuario.rol && ROLES_TESTIGO_CERCANO.includes(usuario.rol)) return true;
 
   return false;
 }
