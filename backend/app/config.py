@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     supabase_service_key: str
     supabase_bucket: str = "pawalert-fotos"
     supabase_sensitive_bucket: str = "pawalert-evidencias-privadas"
+    supabase_adoptions_bucket: str = "pawalert-adopciones-privado"
     brevo_api_key: str = ""
     cron_secret: str = ""
      # Twilio — verificación de teléfono para invitados que reclaman cuenta

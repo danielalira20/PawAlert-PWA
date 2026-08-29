@@ -368,7 +368,12 @@ Asociacion verificada:
 GET   /associations/me/adoption-intake-requests
 POST  /adoption-intake-requests/{request_id}/resolve
 POST  /associations/me/adoptions
+GET   /associations/me/adoptions
+GET   /associations/me/adoptions/{profile_id}
 PATCH /associations/me/adoptions/{profile_id}
+POST  /associations/me/adoptions/{profile_id}/photos
+POST  /associations/me/adoptions/{profile_id}/photos/{photo_id}/review
+DELETE /associations/me/adoptions/{profile_id}/photos/{photo_id}
 POST  /associations/me/adoptions/{profile_id}/publish
 POST  /associations/me/adoptions/{profile_id}/pause
 GET   /associations/me/adoptions/{profile_id}/applications
@@ -404,7 +409,14 @@ Las respuestas de escritura incluyen `id`, `estado`, `updated_at` y un
 
 ## Privacidad y almacenamiento
 
-Las fotografias aprobadas del perfil pueden ser publicas. Permanecen privadas:
+La carga de una fotografia usa `multipart/form-data` con `photo`, `orden`,
+`texto_alternativo` e `idempotency_key`. El backend valida el archivo real,
+lo convierte a JPEG sin EXIF y registra la fotografia como no aprobada. Una
+asociacion debe revisarla expresamente antes de publicar el perfil.
+
+Las fotografias aprobadas pueden mostrarse en el perfil publico mediante URLs
+firmadas, pero su bucket y `storage_path` permanecen privados. Tambien
+permanecen privados:
 
 - identificaciones y comprobantes de domicilio;
 - contratos y firmas;
@@ -412,9 +424,10 @@ Las fotografias aprobadas del perfil pueden ser publicas. Permanecen privadas:
 - notas internas y motivos sensibles;
 - evidencias de entrega y seguimiento que contengan datos personales.
 
-Los documentos privados se entregan mediante URLs firmadas de corta duracion.
-El backend valida permiso antes de firmar cada acceso. Las notificaciones no
-incluyen documentos, coordenadas, domicilios ni notas internas.
+Los documentos y fotografias privadas se entregan mediante URLs firmadas de
+corta duracion. El backend valida permiso antes de firmar cada acceso y nunca
+devuelve `storage_path`. Las notificaciones no incluyen documentos,
+coordenadas, domicilios ni notas internas.
 
 ## Historial y notificaciones
 

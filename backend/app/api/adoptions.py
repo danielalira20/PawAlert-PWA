@@ -1,7 +1,7 @@
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
 
 from app.db.supabase import supabase
 from app.models.adoption import (
@@ -10,7 +10,10 @@ from app.models.adoption import (
     AdoptionIntakeCreate,
     AdoptionIntakeResolve,
     AdoptionProfilePause,
+    AdoptionProfilePhotoRemove,
+    AdoptionProfilePhotoReview,
     AdoptionProfilePublish,
+    AdoptionProfileUpdate,
     FormalAdoptionProfileCreate,
 )
 from app.services import adoption_service
@@ -190,6 +193,106 @@ def get_association_adoption_profiles(
     association_id = _association_context(user)
     return _call(
         lambda: adoption_service.listar_perfiles_asociacion(association_id)
+    )
+
+
+@router.get("/associations/me/adoptions/{profile_id}")
+def get_association_adoption_profile(
+    profile_id: UUID,
+    authorization: Optional[str] = Header(None),
+):
+    user = _authenticated_user(authorization)
+    association_id = _association_context(user)
+    return _call(
+        lambda: adoption_service.obtener_perfil_asociacion(
+            str(profile_id), association_id
+        )
+    )
+
+
+@router.patch("/associations/me/adoptions/{profile_id}")
+def update_adoption_profile(
+    profile_id: UUID,
+    body: AdoptionProfileUpdate,
+    authorization: Optional[str] = Header(None),
+):
+    user = _authenticated_user(authorization)
+    association_id = _association_context(user)
+    return _call(
+        lambda: adoption_service.actualizar_perfil(
+            str(profile_id),
+            association_id,
+            user["id"],
+            body,
+        )
+    )
+
+
+@router.post("/associations/me/adoptions/{profile_id}/photos", status_code=201)
+async def upload_adoption_profile_photo(
+    profile_id: UUID,
+    photo: UploadFile = File(...),
+    idempotency_key: str = Form(..., min_length=8, max_length=200),
+    orden: int | None = Form(None, ge=1, le=8),
+    texto_alternativo: str | None = Form(None, max_length=500),
+    authorization: Optional[str] = Header(None),
+):
+    user = _authenticated_user(authorization)
+    association_id = _association_context(user)
+    try:
+        return await adoption_service.subir_foto_perfil(
+            str(profile_id),
+            association_id,
+            user["id"],
+            photo,
+            order=orden,
+            alternative_text=texto_alternativo,
+            idempotency_key=idempotency_key,
+        )
+    except adoption_service.AdoptionServiceError as error:
+        raise HTTPException(
+            status_code=error.status_code,
+            detail=error.detail,
+        ) from error
+
+
+@router.post("/associations/me/adoptions/{profile_id}/photos/{photo_id}/review")
+def review_adoption_profile_photo(
+    profile_id: UUID,
+    photo_id: UUID,
+    body: AdoptionProfilePhotoReview,
+    authorization: Optional[str] = Header(None),
+):
+    user = _authenticated_user(authorization)
+    association_id = _association_context(user)
+    return _call(
+        lambda: adoption_service.revisar_foto_perfil(
+            str(profile_id),
+            str(photo_id),
+            association_id,
+            user["id"],
+            body,
+        )
+    )
+
+
+@router.delete("/associations/me/adoptions/{profile_id}/photos/{photo_id}")
+def remove_adoption_profile_photo(
+    profile_id: UUID,
+    photo_id: UUID,
+    body: AdoptionProfilePhotoRemove,
+    authorization: Optional[str] = Header(None),
+):
+    user = _authenticated_user(authorization)
+    association_id = _association_context(user)
+    return _call(
+        lambda: adoption_service.retirar_foto_perfil(
+            str(profile_id),
+            str(photo_id),
+            association_id,
+            user["id"],
+            body,
+        )
     )
 
 

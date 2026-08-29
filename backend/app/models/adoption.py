@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class AdoptionIntakeCreate(BaseModel):
@@ -153,6 +153,72 @@ class FormalAdoptionProfileCreate(BaseModel):
         cleaned = value.strip()
         if not cleaned:
             raise ValueError("La clave de idempotencia no puede estar vacía")
+        return cleaned
+
+
+class AdoptionProfileUpdate(BaseModel):
+    datos: FormalAdoptionProfileData
+    idempotency_key: str = Field(min_length=8, max_length=200)
+
+    @field_validator("idempotency_key")
+    @classmethod
+    def limpiar_idempotencia(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("La clave de idempotencia no puede estar vacía")
+        return cleaned
+
+    @model_validator(mode="after")
+    def requiere_al_menos_un_cambio(self):
+        if not self.datos.model_fields_set:
+            raise ValueError("Indica al menos un dato para actualizar")
+        for field_name in ("sexo", "edad_aproximada"):
+            if (
+                field_name in self.datos.model_fields_set
+                and getattr(self.datos, field_name) is None
+            ):
+                raise ValueError(f"{field_name} no puede quedar vacío")
+        return self
+
+
+class AdoptionProfilePhotoReview(BaseModel):
+    aprobada: bool
+    motivo: str | None = Field(default=None, max_length=2000)
+    idempotency_key: str = Field(min_length=8, max_length=200)
+
+    @field_validator("motivo")
+    @classmethod
+    def limpiar_motivo(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
+    @field_validator("idempotency_key")
+    @classmethod
+    def limpiar_idempotencia(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("La clave de idempotencia no puede estar vacía")
+        return cleaned
+
+    @model_validator(mode="after")
+    def requiere_motivo_al_rechazar(self):
+        if not self.aprobada and not self.motivo:
+            raise ValueError("Indica por qué la fotografía no puede publicarse")
+        return self
+
+
+class AdoptionProfilePhotoRemove(BaseModel):
+    motivo: str = Field(min_length=1, max_length=2000)
+    idempotency_key: str = Field(min_length=8, max_length=200)
+
+    @field_validator("motivo", "idempotency_key")
+    @classmethod
+    def limpiar_texto(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("El texto no puede estar vacío")
         return cleaned
 
 

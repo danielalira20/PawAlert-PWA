@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import logging
+from hashlib import sha256
 from typing import Callable
+
+from fastapi import UploadFile
 
 from app.db.supabase import supabase_admin
 from app.models.adoption import (
@@ -10,12 +13,27 @@ from app.models.adoption import (
     AdoptionIntakeCreate,
     AdoptionIntakeResolve,
     AdoptionProfilePause,
+    AdoptionProfilePhotoRemove,
+    AdoptionProfilePhotoReview,
     AdoptionProfilePublish,
+    AdoptionProfileUpdate,
     FormalAdoptionProfileCreate,
+)
+from app.services.image_evidence_service import (
+    ImagenEvidenciaInvalida,
+    MAX_IMAGE_BYTES,
+    procesar_imagen_evidencia,
+)
+from app.services.storage_service import (
+    ObjetoPrivadoYaExiste,
+    crear_url_firmada_adopcion,
+    eliminar_objeto_adopcion,
+    subir_bytes_adopcion,
 )
 
 
 logger = logging.getLogger(__name__)
+MAX_ADOPTION_PHOTO_BYTES = 10 * 1024 * 1024
 
 
 ERROR_STATUS = {
@@ -39,6 +57,9 @@ ERROR_STATUS = {
     "perfil_adopcion_no_publicable": 409,
     "perfil_adopcion_suspendido": 409,
     "perfil_adopcion_no_pausable": 409,
+    "perfil_adopcion_no_editable": 409,
+    "perfil_adopcion_limite_fotos": 409,
+    "foto_perfil_adopcion_no_encontrada": 404,
     "idempotency_key_ingreso_en_conflicto": 409,
     "idempotency_key_aclaracion_en_conflicto": 409,
     "idempotency_key_cancelacion_en_conflicto": 409,
@@ -46,12 +67,30 @@ ERROR_STATUS = {
     "idempotency_key_perfil_formal_en_conflicto": 409,
     "idempotency_key_publicacion_en_conflicto": 409,
     "idempotency_key_pausa_en_conflicto": 409,
+    "idempotency_key_actualizacion_perfil_en_conflicto": 409,
+    "idempotency_key_registro_foto_en_conflicto": 409,
+    "idempotency_key_revision_foto_en_conflicto": 409,
+    "idempotency_key_retiro_foto_en_conflicto": 409,
     "individuo_animal_invalido": 422,
     "fecha_disponibilidad_custodia_invalida": 422,
     "fotos_propuesta_invalidas": 422,
     "perfil_adopcion_datos_publicacion_incompletos": 422,
     "perfil_adopcion_sin_foto_aprobada": 422,
     "revision_publicacion_incompleta": 422,
+    "actualizacion_perfil_incompleta": 422,
+    "actualizacion_perfil_contiene_campos_no_permitidos": 422,
+    "compatibilidad_perfil_invalida": 422,
+    "vacunacion_estado_invalido": 422,
+    "esterilizacion_estado_invalido": 422,
+    "revision_medica_estado_invalido": 422,
+    "sexo_perfil_invalido": 422,
+    "edad_aproximada_perfil_invalida": 422,
+    "registro_foto_perfil_incompleto": 422,
+    "storage_path_foto_perfil_invalido": 422,
+    "revision_foto_perfil_incompleta": 422,
+    "retiro_foto_perfil_incompleto": 422,
+    "foto_perfil_invalida": 422,
+    "adopcion_storage_no_disponible": 503,
     "requisitos_base_adopcion_no_disponibles": 503,
 }
 
@@ -77,12 +116,29 @@ ERROR_DETAIL = {
     "perfil_adopcion_no_publicable": "El perfil no puede publicarse desde su estado actual.",
     "perfil_adopcion_suspendido": "El perfil está suspendido y no puede publicarse.",
     "perfil_adopcion_no_pausable": "Solo un perfil publicado puede pausarse.",
+    "perfil_adopcion_no_editable": "Solo puedes editar un borrador o un perfil pausado.",
+    "perfil_adopcion_limite_fotos": "El perfil ya tiene el máximo de ocho fotografías.",
+    "foto_perfil_adopcion_no_encontrada": "No se encontró la fotografía dentro de este perfil.",
     "individuo_animal_invalido": "Selecciona correctamente al animal de la ficha grupal.",
     "fecha_disponibilidad_custodia_invalida": "La disponibilidad del hogar temporal debe terminar en una fecha futura.",
     "fotos_propuesta_invalidas": "Adjunta entre una y cinco fotografías privadas válidas.",
     "perfil_adopcion_datos_publicacion_incompletos": "Completa los datos públicos del animal antes de publicar.",
     "perfil_adopcion_sin_foto_aprobada": "Aprueba al menos una fotografía antes de publicar.",
     "revision_publicacion_incompleta": "Confirma la revisión médica y jurídica antes de publicar.",
+    "actualizacion_perfil_incompleta": "Indica al menos un dato válido para actualizar.",
+    "actualizacion_perfil_contiene_campos_no_permitidos": "La actualización contiene campos que no pueden editarse.",
+    "compatibilidad_perfil_invalida": "La compatibilidad debe tener un formato válido.",
+    "vacunacion_estado_invalido": "Selecciona un estado de vacunación válido.",
+    "esterilizacion_estado_invalido": "Selecciona un estado de esterilización válido.",
+    "revision_medica_estado_invalido": "Selecciona un estado de revisión médica válido.",
+    "sexo_perfil_invalido": "Selecciona un sexo válido.",
+    "edad_aproximada_perfil_invalida": "Selecciona una edad aproximada válida.",
+    "registro_foto_perfil_incompleto": "La fotografía no contiene todos los datos necesarios.",
+    "storage_path_foto_perfil_invalido": "La fotografía no pertenece a este perfil.",
+    "revision_foto_perfil_incompleta": "Indica si la fotografía puede publicarse y el motivo cuando sea rechazada.",
+    "retiro_foto_perfil_incompleto": "Indica el motivo para retirar la fotografía.",
+    "foto_perfil_invalida": "Selecciona una fotografía JPG, PNG o WEBP de hasta 15 MB.",
+    "adopcion_storage_no_disponible": "No se pudo guardar la fotografía. Intenta nuevamente.",
     "requisitos_base_adopcion_no_disponibles": "Los requisitos de adopción no están disponibles temporalmente.",
     "idempotency_key_ingreso_en_conflicto": "La misma operación fue enviada antes con datos diferentes.",
     "idempotency_key_aclaracion_en_conflicto": "La misma aclaración fue enviada antes con datos diferentes.",
@@ -91,6 +147,10 @@ ERROR_DETAIL = {
     "idempotency_key_perfil_formal_en_conflicto": "El mismo alta formal fue enviada antes con datos diferentes.",
     "idempotency_key_publicacion_en_conflicto": "La misma publicación fue enviada antes para otro perfil.",
     "idempotency_key_pausa_en_conflicto": "La misma pausa fue enviada antes con datos diferentes.",
+    "idempotency_key_actualizacion_perfil_en_conflicto": "La misma actualización fue enviada antes con datos diferentes.",
+    "idempotency_key_registro_foto_en_conflicto": "La misma carga fue enviada antes con una fotografía diferente.",
+    "idempotency_key_revision_foto_en_conflicto": "La misma revisión fue enviada antes con datos diferentes.",
+    "idempotency_key_retiro_foto_en_conflicto": "El mismo retiro fue enviado antes con datos diferentes.",
 }
 
 
@@ -257,6 +317,73 @@ def pausar_perfil(
     )
 
 
+def actualizar_perfil(
+    profile_id: str,
+    association_id: str,
+    actor_user_id: str,
+    body: AdoptionProfileUpdate,
+) -> dict:
+    return _rpc(
+        "actualizar_borrador_perfil_adopcion",
+        {
+            "p_perfil_id": profile_id,
+            "p_asociacion_id": association_id,
+            "p_actor_usuario_id": actor_user_id,
+            "p_datos": body.datos.model_dump(
+                mode="json",
+                exclude_unset=True,
+            ),
+            "p_idempotency_key": body.idempotency_key,
+        },
+    )
+
+
+def revisar_foto_perfil(
+    profile_id: str,
+    photo_id: str,
+    association_id: str,
+    actor_user_id: str,
+    body: AdoptionProfilePhotoReview,
+) -> dict:
+    return _rpc(
+        "revisar_foto_perfil_adopcion",
+        {
+            "p_perfil_id": profile_id,
+            "p_foto_id": photo_id,
+            "p_asociacion_id": association_id,
+            "p_actor_usuario_id": actor_user_id,
+            "p_aprobada": body.aprobada,
+            "p_motivo": body.motivo,
+            "p_idempotency_key": body.idempotency_key,
+        },
+    )
+
+
+def retirar_foto_perfil(
+    profile_id: str,
+    photo_id: str,
+    association_id: str,
+    actor_user_id: str,
+    body: AdoptionProfilePhotoRemove,
+) -> dict:
+    result = _rpc(
+        "retirar_foto_perfil_adopcion",
+        {
+            "p_perfil_id": profile_id,
+            "p_foto_id": photo_id,
+            "p_asociacion_id": association_id,
+            "p_actor_usuario_id": actor_user_id,
+            "p_motivo": body.motivo,
+            "p_idempotency_key": body.idempotency_key,
+        },
+    )
+    storage_path = result.pop("storage_path", None)
+    result["storage_cleanup_pending"] = bool(
+        storage_path and not eliminar_objeto_adopcion(storage_path)
+    )
+    return result
+
+
 def _query(operation: str, query_factory: Callable[[], object]) -> list[dict]:
     try:
         response = query_factory().execute()
@@ -269,6 +396,203 @@ def _query(operation: str, query_factory: Callable[[], object]) -> list[dict]:
     if not isinstance(data, list):
         raise AdoptionServiceError("adopcion_respuesta_invalida")
     return data
+
+
+def _obtener_perfil_asociacion(
+    profile_id: str,
+    association_id: str,
+    *,
+    editable: bool = False,
+) -> dict:
+    profiles = _query(
+        "obtener perfil de asociación",
+        lambda: supabase_admin.table("perfiles_adopcion")
+        .select(
+            "id, solicitud_ingreso_id, origen, custodia_id, reporte_id, animal_id, "
+            "origen_individuo, nombre_publico, tipo_animal_id, tipo_animal_otro_id, "
+            "tamanio_id, raza_id, sexo, edad_aproximada, descripcion, personalidad, "
+            "salud_conocida, tratamientos, necesidades_especiales, vacunacion_estado, "
+            "esterilizacion_estado, revision_medica_estado, compatibilidad, zona_general, "
+            "estado, estado_moderacion, revision_medica_confirmada, "
+            "revision_juridica_confirmada, revision_publicacion_at, "
+            "requisitos_base_version, plantilla_requisitos_id, plantilla_version, "
+            "publicado_at, pausado_at, creado_at, actualizado_at"
+        )
+        .eq("id", profile_id)
+        .eq("asociacion_id", association_id)
+        .limit(1),
+    )
+    if not profiles:
+        raise AdoptionServiceError("perfil_adopcion_no_encontrado")
+    profile = profiles[0]
+    if editable and profile.get("estado") not in ("borrador", "pausado"):
+        raise AdoptionServiceError("perfil_adopcion_no_editable")
+    return profile
+
+
+def _foto_con_acceso_temporal(photo: dict) -> dict:
+    acceso: dict | None = None
+    try:
+        acceso = crear_url_firmada_adopcion(photo["storage_path"])
+    except Exception:
+        logger.warning(
+            "No se pudo firmar una fotografía privada de adopción",
+            exc_info=True,
+        )
+    return {
+        "id": photo["id"],
+        "mime_type": photo.get("mime_type"),
+        "size_bytes": photo.get("size_bytes"),
+        "orden": photo.get("orden"),
+        "texto_alternativo": photo.get("texto_alternativo"),
+        "aprobada_publicacion": photo.get("aprobada_publicacion", False),
+        "aprobada_at": photo.get("aprobada_at"),
+        "creada_at": photo.get("creada_at"),
+        "actualizada_at": photo.get("actualizada_at"),
+        "foto_url": acceso["url"] if acceso else None,
+        "foto_url_expira_at": acceso["expira_at"] if acceso else None,
+    }
+
+
+def _reemplazar_paths_ingreso_con_accesos(row: dict) -> dict:
+    paths = row.pop("fotos_propuesta_paths", None) or []
+    photos: list[dict] = []
+    for path in paths:
+        try:
+            access = crear_url_firmada_adopcion(path)
+        except Exception:
+            logger.warning(
+                "No se pudo firmar una fotografía privada de ingreso",
+                exc_info=True,
+            )
+            access = None
+        photos.append(
+            {
+                "foto_url": access["url"] if access else None,
+                "foto_url_expira_at": access["expira_at"] if access else None,
+            }
+        )
+    row["fotos_propuesta"] = photos
+    return row
+
+
+def _adjuntar_fotos_privadas(profiles: list[dict]) -> list[dict]:
+    profile_ids = [profile["id"] for profile in profiles]
+    if not profile_ids:
+        return profiles
+    photos = _query(
+        "listar fotografías privadas de adopción",
+        lambda: supabase_admin.table("fotos_perfil_adopcion")
+        .select(
+            "id, perfil_adopcion_id, storage_path, mime_type, size_bytes, orden, "
+            "texto_alternativo, aprobada_publicacion, aprobada_at, creada_at, "
+            "actualizada_at"
+        )
+        .in_("perfil_adopcion_id", profile_ids)
+        .order("orden"),
+    )
+    grouped: dict[str, list[dict]] = {profile_id: [] for profile_id in profile_ids}
+    for photo in photos:
+        profile_id = photo.get("perfil_adopcion_id")
+        if profile_id in grouped:
+            grouped[profile_id].append(_foto_con_acceso_temporal(photo))
+    for profile in profiles:
+        profile["fotos"] = grouped[profile["id"]]
+    return profiles
+
+
+async def subir_foto_perfil(
+    profile_id: str,
+    association_id: str,
+    actor_user_id: str,
+    photo: UploadFile,
+    *,
+    order: int | None,
+    alternative_text: str | None,
+    idempotency_key: str,
+) -> dict:
+    _obtener_perfil_asociacion(profile_id, association_id, editable=True)
+    idempotency_key = idempotency_key.strip()
+    alternative_text = (
+        alternative_text.strip() if alternative_text else None
+    ) or None
+    if len(idempotency_key) < 8 or len(idempotency_key) > 200:
+        raise AdoptionServiceError("registro_foto_perfil_incompleto")
+    if order is not None and not 1 <= order <= 8:
+        raise AdoptionServiceError("registro_foto_perfil_incompleto")
+    if alternative_text and len(alternative_text) > 500:
+        raise AdoptionServiceError("registro_foto_perfil_incompleto")
+    contenido = await photo.read(MAX_IMAGE_BYTES + 1)
+    try:
+        processed = procesar_imagen_evidencia(contenido)
+    except ImagenEvidenciaInvalida as error:
+        raise AdoptionServiceError("foto_perfil_invalida") from error
+    if len(processed.contenido_publico) > MAX_ADOPTION_PHOTO_BYTES:
+        raise AdoptionServiceError("foto_perfil_invalida")
+
+    digest = sha256()
+    digest.update(profile_id.encode("utf-8"))
+    digest.update(actor_user_id.encode("utf-8"))
+    digest.update(idempotency_key.encode("utf-8"))
+    digest.update(processed.contenido_publico)
+    filename = f"{digest.hexdigest()}.jpg"
+    folder = f"adopciones/perfiles/{profile_id}"
+    storage_path = f"{folder}/{filename}"
+    uploaded_now = False
+    try:
+        storage_path = await subir_bytes_adopcion(
+            processed.contenido_publico,
+            carpeta=folder,
+            content_type=processed.content_type_publico,
+            extension=processed.extension_publica,
+            nombre_archivo=filename,
+        )
+        uploaded_now = True
+    except ObjetoPrivadoYaExiste:
+        pass
+    except Exception as error:
+        logger.exception("No se pudo cargar la fotografía privada de adopción")
+        raise AdoptionServiceError("adopcion_storage_no_disponible") from error
+
+    try:
+        result = _rpc(
+            "registrar_foto_perfil_adopcion",
+            {
+                "p_perfil_id": profile_id,
+                "p_asociacion_id": association_id,
+                "p_actor_usuario_id": actor_user_id,
+                "p_storage_path": storage_path,
+                "p_mime_type": processed.content_type_publico,
+                "p_size_bytes": len(processed.contenido_publico),
+                "p_orden": order,
+                "p_texto_alternativo": alternative_text,
+                "p_idempotency_key": idempotency_key,
+            },
+        )
+    except AdoptionServiceError as error:
+        # Un 5xx puede significar que la transacción sí confirmó pero se perdió
+        # la respuesta. En ese caso conservamos el objeto para no romper la fila.
+        if uploaded_now and error.status_code < 500:
+            eliminar_objeto_adopcion(storage_path)
+        raise
+
+    try:
+        access = crear_url_firmada_adopcion(storage_path)
+    except Exception:
+        logger.warning(
+            "La fotografía se guardó pero no pudo firmarse temporalmente",
+            exc_info=True,
+        )
+        access = None
+    return {
+        **result,
+        "mime_type": processed.content_type_publico,
+        "size_bytes": len(processed.contenido_publico),
+        "texto_alternativo": alternative_text,
+        "aprobada_publicacion": False,
+        "foto_url": access["url"] if access else None,
+        "foto_url_expira_at": access["expira_at"] if access else None,
+    }
 
 
 def obtener_ingreso_de_custodia(custody_id: str, actor_user_id: str) -> dict:
@@ -312,11 +636,11 @@ def obtener_ingreso_de_custodia(custody_id: str, actor_user_id: str) -> dict:
     )
     if not requests:
         raise AdoptionServiceError("solicitud_ingreso_no_encontrada")
-    return requests[0]
+    return _reemplazar_paths_ingreso_con_accesos(requests[0])
 
 
 def listar_ingresos_asociacion(association_id: str) -> list[dict]:
-    return _query(
+    requests = _query(
         "listar ingresos de asociación",
         lambda: supabase_admin.table("solicitudes_ingreso_adopcion")
         .select(
@@ -331,10 +655,13 @@ def listar_ingresos_asociacion(association_id: str) -> list[dict]:
         .eq("asociacion_id", association_id)
         .order("creada_at", desc=True),
     )
+    return [
+        _reemplazar_paths_ingreso_con_accesos(request) for request in requests
+    ]
 
 
 def listar_perfiles_asociacion(association_id: str) -> list[dict]:
-    return _query(
+    profiles = _query(
         "listar perfiles de asociación",
         lambda: supabase_admin.table("perfiles_adopcion")
         .select(
@@ -343,8 +670,17 @@ def listar_perfiles_asociacion(association_id: str) -> list[dict]:
             "tamanio_id, raza_id, sexo, edad_aproximada, descripcion, personalidad, "
             "salud_conocida, tratamientos, necesidades_especiales, vacunacion_estado, "
             "esterilizacion_estado, revision_medica_estado, compatibilidad, zona_general, "
-            "estado, estado_moderacion, publicado_at, pausado_at, creado_at, actualizado_at"
+            "estado, estado_moderacion, revision_medica_confirmada, "
+            "revision_juridica_confirmada, revision_publicacion_at, "
+            "requisitos_base_version, plantilla_requisitos_id, plantilla_version, "
+            "publicado_at, pausado_at, creado_at, actualizado_at"
         )
         .eq("asociacion_id", association_id)
         .order("actualizado_at", desc=True),
     )
+    return _adjuntar_fotos_privadas(profiles)
+
+
+def obtener_perfil_asociacion(profile_id: str, association_id: str) -> dict:
+    profile = _obtener_perfil_asociacion(profile_id, association_id)
+    return _adjuntar_fotos_privadas([profile])[0]
