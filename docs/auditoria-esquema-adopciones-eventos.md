@@ -194,12 +194,21 @@ durante la primera version.
 - eventos guardados;
 - historial y RLS.
 
-### `0090_adopciones_eventos_operaciones.sql`
+### `0090_adopciones_eventos_infraestructura_operativa.sql`
 
-- transiciones atomicas;
-- ampliacion del outbox;
-- claims y jobs;
+- ampliacion segura del outbox;
+- validadores compartidos de asociacion y administracion;
+- ejecuciones y claims idempotentes para cron;
 - permisos de funciones.
+
+### Migraciones operativas posteriores
+
+- ingreso y publicacion de perfiles de adopcion;
+- solicitudes, seleccion, entregas y seguimientos;
+- publicacion, cambios y ciclo de vida de eventos.
+
+Estas transiciones se separan para que cada grupo pueda probarse e integrarse
+sin mezclar estados de adopcion, custodia y eventos en una sola operacion.
 
 ## Riesgos detectados y respuesta
 
