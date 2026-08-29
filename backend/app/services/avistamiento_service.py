@@ -138,6 +138,54 @@ def _voluntario_verificado_cerca(usuario_id: str, reporte: dict) -> bool:
     return distancia <= radio
 
 
+# Roles elegibles para la fuente testigo_cercano (Entrega C): cualquiera
+# que no tenga ya un camino propio en _resolver_fuente, salvo aliado_local,
+# staff y asociacion (decision explicita del equipo). El reportante SI
+# entra aqui -- pero solo llega a evaluarse cuando el reporte no es el
+# suyo, porque si lo fuera ya habria salido por confirmacion_reportante.
+ROLES_TESTIGO_CERCANO = (
+    "reportante",
+    "voluntario_interno",
+    "donante_comunitario",
+    "patrocinador_institucional",
+)
+
+
+def _es_testigo_cercano_elegible(usuario: dict) -> bool:
+    """Condicion de ENTRADA (no de auto-validacion) para testigo_cercano: el
+    rol debe estar habilitado Y su trust_score debe alcanzar el mismo
+    umbral que ya se usa para auto-validar otras fuentes
+    (settings.trust_score_minimo_auto_validacion).
+
+    A diferencia de _cumple_trust_y_radio (que solo acelera la
+    auto-validacion de un avistamiento que YA se va a crear), esto decide
+    si la persona puede intentar registrar uno. Por eso, a diferencia del
+    resto del modulo, un fallo consultando trust_score aqui NIEGA el
+    acceso en vez de dejarlo pasar: es un limite de seguridad, no una
+    optimizacion, y esta fuente ya es mas abierta que las demas.
+    """
+    rol = usuario.get("rol")
+    usuario_id = usuario.get("id")
+    if rol not in ROLES_TESTIGO_CERCANO or not usuario_id:
+        return False
+
+    try:
+        from app.services.reputacion_service import consultar_restricciones
+
+        puntaje = int(consultar_restricciones(usuario_id, rol)["puntaje"])
+    except Exception:
+        logger.warning(
+            "No se pudo consultar trust_score de %s (rol=%s) para "
+            "testigo_cercano; se niega el acceso",
+            usuario_id,
+            rol,
+            exc_info=True,
+        )
+        return False
+
+    return puntaje >= settings.trust_score_minimo_auto_validacion
+
+
 def _resolver_fuente(reporte: dict, usuario: dict) -> LocationSource | None:
     usuario_id = usuario["id"]
     if reporte.get("usuario_id") == usuario_id:
@@ -148,6 +196,8 @@ def _resolver_fuente(reporte: dict, usuario: dict) -> LocationSource | None:
         return LocationSource.asociacion
     if _voluntario_verificado_cerca(usuario_id, reporte):
         return LocationSource.voluntario_verificado
+    if _es_testigo_cercano_elegible(usuario):
+        return LocationSource.testigo_cercano
     return None
 
 
@@ -158,6 +208,7 @@ def _resolver_fuente(reporte: dict, usuario: dict) -> LocationSource | None:
 FUENTES_CON_FILTRO_ENTRADA = (
     LocationSource.confirmacion_reportante,
     LocationSource.voluntario_verificado,
+    LocationSource.testigo_cercano,
 )
 
 
@@ -212,6 +263,34 @@ def _validar_cercania_entrada(
             detail=(
                 f"Debes estar dentro de {radio} metros del caso para registrar "
                 f"un avistamiento. Estás a {round(distancia)} metros."
+            ),
+        )
+
+
+def _validar_cap_pendientes_testigo_cercano(usuario_id: str) -> None:
+    """Limite anti-spam (Entrega C): como testigo_cercano nunca se
+    auto-valida, cada registro se queda apilado en el panel de asociacion
+    hasta que alguien lo revise a mano. Sin este limite, una sola persona
+    podria saturar esa cola -- y la factura de Gemini -- registrando varios
+    de golpe. Se cuenta por usuario, no por reporte, para que no se pueda
+    esquivar reportando el mismo lugar en varios casos distintos. El cupo
+    se libera solo en cuanto asociacion resuelve alguno de sus pendientes.
+    """
+    cap = settings.avistamiento_cap_pendientes_testigo_cercano
+    pendientes = (
+        supabase_admin.table("avistamientos_animal")
+        .select("id", count="exact")
+        .eq("usuario_id", usuario_id)
+        .eq("fuente", LocationSource.testigo_cercano.value)
+        .eq("estado_validacion", "pendiente")
+        .execute()
+    )
+    if (pendientes.count or 0) >= cap:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Ya tienes {cap} avistamientos esperando revisión. Espera "
+                "a que se resuelvan antes de registrar otro."
             ),
         )
 
@@ -415,6 +494,12 @@ def _validar_condiciones_auto_validacion(
     de retornar -- la regla es que ambos se validan juntos, y hacerlo aqui
     evita repetir la busqueda desde el llamador.
     """
+    # testigo_cercano nunca se auto-valida, ni siquiera por corroboracion
+    # (condicion 3 no distingue fuente): es la pieza central de que esta
+    # fuente, mas abierta, siempre pase por revision humana de asociacion.
+    if avistamiento_nuevo.get("fuente") == LocationSource.testigo_cercano.value:
+        return False, None
+
     latitud = avistamiento_nuevo.get("latitud")
     longitud = avistamiento_nuevo.get("longitud")
     if latitud is None or longitud is None:
@@ -852,6 +937,17 @@ def registrar_avistamiento(
 
     _validar_cercania_entrada(reporte, fuente, data.latitud, data.longitud)
 
+    if fuente == LocationSource.testigo_cercano:
+        _validar_cap_pendientes_testigo_cercano(usuario_id)
+        if not data.evidencia_id:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Para registrar un avistamiento debes adjuntar una "
+                    "fotografía."
+                ),
+            )
+
     animal = (
         supabase_admin.table("animal")
         .select("id")
@@ -1119,14 +1215,67 @@ def listar_pendientes_asociacion(asociacion_id: str) -> list[dict]:
     return list(grupos.values())
 
 
+def _registrar_incidente_avistamiento_falso(*, avistamiento: dict, actor_id: str) -> None:
+    """Unica consecuencia real de reputacion para testigo_cercano (Entrega
+    C): cuando asociacion rechaza uno de estos avistamientos marcandolo
+    explicitamente como falso, se abre y confirma un incidente -- la unica
+    via legitima para bajar trust_score (ver incidentes_service.py, "unica
+    via legitima para reducir trust_score a partir de ahora"). Las demas
+    fuentes no cambian: nunca tuvieron esta consecuencia y siguen sin
+    tenerla.
+
+    Secundario al rechazo en si mismo: un fallo aqui se loguea pero nunca
+    revierte ni bloquea el rechazo, que ya quedo guardado en la base.
+    """
+    if avistamiento.get("fuente") != LocationSource.testigo_cercano.value:
+        return
+    usuario_afectado_id = avistamiento.get("usuario_id")
+    if not usuario_afectado_id:
+        return
+
+    try:
+        from app.services import incidentes_service
+
+        usuario_afectado = _obtener_usuario(usuario_afectado_id)
+        rol = usuario_afectado.get("rol")
+        if not rol:
+            return
+
+        incidente = incidentes_service.registrar_incidente(
+            usuario_id=usuario_afectado_id,
+            rol=rol,
+            tipo_incidente="avistamiento_falso",
+            descripcion=(
+                "Avistamiento marcado como falso por la asociación al "
+                "revisarlo."
+            ),
+            registrado_por=actor_id,
+            actor_tipo="asociacion",
+            reporte_id=avistamiento.get("reporte_id"),
+        )
+        incidentes_service.confirmar_incidente(
+            incidente_id=incidente["id"],
+            confirmado_por=actor_id,
+            actor_tipo="asociacion",
+        )
+    except Exception:
+        logger.warning(
+            "No se pudo registrar/confirmar el incidente de avistamiento "
+            "falso para el usuario %s (avistamiento=%s)",
+            usuario_afectado_id,
+            avistamiento.get("id"),
+            exc_info=True,
+        )
+
+
 def validar_avistamiento(
-    avistamiento_id: str, usuario_id: str, aprobar: bool
+    avistamiento_id: str, usuario_id: str, aprobar: bool, es_falso: bool = False
 ) -> AvistamientoResult:
     resultado = (
         supabase_admin.table("avistamientos_animal")
         .select(
             "id, reporte_id, animal_id, fuente, estado_validacion, "
-            "latitud, longitud, registrado_at"
+            "latitud, longitud, registrado_at, usuario_id"
         )
         .eq("id", avistamiento_id)
         .limit(1)
@@ -1193,6 +1342,10 @@ def validar_avistamiento(
             longitud=avistamiento["longitud"],
             fuente=LocationSource(avistamiento["fuente"]),
             staff_asignado_id=reporte.get("staff_asignado_id"),
+        )
+    elif es_falso:
+        _registrar_incidente_avistamiento_falso(
+            avistamiento=avistamiento, actor_id=usuario_id
         )
 
     avistamiento["estado_validacion"] = nuevo_estado

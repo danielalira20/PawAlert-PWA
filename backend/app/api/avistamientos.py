@@ -14,6 +14,11 @@ router = APIRouter()
 
 class ValidarAvistamientoRequest(BaseModel):
     aprobar: bool
+    # Solo tiene efecto cuando aprobar=False y la fuente es testigo_cercano
+    # (Entrega C): dispara un incidente confirmado contra quien registro el
+    # avistamiento (ver avistamiento_service._registrar_incidente_avistamiento_falso).
+    # Para las demas fuentes/combinaciones no hace nada.
+    es_falso: bool = False
 
 
 def _obtener_usuario_autenticado(authorization: Optional[str]) -> dict:
@@ -100,5 +105,5 @@ def validar_avistamiento(
 ) -> AvistamientoResult:
     usuario = _obtener_usuario_autenticado(authorization)
     return avistamiento_service.validar_avistamiento(
-        avistamiento_id, usuario["id"], body.aprobar
+        avistamiento_id, usuario["id"], body.aprobar, body.es_falso
     )

@@ -63,6 +63,13 @@ class Settings(BaseSettings):
     radio_corroboracion_avistamiento_metros: int = Field(default=50, gt=0)
     ventana_corroboracion_avistamiento_minutos: int = Field(default=5, gt=0)
 
+    # Avistamientos, fuente testigo_cercano (Entrega C). Reusa
+    # trust_score_minimo_auto_validacion de arriba como umbral de ENTRADA
+    # (no solo de auto-validacion) para esta fuente mas abierta. El cap
+    # es anti-spam: como testigo_cercano nunca se auto-valida, cada
+    # registro se queda pendiente hasta revision de asociacion.
+    avistamiento_cap_pendientes_testigo_cercano: int = Field(default=3, gt=0)
+
     # Avistamientos: verificacion visual contra la(s) foto(s) originales del
     # animal reportado (Gemini multimodal). Si la probabilidad de que sea el
     # mismo animal cae por debajo de este umbral, se adjunta una advertencia
