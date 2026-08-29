@@ -859,7 +859,7 @@ async def get_historial_reporte(reporte_id: str, authorization: str = Header(Non
 
     reporte = supabase.table("reportes").select(
         "id, created_at, asociacion_asignada_id, usuario_id, "
-        "reportante_nombre, reportante_apellido_paterno, "
+        "reportante_nombre, reportante_apellido_paterno, latitud, longitud, "
         "animal(orden, descripcion, condicion_catalogo(clave), animal_fotos(foto_url, orden))"
     ).eq("id", reporte_id).execute()
 
@@ -898,6 +898,8 @@ async def get_historial_reporte(reporte_id: str, authorization: str = Header(Non
         "foto_url": foto_reporte,
         "reportante_nombre": reportante_nombre or "anónimo",
         "nota": nota_reporte,
+        "latitud": reporte.get("latitud"),
+        "longitud": reporte.get("longitud"),
     }]
 
     hitos = supabase.table("historial_reporte").select(
@@ -1032,6 +1034,8 @@ async def get_historial_reporte(reporte_id: str, authorization: str = Header(Non
             "foto_url": detalle_avist.get("foto_url") or datos_extra.get("foto_url"),
             "usuario_nombre": usuario_nombre or detalle_avist.get("registrado_por") or None,
             "nota": nota_hito,
+            "latitud": datos_extra.get("latitud"),
+            "longitud": datos_extra.get("longitud"),
         })
 
     eventos.sort(key=lambda e: e["created_at"])

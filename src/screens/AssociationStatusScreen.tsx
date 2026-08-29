@@ -11,6 +11,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { Toast, useToast } from '../components/Toast';
 import { BusquedaNoLocalizadoPanel } from '../components/association-dashboard/BusquedaNoLocalizadoPanel';
 import { AvistamientosPendientesPanel } from '../components/association-dashboard/AvistamientosPendientesPanel';
+import RecorridoAvistamientosMap from '../components/association-dashboard/RecorridoAvistamientosMap';
+import type { PuntoRecorrido } from '../components/association-dashboard/recorridoAvistamientos.types';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
@@ -102,6 +104,8 @@ interface HistorialEvento {
   reportante_nombre?: string;
   usuario_nombre?: string | null;
   nota?: string | null;
+  latitud?: number | null;
+  longitud?: number | null;
 }
 
 type FiltroAsignacion = 'todas' | 'pendientes' | 'aceptadas' | 'rechazadas';
@@ -2155,6 +2159,48 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                 {/* ── Línea de tiempo: sub-filtros "Por cerrar" y "Completados" ── */}
                 {(subFiltroAceptadas === 'por_cerrar' || subFiltroAceptadas === 'completados') && (
                   <View style={{ marginTop: 24 }}>
+                    {(() => {
+                      // Recorrido del caso: reporte original + avistamientos validados,
+                      // en orden cronológico (historialTimeline ya viene ASC por created_at).
+                      // Solo se listan aquí los eventos con coordenadas conocidas.
+                      const eventosConUbicacion = (historialTimeline || []).filter(
+                        (evento) => evento.latitud != null && evento.longitud != null,
+                      );
+                      if (eventosConUbicacion.length < 2) {
+                        return null;
+                      }
+                      const puntosRecorrido: PuntoRecorrido[] = eventosConUbicacion.map((evento, idx) => ({
+                        latitud: Number(evento.latitud),
+                        longitud: Number(evento.longitud),
+                        esOrigen: evento.tipo_evento === 'reporte_creado',
+                        esMasReciente: idx === eventosConUbicacion.length - 1,
+                        etiqueta: (TIMELINE_LABELS[evento.tipo_evento] || { label: evento.tipo_evento }).label,
+                      }));
+                      return (
+                        <View style={{ marginBottom: 20 }}>
+                          <Text style={{ fontSize: 18, fontWeight: '800', color: COLORS.textDark, marginBottom: 4 }}>Recorrido del caso</Text>
+                          <Text style={{ fontSize: 12, color: COLORS.textLight, marginBottom: 10 }}>
+                            Línea recta entre el reporte y cada avistamiento validado. El punto más grande es el más reciente.
+                          </Text>
+                          <RecorridoAvistamientosMap puntos={puntosRecorrido} height={220} />
+                          <View style={{ flexDirection: 'row', gap: 16, marginTop: 10, flexWrap: 'wrap' }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              <View style={{ width: 12, height: 12, borderRadius: 3, backgroundColor: '#8C7A6B' }} />
+                              <Text style={{ fontSize: 11, color: COLORS.textLight }}>Reporte original</Text>
+                            </View>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#66BCB4' }} />
+                              <Text style={{ fontSize: 11, color: COLORS.textLight }}>Avistamiento validado</Text>
+                            </View>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              <View style={{ width: 14, height: 14, borderRadius: 7, backgroundColor: '#EC802B' }} />
+                              <Text style={{ fontSize: 11, color: COLORS.textLight }}>Última ubicación conocida</Text>
+                            </View>
+                          </View>
+                        </View>
+                      );
+                    })()}
+
                     <Text style={{ fontSize: 18, fontWeight: '800', color: COLORS.textDark, marginBottom: 12 }}>Línea de tiempo</Text>
 
                     {isLoadingHistorial ? (
