@@ -3,6 +3,7 @@ import L from 'leaflet';
 import { useEffect } from 'react';
 import 'leaflet/dist/leaflet.css';
 import { Circle, MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
+import { CARTO_LIGHT_TILE_URL } from '@/constants/mapTiles';
 import { ReportContentMenu } from '../components/reports/ReportContentMenu';
 import { Reporte, ZonaAgregada, getAnimales, condicionMasGrave, especieMasGrave, totalAnimales } from '../types/reporte';
 import { ICON_MULTIPLE } from '../constants/mapIcons';
@@ -521,7 +522,7 @@ export default function LeafletMap({
       >
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-          url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+          url={CARTO_LIGHT_TILE_URL}
         />
         <MapClickHandler onMapClick={onMapClick} />
         <FitToMarkers enabled={fitToMarkers} positions={markerPositions} />

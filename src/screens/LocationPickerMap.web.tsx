@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { CARTO_LIGHT_TILE_URL } from '@/constants/mapTiles'
 
 interface Props {
   onLocationSelect: (latitud: number, longitud: number) => void
@@ -81,7 +82,7 @@ export default function LocationPickerMap({
       map.getContainer().classList.add('pawalert-picker')
       mapInstanceRef.current = map
 
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      L.tileLayer(CARTO_LIGHT_TILE_URL, {
         attribution: '© OpenStreetMap contributors © CARTO'
       }).addTo(map)
 

@@ -18,6 +18,12 @@ class Settings(BaseSettings):
     whatsapp_notifications_enabled: bool = False
     twilio_webhook_base_url: str = ""
     twilio_validate_signatures: bool = True
+    # WhatsApp Cloud API (Meta) — canal conversacional para crear reportes.
+    whatsapp_meta_verify_token: str = ""
+    whatsapp_meta_access_token: str = ""
+    whatsapp_meta_app_secret: str = ""
+    whatsapp_meta_phone_number_id: str = ""
+    whatsapp_meta_graph_version: str = "v25.0"
     require_phone_verification: bool = False
     frontend_url: str = "https://paw-alert-pwa.vercel.app"
     cors_origins: str = ""
