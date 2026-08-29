@@ -10,7 +10,6 @@ import { ActivityIndicator, Dimensions, Image, Linking, Modal, Platform, ScrollV
 import { Ionicons } from '@expo/vector-icons';
 import { Toast, useToast } from '../components/Toast';
 import { BusquedaNoLocalizadoPanel } from '../components/association-dashboard/BusquedaNoLocalizadoPanel';
-import { AvistamientoEntryButton } from '../components/avistamientos/AvistamientoEntryButton';
 import { AvistamientosPendientesPanel } from '../components/association-dashboard/AvistamientosPendientesPanel';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
@@ -326,6 +325,7 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
     cancelacion_reportante_avisada: { label: 'Solicitud de cancelación del reportante', icon: 'information-circle-outline' },
     hito_llegue_refugio: { label: 'Llegada al refugio', icon: 'home-outline' },
     caso_cerrado: { label: 'Caso cerrado', icon: 'checkmark-done-circle-outline' },
+    ubicacion_confirmada: { label: 'Avistamiento validado', icon: 'eye-outline' },
   };
 
 
@@ -2151,22 +2151,6 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                   }}
                   onError={(message) => showToast({ type: 'warning', title: 'Revisa la decisión', message })}
                 />
-
-                {/* Avistamiento (Capa 8). Se pasa la coordinadora vigente real
-                    del reporte (no `user.asociacion_id`): un caso reasignado
-                    sigue apareciendo aquí por su fila histórica de asignación,
-                    y el botón debe ocultarse porque esta asociación ya no lo
-                    coordina — el pre-filtro de AvistamientoEntryButton lo
-                    resuelve al comparar contra este valor. */}
-                {['pendiente', 'asignado'].includes(reporteSeleccionado.estado_reporte) && (
-                  <AvistamientoEntryButton
-                    reporte={{
-                      id: reporteSeleccionado.reporte_id,
-                      asociacion_asignada_id: reporteSeleccionado.asociacion_asignada_id,
-                    }}
-                    onBeforeNavigate={() => { setReporteSeleccionado(null); onClose?.(); }}
-                  />
-                )}
 
                 {/* ── Línea de tiempo: sub-filtros "Por cerrar" y "Completados" ── */}
                 {(subFiltroAceptadas === 'por_cerrar' || subFiltroAceptadas === 'completados') && (

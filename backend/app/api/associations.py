@@ -834,6 +834,7 @@ TIPOS_HITO_TIMELINE = [
     "hito_llego_veterinaria",
     "caso_cerrado",
     "necesidad_cubierta",
+    "ubicacion_confirmada",
 ]
 
 
@@ -905,6 +906,71 @@ async def get_historial_reporte(reporte_id: str, authorization: str = Header(Non
         "tipo_evento", TIPOS_HITO_TIMELINE
     ).order("created_at").execute()
 
+    # `ubicacion_confirmada` (avistamientos, Capa 8) solo guarda
+    # avistamiento_id/latitud/longitud/fuente en datos_extra -- a proposito,
+    # ese shape es el contrato que consume Urgency y no se toca aqui. El
+    # detalle para mostrar en la linea de tiempo (que animal, la
+    # direccion/comentario que escribio quien lo vio, su foto, y quien lo
+    # registro) se resuelve en una pasada aparte contra avistamientos_animal.
+    ids_avistamientos = list({
+        (hito.get("datos_extra") or {}).get("avistamiento_id")
+        for hito in (hitos.data or [])
+        if hito["tipo_evento"] == "ubicacion_confirmada"
+        and (hito.get("datos_extra") or {}).get("avistamiento_id")
+    })
+    detalle_avistamientos: dict[str, dict] = {}
+    if ids_avistamientos:
+        avistamientos = supabase.table("avistamientos_animal").select(
+            "id, direccion_observada, comentario, evidencia_id, "
+            "animal(orden, tipo_animal_catalogo(clave)), "
+            "usuarios(nombre, apellido_paterno)"
+        ).in_("id", ids_avistamientos).execute()
+
+        evidencia_ids = list({
+            fila["evidencia_id"]
+            for fila in (avistamientos.data or [])
+            if fila.get("evidencia_id")
+        })
+        fotos_avistamiento: dict[str, str] = {}
+        if evidencia_ids:
+            evidencias = supabase.table("reporte_evidencias").select(
+                "id, foto_url"
+            ).in_("id", evidencia_ids).execute()
+            fotos_avistamiento = {
+                fila["id"]: fila["foto_url"]
+                for fila in (evidencias.data or [])
+                if fila.get("foto_url")
+            }
+
+        for fila in avistamientos.data or []:
+            animal = fila.get("animal")
+            if isinstance(animal, list):
+                animal = animal[0] if animal else None
+            animal = animal or {}
+            especie = (animal.get("tipo_animal_catalogo") or {}).get("clave")
+            orden = animal.get("orden")
+            animal_label = None
+            if especie:
+                especie_cap = especie.capitalize()
+                animal_label = f"{especie_cap} {orden}" if orden else especie_cap
+
+            registrador = fila.get("usuarios")
+            if isinstance(registrador, list):
+                registrador = registrador[0] if registrador else None
+            registrador_nombre = None
+            if registrador:
+                registrador_nombre = " ".join(
+                    p for p in (registrador.get("nombre"), registrador.get("apellido_paterno")) if p
+                ).strip() or None
+
+            detalle_avistamientos[fila["id"]] = {
+                "animal_label": animal_label,
+                "direccion_observada": fila.get("direccion_observada"),
+                "comentario": fila.get("comentario"),
+                "foto_url": fotos_avistamiento.get(fila.get("evidencia_id")),
+                "registrado_por": registrador_nombre,
+            }
+
     for hito in hitos.data or []:
         datos_extra = hito.get("datos_extra") or {}
         vol = hito.get("usuarios") or {}
@@ -917,6 +983,17 @@ async def get_historial_reporte(reporte_id: str, authorization: str = Header(Non
         # son conclusion/notas (ver cambiar_estado_reporte).
         if hito["tipo_evento"] == "caso_cerrado":
             nota_partes = [p for p in (datos_extra.get("conclusion"), datos_extra.get("notas")) if p]
+        elif hito["tipo_evento"] == "ubicacion_confirmada":
+            detalle = detalle_avistamientos.get(datos_extra.get("avistamiento_id"), {})
+            nota_partes = [
+                p
+                for p in (
+                    detalle.get("animal_label"),
+                    detalle.get("direccion_observada"),
+                    detalle.get("comentario"),
+                )
+                if p
+            ]
         elif hito["tipo_evento"] == "necesidad_cubierta":
             nota_partes = [p for p in (datos_extra.get("nombre_aliado"), datos_extra.get("subcategoria") or datos_extra.get("categoria")) if p]
         elif hito["tipo_evento"] in ("animal_no_localizado", "hito_animal_no_localizado"):
@@ -943,11 +1020,17 @@ async def get_historial_reporte(reporte_id: str, authorization: str = Header(Non
             nota_partes = [p for p in (datos_extra.get("condicion_observada"), datos_extra.get("comentario")) if p]
         nota_hito = " — ".join(nota_partes) if nota_partes else None
 
+        detalle_avist = (
+            detalle_avistamientos.get(datos_extra.get("avistamiento_id"), {})
+            if hito["tipo_evento"] == "ubicacion_confirmada"
+            else {}
+        )
+
         eventos.append({
             "tipo_evento": hito["tipo_evento"],
             "created_at": str(hito["created_at"]),
-            "foto_url": datos_extra.get("foto_url"),
-            "usuario_nombre": usuario_nombre or None,
+            "foto_url": detalle_avist.get("foto_url") or datos_extra.get("foto_url"),
+            "usuario_nombre": usuario_nombre or detalle_avist.get("registrado_por") or None,
             "nota": nota_hito,
         })
 
