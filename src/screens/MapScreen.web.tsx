@@ -868,6 +868,7 @@ export default function MapScreen() {
             }}
             onSelectAsociacion={handleSelectAsociacion}
             onMapClick={handleMapClick}
+            bottomOffset={TAB_BAR_CLEARANCE}
           />
         </Suspense>
       ) : (

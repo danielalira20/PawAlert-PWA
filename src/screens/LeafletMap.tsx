@@ -2,6 +2,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import { useEffect } from 'react';
 import { Circle, GeoJSON, MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
+import { Ionicons } from '@expo/vector-icons';
 import { CARTO_LIGHT_TILE_URL } from '@/constants/mapTiles';
 import { ReportContentMenu } from '../components/reports/ReportContentMenu';
 import { Reporte, ZonaAgregada, getAnimales, condicionMasGrave, especieMasGrave, totalAnimales } from '../types/reporte';
@@ -17,8 +18,8 @@ const CAT_DATA_URI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAYA
 // ─── Paleta por condición ─────────────────────────────────────────────────────
 const CONDICION: Record<string, { border: string; bg: string }> = {
   estable: { border: '#27AE60', bg: '#EAFAF1' },
-  herido:  { border: '#F39C12', bg: '#FEF9E7' },
-  grave:   { border: '#E74C3C', bg: '#FDEDEC' },
+  herido: { border: '#F39C12', bg: '#FEF9E7' },
+  grave: { border: '#E74C3C', bg: '#FDEDEC' },
 };
 
 const getCfg = (c: string) =>
@@ -30,20 +31,20 @@ const getCfg = (c: string) =>
 const getAnimalImg = (tipoAnimal: string, condColor: string, count: number = 1): string => {
   if (count > 1) {
     return `
-      <div style="width:${46-8}px;height:${46-8}px;border-radius:50%;background:rgba(255,255,255,0.88);display:flex;align-items:center;justify-content:center;">
+      <div style="width:${46 - 8}px;height:${46 - 8}px;border-radius:50%;background:rgba(255,255,255,0.88);display:flex;align-items:center;justify-content:center;">
         <img src="${ICON_MULTIPLE}" style="width:34px;height:34px;object-fit:contain;" />
       </div>`;
   }
   const tipo = tipoAnimal?.toLowerCase();
   if (tipo === 'perro') {
     return `
-      <div style="width:${46-8}px;height:${46-8}px;border-radius:50%;background:rgba(255,255,255,0.88);display:flex;align-items:center;justify-content:center;">
+      <div style="width:${46 - 8}px;height:${46 - 8}px;border-radius:50%;background:rgba(255,255,255,0.88);display:flex;align-items:center;justify-content:center;">
         <img src="${DOG_DATA_URI}" style="width:34px;height:34px;object-fit:contain;" />
       </div>`;
   }
   if (tipo === 'gato') {
     return `
-      <div style="width:${46-8}px;height:${46-8}px;border-radius:50%;background:rgba(255,255,255,0.88);display:flex;align-items:center;justify-content:center;">
+      <div style="width:${46 - 8}px;height:${46 - 8}px;border-radius:50%;background:rgba(255,255,255,0.88);display:flex;align-items:center;justify-content:center;">
         <img src="${CAT_DATA_URI}" style="width:28px;height:28px;object-fit:contain;" />
       </div>`;
   }
@@ -166,9 +167,9 @@ function ReportCoverageGlow({ reporte }: { reporte: Reporte & { latitud: number;
 
 // ─── Pin de zona agregada (visitantes sin sesión: densidad, no reportes) ──────
 const NIVEL_URGENCIA_COLOR: Record<string, { border: string; bg: string }> = {
-  rojo:     { border: '#E74C3C', bg: '#FDEDEC' },
+  rojo: { border: '#E74C3C', bg: '#FDEDEC' },
   amarillo: { border: '#F39C12', bg: '#FEF9E7' },
-  verde:    { border: '#27AE60', bg: '#EAFAF1' },
+  verde: { border: '#27AE60', bg: '#EAFAF1' },
 };
 
 const createZonaPin = (cantidad: number, nivel: string | null) => {
@@ -221,11 +222,11 @@ function ZonaGlow({ zona }: { zona: { latitud: number; longitud: number; cantida
 
 // ─── Config por estado del reporte ───────────────────────────────────────────
 const ESTADO: Record<string, { color: string; bg: string; label: string }> = {
-  pendiente:     { color: '#7B68EE', bg: '#F0EEFF', label: 'Pendiente'    },
-  asignado:      { color: '#2980B9', bg: '#EBF5FB', label: 'Asignado'     },
-  en_camino:     { color: '#16A085', bg: '#E8F8F5', label: 'En camino'    },
-  en_atencion:   { color: '#8E44AD', bg: '#F5EEF8', label: 'En atención'  },
-  sin_cobertura: { color: '#E67E22', bg: '#FEF9E7', label: 'Sin cobertura'},
+  pendiente: { color: '#7B68EE', bg: '#F0EEFF', label: 'Pendiente' },
+  asignado: { color: '#2980B9', bg: '#EBF5FB', label: 'Asignado' },
+  en_camino: { color: '#16A085', bg: '#E8F8F5', label: 'En camino' },
+  en_atencion: { color: '#8E44AD', bg: '#F5EEF8', label: 'En atención' },
+  sin_cobertura: { color: '#E67E22', bg: '#FEF9E7', label: 'Sin cobertura' },
 };
 const getEstado = (e: string) =>
   ESTADO[e?.toLowerCase()] ?? { color: '#95A5A6', bg: '#F2F3F4', label: e ?? '' };
@@ -405,8 +406,8 @@ function FitToMarkers({
 // ─── Capa de colonias (división por código postal del municipio de Puebla) ────
 const COLONIA_COLORS = {
   default: { color: '#8C6B4D', fillColor: '#8C6B4D', weight: 1.2, fillOpacity: 0.05 },
-  hover:   { color: '#5C4A3A', fillColor: '#5C4A3A', weight: 2,   fillOpacity: 0.15 },
-  active:  { color: '#E99039', fillColor: '#E99039', weight: 2.5, fillOpacity: 0.25 },
+  hover: { color: '#5C4A3A', fillColor: '#5C4A3A', weight: 2, fillOpacity: 0.15 },
+  active: { color: '#E99039', fillColor: '#E99039', weight: 2.5, fillOpacity: 0.25 },
 };
 
 interface ColoniaFeature {
@@ -415,28 +416,46 @@ interface ColoniaFeature {
   geometry: { type: string; coordinates: number[][][] };
 }
 
+// ─── GeoJSON Point in Polygon Logic ──────────────────────────────────────────
+function pointInPolygon(point: [number, number], vs: number[][]) {
+  const x = point[0], y = point[1];
+  let inside = false;
+  for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+    const xi = vs[i][0], yi = vs[i][1];
+    const xj = vs[j][0], yj = vs[j][1];
+    const intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+function isPointInFeature(pt: [number, number], feature: any) {
+  const geom = feature?.geometry;
+  if (!geom) return false;
+  if (geom.type === 'Polygon') {
+    return pointInPolygon(pt, geom.coordinates[0]);
+  } else if (geom.type === 'MultiPolygon') {
+    for (const poly of geom.coordinates) {
+      if (pointInPolygon(pt, poly[0])) return true;
+    }
+  }
+  return false;
+}
+
 function ColoniasLayer({
   reportes,
   visible,
   coloniaSeleccionada,
   onSelectColonia,
+  data,
 }: {
   reportes: Reporte[];
   visible: boolean;
   coloniaSeleccionada: number | null;
   onSelectColonia: (cp: number | null) => void;
+  data: GeoJSON.FeatureCollection | null;
 }) {
-  const [data, setData] = useState<GeoJSON.FeatureCollection | null>(null);
   const geoJsonRef = useRef<L.GeoJSON | null>(null);
-
-  useEffect(() => {
-    if (!visible) return;
-    if (data) return;
-    fetch('/data/colonias-puebla.geojson')
-      .then(r => r.json())
-      .then(setData)
-      .catch(() => {});
-  }, [visible, data]);
 
   // Count reports per postal code
   const reportesPorCP = useMemo(() => {
@@ -505,16 +524,26 @@ function ColoniaInfoPanel({
   cp,
   reportes,
   onClose,
+  data,
+  bottomOffset,
 }: {
   cp: number;
   reportes: Reporte[];
   onClose: () => void;
+  data: GeoJSON.FeatureCollection | null;
+  bottomOffset?: number;
 }) {
-  // Count reports that are geographically within Puebla
-  const reportesEnZona = reportes.filter(r =>
-    r.latitud !== null && r.longitud !== null &&
-    r.municipio?.toLowerCase()?.includes('puebla'),
-  );
+  // Encontrar el feature de esta colonia para el filtro geográfico
+  const feature = useMemo(() => data?.features.find(f => f.properties?.cp === cp), [data, cp]);
+
+  // Contar reportes que geográficamente caen dentro del polígono
+  const reportesEnZona = useMemo(() => {
+    if (!feature) return [];
+    return reportes.filter(r => {
+      if (r.latitud === null || r.longitud === null) return false;
+      return isPointInFeature([r.longitud, r.latitud], feature);
+    });
+  }, [reportes, feature]);
 
   const totalReportes = reportesEnZona.length;
   const pendientes = reportesEnZona.filter(r => r.estado_reporte === 'pendiente').length;
@@ -523,10 +552,12 @@ function ColoniaInfoPanel({
   ).length;
 
   return (
-    <div className="colonia-info-panel">
+    <div className="colonia-info-panel" style={{ bottom: (bottomOffset ?? 20) + 16 }}>
       <button className="colonia-info-close" onClick={onClose} aria-label="Cerrar">×</button>
       <div className="colonia-info-header">
-        <div className="colonia-info-icon">📍</div>
+        <div className="colonia-info-icon">
+          <Ionicons name="location" size={24} color="#FF7F50" />
+        </div>
         <div>
           <div className="colonia-info-title">CP {cp}</div>
           <div className="colonia-info-subtitle">Municipio de Puebla</div>
@@ -535,14 +566,14 @@ function ColoniaInfoPanel({
       <div className="colonia-info-stats">
         <div className="colonia-stat">
           <span className="colonia-stat-num">{totalReportes}</span>
-          <span className="colonia-stat-label">Reportes en Puebla</span>
+          <span className="colonia-stat-label">Total en zona</span>
         </div>
         <div className="colonia-stat">
-          <span className="colonia-stat-num" style={{ color: '#7B68EE' }}>{pendientes}</span>
+          <span className="colonia-stat-num" style={{ color: '#FF7F50' }}>{pendientes}</span>
           <span className="colonia-stat-label">Pendientes</span>
         </div>
         <div className="colonia-stat">
-          <span className="colonia-stat-num" style={{ color: '#16A085' }}>{enAtencion}</span>
+          <span className="colonia-stat-num" style={{ color: '#118B8B' }}>{enAtencion}</span>
           <span className="colonia-stat-label">En atención</span>
         </div>
       </div>
@@ -567,6 +598,7 @@ interface LeafletMapProps {
   onReportModerated?: (reporteId: string) => void;
   onSelectAsociacion?: (asociacion: AsociacionMapa) => void;
   onMapClick: () => void;
+  bottomOffset?: number;
 }
 
 // ─── Componente ───────────────────────────────────────────────────────────────
@@ -586,6 +618,7 @@ export default function LeafletMap({
   height,
   fitToMarkers = false,
   showReportMenuInPopup = true,
+  bottomOffset = 20,
 }: LeafletMapProps) {
   // Zona seleccionada (visitantes sin sesión): al hacer click en un pin de
   // zona se muestra un círculo difuminado alrededor, solo esa — no todas a
@@ -593,6 +626,16 @@ export default function LeafletMap({
   const [zonaSeleccionada, setZonaSeleccionada] = useState<string | null>(null);
   const [mostrarColonias, setMostrarColonias] = useState(false);
   const [coloniaSeleccionada, setColoniaSeleccionada] = useState<number | null>(null);
+  const [coloniasData, setColoniasData] = useState<GeoJSON.FeatureCollection | null>(null);
+
+  useEffect(() => {
+    if (!mostrarColonias) return;
+    if (coloniasData) return;
+    fetch('/data/colonias-puebla.geojson')
+      .then(r => r.json())
+      .then(setColoniasData)
+      .catch(() => { });
+  }, [mostrarColonias, coloniasData]);
 
   const markerPositions = useMemo(
     () =>
@@ -666,30 +709,27 @@ export default function LeafletMap({
 
         /* ── Colonias toggle button ──────────────────── */
         .colonias-toggle {
-          position:absolute; top:12px; right:12px; z-index:1000;
-          display:flex; align-items:center; gap:7px;
-          padding:8px 14px; border-radius:14px; border:none;
-          font-family:'Segoe UI',Arial,sans-serif;
-          font-size:12px; font-weight:800; letter-spacing:0.2px;
+          position:absolute; right: 20px; z-index:1000;
+          display:flex; align-items:center; justify-content:center;
+          width: 52px; height: 52px; border-radius: 26px; border:none;
           cursor:pointer;
           transition:all 0.25s cubic-bezier(0.4,0,0.2,1);
-          box-shadow:0 2px 12px rgba(92,74,58,0.12), 0 1px 3px rgba(0,0,0,0.06);
+          box-shadow: 0 4px 12px rgba(0,0,0,0.15);
         }
         .colonias-toggle.active {
-          background:linear-gradient(135deg,#8C6B4D,#5C4A3A);
+          background: linear-gradient(135deg,#8C6B4D,#5C4A3A);
           color:#fff;
         }
         .colonias-toggle.inactive {
-          background:#FFF5EE;
+          background:#FFFFFF;
           color:#5C4A3A;
-          border:1.5px solid #F2F0EC;
         }
         .colonias-toggle:hover {
           transform:translateY(-1px);
-          box-shadow:0 4px 16px rgba(92,74,58,0.25), 0 2px 6px rgba(0,0,0,0.08);
+          box-shadow:0 6px 16px rgba(0,0,0,0.2);
         }
         .colonias-toggle:active { transform:translateY(0); }
-        .colonias-toggle-icon { font-size:15px; line-height:1; }
+        .colonias-toggle-icon { font-size:24px; line-height:1; }
 
         /* ── Colonia tooltip ─────────────────────────── */
         .colonia-tooltip {
@@ -709,20 +749,19 @@ export default function LeafletMap({
 
         /* ── Colonia info panel ──────────────────────── */
         .colonia-info-panel {
-          position:absolute; bottom:85px; left:50%; transform:translateX(-50%); z-index:1000;
-          background:rgba(255,245,238,0.96);
-          backdrop-filter:blur(12px);
-          border-radius:20px;
+          position:fixed; left:0; right:0; margin:0 auto; z-index:1000;
+          box-sizing:border-box;
+          background:#FFFAF6;
+          border-radius:16px;
           padding:16px 18px;
-          width:calc(100% - 32px); max-width:320px;
-          box-shadow:0 8px 32px rgba(92,74,58,0.12), 0 2px 8px rgba(0,0,0,0.06);
-          border:1.5px solid #F2F0EC;
+          width:calc(100% - 32px); max-width:480px;
+          box-shadow:0 8px 32px rgba(0,0,0,0.16), 0 2px 8px rgba(0,0,0,0.08);
           font-family:'Segoe UI',Arial,sans-serif;
           animation:coloniaSlideIn 0.3s cubic-bezier(0.34,1.56,0.64,1);
         }
         @keyframes coloniaSlideIn {
-          from { opacity:0; transform:translate(-50%, 12px) scale(0.96); }
-          to   { opacity:1; transform:translate(-50%, 0) scale(1); }
+          from { opacity:0; transform:translateY(12px) scale(0.96); }
+          to   { opacity:1; transform:translateY(0) scale(1); }
         }
         .colonia-info-close {
           position:absolute; top:10px; right:10px;
@@ -730,11 +769,12 @@ export default function LeafletMap({
           background:#F2F0EC; color:#5C4A3A;
           font-size:16px; font-weight:700; line-height:1;
           display:flex; align-items:center; justify-content:center;
-          cursor:pointer; padding:0;
+          cursor:pointer; transition:all 0.2s;
         }
-        .colonia-info-close:hover { background:#E5E1D9; }
+        .colonia-info-close:hover { background:#E0D8C8; color:#3A2E24; }
         .colonia-info-header {
-          display:flex; align-items:center; gap:12px; margin-bottom:14px;
+          display:flex; align-items:center; gap:12px;
+          margin-bottom:16px;
         }
         .colonia-info-icon {
           width:40px; height:40px; border-radius:12px;
@@ -771,14 +811,16 @@ export default function LeafletMap({
       {/* Botón toggle de colonias */}
       <button
         className={`colonias-toggle ${mostrarColonias ? 'active' : 'inactive'}`}
+        style={{ bottom: bottomOffset + 68 }}
         onClick={() => {
           setMostrarColonias(v => !v);
           if (mostrarColonias) setColoniaSeleccionada(null);
         }}
         title={mostrarColonias ? 'Ocultar colonias' : 'Ver colonias'}
       >
-        <span className="colonias-toggle-icon">{mostrarColonias ? '🗺️' : '🏘️'}</span>
-        {mostrarColonias ? 'Ocultar colonias' : 'Ver colonias'}
+        <span className="colonias-toggle-icon">
+          <Ionicons name={mostrarColonias ? 'map' : 'business'} size={24} color={mostrarColonias ? '#fff' : '#5C4A3A'} />
+        </span>
       </button>
 
       {/* Panel de info de colonia seleccionada */}
@@ -787,6 +829,8 @@ export default function LeafletMap({
           cp={coloniaSeleccionada}
           reportes={reportes}
           onClose={() => setColoniaSeleccionada(null)}
+          data={coloniasData}
+          bottomOffset={bottomOffset}
         />
       )}
 
@@ -806,6 +850,7 @@ export default function LeafletMap({
           visible={mostrarColonias}
           coloniaSeleccionada={coloniaSeleccionada}
           onSelectColonia={setColoniaSeleccionada}
+          data={coloniasData}
         />
         {(() => {
           const reporteSeleccionado = reportes.find(
@@ -828,8 +873,8 @@ export default function LeafletMap({
             const tamanioLabel = tamanio ? tamanio[0].toUpperCase() + tamanio.slice(1) : '';
             const condicionValor = condicionMasGrave(animales) ?? '';
             const cond = getCfg(condicionValor);
-            const est  = getEstado(reporte.estado_reporte ?? '');
-            const loc  = reporte.colonia ?? reporte.municipio ?? '';
+            const est = getEstado(reporte.estado_reporte ?? '');
+            const loc = reporte.colonia ?? reporte.municipio ?? '';
 
             return (
               <Marker
