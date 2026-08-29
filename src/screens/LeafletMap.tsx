@@ -7,6 +7,8 @@ import { CARTO_LIGHT_TILE_URL } from '@/constants/mapTiles';
 import { ReportContentMenu } from '../components/reports/ReportContentMenu';
 import { Reporte, ZonaAgregada, getAnimales, condicionMasGrave, especieMasGrave, totalAnimales } from '../types/reporte';
 import { ICON_MULTIPLE } from '../constants/mapIcons';
+import { Brand } from '@/constants/theme';
+import { RADIO_METROS_ESTOY_AQUI } from '../hooks/useUbicacionEnVivo';
 
 const INITIAL_CENTER: [number, number] = [19.0414, -98.2063];
 const INITIAL_ZOOM = 13;
@@ -220,6 +222,56 @@ function ZonaGlow({ zona }: { zona: { latitud: number; longitud: number; cantida
   );
 }
 
+// ─── Punto "estoy aquí" (ver src/hooks/useUbicacionEnVivo.ts) ────────────────
+// Personal y puramente visual: el punto azul de quien ve el mapa, más el
+// mismo radio de entrada de 500 m que usa el backend para el registro de
+// avistamientos. No representa a nadie más ni se sincroniza con nada.
+function createUbicacionEnVivoIcon(desactualizado: boolean) {
+  const color = desactualizado ? '#9AA5B1' : Brand.info;
+  const html = `
+    <div style="
+      width:34px; height:34px; border-radius:50%;
+      background:${color}2E;
+      display:flex; align-items:center; justify-content:center;
+    ">
+      <div style="
+        width:16px; height:16px; border-radius:50%;
+        background:${color};
+        border:3px solid #FFFFFF;
+        box-shadow:0 1px 4px rgba(0,0,0,0.35);
+      "></div>
+    </div>`;
+  return L.divIcon({
+    className: 'pawalert-ubicacion-en-vivo',
+    html,
+    iconSize: [34, 34],
+    iconAnchor: [17, 17],
+  });
+}
+
+function UbicacionEnVivoOverlay({
+  ubicacion,
+}: {
+  ubicacion: { latitud: number; longitud: number; desactualizado: boolean };
+}) {
+  const color = ubicacion.desactualizado ? '#9AA5B1' : Brand.info;
+  return (
+    <>
+      <Circle
+        center={[ubicacion.latitud, ubicacion.longitud]}
+        radius={RADIO_METROS_ESTOY_AQUI}
+        interactive={false}
+        pathOptions={{ color, weight: 1.5, opacity: 0.35, fillColor: color, fillOpacity: 0.1 }}
+      />
+      <Marker
+        position={[ubicacion.latitud, ubicacion.longitud]}
+        icon={createUbicacionEnVivoIcon(ubicacion.desactualizado)}
+        interactive={false}
+      />
+    </>
+  );
+}
+
 // ─── Config por estado del reporte ───────────────────────────────────────────
 const ESTADO: Record<string, { color: string; bg: string; label: string }> = {
   pendiente:     { color: '#7B68EE', bg: '#F0EEFF', label: 'Pendiente'    },
@@ -403,6 +455,36 @@ function FitToMarkers({
   return null;
 }
 
+// Zoom automático al activar "Estoy aquí": una sola vez, en el instante en
+// que el tracking pasa a activo con su primer fix (null -> no-null). Los
+// updates de GPS posteriores solo mueven el punto/círculo — no vuelven a
+// hacer zoom para no pelear con el paneo manual del usuario. Volver a
+// picar el botón (apagar y encender) sí dispara otro zoom.
+const ZOOM_ESTOY_AQUI = 16;
+
+function CentrarEnUbicacionEnVivo({
+  ubicacion,
+}: {
+  ubicacion: { latitud: number; longitud: number } | null;
+}) {
+  const map = useMap();
+  const estabaActivaRef = useRef(false);
+
+  useEffect(() => {
+    const activaAhora = ubicacion !== null;
+    if (activaAhora && !estabaActivaRef.current) {
+      map.flyTo(
+        [ubicacion!.latitud, ubicacion!.longitud],
+        Math.max(map.getZoom(), ZOOM_ESTOY_AQUI),
+        { duration: 0.75 },
+      );
+    }
+    estabaActivaRef.current = activaAhora;
+  }, [ubicacion, map]);
+
+  return null;
+}
+
 // ─── Props ────────────────────────────────────────────────────────────────────
 interface LeafletMapProps {
   reportes: Reporte[];
@@ -420,6 +502,10 @@ interface LeafletMapProps {
   onReportModerated?: (reporteId: string) => void;
   onSelectAsociacion?: (asociacion: AsociacionMapa) => void;
   onMapClick: () => void;
+  // "Estoy aquí" (ver src/hooks/useUbicacionEnVivo.ts): punto personal del
+  // usuario en el mapa, puramente visual. No se comparte con nadie ni se
+  // guarda en el backend -- si viene null/undefined no se dibuja nada.
+  ubicacionEnVivo?: { latitud: number; longitud: number; desactualizado: boolean } | null;
 }
 
 // ─── Componente ───────────────────────────────────────────────────────────────
@@ -439,6 +525,7 @@ export default function LeafletMap({
   height,
   fitToMarkers = false,
   showReportMenuInPopup = true,
+  ubicacionEnVivo = null,
 }: LeafletMapProps) {
   // Zona seleccionada (visitantes sin sesión): al hacer click en un pin de
   // zona se muestra un círculo difuminado alrededor, solo esa — no todas a
@@ -535,6 +622,8 @@ export default function LeafletMap({
           );
           return reporteSeleccionado ? <ReportCoverageGlow reporte={reporteSeleccionado} /> : null;
         })()}
+        <CentrarEnUbicacionEnVivo ubicacion={ubicacionEnVivo} />
+        {ubicacionEnVivo && <UbicacionEnVivoOverlay ubicacion={ubicacionEnVivo} />}
         {reportes
           .filter((r): r is typeof r & { latitud: number; longitud: number } =>
             r.latitud !== null && r.longitud !== null)

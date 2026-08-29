@@ -15,6 +15,9 @@ import { useAuth } from '../context/AuthContext';
 import { Reporte, ZonaAgregada, getAnimales, condicionMasGrave, especieMasGrave, totalAnimales, animalMasGrave } from '../types/reporte';
 import { AnimalCarousel } from '../components/common/AnimalCarousel';
 import ReportFormScreen from './ReportFormScreen';
+import { AvistamientoEntryButton } from '../components/avistamientos/AvistamientoEntryButton';
+import { Brand } from '../constants/theme';
+import { RADIO_METROS_ESTOY_AQUI } from '../hooks/useUbicacionEnVivo';
 
 const { width, height } = Dimensions.get('window');
 
@@ -243,6 +246,29 @@ export default function MapScreen() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [, setTick] = useState(0);
 
+  // "Estoy aquí": círculo de 500m sobre el punto azul que MapView ya
+  // dibuja solo (showsUserLocation, preexistente). No se comparte con
+  // nadie ni se guarda en el backend -- puramente visual.
+  const [posicionUsuario, setPosicionUsuario] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [ubicacionDesactualizada, setUbicacionDesactualizada] = useState(false);
+  const ultimaUbicacionRef = useRef<number | null>(null);
+  const handleUserLocationChange = useCallback((event: any) => {
+    const coordenada = event?.nativeEvent?.coordinate;
+    if (!coordenada) return;
+    ultimaUbicacionRef.current = Date.now();
+    setUbicacionDesactualizada(false);
+    setPosicionUsuario({ latitude: coordenada.latitude, longitude: coordenada.longitude });
+  }, []);
+  useEffect(() => {
+    const intervalo = setInterval(() => {
+      const ultima = ultimaUbicacionRef.current;
+      if (ultima && Date.now() - ultima > 60_000) {
+        setUbicacionDesactualizada(true);
+      }
+    }, 5_000);
+    return () => clearInterval(intervalo);
+  }, []);
+
   // ── Filtros — portados de MapScreen.web.tsx ──────────────────────────────
   const [filtro, setFiltro] = useState('todos');
   const [filtroEspecie, setFiltroEspecie] = useState('todos');
@@ -385,7 +411,17 @@ export default function MapScreen() {
         onPress={() => { if (selectedReport) hideSheet(); }}
         showsUserLocation
         showsMyLocationButton={false}
+        onUserLocationChange={handleUserLocationChange}
       >
+        {posicionUsuario && (
+          <Circle
+            center={posicionUsuario}
+            radius={RADIO_METROS_ESTOY_AQUI}
+            strokeWidth={1.5}
+            strokeColor={ubicacionDesactualizada ? '#9AA5B155' : `${Brand.info}55`}
+            fillColor={ubicacionDesactualizada ? '#9AA5B11A' : `${Brand.info}1A`}
+          />
+        )}
         {(mostrarAsociaciones ? [] : reportesFiltrados).map(reporte => {
           const animales = getAnimales(reporte);
           const total = totalAnimales(animales);
@@ -716,6 +752,9 @@ export default function MapScreen() {
                 <View style={{ marginTop: 12 }}>
                   <AnimalCarousel key={r.id} animales={animalesSel} compact />
                 </View>
+              )}
+              {!['cerrado', 'cancelado_por_reportante', 'rechazado', 'rescatado'].includes(r.estado_reporte ?? '') && (
+                <AvistamientoEntryButton reporte={{ id: r.id }} onBeforeNavigate={hideSheet} />
               )}
               <View style={{ backgroundColor: '#FFF5EE', borderRadius: 10, padding: 8, marginTop: 12 }}>
                 <Text style={{ fontSize: 10, color: COLORS.orange, fontStyle: 'italic' }}>
