@@ -247,3 +247,68 @@ class AdoptionProfilePause(BaseModel):
         if not cleaned:
             raise ValueError("El texto no puede estar vacío")
         return cleaned
+
+
+class AdoptionPublicCatalogItem(BaseModel):
+    clave: str
+    descripcion: str
+
+
+class AdoptionPublicAssociation(BaseModel):
+    id: UUID
+    nombre: str
+    acerca_de: str | None = None
+    logo_url: str | None = None
+
+
+class AdoptionPublicPhoto(BaseModel):
+    id: UUID
+    orden: int
+    texto_alternativo: str | None = None
+    foto_url: str
+    foto_url_expira_at: datetime
+
+
+class AdoptionPublicProfileSummary(BaseModel):
+    id: UUID
+    nombre_publico: str
+    tipo_animal: AdoptionPublicCatalogItem
+    tipo_animal_otro: AdoptionPublicCatalogItem | None = None
+    tamanio: AdoptionPublicCatalogItem
+    raza: AdoptionPublicCatalogItem | None = None
+    sexo: Literal["macho", "hembra", "desconocido"]
+    edad_aproximada: Literal[
+        "cachorro", "joven", "adulto", "senior", "desconocido"
+    ]
+    zona_general: str
+    compatibilidad: dict[str, object] = Field(default_factory=dict)
+    asociacion: AdoptionPublicAssociation
+    foto_portada: AdoptionPublicPhoto | None = None
+    publicado_at: datetime
+    actualizado_at: datetime
+
+
+class AdoptionPublicProfileDetail(AdoptionPublicProfileSummary):
+    descripcion: str
+    personalidad: str
+    salud_conocida: str
+    tratamientos: str | None = None
+    necesidades_especiales: str | None = None
+    vacunacion_estado: Literal[
+        "desconocido", "pendiente", "parcial", "completo", "no_aplica"
+    ]
+    esterilizacion_estado: Literal[
+        "desconocido", "pendiente", "completo", "no_aplica"
+    ]
+    revision_medica_estado: Literal[
+        "desconocida", "pendiente", "declarada", "verificada"
+    ]
+    fotos: list[AdoptionPublicPhoto]
+
+
+class AdoptionPublicPage(BaseModel):
+    items: list[AdoptionPublicProfileSummary]
+    pagina: int
+    limite: int
+    total: int
+    tiene_mas: bool

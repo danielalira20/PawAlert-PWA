@@ -1,7 +1,7 @@
-from typing import Optional
+from typing import Literal, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, Header, HTTPException, Query, UploadFile
 
 from app.db.supabase import supabase
 from app.models.adoption import (
@@ -14,6 +14,8 @@ from app.models.adoption import (
     AdoptionProfilePhotoReview,
     AdoptionProfilePublish,
     AdoptionProfileUpdate,
+    AdoptionPublicPage,
+    AdoptionPublicProfileDetail,
     FormalAdoptionProfileCreate,
 )
 from app.services import adoption_service
@@ -81,6 +83,41 @@ def _call(operation):
             status_code=error.status_code,
             detail=error.detail,
         ) from error
+
+
+@router.get("/adoptions", response_model=AdoptionPublicPage)
+def get_public_adoptions(
+    especie: str | None = Query(None, min_length=1, max_length=80),
+    tamanio: str | None = Query(None, min_length=1, max_length=80),
+    edad: Literal[
+        "cachorro", "joven", "adulto", "senior", "desconocido"
+    ] | None = Query(None),
+    zona: str | None = Query(None, min_length=1, max_length=120),
+    compatible_con: str | None = Query(None, min_length=1, max_length=80),
+    pagina: int = Query(1, ge=1),
+    limite: int = Query(20, ge=1, le=50),
+):
+    return _call(
+        lambda: adoption_service.listar_adopciones_publicas(
+            especie=especie,
+            tamanio=tamanio,
+            edad=edad,
+            zona=zona,
+            compatible_con=compatible_con,
+            pagina=pagina,
+            limite=limite,
+        )
+    )
+
+
+@router.get(
+    "/adoptions/{profile_id}",
+    response_model=AdoptionPublicProfileDetail,
+)
+def get_public_adoption(profile_id: UUID):
+    return _call(
+        lambda: adoption_service.obtener_adopcion_publica(str(profile_id))
+    )
 
 
 @router.post("/custody/{custody_id}/adoption-intake-requests", status_code=201)

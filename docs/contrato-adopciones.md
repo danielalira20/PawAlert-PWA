@@ -409,6 +409,25 @@ Las respuestas de escritura incluyen `id`, `estado`, `updated_at` y un
 
 ## Privacidad y almacenamiento
 
+### Lectura publica
+
+La galeria se consulta sin autenticacion mediante `GET /adoptions`. Acepta los
+filtros `especie`, `tamanio`, `edad`, `zona` y `compatible_con`, junto con
+`pagina` y `limite`. El limite maximo es 50. `GET /adoptions/{perfil_id}`
+entrega el detalle de una ficha que siga disponible.
+
+Ambas rutas muestran exclusivamente perfiles con `estado = publicado`,
+`estado_moderacion = visible` y una asociacion que conserve `activo = true` y
+`verificado = true`. La galeria devuelve una portada y el detalle devuelve
+todas las fotografias aprobadas para publicacion. Las URLs son temporales; un
+fallo al firmar una imagen no revela su ruta ni vuelve publica la carpeta.
+
+La respuesta publica se construye mediante una lista explicita de campos. No
+incluye identificadores de custodia, reporte o animal, datos del custodio,
+coordenadas, domicilio, telefono, correo, documentos, notas de moderacion,
+confirmaciones internas ni `storage_path`. La asociacion se identifica solo
+con nombre, descripcion y logo publicos.
+
 La carga de una fotografia usa `multipart/form-data` con `photo`, `orden`,
 `texto_alternativo` e `idempotency_key`. El backend valida el archivo real,
 lo convierte a JPEG sin EXIF y registra la fotografia como no aprobada. Una

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import unicodedata
 from hashlib import sha256
 from typing import Callable
 
@@ -34,6 +35,14 @@ from app.services.storage_service import (
 
 logger = logging.getLogger(__name__)
 MAX_ADOPTION_PHOTO_BYTES = 10 * 1024 * 1024
+PUBLIC_PROFILE_FIELDS = (
+    "id, asociacion_id, nombre_publico, tipo_animal_id, "
+    "tipo_animal_otro_id, tamanio_id, raza_id, sexo, edad_aproximada, "
+    "descripcion, personalidad, salud_conocida, tratamientos, "
+    "necesidades_especiales, vacunacion_estado, esterilizacion_estado, "
+    "revision_medica_estado, compatibilidad, zona_general, publicado_at, "
+    "actualizado_at, estado, estado_moderacion"
+)
 
 
 ERROR_STATUS = {
@@ -43,6 +52,7 @@ ERROR_STATUS = {
     "animal_no_pertenece_custodia": 404,
     "animal_ingreso_no_encontrado": 404,
     "perfil_adopcion_no_encontrado": 404,
+    "adopcion_publica_no_encontrada": 404,
     "actor_no_es_custodio_activo": 403,
     "actor_no_es_proponente_ingreso": 403,
     "actor_no_pertenece_asociacion": 403,
@@ -102,6 +112,7 @@ ERROR_DETAIL = {
     "animal_no_pertenece_custodia": "El animal seleccionado no pertenece a esta custodia.",
     "animal_ingreso_no_encontrado": "El animal de la propuesta ya no está disponible.",
     "perfil_adopcion_no_encontrado": "No se encontró el perfil dentro de tu asociación.",
+    "adopcion_publica_no_encontrada": "Esta adopción ya no está disponible.",
     "actor_no_es_custodio_activo": "Solo el hogar temporal actual puede proponer este ingreso.",
     "actor_no_es_proponente_ingreso": "Solo quien hizo la propuesta puede realizar esta acción.",
     "actor_no_pertenece_asociacion": "Esta acción corresponde a la asociación coordinadora.",
@@ -684,3 +695,338 @@ def listar_perfiles_asociacion(association_id: str) -> list[dict]:
 def obtener_perfil_asociacion(profile_id: str, association_id: str) -> dict:
     profile = _obtener_perfil_asociacion(profile_id, association_id)
     return _adjuntar_fotos_privadas([profile])[0]
+
+
+def _normalizar_filtro_publico(value: object) -> str:
+    text = str(value or "").strip().casefold()
+    return "".join(
+        character
+        for character in unicodedata.normalize("NFKD", text)
+        if not unicodedata.combining(character)
+    )
+
+
+def _valor_indica_compatibilidad(value: object) -> bool:
+    if value is True:
+        return True
+    if isinstance(value, str):
+        return _normalizar_filtro_publico(value) in {
+            "apto",
+            "compatible",
+            "confirmado",
+            "si",
+        }
+    if isinstance(value, dict):
+        return any(
+            _valor_indica_compatibilidad(value.get(key))
+            for key in ("compatible", "estado", "valor")
+            if key in value
+        )
+    return False
+
+
+def _perfil_coincide_compatibilidad(profile: dict, key: str | None) -> bool:
+    if not key:
+        return True
+    expected = _normalizar_filtro_publico(key)
+    compatibility = profile.get("compatibilidad") or {}
+    if not isinstance(compatibility, dict):
+        return False
+    return any(
+        _normalizar_filtro_publico(name) == expected
+        and _valor_indica_compatibilidad(value)
+        for name, value in compatibility.items()
+    )
+
+
+def _catalogo_por_id(table: str, ids: set[str]) -> dict[str, dict]:
+    if not ids:
+        return {}
+    rows = _query(
+        f"resolver catálogo público {table}",
+        lambda: supabase_admin.table(table)
+        .select("id, clave, descripcion")
+        .in_("id", sorted(ids)),
+    )
+    return {
+        row["id"]: {
+            "clave": row["clave"],
+            "descripcion": row["descripcion"],
+        }
+        for row in rows
+        if row.get("id") and row.get("clave") and row.get("descripcion")
+    }
+
+
+def _contexto_publico_perfiles(
+    profiles: list[dict],
+) -> tuple[dict[str, dict], dict[str, dict[str, dict]]]:
+    association_ids = {
+        profile["asociacion_id"]
+        for profile in profiles
+        if profile.get("asociacion_id")
+    }
+    associations: dict[str, dict] = {}
+    if association_ids:
+        rows = _query(
+            "resolver asociaciones de adopciones públicas",
+            lambda: supabase_admin.table("asociaciones")
+            .select("id, nombre, acerca_de, logo_url, activo, verificado")
+            .in_("id", sorted(association_ids))
+            .eq("activo", True)
+            .eq("verificado", True),
+        )
+        associations = {
+            row["id"]: {
+                "id": row["id"],
+                "nombre": row["nombre"],
+                "acerca_de": row.get("acerca_de"),
+                "logo_url": row.get("logo_url"),
+            }
+            for row in rows
+            if row.get("id")
+            and row.get("nombre")
+            and row.get("activo") is True
+            and row.get("verificado") is True
+        }
+
+    catalog_ids = {
+        "tipo_animal": {
+            profile["tipo_animal_id"]
+            for profile in profiles
+            if profile.get("tipo_animal_id")
+        },
+        "tipo_animal_otro": {
+            profile["tipo_animal_otro_id"]
+            for profile in profiles
+            if profile.get("tipo_animal_otro_id")
+        },
+        "tamanio": {
+            profile["tamanio_id"]
+            for profile in profiles
+            if profile.get("tamanio_id")
+        },
+        "raza": {
+            profile["raza_id"]
+            for profile in profiles
+            if profile.get("raza_id")
+        },
+    }
+    catalogs = {
+        "tipo_animal": _catalogo_por_id(
+            "tipo_animal_catalogo", catalog_ids["tipo_animal"]
+        ),
+        "tipo_animal_otro": _catalogo_por_id(
+            "tipo_animal_otro", catalog_ids["tipo_animal_otro"]
+        ),
+        "tamanio": _catalogo_por_id(
+            "tamanio_catalogo", catalog_ids["tamanio"]
+        ),
+        "raza": _catalogo_por_id("raza_catalogo", catalog_ids["raza"]),
+    }
+    return associations, catalogs
+
+
+def _serializar_perfil_publico(
+    profile: dict,
+    association: dict,
+    catalogs: dict[str, dict[str, dict]],
+) -> dict | None:
+    animal_type = catalogs["tipo_animal"].get(profile.get("tipo_animal_id"))
+    size = catalogs["tamanio"].get(profile.get("tamanio_id"))
+    if not animal_type or not size:
+        logger.warning(
+            "Perfil público de adopción %s tiene catálogos incompletos",
+            profile.get("id"),
+        )
+        return None
+    return {
+        "id": profile["id"],
+        "nombre_publico": profile["nombre_publico"],
+        "tipo_animal": animal_type,
+        "tipo_animal_otro": catalogs["tipo_animal_otro"].get(
+            profile.get("tipo_animal_otro_id")
+        ),
+        "tamanio": size,
+        "raza": catalogs["raza"].get(profile.get("raza_id")),
+        "sexo": profile["sexo"],
+        "edad_aproximada": profile["edad_aproximada"],
+        "zona_general": profile["zona_general"],
+        "compatibilidad": profile.get("compatibilidad") or {},
+        "asociacion": association,
+        "publicado_at": profile["publicado_at"],
+        "actualizado_at": profile["actualizado_at"],
+    }
+
+
+def _fotos_publicas(
+    profile_ids: list[str],
+    *,
+    solo_portada: bool,
+) -> dict[str, list[dict]]:
+    grouped: dict[str, list[dict]] = {
+        profile_id: [] for profile_id in profile_ids
+    }
+    if not profile_ids:
+        return grouped
+    photos = _query(
+        "listar fotografías públicas de adopción",
+        lambda: supabase_admin.table("fotos_perfil_adopcion")
+        .select(
+            "id, perfil_adopcion_id, storage_path, orden, "
+            "texto_alternativo, aprobada_publicacion"
+        )
+        .in_("perfil_adopcion_id", profile_ids)
+        .eq("aprobada_publicacion", True)
+        .order("orden"),
+    )
+    for photo in photos:
+        profile_id = photo.get("perfil_adopcion_id")
+        if (
+            profile_id not in grouped
+            or photo.get("aprobada_publicacion") is not True
+            or (solo_portada and grouped[profile_id])
+        ):
+            continue
+        try:
+            access = crear_url_firmada_adopcion(photo["storage_path"])
+        except Exception:
+            logger.warning(
+                "No se pudo firmar una fotografía pública de adopción",
+                exc_info=True,
+            )
+            continue
+        grouped[profile_id].append(
+            {
+                "id": photo["id"],
+                "orden": photo["orden"],
+                "texto_alternativo": photo.get("texto_alternativo"),
+                "foto_url": access["url"],
+                "foto_url_expira_at": access["expira_at"],
+            }
+        )
+    return grouped
+
+
+def _consultar_perfiles_publicos(profile_id: str | None = None) -> list[dict]:
+    def query():
+        result = (
+            supabase_admin.table("perfiles_adopcion")
+            .select(PUBLIC_PROFILE_FIELDS)
+            .eq("estado", "publicado")
+            .eq("estado_moderacion", "visible")
+        )
+        if profile_id:
+            result = result.eq("id", profile_id).limit(1)
+        else:
+            result = result.order("publicado_at", desc=True).order(
+                "id", desc=True
+            )
+        return result
+
+    return _query("listar adopciones públicas", query)
+
+
+def listar_adopciones_publicas(
+    *,
+    especie: str | None,
+    tamanio: str | None,
+    edad: str | None,
+    zona: str | None,
+    compatible_con: str | None,
+    pagina: int,
+    limite: int,
+) -> dict:
+    profiles = _consultar_perfiles_publicos()
+    associations, catalogs = _contexto_publico_perfiles(profiles)
+    species_filter = _normalizar_filtro_publico(especie)
+    size_filter = _normalizar_filtro_publico(tamanio)
+    zone_filter = _normalizar_filtro_publico(zona)
+    public_profiles: list[dict] = []
+
+    for profile in profiles:
+        if (
+            profile.get("estado") != "publicado"
+            or profile.get("estado_moderacion") != "visible"
+        ):
+            continue
+        association = associations.get(profile.get("asociacion_id"))
+        if not association:
+            continue
+        shaped = _serializar_perfil_publico(profile, association, catalogs)
+        if not shaped:
+            continue
+        if species_filter and _normalizar_filtro_publico(
+            shaped["tipo_animal"]["clave"]
+        ) != species_filter:
+            continue
+        if size_filter and _normalizar_filtro_publico(
+            shaped["tamanio"]["clave"]
+        ) != size_filter:
+            continue
+        if edad and shaped["edad_aproximada"] != edad:
+            continue
+        if zone_filter and zone_filter not in _normalizar_filtro_publico(
+            shaped["zona_general"]
+        ):
+            continue
+        if not _perfil_coincide_compatibilidad(profile, compatible_con):
+            continue
+        public_profiles.append(shaped)
+
+    public_profiles.sort(
+        key=lambda profile: (profile["publicado_at"], profile["id"]),
+        reverse=True,
+    )
+    total = len(public_profiles)
+    start = (pagina - 1) * limite
+    page_items = public_profiles[start : start + limite]
+    photos = _fotos_publicas(
+        [profile["id"] for profile in page_items],
+        solo_portada=True,
+    )
+    for profile in page_items:
+        profile_photos = photos.get(profile["id"], [])
+        profile["foto_portada"] = profile_photos[0] if profile_photos else None
+    return {
+        "items": page_items,
+        "pagina": pagina,
+        "limite": limite,
+        "total": total,
+        "tiene_mas": start + len(page_items) < total,
+    }
+
+
+def obtener_adopcion_publica(profile_id: str) -> dict:
+    profiles = _consultar_perfiles_publicos(profile_id)
+    if not profiles:
+        raise AdoptionServiceError("adopcion_publica_no_encontrada")
+    associations, catalogs = _contexto_publico_perfiles(profiles)
+    profile = profiles[0]
+    if (
+        profile.get("estado") != "publicado"
+        or profile.get("estado_moderacion") != "visible"
+    ):
+        raise AdoptionServiceError("adopcion_publica_no_encontrada")
+    association = associations.get(profile.get("asociacion_id"))
+    if not association:
+        raise AdoptionServiceError("adopcion_publica_no_encontrada")
+    shaped = _serializar_perfil_publico(profile, association, catalogs)
+    if not shaped:
+        raise AdoptionServiceError("adopcion_publica_no_encontrada")
+    photos = _fotos_publicas([profile_id], solo_portada=False)[profile_id]
+    shaped.update(
+        {
+            "foto_portada": photos[0] if photos else None,
+            "descripcion": profile["descripcion"],
+            "personalidad": profile["personalidad"],
+            "salud_conocida": profile["salud_conocida"],
+            "tratamientos": profile.get("tratamientos"),
+            "necesidades_especiales": profile.get("necesidades_especiales"),
+            "vacunacion_estado": profile["vacunacion_estado"],
+            "esterilizacion_estado": profile["esterilizacion_estado"],
+            "revision_medica_estado": profile["revision_medica_estado"],
+            "fotos": photos,
+        }
+    )
+    return shaped
