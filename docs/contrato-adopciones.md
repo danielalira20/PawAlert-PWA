@@ -297,10 +297,12 @@ automaticamente el reporte ni la custodia original.
 
 La implementacion debe separar como minimo:
 
+- `requisitos_base_adopcion`;
 - `solicitudes_ingreso_adopcion`;
 - `perfiles_adopcion`;
 - `fotos_perfil_adopcion`;
 - `plantillas_requisitos_adopcion`;
+- `preguntas_requisito_adopcion`;
 - `solicitudes_adopcion`;
 - `respuestas_solicitud_adopcion`;
 - `entregas_adopcion`;
@@ -310,6 +312,11 @@ La implementacion debe separar como minimo:
 Las relaciones a `reporte_id`, `animal_id` y `custodia_id` son opcionales para
 un ingreso formal, pero obligatorias cuando el origen es `custodia_pawalert`.
 La asociacion responsable siempre es obligatoria.
+
+`requisitos_base_adopcion` pertenece a PawAlert y se versiona por `clave`. Las
+preguntas de `plantillas_requisitos_adopcion` pertenecen a una asociacion. La
+solicitud conserva un snapshot de ambas fuentes y cada respuesta conserva el
+texto, tipo y obligatoriedad que el usuario vio al contestar.
 
 Restricciones minimas de base de datos:
 
