@@ -432,9 +432,11 @@ CREATE TABLE IF NOT EXISTS public.respuestas_solicitud_adopcion (
       AND documento_storage_path IS NOT NULL
       AND documento_storage_path LIKE 'adopciones/solicitudes/%'
       AND documento_storage_path !~ '(^|/)\.\.(/|$)'
+      AND documento_mime_type IS NOT NULL
       AND documento_mime_type IN (
         'image/jpeg', 'image/png', 'image/webp', 'application/pdf'
       )
+      AND documento_size_bytes IS NOT NULL
       AND documento_size_bytes > 0
       AND documento_size_bytes <= 10485760
       AND es_sensible_snapshot = true
