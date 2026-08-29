@@ -306,7 +306,10 @@ La implementacion debe separar como minimo:
 - `solicitudes_adopcion`;
 - `respuestas_solicitud_adopcion`;
 - `entregas_adopcion`;
+- `confirmaciones_entrega_adopcion`;
 - `seguimientos_adopcion`;
+- `evidencias_seguimiento_adopcion`;
+- `alertas_bienestar_adopcion`;
 - `historial_adopcion`.
 
 Las relaciones a `reporte_id`, `animal_id` y `custodia_id` son opcionales para
