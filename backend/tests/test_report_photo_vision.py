@@ -128,14 +128,14 @@ def test_mensaje_rechazo_imagen_no_clara():
     assert vision.mensaje_rechazo("imagen_no_clara") == vision.MENSAJE_IMAGEN_NO_CLARA
 
 
-def test_mensaje_rechazo_otras_categorias_usa_generico():
-    for categoria in [
-        "no_hay_animal",
-        "peluche_o_figura",
-        "captura_pantalla_o_descarga",
-        None,
-    ]:
-        assert vision.mensaje_rechazo(categoria) == vision.MENSAJE_RECHAZO_GENERICO
+def test_mensaje_rechazo_explica_la_causa_detectada():
+    assert "animal" in vision.mensaje_rechazo("no_hay_animal").lower()
+    assert "peluche" in vision.mensaje_rechazo("peluche_o_figura").lower()
+    assert "ia" in vision.mensaje_rechazo("imagen_generada_ia").lower()
+    assert "captura" in vision.mensaje_rechazo(
+        "captura_pantalla_o_descarga"
+    ).lower()
+    assert vision.mensaje_rechazo(None) == vision.MENSAJE_RECHAZO_GENERICO
 
 
 def test_mensaje_advertencia_identificacion_devuelve_texto_esperado():
