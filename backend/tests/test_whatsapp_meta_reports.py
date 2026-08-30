@@ -260,6 +260,100 @@ def test_foto_rechazada_en_distintos_reemplaza_solo_la_ficha(monkeypatch):
     assert "animal 2" in enviados[0]
 
 
+def test_foto_se_valida_inmediatamente_y_rechazo_no_avanza(monkeypatch):
+    enviados = []
+    guardados = []
+
+    monkeypatch.setattr(service, "_registrar_mensaje", lambda *_a: True)
+    monkeypatch.setattr(
+        service,
+        "_sesion",
+        lambda _wa_id: {
+            "estado": "foto",
+            "respuestas": {
+                "cantidad": 2,
+                "_modo": "distintos",
+                "_animal_idx": 1,
+                "_animales_total": 2,
+                "_animales": [],
+            },
+        },
+    )
+
+    async def validar(_media):
+        return {"es_animal_real": False, "categoria_rechazo": "peluche_o_figura"}
+
+    async def enviar(_wa_id, texto, **_kwargs):
+        enviados.append(texto)
+
+    monkeypatch.setattr(service, "_validar_foto_inmediatamente", validar)
+    monkeypatch.setattr(service, "enviar_texto", enviar)
+    monkeypatch.setattr(service, "_guardar_sesion", lambda *args: guardados.append(args))
+
+    asyncio.run(
+        service._procesar_mensaje(
+            {
+                "id": "foto-peluche",
+                "from": "5212210000000",
+                "type": "image",
+                "image": {"id": "media-1", "mime_type": "image/jpeg"},
+            }
+        )
+    )
+
+    assert not guardados
+    assert "peluche" in enviados[0].lower()
+    assert "envía otra foto" in enviados[0].lower()
+
+
+def test_foto_valida_avanza_y_conserva_resultado_vision(monkeypatch):
+    guardado = {}
+
+    monkeypatch.setattr(service, "_registrar_mensaje", lambda *_a: True)
+    monkeypatch.setattr(
+        service,
+        "_sesion",
+        lambda _wa_id: {
+            "estado": "foto",
+            "respuestas": {"cantidad": 1},
+        },
+    )
+
+    resultado_vision = {
+        "estado": "completado",
+        "es_animal_real": True,
+        "confianza": 0.98,
+    }
+
+    async def validar(_media):
+        return resultado_vision
+
+    async def noop(*_args, **_kwargs):
+        return None
+
+    def guardar(_wa_id, estado, respuestas):
+        guardado.update(estado=estado, respuestas=dict(respuestas))
+
+    monkeypatch.setattr(service, "_validar_foto_inmediatamente", validar)
+    monkeypatch.setattr(service, "_guardar_sesion", guardar)
+    monkeypatch.setattr(service, "enviar_pregunta", noop)
+
+    asyncio.run(
+        service._procesar_mensaje(
+            {
+                "id": "foto-real",
+                "from": "5212210000000",
+                "type": "image",
+                "image": {"id": "media-2", "mime_type": "image/jpeg"},
+            }
+        )
+    )
+
+    assert guardado["estado"] == "tipo_animal"
+    assert guardado["respuestas"]["foto"]["media_id"] == "media-2"
+    assert guardado["respuestas"]["_validacion_foto"] == resultado_vision
+
+
 def test_despedida_incluye_folio_sitio_y_vista_previa(monkeypatch):
     enviado = {}
 

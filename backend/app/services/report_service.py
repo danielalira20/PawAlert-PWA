@@ -257,6 +257,7 @@ async def crear_reporte(
     fotos: list | None = None,
     fotos_ordenes: str | None = None,
     fotos_animal_index: str | None = None,
+    fotos_vision_resultados: str | None = None,
     estado_ubicacion: str | None = None,
     usuario_id: str | None = None,
     es_duplicado_confirmado: bool | None = None,
@@ -422,6 +423,11 @@ async def crear_reporte(
         if fotos:
             ordenes = json.loads(fotos_ordenes) if fotos_ordenes and fotos_ordenes.strip() else []
             indices = json.loads(fotos_animal_index) if fotos_animal_index and fotos_animal_index.strip() else []
+            resultados_previos = (
+                json.loads(fotos_vision_resultados)
+                if fotos_vision_resultados and fotos_vision_resultados.strip()
+                else []
+            )
             for i, foto in enumerate(fotos):
                 if foto and foto.filename:
                     from app.services.report_moderation_service import calcular_phash, registrar_phash_reporte
@@ -431,7 +437,12 @@ async def crear_reporte(
                     animal_id_actual = animal_ids[animal_idx]
                     contenido_foto = await foto.read()
 
-                    resultado_vision = verificar_foto_animal(contenido_foto, foto.content_type)
+                    resultado_vision = (
+                        resultados_previos[i]
+                        if i < len(resultados_previos)
+                        and isinstance(resultados_previos[i], dict)
+                        else verificar_foto_animal(contenido_foto, foto.content_type)
+                    )
 
                     if resultado_vision.get("es_animal_real") is False:
                         raise FotoAnimalRechazada(

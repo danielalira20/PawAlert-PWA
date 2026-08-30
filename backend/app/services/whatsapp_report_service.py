@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import json
 import unicodedata
 from io import BytesIO
 from datetime import datetime, timezone
@@ -17,6 +18,7 @@ from app.config import settings
 from app.db.supabase import supabase_admin
 from app.models.report import AnimalInput
 from app.services.report_service import FotoAnimalRechazada, crear_reporte
+from app.services.report_photo_vision_service import mensaje_rechazo, verificar_foto_animal
 
 
 logger = logging.getLogger(__name__)
@@ -189,6 +191,7 @@ CAMPOS_FICHA_ANIMAL = (
     "trae_crias",
     "numero_crias",
     "descripcion_animal",
+    "_validacion_foto",
 )
 
 RAZAS_SUGERIDAS: dict[str, list[tuple[str, str]]] = {
@@ -729,6 +732,13 @@ async def _descargar_imagen(media: dict[str, Any]) -> UploadFile:
     )
 
 
+async def _validar_foto_inmediatamente(media: dict[str, Any]) -> dict[str, Any]:
+    """Aplica el mismo filtro de la PWA en cuanto WhatsApp recibe la imagen."""
+    archivo = await _descargar_imagen(media)
+    contenido = await archivo.read()
+    return verificar_foto_animal(contenido, archivo.content_type or "image/jpeg")
+
+
 async def _pedir_nueva_foto(
     wa_id: str,
     respuestas: dict[str, Any],
@@ -911,6 +921,11 @@ async def _crear_desde_respuestas(
         fotos_ordenes=str(list(range(1, len(fotos) + 1))) if fotos else None,
         fotos_animal_index=(
             str(list(range(len(fotos)))) if fichas and fotos else "[0]" if fotos else None
+        ),
+        fotos_vision_resultados=(
+            json.dumps([ficha.get("_validacion_foto") for ficha in fichas])
+            if fichas and fotos
+            else json.dumps([respuestas.get("_validacion_foto")]) if fotos else None
         ),
         animales=animales,
         latitud=ubicacion.get("latitud"),
@@ -1114,11 +1129,30 @@ async def _procesar_mensaje(mensaje: dict[str, Any]) -> None:
                 + PREGUNTAS[estado],
             )
             return
+        if estado == "foto" and valor is not None:
+            try:
+                resultado_vision = await _validar_foto_inmediatamente(valor)
+            except ValueError as error:
+                await enviar_texto(wa_id, str(error) + "\n\n" + PREGUNTAS["foto"])
+                return
+            if resultado_vision.get("es_animal_real") is False:
+                await enviar_texto(
+                    wa_id,
+                    "⚠️ *La fotografía no fue aceptada*\n\n"
+                    + mensaje_rechazo(resultado_vision.get("categoria_rechazo"))
+                    + "\n\nEnvía otra foto para continuar.",
+                )
+                return
+            respuestas["_validacion_foto"] = resultado_vision
+
         respuestas[estado] = valor
 
         indice_foto = respuestas.pop("_reemplazando_foto_idx", None)
         if estado == "foto" and indice_foto is not None:
             respuestas["_animales"][indice_foto]["foto"] = valor
+            respuestas["_animales"][indice_foto]["_validacion_foto"] = respuestas.pop(
+                "_validacion_foto", None
+            )
             respuestas.pop("foto", None)
             _guardar_sesion(wa_id, "confirmacion", respuestas)
             await enviar_confirmacion(wa_id, respuestas)
