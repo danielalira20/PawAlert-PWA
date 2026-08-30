@@ -241,6 +241,12 @@ El rechazo exige un motivo interno y una categoria comunicable. No deben
 enviarse al usuario notas sensibles, comparaciones con otras personas ni
 acusaciones no revisadas.
 
+Las categorias publicas permitidas son `requisitos_no_cumplidos`,
+`condiciones_no_compatibles`, `proceso_incompleto` y `otro`. El frontend
+traduce esas claves a mensajes cuidadosos; el motivo interno permanece visible
+solo para la asociacion y administracion. Pedir informacion o rechazar encola
+una notificacion sin copiar en su payload la aclaracion ni el motivo interno.
+
 ## Seleccion y concurrencia
 
 Seleccionar una solicitud es una operacion atomica que debe:
@@ -256,6 +262,8 @@ Seleccionar una solicitud es una operacion atomica que debe:
 Un segundo intento concurrente debe devolver `409 conflicto` sin cambios
 parciales. Si la seleccion se cancela, la asociacion decide si el perfil vuelve
 a `publicado` o `pausado`; solo entonces puede seleccionar otra solicitud.
+Seleccionar tampoco crea la entrega ni cambia custodia o reporte: esas acciones
+pertenecen al siguiente tramo del flujo.
 
 ## Entrega y relacion con custodia
 
