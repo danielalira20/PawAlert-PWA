@@ -34,6 +34,8 @@ class FotoAnimalInvalida(ValueError):
 INICIO = "nombre"
 SITIO_PAWALERT = "https://paw-alert-pwa.vercel.app"
 MARCA_AVISO_INACTIVIDAD = "_aviso_inactividad"
+TOLERANCIA_MENSAJE_ATRASADO_SEGUNDOS = 30
+MAX_ANTIGUEDAD_MENSAJE_SIN_SESION_MINUTOS = 5
 
 COMANDOS_REINICIO = {
     "nuevo reporte",
@@ -488,7 +490,7 @@ def _resumen(respuestas: dict[str, Any]) -> str:
 def _sesion(wa_id: str) -> dict[str, Any] | None:
     resultado = (
         supabase_admin.table("whatsapp_reporte_sesiones")
-        .select("wa_id, estado, respuestas")
+        .select("wa_id, estado, respuestas, creado_at, actualizado_at")
         .eq("wa_id", wa_id)
         .limit(1)
         .execute()
@@ -516,6 +518,34 @@ def _eliminar_sesion(wa_id: str) -> None:
 
 def _fecha_sesion(valor: str) -> datetime:
     return datetime.fromisoformat(valor.replace("Z", "+00:00"))
+
+
+def _fecha_mensaje_meta(mensaje: dict[str, Any]) -> datetime | None:
+    try:
+        return datetime.fromtimestamp(int(mensaje["timestamp"]), tz=timezone.utc)
+    except (KeyError, TypeError, ValueError, OSError):
+        return None
+
+
+def _mensaje_llego_atrasado(
+    mensaje: dict[str, Any],
+    sesion: dict[str, Any] | None,
+    ahora: datetime | None = None,
+) -> bool:
+    fecha_mensaje = _fecha_mensaje_meta(mensaje)
+    if fecha_mensaje is None:
+        return False
+    ahora = ahora or datetime.now(timezone.utc)
+    if sesion and sesion.get("actualizado_at"):
+        ultima_actividad = _fecha_sesion(sesion["actualizado_at"])
+        return (
+            fecha_mensaje
+            + timedelta(seconds=TOLERANCIA_MENSAJE_ATRASADO_SEGUNDOS)
+            < ultima_actividad
+        )
+    return ahora - fecha_mensaje > timedelta(
+        minutes=MAX_ANTIGUEDAD_MENSAJE_SIN_SESION_MINUTOS
+    )
 
 
 async def procesar_inactividad_sesiones(
@@ -608,12 +638,6 @@ def _registrar_mensaje(message_id: str, wa_id: str) -> bool:
         {"message_id": message_id, "wa_id": wa_id}
     ).execute()
     return True
-
-
-def _olvidar_mensaje(message_id: str) -> None:
-    supabase_admin.table("whatsapp_mensajes_recibidos").delete().eq(
-        "message_id", message_id
-    ).execute()
 
 
 async def enviar_texto(wa_id: str, texto: str, *, preview_url: bool = False) -> None:
@@ -1031,13 +1055,17 @@ async def _procesar_mensaje(mensaje: dict[str, Any]) -> None:
         return
 
     try:
+        sesion = _sesion(wa_id)
+        if _mensaje_llego_atrasado(mensaje, sesion):
+            logger.info("Mensaje atrasado de Meta ignorado: %s", message_id)
+            return
+
         if contenido and contenido[0] == "text" and _es_reinicio(contenido[1]):
             _eliminar_sesion(wa_id)
             _guardar_sesion(wa_id, INICIO, {})
             await enviar_pregunta(wa_id, INICIO)
             return
 
-        sesion = _sesion(wa_id)
         if sesion is None:
             _guardar_sesion(wa_id, INICIO, {})
             await enviar_pregunta(wa_id, INICIO)
@@ -1301,7 +1329,8 @@ async def _procesar_mensaje(mensaje: dict[str, Any]) -> None:
         else:
             await enviar_pregunta(wa_id, siguiente, respuestas)
     except Exception:
-        _olvidar_mensaje(message_id)
+        # El message_id permanece registrado: Meta puede reenviar el webhook,
+        # pero nunca volveremos a ejecutar una mutación que quizá ya ocurrió.
         raise
 
 

@@ -530,6 +530,58 @@ def test_comando_de_reinicio_borra_sesion_atorada_y_reinicia(monkeypatch):
     assert preguntas == [service.INICIO]
 
 
+def test_comando_de_reinicio_atrasado_no_borra_sesion_actual(monkeypatch):
+    eliminadas = []
+    guardadas = []
+    preguntas = []
+    ultima_actividad = datetime(2026, 8, 29, 20, 16, tzinfo=timezone.utc)
+    mensaje_antiguo = datetime(2026, 8, 29, 20, 12, tzinfo=timezone.utc)
+
+    monkeypatch.setattr(service, "_registrar_mensaje", lambda *_a: True)
+    monkeypatch.setattr(
+        service,
+        "_sesion",
+        lambda _wa_id: {
+            "estado": "edad",
+            "respuestas": {"nombre": "Diana"},
+            "actualizado_at": ultima_actividad.isoformat(),
+        },
+    )
+    monkeypatch.setattr(service, "_eliminar_sesion", lambda wa_id: eliminadas.append(wa_id))
+    monkeypatch.setattr(service, "_guardar_sesion", lambda *args: guardadas.append(args))
+
+    async def preguntar(*args):
+        preguntas.append(args)
+
+    monkeypatch.setattr(service, "enviar_pregunta", preguntar)
+
+    asyncio.run(
+        service._procesar_mensaje(
+            {
+                "id": "reinicio-atrasado",
+                "from": "5212210000000",
+                "timestamp": str(int(mensaje_antiguo.timestamp())),
+                "type": "text",
+                "text": {"body": "Quiero hacer un reporte"},
+            }
+        )
+    )
+
+    assert eliminadas == []
+    assert guardadas == []
+    assert preguntas == []
+
+
+def test_mensaje_sin_sesion_demasiado_antiguo_se_ignora():
+    ahora = datetime(2026, 8, 29, 20, 30, tzinfo=timezone.utc)
+    mensaje = {
+        "timestamp": str(int((ahora - timedelta(minutes=6)).timestamp()))
+    }
+    assert service._mensaje_llego_atrasado(mensaje, None, ahora) is True
+    mensaje["timestamp"] = str(int((ahora - timedelta(minutes=4)).timestamp()))
+    assert service._mensaje_llego_atrasado(mensaje, None, ahora) is False
+
+
 def test_cantidad_otro_pide_numero_libre():
     valido, _, mensaje = service._validar_respuesta("cantidad", "text", "otro")
     assert valido is False
