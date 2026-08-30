@@ -131,7 +131,16 @@ def correr_ciclo_vida_eventos(x_cron_secret: Optional[str] = Header(None)):
         raise HTTPException(status_code=401, detail="No autorizado")
     from app.services.event_lifecycle_service import run_event_lifecycle
 
-    return run_event_lifecycle(limit=100)
+    result = run_event_lifecycle(limit=100)
+    if result.get("estado") == "error":
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "event_lifecycle_unavailable",
+                "run_id": result.get("run_id"),
+            },
+        )
+    return result
 
 @router.post("/deceased-followups/run")
 def correr_escalamiento_seguimientos_fallecimiento(
