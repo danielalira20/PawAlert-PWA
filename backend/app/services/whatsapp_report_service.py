@@ -1090,7 +1090,10 @@ async def _crear_desde_respuestas(
                     "colonia": geocodificada.get("colonia"),
                     "municipio": geocodificada.get("municipio"),
                     "estado": geocodificada.get("estado"),
-                    "_fuente": "geocodificada",
+                    # La ubicación proviene de una dirección escrita por el
+                    # usuario. Aunque obtengamos coordenadas por geocodificación,
+                    # el enum existente solo distingue "manual" de "gps".
+                    "_fuente": "manual",
                 }
             )
     foto = (

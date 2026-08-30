@@ -1064,6 +1064,6 @@ def test_direccion_escrita_se_geocodifica_antes_de_crear(monkeypatch):
 
     assert capturado["latitud"] == 19.0432
     assert capturado["longitud"] == -98.1987
-    assert capturado["ubicacion_fuente"] == "geocodificada"
+    assert capturado["ubicacion_fuente"] == "manual"
     assert capturado["colonia"] == "Centro"
     assert capturado["municipio"] == "Puebla"
