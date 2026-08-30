@@ -237,8 +237,16 @@ firmadas temporales junto con su expiracion. Reemplazar o retirar la imagen de
 un evento publicado crea una nueva version, deja historial y notifica a sus
 usuarios suscritos sin incluir rutas privadas.
 
-Quedan fuera de JASS-02 los endpoints de reportes, colaboradores, perfiles de
-adopcion vinculados y moderacion administrativa que se enumeran mas abajo.
+JASS-05 incorpora el reporte autenticado y la moderacion administrativa. La
+denuncia se conserva como dato privado, no revela al reportante en el historial
+del evento y solo administracion puede consultar incidentes. Suspender oculta
+un evento publicado o pausado; restaurarlo lo deja `pausado`, por lo que la
+asociacion debe revisarlo y publicarlo nuevamente. Ambas operaciones son
+atomicas, auditables e idempotentes mediante la migracion
+`0102_eventos_moderacion.sql`.
+
+Continuan fuera del alcance implementado los colaboradores y la vinculacion de
+perfiles de adopcion que se enumeran mas abajo.
 
 Lectura publica:
 
@@ -337,6 +345,7 @@ Eventos minimos de historial y notificacion:
 - `colaborador_evento_invitado`;
 - `colaborador_evento_aceptado`;
 - `evento_suspendido_admin`.
+- `evento_restaurado_admin`.
 
 Los usuarios que guardaron el evento reciben cambios relevantes y
 cancelaciones. Las notificaciones no prometen cupo ni atencion y nunca incluyen
@@ -344,9 +353,12 @@ datos privados de terceros.
 
 ## Moderacion y seguridad
 
-La aplicacion debe permitir reportar un evento por informacion falsa, servicio
-riesgoso, ubicacion incorrecta, cobro no informado u otra causa. Administracion
-puede suspenderlo sin borrar historial.
+La aplicacion permite reportar un evento por informacion falsa, servicio
+riesgoso, ubicacion incorrecta, cobro no informado u otra causa. Un usuario no
+puede mantener dos denuncias abiertas sobre el mismo evento. Administracion
+puede suspenderlo sin borrar historial, revisar las denuncias y restaurarlo a
+`pausado` con una resolucion. Los avisos de suspension y restauracion no
+incluyen el motivo privado, la resolucion ni la identidad del reportante.
 
 Para eventos clinicos, el perfil publico diferencia claramente entre:
 
