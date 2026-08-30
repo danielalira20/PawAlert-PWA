@@ -262,6 +262,7 @@ async def crear_reporte(
     usuario_id: str | None = None,
     es_duplicado_confirmado: bool | None = None,
     reporte_original_id: str | None = None,
+    ubicacion_fuente: str | None = None,
 ) -> dict:
 
     # La verificación de duplicados considera el caso completo (todas las
@@ -365,7 +366,9 @@ async def crear_reporte(
         "razones_validacion": [],
         "latitud": latitud,
         "longitud": longitud,
-        "ubicacion_fuente": "gps" if latitud and longitud else "manual",
+        "ubicacion_fuente": ubicacion_fuente or (
+            "gps" if latitud is not None and longitud is not None else "manual"
+        ),
         "calle": calle,
         "colonia": colonia,
         "municipio": municipio,

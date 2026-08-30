@@ -1073,6 +1073,26 @@ async def _crear_desde_respuestas(
     reporte_original_id: str | None = None,
 ) -> dict[str, Any]:
     ubicacion = respuestas["ubicacion"]
+    if (
+        ubicacion.get("direccion")
+        and ubicacion.get("latitud") is None
+        and ubicacion.get("longitud") is None
+    ):
+        from app.services.geocoding_service import geocodificar_direccion
+
+        geocodificada = await geocodificar_direccion(ubicacion["direccion"])
+        if geocodificada:
+            ubicacion.update(
+                {
+                    "latitud": geocodificada["latitud"],
+                    "longitud": geocodificada["longitud"],
+                    "calle": geocodificada.get("calle"),
+                    "colonia": geocodificada.get("colonia"),
+                    "municipio": geocodificada.get("municipio"),
+                    "estado": geocodificada.get("estado"),
+                    "_fuente": "geocodificada",
+                }
+            )
     foto = (
         await _descargar_imagen(respuestas["foto"]) if respuestas.get("foto") else None
     )
@@ -1170,13 +1190,19 @@ async def _crear_desde_respuestas(
         animales=animales,
         latitud=ubicacion.get("latitud"),
         longitud=ubicacion.get("longitud"),
-        calle=None,
-        colonia=None,
+        calle=ubicacion.get("calle") or ubicacion.get("direccion"),
+        colonia=ubicacion.get("colonia"),
         municipio=ubicacion.get("municipio"),
-        estado_ubicacion=None,
+        estado_ubicacion=ubicacion.get("estado"),
         referencia=respuestas["referencia"],
         es_duplicado_confirmado=es_duplicado_confirmado,
         reporte_original_id=reporte_original_id,
+        ubicacion_fuente=ubicacion.get("_fuente") or (
+            "gps"
+            if ubicacion.get("latitud") is not None
+            and ubicacion.get("longitud") is not None
+            else "manual"
+        ),
     )
 
 

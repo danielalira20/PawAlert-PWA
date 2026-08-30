@@ -1018,3 +1018,52 @@ def test_crear_desde_respuestas_con_varios_animales(monkeypatch):
     assert animales[1].es_domestico_probable is True
     assert capturado["fotos"] == ["archivo-1", "archivo-2"]
     assert capturado["fotos_animal_index"] == "[0, 1]"
+
+
+def test_direccion_escrita_se_geocodifica_antes_de_crear(monkeypatch):
+    capturado = {}
+
+    async def fake_crear_reporte(**kwargs):
+        capturado.update(kwargs)
+        return {"id": "rep-geocodificado"}
+
+    async def fake_descargar(_media):
+        return "archivo"
+
+    async def fake_geocodificar(_direccion):
+        return {
+            "latitud": 19.0432,
+            "longitud": -98.1987,
+            "calle": "Calle 3 Sur",
+            "colonia": "Centro",
+            "municipio": "Puebla",
+            "estado": "Puebla",
+        }
+
+    monkeypatch.setattr(service, "crear_reporte", fake_crear_reporte)
+    monkeypatch.setattr(service, "_descargar_imagen", fake_descargar)
+    monkeypatch.setattr(
+        "app.services.geocoding_service.geocodificar_direccion", fake_geocodificar
+    )
+    respuestas = {
+        "nombre": "Ana",
+        "cantidad": 1,
+        "foto": {"media_id": "1"},
+        "tipo_animal": "gato",
+        "condicion": "estable",
+        "tamanio": "pequeno",
+        "sexo": "hembra",
+        "edad": "cachorro",
+        "descripcion_animal": "Gatita naranja",
+        "descripcion": "Está junto a la banqueta",
+        "ubicacion": {"direccion": "Calle 3 Sur 905, Centro, Puebla"},
+        "referencia": "Frente a la papelería",
+    }
+
+    asyncio.run(service._crear_desde_respuestas("5212210000000", respuestas))
+
+    assert capturado["latitud"] == 19.0432
+    assert capturado["longitud"] == -98.1987
+    assert capturado["ubicacion_fuente"] == "geocodificada"
+    assert capturado["colonia"] == "Centro"
+    assert capturado["municipio"] == "Puebla"
