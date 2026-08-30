@@ -216,6 +216,24 @@ horario y ubicacion.
 
 ## Contrato HTTP propuesto
 
+### Estado de implementacion de JASS-02
+
+La API base ya expone lectura publica, administracion del evento por su
+asociacion y guardados del usuario. Sus modelos rechazan campos desconocidos,
+fechas sin zona horaria, rangos invertidos y actualizaciones vacias. Los
+errores conocidos de las RPC se traducen a respuestas `403`, `404`, `409` o
+`422` sin devolver detalles internos de PostgreSQL.
+
+La consulta `GET /events` pagina con `pagina` y `limite`, y admite `tipo`,
+`asociacion_id`, `municipio`, `especie`, `gratuito`, `desde` y `hasta`.
+`GET /events/map` usa una ventana maxima de 90 dias y permite acotar latitud y
+longitud. Ambas consultas solo devuelven eventos publicados de asociaciones
+activas y verificadas. Las imagenes permanecen en `null` hasta implementar el
+flujo de almacenamiento de JASS-03.
+
+Quedan fuera de JASS-02 los endpoints de reportes, colaboradores, perfiles de
+adopcion vinculados y moderacion administrativa que se enumeran mas abajo.
+
 Lectura publica:
 
 ```text
