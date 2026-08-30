@@ -955,6 +955,10 @@ async def obtener_reportes_usuario(usuario_id: str) -> list:
         cobertura = r.get("estado_cobertura")
         if estado == "cancelado_por_reportante":
             estado_publico = "Reporte cancelado"
+        elif estado == "pendiente_seguimiento_fallecimiento":
+            estado_publico = "Resultado en revisión"
+        elif estado == "muerto":
+            estado_publico = "Seguimiento concluido"
         elif estado == "cerrado":
             estado_publico = "Resolución final"
         elif estado == "rescatado" or eventos.intersection(
@@ -994,6 +998,8 @@ async def obtener_reportes_usuario(usuario_id: str) -> list:
                 "cerrado",
                 "cancelado_por_reportante",
                 "rescatado",
+                "pendiente_seguimiento_fallecimiento",
+                "muerto",
             ),
         })
 

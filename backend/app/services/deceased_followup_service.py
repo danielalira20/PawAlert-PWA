@@ -1,0 +1,728 @@
+import logging
+from datetime import datetime, timezone
+from typing import Any
+
+from app.db.supabase import supabase_admin
+from app.models.report import (
+    CerrarSeguimientoFallecimientoRequest,
+    RevisionResultadoSinVidaRequest,
+    SeguimientoRetiroAnimalRequest,
+)
+from app.services.storage_service import crear_url_firmada_sensible
+from app.utils.animal_shaping import shape_animal_embed, shape_animal_response
+
+
+ESTADOS_SEGUIMIENTO_ABIERTOS = (
+    "pendiente_voluntario",
+    "pendiente_asociacion",
+    "escalado_administracion",
+)
+
+logger = logging.getLogger(__name__)
+
+ERRORES_REVISION_CONOCIDOS = (
+    "decision_revision_invalida",
+    "notas_revision_requeridas",
+    "seguimiento_no_autorizado",
+    "reporte_no_encontrado",
+    "resultado_no_encontrado",
+    "revision_duda_no_reversible",
+    "seguimiento_ya_reactivado",
+    "reporte_no_disponible_para_reactivar",
+    "asociacion_coordinadora_requerida",
+    "estado_asignado_no_encontrado",
+    "seguimiento_no_preparado_para_reactivar",
+    "reporte_no_preparado_para_reactivar",
+    "urgency_recalculada_requerida",
+)
+
+ERRORES_SEGUIMIENTO_RETIRO_CONOCIDOS = (
+    "tipo_actor_seguimiento_invalido",
+    "accion_seguimiento_invalida",
+    "idempotency_key_requerida",
+    "idempotency_key_en_conflicto",
+    "nombre_servicio_requerido",
+    "seguimiento_fallecimiento_no_encontrado",
+    "seguimiento_fallecimiento_no_disponible",
+    "resultado_seguimiento_no_encontrado",
+    "resultado_reactivado_no_admite_seguimiento",
+    "voluntario_seguimiento_no_autorizado",
+    "asociacion_seguimiento_no_autorizada",
+    "evidencia_seguimiento_no_disponible",
+    "evidencia_seguimiento_en_conflicto",
+)
+
+ERRORES_CIERRE_CONOCIDOS = (
+    "actor_cierre_fallecimiento_invalido",
+    "resultado_final_fallecimiento_invalido",
+    "idempotency_key_cierre_requerida",
+    "nota_cierre_fallecimiento_requerida",
+    "seguimiento_fallecimiento_no_encontrado",
+    "seguimiento_fallecimiento_ya_cerrado",
+    "seguimiento_fallecimiento_no_disponible",
+    "asociacion_cierre_fallecimiento_no_autorizada",
+    "reporte_no_disponible_para_cierre_fallecimiento",
+    "resultados_fallecimiento_requeridos",
+    "revision_fallecimiento_pendiente",
+    "duda_critica_impide_cierre_fallecimiento",
+    "resultados_fallecimiento_no_confirmados",
+    "seguimiento_retiro_requerido_para_cierre",
+    "resultado_final_sin_seguimiento_compatible",
+    "estado_reporte_muerto_no_encontrado",
+)
+
+
+class SeguimientoFallecimientoError(Exception):
+    def __init__(self, codigo: str):
+        self.codigo = codigo
+        super().__init__(codigo)
+
+
+def escalar_seguimientos_vencidos(limit: int = 100) -> dict[str, int]:
+    """Escala los seguimientos vencidos mediante la operacion atomica SQL."""
+    if limit < 1 or limit > 500:
+        raise ValueError("limit debe estar entre 1 y 500")
+
+    try:
+        respuesta = supabase_admin.rpc(
+            "escalar_seguimientos_fallecimiento",
+            {"p_limit": limit},
+        ).execute()
+    except Exception as error:
+        logger.exception("No se pudieron escalar seguimientos de fallecimiento")
+        raise SeguimientoFallecimientoError(
+            "escalamiento_fallecimiento_no_disponible"
+        ) from error
+
+    datos = respuesta.data
+    if isinstance(datos, list):
+        datos = datos[0] if datos else None
+
+    claves = (
+        "procesados",
+        "escalados_asociacion",
+        "escalados_administracion",
+        "notificaciones_encoladas",
+    )
+    if not isinstance(datos, dict) or any(
+        not isinstance(datos.get(clave), int) or datos[clave] < 0
+        for clave in claves
+    ):
+        raise SeguimientoFallecimientoError(
+            "respuesta_escalamiento_fallecimiento_invalida"
+        )
+    if datos["procesados"] != (
+        datos["escalados_asociacion"]
+        + datos["escalados_administracion"]
+    ):
+        raise SeguimientoFallecimientoError(
+            "respuesta_escalamiento_fallecimiento_invalida"
+        )
+    return {clave: datos[clave] for clave in claves}
+
+
+def _ejecutar_rpc(nombre: str, parametros: dict) -> Any:
+    try:
+        respuesta = supabase_admin.rpc(nombre, parametros).execute()
+    except Exception as error:
+        detalle = str(error).lower()
+        for codigo in ERRORES_REVISION_CONOCIDOS:
+            if codigo in detalle:
+                raise SeguimientoFallecimientoError(codigo) from error
+        raise SeguimientoFallecimientoError(
+            "revision_fallecimiento_no_disponible"
+        ) from error
+
+    datos = respuesta.data
+    if isinstance(datos, list):
+        datos = datos[0] if datos else None
+    return datos
+
+
+def _auditar_contactos_retiro_mostrados(
+    reporte_id: str,
+    usuario_id: str | None,
+    tipo_actor: str,
+    total_contactos: int,
+) -> None:
+    if not usuario_id or total_contactos < 1:
+        return
+    try:
+        supabase_admin.rpc(
+            "registrar_contactos_retiro_mostrados",
+            {
+                "p_reporte_id": reporte_id,
+                "p_usuario_id": usuario_id,
+                "p_tipo_actor": tipo_actor,
+                "p_total_contactos": total_contactos,
+            },
+        ).execute()
+    except Exception as error:
+        logger.warning(
+            "No se pudo auditar la entrega de contactos del reporte %s: %s",
+            reporte_id,
+            type(error).__name__,
+        )
+
+
+def revisar_resultado(
+    reporte_id: str,
+    resultado_id: str,
+    usuario_id: str,
+    asociacion_id: str | None,
+    body: RevisionResultadoSinVidaRequest,
+) -> dict:
+    datos = _ejecutar_rpc(
+        "revisar_resultado_rescate_sin_vida",
+        {
+            "p_reporte_id": reporte_id,
+            "p_resultado_id": resultado_id,
+            "p_usuario_id": usuario_id,
+            "p_asociacion_id": asociacion_id,
+            "p_decision": body.decision,
+            "p_notas": body.notas.strip(),
+        },
+    )
+    if not isinstance(datos, dict) or datos.get("reporte_id") != reporte_id:
+        raise SeguimientoFallecimientoError("respuesta_revision_invalida")
+
+    if not datos.get("requiere_reactivacion"):
+        return datos
+
+    try:
+        from app.services.urgency_service import evaluate_report_urgency
+
+        evaluate_report_urgency(reporte_id)
+    except Exception as error:
+        logger.warning(
+            "La duda del reporte %s quedó pendiente de recalcular Urgency: %s",
+            reporte_id,
+            type(error).__name__,
+        )
+        raise SeguimientoFallecimientoError(
+            "reactivacion_urgency_pendiente"
+        ) from error
+
+    datos.update(finalizar_reactivacion_pendiente(reporte_id))
+    return datos
+
+
+def registrar_seguimiento_retiro(
+    reporte_id: str,
+    resultado_id: str,
+    usuario_id: str,
+    tipo_actor: str,
+    asociacion_id: str | None,
+    body: SeguimientoRetiroAnimalRequest,
+) -> dict:
+    parametros = {
+        "p_reporte_id": reporte_id,
+        "p_resultado_id": resultado_id,
+        "p_usuario_id": usuario_id,
+        "p_tipo_actor": tipo_actor,
+        "p_asociacion_id": asociacion_id,
+        "p_accion": body.accion,
+        "p_idempotency_key": body.idempotency_key,
+        "p_folio": body.folio,
+        "p_nombre_servicio": body.nombre_servicio,
+        "p_destino_informado": body.destino_informado,
+        "p_nota": body.nota,
+        "p_evidencia_lugar_id": (
+            str(body.evidencia_lugar_id)
+            if body.evidencia_lugar_id
+            else None
+        ),
+    }
+    try:
+        respuesta = supabase_admin.rpc(
+            "registrar_seguimiento_retiro_animal",
+            parametros,
+        ).execute()
+    except Exception as error:
+        detalle = str(error).lower()
+        for codigo in ERRORES_SEGUIMIENTO_RETIRO_CONOCIDOS:
+            if codigo in detalle:
+                raise SeguimientoFallecimientoError(codigo) from error
+        raise SeguimientoFallecimientoError(
+            "registro_seguimiento_retiro_no_disponible"
+        ) from error
+
+    datos = respuesta.data
+    if isinstance(datos, list):
+        datos = datos[0] if datos else None
+    if (
+        not isinstance(datos, dict)
+        or datos.get("reporte_id") != reporte_id
+        or datos.get("resultado_id") != resultado_id
+    ):
+        raise SeguimientoFallecimientoError(
+            "respuesta_seguimiento_retiro_invalida"
+        )
+    return datos
+
+
+def cerrar_seguimiento_fallecimiento(
+    reporte_id: str,
+    usuario_id: str,
+    tipo_actor: str,
+    asociacion_id: str | None,
+    body: CerrarSeguimientoFallecimientoRequest,
+) -> dict:
+    parametros = {
+        "p_reporte_id": reporte_id,
+        "p_usuario_id": usuario_id,
+        "p_tipo_actor": tipo_actor,
+        "p_asociacion_id": asociacion_id,
+        "p_resultado_final": body.resultado_final,
+        "p_idempotency_key": body.idempotency_key,
+        "p_nota_cierre": body.nota_cierre,
+    }
+    try:
+        respuesta = supabase_admin.rpc(
+            "cerrar_seguimiento_fallecimiento",
+            parametros,
+        ).execute()
+    except Exception as error:
+        detalle = str(error).lower()
+        for codigo in ERRORES_CIERRE_CONOCIDOS:
+            if codigo in detalle:
+                raise SeguimientoFallecimientoError(codigo) from error
+        raise SeguimientoFallecimientoError(
+            "cierre_fallecimiento_no_disponible"
+        ) from error
+
+    datos = respuesta.data
+    if isinstance(datos, list):
+        datos = datos[0] if datos else None
+    if (
+        not isinstance(datos, dict)
+        or datos.get("reporte_id") != reporte_id
+        or datos.get("estado_seguimiento") != "cerrado"
+        or datos.get("estado_reporte") != "muerto"
+    ):
+        raise SeguimientoFallecimientoError(
+            "respuesta_cierre_fallecimiento_invalida"
+        )
+    return datos
+
+
+def finalizar_reactivacion_pendiente(reporte_id: str) -> dict:
+    activacion = _ejecutar_rpc(
+        "finalizar_reactivacion_duda_fallecimiento",
+        {"p_reporte_id": reporte_id},
+    )
+    if not isinstance(activacion, dict):
+        raise SeguimientoFallecimientoError("respuesta_reactivacion_invalida")
+
+    matching_status = "completo"
+    candidatos = 0
+    try:
+        from app.services import matching
+
+        resultado_matching = matching.obtener_candidatos(reporte_id)
+        candidatos = len(resultado_matching.get("candidatos") or [])
+        if candidatos:
+            supabase_admin.table("reportes").update({
+                "candidatos_presentados_at": datetime.now(
+                    timezone.utc
+                ).isoformat()
+            }).eq("id", reporte_id).execute()
+    except Exception as error:
+        matching_status = "pendiente_reintento"
+        logger.warning(
+            "El reporte %s se reactivó, pero matching quedó pendiente: %s",
+            reporte_id,
+            type(error).__name__,
+        )
+
+    return {
+        "reactivacion": activacion,
+        "matching_status": matching_status,
+        "candidatos_calculados": candidatos,
+    }
+
+
+def _obtener_seguimiento_autorizado(
+    reporte_id: str,
+    asociacion_id: str | None,
+) -> dict:
+    consulta = (
+        supabase_admin.table("seguimientos_fallecimiento_reporte")
+        .select(
+            "id, reporte_id, asociacion_coordinadora_id, estado, iniciado_at, "
+            "asociacion_deadline_at, administracion_deadline_at, "
+            "resultado_final, conclusion_rescate, cerrado_at, actualizado_at"
+        )
+        .eq("reporte_id", reporte_id)
+    )
+    if asociacion_id is None:
+        consulta = consulta.is_("asociacion_coordinadora_id", "null")
+    else:
+        consulta = consulta.eq("asociacion_coordinadora_id", asociacion_id)
+    consulta = consulta.execute()
+    if not consulta.data:
+        raise SeguimientoFallecimientoError("seguimiento_no_encontrado")
+    return consulta.data[0]
+
+
+def listar_seguimientos_asociacion(asociacion_id: str) -> list[dict]:
+    resultado = (
+        supabase_admin.table("seguimientos_fallecimiento_reporte")
+        .select(
+            "id, reporte_id, estado, iniciado_at, asociacion_deadline_at, "
+            "administracion_deadline_at, actualizado_at, "
+            "reportes(municipio, colonia, created_at)"
+        )
+        .eq("asociacion_coordinadora_id", asociacion_id)
+        .in_("estado", list(ESTADOS_SEGUIMIENTO_ABIERTOS))
+        .order("iniciado_at", desc=False)
+        .execute()
+    )
+    return resultado.data or []
+
+
+def listar_seguimientos_administracion() -> list[dict]:
+    resultado = (
+        supabase_admin.table("seguimientos_fallecimiento_reporte")
+        .select(
+            "id, reporte_id, asociacion_coordinadora_id, estado, iniciado_at, "
+            "asociacion_deadline_at, administracion_deadline_at, actualizado_at, "
+            "reportes(municipio, colonia, created_at)"
+        )
+        .eq("estado", "escalado_administracion")
+        .order("administracion_deadline_at", desc=False)
+        .execute()
+    )
+    return resultado.data or []
+
+
+def obtener_detalle_seguimiento_administracion(
+    reporte_id: str,
+    usuario_id: str | None = None,
+) -> dict:
+    consulta = (
+        supabase_admin.table("seguimientos_fallecimiento_reporte")
+        .select("asociacion_coordinadora_id, estado")
+        .eq("reporte_id", reporte_id)
+        .eq("estado", "escalado_administracion")
+        .execute()
+    )
+    if not consulta.data:
+        raise SeguimientoFallecimientoError("seguimiento_no_encontrado")
+    return obtener_detalle_seguimiento(
+        reporte_id,
+        consulta.data[0].get("asociacion_coordinadora_id"),
+        actor_id=usuario_id,
+        tipo_actor="administracion",
+    )
+
+
+def revisar_resultado_administracion(
+    reporte_id: str,
+    resultado_id: str,
+    usuario_id: str,
+    body: RevisionResultadoSinVidaRequest,
+) -> dict:
+    consulta = (
+        supabase_admin.table("seguimientos_fallecimiento_reporte")
+        .select("asociacion_coordinadora_id")
+        .eq("reporte_id", reporte_id)
+        .eq("estado", "escalado_administracion")
+        .execute()
+    )
+    if not consulta.data:
+        raise SeguimientoFallecimientoError("seguimiento_no_encontrado")
+    return revisar_resultado(
+        reporte_id,
+        resultado_id,
+        usuario_id,
+        consulta.data[0].get("asociacion_coordinadora_id"),
+        body,
+    )
+
+
+def _listar_resultados_propios(
+    usuario_id: str,
+    reporte_id: str | None = None,
+) -> list[dict]:
+    consulta = (
+        supabase_admin.table("resultados_rescate_animal")
+        .select(
+            "id, reporte_id, animal_id, estado, cantidad_reportada, "
+            "puede_esperar_seguro, riesgo_vial, riesgo_sanitario, "
+            "identificacion_observada, comentario, "
+            "motivo_retiro_seguridad, reportado_at, revisado_at, "
+            "actualizado_at"
+        )
+        .eq("reportado_por_id", usuario_id)
+    )
+    if reporte_id:
+        consulta = consulta.eq("reporte_id", reporte_id)
+    resultado = consulta.order("reportado_at", desc=False).execute()
+    return resultado.data or []
+
+
+def listar_seguimientos_voluntario(usuario_id: str) -> list[dict]:
+    resultados = _listar_resultados_propios(usuario_id)
+    reporte_ids = list({
+        fila["reporte_id"]
+        for fila in resultados
+        if fila.get("reporte_id")
+    })
+    if not reporte_ids:
+        return []
+
+    seguimientos_res = (
+        supabase_admin.table("seguimientos_fallecimiento_reporte")
+        .select(
+            "id, reporte_id, estado, iniciado_at, asociacion_deadline_at, "
+            "administracion_deadline_at, actualizado_at"
+        )
+        .in_("reporte_id", reporte_ids)
+        .in_("estado", list(ESTADOS_SEGUIMIENTO_ABIERTOS))
+        .order("iniciado_at", desc=False)
+        .execute()
+    )
+    seguimientos = seguimientos_res.data or []
+    if not seguimientos:
+        return []
+
+    ids_abiertos = [fila["reporte_id"] for fila in seguimientos]
+    reportes_res = (
+        supabase_admin.table("reportes")
+        .select("id, estado_reporte, municipio, colonia, created_at")
+        .in_("id", ids_abiertos)
+        .execute()
+    )
+    reportes_por_id = {
+        fila["id"]: fila for fila in (reportes_res.data or [])
+    }
+    resultados_por_reporte: dict[str, list[dict]] = {}
+    for fila in resultados:
+        resultados_por_reporte.setdefault(fila["reporte_id"], []).append(fila)
+
+    return [
+        {
+            **seguimiento,
+            "reporte": reportes_por_id.get(seguimiento["reporte_id"]),
+            "resultados": resultados_por_reporte.get(
+                seguimiento["reporte_id"],
+                [],
+            ),
+        }
+        for seguimiento in seguimientos
+    ]
+
+
+def obtener_detalle_seguimiento_voluntario(
+    reporte_id: str,
+    usuario_id: str,
+) -> dict:
+    resultados = _listar_resultados_propios(usuario_id, reporte_id)
+    if not resultados:
+        raise SeguimientoFallecimientoError("seguimiento_no_encontrado")
+
+    seguimiento_res = (
+        supabase_admin.table("seguimientos_fallecimiento_reporte")
+        .select(
+            "id, reporte_id, estado, iniciado_at, asociacion_deadline_at, "
+            "administracion_deadline_at, resultado_final, "
+            "conclusion_rescate, cerrado_at, actualizado_at"
+        )
+        .eq("reporte_id", reporte_id)
+        .execute()
+    )
+    if not seguimiento_res.data:
+        raise SeguimientoFallecimientoError("seguimiento_no_encontrado")
+    seguimiento = seguimiento_res.data[0]
+
+    reporte_res = (
+        supabase_admin.table("reportes")
+        .select(
+            "id, estado_reporte, municipio, colonia, calle, created_at, "
+            "animal(id, orden, es_grupo, cantidad, trae_crias_nacidas, "
+            "numero_crias_nacidas, sexo, edad_aproximada, descripcion, "
+            "tipo_animal_catalogo(clave), condicion_catalogo(clave), "
+            "tamanio_catalogo(clave))"
+        )
+        .eq("id", reporte_id)
+        .execute()
+    )
+    if not reporte_res.data:
+        raise SeguimientoFallecimientoError("seguimiento_no_encontrado")
+
+    reporte = reporte_res.data[0]
+    animales_crudos, _ = shape_animal_embed(reporte.pop("animal", None))
+    animales_propios = {fila["animal_id"] for fila in resultados}
+    reporte["animales"] = [
+        shape_animal_response(animal)
+        for animal in animales_crudos
+        if animal.get("id") in animales_propios
+    ]
+
+    resultado_ids = [fila["id"] for fila in resultados]
+    acciones_res = (
+        supabase_admin.table("seguimientos_retiro_animal")
+        .select(
+            "id, resultado_rescate_animal_id, tipo_actor, accion, folio, "
+            "nombre_servicio, destino_informado, nota, registrado_at"
+        )
+        .eq("reporte_id", reporte_id)
+        .in_("resultado_rescate_animal_id", resultado_ids)
+        .order("registrado_at", desc=True)
+        .execute()
+    )
+
+    contactos = []
+    municipio = reporte.get("municipio")
+    if municipio:
+        contactos_res = (
+            supabase_admin.table("contactos_retiro_animal")
+            .select(
+                "id, municipio_nombre, nombre_servicio, telefono, "
+                "tipo_servicio, horario, fuente, verificado_at"
+            )
+            .eq("municipio_nombre", municipio)
+            .eq("activo", True)
+            .order("prioridad", desc=False)
+            .execute()
+        )
+        contactos = contactos_res.data or []
+
+    _auditar_contactos_retiro_mostrados(
+        reporte_id,
+        usuario_id,
+        "voluntario",
+        len(contactos),
+    )
+
+    return {
+        "seguimiento": seguimiento,
+        "reporte": reporte,
+        "resultados": resultados,
+        "acciones_retiro": acciones_res.data or [],
+        "contactos_retiro": contactos,
+    }
+
+
+def obtener_detalle_seguimiento(
+    reporte_id: str,
+    asociacion_id: str | None,
+    actor_id: str | None = None,
+    tipo_actor: str = "asociacion",
+) -> dict:
+    seguimiento = _obtener_seguimiento_autorizado(reporte_id, asociacion_id)
+
+    reporte_res = (
+        supabase_admin.table("reportes")
+        .select(
+            "id, estado_reporte, municipio, colonia, calle, created_at, "
+            "animal(id, orden, es_grupo, cantidad, trae_crias_nacidas, "
+            "numero_crias_nacidas, sexo, edad_aproximada, descripcion, "
+            "tipo_animal_catalogo(clave), condicion_catalogo(clave), "
+            "tamanio_catalogo(clave))"
+        )
+        .eq("id", reporte_id)
+        .execute()
+    )
+    if not reporte_res.data:
+        raise SeguimientoFallecimientoError("reporte_no_encontrado")
+
+    reporte = reporte_res.data[0]
+    animales_crudos, _ = shape_animal_embed(reporte.pop("animal", None))
+    reporte["animales"] = [
+        shape_animal_response(animal) for animal in animales_crudos
+    ]
+
+    resultados_res = (
+        supabase_admin.table("resultados_rescate_animal")
+        .select(
+            "id, animal_id, reportado_por_id, evidencia_id, estado, "
+            "cantidad_reportada, latitud, longitud, puede_esperar_seguro, "
+            "riesgo_vial, riesgo_sanitario, identificacion_observada, "
+            "comentario, motivo_retiro_seguridad, revision_notas, "
+            "reportado_at, revisado_at, actualizado_at"
+        )
+        .eq("reporte_id", reporte_id)
+        .order("reportado_at", desc=False)
+        .execute()
+    )
+    resultados = resultados_res.data or []
+
+    evidencias_por_id: dict[str, dict] = {}
+    evidencia_ids = list({
+        fila["evidencia_id"]
+        for fila in resultados
+        if fila.get("evidencia_id")
+    })
+    if evidencia_ids:
+        evidencias_res = (
+            supabase_admin.table("reporte_evidencias")
+            .select("id, foto_url, created_at")
+            .eq("reporte_id", reporte_id)
+            .in_("id", evidencia_ids)
+            .execute()
+        )
+        evidencias_por_id = {
+            evidencia["id"]: evidencia
+            for evidencia in (evidencias_res.data or [])
+        }
+
+    for fila in resultados:
+        evidencia = evidencias_por_id.get(fila.get("evidencia_id"))
+        fila["evidencia"] = None
+        if evidencia and evidencia.get("foto_url"):
+            try:
+                acceso = crear_url_firmada_sensible(evidencia["foto_url"])
+            except (RuntimeError, ValueError):
+                acceso = None
+            if acceso:
+                fila["evidencia"] = {
+                    "url": acceso["url"],
+                    "expira_at": acceso["expira_at"],
+                    "creada_at": evidencia.get("created_at"),
+                    "contenido_sensible": True,
+                }
+
+    acciones_res = (
+        supabase_admin.table("seguimientos_retiro_animal")
+        .select(
+            "id, resultado_rescate_animal_id, registrado_por_id, "
+            "tipo_actor, accion, folio, nombre_servicio, destino_informado, "
+            "nota, registrado_at"
+        )
+        .eq("reporte_id", reporte_id)
+        .order("registrado_at", desc=True)
+        .execute()
+    )
+
+    contactos = []
+    municipio = reporte.get("municipio")
+    if municipio:
+        contactos_res = (
+            supabase_admin.table("contactos_retiro_animal")
+            .select(
+                "id, municipio_nombre, nombre_servicio, telefono, "
+                "tipo_servicio, horario, fuente, verificado_at"
+            )
+            .eq("municipio_nombre", municipio)
+            .eq("activo", True)
+            .order("prioridad", desc=False)
+            .execute()
+        )
+        contactos = contactos_res.data or []
+
+    _auditar_contactos_retiro_mostrados(
+        reporte_id,
+        actor_id,
+        tipo_actor,
+        len(contactos),
+    )
+
+    return {
+        "seguimiento": seguimiento,
+        "reporte": reporte,
+        "resultados": resultados,
+        "acciones_retiro": acciones_res.data or [],
+        "contactos_retiro": contactos,
+    }

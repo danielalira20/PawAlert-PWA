@@ -148,6 +148,20 @@ POST /internal/push/run
 X-Cron-Secret: <CRON_SECRET>
 ```
 
+### Escalamiento de resultados sensibles
+
+Los seguimientos por animales encontrados sin vida se escalan a la asociación
+a las 24 horas y a administración a las 48 horas. Configura una llamada cada
+15 minutos:
+
+```text
+POST /internal/deceased-followups/run
+X-Cron-Secret: <CRON_SECRET>
+```
+
+Este proceso no cierra reportes: únicamente actualiza la responsabilidad,
+registra historial y encola notificaciones idempotentes.
+
 ## Correr el servidor
 
 ```bash

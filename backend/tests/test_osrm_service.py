@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock, patch
 
 import httpx
+import pytest
 
 from app.models.dispatch import (
     RouteMatrixRequest,
@@ -134,6 +135,37 @@ def test_coordinate_limit_prevents_oversized_request():
     get.assert_not_called()
     assert result.status == RoutingStatus.unavailable
     assert result.error_code == RoutingErrorCode.request_too_large
+
+
+def test_coordinate_limit_allows_exact_boundary():
+    with (
+        patch.object(osrm_service.settings, "osrm_max_coordinates", 3),
+        patch.object(
+            osrm_service.httpx,
+            "get",
+            return_value=response(200, valid_payload()),
+        ) as get,
+    ):
+        result = osrm_service.get_route_matrix(request())
+
+    get.assert_called_once()
+    assert result.status == RoutingStatus.complete
+
+
+@pytest.mark.parametrize("invalid_value", [float("nan"), float("inf")])
+def test_nonfinite_matrix_value_is_invalid_response(invalid_value):
+    payload = valid_payload()
+    payload["durations"][0][0] = invalid_value
+
+    with patch.object(
+        osrm_service.httpx,
+        "get",
+        return_value=response(200, payload),
+    ):
+        result = osrm_service.get_route_matrix(request())
+
+    assert result.status == RoutingStatus.unavailable
+    assert result.error_code == RoutingErrorCode.invalid_response
 
 
 def test_get_route_returns_duration_distance_and_geojson_geometry():

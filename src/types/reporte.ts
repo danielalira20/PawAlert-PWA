@@ -1,4 +1,5 @@
 export interface Animal {
+  id?: string | null;
   tipo_animal: string | null;
   condicion: string | null;
   tamanio: string | null;

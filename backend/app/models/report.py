@@ -1,6 +1,7 @@
 from datetime import datetime
+from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Literal, Optional
 from enum import Enum
 
@@ -36,6 +37,7 @@ class EstadoReporteEnum(str, Enum):
     asignado = "asignado"
     en_camino = "en_camino"
     en_atencion = "en_atencion"
+    pendiente_seguimiento_fallecimiento = "pendiente_seguimiento_fallecimiento"
     rescatado = "rescatado"
     cerrado = "cerrado"
     sin_cobertura = "sin_cobertura"
@@ -166,6 +168,86 @@ class HitoRequest(BaseModel):
     tiempo_busqueda_minutos: Optional[int] = Field(default=None, ge=1, le=1440)
     ruta_resguardo: Optional[str] = None
     fecha_limite_resguardo: Optional[datetime] = None
+
+
+class AnimalResultadoSinVidaInput(BaseModel):
+    animal_id: UUID
+    cantidad_reportada: int = Field(ge=1)
+
+
+class ResultadoRescateSinVidaRequest(BaseModel):
+    animales: list[AnimalResultadoSinVidaInput] = Field(min_length=1)
+    evidencia_id: UUID
+    latitud: float = Field(ge=-90, le=90)
+    longitud: float = Field(ge=-180, le=180)
+    puede_esperar_seguro: bool
+    riesgo_vial: bool = False
+    riesgo_sanitario: bool = False
+    identificacion_observada: Optional[str] = Field(default=None, max_length=500)
+    comentario: Optional[str] = Field(default=None, max_length=1000)
+    motivo_retiro_seguridad: Optional[str] = Field(default=None, max_length=500)
+
+
+class RevisionResultadoSinVidaRequest(BaseModel):
+    decision: Literal[
+        "confirmar",
+        "duda_critica",
+        "evidencia_insuficiente",
+    ]
+    notas: str = Field(min_length=5, max_length=1000)
+
+
+class SeguimientoRetiroAnimalRequest(BaseModel):
+    accion: Literal[
+        "contacto_oficial_realizado",
+        "autoridad_se_presento",
+        "tercero_responsable_se_hizo_cargo",
+        "retiro_gestionado_con_indicaciones",
+        "sin_comunicacion",
+        "sin_contacto_disponible",
+        "retiro_por_seguridad",
+    ]
+    idempotency_key: str = Field(min_length=8, max_length=100)
+    folio: Optional[str] = Field(default=None, max_length=200)
+    nombre_servicio: Optional[str] = Field(default=None, max_length=200)
+    destino_informado: Optional[str] = Field(default=None, max_length=500)
+    nota: Optional[str] = Field(default=None, max_length=1000)
+    evidencia_lugar_id: Optional[UUID] = None
+
+    @model_validator(mode="after")
+    def validar_seguimiento(self):
+        self.idempotency_key = self.idempotency_key.strip()
+        if len(self.idempotency_key) < 8:
+            raise ValueError("idempotency_key debe tener al menos 8 caracteres")
+        if (
+            self.accion == "retiro_gestionado_con_indicaciones"
+            and not (self.nombre_servicio or "").strip()
+        ):
+            raise ValueError("nombre_servicio es requerido para esta acción")
+        return self
+
+
+class CerrarSeguimientoFallecimientoRequest(BaseModel):
+    resultado_final: Literal[
+        "contacto_realizado",
+        "autoridad_atendio",
+        "retiro_reportado",
+        "retiro_confirmado",
+        "sin_contacto_disponible",
+        "voluntario_se_retiro_por_seguridad",
+    ]
+    idempotency_key: str = Field(min_length=8, max_length=100)
+    nota_cierre: str = Field(min_length=5, max_length=1000)
+
+    @model_validator(mode="after")
+    def validar_cierre(self):
+        self.idempotency_key = self.idempotency_key.strip()
+        self.nota_cierre = self.nota_cierre.strip()
+        if len(self.idempotency_key) < 8:
+            raise ValueError("idempotency_key debe tener al menos 8 caracteres")
+        if len(self.nota_cierre) < 5:
+            raise ValueError("nota_cierre debe tener al menos 5 caracteres")
+        return self
 
 
 class ResolverBusquedaNoLocalizadoRequest(BaseModel):

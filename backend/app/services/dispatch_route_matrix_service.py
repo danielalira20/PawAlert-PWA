@@ -23,6 +23,7 @@ def _unique_ids(values: list[str], label: str) -> list[str]:
 def _unavailable(
     volunteer_ids: list[str],
     report_ids: list[str],
+    error_code: RoutingErrorCode = RoutingErrorCode.missing_coordinates,
 ) -> RouteMatrixResult:
     return RouteMatrixResult(
         origin_ids=volunteer_ids,
@@ -30,7 +31,7 @@ def _unavailable(
         durations_seconds=[],
         distances_meters=[],
         status=RoutingStatus.unavailable,
-        error_code=RoutingErrorCode.missing_coordinates,
+        error_code=error_code,
         calculated_at=datetime.now(timezone.utc),
     )
 
@@ -55,14 +56,17 @@ def _load_volunteer_points(volunteer_ids: list[str]) -> list[RoutingPoint] | Non
     ):
         return None
 
-    return [
-        RoutingPoint(
-            id=volunteer_id,
-            latitude=float(by_id[volunteer_id]["latitud"]),
-            longitude=float(by_id[volunteer_id]["longitud"]),
-        )
-        for volunteer_id in volunteer_ids
-    ]
+    try:
+        return [
+            RoutingPoint(
+                id=volunteer_id,
+                latitude=float(by_id[volunteer_id]["latitud"]),
+                longitude=float(by_id[volunteer_id]["longitud"]),
+            )
+            for volunteer_id in volunteer_ids
+        ]
+    except (TypeError, ValueError):
+        return None
 
 
 def _load_report_points(report_ids: list[str]) -> list[RoutingPoint] | None:
@@ -94,13 +98,16 @@ def _load_report_points(report_ids: list[str]) -> list[RoutingPoint] | None:
             longitude = report.get("longitud")
         if latitude is None or longitude is None:
             return None
-        points.append(
-            RoutingPoint(
-                id=report_id,
-                latitude=float(latitude),
-                longitude=float(longitude),
+        try:
+            points.append(
+                RoutingPoint(
+                    id=report_id,
+                    latitude=float(latitude),
+                    longitude=float(longitude),
+                )
             )
-        )
+        except (TypeError, ValueError):
+            return None
     return points
 
 
@@ -116,6 +123,16 @@ def calculate_dispatch_route_matrix(
     if origins is None or destinations is None:
         return _unavailable(normalized_volunteer_ids, normalized_report_ids)
 
-    return get_route_matrix(
+    result = get_route_matrix(
         RouteMatrixRequest(origins=origins, destinations=destinations)
     )
+    if (
+        result.origin_ids != normalized_volunteer_ids
+        or result.destination_ids != normalized_report_ids
+    ):
+        return _unavailable(
+            normalized_volunteer_ids,
+            normalized_report_ids,
+            RoutingErrorCode.invalid_response,
+        )
+    return result

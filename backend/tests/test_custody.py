@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.api import custody, reports
@@ -445,6 +446,51 @@ def test_reportante_recibe_estado_publico_de_cancelacion(make_query):
         resultado = asyncio.run(report_service.obtener_reportes_usuario("reportante-1"))
 
     assert resultado[0]["estado_publico"] == "Reporte cancelado"
+    assert resultado[0]["puede_cancelar"] is False
+
+
+@pytest.mark.parametrize(
+    ("estado_reporte", "estado_publico"),
+    [
+        (
+            "pendiente_seguimiento_fallecimiento",
+            "Resultado en revisión",
+        ),
+        ("muerto", "Seguimiento concluido"),
+    ],
+)
+def test_reportante_recibe_resultado_sensible_sin_cancelacion(
+    make_query,
+    estado_reporte,
+    estado_publico,
+):
+    tablas = {
+        "reportes": make_query(data=[{
+            "id": "rep-sensible",
+            "estado_reporte": estado_reporte,
+            "estado_cobertura": "finalizado",
+            "latitud": 19.43,
+            "longitud": -99.13,
+            "municipio": "Puebla",
+            "colonia": "Centro",
+            "calle": "Calle del reporte",
+            "created_at": "2026-08-01T10:00:00Z",
+            "asociacion_asignada_id": "aso-1",
+            "staff_asignado_id": None,
+            "animal": [],
+            "asociaciones": {"nombre": "Patitas"},
+        }]),
+        "historial_reporte": make_query(data=[]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+
+    with patch.object(report_service, "supabase", supabase):
+        resultado = asyncio.run(
+            report_service.obtener_reportes_usuario("reportante-1")
+        )
+
+    assert resultado[0]["estado_publico"] == estado_publico
     assert resultado[0]["puede_cancelar"] is False
 
 

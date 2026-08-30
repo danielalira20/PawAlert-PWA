@@ -5,7 +5,12 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { useAuth } from '../context/AuthContext';
 import { API_URL } from '../constants/api';
-import type { ReporteStaff, RespuestaStaffReportes, SugerenciaAliado } from '../types/reportestaff';
+import type {
+  ReporteStaff,
+  RespuestaStaffReportes,
+  ResultadoRescateSinVidaResponse,
+  SugerenciaAliado,
+} from '../types/reportestaff';
 
 type ShowToastFn = (toast: {
   type: 'success' | 'error' | 'warning' | 'info';
@@ -167,7 +172,11 @@ export function useStaffReports(showToast: ShowToastFn) {
   }, []);
 
   const subirFotoHito = useCallback(
-    async (reporteId: string, fotoUri: string): Promise<FotoHitoSubida | null> => {
+    async (
+      reporteId: string,
+      fotoUri: string,
+      sensible = false,
+    ): Promise<FotoHitoSubida | null> => {
       try {
         const formData = new FormData();
         if (Platform.OS === 'web') {
@@ -182,6 +191,7 @@ export function useStaffReports(showToast: ShowToastFn) {
             type: 'image/jpeg',
           } as any);
         }
+        formData.append('sensible', sensible ? 'true' : 'false');
         const res = await axios.post(`${API_URL}/reports/${reporteId}/hitos/foto`, formData, {
           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' },
         });
@@ -199,6 +209,165 @@ export function useStaffReports(showToast: ShowToastFn) {
   const [notasEncontre, setNotasEncontre] = useState('');
   const [fotoEncontre, setFotoEncontre] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // ── Resultado: animal encontrado aparentemente sin vida ─────────────
+  const [cantidadesSinVida, setCantidadesSinVida] = useState<Record<string, number>>({});
+  const [fotoSinVida, setFotoSinVida] = useState<string | null>(null);
+  const [puedeEsperarSeguro, setPuedeEsperarSeguro] = useState<boolean | null>(null);
+  const [riesgoVialSinVida, setRiesgoVialSinVida] = useState(false);
+  const [riesgoSanitarioSinVida, setRiesgoSanitarioSinVida] = useState(false);
+  const [identificacionSinVida, setIdentificacionSinVida] = useState('');
+  const [notasSinVida, setNotasSinVida] = useState('');
+  const [motivoRetiroSeguridad, setMotivoRetiroSeguridad] = useState('');
+
+  const seleccionarAnimalSinVida = useCallback((animalId: string, _cantidadMaxima: number) => {
+    setCantidadesSinVida((actuales) => {
+      if (actuales[animalId]) {
+        const siguientes = { ...actuales };
+        delete siguientes[animalId];
+        return siguientes;
+      }
+      return { ...actuales, [animalId]: 1 };
+    });
+  }, []);
+
+  const cambiarCantidadSinVida = useCallback(
+    (animalId: string, cantidad: number, cantidadMaxima: number) => {
+      if (!Number.isInteger(cantidad) || cantidad < 1) return;
+      setCantidadesSinVida((actuales) => ({
+        ...actuales,
+        [animalId]: Math.min(cantidad, Math.max(1, cantidadMaxima)),
+      }));
+    },
+    [],
+  );
+
+  const resetSinVida = useCallback(() => {
+    setCantidadesSinVida({});
+    setFotoSinVida(null);
+    setPuedeEsperarSeguro(null);
+    setRiesgoVialSinVida(false);
+    setRiesgoSanitarioSinVida(false);
+    setIdentificacionSinVida('');
+    setNotasSinVida('');
+    setMotivoRetiroSeguridad('');
+    setUbicacionActual(null);
+    setPermisoDenegado(false);
+  }, []);
+
+  const registrarSinVida = useCallback(
+    async (reporteId: string): Promise<boolean> => {
+      const animales = Object.entries(cantidadesSinVida).map(
+        ([animal_id, cantidad_reportada]) => ({ animal_id, cantidad_reportada }),
+      );
+      if (!animales.length) {
+        showToast({
+          type: 'warning',
+          title: 'Selecciona al animal',
+          message: 'Indica qué animal o animales encontraste en esta condición.',
+        });
+        return false;
+      }
+      if (!fotoSinVida) {
+        showToast({
+          type: 'warning',
+          title: 'Fotografía requerida',
+          message: 'Toma la evidencia desde la cámara para continuar.',
+        });
+        return false;
+      }
+      if (!ubicacionActual) {
+        showToast({
+          type: 'warning',
+          title: 'Ubicación requerida',
+          message: 'Captura el GPS desde el lugar donde encontraste al animal.',
+        });
+        return false;
+      }
+      if (puedeEsperarSeguro === null) {
+        showToast({
+          type: 'warning',
+          title: 'Confirma tu seguridad',
+          message: 'Indica si puedes esperar de forma segura.',
+        });
+        return false;
+      }
+      if (!puedeEsperarSeguro && !motivoRetiroSeguridad.trim()) {
+        showToast({
+          type: 'warning',
+          title: 'Explica por qué debes retirarte',
+          message: 'La asociación necesita conocer el riesgo para coordinar el seguimiento.',
+        });
+        return false;
+      }
+
+      setIsSubmitting(true);
+      try {
+        const fotoSubida = await subirFotoHito(reporteId, fotoSinVida, true);
+        if (!fotoSubida?.evidencia_id) {
+          showToast({
+            type: 'error',
+            title: 'No pudimos guardar la evidencia',
+            message: 'Verifica tu conexión e inténtalo nuevamente.',
+          });
+          return false;
+        }
+
+        const respuesta = await axios.post<ResultadoRescateSinVidaResponse>(
+          `${API_URL}/reports/${reporteId}/resultados/sin-vida`,
+          {
+            animales,
+            evidencia_id: fotoSubida.evidencia_id,
+            latitud: ubicacionActual.latitude,
+            longitud: ubicacionActual.longitude,
+            puede_esperar_seguro: puedeEsperarSeguro,
+            riesgo_vial: riesgoVialSinVida,
+            riesgo_sanitario: riesgoSanitarioSinVida,
+            identificacion_observada: identificacionSinVida.trim() || null,
+            comentario: notasSinVida.trim() || null,
+            motivo_retiro_seguridad: motivoRetiroSeguridad.trim() || null,
+          },
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+
+        showToast({
+          type: 'success',
+          title: 'Resultado registrado',
+          message: respuesta.data.todos_animales_reportados
+            ? 'La asociación coordinará el seguimiento y el retiro digno.'
+            : 'El caso sigue activo porque todavía hay animales por localizar.',
+        });
+        resetSinVida();
+        await cargarReportesAsignados();
+        return true;
+      } catch (error: any) {
+        showToast({
+          type: 'error',
+          title: 'No pudimos registrar el resultado',
+          message: error?.response?.data?.detail || 'Inténtalo nuevamente.',
+        });
+        return false;
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    [
+      cantidadesSinVida,
+      fotoSinVida,
+      ubicacionActual,
+      puedeEsperarSeguro,
+      motivoRetiroSeguridad,
+      subirFotoHito,
+      riesgoVialSinVida,
+      riesgoSanitarioSinVida,
+      identificacionSinVida,
+      notasSinVida,
+      token,
+      showToast,
+      resetSinVida,
+      cargarReportesAsignados,
+    ],
+  );
 
   // ── Hito: llegada a la zona del reporte ─────────────────────────────
   const resetLlegadaZona = useCallback(() => {
@@ -819,6 +988,27 @@ const rechazarAsignacionVoluntario = useCallback(
     resetEncontre,
     OPCIONES_ENCONTRE,
     OPCIONES_ENCONTRE_EXTERNO,
+
+    // resultado: animal aparentemente sin vida
+    cantidadesSinVida,
+    seleccionarAnimalSinVida,
+    cambiarCantidadSinVida,
+    fotoSinVida,
+    setFotoSinVida,
+    puedeEsperarSeguro,
+    setPuedeEsperarSeguro,
+    riesgoVialSinVida,
+    setRiesgoVialSinVida,
+    riesgoSanitarioSinVida,
+    setRiesgoSanitarioSinVida,
+    identificacionSinVida,
+    setIdentificacionSinVida,
+    notasSinVida,
+    setNotasSinVida,
+    motivoRetiroSeguridad,
+    setMotivoRetiroSeguridad,
+    registrarSinVida,
+    resetSinVida,
 
     // hito: llegada a la zona
     registrarLlegadaZona,

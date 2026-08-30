@@ -41,7 +41,9 @@ from app.services.video_evidence_service import procesar_evidencia_verificacion
 from app.services.whatsapp_notification_service import (
     notificar_evento_verificacion,
 )
+from app.services import deceased_followup_service
 from app.models.association import NuevoRepresentante
+from app.models.report import RevisionResultadoSinVidaRequest
 from app.utils.animal_shaping import shape_animal_embed, shape_animal_response, condicion_mas_grave
 import json
 from app.services.email_service import email_bienvenida_staff
@@ -635,6 +637,127 @@ async def get_reportes_asignados(authorization: str = Header(None)):
         })
 
     return reportes
+
+
+@router.get("/me/seguimientos-fallecimiento", status_code=200)
+async def get_seguimientos_fallecimiento(
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion", "staff"))
+    asociacion_id = usuario.get("asociacion_id")
+    if not asociacion_id:
+        raise HTTPException(
+            status_code=404,
+            detail="Este usuario no está vinculado a ninguna asociación",
+        )
+    _verificar_asociacion_aprobada(asociacion_id)
+    return deceased_followup_service.listar_seguimientos_asociacion(
+        asociacion_id
+    )
+
+
+@router.get(
+    "/me/seguimientos-fallecimiento/{reporte_id}",
+    status_code=200,
+)
+async def get_detalle_seguimiento_fallecimiento(
+    reporte_id: str,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion", "staff"))
+    asociacion_id = usuario.get("asociacion_id")
+    if not asociacion_id:
+        raise HTTPException(
+            status_code=404,
+            detail="Este usuario no está vinculado a ninguna asociación",
+        )
+    _verificar_asociacion_aprobada(asociacion_id)
+    try:
+        return deceased_followup_service.obtener_detalle_seguimiento(
+            reporte_id,
+            asociacion_id,
+            actor_id=usuario["id"],
+            tipo_actor="asociacion",
+        )
+    except deceased_followup_service.SeguimientoFallecimientoError as error:
+        if error.codigo == "reporte_no_encontrado":
+            raise HTTPException(status_code=404, detail="Reporte no encontrado")
+        raise HTTPException(
+            status_code=404,
+            detail="Seguimiento no encontrado para tu asociación",
+        )
+
+
+@router.post(
+    "/me/seguimientos-fallecimiento/{reporte_id}/resultados/"
+    "{resultado_id}/revision",
+    status_code=200,
+)
+async def post_revision_resultado_fallecimiento(
+    reporte_id: str,
+    resultado_id: str,
+    body: RevisionResultadoSinVidaRequest,
+    authorization: str = Header(None),
+):
+    usuario = _obtener_usuario_autenticado(authorization)
+    _verificar_rol(usuario, ("asociacion", "staff"))
+    asociacion_id = usuario.get("asociacion_id")
+    if not asociacion_id:
+        raise HTTPException(
+            status_code=404,
+            detail="Este usuario no está vinculado a ninguna asociación",
+        )
+    _verificar_asociacion_aprobada(asociacion_id)
+
+    try:
+        return deceased_followup_service.revisar_resultado(
+            reporte_id,
+            resultado_id,
+            usuario["id"],
+            asociacion_id,
+            body,
+        )
+    except deceased_followup_service.SeguimientoFallecimientoError as error:
+        if error.codigo in (
+            "seguimiento_no_autorizado",
+            "reporte_no_encontrado",
+            "resultado_no_encontrado",
+        ):
+            raise HTTPException(
+                status_code=404,
+                detail="Resultado no encontrado para tu asociación",
+            )
+        if error.codigo in (
+            "decision_revision_invalida",
+            "notas_revision_requeridas",
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="La decisión o las notas de revisión no son válidas",
+            )
+        if error.codigo == "reactivacion_urgency_pendiente":
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "La duda quedó registrada. El reporte seguirá pausado "
+                    "hasta recalcular su urgencia; vuelve a intentarlo."
+                ),
+            )
+        if error.codigo in (
+            "revision_fallecimiento_no_disponible",
+            "respuesta_revision_invalida",
+            "respuesta_reactivacion_invalida",
+        ):
+            raise HTTPException(
+                status_code=503,
+                detail="La revisión no está disponible temporalmente",
+            )
+        raise HTTPException(
+            status_code=409,
+            detail="El resultado ya no admite esa decisión",
+        )
 
 
 @router.get("/me/reportes/necesidades-activas", status_code=200)

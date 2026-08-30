@@ -417,6 +417,39 @@ def test_reanudar_urgency_pendiente_completa_activacion_sin_recalcular(make_quer
     assert argumentos["condicion_mas_grave"] == "grave"
 
 
+def test_reanudar_duda_conserva_asociacion_coordinadora(make_query):
+    reporte = {
+        "id": "reporte-1",
+        "estado_validacion_reporte": "urgency_pendiente",
+        "razones_validacion": [
+            {
+                "codigo": "reactivacion_duda_fallecimiento",
+                "resultado": "urgency_pendiente",
+            }
+        ],
+        "animal": [],
+    }
+    supabase_admin = MagicMock()
+    supabase_admin.table.return_value = make_query(data=[reporte])
+
+    with (
+        patch.object(report_activation_service, "supabase_admin", supabase_admin),
+        patch(
+            "app.services.deceased_followup_service."
+            "finalizar_reactivacion_pendiente",
+            return_value={"estado": "reactivado"},
+        ) as finalizar,
+        patch.object(report_activation_service, "activar_reporte") as activar,
+    ):
+        resultado = report_activation_service.reanudar_activacion_urgency_pendiente(
+            "reporte-1"
+        )
+
+    assert resultado == {"estado": "reactivado"}
+    finalizar.assert_called_once_with("reporte-1")
+    activar.assert_not_called()
+
+
 def test_activar_reporte_por_vencimiento_clip_exige_unico_bloqueo(make_query):
     reporte = {
         "id": "reporte-1",

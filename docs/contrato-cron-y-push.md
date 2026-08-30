@@ -14,8 +14,9 @@ Para facilitar la depuración y evitar dependencias entre distintas tareas pesad
 - `POST /internal/urgency/run`: Reclama un lote de reportes (usando concurrencia segura con `FOR UPDATE SKIP LOCKED` en `urgency_report_claims`) y recalcula su nivel de urgencia, clasificando si el reporte fue `updated` o `degraded` (falla de cache). Se mantiene un log en `urgency_scheduler_runs`.
 - `POST /internal/push/run`: Despacha las notificaciones Push pendientes (límite de 100 por ejecución).
 - `POST /internal/reporter-confirmations/run`: Evalúa reportes con más de 6 horas sin actividad (hitos) para solicitar confirmación de permanencia. Excluye reportes con "recursos vinculados" (custodias activas o contribuciones) mediante la función `obtener_reportes_inactivos_permanencia()`. Genera tokens seguros de 1 solo uso para los invitados, encola Pushes para los autenticados, y mueve a revisión manual a aquellos que caducan sin respuesta.
+- `POST /internal/deceased-followups/run`: Escala seguimientos sensibles sin cerrar el reporte. A las 24 horas cambia la responsabilidad operativa a la asociación coordinadora y a las 48 horas lo presenta a administración. Cada transición y cada aviso usan claves idempotentes.
 
-**Nota para producción:** El administrador debe configurar Supabase (o `pg_cron`) para hacer llamadas HTTP POST a estos endpoints cada 5 minutos.
+**Nota para producción:** El administrador debe configurar un programador externo para hacer llamadas HTTP POST con `X-Cron-Secret`. Urgency, push y confirmaciones pueden ejecutarse cada 5 minutos; el escalamiento de resultados sensibles puede ejecutarse cada 15 minutos. El endpoint de WhatsApp mantiene su frecuencia de un minuto para los recordatorios de seguridad existentes.
 
 ## 3. Dispositivos Push (FCM Tokens)
 - Los dispositivos se guardan en la tabla `dispositivos_push`.

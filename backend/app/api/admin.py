@@ -3,6 +3,8 @@ from pydantic import BaseModel
 from app.db.supabase import supabase, supabase_admin
 from datetime import datetime, timezone
 from app.models.association import RespuestaApelacionBody
+from app.models.report import RevisionResultadoSinVidaRequest
+from app.services import deceased_followup_service
 from app.services.email_service import (email_asociacion_aprobada, email_asociacion_rechazada, email_apelacion_aprobada, email_apelacion_rechazada)
 router = APIRouter()
 
@@ -90,6 +92,89 @@ def _verificar_admin(authorization: str | None) -> dict:
         raise HTTPException(status_code=403, detail="No tienes permisos de administrador")
 
     return usuario
+
+
+@router.get("/seguimientos-fallecimiento", status_code=200)
+def listar_seguimientos_fallecimiento_escalados(
+    authorization: str = Header(None),
+):
+    _verificar_admin(authorization)
+    return deceased_followup_service.listar_seguimientos_administracion()
+
+
+@router.get("/seguimientos-fallecimiento/{reporte_id}", status_code=200)
+def obtener_seguimiento_fallecimiento_escalado(
+    reporte_id: str,
+    authorization: str = Header(None),
+):
+    admin = _verificar_admin(authorization)
+    try:
+        return deceased_followup_service.obtener_detalle_seguimiento_administracion(
+            reporte_id,
+            admin["id"],
+        )
+    except deceased_followup_service.SeguimientoFallecimientoError as error:
+        if error.codigo in ("seguimiento_no_encontrado", "reporte_no_encontrado"):
+            raise HTTPException(
+                status_code=404,
+                detail="Seguimiento escalado no encontrado",
+            ) from error
+        raise HTTPException(
+            status_code=503,
+            detail="El seguimiento no está disponible temporalmente",
+        ) from error
+
+
+@router.post(
+    "/seguimientos-fallecimiento/{reporte_id}/resultados/"
+    "{resultado_id}/revision",
+    status_code=200,
+)
+def revisar_resultado_fallecimiento_escalado(
+    reporte_id: str,
+    resultado_id: str,
+    body: RevisionResultadoSinVidaRequest,
+    authorization: str = Header(None),
+):
+    admin = _verificar_admin(authorization)
+    try:
+        return deceased_followup_service.revisar_resultado_administracion(
+            reporte_id,
+            resultado_id,
+            admin["id"],
+            body,
+        )
+    except deceased_followup_service.SeguimientoFallecimientoError as error:
+        if error.codigo in (
+            "seguimiento_no_encontrado",
+            "reporte_no_encontrado",
+            "resultado_no_encontrado",
+            "seguimiento_no_autorizado",
+        ):
+            raise HTTPException(
+                status_code=404,
+                detail="Resultado escalado no encontrado",
+            ) from error
+        if error.codigo in (
+            "decision_revision_invalida",
+            "notas_revision_requeridas",
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="La decisión o las notas no son válidas",
+            ) from error
+        if error.codigo == "reactivacion_urgency_pendiente":
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "La duda quedó registrada. La reactivación continuará "
+                    "cuando se recalcule la urgencia."
+                ),
+            ) from error
+        raise HTTPException(
+            status_code=409,
+            detail="El resultado ya no admite esa decisión",
+        ) from error
 
 
 @router.get("/asociaciones-pendientes", status_code=200)

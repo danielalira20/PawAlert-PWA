@@ -91,3 +91,20 @@ export interface AceptarSugerenciaResponse {
   contacto_aliado: ContactoAliado;
   ubicacion_aliado: UbicacionAliado;
 }
+
+export interface ResultadoRescateSinVidaResponse {
+  reporte_id: string;
+  estado_reporte: string;
+  todos_animales_reportados: boolean;
+  transicion_realizada: boolean;
+  seguimiento_id: string | null;
+  asociacion_deadline_at: string | null;
+  administracion_deadline_at: string | null;
+  requiere_recalculo_urgency: boolean;
+  verificacion_evidencia: {
+    evidencia_id: string;
+    estado: 'coincidente' | 'discrepancia' | 'sin_gps_exif';
+    distancia_metros: number | null;
+    requiere_revision: boolean;
+  };
+}

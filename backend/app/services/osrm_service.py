@@ -1,5 +1,6 @@
 """Cliente tolerante a fallos para la matriz de tiempos de OSRM."""
 
+import math
 from datetime import datetime, timezone
 
 import httpx
@@ -110,7 +111,10 @@ def _normalize_matrix(payload: object) -> list[list[float | None]]:
                 continue
             if isinstance(value, bool) or not isinstance(value, (int, float)):
                 raise _InvalidPayload
-            normalized_row.append(float(value))
+            normalized_value = float(value)
+            if not math.isfinite(normalized_value):
+                raise _InvalidPayload
+            normalized_row.append(normalized_value)
         normalized.append(normalized_row)
     return normalized
 
