@@ -44,7 +44,14 @@ PREGUNTAS = {
         "Tus respuestas se guardarán únicamente para completar el reporte.\n\n"
         "Para comenzar, ¿cuál es tu nombre?"
     ),
-    "cantidad": "¿Cuántos animales son aproximadamente? Responde con un número (1, 2, 3...).",
+    "cantidad": (
+        "¿Cuántos animales viste? Elige una opción.\n"
+        "Si son más de 6, elige *Otro (son más)* y te pediré el número."
+    ),
+    "cantidad_detalle": (
+        "¿Cuántos animales se encuentran aproximadamente? "
+        "Escribe solo el número (por ejemplo: 8)."
+    ),
     "foto": (
         "📸 Envía una foto clara y reciente del animal. Procura que tenga buena luz, "
         "que el animal sea visible y que no sea una captura de pantalla.\n\n"
@@ -58,7 +65,10 @@ PREGUNTAS = {
     "tamanio": "¿De qué tamaño es? Responde: pequeño, mediano o grande.",
     "sexo": "¿Cuál es su sexo? Responde: macho, hembra o desconocido.",
     "edad": "¿Qué edad aproximada tiene? Responde: cachorro, joven, adulto, senior o desconocido.",
-    "raza": "¿Qué raza parece ser? Escribe la raza o responde OTRO si no está en la lista.",
+    "raza": (
+        "¿Qué raza parece tener? Elige una opción de la lista.\n"
+        "Si no la reconoces o es mestizo/criollo, elige *Otra / no la sé*."
+    ),
     "tiene_collar": "¿Tiene collar? Responde SÍ o NO.",
     "comportamiento": "¿Parece agresivo? Responde SÍ o NO.",
     "es_domestico": "¿Parece doméstico o se deja acercar? Responde SÍ o NO.",
@@ -78,6 +88,15 @@ PREGUNTAS = {
 }
 
 OPCIONES_INTERACTIVAS: dict[str, list[tuple[str, str]]] = {
+    "cantidad": [
+        ("1", "1"),
+        ("2", "2"),
+        ("3", "3"),
+        ("4", "4"),
+        ("5", "5"),
+        ("6", "6"),
+        ("otro", "Otro (son más)"),
+    ],
     "tipo_animal": [("perro", "Perro"), ("gato", "Gato"), ("otro", "Otro")],
     "categoria_otro": [
         ("ave", "Ave"),
@@ -102,6 +121,21 @@ OPCIONES_INTERACTIVAS: dict[str, list[tuple[str, str]]] = {
     "esta_prenada": [("si", "Sí"), ("no", "No")],
     "trae_crias": [("si", "Sí"), ("no", "No")],
     "duplicado": [("mismo", "Es el mismo"), ("nuevo", "Es otro caso")],
+}
+
+RAZAS_SUGERIDAS: dict[str, list[tuple[str, str]]] = {
+    "perro": [
+        ("mestizo", "Mestizo / criollo"),
+        ("labrador", "Labrador"),
+        ("pitbull", "Pitbull"),
+        ("pastor aleman", "Pastor alemán"),
+        ("chihuahua", "Chihuahua"),
+    ],
+    "gato": [
+        ("comun", "Común / criollo"),
+        ("siames", "Siamés"),
+        ("persa", "Persa"),
+    ],
 }
 
 ETIQUETAS_CORRECCION = {
@@ -228,8 +262,10 @@ def _validar_respuesta(
     if estado == "nombre" and not (2 <= len(texto) <= 100):
         return False, None, "Escribe un nombre de entre 2 y 100 caracteres."
     if estado == "cantidad":
+        if normalizado == "otro":
+            return False, None, PREGUNTAS["cantidad_detalle"]
         if not texto.isdigit() or not (1 <= int(texto) <= 99):
-            return False, None, "Escribe una cantidad entre 1 y 99."
+            return False, None, "Elige una opción o escribe un número entre 1 y 99."
         return True, int(texto), None
     if estado in {
         "tiene_collar",
@@ -441,7 +477,19 @@ async def enviar_opciones(
     await _enviar_payload(wa_id, {"type": "interactive", "interactive": interactivo})
 
 
-async def enviar_pregunta(wa_id: str, estado: str) -> None:
+async def enviar_pregunta(
+    wa_id: str, estado: str, respuestas: dict[str, Any] | None = None
+) -> None:
+    if estado == "raza" and respuestas:
+        sugeridas = RAZAS_SUGERIDAS.get(respuestas.get("tipo_animal"))
+        if sugeridas:
+            await enviar_opciones(
+                wa_id,
+                PREGUNTAS["raza"],
+                [*sugeridas, ("otro", "Otra / no la sé")],
+                titulo_boton="Ver razas",
+            )
+            return
     opciones = OPCIONES_INTERACTIVAS.get(estado)
     if opciones:
         await enviar_opciones(wa_id, PREGUNTAS[estado], opciones)
@@ -732,7 +780,7 @@ async def _procesar_mensaje(mensaje: dict[str, Any]) -> None:
                 return
             respuestas["_corrigiendo"] = campo
             _guardar_sesion(wa_id, campo, respuestas)
-            await enviar_pregunta(wa_id, campo)
+            await enviar_pregunta(wa_id, campo, respuestas)
             return
 
         if contenido is None:
@@ -746,7 +794,7 @@ async def _procesar_mensaje(mensaje: dict[str, Any]) -> None:
             if error and error != PREGUNTAS[estado]:
                 await enviar_texto(wa_id, error)
             else:
-                await enviar_pregunta(wa_id, estado)
+                await enviar_pregunta(wa_id, estado, respuestas)
             return
         if estado == "foto" and valor is None and respuestas.get("cantidad", 1) == 1:
             await enviar_texto(
@@ -765,7 +813,7 @@ async def _procesar_mensaje(mensaje: dict[str, Any]) -> None:
         if siguiente == "confirmacion":
             await enviar_confirmacion(wa_id, respuestas)
         else:
-            await enviar_pregunta(wa_id, siguiente)
+            await enviar_pregunta(wa_id, siguiente, respuestas)
     except Exception:
         _olvidar_mensaje(message_id)
         raise

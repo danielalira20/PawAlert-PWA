@@ -275,3 +275,35 @@ def test_comando_de_reinicio_borra_sesion_atorada_y_reinicia(monkeypatch):
     assert eliminadas == ["5212210000000"]
     assert guardado == {"estado": service.INICIO, "respuestas": {}}
     assert preguntas == [service.INICIO]
+
+
+def test_cantidad_otro_pide_numero_libre():
+    valido, _, mensaje = service._validar_respuesta("cantidad", "text", "otro")
+    assert valido is False
+    assert "número" in mensaje
+    assert service._validar_respuesta("cantidad", "text", "8") == (True, 8, None)
+    valido, _, mensaje = service._validar_respuesta("cantidad", "text", "abc")
+    assert valido is False
+
+
+def test_cantidad_y_razas_respetan_limites_de_meta():
+    assert len(service.OPCIONES_INTERACTIVAS["cantidad"]) <= 10
+    for opciones in service.RAZAS_SUGERIDAS.values():
+        assert len(opciones) + 1 <= 10
+        assert all(len(titulo) <= 24 for _, titulo in opciones)
+
+
+def test_enviar_pregunta_raza_manda_lista_segun_tipo(monkeypatch):
+    capturado = {}
+
+    async def enviar_opciones(_wa_id, texto, opciones, **_kwargs):
+        capturado.update(texto=texto, opciones=list(opciones))
+
+    monkeypatch.setattr(service, "enviar_opciones", enviar_opciones)
+
+    asyncio.run(
+        service.enviar_pregunta("5212210000000", "raza", {"tipo_animal": "gato"})
+    )
+
+    ids = [identificador for identificador, _ in capturado["opciones"]]
+    assert ids == ["comun", "siames", "persa", "otro"]
