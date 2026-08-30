@@ -26,6 +26,7 @@ import { Animal, getAnimales, totalAnimales, animalMasGrave, ReportUrgencySnapsh
 import { AnimalCarousel } from '../components/common/AnimalCarousel';
 import { ImageLightbox } from '../components/common/ImageLightbox';
 import { getPaginationWindow, getReportsPerPage } from '../utils/reportPagination';
+import { AssociationEventsPanel } from '../components/events/association/AssociationEventsPanel';
 
 // ─── PALETA DE COLORES PETZEN ───
 const COLORS = {
@@ -103,7 +104,7 @@ interface HistorialEvento {
 }
 
 type FiltroAsignacion = 'todas' | 'pendientes' | 'aceptadas' | 'rechazadas';
-type ActiveTab = 'reportes' | 'seguimientos' | 'postulaciones' | 'voluntarios' | 'lotes' | 'configuracion';
+type ActiveTab = 'reportes' | 'eventos' | 'seguimientos' | 'postulaciones' | 'voluntarios' | 'lotes' | 'configuracion';
 
 type TabAsignacion = 'staff' | 'voluntarios';
 type EstadoVoluntarios = 'cargando' | 'candidatos' | 'esperando_confirmacion' | 'confirmado' | 'rechazado_mostrando_siguiente' | 'sin_candidatos';
@@ -1310,6 +1311,25 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                 </TouchableOpacity>
 
                 <TouchableOpacity
+                  onPress={() => setActiveTab('eventos')}
+                  style={{
+                    paddingBottom: 12,
+                    marginRight: 24,
+                    flexShrink: 0,
+                    borderBottomWidth: activeTab === 'eventos' ? 3 : 0,
+                    borderBottomColor: COLORS.primary
+                  }}
+                >
+                  <Text style={{
+                    fontSize: 16,
+                    fontWeight: activeTab === 'eventos' ? '800' : '600',
+                    color: activeTab === 'eventos' ? COLORS.primary : COLORS.textLight
+                  }}>
+                    Eventos
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
                   onPress={() => setActiveTab('seguimientos')}
                   style={{
                     paddingBottom: 12,
@@ -1413,6 +1433,8 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                 <Text style={{ fontSize: 22, fontWeight: 'bold', color: COLORS.textDark }}>
                   {activeTab === 'reportes'
                     ? 'Reportes asignados'
+                    : activeTab === 'eventos'
+                      ? 'Eventos de la asociación'
                     : activeTab === 'seguimientos'
                       ? 'Seguimientos sensibles'
                     : activeTab === 'postulaciones'
@@ -1709,6 +1731,8 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                   )}
                 </>
 
+              ) : activeTab === 'eventos' ? (
+                <AssociationEventsPanel />
               ) : activeTab === 'seguimientos' ? (
                 <DeceasedFollowupPanel visible={activeTab === 'seguimientos'} />
               ) : activeTab === 'postulaciones' ? (
