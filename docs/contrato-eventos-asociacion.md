@@ -313,8 +313,15 @@ Un job idempotente ejecutado cada 15 minutos:
 
 - mueve `publicado` a `finalizado` al superar la fecha de fin;
 - archiva eventos finalizados 30 dias despues de su fecha de fin;
+- encola un recordatorio unico dentro de las 24 horas previas para cada
+  usuario que tenga guardado un evento publicado de una asociacion operativa;
 - no publica, cancela ni modifica eventos por su cuenta;
 - encola avisos mediante outbox sin enviar dentro de la transaccion.
+
+El recordatorio usa la combinacion usuario, evento y fecha de inicio como
+identidad. Reprogramar el inicio permite un nuevo aviso, pero los reintentos de
+la misma fecha no generan duplicados. El aviso no reserva cupo. La
+finalizacion se notifica una sola vez; el archivado es silencioso.
 
 Eventos minimos de historial y notificacion:
 
@@ -323,6 +330,7 @@ Eventos minimos de historial y notificacion:
 - `evento_actualizado`;
 - `evento_pausado`;
 - `evento_cancelado`;
+- `evento_recordatorio_24h`;
 - `evento_finalizado`;
 - `evento_archivado`;
 - `evento_guardado`;

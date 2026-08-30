@@ -124,6 +124,21 @@ POST /internal/push/run
 X-Cron-Secret: <CRON_SECRET>
 ```
 
+### Ciclo de vida y recordatorios de eventos
+
+Configura en Railway o en el scheduler externo una llamada cada 15 minutos:
+
+```text
+POST /internal/events/lifecycle/run
+X-Cron-Secret: <CRON_SECRET>
+```
+
+El job finaliza eventos al terminar, los archiva 30 dias despues y encola un
+recordatorio unico dentro de las 24 horas previas para cada usuario que los
+guardo. No envia push directamente: `/internal/push/run` debe conservar su
+propia programacion frecuente. Ejecutar varias instancias es seguro gracias a
+claims con expiracion e idempotencia en el outbox.
+
 ### Escalamiento de resultados sensibles
 
 Los seguimientos por animales encontrados sin vida se escalan a la asociación
