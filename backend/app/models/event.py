@@ -29,6 +29,20 @@ EventAccessMode = Literal[
 ]
 EventCapacityState = Literal["no_aplica", "disponible", "agotado"]
 EventProfessionalDataState = Literal["no_aplica", "declarado", "verificado"]
+EventReportReason = Literal[
+    "informacion_falsa",
+    "servicio_riesgoso",
+    "ubicacion_incorrecta",
+    "cobro_no_informado",
+    "otro",
+]
+EventReportState = Literal[
+    "pendiente",
+    "en_revision",
+    "requiere_informacion",
+    "resuelto",
+    "descartado",
+]
 EventState = Literal[
     "borrador",
     "publicado",
@@ -236,6 +250,100 @@ class EventSavedOperationResponse(BaseModel):
     reintento: bool
 
 
+class EventReportCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    motivo: EventReportReason
+    descripcion: str = Field(min_length=10, max_length=2000)
+    idempotency_key: str = Field(min_length=8, max_length=200)
+
+    @field_validator("descripcion")
+    @classmethod
+    def normalize_description(cls, value: str) -> str:
+        normalized = value.strip()
+        if len(normalized) < 10:
+            raise ValueError("Describe el problema con al menos 10 caracteres")
+        return normalized
+
+
+class EventReportResponse(BaseModel):
+    id: UUID
+    evento_id: UUID
+    motivo: EventReportReason
+    estado: EventReportState
+    creado_at: datetime
+    reintento: bool
+
+
+class EventAdminSuspend(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    motivo: str = Field(min_length=10, max_length=2000)
+    idempotency_key: str = Field(min_length=8, max_length=200)
+
+    @field_validator("motivo")
+    @classmethod
+    def normalize_reason(cls, value: str) -> str:
+        normalized = value.strip()
+        if len(normalized) < 10:
+            raise ValueError("Describe el motivo de moderación")
+        return normalized
+
+
+class EventAdminRestore(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    resolucion: str = Field(min_length=10, max_length=2000)
+    idempotency_key: str = Field(min_length=8, max_length=200)
+
+    @field_validator("resolucion")
+    @classmethod
+    def normalize_resolution(cls, value: str) -> str:
+        normalized = value.strip()
+        if len(normalized) < 10:
+            raise ValueError("Describe la resolución administrativa")
+        return normalized
+
+
+class EventAdminIncidentAssociation(BaseModel):
+    id: UUID
+    nombre: str
+
+
+class EventAdminIncidentEvent(BaseModel):
+    id: UUID
+    asociacion_id: UUID
+    titulo: str
+    tipo: EventType
+    estado: EventState
+    version_publica: int
+    asociacion: EventAdminIncidentAssociation
+
+
+class EventAdminIncident(BaseModel):
+    id: UUID
+    evento_id: UUID
+    reportado_por_usuario_id: UUID
+    motivo: EventReportReason
+    descripcion: str
+    estado: EventReportState
+    revisado_por_usuario_id: UUID | None = None
+    revisado_at: datetime | None = None
+    resolucion: str | None = None
+    resuelto_at: datetime | None = None
+    creado_at: datetime
+    actualizada_at: datetime
+    evento: EventAdminIncidentEvent
+
+
+class EventAdminIncidentPage(BaseModel):
+    items: list[EventAdminIncident]
+    pagina: int
+    limite: int
+    total: int
+    tiene_mas: bool
+
+
 class EventImageOperationResponse(BaseModel):
     id: UUID
     estado: EventState
@@ -383,6 +491,8 @@ class EventAssociationView(BaseModel):
     motivo_cancelacion_publico: str | None = None
     finalizado_at: datetime | None = None
     archivado_at: datetime | None = None
+    suspendido_at: datetime | None = None
+    motivo_suspension: str | None = None
     creado_at: datetime
     actualizada_at: datetime
 

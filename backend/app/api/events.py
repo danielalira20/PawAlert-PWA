@@ -7,6 +7,9 @@ from fastapi import APIRouter, File, Form, Header, HTTPException, Query, UploadF
 from app.db.supabase import supabase
 from app.models.event import (
     EventAction,
+    EventAdminIncidentPage,
+    EventAdminRestore,
+    EventAdminSuspend,
     EventAssociationView,
     EventCancel,
     EventDraftCreate,
@@ -16,6 +19,10 @@ from app.models.event import (
     EventPause,
     EventPublicDetail,
     EventPublicPage,
+    EventReportCreate,
+    EventReportReason,
+    EventReportResponse,
+    EventReportState,
     EventSavedOperationResponse,
     EventSavedView,
     EventState,
@@ -72,6 +79,14 @@ def _association_context(user: dict) -> str:
             detail="Tu cuenta no está vinculada a una asociación",
         )
     return str(association_id)
+
+
+def _admin_context(user: dict) -> None:
+    if user.get("rol") != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Esta acción requiere permisos de administración",
+        )
 
 
 def _call(operation):
@@ -375,5 +390,84 @@ def get_saved_events(
     return _call(
         lambda: event_service.listar_eventos_guardados(
             str(user["id"]), limite=limite
+        )
+    )
+
+
+@router.post(
+    "/events/{event_id}/report",
+    response_model=EventReportResponse,
+    status_code=201,
+)
+def report_event(
+    event_id: UUID,
+    body: EventReportCreate,
+    authorization: Optional[str] = Header(None),
+):
+    user = _authenticated_user(authorization)
+    return _call(
+        lambda: event_service.reportar_evento(
+            str(event_id), str(user["id"]), body
+        )
+    )
+
+
+@router.get(
+    "/admin/events/incidents",
+    response_model=EventAdminIncidentPage,
+)
+def get_event_incidents_admin(
+    estado: EventReportState | None = Query(None),
+    motivo: EventReportReason | None = Query(None),
+    evento_id: UUID | None = Query(None),
+    pagina: int = Query(1, ge=1),
+    limite: int = Query(20, ge=1, le=100),
+    authorization: Optional[str] = Header(None),
+):
+    user = _authenticated_user(authorization)
+    _admin_context(user)
+    return _call(
+        lambda: event_service.listar_incidentes_eventos_admin(
+            estado=estado,
+            motivo=motivo,
+            evento_id=str(evento_id) if evento_id else None,
+            pagina=pagina,
+            limite=limite,
+        )
+    )
+
+
+@router.post(
+    "/admin/events/{event_id}/suspend",
+    response_model=EventOperationResponse,
+)
+def suspend_event_admin(
+    event_id: UUID,
+    body: EventAdminSuspend,
+    authorization: Optional[str] = Header(None),
+):
+    user = _authenticated_user(authorization)
+    _admin_context(user)
+    return _call(
+        lambda: event_service.suspender_evento_admin(
+            str(event_id), str(user["id"]), body
+        )
+    )
+
+
+@router.post(
+    "/admin/events/{event_id}/restore",
+    response_model=EventOperationResponse,
+)
+def restore_event_admin(
+    event_id: UUID,
+    body: EventAdminRestore,
+    authorization: Optional[str] = Header(None),
+):
+    user = _authenticated_user(authorization)
+    _admin_context(user)
+    return _call(
+        lambda: event_service.restaurar_evento_admin(
+            str(event_id), str(user["id"]), body
         )
     )

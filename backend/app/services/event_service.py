@@ -7,9 +7,12 @@ from fastapi import UploadFile
 from app.db.supabase import supabase_admin
 from app.models.event import (
     EventAction,
+    EventAdminRestore,
+    EventAdminSuspend,
     EventCancel,
     EventDraftCreate,
     EventPause,
+    EventReportCreate,
     EventUpdate,
 )
 from app.services.image_evidence_service import (
@@ -60,8 +63,9 @@ ASSOCIATION_EVENT_FIELDS = (
     "datos_profesionales_estado, imagen_storage_path, "
     "imagen_texto_alternativo, accesibilidad, "
     "transporte, estado, version_publica, publicado_at, pausado_at, "
-    "cancelado_at, motivo_cancelacion_publico, finalizado_at, archivado_at, "
-    "creado_at, actualizada_at"
+    "cancelado_at, motivo_cancelacion_publico, suspendido_at, "
+    "motivo_suspension, finalizado_at, archivado_at, creado_at, "
+    "actualizada_at"
 )
 
 
@@ -72,7 +76,9 @@ ERROR_STATUS = {
     "evento_no_disponible_para_guardar": 404,
     "evento_no_estaba_guardado": 404,
     "evento_publico_no_encontrado": 404,
+    "evento_no_disponible_para_reportar": 404,
     "actor_no_pertenece_asociacion": 403,
+    "actor_no_es_administrador": 403,
     "asociacion_no_operativa": 403,
     "responsable_operativo_no_pertenece_asociacion": 403,
     "evento_no_editable": 409,
@@ -80,6 +86,9 @@ ERROR_STATUS = {
     "evento_no_pausable": 409,
     "evento_no_cancelable": 409,
     "evento_ya_guardado": 409,
+    "evento_ya_reportado_abierto": 409,
+    "evento_no_suspendible_admin": 409,
+    "evento_no_restaurable_admin": 409,
     "actualizacion_evento_sin_cambios": 409,
     "idempotency_key_creacion_evento_en_conflicto": 409,
     "idempotency_key_actualizacion_evento_en_conflicto": 409,
@@ -90,6 +99,9 @@ ERROR_STATUS = {
     "idempotency_key_retiro_guardado_evento_en_conflicto": 409,
     "idempotency_key_imagen_evento_en_conflicto": 409,
     "idempotency_key_retiro_imagen_evento_en_conflicto": 409,
+    "idempotency_key_reporte_evento_en_conflicto": 409,
+    "idempotency_key_suspension_evento_en_conflicto": 409,
+    "idempotency_key_restauracion_evento_en_conflicto": 409,
     "evento_imagen_no_encontrada": 404,
     "payload_evento_invalido": 422,
     "payload_evento_campos_no_permitidos": 422,
@@ -114,6 +126,9 @@ ERROR_STATUS = {
     "retiro_imagen_evento_incompleto": 422,
     "storage_path_imagen_evento_invalido": 422,
     "imagen_evento_invalida": 422,
+    "reporte_evento_incompleto": 422,
+    "suspension_evento_admin_incompleta": 422,
+    "restauracion_evento_admin_incompleta": 422,
 }
 
 ERROR_DETAIL = {
@@ -123,7 +138,9 @@ ERROR_DETAIL = {
     "evento_no_disponible_para_guardar": "El evento ya no está disponible para guardarse.",
     "evento_no_estaba_guardado": "El evento no estaba guardado en tu cuenta.",
     "evento_publico_no_encontrado": "Este evento no está disponible públicamente.",
+    "evento_no_disponible_para_reportar": "Este evento ya no está disponible para reportarse.",
     "actor_no_pertenece_asociacion": "Esta acción corresponde a la asociación organizadora.",
+    "actor_no_es_administrador": "Esta acción requiere permisos de administración.",
     "asociacion_no_operativa": "La asociación debe estar activa y verificada.",
     "responsable_operativo_no_pertenece_asociacion": "El responsable debe pertenecer a la asociación organizadora.",
     "evento_no_editable": "El evento ya no admite modificaciones ordinarias.",
@@ -131,6 +148,9 @@ ERROR_DETAIL = {
     "evento_no_pausable": "Solo un evento publicado puede pausarse.",
     "evento_no_cancelable": "Solo un evento publicado o pausado puede cancelarse.",
     "evento_ya_guardado": "El evento ya está guardado en tu cuenta.",
+    "evento_ya_reportado_abierto": "Ya tienes un reporte abierto para este evento.",
+    "evento_no_suspendible_admin": "Solo se puede suspender un evento publicado o pausado.",
+    "evento_no_restaurable_admin": "Solo se puede restaurar un evento suspendido por administración.",
     "actualizacion_evento_sin_cambios": "La actualización no modifica ningún dato del evento.",
     "payload_evento_invalido": "Los datos del evento no tienen un formato válido.",
     "payload_evento_campos_no_permitidos": "La actualización contiene campos protegidos.",
@@ -156,6 +176,9 @@ ERROR_DETAIL = {
     "retiro_imagen_evento_incompleto": "No se pudo identificar el retiro de la imagen.",
     "storage_path_imagen_evento_invalido": "La imagen no pertenece a este evento.",
     "imagen_evento_invalida": "Selecciona una imagen JPEG, PNG o WebP válida.",
+    "reporte_evento_incompleto": "Completa el motivo y la descripción del reporte.",
+    "suspension_evento_admin_incompleta": "Completa el motivo de la suspensión administrativa.",
+    "restauracion_evento_admin_incompleta": "Completa la resolución administrativa.",
     "evento_storage_no_disponible": "No se pudo acceder al almacenamiento de eventos.",
 }
 
@@ -169,6 +192,9 @@ for _idempotency_code in (
     "idempotency_key_retiro_guardado_evento_en_conflicto",
     "idempotency_key_imagen_evento_en_conflicto",
     "idempotency_key_retiro_imagen_evento_en_conflicto",
+    "idempotency_key_reporte_evento_en_conflicto",
+    "idempotency_key_suspension_evento_en_conflicto",
+    "idempotency_key_restauracion_evento_en_conflicto",
 ):
     ERROR_DETAIL[_idempotency_code] = (
         "La misma operación fue utilizada antes con datos diferentes."
@@ -338,6 +364,121 @@ def dejar_de_guardar_evento(
         },
         required_fields=("evento_id", "guardado"),
     )
+
+
+def reportar_evento(
+    event_id: str,
+    actor_user_id: str,
+    body: EventReportCreate,
+) -> dict:
+    return _rpc(
+        "reportar_evento_asociacion",
+        {
+            "p_evento_id": event_id,
+            "p_actor_usuario_id": actor_user_id,
+            "p_motivo": body.motivo,
+            "p_descripcion": body.descripcion,
+            "p_idempotency_key": body.idempotency_key,
+        },
+        required_fields=("id", "evento_id", "estado"),
+    )
+
+
+def suspender_evento_admin(
+    event_id: str,
+    actor_user_id: str,
+    body: EventAdminSuspend,
+) -> dict:
+    return _rpc(
+        "suspender_evento_asociacion_admin",
+        {
+            "p_evento_id": event_id,
+            "p_actor_usuario_id": actor_user_id,
+            "p_motivo": body.motivo,
+            "p_idempotency_key": body.idempotency_key,
+        },
+        required_fields=("id", "estado", "event_id"),
+    )
+
+
+def restaurar_evento_admin(
+    event_id: str,
+    actor_user_id: str,
+    body: EventAdminRestore,
+) -> dict:
+    return _rpc(
+        "restaurar_evento_asociacion_admin",
+        {
+            "p_evento_id": event_id,
+            "p_actor_usuario_id": actor_user_id,
+            "p_resolucion": body.resolucion,
+            "p_idempotency_key": body.idempotency_key,
+        },
+        required_fields=("id", "estado", "event_id"),
+    )
+
+
+def listar_incidentes_eventos_admin(
+    *,
+    estado: str | None,
+    motivo: str | None,
+    evento_id: str | None,
+    pagina: int,
+    limite: int,
+) -> dict:
+    event_fields = (
+        "id, asociacion_id, titulo, tipo, estado, version_publica, "
+        "asociacion:asociaciones!inner(id, nombre)"
+    )
+    fields = (
+        "id, evento_id, reportado_por_usuario_id, motivo, descripcion, "
+        "estado, revisado_por_usuario_id, revisado_at, resolucion, "
+        "resuelto_at, creado_at, actualizada_at, "
+        f"evento:eventos_asociacion!inner({event_fields})"
+    )
+    try:
+        query = supabase_admin.table("reportes_evento_asociacion").select(
+            fields,
+            count="exact",
+        )
+        if estado:
+            query = query.eq("estado", estado)
+        if motivo:
+            query = query.eq("motivo", motivo)
+        if evento_id:
+            query = query.eq("evento_id", evento_id)
+        offset = (pagina - 1) * limite
+        response = (
+            query.order("creado_at", desc=True)
+            .range(offset, offset + limite - 1)
+            .execute()
+        )
+    except Exception as error:
+        logger.exception("No se pudieron listar los incidentes de eventos")
+        raise EventServiceError("evento_consulta_no_disponible") from error
+
+    rows = response.data or []
+    items = []
+    for row in rows:
+        item = dict(row)
+        event = item.get("evento") or {}
+        if isinstance(event, list):
+            event = event[0] if event else {}
+        association = event.get("asociacion") or {}
+        if isinstance(association, list):
+            association = association[0] if association else {}
+        event["asociacion"] = association
+        item["evento"] = event
+        items.append(item)
+
+    total = response.count if response.count is not None else len(items)
+    return {
+        "items": items,
+        "pagina": pagina,
+        "limite": limite,
+        "total": total,
+        "tiene_mas": offset + len(items) < total,
+    }
 
 
 def _obtener_evento_asociacion(
