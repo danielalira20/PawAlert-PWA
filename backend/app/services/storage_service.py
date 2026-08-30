@@ -96,6 +96,54 @@ async def subir_bytes_adopcion(
 
     return ruta
 
+
+def _validar_path_evento(path: str) -> str:
+    ruta = path.strip()
+    if (
+        not ruta.startswith("eventos/")
+        or ruta.startswith("/")
+        or ".." in ruta.split("/")
+    ):
+        raise ValueError("storage_path_evento_invalido")
+    return ruta
+
+
+async def subir_bytes_evento(
+    contenido: bytes,
+    *,
+    carpeta: str,
+    content_type: str,
+    extension: str,
+    nombre_archivo: str | None = None,
+) -> str:
+    """Guarda la imagen en el bucket privado de eventos y devuelve su path."""
+    extension_limpia = extension.lower().lstrip(".") or "bin"
+    nombre = nombre_archivo or f"{uuid.uuid4()}.{extension_limpia}"
+    if "/" in nombre or nombre in (".", ".."):
+        raise ValueError("nombre_archivo_evento_invalido")
+    ruta = _validar_path_evento(f"{carpeta.rstrip('/')}/{nombre}")
+
+    try:
+        await run_in_threadpool(
+            supabase_admin.storage.from_(
+                settings.supabase_events_bucket
+            ).upload,
+            path=ruta,
+            file=contenido,
+            file_options={"content-type": content_type},
+        )
+    except Exception as error:
+        detalle = str(error).lower()
+        if (
+            "duplicate" in detalle
+            or "already exists" in detalle
+            or "409" in detalle
+        ):
+            raise ObjetoPrivadoYaExiste(ruta) from error
+        raise
+    return ruta
+
+
 async def subir_foto(foto: UploadFile, carpeta: str = "reportes") -> str:
     contenido = await foto.read()
     extension = foto.filename.split(".")[-1]
@@ -216,6 +264,48 @@ def eliminar_objeto_adopcion(storage_path: str) -> bool:
     except Exception:
         logger.warning(
             "No se pudo retirar un objeto privado de adopción",
+            exc_info=True,
+        )
+        return False
+
+
+def crear_url_firmada_evento(
+    storage_path: str,
+    *,
+    vigencia_segundos: int = 600,
+) -> dict:
+    """Crea acceso temporal a una imagen de evento sin exponer su path."""
+    ruta = _validar_path_evento(storage_path)
+    respuesta = supabase_admin.storage.from_(
+        settings.supabase_events_bucket
+    ).create_signed_url(ruta, vigencia_segundos)
+    if isinstance(respuesta, dict):
+        url = (
+            respuesta.get("signedURL")
+            or respuesta.get("signed_url")
+            or respuesta.get("signedUrl")
+        )
+    else:
+        url = getattr(respuesta, "signed_url", None)
+    if not url:
+        raise RuntimeError("url_firmada_evento_no_disponible")
+    expira_at = datetime.now(timezone.utc) + timedelta(
+        seconds=vigencia_segundos
+    )
+    return {"url": url, "expira_at": expira_at.isoformat()}
+
+
+def eliminar_objeto_evento(storage_path: str) -> bool:
+    """Elimina una imagen de evento con limpieza de mejor esfuerzo."""
+    try:
+        ruta = _validar_path_evento(storage_path)
+        supabase_admin.storage.from_(settings.supabase_events_bucket).remove(
+            [ruta]
+        )
+        return True
+    except Exception:
+        logger.warning(
+            "No se pudo retirar un objeto privado de eventos",
             exc_info=True,
         )
         return False

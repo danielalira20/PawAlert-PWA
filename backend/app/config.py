@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     supabase_bucket: str = "pawalert-fotos"
     supabase_sensitive_bucket: str = "pawalert-evidencias-privadas"
     supabase_adoptions_bucket: str = "pawalert-adopciones-privado"
+    supabase_events_bucket: str = "pawalert-eventos-privado"
     brevo_api_key: str = ""
     cron_secret: str = ""
      # Twilio — verificación de teléfono para invitados que reclaman cuenta
@@ -43,6 +44,8 @@ class Settings(BaseSettings):
     clip_high_threshold: float = 0.94
     firebase_service_account_json: str = ""
     google_application_credentials: str = ""
+
+
 
     @model_validator(mode="after")
     def validate_vroom_route_windows(self):
