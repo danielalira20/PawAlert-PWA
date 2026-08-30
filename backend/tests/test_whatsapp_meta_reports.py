@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import hmac
 import json
+from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
@@ -352,6 +353,121 @@ def test_foto_valida_avanza_y_conserva_resultado_vision(monkeypatch):
     assert guardado["estado"] == "tipo_animal"
     assert guardado["respuestas"]["foto"]["media_id"] == "media-2"
     assert guardado["respuestas"]["_validacion_foto"] == resultado_vision
+
+
+def test_continuar_reactiva_sesion_y_repite_confirmacion(monkeypatch):
+    guardado = {}
+    confirmaciones = []
+
+    monkeypatch.setattr(service, "_registrar_mensaje", lambda *_a: True)
+    monkeypatch.setattr(
+        service,
+        "_sesion",
+        lambda _wa_id: {
+            "estado": "confirmacion",
+            "respuestas": {service.MARCA_AVISO_INACTIVIDAD: True},
+        },
+    )
+    monkeypatch.setattr(
+        service,
+        "_guardar_sesion",
+        lambda _wa_id, estado, respuestas: guardado.update(
+            estado=estado, respuestas=dict(respuestas)
+        ),
+    )
+
+    async def confirmar(_wa_id, respuestas):
+        confirmaciones.append(dict(respuestas))
+
+    monkeypatch.setattr(service, "enviar_confirmacion", confirmar)
+
+    asyncio.run(
+        service._procesar_mensaje(
+            {
+                "id": "continuar-1",
+                "from": "5212210000000",
+                "type": "text",
+                "text": {"body": "CONTINUAR"},
+            }
+        )
+    )
+
+    assert guardado["estado"] == "confirmacion"
+    assert service.MARCA_AVISO_INACTIVIDAD not in guardado["respuestas"]
+    assert len(confirmaciones) == 1
+
+
+def test_cron_avisa_y_expira_sesiones_sin_duplicar(monkeypatch):
+    ahora = datetime(2026, 8, 29, 20, 30, tzinfo=timezone.utc)
+    sesiones = [
+        {
+            "wa_id": "aviso",
+            "estado": "edad",
+            "respuestas": {},
+            "actualizado_at": (ahora - timedelta(minutes=16)).isoformat(),
+        },
+        {
+            "wa_id": "expira",
+            "estado": "foto",
+            "respuestas": {service.MARCA_AVISO_INACTIVIDAD: True},
+            "actualizado_at": (ahora - timedelta(minutes=11)).isoformat(),
+        },
+    ]
+    operaciones = []
+
+    class Resultado:
+        def __init__(self, data):
+            self.data = data
+
+    class Consulta:
+        def __init__(self):
+            self.operacion = "select"
+            self.datos = None
+
+        def select(self, *_args):
+            return self
+
+        def lte(self, *_args):
+            return self
+
+        def eq(self, *_args):
+            return self
+
+        def update(self, datos):
+            self.operacion = "update"
+            self.datos = datos
+            return self
+
+        def delete(self):
+            self.operacion = "delete"
+            return self
+
+        def execute(self):
+            operaciones.append((self.operacion, self.datos))
+            return Resultado(sesiones if self.operacion == "select" else [{}])
+
+    class SupabaseFalso:
+        def table(self, _nombre):
+            return Consulta()
+
+    enviados = []
+
+    async def enviar(wa_id, texto, **_kwargs):
+        enviados.append((wa_id, texto))
+
+    monkeypatch.setattr(service, "supabase_admin", SupabaseFalso())
+    monkeypatch.setattr(service, "enviar_texto", enviar)
+    monkeypatch.setattr(service.settings, "whatsapp_meta_access_token", "token")
+    monkeypatch.setattr(service.settings, "whatsapp_meta_phone_number_id", "phone")
+    monkeypatch.setattr(service.settings, "whatsapp_session_warning_minutes", 15)
+    monkeypatch.setattr(service.settings, "whatsapp_session_expiration_minutes", 25)
+
+    resultado = asyncio.run(service.procesar_inactividad_sesiones(ahora))
+
+    assert resultado == {"avisadas": 1, "expiradas": 1}
+    assert [operacion for operacion, _ in operaciones] == ["select", "update", "delete"]
+    assert "10 minutos" in enviados[0][1]
+    assert "sesión expiró" in enviados[1][1]
 
 
 def test_despedida_incluye_folio_sitio_y_vista_previa(monkeypatch):

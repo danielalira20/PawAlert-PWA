@@ -6,7 +6,7 @@ import logging
 import json
 import unicodedata
 from io import BytesIO
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import httpx
@@ -33,6 +33,7 @@ class FotoAnimalInvalida(ValueError):
 
 INICIO = "nombre"
 SITIO_PAWALERT = "https://paw-alert-pwa.vercel.app"
+MARCA_AVISO_INACTIVIDAD = "_aviso_inactividad"
 
 COMANDOS_REINICIO = {
     "nuevo reporte",
@@ -513,6 +514,86 @@ def _eliminar_sesion(wa_id: str) -> None:
     ).execute()
 
 
+def _fecha_sesion(valor: str) -> datetime:
+    return datetime.fromisoformat(valor.replace("Z", "+00:00"))
+
+
+async def procesar_inactividad_sesiones(
+    ahora: datetime | None = None,
+) -> dict[str, int]:
+    """Avisa al alcanzar el umbral y elimina la sesión al vencer."""
+    if (
+        not settings.whatsapp_meta_access_token
+        or not settings.whatsapp_meta_phone_number_id
+    ):
+        return {"avisadas": 0, "expiradas": 0}
+
+    ahora = ahora or datetime.now(timezone.utc)
+    minutos_aviso = settings.whatsapp_session_warning_minutes
+    minutos_expiracion = settings.whatsapp_session_expiration_minutes
+    minutos_despues_aviso = minutos_expiracion - minutos_aviso
+    limite_consulta = ahora - timedelta(
+        minutes=min(minutos_aviso, minutos_despues_aviso)
+    )
+    resultado = (
+        supabase_admin.table("whatsapp_reporte_sesiones")
+        .select("wa_id, estado, respuestas, actualizado_at")
+        .lte("actualizado_at", limite_consulta.isoformat())
+        .execute()
+    )
+    avisadas = 0
+    expiradas = 0
+
+    for sesion in resultado.data or []:
+        wa_id = sesion["wa_id"]
+        actualizado_at = sesion["actualizado_at"]
+        respuestas = dict(sesion.get("respuestas") or {})
+        antiguedad = ahora - _fecha_sesion(actualizado_at)
+
+        if respuestas.get(MARCA_AVISO_INACTIVIDAD):
+            if antiguedad < timedelta(minutes=minutos_despues_aviso):
+                continue
+            eliminado = (
+                supabase_admin.table("whatsapp_reporte_sesiones")
+                .delete()
+                .eq("wa_id", wa_id)
+                .eq("actualizado_at", actualizado_at)
+                .execute()
+            )
+            if not eliminado.data:
+                continue
+            expiradas += 1
+            await enviar_texto(
+                wa_id,
+                "⌛ *Tu sesión expiró por inactividad*\n\n"
+                "El reporte incompleto fue descartado y la sesión ha terminado.\n\n"
+                "Para comenzar uno nuevo, escribe *QUIERO HACER UN REPORTE*.",
+            )
+            continue
+
+        if antiguedad < timedelta(minutes=minutos_aviso):
+            continue
+        respuestas[MARCA_AVISO_INACTIVIDAD] = True
+        reclamado = (
+            supabase_admin.table("whatsapp_reporte_sesiones")
+            .update({"respuestas": respuestas, "actualizado_at": ahora.isoformat()})
+            .eq("wa_id", wa_id)
+            .eq("actualizado_at", actualizado_at)
+            .execute()
+        )
+        if not reclamado.data:
+            continue
+        avisadas += 1
+        await enviar_texto(
+            wa_id,
+            "⏳ *Tu reporte sigue pendiente*\n\n"
+            f"La sesión expirará en {minutos_despues_aviso} minutos por inactividad. "
+            "Responde *CONTINUAR* para conservarla o *CANCELAR* para descartarla.",
+        )
+
+    return {"avisadas": avisadas, "expiradas": expiradas}
+
+
 def _registrar_mensaje(message_id: str, wa_id: str) -> bool:
     existente = (
         supabase_admin.table("whatsapp_mensajes_recibidos")
@@ -817,7 +898,7 @@ async def _enviar_reporte_creado(wa_id: str, reporte_id: str) -> None:
         wa_id,
         "✅ *¡Reporte enviado correctamente!*\n\n"
         "Gracias por tomarte el tiempo de ayudar. Tu reporte ya está disponible "
-        "para la comunidad de PawAlert.\n\n"
+        "para la comunidad de PawAlert. Esta sesión ha terminado.\n\n"
         f"🧾 *Folio:* {reporte_id}\n"
         f"🌐 *Consulta PawAlert:* {SITIO_PAWALERT}\n\n"
         "Si necesitas crear otro reporte, escribe *NUEVO REPORTE*.",
@@ -964,6 +1045,31 @@ async def _procesar_mensaje(mensaje: dict[str, Any]) -> None:
 
         estado = sesion["estado"]
         respuestas = dict(sesion.get("respuestas") or {})
+        comando = (
+            _normalizar(contenido[1])
+            if contenido and contenido[0] == "text"
+            else ""
+        )
+        if comando in {"cancelar", "cancela"}:
+            _eliminar_sesion(wa_id)
+            await enviar_texto(
+                wa_id,
+                "🟠 *Reporte cancelado*\n\n"
+                "La sesión ha terminado y no se guardó ningún reporte.\n\n"
+                "Cuando quieras comenzar uno nuevo, escribe "
+                "*QUIERO HACER UN REPORTE*.",
+            )
+            return
+        if comando == "continuar":
+            respuestas.pop(MARCA_AVISO_INACTIVIDAD, None)
+            _guardar_sesion(wa_id, estado, respuestas)
+            if estado == "confirmacion":
+                await enviar_confirmacion(wa_id, respuestas)
+            elif estado == "correccion":
+                await enviar_menu_correccion(wa_id, respuestas)
+            else:
+                await enviar_pregunta(wa_id, estado, respuestas)
+            return
         if estado == "duplicado":
             respuesta = (
                 _normalizar(contenido[1])
@@ -997,7 +1103,8 @@ async def _procesar_mensaje(mensaje: dict[str, Any]) -> None:
                 await enviar_texto(
                     wa_id,
                     "🟠 *Reporte cancelado*\n\n"
-                    "No se guardó ningún reporte. Cuando quieras intentarlo de nuevo, "
+                    "La sesión ha terminado y no se guardó ningún reporte. "
+                    "Cuando quieras intentarlo de nuevo, "
                     "escribe *Quiero hacer un reporte*.",
                 )
                 return
@@ -1146,6 +1253,7 @@ async def _procesar_mensaje(mensaje: dict[str, Any]) -> None:
             respuestas["_validacion_foto"] = resultado_vision
 
         respuestas[estado] = valor
+        respuestas.pop(MARCA_AVISO_INACTIVIDAD, None)
 
         indice_foto = respuestas.pop("_reemplazando_foto_idx", None)
         if estado == "foto" and indice_foto is not None:
