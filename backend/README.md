@@ -168,6 +168,15 @@ El ejecutor devuelve un codigo distinto de cero ante errores HTTP, problemas
 de red, JSON invalido, `estado: error` o un campo `error`. Nunca registra el
 valor de `CRON_SECRET`.
 
+#### Smoke test funcional de eventos
+
+En un proyecto Supabase de pruebas, ejecuta completo
+`scripts/smoke_event_lifecycle.sql` desde SQL Editor. El script usa una
+asociacion activa y verificada existente, crea tres fixtures efimeros y valida
+claims, recordatorio de 24 horas, finalizacion, archivado e idempotencia. Todo
+se ejecuta dentro de una transaccion que termina con `ROLLBACK`, por lo que no
+conserva eventos, historial, claims ni notificaciones de prueba.
+
 ### Escalamiento de resultados sensibles
 
 Los seguimientos por animales encontrados sin vida se escalan a la asociación
