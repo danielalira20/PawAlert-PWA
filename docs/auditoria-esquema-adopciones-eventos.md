@@ -234,6 +234,14 @@ durante la primera version.
 - reserva de claves base mediante trigger para cualquier ruta de escritura;
 - rechazo sin borrar ni renombrar automaticamente informacion de la asociacion.
 
+### `0095_adopciones_solicitudes_operaciones.sql`
+
+- cuenta autenticada con correo o telefono confirmado;
+- borrador idempotente con snapshot de requisitos base y personalizados;
+- respuestas tipadas y documentos ligados al expediente privado correcto;
+- envio con comprobacion de campos obligatorios y consentimientos;
+- retiro voluntario solo antes de seleccionar a la persona adoptante.
+
 ### Migraciones operativas posteriores
 
 - solicitudes, seleccion, entregas y seguimientos;

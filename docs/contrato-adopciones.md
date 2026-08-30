@@ -192,6 +192,12 @@ debe indicar si es obligatoria y por que se solicita.
 Al enviar una solicitud se guarda una copia versionada de los requisitos y
 preguntas vigentes. Cambiar la plantilla no altera solicitudes ya enviadas.
 
+El snapshot se crea desde el primer borrador, no hasta presionar Enviar. Esto
+evita que un formulario guardado cambie de preguntas durante una recarga o
+mientras la persona lo completa. Solamente la persona propietaria del borrador
+puede modificar sus respuestas. Los documentos deben pertenecer a la carpeta
+privada de ese mismo expediente.
+
 La asociacion administra sus preguntas adicionales mediante versiones. Puede
 editar libremente un borrador, pero una version activa o retirada es
 inmutable. Para cambiarla crea un nuevo borrador; al activarlo, la version
@@ -220,6 +226,12 @@ activo una version nueva.
 - `vencida`;
 - `cerrada_por_adopcion`;
 - `adopcion_confirmada`.
+
+El primer envio cambia `borrador` a `enviada`. Cuando la asociacion pidio
+informacion adicional, la persona puede editar solamente ese expediente y al
+reenviarlo pasa a `en_evaluacion`. El retiro voluntario se permite antes de la
+seleccion; una solicitud `seleccionada` requiere cancelar primero la
+coordinacion con la asociacion.
 
 El solicitante puede editar solo un `borrador`, responder una aclaracion o
 retirar una solicitud que aun no tenga entrega completada. Una solicitud
