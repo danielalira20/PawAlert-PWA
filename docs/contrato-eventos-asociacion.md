@@ -246,6 +246,23 @@ POST  /associations/me/events/{event_id}/collaborators
 POST  /associations/me/events/{event_id}/adoption-profiles
 ```
 
+Las escrituras basicas se apoyan en RPC atomicas versionadas en la migracion
+`0097_eventos_operaciones_basicas.sql`:
+
+- `crear_borrador_evento_asociacion`;
+- `actualizar_evento_asociacion`;
+- `publicar_evento_asociacion`;
+- `pausar_evento_asociacion`;
+- `cancelar_evento_asociacion`;
+- `guardar_evento_asociacion`;
+- `dejar_de_guardar_evento_asociacion`.
+
+Las operaciones de asociacion bloquean el evento, validan nuevamente rol,
+pertenencia, verificacion y actividad, y registran historial e idempotencia en
+la misma transaccion. Publicar tambien crea un snapshot inmutable; editar un
+evento que ya tuvo una version publica crea la siguiente version. Guardar un
+evento es una suscripcion a cambios y nunca modifica el cupo.
+
 Colaborador invitado:
 
 ```text
