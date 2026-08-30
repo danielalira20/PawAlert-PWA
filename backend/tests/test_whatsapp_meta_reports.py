@@ -411,6 +411,32 @@ def test_siguiente_estado_grupo_parecido_pregunta_una_vez():
     assert service._siguiente_estado("edad", resp) == "descripcion"
 
 
+def test_siguiente_estado_distintos_repite_ficha_completa():
+    perro = {
+        "cantidad": 2,
+        "tipo_animal": "perro",
+        "sexo": "hembra",
+        "_modo": "distintos",
+    }
+    assert service._siguiente_estado("tamanio", perro) == "sexo"
+    assert service._siguiente_estado("edad", perro) == "raza"
+    assert service._siguiente_estado("comportamiento", perro) == "esta_prenada"
+    assert service._siguiente_estado("numero_crias", perro) == "descripcion_animal"
+
+    gato = {**perro, "tipo_animal": "gato", "sexo": "macho"}
+    assert service._siguiente_estado("tiene_collar", gato) == "es_domestico"
+    assert service._siguiente_estado("es_domestico", gato) == "descripcion_animal"
+
+
+def test_descripcion_animal_es_opcional():
+    assert service._validar_respuesta(
+        "descripcion_animal", "text", "OMITIR"
+    ) == (True, None, None)
+    assert service._validar_respuesta(
+        "descripcion_animal", "text", "Mancha blanca en el pecho"
+    ) == (True, "Mancha blanca en el pecho", None)
+
+
 def test_modo_grupo_mama_crias_precarga_datos(monkeypatch):
     guardado, _ = _correr_correccion(
         monkeypatch,
@@ -453,7 +479,8 @@ def test_modo_grupo_distintos_muchos_cae_a_grupo(monkeypatch):
     assert "_animales" not in guardado["respuestas"]
 
 
-def test_bucle_distintos_cierra_ficha_y_pasa_al_siguiente(monkeypatch):
+def test_bucle_distintos_cierra_ficha_completa_y_pasa_a_foto(monkeypatch):
+    foto = {"media_id": "foto-1", "mime_type": "image/jpeg"}
     base = {
         "nombre": "Ana",
         "cantidad": 2,
@@ -461,33 +488,59 @@ def test_bucle_distintos_cierra_ficha_y_pasa_al_siguiente(monkeypatch):
         "_animal_idx": 1,
         "_animales_total": 2,
         "_animales": [],
+        "foto": foto,
         "tipo_animal": "perro",
         "condicion": "herido",
         "tamanio": "mediano",
+        "sexo": "macho",
+        "edad": "adulto",
+        "raza": "mestizo",
+        "tiene_collar": False,
+        "comportamiento": False,
     }
-    guardado, _ = _correr_correccion(monkeypatch, "edad", base, "adulto")
+    guardado, _ = _correr_correccion(
+        monkeypatch, "descripcion_animal", base, "Mancha blanca"
+    )
     r = guardado["respuestas"]
-    assert guardado["estado"] == "tipo_animal"
+    assert guardado["estado"] == "foto"
     assert r["_animal_idx"] == 2
     assert len(r["_animales"]) == 1
     assert r["_animales"][0]["tipo_animal"] == "perro"
+    assert r["_animales"][0]["foto"] == foto
+    assert r["_animales"][0]["sexo"] == "macho"
+    assert r["_animales"][0]["tiene_collar"] is False
+    assert r["_animales"][0]["comportamiento"] is False
+    assert r["_animales"][0]["descripcion_animal"] == "Mancha blanca"
     assert "tipo_animal" not in r  # limpió la ficha para el siguiente animal
+    assert "foto" not in r
 
 
 def test_bucle_distintos_ultimo_animal_va_a_descripcion(monkeypatch):
+    foto_1 = {"media_id": "foto-1", "mime_type": "image/jpeg"}
+    foto_2 = {"media_id": "foto-2", "mime_type": "image/jpeg"}
     base = {
         "nombre": "Ana",
         "cantidad": 2,
         "_modo": "distintos",
         "_animal_idx": 2,
         "_animales_total": 2,
-        "_animales": [{"tipo_animal": "perro", "condicion": "herido",
-                       "tamanio": "mediano", "edad": "adulto"}],
+        "_animales": [{"foto": foto_1, "tipo_animal": "perro",
+                       "condicion": "herido", "tamanio": "mediano",
+                       "sexo": "macho", "edad": "adulto", "raza": "mestizo",
+                       "tiene_collar": False, "comportamiento": False}],
+        "foto": foto_2,
         "tipo_animal": "gato",
         "condicion": "estable",
         "tamanio": "pequeno",
+        "sexo": "macho",
+        "edad": "cachorro",
+        "raza": "comun",
+        "tiene_collar": True,
+        "es_domestico": True,
     }
-    guardado, _ = _correr_correccion(monkeypatch, "edad", base, "cachorro")
+    guardado, _ = _correr_correccion(
+        monkeypatch, "descripcion_animal", base, "OMITIR"
+    )
     assert guardado["estado"] == "descripcion"
     assert len(guardado["respuestas"]["_animales"]) == 2
 
@@ -501,13 +554,23 @@ def test_crear_desde_respuestas_con_varios_animales(monkeypatch):
 
     monkeypatch.setattr(service, "crear_reporte", fake_crear_reporte)
 
+    async def fake_descargar(media):
+        return f"archivo-{media['media_id']}"
+
+    monkeypatch.setattr(service, "_descargar_imagen", fake_descargar)
+
     respuestas = {
         "nombre": "Ana",
         "_animales": [
-            {"tipo_animal": "perro", "condicion": "herido", "tamanio": "grande",
-             "edad": "adulto"},
-            {"tipo_animal": "gato", "condicion": "estable", "tamanio": "pequeno",
-             "edad": "cachorro"},
+            {"foto": {"media_id": "1"}, "tipo_animal": "perro",
+             "condicion": "herido", "tamanio": "grande", "sexo": "hembra",
+             "edad": "adulto", "raza": "mestizo", "tiene_collar": True,
+             "comportamiento": False, "esta_prenada": True, "trae_crias": True,
+             "numero_crias": 2, "descripcion_animal": "Café con pecho blanco"},
+            {"foto": {"media_id": "2"}, "tipo_animal": "gato",
+             "condicion": "estable", "tamanio": "pequeno", "sexo": "macho",
+             "edad": "cachorro", "raza": "comun", "tiene_collar": False,
+             "es_domestico": True},
         ],
         "descripcion": "Dos animales juntos en el mismo predio.",
         "referencia": "Calle 5",
@@ -519,3 +582,17 @@ def test_crear_desde_respuestas_con_varios_animales(monkeypatch):
     assert [a.tipo_animal for a in animales] == ["perro", "gato"]
     assert [a.orden for a in animales] == [1, 2]
     assert all(a.cantidad == 1 and a.es_grupo is False for a in animales)
+    assert animales[0].sexo.value == "hembra"
+    assert animales[0].raza_clave == "mestizo"
+    assert animales[0].esta_prenada is True
+    assert animales[0].numero_crias_nacidas == 2
+    assert animales[0].descripcion == (
+        "Café con pecho blanco\n"
+        "Situación general: Dos animales juntos en el mismo predio."
+    )
+    assert animales[1].descripcion == (
+        "Situación general: Dos animales juntos en el mismo predio."
+    )
+    assert animales[1].es_domestico_probable is True
+    assert capturado["fotos"] == ["archivo-1", "archivo-2"]
+    assert capturado["fotos_animal_index"] == "[0, 1]"
