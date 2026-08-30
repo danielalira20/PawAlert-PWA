@@ -160,6 +160,18 @@ def test_ruta_individual_incluye_campos_condicionales():
     assert service._siguiente_estado("comportamiento", respuestas) == "esta_prenada"
 
 
+def test_ruta_individual_pide_descripcion_propia_y_cachorro_no_pide_prenez():
+    respuestas = {
+        "cantidad": 1,
+        "tipo_animal": "gato",
+        "sexo": "hembra",
+        "edad": "cachorro",
+    }
+    assert service._siguiente_estado("es_domestico", respuestas) == "descripcion_animal"
+    assert service._siguiente_estado("descripcion_animal", respuestas) == "descripcion"
+    assert service._siguiente_tras_correccion("sexo", respuestas) == "confirmacion"
+
+
 def test_ruta_grupo_omite_ficha_individual():
     respuestas = {"cantidad": 4, "tipo_animal": "gato"}
     assert service._siguiente_estado("tamanio", respuestas) == "edad"
@@ -806,31 +818,36 @@ def test_correccion_a_hembra_pregunta_prenez_y_crias(monkeypatch):
     assert "_correccion_dependiente" not in guardado["respuestas"]
 
 
-def test_ubicacion_escrita_pide_confirmar_o_compartir_pin(monkeypatch):
+def test_ubicacion_primero_pide_metodo_y_luego_direccion(monkeypatch):
     guardado, opciones = _correr_correccion(
         monkeypatch,
         "ubicacion",
         {"descripcion": "Dos perros en riesgo"},
-        "Parque Ecológico, Puebla",
+        "ubicacion:escribir",
     )
 
     assert guardado["estado"] == "ubicacion"
-    assert guardado["respuestas"]["_ubicacion_texto_pendiente"] == {
-        "municipio": "Parque Ecológico, Puebla"
-    }
-    assert opciones[-1][1] == ["ubicacion:compartir", "ubicacion:texto"]
+    assert guardado["respuestas"]["_esperando_ubicacion_texto"] is True
 
     guardado, _ = _correr_correccion(
         monkeypatch,
         "ubicacion",
         guardado["respuestas"],
-        "ubicacion:texto",
+        "Avenida Juárez 2318, La Paz, Puebla",
     )
     assert guardado["estado"] == "referencia"
     assert guardado["respuestas"]["ubicacion"] == {
-        "municipio": "Parque Ecológico, Puebla"
+        "direccion": "Avenida Juárez 2318, La Paz, Puebla"
     }
-    assert "_ubicacion_texto_pendiente" not in guardado["respuestas"]
+    assert "_esperando_ubicacion_texto" not in guardado["respuestas"]
+
+
+def test_referencia_puede_omitirse():
+    assert service._validar_respuesta("referencia", "text", "OMITIR") == (
+        True,
+        None,
+        None,
+    )
 
 
 def test_descripcion_animal_es_opcional():

@@ -117,14 +117,14 @@ PREGUNTAS = {
         "Máximo 300 caracteres."
     ),
     "ubicacion": (
-        "📍 Comparte la *ubicación exacta* con el clip 📎 de WhatsApp "
-        "(Ubicación → Enviar tu ubicación actual).\n"
-        "Si no puedes, escribe la colonia o el municipio donde está el animal."
+        "📍 ¿Cómo deseas indicar dónde está el animal?\n\n"
+        "El *pin GPS* nos ayuda a ubicarlo con mayor precisión. También puedes "
+        "escribir la dirección completa."
     ),
     "referencia": (
-        "Para ubicar el lugar, escribe una *referencia del sitio*: calle y número, "
-        "un negocio o punto conocido cerca, color de fachada, etc. "
-        "Máximo 300 caracteres."
+        "Agrega una *referencia diferente a la dirección*: un negocio o punto "
+        "conocido cercano, color de fachada, esquina, etc. Máximo 300 caracteres. "
+        "Si no hay otra referencia, escribe OMITIR."
     ),
     "duplicado": (
         "Encontramos un reporte cercano que podría ser el mismo caso. "
@@ -172,6 +172,11 @@ OPCIONES_INTERACTIVAS: dict[str, list[tuple[str, str]]] = {
     "trae_crias": [("si", "Sí"), ("no", "No")],
     "duplicado": [("mismo", "Es el mismo"), ("nuevo", "Es otro caso")],
 }
+
+OPCIONES_UBICACION = [
+    ("ubicacion:compartir", "Compartir pin GPS"),
+    ("ubicacion:escribir", "Escribir dirección"),
+]
 
 # Máximo de animales distintos que se capturan uno por uno en WhatsApp.
 MAX_ANIMALES_DISTINTOS = 4
@@ -222,6 +227,7 @@ CAMPOS_CORRECCION_ANIMAL: list[tuple[str, str]] = [
     ("sexo", "Sexo"),
     ("edad", "Edad"),
     ("raza", "Raza"),
+    ("descripcion_animal", "Descripción del animal"),
     ("tiene_collar", "¿Tiene collar?"),
     ("comportamiento", "¿Parece agresivo?"),
     ("es_domestico", "¿Parece de casa?"),
@@ -329,7 +335,7 @@ def _validar_respuesta(
         if tipo == "location":
             return True, valor, None
         if isinstance(valor, str) and len(valor.strip()) >= 2:
-            return True, {"municipio": valor.strip()}, None
+            return True, {"direccion": valor.strip()}, None
         return False, None, PREGUNTAS[estado]
 
     if tipo != "text" or not valor:
@@ -382,6 +388,8 @@ def _validar_respuesta(
         if not (2 <= len(texto) <= 300):
             return False, None, "Escribe entre 2 y 300 caracteres o responde OMITIR."
         return True, texto, None
+    if estado == "referencia" and normalizado == "omitir":
+        return True, None, None
     if estado in {"descripcion", "referencia"} and not (2 <= len(texto) <= 300):
         return False, None, "Escribe una respuesta de entre 2 y 300 caracteres."
     if estado == "especie_descripcion" and not (2 <= len(texto) <= 100):
@@ -415,7 +423,7 @@ def _siguiente_estado(estado: str, respuestas: dict[str, Any]) -> str:
             if ficha_individual and tipo != "otro"
             else "descripcion_animal" if modo == "distintos" else "descripcion"
         ),
-        "descripcion_animal": "foto",
+        "descripcion_animal": "descripcion",
         "descripcion": "ubicacion",
         "ubicacion": "referencia",
         "referencia": "confirmacion",
@@ -433,17 +441,17 @@ def _siguiente_estado(estado: str, respuestas: dict[str, Any]) -> str:
     if estado in {"comportamiento", "es_domestico"}:
         if modo == "mama_crias":
             return "descripcion"
-        if respuestas.get("sexo") == "hembra":
+        if respuestas.get("sexo") == "hembra" and respuestas.get("edad") != "cachorro":
             return "esta_prenada"
-        return "descripcion_animal" if modo == "distintos" else "descripcion"
+        return "descripcion_animal" if ficha_individual else "descripcion"
     if estado == "esta_prenada":
         return "trae_crias"
     if estado == "trae_crias":
         if respuestas.get("trae_crias"):
             return "numero_crias"
-        return "descripcion_animal" if modo == "distintos" else "descripcion"
+        return "descripcion_animal" if ficha_individual else "descripcion"
     if estado == "numero_crias":
-        return "descripcion_animal" if modo == "distintos" else "descripcion"
+        return "descripcion_animal" if ficha_individual else "descripcion"
     return rutas_fijas[estado]
 
 
@@ -494,7 +502,17 @@ def _siguiente_tras_correccion(
     if campo == "sexo":
         for clave in ("esta_prenada", "trae_crias", "numero_crias"):
             respuestas.pop(clave, None)
-        return "esta_prenada" if respuestas.get("sexo") == "hembra" else "confirmacion"
+        return (
+            "esta_prenada"
+            if respuestas.get("sexo") == "hembra"
+            and respuestas.get("edad") != "cachorro"
+            else "confirmacion"
+        )
+
+    if campo == "edad" and respuestas.get("edad") == "cachorro":
+        for clave in ("esta_prenada", "trae_crias", "numero_crias"):
+            respuestas.pop(clave, None)
+        return "confirmacion"
 
     if campo == "trae_crias":
         if respuestas.get("trae_crias"):
@@ -506,6 +524,9 @@ def _siguiente_tras_correccion(
 
 
 def _resumen(respuestas: dict[str, Any]) -> str:
+    def si_no(valor: Any) -> str:
+        return "sí" if valor is True else "no"
+
     ubicacion = respuestas.get("ubicacion") or {}
     lugar = (
         ubicacion.get("municipio")
@@ -543,10 +564,30 @@ def _resumen(respuestas: dict[str, Any]) -> str:
             lineas.append(f"• Cantidad: {respuestas['cantidad']}")
         lineas.append(f"• Condición: {respuestas['condicion']}")
         lineas.append(f"• Tamaño: {respuestas['tamanio']}")
+        lineas.append(f"• Sexo: {respuestas.get('sexo', 'desconocido')}")
         lineas.append(f"• Edad: {respuestas['edad']}")
+        if respuestas.get("raza"):
+            lineas.append(f"• Raza: {respuestas['raza']}")
+        if respuestas.get("tiene_collar") is not None:
+            lineas.append(f"• Collar, correa o placa: {si_no(respuestas['tiene_collar'])}")
+        if respuestas.get("comportamiento") is not None:
+            lineas.append(f"• Se comporta agresivo: {si_no(respuestas['comportamiento'])}")
+        if respuestas.get("es_domestico") is not None:
+            lineas.append(f"• Parece de casa: {si_no(respuestas['es_domestico'])}")
+        if respuestas.get("esta_prenada") is not None:
+            lineas.append(f"• Parece preñada: {si_no(respuestas['esta_prenada'])}")
+        if respuestas.get("trae_crias") is not None:
+            lineas.append(f"• Acompañada de crías: {si_no(respuestas['trae_crias'])}")
+        if respuestas.get("numero_crias"):
+            lineas.append(f"• Número de crías: {respuestas['numero_crias']}")
+        if respuestas.get("descripcion_animal"):
+            lineas.append(f"• Descripción del animal: {respuestas['descripcion_animal']}")
         lineas.append(f"• Foto: {'sí' if respuestas.get('foto') else 'no'}")
+    if respuestas.get("descripcion"):
+        lineas.append(f"• Situación: {respuestas['descripcion']}")
     lineas.append(f"• Lugar ({tipo_ubicacion}): {lugar}")
-    lineas.append(f"• Referencia: {respuestas['referencia']}")
+    if respuestas.get("referencia"):
+        lineas.append(f"• Referencia: {respuestas['referencia']}")
     lineas.append("")
     lineas.append("Responde SÍ para enviarlo o NO para cancelarlo.")
     return "\n".join(lineas)
@@ -794,6 +835,35 @@ async def enviar_pregunta(
     wa_id: str, estado: str, respuestas: dict[str, Any] | None = None
 ) -> None:
     prefijo = _prefijo_animal(respuestas, estado)
+    if estado == "tipo_animal" and respuestas and respuestas.get("_tipo_detectado"):
+        detectado = respuestas["_tipo_detectado"]
+        etiqueta = {"perro": "perro", "gato": "gato", "otro": "otro animal"}[detectado]
+        await enviar_opciones(
+            wa_id,
+            prefijo + f"La foto parece mostrar un *{etiqueta}*. ¿Es correcto?",
+            [
+                ("tipo_detectado:confirmar", "Sí, es correcto"),
+                ("tipo_detectado:cambiar", "Cambiar tipo"),
+            ],
+        )
+        return
+    if estado == "ubicacion" and respuestas:
+        if respuestas.get("_esperando_ubicacion_texto"):
+            await enviar_texto(
+                wa_id,
+                "✍️ Escribe la dirección en este formato:\n"
+                "*calle y número, colonia, municipio, estado*.\n\n"
+                "Ejemplo: Avenida Juárez 2318, colonia La Paz, Puebla, Puebla.",
+            )
+        elif respuestas.get("_esperando_ubicacion_gps"):
+            await enviar_texto(
+                wa_id,
+                "📍 Comparte el pin con el clip 📎 de WhatsApp: "
+                "*Ubicación → Enviar tu ubicación actual*.",
+            )
+        else:
+            await enviar_opciones(wa_id, PREGUNTAS[estado], OPCIONES_UBICACION)
+        return
     if estado == "raza" and respuestas:
         sugeridas = RAZAS_SUGERIDAS.get(respuestas.get("tipo_animal"))
         if sugeridas:
@@ -1073,7 +1143,7 @@ async def _crear_desde_respuestas(
                 raza_clave=_raza_clave(respuestas["tipo_animal"], respuestas.get("raza")),
                 tipo_animal_otro_clave=respuestas.get("categoria_otro"),
                 especie_descripcion=respuestas.get("especie_descripcion"),
-                descripcion=respuestas["descripcion"],
+                descripcion=_descripcion_ficha(respuestas),
                 es_grupo=cantidad > 1,
                 cantidad=cantidad,
                 trae_crias_nacidas=respuestas.get("trae_crias"),
@@ -1314,36 +1384,44 @@ async def _procesar_mensaje(mensaje: dict[str, Any]) -> None:
             return
         if estado == "ubicacion" and contenido[0] == "text":
             opcion_ubicacion = _normalizar(str(contenido[1]))
-            pendiente = respuestas.get("_ubicacion_texto_pendiente")
             if opcion_ubicacion == "ubicacion:compartir":
-                respuestas.pop("_ubicacion_texto_pendiente", None)
+                respuestas.pop("_esperando_ubicacion_texto", None)
+                respuestas["_esperando_ubicacion_gps"] = True
                 _guardar_sesion(wa_id, estado, respuestas)
                 await enviar_pregunta(wa_id, estado, respuestas)
                 return
-            if opcion_ubicacion == "ubicacion:texto" and pendiente:
-                contenido = ("text", pendiente["municipio"])
-                respuestas.pop("_ubicacion_texto_pendiente", None)
-            else:
-                texto_ubicacion = str(contenido[1]).strip()
-                if len(texto_ubicacion) < 2:
-                    await enviar_pregunta(wa_id, estado, respuestas)
-                    return
-                respuestas["_ubicacion_texto_pendiente"] = {
-                    "municipio": texto_ubicacion
-                }
+            if opcion_ubicacion in {"ubicacion:escribir", "ubicacion:texto"}:
+                respuestas.pop("_esperando_ubicacion_gps", None)
+                respuestas["_esperando_ubicacion_texto"] = True
                 _guardar_sesion(wa_id, estado, respuestas)
-                await enviar_opciones(
-                    wa_id,
-                    "📍 Con un pin GPS podremos ubicar y asignar mejor el reporte. "
-                    "Una dirección escrita puede ser menos precisa. ¿Cómo deseas continuar?",
-                    [
-                        ("ubicacion:compartir", "Compartir ubicación"),
-                        ("ubicacion:texto", "Usar dirección escrita"),
-                    ],
-                )
+                await enviar_pregunta(wa_id, estado, respuestas)
                 return
+            if not respuestas.get("_esperando_ubicacion_texto"):
+                await enviar_pregunta(wa_id, estado, respuestas)
+                return
+            texto_ubicacion = str(contenido[1]).strip()
+            if len(texto_ubicacion) < 8:
+                await enviar_texto(
+                    wa_id,
+                    "La dirección parece incompleta. Incluye calle, colonia y municipio.",
+                )
+                await enviar_pregunta(wa_id, estado, respuestas)
+                return
+            contenido = ("text", texto_ubicacion)
+            respuestas.pop("_esperando_ubicacion_texto", None)
         elif estado == "ubicacion" and contenido[0] == "location":
-            respuestas.pop("_ubicacion_texto_pendiente", None)
+            respuestas.pop("_esperando_ubicacion_texto", None)
+            respuestas.pop("_esperando_ubicacion_gps", None)
+        if estado == "tipo_animal" and contenido[0] == "text":
+            opcion_tipo = _normalizar(str(contenido[1]))
+            if opcion_tipo == "tipo_detectado:cambiar":
+                respuestas.pop("_tipo_detectado", None)
+                _guardar_sesion(wa_id, estado, respuestas)
+                await enviar_pregunta(wa_id, estado, respuestas)
+                return
+            if opcion_tipo == "tipo_detectado:confirmar":
+                contenido = ("text", respuestas.get("_tipo_detectado", ""))
+                respuestas.pop("_tipo_detectado", None)
         valido, valor, error = _validar_respuesta(estado, *contenido)
         if not valido:
             if error and error != PREGUNTAS[estado]:
@@ -1376,6 +1454,9 @@ async def _procesar_mensaje(mensaje: dict[str, Any]) -> None:
                 )
                 return
             respuestas["_validacion_foto"] = resultado_vision
+            detectado = resultado_vision.get("tipo_animal_detectado")
+            if detectado in {"perro", "gato", "otro"}:
+                respuestas["_tipo_detectado"] = detectado
 
         respuestas[estado] = valor
         respuestas.pop(MARCA_AVISO_INACTIVIDAD, None)
@@ -1438,7 +1519,8 @@ async def _procesar_mensaje(mensaje: dict[str, Any]) -> None:
                     )
                 )
                 if correccion_dependiente and (
-                    siguiente == "descripcion" or termina_tipo_otro
+                    siguiente in {"descripcion_animal", "descripcion"}
+                    or termina_tipo_otro
                 ):
                     respuestas.pop("_correccion_dependiente", None)
                     siguiente = "confirmacion"

@@ -27,6 +27,11 @@ SCHEMA = {
             "enum": ["estable", "herido", "grave"],
             "nullable": True,
         },
+        "tipo_animal_detectado": {
+            "type": "string",
+            "enum": ["perro", "gato", "otro"],
+            "nullable": True,
+        },
         "calidad_identificacion": {
             "type": "string",
             "enum": ["adecuada", "limitada"],
@@ -103,6 +108,7 @@ def verificar_foto_animal(contenido: bytes, content_type: str = "image/jpeg") ->
                     "para que alguien pueda reconocerlo en persona más tarde — por ejemplo, "
                     "una foto de espaldas o sin el rostro visible tiene calidad de "
                     "identificación limitada aunque el animal sí sea real. "
+                    "Identifica además si el animal es perro, gato u otro. "
                     "No tomes decisiones finales de rescate; esto es solo un filtro de "
                     "calidad y una estimación informativa de la condición del animal."
                 )
