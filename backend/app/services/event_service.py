@@ -1,5 +1,8 @@
 import logging
 from datetime import datetime, timedelta, timezone
+from hashlib import sha256
+
+from fastapi import UploadFile
 
 from app.db.supabase import supabase_admin
 from app.models.event import (
@@ -9,9 +12,21 @@ from app.models.event import (
     EventPause,
     EventUpdate,
 )
+from app.services.image_evidence_service import (
+    MAX_IMAGE_BYTES,
+    ImagenEvidenciaInvalida,
+    procesar_imagen_evidencia,
+)
+from app.services.storage_service import (
+    ObjetoPrivadoYaExiste,
+    crear_url_firmada_evento,
+    eliminar_objeto_evento,
+    subir_bytes_evento,
+)
 
 
 logger = logging.getLogger(__name__)
+MAX_EVENT_IMAGE_BYTES = 10 * 1024 * 1024
 
 ASSOCIATION_PUBLIC_FIELDS = "id, nombre, logo_url, acerca_de"
 PUBLIC_EVENT_FIELDS = (
@@ -25,7 +40,8 @@ PUBLIC_EVENT_FIELDS = (
     "contacto_institucional_email, es_gratuito, costo_centavos, moneda, "
     "detalle_costos, cupo_total, cupo_estado, responsable_profesional, "
     "cedula_profesional, institucion_profesional, "
-    "datos_profesionales_estado, imagen_texto_alternativo, accesibilidad, "
+    "datos_profesionales_estado, imagen_storage_path, "
+    "imagen_texto_alternativo, accesibilidad, "
     "transporte, estado, version_publica, publicado_at, "
     "motivo_cancelacion_publico"
 )
@@ -41,7 +57,8 @@ ASSOCIATION_EVENT_FIELDS = (
     "contacto_institucional_email, es_gratuito, costo_centavos, moneda, "
     "detalle_costos, cupo_total, cupo_estado, responsable_profesional, "
     "cedula_profesional, institucion_profesional, "
-    "datos_profesionales_estado, imagen_texto_alternativo, accesibilidad, "
+    "datos_profesionales_estado, imagen_storage_path, "
+    "imagen_texto_alternativo, accesibilidad, "
     "transporte, estado, version_publica, publicado_at, pausado_at, "
     "cancelado_at, motivo_cancelacion_publico, finalizado_at, archivado_at, "
     "creado_at, actualizada_at"
@@ -71,6 +88,9 @@ ERROR_STATUS = {
     "idempotency_key_cancelacion_evento_en_conflicto": 409,
     "idempotency_key_guardado_evento_en_conflicto": 409,
     "idempotency_key_retiro_guardado_evento_en_conflicto": 409,
+    "idempotency_key_imagen_evento_en_conflicto": 409,
+    "idempotency_key_retiro_imagen_evento_en_conflicto": 409,
+    "evento_imagen_no_encontrada": 404,
     "payload_evento_invalido": 422,
     "payload_evento_campos_no_permitidos": 422,
     "creacion_evento_incompleta": 422,
@@ -90,6 +110,10 @@ ERROR_STATUS = {
     "eventos_asociacion_fechas_validas": 422,
     "eventos_asociacion_cupo_consistente": 422,
     "eventos_asociacion_categoria_otro_consistente": 422,
+    "registro_imagen_evento_incompleto": 422,
+    "retiro_imagen_evento_incompleto": 422,
+    "storage_path_imagen_evento_invalido": 422,
+    "imagen_evento_invalida": 422,
 }
 
 ERROR_DETAIL = {
@@ -127,6 +151,12 @@ ERROR_DETAIL = {
     "eventos_asociacion_fechas_validas": "La fecha de inicio debe ser anterior a la fecha de término.",
     "eventos_asociacion_cupo_consistente": "Revisa el cupo y su estado.",
     "eventos_asociacion_categoria_otro_consistente": "Describe la categoría del evento.",
+    "evento_imagen_no_encontrada": "El evento no tiene una imagen para retirar.",
+    "registro_imagen_evento_incompleto": "Completa la imagen y su texto alternativo.",
+    "retiro_imagen_evento_incompleto": "No se pudo identificar el retiro de la imagen.",
+    "storage_path_imagen_evento_invalido": "La imagen no pertenece a este evento.",
+    "imagen_evento_invalida": "Selecciona una imagen JPEG, PNG o WebP válida.",
+    "evento_storage_no_disponible": "No se pudo acceder al almacenamiento de eventos.",
 }
 
 for _idempotency_code in (
@@ -137,6 +167,8 @@ for _idempotency_code in (
     "idempotency_key_cancelacion_evento_en_conflicto",
     "idempotency_key_guardado_evento_en_conflicto",
     "idempotency_key_retiro_guardado_evento_en_conflicto",
+    "idempotency_key_imagen_evento_en_conflicto",
+    "idempotency_key_retiro_imagen_evento_en_conflicto",
 ):
     ERROR_DETAIL[_idempotency_code] = (
         "La misma operación fue utilizada antes con datos diferentes."
@@ -164,7 +196,7 @@ def _rpc(
         response = supabase_admin.rpc(operation, params).execute()
     except Exception as error:
         raw_detail = str(error).lower()
-        for code in ERROR_STATUS:
+        for code in sorted(ERROR_STATUS, key=len, reverse=True):
             if code in raw_detail:
                 raise EventServiceError(code) from error
         logger.exception("Falló la operación de eventos %s", operation)
@@ -308,6 +340,174 @@ def dejar_de_guardar_evento(
     )
 
 
+def _obtener_evento_asociacion(
+    event_id: str,
+    association_id: str,
+    *,
+    editable: bool,
+) -> dict:
+    try:
+        response = (
+            supabase_admin.table("eventos_asociacion")
+            .select("id, asociacion_id, estado, imagen_storage_path")
+            .eq("id", event_id)
+            .eq("asociacion_id", association_id)
+            .limit(1)
+            .execute()
+        )
+    except Exception as error:
+        logger.exception("No se pudo verificar el evento %s", event_id)
+        raise EventServiceError("evento_consulta_no_disponible") from error
+    if not response.data:
+        raise EventServiceError("evento_no_encontrado_asociacion")
+    event = response.data[0]
+    if editable and event.get("estado") not in (
+        "borrador",
+        "publicado",
+        "pausado",
+    ):
+        raise EventServiceError("evento_no_editable")
+    return event
+
+
+def _firmar_imagen_evento(storage_path: str | None) -> dict | None:
+    if not storage_path:
+        return None
+    try:
+        return crear_url_firmada_evento(storage_path)
+    except Exception:
+        logger.warning(
+            "No se pudo firmar una imagen privada de evento",
+            exc_info=True,
+        )
+        return None
+
+
+async def subir_imagen_evento(
+    event_id: str,
+    association_id: str,
+    actor_user_id: str,
+    image: UploadFile,
+    *,
+    alternative_text: str,
+    idempotency_key: str,
+) -> dict:
+    _obtener_evento_asociacion(event_id, association_id, editable=True)
+    alternative_text = alternative_text.strip()
+    idempotency_key = idempotency_key.strip()
+    if not 1 <= len(alternative_text) <= 500 or not 8 <= len(
+        idempotency_key
+    ) <= 200:
+        raise EventServiceError("registro_imagen_evento_incompleto")
+
+    content = await image.read(MAX_IMAGE_BYTES + 1)
+    try:
+        processed = procesar_imagen_evidencia(content)
+    except ImagenEvidenciaInvalida as error:
+        raise EventServiceError("imagen_evento_invalida") from error
+    if len(processed.contenido_publico) > MAX_EVENT_IMAGE_BYTES:
+        raise EventServiceError("imagen_evento_invalida")
+
+    digest = sha256()
+    digest.update(event_id.encode("utf-8"))
+    digest.update(actor_user_id.encode("utf-8"))
+    digest.update(idempotency_key.encode("utf-8"))
+    digest.update(processed.contenido_publico)
+    filename = f"{digest.hexdigest()}.jpg"
+    folder = f"eventos/{event_id}"
+    storage_path = f"{folder}/{filename}"
+    uploaded_now = False
+    try:
+        storage_path = await subir_bytes_evento(
+            processed.contenido_publico,
+            carpeta=folder,
+            content_type=processed.content_type_publico,
+            extension=processed.extension_publica,
+            nombre_archivo=filename,
+        )
+        uploaded_now = True
+    except ObjetoPrivadoYaExiste:
+        pass
+    except Exception as error:
+        logger.exception("No se pudo cargar la imagen privada del evento")
+        raise EventServiceError("evento_storage_no_disponible") from error
+
+    try:
+        result = _rpc(
+            "registrar_imagen_evento_asociacion",
+            {
+                "p_evento_id": event_id,
+                "p_asociacion_id": association_id,
+                "p_actor_usuario_id": actor_user_id,
+                "p_storage_path": storage_path,
+                "p_mime_type": processed.content_type_publico,
+                "p_size_bytes": len(processed.contenido_publico),
+                "p_texto_alternativo": alternative_text,
+                "p_idempotency_key": idempotency_key,
+            },
+            required_fields=("id", "estado", "storage_path"),
+        )
+    except EventServiceError as error:
+        if uploaded_now and error.status_code < 500:
+            eliminar_objeto_evento(storage_path)
+        raise
+
+    previous_path = result.pop("previous_storage_path", None)
+    result.pop("storage_path", None)
+    result.pop("mime_type", None)
+    result.pop("size_bytes", None)
+    result.pop("texto_alternativo", None)
+    cleanup_pending = False
+    if (
+        not result.get("reintento")
+        and previous_path
+        and previous_path != storage_path
+    ):
+        cleanup_pending = not eliminar_objeto_evento(previous_path)
+    access = _firmar_imagen_evento(storage_path)
+    return {
+        **result,
+        "imagen_url": access["url"] if access else None,
+        "imagen_url_expira_at": access["expira_at"] if access else None,
+        "imagen_mime_type": processed.content_type_publico,
+        "imagen_size_bytes": len(processed.contenido_publico),
+        "imagen_texto_alternativo": alternative_text,
+        "storage_cleanup_pending": cleanup_pending,
+    }
+
+
+def retirar_imagen_evento(
+    event_id: str,
+    association_id: str,
+    actor_user_id: str,
+    body: EventAction,
+) -> dict:
+    _obtener_evento_asociacion(event_id, association_id, editable=True)
+    result = _rpc(
+        "retirar_imagen_evento_asociacion",
+        {
+            "p_evento_id": event_id,
+            "p_asociacion_id": association_id,
+            "p_actor_usuario_id": actor_user_id,
+            "p_idempotency_key": body.idempotency_key,
+        },
+        required_fields=("id", "estado"),
+    )
+    previous_path = result.pop("previous_storage_path", None)
+    cleanup_pending = False
+    if not result.get("reintento") and previous_path:
+        cleanup_pending = not eliminar_objeto_evento(previous_path)
+    return {
+        **result,
+        "imagen_url": None,
+        "imagen_url_expira_at": None,
+        "imagen_mime_type": None,
+        "imagen_size_bytes": None,
+        "imagen_texto_alternativo": None,
+        "storage_cleanup_pending": cleanup_pending,
+    }
+
+
 def _association(row: dict) -> dict:
     association = row.get("asociacion") or row.get("asociaciones") or {}
     if isinstance(association, list):
@@ -321,6 +521,7 @@ def _association(row: dict) -> dict:
 
 
 def _public_summary(row: dict) -> dict:
+    access = _firmar_imagen_evento(row.get("imagen_storage_path"))
     return {
         "id": row.get("id"),
         "tipo": row.get("tipo"),
@@ -338,7 +539,8 @@ def _public_summary(row: dict) -> dict:
         "moneda": row.get("moneda"),
         "cupo_total": row.get("cupo_total"),
         "cupo_estado": row.get("cupo_estado"),
-        "imagen_url": None,
+        "imagen_url": access["url"] if access else None,
+        "imagen_url_expira_at": access["expira_at"] if access else None,
         "imagen_texto_alternativo": row.get("imagen_texto_alternativo"),
         "asociacion": _association(row),
     }
@@ -550,7 +752,17 @@ def listar_eventos_asociacion(
         )
         raise EventServiceError("evento_consulta_no_disponible") from error
 
-    return [{**row, "imagen_url": None} for row in rows]
+    result = []
+    for row in rows:
+        private_row = dict(row)
+        storage_path = private_row.pop("imagen_storage_path", None)
+        access = _firmar_imagen_evento(storage_path)
+        private_row["imagen_url"] = access["url"] if access else None
+        private_row["imagen_url_expira_at"] = (
+            access["expira_at"] if access else None
+        )
+        result.append(private_row)
+    return result
 
 
 def listar_eventos_guardados(actor_user_id: str, *, limite: int) -> list[dict]:

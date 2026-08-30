@@ -236,6 +236,21 @@ class EventSavedOperationResponse(BaseModel):
     reintento: bool
 
 
+class EventImageOperationResponse(BaseModel):
+    id: UUID
+    estado: EventState
+    version_publica: int = Field(ge=0)
+    updated_at: datetime
+    event_id: UUID
+    reintento: bool
+    imagen_url: str | None = None
+    imagen_url_expira_at: datetime | None = None
+    imagen_mime_type: str | None = None
+    imagen_size_bytes: int | None = Field(default=None, ge=1)
+    imagen_texto_alternativo: str | None = None
+    storage_cleanup_pending: bool = False
+
+
 class EventAssociationPublic(BaseModel):
     id: UUID
     nombre: str
@@ -261,6 +276,7 @@ class EventPublicSummary(BaseModel):
     cupo_total: int | None = None
     cupo_estado: EventCapacityState
     imagen_url: str | None = None
+    imagen_url_expira_at: datetime | None = None
     imagen_texto_alternativo: str | None = None
     asociacion: EventAssociationPublic
 
@@ -355,6 +371,7 @@ class EventAssociationView(BaseModel):
     institucion_profesional: str | None = None
     datos_profesionales_estado: EventProfessionalDataState
     imagen_url: str | None = None
+    imagen_url_expira_at: datetime | None = None
     imagen_texto_alternativo: str | None = None
     accesibilidad: str | None = None
     transporte: str | None = None
