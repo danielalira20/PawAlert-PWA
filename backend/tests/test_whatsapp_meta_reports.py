@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from app.config import settings
 from app.main import app
 from app.services import whatsapp_report_service as service
+from app.services.report_service import FotoAnimalRechazada
 
 
 def test_verificacion_webhook_meta(monkeypatch):
@@ -221,6 +222,42 @@ def test_foto_rechazada_conserva_respuestas_y_regresa_a_foto(monkeypatch):
     assert guardado["respuestas"]["nombre"] == "Miguel"
     assert guardado["respuestas"]["_corrigiendo"] == "foto"
     assert "No perdiste tus demás respuestas" in enviados[0]
+
+
+def test_foto_rechazada_en_distintos_reemplaza_solo_la_ficha(monkeypatch):
+    guardado = {}
+    enviados = []
+    respuestas = {
+        "nombre": "Diana López",
+        "_modo": "distintos",
+        "_animales": [
+            {"foto": {"media_id": "buena"}, "tipo_animal": "perro"},
+            {"foto": {"media_id": "mala"}, "tipo_animal": "perro"},
+        ],
+    }
+
+    async def crear(*_args, **_kwargs):
+        raise FotoAnimalRechazada(1, "No se ve un animal real.")
+
+    async def enviar(_wa_id, texto, **_kwargs):
+        enviados.append(texto)
+
+    def guardar(_wa_id, estado, datos):
+        guardado.update(estado=estado, respuestas=dict(datos))
+
+    monkeypatch.setattr(service, "_crear_desde_respuestas", crear)
+    monkeypatch.setattr(service, "enviar_texto", enviar)
+    monkeypatch.setattr(service, "_guardar_sesion", guardar)
+
+    resultado = asyncio.run(
+        service._crear_reporte_con_recuperacion("5212210000000", respuestas)
+    )
+
+    assert resultado is None
+    assert guardado["estado"] == "foto"
+    assert guardado["respuestas"]["_reemplazando_foto_idx"] == 1
+    assert len(guardado["respuestas"]["_animales"]) == 2
+    assert "animal 2" in enviados[0]
 
 
 def test_despedida_incluye_folio_sitio_y_vista_previa(monkeypatch):

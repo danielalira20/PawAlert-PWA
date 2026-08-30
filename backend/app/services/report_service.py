@@ -15,6 +15,14 @@ from app.utils.animal_shaping import shape_animal_embed, shape_animal_response, 
 import json
 
 
+class FotoAnimalRechazada(HTTPException):
+    """422 compatible con la PWA que conserva qué fotografía fue rechazada."""
+
+    def __init__(self, animal_index: int, detail: str) -> None:
+        super().__init__(status_code=422, detail=detail)
+        self.animal_index = animal_index
+
+
 def _analizar_similitud_visual_si_habilitada(
     *,
     reporte_id: str,
@@ -426,9 +434,11 @@ async def crear_reporte(
                     resultado_vision = verificar_foto_animal(contenido_foto, foto.content_type)
 
                     if resultado_vision.get("es_animal_real") is False:
-                        raise HTTPException(
-                            status_code=422,
-                            detail=mensaje_rechazo(resultado_vision.get("categoria_rechazo")),
+                        raise FotoAnimalRechazada(
+                            animal_index=animal_idx,
+                            detail=mensaje_rechazo(
+                                resultado_vision.get("categoria_rechazo")
+                            ),
                         )
 
                     from app.services.image_evidence_service import ImagenEvidenciaInvalida, procesar_imagen_evidencia

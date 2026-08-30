@@ -16,7 +16,7 @@ from starlette.datastructures import Headers
 from app.config import settings
 from app.db.supabase import supabase_admin
 from app.models.report import AnimalInput
-from app.services.report_service import crear_reporte
+from app.services.report_service import FotoAnimalRechazada, crear_reporte
 
 
 logger = logging.getLogger(__name__)
@@ -747,6 +747,24 @@ async def _pedir_nueva_foto(
     )
 
 
+async def _pedir_nueva_foto_animal(
+    wa_id: str,
+    respuestas: dict[str, Any],
+    indice: int,
+    detalle: str,
+) -> None:
+    """Conserva las fichas y reemplaza solamente la foto rechazada."""
+    respuestas["_reemplazando_foto_idx"] = indice
+    _guardar_sesion(wa_id, "foto", respuestas)
+    await enviar_texto(
+        wa_id,
+        "⚠️ *Necesito otra fotografía para el animal "
+        f"{indice + 1}*\n\n{detalle.strip()}\n\n"
+        "No perdiste las demás fichas. Envía aquí una foto nueva y volveré "
+        "a mostrarte el resumen.",
+    )
+
+
 async def _crear_reporte_con_recuperacion(
     wa_id: str,
     respuestas: dict[str, Any],
@@ -755,20 +773,24 @@ async def _crear_reporte_con_recuperacion(
     try:
         return await _crear_desde_respuestas(wa_id, respuestas, **opciones)
     except FotoAnimalInvalida as error:
-        respuestas["_reemplazando_foto_idx"] = error.indice
-        _guardar_sesion(wa_id, "foto", respuestas)
-        await enviar_texto(
-            wa_id,
-            "⚠️ *Necesito otra fotografía para el animal "
-            f"{error.indice + 1}*\n\n{str(error).strip()}\n\n"
-            "No perdiste las demás fichas. Envía aquí una foto nueva y volveré "
-            "a mostrarte el resumen.",
+        await _pedir_nueva_foto_animal(
+            wa_id, respuestas, error.indice, str(error)
         )
         return None
     except ValueError as error:
         await _pedir_nueva_foto(wa_id, respuestas, str(error))
         return None
     except HTTPException as error:
+        if isinstance(error, FotoAnimalRechazada) and respuestas.get("_animales"):
+            detalle = (
+                error.detail
+                if isinstance(error.detail, str)
+                else "La foto no pasó la validación."
+            )
+            await _pedir_nueva_foto_animal(
+                wa_id, respuestas, error.animal_index, detalle
+            )
+            return None
         if error.status_code != 422 or not respuestas.get("foto"):
             raise
         detalle = (
