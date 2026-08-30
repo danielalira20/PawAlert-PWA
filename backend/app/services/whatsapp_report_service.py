@@ -117,9 +117,10 @@ PREGUNTAS = {
         "Máximo 300 caracteres."
     ),
     "ubicacion": (
-        "📍 ¿Cómo deseas indicar dónde está el animal?\n\n"
-        "El *pin GPS* nos ayuda a ubicarlo con mayor precisión. También puedes "
-        "escribir la dirección completa."
+        "📍 ¿Cómo prefieres indicar dónde está el animal?\n\n"
+        "De preferencia, comparte el *pin GPS*: nos permite ubicar al animal "
+        "con mayor precisión y agilizar la atención.\n\n"
+        "Si no puedes o prefieres no compartirlo, selecciona *Escribir dirección*."
     ),
     "referencia": (
         "Agrega una *referencia diferente a la dirección*: un negocio o punto "
