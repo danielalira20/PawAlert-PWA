@@ -219,6 +219,15 @@ durante la primera version.
 - revision explicita de fotografias publicables;
 - retiro auditado y limpieza posterior del objeto en Storage.
 
+### `0093_adopciones_plantillas_requisitos_operaciones.sql`
+
+- historial asociado directamente a cada version de plantilla;
+- validacion cerrada de preguntas, tipos, opciones y sensibilidad;
+- creacion concurrente segura de la siguiente version borrador;
+- reemplazo atomico del contenido mientras siga en borrador;
+- activacion que retira la version anterior en la misma transaccion;
+- retiro de requisitos adicionales sin eliminar los requisitos base.
+
 ### Migraciones operativas posteriores
 
 - solicitudes, seleccion, entregas y seguimientos;

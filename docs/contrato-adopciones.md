@@ -376,6 +376,11 @@ POST  /associations/me/adoptions/{profile_id}/photos/{photo_id}/review
 DELETE /associations/me/adoptions/{profile_id}/photos/{photo_id}
 POST  /associations/me/adoptions/{profile_id}/publish
 POST  /associations/me/adoptions/{profile_id}/pause
+GET   /associations/me/adoption-requirement-templates
+POST  /associations/me/adoption-requirement-templates
+PUT   /associations/me/adoption-requirement-templates/{template_id}
+POST  /associations/me/adoption-requirement-templates/{template_id}/activate
+POST  /associations/me/adoption-requirement-templates/{template_id}/retire
 GET   /associations/me/adoptions/{profile_id}/applications
 POST  /adoption-applications/{application_id}/request-information
 POST  /adoption-applications/{application_id}/select
