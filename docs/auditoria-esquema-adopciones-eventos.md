@@ -228,6 +228,12 @@ durante la primera version.
 - activacion que retira la version anterior en la misma transaccion;
 - retiro de requisitos adicionales sin eliminar los requisitos base.
 
+### `0094_adopciones_claves_requisitos_reservadas.sql`
+
+- comprobacion previa de colisiones ya existentes;
+- reserva de claves base mediante trigger para cualquier ruta de escritura;
+- rechazo sin borrar ni renombrar automaticamente informacion de la asociacion.
+
 ### Migraciones operativas posteriores
 
 - solicitudes, seleccion, entregas y seguimientos;

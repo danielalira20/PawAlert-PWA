@@ -16,6 +16,10 @@ from app.models.adoption import (
     AdoptionProfileUpdate,
     AdoptionPublicPage,
     AdoptionPublicProfileDetail,
+    AdoptionRequirementTemplateAction,
+    AdoptionRequirementTemplatePanel,
+    AdoptionRequirementTemplateRetire,
+    AdoptionRequirementTemplateWrite,
     FormalAdoptionProfileCreate,
 )
 from app.services import adoption_service
@@ -201,6 +205,101 @@ def resolve_adoption_intake(
     return _call(
         lambda: adoption_service.resolver_ingreso(
             str(request_id),
+            association_id,
+            user["id"],
+            body,
+        )
+    )
+
+
+@router.get(
+    "/associations/me/adoption-requirement-templates",
+    response_model=AdoptionRequirementTemplatePanel,
+)
+def get_association_adoption_requirement_templates(
+    authorization: Optional[str] = Header(None),
+):
+    user = _authenticated_user(authorization)
+    association_id = _association_context(user)
+    return _call(
+        lambda: adoption_service.listar_plantillas_requisitos(
+            association_id
+        )
+    )
+
+
+@router.post(
+    "/associations/me/adoption-requirement-templates",
+    status_code=201,
+)
+def create_association_adoption_requirement_template(
+    body: AdoptionRequirementTemplateWrite,
+    authorization: Optional[str] = Header(None),
+):
+    user = _authenticated_user(authorization)
+    association_id = _association_context(user)
+    return _call(
+        lambda: adoption_service.crear_plantilla_requisitos(
+            association_id,
+            user["id"],
+            body,
+        )
+    )
+
+
+@router.put(
+    "/associations/me/adoption-requirement-templates/{template_id}",
+)
+def update_association_adoption_requirement_template(
+    template_id: UUID,
+    body: AdoptionRequirementTemplateWrite,
+    authorization: Optional[str] = Header(None),
+):
+    user = _authenticated_user(authorization)
+    association_id = _association_context(user)
+    return _call(
+        lambda: adoption_service.actualizar_plantilla_requisitos(
+            str(template_id),
+            association_id,
+            user["id"],
+            body,
+        )
+    )
+
+
+@router.post(
+    "/associations/me/adoption-requirement-templates/{template_id}/activate",
+)
+def activate_association_adoption_requirement_template(
+    template_id: UUID,
+    body: AdoptionRequirementTemplateAction,
+    authorization: Optional[str] = Header(None),
+):
+    user = _authenticated_user(authorization)
+    association_id = _association_context(user)
+    return _call(
+        lambda: adoption_service.activar_plantilla_requisitos(
+            str(template_id),
+            association_id,
+            user["id"],
+            body,
+        )
+    )
+
+
+@router.post(
+    "/associations/me/adoption-requirement-templates/{template_id}/retire",
+)
+def retire_association_adoption_requirement_template(
+    template_id: UUID,
+    body: AdoptionRequirementTemplateRetire,
+    authorization: Optional[str] = Header(None),
+):
+    user = _authenticated_user(authorization)
+    association_id = _association_context(user)
+    return _call(
+        lambda: adoption_service.retirar_plantilla_requisitos(
+            str(template_id),
             association_id,
             user["id"],
             body,

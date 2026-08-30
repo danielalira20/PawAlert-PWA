@@ -38,6 +38,9 @@ def _profile(**overrides) -> dict:
         "zona_general": "Puebla capital",
         "estado": "publicado",
         "estado_moderacion": "visible",
+        "requisitos_base_version": "pawalert-v1",
+        "plantilla_requisitos_id": "80000000-0000-0000-0000-000000000008",
+        "plantilla_version": 1,
         "publicado_at": "2026-08-29T12:00:00+00:00",
         "actualizado_at": "2026-08-29T12:30:00+00:00",
         "custodia_id": "dato-que-no-debe-salir",
@@ -104,6 +107,39 @@ def _admin_for_public_profiles(make_query, profiles: list[dict]):
                     "texto_alternativo": "Foto pendiente",
                     "aprobada_publicacion": False,
                 },
+            ]
+        ),
+        "requisitos_base_adopcion": make_query(
+            data=[
+                {
+                    "clave": "identidad_mayoria_edad",
+                    "titulo": "Identidad y mayoría de edad",
+                    "descripcion": "Documento para validar identidad.",
+                    "tipo_respuesta": "documento",
+                    "opciones": [],
+                    "obligatorio": True,
+                    "es_sensible": True,
+                    "orden": 10,
+                    "activo": True,
+                }
+            ]
+        ),
+        "plantillas_requisitos_adopcion": make_query(
+            data=[{"id": "80000000-0000-0000-0000-000000000008"}]
+        ),
+        "preguntas_requisito_adopcion": make_query(
+            data=[
+                {
+                    "plantilla_id": "80000000-0000-0000-0000-000000000008",
+                    "clave": "patio_seguro",
+                    "titulo": "Patio seguro",
+                    "descripcion": "Describe las medidas de seguridad.",
+                    "tipo_respuesta": "texto_largo",
+                    "opciones": [],
+                    "obligatorio": True,
+                    "es_sensible": False,
+                    "orden": 1,
+                }
             ]
         ),
     }
@@ -213,6 +249,10 @@ def test_detalle_publico_incluye_solo_fotos_aprobadas(make_query):
     assert result["descripcion"] == "Busca un hogar paciente."
     assert len(result["fotos"]) == 1
     assert result["fotos"][0]["id"] == PHOTO_ID
+    assert [requirement["origen"] for requirement in result["requisitos"]] == [
+        "pawalert",
+        "asociacion",
+    ]
     assert "storage_path" not in str(result)
 
 

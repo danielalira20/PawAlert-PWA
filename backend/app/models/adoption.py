@@ -269,6 +269,144 @@ class AdoptionPublicPhoto(BaseModel):
     foto_url_expira_at: datetime
 
 
+AdoptionRequirementResponseType = Literal[
+    "texto_corto",
+    "texto_largo",
+    "seleccion_unica",
+    "seleccion_multiple",
+    "booleano",
+    "fecha",
+    "documento",
+]
+
+
+class AdoptionRequirementQuestion(BaseModel):
+    clave: str = Field(min_length=1, max_length=80, pattern=r"^[a-z0-9_]+$")
+    titulo: str = Field(min_length=1, max_length=300)
+    descripcion: str | None = Field(default=None, max_length=1000)
+    tipo_respuesta: AdoptionRequirementResponseType
+    opciones: list[str] = Field(default_factory=list, max_length=20)
+    obligatorio: bool = False
+    es_sensible: bool = False
+    orden: int = Field(ge=1, le=32767)
+
+    @field_validator("clave", "titulo", "descripcion")
+    @classmethod
+    def limpiar_texto(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("El texto no puede estar vacío")
+        return cleaned
+
+    @field_validator("opciones")
+    @classmethod
+    def limpiar_opciones(cls, values: list[str]) -> list[str]:
+        cleaned = [value.strip() for value in values]
+        if any(not value or len(value) > 200 for value in cleaned):
+            raise ValueError("Cada opción debe tener entre 1 y 200 caracteres")
+        if len(set(cleaned)) != len(cleaned):
+            raise ValueError("No repitas opciones dentro de una pregunta")
+        return cleaned
+
+    @model_validator(mode="after")
+    def validar_tipo_y_opciones(self):
+        selection_types = {"seleccion_unica", "seleccion_multiple"}
+        if self.tipo_respuesta in selection_types and not self.opciones:
+            raise ValueError("Las preguntas de selección necesitan opciones")
+        if self.tipo_respuesta not in selection_types and self.opciones:
+            raise ValueError("Este tipo de pregunta no admite opciones")
+        if self.tipo_respuesta == "documento" and not self.es_sensible:
+            raise ValueError("Los documentos siempre deben marcarse como sensibles")
+        return self
+
+
+class AdoptionRequirementTemplateData(BaseModel):
+    nombre: str = Field(min_length=1, max_length=160)
+    descripcion: str | None = Field(default=None, max_length=2000)
+    preguntas: list[AdoptionRequirementQuestion] = Field(
+        default_factory=list,
+        max_length=25,
+    )
+
+    @field_validator("nombre", "descripcion")
+    @classmethod
+    def limpiar_texto(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("El texto no puede estar vacío")
+        return cleaned
+
+    @model_validator(mode="after")
+    def validar_identificadores_unicos(self):
+        keys = [question.clave for question in self.preguntas]
+        orders = [question.orden for question in self.preguntas]
+        if len(keys) != len(set(keys)):
+            raise ValueError("No repitas la clave de una pregunta")
+        if len(orders) != len(set(orders)):
+            raise ValueError("No repitas el orden de una pregunta")
+        return self
+
+
+class AdoptionRequirementTemplateWrite(AdoptionRequirementTemplateData):
+    idempotency_key: str = Field(min_length=8, max_length=200)
+
+    @field_validator("idempotency_key")
+    @classmethod
+    def limpiar_idempotencia(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("La clave de idempotencia no puede estar vacía")
+        return cleaned
+
+
+class AdoptionRequirementTemplateAction(BaseModel):
+    idempotency_key: str = Field(min_length=8, max_length=200)
+
+    @field_validator("idempotency_key")
+    @classmethod
+    def limpiar_idempotencia(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("La clave de idempotencia no puede estar vacía")
+        return cleaned
+
+
+class AdoptionRequirementTemplateRetire(AdoptionRequirementTemplateAction):
+    motivo: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("motivo")
+    @classmethod
+    def limpiar_motivo(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("El motivo no puede estar vacío")
+        return cleaned
+
+
+class AdoptionPublicRequirement(AdoptionRequirementQuestion):
+    origen: Literal["pawalert", "asociacion"]
+
+
+class AdoptionRequirementTemplateView(AdoptionRequirementTemplateData):
+    id: UUID
+    version: int
+    requisitos_base_version: str
+    estado: Literal["borrador", "activa", "retirada"]
+    activada_at: datetime | None = None
+    retirada_at: datetime | None = None
+    creada_at: datetime
+    actualizada_at: datetime
+
+
+class AdoptionRequirementTemplatePanel(BaseModel):
+    requisitos_base: list[AdoptionPublicRequirement]
+    plantillas: list[AdoptionRequirementTemplateView]
+
+
 class AdoptionPublicProfileSummary(BaseModel):
     id: UUID
     nombre_publico: str
@@ -304,6 +442,7 @@ class AdoptionPublicProfileDetail(AdoptionPublicProfileSummary):
         "desconocida", "pendiente", "declarada", "verificada"
     ]
     fotos: list[AdoptionPublicPhoto]
+    requisitos: list[AdoptionPublicRequirement]
 
 
 class AdoptionPublicPage(BaseModel):

@@ -192,6 +192,19 @@ debe indicar si es obligatoria y por que se solicita.
 Al enviar una solicitud se guarda una copia versionada de los requisitos y
 preguntas vigentes. Cambiar la plantilla no altera solicitudes ya enviadas.
 
+La asociacion administra sus preguntas adicionales mediante versiones. Puede
+editar libremente un borrador, pero una version activa o retirada es
+inmutable. Para cambiarla crea un nuevo borrador; al activarlo, la version
+anterior se retira dentro de la misma transaccion. Retirar la plantilla activa
+deja solamente los requisitos base para publicaciones futuras y no altera los
+perfiles o solicitudes que conservaron una version anterior.
+
+Las claves de los requisitos base estan reservadas. Una pregunta propia no
+puede reutilizarlas, aunque tenga otro texto o tipo de respuesta. El detalle
+publico del animal devuelve la version base y las preguntas adicionales que
+quedaron vinculadas al publicar esa ficha, incluso si despues la asociacion
+activo una version nueva.
+
 ## Estados de solicitud del adoptante
 
 `solicitudes_adopcion.estado` acepta:

@@ -18,6 +18,9 @@ from app.models.adoption import (
     AdoptionProfilePhotoReview,
     AdoptionProfilePublish,
     AdoptionProfileUpdate,
+    AdoptionRequirementTemplateAction,
+    AdoptionRequirementTemplateRetire,
+    AdoptionRequirementTemplateWrite,
     FormalAdoptionProfileCreate,
 )
 from app.services.image_evidence_service import (
@@ -41,7 +44,8 @@ PUBLIC_PROFILE_FIELDS = (
     "descripcion, personalidad, salud_conocida, tratamientos, "
     "necesidades_especiales, vacunacion_estado, esterilizacion_estado, "
     "revision_medica_estado, compatibilidad, zona_general, publicado_at, "
-    "actualizado_at, estado, estado_moderacion"
+    "actualizado_at, estado, estado_moderacion, requisitos_base_version, "
+    "plantilla_requisitos_id, plantilla_version"
 )
 
 
@@ -53,6 +57,7 @@ ERROR_STATUS = {
     "animal_ingreso_no_encontrado": 404,
     "perfil_adopcion_no_encontrado": 404,
     "adopcion_publica_no_encontrada": 404,
+    "plantilla_requisitos_adopcion_no_encontrada": 404,
     "actor_no_es_custodio_activo": 403,
     "actor_no_es_proponente_ingreso": 403,
     "actor_no_pertenece_asociacion": 403,
@@ -68,6 +73,9 @@ ERROR_STATUS = {
     "perfil_adopcion_suspendido": 409,
     "perfil_adopcion_no_pausable": 409,
     "perfil_adopcion_no_editable": 409,
+    "plantilla_requisitos_adopcion_no_editable": 409,
+    "plantilla_requisitos_adopcion_no_activable": 409,
+    "plantilla_requisitos_adopcion_no_retirable": 409,
     "perfil_adopcion_limite_fotos": 409,
     "foto_perfil_adopcion_no_encontrada": 404,
     "idempotency_key_ingreso_en_conflicto": 409,
@@ -81,6 +89,10 @@ ERROR_STATUS = {
     "idempotency_key_registro_foto_en_conflicto": 409,
     "idempotency_key_revision_foto_en_conflicto": 409,
     "idempotency_key_retiro_foto_en_conflicto": 409,
+    "idempotency_key_plantilla_creacion_en_conflicto": 409,
+    "idempotency_key_plantilla_actualizacion_en_conflicto": 409,
+    "idempotency_key_plantilla_activacion_en_conflicto": 409,
+    "idempotency_key_plantilla_retiro_en_conflicto": 409,
     "individuo_animal_invalido": 422,
     "fecha_disponibilidad_custodia_invalida": 422,
     "fotos_propuesta_invalidas": 422,
@@ -100,6 +112,11 @@ ERROR_STATUS = {
     "revision_foto_perfil_incompleta": 422,
     "retiro_foto_perfil_incompleto": 422,
     "foto_perfil_invalida": 422,
+    "plantilla_requisitos_adopcion_invalida": 422,
+    "preguntas_plantilla_adopcion_invalidas": 422,
+    "activacion_plantilla_requisitos_incompleta": 422,
+    "retiro_plantilla_requisitos_incompleto": 422,
+    "clave_requisito_adopcion_reservada": 422,
     "adopcion_storage_no_disponible": 503,
     "requisitos_base_adopcion_no_disponibles": 503,
 }
@@ -113,6 +130,7 @@ ERROR_DETAIL = {
     "animal_ingreso_no_encontrado": "El animal de la propuesta ya no está disponible.",
     "perfil_adopcion_no_encontrado": "No se encontró el perfil dentro de tu asociación.",
     "adopcion_publica_no_encontrada": "Esta adopción ya no está disponible.",
+    "plantilla_requisitos_adopcion_no_encontrada": "No se encontró la plantilla dentro de tu asociación.",
     "actor_no_es_custodio_activo": "Solo el hogar temporal actual puede proponer este ingreso.",
     "actor_no_es_proponente_ingreso": "Solo quien hizo la propuesta puede realizar esta acción.",
     "actor_no_pertenece_asociacion": "Esta acción corresponde a la asociación coordinadora.",
@@ -128,6 +146,9 @@ ERROR_DETAIL = {
     "perfil_adopcion_suspendido": "El perfil está suspendido y no puede publicarse.",
     "perfil_adopcion_no_pausable": "Solo un perfil publicado puede pausarse.",
     "perfil_adopcion_no_editable": "Solo puedes editar un borrador o un perfil pausado.",
+    "plantilla_requisitos_adopcion_no_editable": "Solo puedes modificar una plantilla en borrador.",
+    "plantilla_requisitos_adopcion_no_activable": "Solo puedes activar una plantilla en borrador.",
+    "plantilla_requisitos_adopcion_no_retirable": "Solo puedes retirar la plantilla que está activa.",
     "perfil_adopcion_limite_fotos": "El perfil ya tiene el máximo de ocho fotografías.",
     "foto_perfil_adopcion_no_encontrada": "No se encontró la fotografía dentro de este perfil.",
     "individuo_animal_invalido": "Selecciona correctamente al animal de la ficha grupal.",
@@ -149,6 +170,11 @@ ERROR_DETAIL = {
     "revision_foto_perfil_incompleta": "Indica si la fotografía puede publicarse y el motivo cuando sea rechazada.",
     "retiro_foto_perfil_incompleto": "Indica el motivo para retirar la fotografía.",
     "foto_perfil_invalida": "Selecciona una fotografía JPG, PNG o WEBP de hasta 15 MB.",
+    "plantilla_requisitos_adopcion_invalida": "Revisa el nombre y las preguntas de la plantilla.",
+    "preguntas_plantilla_adopcion_invalidas": "Una o más preguntas adicionales tienen un formato inválido.",
+    "activacion_plantilla_requisitos_incompleta": "No se pudo identificar la plantilla que deseas activar.",
+    "retiro_plantilla_requisitos_incompleto": "Indica por qué se retirará esta plantilla.",
+    "clave_requisito_adopcion_reservada": "La clave de una pregunta ya pertenece a un requisito obligatorio de PawAlert.",
     "adopcion_storage_no_disponible": "No se pudo guardar la fotografía. Intenta nuevamente.",
     "requisitos_base_adopcion_no_disponibles": "Los requisitos de adopción no están disponibles temporalmente.",
     "idempotency_key_ingreso_en_conflicto": "La misma operación fue enviada antes con datos diferentes.",
@@ -162,6 +188,10 @@ ERROR_DETAIL = {
     "idempotency_key_registro_foto_en_conflicto": "La misma carga fue enviada antes con una fotografía diferente.",
     "idempotency_key_revision_foto_en_conflicto": "La misma revisión fue enviada antes con datos diferentes.",
     "idempotency_key_retiro_foto_en_conflicto": "El mismo retiro fue enviado antes con datos diferentes.",
+    "idempotency_key_plantilla_creacion_en_conflicto": "La misma creación fue enviada antes con una plantilla diferente.",
+    "idempotency_key_plantilla_actualizacion_en_conflicto": "La misma actualización fue enviada antes con datos diferentes.",
+    "idempotency_key_plantilla_activacion_en_conflicto": "La misma activación fue enviada antes para otra plantilla.",
+    "idempotency_key_plantilla_retiro_en_conflicto": "El mismo retiro fue enviado antes con datos diferentes.",
 }
 
 
@@ -697,6 +727,214 @@ def obtener_perfil_asociacion(profile_id: str, association_id: str) -> dict:
     return _adjuntar_fotos_privadas([profile])[0]
 
 
+def _asegurar_asociacion_operativa(association_id: str) -> None:
+    associations = _query(
+        "validar asociación para requisitos de adopción",
+        lambda: supabase_admin.table("asociaciones")
+        .select("id, activo, verificado")
+        .eq("id", association_id)
+        .eq("activo", True)
+        .eq("verificado", True)
+        .limit(1),
+    )
+    if (
+        not associations
+        or associations[0].get("activo") is not True
+        or associations[0].get("verificado") is not True
+    ):
+        raise AdoptionServiceError("asociacion_no_operativa")
+
+
+def _serializar_requisito(row: dict, origin: str) -> dict:
+    return {
+        "origen": origin,
+        "clave": row["clave"],
+        "titulo": row["titulo"],
+        "descripcion": row.get("descripcion"),
+        "tipo_respuesta": row["tipo_respuesta"],
+        "opciones": row.get("opciones") or [],
+        "obligatorio": row.get("obligatorio", False),
+        "es_sensible": row.get("es_sensible", False),
+        "orden": row["orden"],
+    }
+
+
+def _listar_requisitos_base(version: str) -> list[dict]:
+    requirements = _query(
+        "listar requisitos base de adopción",
+        lambda: supabase_admin.table("requisitos_base_adopcion")
+        .select(
+            "clave, titulo, descripcion, tipo_respuesta, opciones, "
+            "obligatorio, es_sensible, orden, activo"
+        )
+        .eq("version", version)
+        .eq("activo", True)
+        .order("orden"),
+    )
+    active_requirements = [
+        _serializar_requisito(requirement, "pawalert")
+        for requirement in requirements
+        if requirement.get("activo") is True
+    ]
+    if not active_requirements:
+        raise AdoptionServiceError("requisitos_base_adopcion_no_disponibles")
+    return active_requirements
+
+
+def _preguntas_de_plantillas(template_ids: list[str]) -> dict[str, list[dict]]:
+    grouped = {template_id: [] for template_id in template_ids}
+    if not template_ids:
+        return grouped
+    questions = _query(
+        "listar preguntas de plantillas de adopción",
+        lambda: supabase_admin.table("preguntas_requisito_adopcion")
+        .select(
+            "plantilla_id, clave, titulo, descripcion, tipo_respuesta, "
+            "opciones, obligatorio, es_sensible, orden"
+        )
+        .in_("plantilla_id", template_ids)
+        .order("orden"),
+    )
+    for question in questions:
+        template_id = question.get("plantilla_id")
+        if template_id in grouped:
+            grouped[template_id].append(
+                _serializar_requisito(question, "asociacion")
+            )
+    for template_questions in grouped.values():
+        template_questions.sort(key=lambda question: question["orden"])
+    return grouped
+
+
+def _validar_claves_personalizadas(body: AdoptionRequirementTemplateWrite) -> None:
+    base_keys = {
+        requirement["clave"]
+        for requirement in _listar_requisitos_base("pawalert-v1")
+    }
+    if any(question.clave in base_keys for question in body.preguntas):
+        raise AdoptionServiceError("clave_requisito_adopcion_reservada")
+
+
+def listar_plantillas_requisitos(association_id: str) -> dict:
+    _asegurar_asociacion_operativa(association_id)
+    base_requirements = _listar_requisitos_base("pawalert-v1")
+    templates = _query(
+        "listar plantillas de requisitos de asociación",
+        lambda: supabase_admin.table("plantillas_requisitos_adopcion")
+        .select(
+            "id, version, nombre, descripcion, requisitos_base_version, "
+            "estado, activada_at, retirada_at, creada_at, actualizada_at"
+        )
+        .eq("asociacion_id", association_id)
+        .order("version", desc=True),
+    )
+    questions = _preguntas_de_plantillas(
+        [template["id"] for template in templates]
+    )
+    return {
+        "requisitos_base": base_requirements,
+        "plantillas": [
+            {
+                "id": template["id"],
+                "version": template["version"],
+                "nombre": template["nombre"],
+                "descripcion": template.get("descripcion"),
+                "requisitos_base_version": template[
+                    "requisitos_base_version"
+                ],
+                "estado": template["estado"],
+                "activada_at": template.get("activada_at"),
+                "retirada_at": template.get("retirada_at"),
+                "creada_at": template["creada_at"],
+                "actualizada_at": template["actualizada_at"],
+                "preguntas": questions.get(template["id"], []),
+            }
+            for template in templates
+        ],
+    }
+
+
+def crear_plantilla_requisitos(
+    association_id: str,
+    actor_user_id: str,
+    body: AdoptionRequirementTemplateWrite,
+) -> dict:
+    _validar_claves_personalizadas(body)
+    return _rpc(
+        "crear_plantilla_requisitos_adopcion",
+        {
+            "p_asociacion_id": association_id,
+            "p_actor_usuario_id": actor_user_id,
+            "p_nombre": body.nombre,
+            "p_descripcion": body.descripcion,
+            "p_preguntas": [
+                question.model_dump(mode="json")
+                for question in body.preguntas
+            ],
+            "p_idempotency_key": body.idempotency_key,
+        },
+    )
+
+
+def actualizar_plantilla_requisitos(
+    template_id: str,
+    association_id: str,
+    actor_user_id: str,
+    body: AdoptionRequirementTemplateWrite,
+) -> dict:
+    _validar_claves_personalizadas(body)
+    return _rpc(
+        "actualizar_plantilla_requisitos_adopcion",
+        {
+            "p_plantilla_id": template_id,
+            "p_asociacion_id": association_id,
+            "p_actor_usuario_id": actor_user_id,
+            "p_nombre": body.nombre,
+            "p_descripcion": body.descripcion,
+            "p_preguntas": [
+                question.model_dump(mode="json")
+                for question in body.preguntas
+            ],
+            "p_idempotency_key": body.idempotency_key,
+        },
+    )
+
+
+def activar_plantilla_requisitos(
+    template_id: str,
+    association_id: str,
+    actor_user_id: str,
+    body: AdoptionRequirementTemplateAction,
+) -> dict:
+    return _rpc(
+        "activar_plantilla_requisitos_adopcion",
+        {
+            "p_plantilla_id": template_id,
+            "p_asociacion_id": association_id,
+            "p_actor_usuario_id": actor_user_id,
+            "p_idempotency_key": body.idempotency_key,
+        },
+    )
+
+
+def retirar_plantilla_requisitos(
+    template_id: str,
+    association_id: str,
+    actor_user_id: str,
+    body: AdoptionRequirementTemplateRetire,
+) -> dict:
+    return _rpc(
+        "retirar_plantilla_requisitos_adopcion",
+        {
+            "p_plantilla_id": template_id,
+            "p_asociacion_id": association_id,
+            "p_actor_usuario_id": actor_user_id,
+            "p_motivo": body.motivo,
+            "p_idempotency_key": body.idempotency_key,
+        },
+    )
+
+
 def _normalizar_filtro_publico(value: object) -> str:
     text = str(value or "").strip().casefold()
     return "".join(
@@ -927,6 +1165,29 @@ def _consultar_perfiles_publicos(profile_id: str | None = None) -> list[dict]:
     return _query("listar adopciones públicas", query)
 
 
+def _requisitos_perfil_publico(profile: dict) -> list[dict]:
+    base_version = profile.get("requisitos_base_version")
+    if not base_version:
+        raise AdoptionServiceError("requisitos_base_adopcion_no_disponibles")
+    requirements = _listar_requisitos_base(base_version)
+    template_id = profile.get("plantilla_requisitos_id")
+    if not template_id:
+        return requirements
+
+    templates = _query(
+        "validar plantilla versionada del perfil público",
+        lambda: supabase_admin.table("plantillas_requisitos_adopcion")
+        .select("id")
+        .eq("id", template_id)
+        .eq("asociacion_id", profile["asociacion_id"])
+        .eq("version", profile["plantilla_version"])
+        .limit(1),
+    )
+    if not templates:
+        raise AdoptionServiceError("requisitos_base_adopcion_no_disponibles")
+    return requirements + _preguntas_de_plantillas([template_id])[template_id]
+
+
 def listar_adopciones_publicas(
     *,
     especie: str | None,
@@ -1015,6 +1276,7 @@ def obtener_adopcion_publica(profile_id: str) -> dict:
     if not shaped:
         raise AdoptionServiceError("adopcion_publica_no_encontrada")
     photos = _fotos_publicas([profile_id], solo_portada=False)[profile_id]
+    requirements = _requisitos_perfil_publico(profile)
     shaped.update(
         {
             "foto_portada": photos[0] if photos else None,
@@ -1027,6 +1289,7 @@ def obtener_adopcion_publica(profile_id: str) -> dict:
             "esterilizacion_estado": profile["esterilizacion_estado"],
             "revision_medica_estado": profile["revision_medica_estado"],
             "fotos": photos,
+            "requisitos": requirements,
         }
     )
     return shaped
