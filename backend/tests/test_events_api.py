@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 
@@ -158,3 +158,93 @@ def test_usuario_autenticado_guarda_evento_sin_reservar_cupo():
     assert response.status_code == 201
     assert response.json()["guardado"] is True
     save.assert_called_once()
+
+
+def test_asociacion_reemplaza_imagen_principal():
+    result = {
+        **_operation(),
+        "imagen_url": "https://signed.test/event",
+        "imagen_url_expira_at": "2026-08-30T18:00:00+00:00",
+        "imagen_mime_type": "image/jpeg",
+        "imagen_size_bytes": 1234,
+        "imagen_texto_alternativo": "Personas en una jornada veterinaria",
+        "storage_cleanup_pending": False,
+    }
+    with (
+        patch.object(events, "_authenticated_user", return_value=_user()),
+        patch.object(
+            event_service,
+            "subir_imagen_evento",
+            new=AsyncMock(return_value=result),
+        ) as upload,
+    ):
+        response = client.put(
+            f"/associations/me/events/{EVENT_ID}/image",
+            files={"image": ("evento.png", b"fake-image", "image/png")},
+            data={
+                "alternative_text": "Personas en una jornada veterinaria",
+                "idempotency_key": "event-image-001",
+            },
+            headers=AUTH,
+        )
+
+    assert response.status_code == 200
+    assert response.json()["imagen_url"] == "https://signed.test/event"
+    assert upload.call_args.args[:3] == (EVENT_ID, ASSOCIATION_ID, USER_ID)
+    assert upload.call_args.kwargs == {
+        "alternative_text": "Personas en una jornada veterinaria",
+        "idempotency_key": "event-image-001",
+    }
+
+
+def test_rol_ajeno_no_puede_subir_imagen_de_evento():
+    with (
+        patch.object(
+            events,
+            "_authenticated_user",
+            return_value=_user("voluntario_externo", None),
+        ),
+        patch.object(
+            event_service, "subir_imagen_evento", new=AsyncMock()
+        ) as upload,
+    ):
+        response = client.put(
+            f"/associations/me/events/{EVENT_ID}/image",
+            files={"image": ("evento.jpg", b"fake", "image/jpeg")},
+            data={
+                "alternative_text": "Jornada comunitaria",
+                "idempotency_key": "event-image-002",
+            },
+            headers=AUTH,
+        )
+
+    assert response.status_code == 403
+    upload.assert_not_called()
+
+
+def test_asociacion_retira_imagen_principal():
+    result = {
+        **_operation(),
+        "imagen_url": None,
+        "imagen_url_expira_at": None,
+        "imagen_mime_type": None,
+        "imagen_size_bytes": None,
+        "imagen_texto_alternativo": None,
+        "storage_cleanup_pending": False,
+    }
+    with (
+        patch.object(events, "_authenticated_user", return_value=_user()),
+        patch.object(
+            event_service, "retirar_imagen_evento", return_value=result
+        ) as remove,
+    ):
+        response = client.request(
+            "DELETE",
+            f"/associations/me/events/{EVENT_ID}/image",
+            json={"idempotency_key": "event-image-remove-001"},
+            headers=AUTH,
+        )
+
+    assert response.status_code == 200
+    assert response.json()["imagen_url"] is None
+    assert remove.call_args.args[:3] == (EVENT_ID, ASSOCIATION_ID, USER_ID)

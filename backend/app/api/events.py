@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Header, HTTPException, Query
+from fastapi import APIRouter, File, Form, Header, HTTPException, Query, UploadFile
 
 from app.db.supabase import supabase
 from app.models.event import (
@@ -10,6 +10,7 @@ from app.models.event import (
     EventAssociationView,
     EventCancel,
     EventDraftCreate,
+    EventImageOperationResponse,
     EventMapItem,
     EventOperationResponse,
     EventPause,
@@ -224,6 +225,53 @@ def update_association_event(
     association_id = _association_context(user)
     return _call(
         lambda: event_service.actualizar_evento(
+            str(event_id), association_id, str(user["id"]), body
+        )
+    )
+
+
+@router.put(
+    "/associations/me/events/{event_id}/image",
+    response_model=EventImageOperationResponse,
+)
+async def replace_association_event_image(
+    event_id: UUID,
+    image: UploadFile = File(...),
+    alternative_text: str = Form(..., min_length=1, max_length=500),
+    idempotency_key: str = Form(..., min_length=8, max_length=200),
+    authorization: Optional[str] = Header(None),
+):
+    user = _authenticated_user(authorization)
+    association_id = _association_context(user)
+    try:
+        return await event_service.subir_imagen_evento(
+            str(event_id),
+            association_id,
+            str(user["id"]),
+            image,
+            alternative_text=alternative_text,
+            idempotency_key=idempotency_key,
+        )
+    except event_service.EventServiceError as error:
+        raise HTTPException(
+            status_code=error.status_code,
+            detail=error.detail,
+        ) from error
+
+
+@router.delete(
+    "/associations/me/events/{event_id}/image",
+    response_model=EventImageOperationResponse,
+)
+def remove_association_event_image(
+    event_id: UUID,
+    body: EventAction,
+    authorization: Optional[str] = Header(None),
+):
+    user = _authenticated_user(authorization)
+    association_id = _association_context(user)
+    return _call(
+        lambda: event_service.retirar_imagen_evento(
             str(event_id), association_id, str(user["id"]), body
         )
     )
