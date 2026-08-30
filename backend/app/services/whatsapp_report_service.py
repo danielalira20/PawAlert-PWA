@@ -623,6 +623,23 @@ def _eliminar_sesion(wa_id: str) -> None:
     ).execute()
 
 
+def _reclamar_envio(wa_id: str, estado_esperado: str) -> bool:
+    """Impide que dos respuestas simultáneas creen el mismo reporte dos veces."""
+    resultado = (
+        supabase_admin.table("whatsapp_reporte_sesiones")
+        .update(
+            {
+                "estado": "procesando_envio",
+                "actualizado_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+        .eq("wa_id", wa_id)
+        .eq("estado", estado_esperado)
+        .execute()
+    )
+    return bool(resultado.data)
+
+
 def _fecha_sesion(valor: str) -> datetime:
     return datetime.fromisoformat(valor.replace("Z", "+00:00"))
 
@@ -1053,6 +1070,22 @@ async def _crear_reporte_con_recuperacion(
         return None
 
 
+async def _crear_reporte_reclamado(
+    wa_id: str,
+    respuestas: dict[str, Any],
+    estado_reintento: str,
+    **opciones: Any,
+) -> dict[str, Any] | None:
+    """Libera el bloqueo si ocurre un error inesperado antes de crear el reporte."""
+    try:
+        return await _crear_reporte_con_recuperacion(
+            wa_id, respuestas, **opciones
+        )
+    except Exception:
+        _guardar_sesion(wa_id, estado_reintento, respuestas)
+        raise
+
+
 async def _enviar_reporte_creado(wa_id: str, reporte_id: str) -> None:
     await enviar_texto(
         wa_id,
@@ -1263,6 +1296,13 @@ async def _procesar_mensaje(mensaje: dict[str, Any]) -> None:
             else:
                 await enviar_pregunta(wa_id, estado, respuestas)
             return
+        if estado == "procesando_envio":
+            await enviar_texto(
+                wa_id,
+                "⏳ Tu reporte ya se está procesando. En un momento recibirás "
+                "el folio de confirmación.",
+            )
+            return
         if estado == "duplicado":
             respuesta = (
                 _normalizar(contenido[1])
@@ -1272,9 +1312,17 @@ async def _procesar_mensaje(mensaje: dict[str, Any]) -> None:
             if respuesta not in {"mismo", "nuevo"}:
                 await enviar_pregunta(wa_id, "duplicado")
                 return
-            reporte = await _crear_reporte_con_recuperacion(
+            if not _reclamar_envio(wa_id, "duplicado"):
+                await enviar_texto(
+                    wa_id,
+                    "⏳ Tu reporte ya se está procesando. En un momento recibirás "
+                    "el folio de confirmación.",
+                )
+                return
+            reporte = await _crear_reporte_reclamado(
                 wa_id,
                 respuestas,
+                "duplicado",
                 es_duplicado_confirmado=True,
                 reporte_original_id=(
                     respuestas.get("_duplicado_id") if respuesta == "mismo" else None
@@ -1308,7 +1356,16 @@ async def _procesar_mensaje(mensaje: dict[str, Any]) -> None:
             if respuesta not in {"si", "s", "confirmar", "confirmo"}:
                 await enviar_confirmacion(wa_id, respuestas)
                 return
-            reporte = await _crear_reporte_con_recuperacion(wa_id, respuestas)
+            if not _reclamar_envio(wa_id, "confirmacion"):
+                await enviar_texto(
+                    wa_id,
+                    "⏳ Tu reporte ya se está procesando. En un momento recibirás "
+                    "el folio de confirmación.",
+                )
+                return
+            reporte = await _crear_reporte_reclamado(
+                wa_id, respuestas, "confirmacion"
+            )
             if reporte is None:
                 return
             if reporte.get("posible_duplicado"):

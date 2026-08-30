@@ -409,6 +409,55 @@ def test_continuar_reactiva_sesion_y_repite_confirmacion(monkeypatch):
     assert len(confirmaciones) == 1
 
 
+def test_doble_envio_simultaneo_crea_un_solo_reporte_y_folio(monkeypatch):
+    reclamos = iter([True, False])
+    creados = []
+    folios = []
+    avisos = []
+
+    monkeypatch.setattr(service, "_registrar_mensaje", lambda *_a: True)
+    monkeypatch.setattr(
+        service,
+        "_sesion",
+        lambda _wa_id: {"estado": "confirmacion", "respuestas": {"cantidad": 1}},
+    )
+    monkeypatch.setattr(
+        service, "_reclamar_envio", lambda *_a: next(reclamos)
+    )
+    monkeypatch.setattr(service, "_eliminar_sesion", lambda *_a: None)
+
+    async def crear(*_args, **_kwargs):
+        creados.append(True)
+        return {"id": "folio-unico"}
+
+    async def enviar_folio(_wa_id, reporte_id):
+        folios.append(reporte_id)
+
+    async def enviar_texto(_wa_id, texto, **_kwargs):
+        avisos.append(texto)
+
+    monkeypatch.setattr(service, "_crear_reporte_reclamado", crear)
+    monkeypatch.setattr(service, "_enviar_reporte_creado", enviar_folio)
+    monkeypatch.setattr(service, "enviar_texto", enviar_texto)
+
+    for message_id in ("confirmar-1", "confirmar-2"):
+        asyncio.run(
+            service._procesar_mensaje(
+                {
+                    "id": message_id,
+                    "from": "5212210000000",
+                    "type": "text",
+                    "text": {"body": "CONFIRMAR"},
+                }
+            )
+        )
+
+    assert len(creados) == 1
+    assert folios == ["folio-unico"]
+    assert len(avisos) == 1
+    assert "ya se está procesando" in avisos[0]
+
+
 def test_cron_avisa_y_expira_sesiones_sin_duplicar(monkeypatch):
     ahora = datetime(2026, 8, 29, 20, 30, tzinfo=timezone.utc)
     sesiones = [
