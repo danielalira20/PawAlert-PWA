@@ -5,6 +5,11 @@ from fastapi import APIRouter, File, Form, Header, HTTPException, Query, UploadF
 
 from app.db.supabase import supabase
 from app.models.adoption import (
+    AdoptionApplicationAction,
+    AdoptionApplicationDraftCreate,
+    AdoptionApplicationDraftUpdate,
+    AdoptionApplicationView,
+    AdoptionApplicationWithdraw,
     AdoptionIntakeCancel,
     AdoptionIntakeClarification,
     AdoptionIntakeCreate,
@@ -121,6 +126,115 @@ def get_public_adoptions(
 def get_public_adoption(profile_id: UUID):
     return _call(
         lambda: adoption_service.obtener_adopcion_publica(str(profile_id))
+    )
+
+
+@router.post(
+    "/adoptions/{profile_id}/applications/draft",
+    status_code=201,
+)
+def create_adoption_application_draft(
+    profile_id: UUID,
+    body: AdoptionApplicationDraftCreate,
+    authorization: Optional[str] = Header(None),
+):
+    user = _authenticated_user(authorization)
+    return _call(
+        lambda: adoption_service.crear_borrador_solicitud(
+            str(profile_id),
+            user["id"],
+            body,
+        )
+    )
+
+
+@router.patch("/adoption-applications/{application_id}/draft")
+def update_adoption_application_draft(
+    application_id: UUID,
+    body: AdoptionApplicationDraftUpdate,
+    authorization: Optional[str] = Header(None),
+):
+    user = _authenticated_user(authorization)
+    return _call(
+        lambda: adoption_service.actualizar_respuestas_solicitud(
+            str(application_id),
+            user["id"],
+            body,
+        )
+    )
+
+
+@router.post("/adoption-applications/{application_id}/documents")
+async def upload_adoption_application_document(
+    application_id: UUID,
+    document: UploadFile = File(...),
+    question_key: str = Form(
+        ...,
+        min_length=1,
+        max_length=80,
+        pattern=r"^[a-z0-9_]+$",
+    ),
+    idempotency_key: str = Form(..., min_length=8, max_length=200),
+    authorization: Optional[str] = Header(None),
+):
+    user = _authenticated_user(authorization)
+    try:
+        return await adoption_service.subir_documento_solicitud(
+            str(application_id),
+            user["id"],
+            document,
+            question_key=question_key,
+            idempotency_key=idempotency_key,
+        )
+    except adoption_service.AdoptionServiceError as error:
+        raise HTTPException(
+            status_code=error.status_code,
+            detail=error.detail,
+        ) from error
+
+
+@router.post("/adoption-applications/{application_id}/submit")
+def submit_adoption_application(
+    application_id: UUID,
+    body: AdoptionApplicationAction,
+    authorization: Optional[str] = Header(None),
+):
+    user = _authenticated_user(authorization)
+    return _call(
+        lambda: adoption_service.enviar_solicitud(
+            str(application_id),
+            user["id"],
+            body,
+        )
+    )
+
+
+@router.post("/adoption-applications/{application_id}/withdraw")
+def withdraw_adoption_application(
+    application_id: UUID,
+    body: AdoptionApplicationWithdraw,
+    authorization: Optional[str] = Header(None),
+):
+    user = _authenticated_user(authorization)
+    return _call(
+        lambda: adoption_service.retirar_solicitud(
+            str(application_id),
+            user["id"],
+            body,
+        )
+    )
+
+
+@router.get(
+    "/me/adoption-applications",
+    response_model=list[AdoptionApplicationView],
+)
+def get_my_adoption_applications(
+    authorization: Optional[str] = Header(None),
+):
+    user = _authenticated_user(authorization)
+    return _call(
+        lambda: adoption_service.listar_mis_solicitudes(user["id"])
     )
 
 

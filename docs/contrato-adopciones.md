@@ -370,6 +370,7 @@ Solicitante autenticado:
 ```text
 POST  /adoptions/{profile_id}/applications/draft
 PATCH /adoption-applications/{application_id}/draft
+POST  /adoption-applications/{application_id}/documents
 POST  /adoption-applications/{application_id}/submit
 POST  /adoption-applications/{application_id}/withdraw
 GET   /me/adoption-applications
@@ -477,6 +478,12 @@ Los documentos y fotografias privadas se entregan mediante URLs firmadas de
 corta duracion. El backend valida permiso antes de firmar cada acceso y nunca
 devuelve `storage_path`. Las notificaciones no incluyen documentos,
 coordenadas, domicilios ni notas internas.
+
+La carga documental utiliza `multipart/form-data` con `document`,
+`question_key` e `idempotency_key`. Solo acepta JPG, PNG, WEBP o PDF de hasta
+10 MB. Las imagenes se normalizan sin EXIF y todos los archivos se guardan en
+la carpeta privada de la solicitud propietaria. El listado propio puede
+devolver una URL firmada temporal, pero nunca la ruta persistida.
 
 ## Historial y notificaciones
 

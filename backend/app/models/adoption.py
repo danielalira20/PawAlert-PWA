@@ -407,6 +407,168 @@ class AdoptionRequirementTemplatePanel(BaseModel):
     plantillas: list[AdoptionRequirementTemplateView]
 
 
+AdoptionApplicationAnswerValue = str | bool | list[str]
+
+
+class AdoptionApplicationDraftCreate(BaseModel):
+    idempotency_key: str = Field(min_length=8, max_length=200)
+
+    @field_validator("idempotency_key")
+    @classmethod
+    def limpiar_idempotencia(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("La clave de idempotencia no puede estar vacía")
+        return cleaned
+
+
+class AdoptionApplicationAnswer(BaseModel):
+    clave: str = Field(min_length=1, max_length=80, pattern=r"^[a-z0-9_]+$")
+    valor: AdoptionApplicationAnswerValue | None = None
+    eliminar: bool = False
+
+    @model_validator(mode="after")
+    def validar_operacion(self):
+        if self.eliminar:
+            if self.valor is not None:
+                raise ValueError("No envíes un valor al eliminar una respuesta")
+            return self
+        if self.valor is None:
+            raise ValueError("Indica una respuesta")
+        if isinstance(self.valor, str) and not self.valor.strip():
+            raise ValueError("La respuesta no puede estar vacía")
+        if isinstance(self.valor, list):
+            cleaned = [option.strip() for option in self.valor]
+            if any(not option for option in cleaned):
+                raise ValueError("Las opciones no pueden estar vacías")
+            if len(cleaned) != len(set(cleaned)):
+                raise ValueError("No repitas opciones")
+            self.valor = cleaned
+        return self
+
+
+class AdoptionApplicationDraftUpdate(BaseModel):
+    respuestas: list[AdoptionApplicationAnswer] = Field(
+        min_length=1,
+        max_length=40,
+    )
+    idempotency_key: str = Field(min_length=8, max_length=200)
+
+    @field_validator("idempotency_key")
+    @classmethod
+    def limpiar_idempotencia(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("La clave de idempotencia no puede estar vacía")
+        return cleaned
+
+    @model_validator(mode="after")
+    def validar_claves_unicas(self):
+        keys = [answer.clave for answer in self.respuestas]
+        if len(keys) != len(set(keys)):
+            raise ValueError("No repitas una respuesta")
+        return self
+
+
+class AdoptionApplicationAction(BaseModel):
+    idempotency_key: str = Field(min_length=8, max_length=200)
+
+    @field_validator("idempotency_key")
+    @classmethod
+    def limpiar_idempotencia(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("La clave de idempotencia no puede estar vacía")
+        return cleaned
+
+
+class AdoptionApplicationWithdraw(AdoptionApplicationAction):
+    motivo: str = Field(min_length=1, max_length=1000)
+
+    @field_validator("motivo")
+    @classmethod
+    def limpiar_motivo(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("El motivo no puede estar vacío")
+        return cleaned
+
+
+class AdoptionApplicationRequirement(BaseModel):
+    origen: Literal["pawalert", "asociacion"]
+    clave: str
+    titulo: str
+    descripcion: str | None = None
+    tipo_respuesta: AdoptionRequirementResponseType
+    opciones: list[str] = Field(default_factory=list)
+    obligatorio: bool
+    es_sensible: bool
+    orden: int
+
+
+class AdoptionApplicationDocumentAccess(BaseModel):
+    mime_type: Literal[
+        "image/jpeg", "image/png", "image/webp", "application/pdf"
+    ]
+    size_bytes: int
+    documento_url: str | None = None
+    documento_url_expira_at: datetime | None = None
+
+
+class AdoptionApplicationAnswerView(BaseModel):
+    clave: str
+    valor: AdoptionApplicationAnswerValue | None = None
+    documento: AdoptionApplicationDocumentAccess | None = None
+
+
+class AdoptionApplicationProfileView(BaseModel):
+    id: UUID
+    nombre_publico: str
+    estado: Literal[
+        "borrador",
+        "publicado",
+        "pausado",
+        "en_proceso",
+        "adoptado",
+        "retirado",
+        "fallecido",
+    ]
+    zona_general: str | None = None
+    asociacion: AdoptionPublicAssociation
+    foto_portada: AdoptionPublicPhoto | None = None
+
+
+class AdoptionApplicationView(BaseModel):
+    id: UUID
+    estado: Literal[
+        "borrador",
+        "enviada",
+        "requiere_informacion",
+        "en_evaluacion",
+        "entrevista_programada",
+        "seleccionada",
+        "rechazada",
+        "retirada",
+        "vencida",
+        "cerrada_por_adopcion",
+        "adopcion_confirmada",
+    ]
+    perfil: AdoptionApplicationProfileView
+    requisitos: list[AdoptionApplicationRequirement]
+    respuestas: list[AdoptionApplicationAnswerView]
+    informacion_solicitada: str | None = None
+    informacion_solicitada_at: datetime | None = None
+    entrevista_programada_at: datetime | None = None
+    entrevista_modalidad: Literal["presencial", "remota", "telefonica"] | None = None
+    entrevista_detalle_privado: str | None = None
+    categoria_rechazo_publica: str | None = None
+    enviada_at: datetime | None = None
+    retirada_at: datetime | None = None
+    vencimiento_at: datetime | None = None
+    creada_at: datetime
+    actualizada_at: datetime
+
+
 class AdoptionPublicProfileSummary(BaseModel):
     id: UUID
     nombre_publico: str

@@ -9,6 +9,10 @@ from fastapi import UploadFile
 
 from app.db.supabase import supabase_admin
 from app.models.adoption import (
+    AdoptionApplicationAction,
+    AdoptionApplicationDraftCreate,
+    AdoptionApplicationDraftUpdate,
+    AdoptionApplicationWithdraw,
     AdoptionIntakeCancel,
     AdoptionIntakeClarification,
     AdoptionIntakeCreate,
@@ -38,6 +42,7 @@ from app.services.storage_service import (
 
 logger = logging.getLogger(__name__)
 MAX_ADOPTION_PHOTO_BYTES = 10 * 1024 * 1024
+MAX_ADOPTION_DOCUMENT_BYTES = 10 * 1024 * 1024
 PUBLIC_PROFILE_FIELDS = (
     "id, asociacion_id, nombre_publico, tipo_animal_id, "
     "tipo_animal_otro_id, tamanio_id, raza_id, sexo, edad_aproximada, "
@@ -58,6 +63,7 @@ ERROR_STATUS = {
     "perfil_adopcion_no_encontrado": 404,
     "adopcion_publica_no_encontrada": 404,
     "plantilla_requisitos_adopcion_no_encontrada": 404,
+    "solicitud_adopcion_no_encontrada": 404,
     "actor_no_es_custodio_activo": 403,
     "actor_no_es_proponente_ingreso": 403,
     "actor_no_pertenece_asociacion": 403,
@@ -76,6 +82,11 @@ ERROR_STATUS = {
     "plantilla_requisitos_adopcion_no_editable": 409,
     "plantilla_requisitos_adopcion_no_activable": 409,
     "plantilla_requisitos_adopcion_no_retirable": 409,
+    "adopcion_publica_no_disponible": 409,
+    "solicitud_adopcion_abierta_duplicada": 409,
+    "solicitud_adopcion_respuestas_no_editables": 409,
+    "solicitud_adopcion_no_enviable": 409,
+    "solicitud_adopcion_no_retirable": 409,
     "perfil_adopcion_limite_fotos": 409,
     "foto_perfil_adopcion_no_encontrada": 404,
     "idempotency_key_ingreso_en_conflicto": 409,
@@ -93,6 +104,10 @@ ERROR_STATUS = {
     "idempotency_key_plantilla_actualizacion_en_conflicto": 409,
     "idempotency_key_plantilla_activacion_en_conflicto": 409,
     "idempotency_key_plantilla_retiro_en_conflicto": 409,
+    "idempotency_key_borrador_adopcion_en_conflicto": 409,
+    "idempotency_key_respuestas_adopcion_en_conflicto": 409,
+    "idempotency_key_envio_adopcion_en_conflicto": 409,
+    "idempotency_key_retiro_adopcion_en_conflicto": 409,
     "individuo_animal_invalido": 422,
     "fecha_disponibilidad_custodia_invalida": 422,
     "fotos_propuesta_invalidas": 422,
@@ -117,6 +132,18 @@ ERROR_STATUS = {
     "activacion_plantilla_requisitos_incompleta": 422,
     "retiro_plantilla_requisitos_incompleto": 422,
     "clave_requisito_adopcion_reservada": 422,
+    "borrador_solicitud_adopcion_incompleto": 422,
+    "respuestas_solicitud_adopcion_invalidas": 422,
+    "respuesta_solicitud_adopcion_invalida": 422,
+    "documento_solicitud_adopcion_fuera_de_contexto": 422,
+    "envio_solicitud_adopcion_incompleto": 422,
+    "solicitud_adopcion_requisitos_obligatorios_incompletos": 422,
+    "solicitud_adopcion_consentimientos_requeridos": 422,
+    "retiro_solicitud_adopcion_incompleto": 422,
+    "documento_solicitud_adopcion_invalido": 422,
+    "solicitante_requiere_cuenta": 403,
+    "solicitante_requiere_contacto_verificado": 403,
+    "adopcion_documento_storage_no_disponible": 503,
     "adopcion_storage_no_disponible": 503,
     "requisitos_base_adopcion_no_disponibles": 503,
 }
@@ -131,6 +158,7 @@ ERROR_DETAIL = {
     "perfil_adopcion_no_encontrado": "No se encontró el perfil dentro de tu asociación.",
     "adopcion_publica_no_encontrada": "Esta adopción ya no está disponible.",
     "plantilla_requisitos_adopcion_no_encontrada": "No se encontró la plantilla dentro de tu asociación.",
+    "solicitud_adopcion_no_encontrada": "No se encontró una solicitud de adopción propia con ese identificador.",
     "actor_no_es_custodio_activo": "Solo el hogar temporal actual puede proponer este ingreso.",
     "actor_no_es_proponente_ingreso": "Solo quien hizo la propuesta puede realizar esta acción.",
     "actor_no_pertenece_asociacion": "Esta acción corresponde a la asociación coordinadora.",
@@ -149,6 +177,11 @@ ERROR_DETAIL = {
     "plantilla_requisitos_adopcion_no_editable": "Solo puedes modificar una plantilla en borrador.",
     "plantilla_requisitos_adopcion_no_activable": "Solo puedes activar una plantilla en borrador.",
     "plantilla_requisitos_adopcion_no_retirable": "Solo puedes retirar la plantilla que está activa.",
+    "adopcion_publica_no_disponible": "Este animal ya no está recibiendo solicitudes.",
+    "solicitud_adopcion_abierta_duplicada": "Ya tienes una solicitud abierta para este animal.",
+    "solicitud_adopcion_respuestas_no_editables": "Esta solicitud ya no permite modificar respuestas.",
+    "solicitud_adopcion_no_enviable": "Esta solicitud no puede enviarse desde su estado actual.",
+    "solicitud_adopcion_no_retirable": "La solicitud seleccionada debe cancelarse primero con la asociación.",
     "perfil_adopcion_limite_fotos": "El perfil ya tiene el máximo de ocho fotografías.",
     "foto_perfil_adopcion_no_encontrada": "No se encontró la fotografía dentro de este perfil.",
     "individuo_animal_invalido": "Selecciona correctamente al animal de la ficha grupal.",
@@ -175,6 +208,18 @@ ERROR_DETAIL = {
     "activacion_plantilla_requisitos_incompleta": "No se pudo identificar la plantilla que deseas activar.",
     "retiro_plantilla_requisitos_incompleto": "Indica por qué se retirará esta plantilla.",
     "clave_requisito_adopcion_reservada": "La clave de una pregunta ya pertenece a un requisito obligatorio de PawAlert.",
+    "borrador_solicitud_adopcion_incompleto": "No se pudo identificar el perfil o la operación del borrador.",
+    "respuestas_solicitud_adopcion_invalidas": "Revisa las respuestas antes de guardarlas.",
+    "respuesta_solicitud_adopcion_invalida": "Una respuesta no coincide con el tipo u opciones de la pregunta.",
+    "documento_solicitud_adopcion_fuera_de_contexto": "El documento no pertenece a esta solicitud.",
+    "envio_solicitud_adopcion_incompleto": "No se pudo identificar la solicitud que deseas enviar.",
+    "solicitud_adopcion_requisitos_obligatorios_incompletos": "Completa todos los requisitos obligatorios antes de enviar.",
+    "solicitud_adopcion_consentimientos_requeridos": "Acepta los compromisos obligatorios de adopción para continuar.",
+    "retiro_solicitud_adopcion_incompleto": "Indica por qué deseas retirar la solicitud.",
+    "documento_solicitud_adopcion_invalido": "Adjunta una imagen o PDF válido de hasta 10 MB.",
+    "solicitante_requiere_cuenta": "Necesitas una cuenta para solicitar una adopción.",
+    "solicitante_requiere_contacto_verificado": "Verifica tu correo o teléfono antes de solicitar una adopción.",
+    "adopcion_documento_storage_no_disponible": "No se pudo guardar el documento. Intenta nuevamente.",
     "adopcion_storage_no_disponible": "No se pudo guardar la fotografía. Intenta nuevamente.",
     "requisitos_base_adopcion_no_disponibles": "Los requisitos de adopción no están disponibles temporalmente.",
     "idempotency_key_ingreso_en_conflicto": "La misma operación fue enviada antes con datos diferentes.",
@@ -192,6 +237,10 @@ ERROR_DETAIL = {
     "idempotency_key_plantilla_actualizacion_en_conflicto": "La misma actualización fue enviada antes con datos diferentes.",
     "idempotency_key_plantilla_activacion_en_conflicto": "La misma activación fue enviada antes para otra plantilla.",
     "idempotency_key_plantilla_retiro_en_conflicto": "El mismo retiro fue enviado antes con datos diferentes.",
+    "idempotency_key_borrador_adopcion_en_conflicto": "La misma creación fue enviada antes para otro animal.",
+    "idempotency_key_respuestas_adopcion_en_conflicto": "El mismo guardado fue enviado antes con respuestas diferentes.",
+    "idempotency_key_envio_adopcion_en_conflicto": "El mismo envío fue utilizado antes para otra solicitud.",
+    "idempotency_key_retiro_adopcion_en_conflicto": "El mismo retiro fue enviado antes con datos diferentes.",
 }
 
 
@@ -933,6 +982,427 @@ def retirar_plantilla_requisitos(
             "p_idempotency_key": body.idempotency_key,
         },
     )
+
+
+def crear_borrador_solicitud(
+    profile_id: str,
+    actor_user_id: str,
+    body: AdoptionApplicationDraftCreate,
+) -> dict:
+    return _rpc(
+        "crear_borrador_solicitud_adopcion",
+        {
+            "p_perfil_adopcion_id": profile_id,
+            "p_actor_usuario_id": actor_user_id,
+            "p_idempotency_key": body.idempotency_key,
+        },
+    )
+
+
+def actualizar_respuestas_solicitud(
+    application_id: str,
+    actor_user_id: str,
+    body: AdoptionApplicationDraftUpdate,
+) -> dict:
+    answers = []
+    for answer in body.respuestas:
+        if answer.eliminar:
+            answers.append({"clave": answer.clave, "eliminar": True})
+        else:
+            answers.append({"clave": answer.clave, "valor": answer.valor})
+    return _rpc(
+        "actualizar_respuestas_solicitud_adopcion",
+        {
+            "p_solicitud_adopcion_id": application_id,
+            "p_actor_usuario_id": actor_user_id,
+            "p_respuestas": answers,
+            "p_idempotency_key": body.idempotency_key,
+        },
+    )
+
+
+def enviar_solicitud(
+    application_id: str,
+    actor_user_id: str,
+    body: AdoptionApplicationAction,
+) -> dict:
+    return _rpc(
+        "enviar_solicitud_adopcion",
+        {
+            "p_solicitud_adopcion_id": application_id,
+            "p_actor_usuario_id": actor_user_id,
+            "p_idempotency_key": body.idempotency_key,
+        },
+    )
+
+
+def retirar_solicitud(
+    application_id: str,
+    actor_user_id: str,
+    body: AdoptionApplicationWithdraw,
+) -> dict:
+    return _rpc(
+        "retirar_solicitud_adopcion",
+        {
+            "p_solicitud_adopcion_id": application_id,
+            "p_actor_usuario_id": actor_user_id,
+            "p_motivo": body.motivo,
+            "p_idempotency_key": body.idempotency_key,
+        },
+    )
+
+
+def _obtener_solicitud_propia(
+    application_id: str,
+    actor_user_id: str,
+    *,
+    editable: bool,
+) -> dict:
+    applications = _query(
+        "validar solicitud de adopción propia",
+        lambda: supabase_admin.table("solicitudes_adopcion")
+        .select("id, estado, requisitos_snapshot")
+        .eq("id", application_id)
+        .eq("solicitante_usuario_id", actor_user_id)
+        .limit(1),
+    )
+    if not applications:
+        raise AdoptionServiceError("solicitud_adopcion_no_encontrada")
+    application = applications[0]
+    if editable and application.get("estado") not in (
+        "borrador",
+        "requiere_informacion",
+    ):
+        raise AdoptionServiceError("solicitud_adopcion_respuestas_no_editables")
+    return application
+
+
+def _pregunta_documental_propia(application: dict, question_key: str) -> dict:
+    requirements = application.get("requisitos_snapshot")
+    if not isinstance(requirements, list):
+        raise AdoptionServiceError("adopcion_respuesta_invalida")
+    for requirement in requirements:
+        if (
+            isinstance(requirement, dict)
+            and requirement.get("clave") == question_key
+            and requirement.get("tipo_respuesta") == "documento"
+            and requirement.get("es_sensible") is True
+        ):
+            return requirement
+    raise AdoptionServiceError("documento_solicitud_adopcion_invalido")
+
+
+def _procesar_documento_solicitud(
+    content: bytes,
+    declared_content_type: str | None,
+) -> tuple[bytes, str, str]:
+    content_type = (declared_content_type or "").split(";", 1)[0].lower()
+    if content_type in {"image/jpeg", "image/png", "image/webp"}:
+        try:
+            processed = procesar_imagen_evidencia(content)
+        except ImagenEvidenciaInvalida as error:
+            raise AdoptionServiceError(
+                "documento_solicitud_adopcion_invalido"
+            ) from error
+        return (
+            processed.contenido_publico,
+            processed.content_type_publico,
+            processed.extension_publica,
+        )
+    if (
+        content_type == "application/pdf"
+        and content.startswith(b"%PDF-")
+        and b"%%EOF" in content[-2048:]
+    ):
+        return content, "application/pdf", "pdf"
+    raise AdoptionServiceError("documento_solicitud_adopcion_invalido")
+
+
+async def subir_documento_solicitud(
+    application_id: str,
+    actor_user_id: str,
+    document: UploadFile,
+    *,
+    question_key: str,
+    idempotency_key: str,
+) -> dict:
+    question_key = question_key.strip()
+    idempotency_key = idempotency_key.strip()
+    if (
+        not question_key
+        or len(question_key) > 80
+        or not question_key.isascii()
+        or any(
+            not (character.islower() or character.isdigit() or character == "_")
+            for character in question_key
+        )
+        or len(idempotency_key) < 8
+        or len(idempotency_key) > 200
+    ):
+        raise AdoptionServiceError("documento_solicitud_adopcion_invalido")
+    application = _obtener_solicitud_propia(
+        application_id,
+        actor_user_id,
+        editable=True,
+    )
+    _pregunta_documental_propia(application, question_key)
+
+    raw_content = await document.read(MAX_ADOPTION_DOCUMENT_BYTES + 1)
+    if not raw_content or len(raw_content) > MAX_ADOPTION_DOCUMENT_BYTES:
+        raise AdoptionServiceError("documento_solicitud_adopcion_invalido")
+    content, content_type, extension = _procesar_documento_solicitud(
+        raw_content,
+        document.content_type,
+    )
+    if len(content) > MAX_ADOPTION_DOCUMENT_BYTES:
+        raise AdoptionServiceError("documento_solicitud_adopcion_invalido")
+
+    digest = sha256()
+    digest.update(application_id.encode("utf-8"))
+    digest.update(actor_user_id.encode("utf-8"))
+    digest.update(question_key.encode("utf-8"))
+    digest.update(idempotency_key.encode("utf-8"))
+    digest.update(content)
+    filename = f"{digest.hexdigest()}.{extension}"
+    folder = f"adopciones/solicitudes/{application_id}"
+    storage_path = f"{folder}/{filename}"
+    uploaded_now = False
+    try:
+        storage_path = await subir_bytes_adopcion(
+            content,
+            carpeta=folder,
+            content_type=content_type,
+            extension=extension,
+            nombre_archivo=filename,
+        )
+        uploaded_now = True
+    except ObjetoPrivadoYaExiste:
+        pass
+    except Exception as error:
+        logger.exception("No se pudo cargar un documento de adopción")
+        raise AdoptionServiceError(
+            "adopcion_documento_storage_no_disponible"
+        ) from error
+
+    try:
+        result = _rpc(
+            "actualizar_respuestas_solicitud_adopcion",
+            {
+                "p_solicitud_adopcion_id": application_id,
+                "p_actor_usuario_id": actor_user_id,
+                "p_respuestas": [
+                    {
+                        "clave": question_key,
+                        "documento": {
+                            "storage_path": storage_path,
+                            "mime_type": content_type,
+                            "size_bytes": len(content),
+                        },
+                    }
+                ],
+                "p_idempotency_key": idempotency_key,
+            },
+        )
+    except AdoptionServiceError as error:
+        if uploaded_now and error.status_code < 500:
+            eliminar_objeto_adopcion(storage_path)
+        raise
+
+    try:
+        access = crear_url_firmada_adopcion(storage_path)
+    except Exception:
+        logger.warning(
+            "El documento se guardó pero no pudo firmarse temporalmente",
+            exc_info=True,
+        )
+        access = None
+    return {
+        **result,
+        "clave": question_key,
+        "documento": {
+            "mime_type": content_type,
+            "size_bytes": len(content),
+            "documento_url": access["url"] if access else None,
+            "documento_url_expira_at": access["expira_at"] if access else None,
+        },
+    }
+
+
+def _requisitos_snapshot_publicables(snapshot: object) -> list[dict]:
+    if not isinstance(snapshot, list):
+        raise AdoptionServiceError("adopcion_respuesta_invalida")
+    requirements = []
+    allowed_origins = {"pawalert", "asociacion"}
+    for requirement in snapshot:
+        if (
+            not isinstance(requirement, dict)
+            or requirement.get("origen") not in allowed_origins
+            or not requirement.get("clave")
+            or not requirement.get("titulo")
+        ):
+            raise AdoptionServiceError("adopcion_respuesta_invalida")
+        requirements.append(
+            {
+                "origen": requirement["origen"],
+                "clave": requirement["clave"],
+                "titulo": requirement["titulo"],
+                "descripcion": requirement.get("descripcion"),
+                "tipo_respuesta": requirement["tipo_respuesta"],
+                "opciones": requirement.get("opciones") or [],
+                "obligatorio": requirement.get("obligatorio", False),
+                "es_sensible": requirement.get("es_sensible", False),
+                "orden": requirement["orden"],
+            }
+        )
+    return requirements
+
+
+def _respuestas_propias(
+    application_ids: list[str],
+) -> dict[str, list[dict]]:
+    grouped = {application_id: [] for application_id in application_ids}
+    if not application_ids:
+        return grouped
+    answers = _query(
+        "listar respuestas propias de adopción",
+        lambda: supabase_admin.table("respuestas_solicitud_adopcion")
+        .select(
+            "solicitud_adopcion_id, pregunta_clave_snapshot, respuesta_json, "
+            "documento_storage_path, documento_mime_type, documento_size_bytes"
+        )
+        .in_("solicitud_adopcion_id", application_ids)
+        .order("creada_at"),
+    )
+    for answer in answers:
+        application_id = answer.get("solicitud_adopcion_id")
+        if application_id not in grouped:
+            continue
+        document = None
+        storage_path = answer.get("documento_storage_path")
+        if storage_path:
+            try:
+                access = crear_url_firmada_adopcion(storage_path)
+            except Exception:
+                logger.warning(
+                    "No se pudo firmar un documento propio de adopción",
+                    exc_info=True,
+                )
+                access = None
+            document = {
+                "mime_type": answer["documento_mime_type"],
+                "size_bytes": answer["documento_size_bytes"],
+                "documento_url": access["url"] if access else None,
+                "documento_url_expira_at": (
+                    access["expira_at"] if access else None
+                ),
+            }
+        grouped[application_id].append(
+            {
+                "clave": answer["pregunta_clave_snapshot"],
+                "valor": answer.get("respuesta_json"),
+                "documento": document,
+            }
+        )
+    return grouped
+
+
+def listar_mis_solicitudes(actor_user_id: str) -> list[dict]:
+    applications = _query(
+        "listar solicitudes propias de adopción",
+        lambda: supabase_admin.table("solicitudes_adopcion")
+        .select(
+            "id, perfil_adopcion_id, asociacion_id, requisitos_snapshot, "
+            "estado, informacion_solicitada, informacion_solicitada_at, "
+            "entrevista_programada_at, entrevista_modalidad, "
+            "entrevista_detalle_privado, categoria_rechazo_publica, "
+            "enviada_at, retirada_at, vencimiento_at, creada_at, actualizada_at"
+        )
+        .eq("solicitante_usuario_id", actor_user_id)
+        .order("actualizada_at", desc=True),
+    )
+    if not applications:
+        return []
+    application_ids = [application["id"] for application in applications]
+    profile_ids = sorted(
+        {application["perfil_adopcion_id"] for application in applications}
+    )
+    association_ids = sorted(
+        {application["asociacion_id"] for application in applications}
+    )
+    profiles = _query(
+        "resolver perfiles de solicitudes propias",
+        lambda: supabase_admin.table("perfiles_adopcion")
+        .select("id, nombre_publico, estado, zona_general")
+        .in_("id", profile_ids),
+    )
+    associations = _query(
+        "resolver asociaciones de solicitudes propias",
+        lambda: supabase_admin.table("asociaciones")
+        .select("id, nombre, acerca_de, logo_url")
+        .in_("id", association_ids),
+    )
+    profiles_by_id = {profile["id"]: profile for profile in profiles}
+    associations_by_id = {
+        association["id"]: association for association in associations
+    }
+    answers = _respuestas_propias(application_ids)
+    photos = _fotos_publicas(profile_ids, solo_portada=True)
+    result = []
+    for application in applications:
+        profile = profiles_by_id.get(application["perfil_adopcion_id"])
+        association = associations_by_id.get(application["asociacion_id"])
+        if not profile or not association:
+            raise AdoptionServiceError("adopcion_respuesta_invalida")
+        profile_photos = photos.get(profile["id"], [])
+        result.append(
+            {
+                "id": application["id"],
+                "estado": application["estado"],
+                "perfil": {
+                    "id": profile["id"],
+                    "nombre_publico": profile["nombre_publico"],
+                    "estado": profile["estado"],
+                    "zona_general": profile.get("zona_general"),
+                    "asociacion": {
+                        "id": association["id"],
+                        "nombre": association["nombre"],
+                        "acerca_de": association.get("acerca_de"),
+                        "logo_url": association.get("logo_url"),
+                    },
+                    "foto_portada": (
+                        profile_photos[0] if profile_photos else None
+                    ),
+                },
+                "requisitos": _requisitos_snapshot_publicables(
+                    application.get("requisitos_snapshot")
+                ),
+                "respuestas": answers.get(application["id"], []),
+                "informacion_solicitada": application.get(
+                    "informacion_solicitada"
+                ),
+                "informacion_solicitada_at": application.get(
+                    "informacion_solicitada_at"
+                ),
+                "entrevista_programada_at": application.get(
+                    "entrevista_programada_at"
+                ),
+                "entrevista_modalidad": application.get(
+                    "entrevista_modalidad"
+                ),
+                "entrevista_detalle_privado": application.get(
+                    "entrevista_detalle_privado"
+                ),
+                "categoria_rechazo_publica": application.get(
+                    "categoria_rechazo_publica"
+                ),
+                "enviada_at": application.get("enviada_at"),
+                "retirada_at": application.get("retirada_at"),
+                "vencimiento_at": application.get("vencimiento_at"),
+                "creada_at": application["creada_at"],
+                "actualizada_at": application["actualizada_at"],
+            }
+        )
+    return result
 
 
 def _normalizar_filtro_publico(value: object) -> str:
