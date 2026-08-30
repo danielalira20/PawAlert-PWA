@@ -228,8 +228,14 @@ La consulta `GET /events` pagina con `pagina` y `limite`, y admite `tipo`,
 `asociacion_id`, `municipio`, `especie`, `gratuito`, `desde` y `hasta`.
 `GET /events/map` usa una ventana maxima de 90 dias y permite acotar latitud y
 longitud. Ambas consultas solo devuelven eventos publicados de asociaciones
-activas y verificadas. Las imagenes permanecen en `null` hasta implementar el
-flujo de almacenamiento de JASS-03.
+activas y verificadas.
+
+JASS-03 incorpora una imagen principal opcional por evento en el bucket
+privado `pawalert-eventos-privado`. El backend valida y normaliza la imagen,
+elimina metadatos, conserva solo su `storage_path` interno y entrega URLs
+firmadas temporales junto con su expiracion. Reemplazar o retirar la imagen de
+un evento publicado crea una nueva version, deja historial y notifica a sus
+usuarios suscritos sin incluir rutas privadas.
 
 Quedan fuera de JASS-02 los endpoints de reportes, colaboradores, perfiles de
 adopcion vinculados y moderacion administrativa que se enumeran mas abajo.
@@ -257,6 +263,8 @@ Asociacion verificada:
 GET   /associations/me/events
 POST  /associations/me/events
 PATCH /associations/me/events/{event_id}
+PUT   /associations/me/events/{event_id}/image
+DELETE /associations/me/events/{event_id}/image
 POST  /associations/me/events/{event_id}/publish
 POST  /associations/me/events/{event_id}/pause
 POST  /associations/me/events/{event_id}/cancel
