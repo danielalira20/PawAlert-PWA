@@ -58,29 +58,50 @@ PREGUNTAS = {
         "Si la foto no permite validar el caso, te pediré otra. Si reportas un grupo "
         "y no puedes fotografiarlos juntos, escribe OMITIR."
     ),
-    "tipo_animal": "¿Qué animal estás reportando? Responde: perro, gato u otro.",
-    "categoria_otro": "¿Qué categoría es? Responde: ave, reptil, roedor, fauna silvestre u otro.",
-    "especie_descripcion": "Describe qué especie es (por ejemplo: caballo o tlacuache).",
-    "condicion": "¿Cómo se encuentra? Responde: estable, herido o grave.",
-    "tamanio": "¿De qué tamaño es? Responde: pequeño, mediano o grande.",
-    "sexo": "¿Cuál es su sexo? Responde: macho, hembra o desconocido.",
-    "edad": "¿Qué edad aproximada tiene? Responde: cachorro, joven, adulto, senior o desconocido.",
+    "tipo_animal": "¿Qué animal estás reportando?",
+    "categoria_otro": "¿Qué tipo de animal es?",
+    "especie_descripcion": (
+        "¿Qué especie es? Escríbelo (por ejemplo: caballo, tlacuache, zarigüeya, tortuga)."
+    ),
+    "condicion": (
+        "¿Cómo se encuentra?\n"
+        "• *Estable*: se mueve bien, sin heridas visibles\n"
+        "• *Herido*: sangra, cojea o tiene lesiones\n"
+        "• *Grave*: no se levanta o está muy débil"
+    ),
+    "tamanio": "¿De qué tamaño es?",
+    "sexo": "¿Cuál es su sexo? Si no puedes saberlo, elige *No sé*.",
+    "edad": "¿Qué edad aproximada tiene?",
     "raza": (
         "¿Qué raza parece tener? Elige una opción de la lista.\n"
         "Si no la reconoces o es mestizo/criollo, elige *Otra / no la sé*."
     ),
-    "tiene_collar": "¿Tiene collar? Responde SÍ o NO.",
-    "comportamiento": "¿Parece agresivo? Responde SÍ o NO.",
-    "es_domestico": "¿Parece doméstico o se deja acercar? Responde SÍ o NO.",
-    "esta_prenada": "¿Parece estar preñada? Responde SÍ o NO.",
-    "trae_crias": "¿Trae crías con ella? Responde SÍ o NO.",
-    "numero_crias": "¿Cuántas crías aproximadamente? Responde con un número o escribe OMITIR.",
-    "descripcion": "Describe brevemente al animal y la situación (máximo 300 caracteres).",
-    "ubicacion": (
-        "Comparte tu ubicación usando el clip de WhatsApp, o escribe el municipio "
-        "donde se encuentra el animal."
+    "tiene_collar": "¿Trae collar, correa o placa?",
+    "comportamiento": (
+        "¿Se comporta agresivo? (gruñe, intenta morder o no deja que nadie se acerque)"
     ),
-    "referencia": "Escribe una referencia breve del lugar y del animal.",
+    "es_domestico": (
+        "¿Se ve como un animal de casa? (aseado, confiado, se deja acercar). "
+        "Si se ve callejero o asustadizo, elige *No*."
+    ),
+    "esta_prenada": "¿Se ve preñada? (panza abultada)",
+    "trae_crias": "¿Está acompañada de crías o cachorros?",
+    "numero_crias": "¿Cuántas crías aproximadamente? Responde con un número o escribe OMITIR.",
+    "descripcion": (
+        "Cuéntame *la situación*: ¿qué está pasando?, ¿hace cuánto lo viste?, "
+        "¿hay algún riesgo cerca (tráfico, otros animales, gente)? "
+        "Máximo 300 caracteres."
+    ),
+    "ubicacion": (
+        "📍 Comparte la *ubicación exacta* con el clip 📎 de WhatsApp "
+        "(Ubicación → Enviar tu ubicación actual).\n"
+        "Si no puedes, escribe la colonia o el municipio donde está el animal."
+    ),
+    "referencia": (
+        "Para ubicar el lugar, escribe una *referencia del sitio*: calle y número, "
+        "un negocio o punto conocido cerca, color de fachada, etc. "
+        "Máximo 300 caracteres."
+    ),
     "duplicado": (
         "Encontramos un reporte cercano que podría ser el mismo caso. "
         "Responde MISMO para vincularlo o NUEVO si es una situación distinta."
@@ -138,16 +159,34 @@ RAZAS_SUGERIDAS: dict[str, list[tuple[str, str]]] = {
     ],
 }
 
-ETIQUETAS_CORRECCION = {
-    "cantidad": "Cantidad de animales",
-    "foto": "Fotografía",
-    "tipo_animal": "Tipo de animal",
-    "condicion": "Condición",
-    "tamanio": "Tamaño",
-    "edad": "Edad",
-    "descripcion": "Descripción",
-    "ubicacion": "Ubicación",
-    "referencia": "Referencia",
+# Campos que se pueden corregir desde el resumen, agrupados para no rebasar
+# el límite de 10 filas por lista de WhatsApp.
+CAMPOS_CORRECCION_ANIMAL: list[tuple[str, str]] = [
+    ("tipo_animal", "Tipo de animal"),
+    ("cantidad", "Cantidad de animales"),
+    ("condicion", "Condición"),
+    ("tamanio", "Tamaño"),
+    ("sexo", "Sexo"),
+    ("edad", "Edad"),
+    ("raza", "Raza"),
+    ("tiene_collar", "¿Tiene collar?"),
+    ("comportamiento", "¿Parece agresivo?"),
+    ("es_domestico", "¿Parece de casa?"),
+    ("esta_prenada", "¿Está preñada?"),
+    ("trae_crias", "¿Trae crías?"),
+]
+CAMPOS_CORRECCION_LUGAR: list[tuple[str, str]] = [
+    ("ubicacion", "Ubicación (mapa/texto)"),
+    ("referencia", "Referencia del lugar"),
+    ("descripcion", "Situación"),
+]
+ETIQUETAS_CORRECCION: dict[str, str] = {
+    campo: etiqueta
+    for campo, etiqueta in [
+        *CAMPOS_CORRECCION_ANIMAL,
+        *CAMPOS_CORRECCION_LUGAR,
+        ("foto", "Fotografía"),
+    ]
 }
 
 
@@ -513,18 +552,41 @@ async def enviar_confirmacion(wa_id: str, respuestas: dict[str, Any]) -> None:
 
 
 async def enviar_menu_correccion(wa_id: str, respuestas: dict[str, Any]) -> None:
-    opciones = [
-        (f"corregir:{campo}", etiqueta)
-        for campo, etiqueta in ETIQUETAS_CORRECCION.items()
-        if campo in respuestas
-    ]
-    opciones.append(("corregir:ninguno", "No corregir nada"))
+    """Menú superior: agrupa los campos para no rebasar el límite de 10 filas."""
+    opciones: list[tuple[str, str]] = []
+    if any(campo in respuestas for campo, _ in CAMPOS_CORRECCION_ANIMAL):
+        opciones.append(("correccion:animal", "🐾 Datos del animal"))
+    if any(campo in respuestas for campo, _ in CAMPOS_CORRECCION_LUGAR):
+        opciones.append(("correccion:lugar", "📍 Lugar y situación"))
+    if respuestas.get("foto"):
+        opciones.append(("corregir:foto", "📷 Fotografía"))
+    opciones.append(("corregir:ninguno", "✅ Está todo bien"))
     await enviar_opciones(
         wa_id,
-        "¿Qué dato quieres corregir?",
+        "¿Qué quieres corregir?",
         opciones,
-        titulo_boton="Menú de opciones",
+        titulo_boton="Ver campos",
     )
+
+
+async def enviar_submenu_correccion(
+    wa_id: str, respuestas: dict[str, Any], grupo: str
+) -> None:
+    campos = (
+        CAMPOS_CORRECCION_ANIMAL if grupo == "animal" else CAMPOS_CORRECCION_LUGAR
+    )
+    opciones = [
+        (f"corregir:{campo}", etiqueta)
+        for campo, etiqueta in campos
+        if campo in respuestas
+    ][:9]
+    opciones.append(("correccion:volver", "⬅️ Volver"))
+    titulo = (
+        "¿Qué dato del animal quieres corregir?"
+        if grupo == "animal"
+        else "¿Qué dato del lugar quieres corregir?"
+    )
+    await enviar_opciones(wa_id, titulo, opciones, titulo_boton="Ver campos")
 
 
 async def _descargar_imagen(media: dict[str, Any]) -> UploadFile:
@@ -766,7 +828,20 @@ async def _procesar_mensaje(mensaje: dict[str, Any]) -> None:
                 if contenido and contenido[0] == "text"
                 else ""
             )
+            nivel = respuestas.get("_correccion_nivel")
+            if respuesta == "correccion:volver":
+                respuestas.pop("_correccion_nivel", None)
+                _guardar_sesion(wa_id, "correccion", respuestas)
+                await enviar_menu_correccion(wa_id, respuestas)
+                return
+            if respuesta in {"correccion:animal", "correccion:lugar"}:
+                grupo = respuesta.split(":", 1)[1]
+                respuestas["_correccion_nivel"] = grupo
+                _guardar_sesion(wa_id, "correccion", respuestas)
+                await enviar_submenu_correccion(wa_id, respuestas, grupo)
+                return
             if respuesta == "corregir:ninguno":
+                respuestas.pop("_correccion_nivel", None)
                 _guardar_sesion(wa_id, "confirmacion", respuestas)
                 await enviar_confirmacion(wa_id, respuestas)
                 return
@@ -776,8 +851,12 @@ async def _procesar_mensaje(mensaje: dict[str, Any]) -> None:
                 else ""
             )
             if campo not in ETIQUETAS_CORRECCION or campo not in respuestas:
-                await enviar_menu_correccion(wa_id, respuestas)
+                if nivel in {"animal", "lugar"}:
+                    await enviar_submenu_correccion(wa_id, respuestas, nivel)
+                else:
+                    await enviar_menu_correccion(wa_id, respuestas)
                 return
+            respuestas.pop("_correccion_nivel", None)
             respuestas["_corrigiendo"] = campo
             _guardar_sesion(wa_id, campo, respuestas)
             await enviar_pregunta(wa_id, campo, respuestas)

@@ -143,7 +143,7 @@ def test_valida_opciones_con_acentos():
     )
     valido, _, mensaje = service._validar_respuesta("condicion", "text", "no sé")
     assert valido is False
-    assert "estable" in mensaje
+    assert "estable" in mensaje.lower()
 
 
 def test_normaliza_telefono_mexicano():
@@ -179,7 +179,13 @@ def test_opciones_interactivas_respetan_limites_de_meta():
         for opciones in service.OPCIONES_INTERACTIVAS.values()
         for _, titulo in opciones
     )
-    assert len(service.ETIQUETAS_CORRECCION) + 1 <= 10
+    # El menú superior de corrección y cada submenú deben caber en 10 filas.
+    assert len(service.CAMPOS_CORRECCION_LUGAR) + 2 <= 10
+    assert 9 + 1 <= 10  # submenú animal se recorta a 9 campos + "Volver"
+    assert all(
+        len(etiqueta) <= 24
+        for etiqueta in service.ETIQUETAS_CORRECCION.values()
+    )
 
 
 def test_foto_rechazada_conserva_respuestas_y_regresa_a_foto(monkeypatch):
@@ -307,3 +313,80 @@ def test_enviar_pregunta_raza_manda_lista_segun_tipo(monkeypatch):
 
     ids = [identificador for identificador, _ in capturado["opciones"]]
     assert ids == ["comun", "siames", "persa", "otro"]
+
+
+def _correr_correccion(monkeypatch, estado, respuestas, body):
+    guardado = {}
+    opciones_enviadas = []
+
+    monkeypatch.setattr(service, "_registrar_mensaje", lambda *_a: True)
+    monkeypatch.setattr(
+        service,
+        "_sesion",
+        lambda _wa_id: {"estado": estado, "respuestas": dict(respuestas)},
+    )
+
+    def guardar(_wa_id, nuevo_estado, datos):
+        guardado.update(estado=nuevo_estado, respuestas=dict(datos))
+
+    async def enviar_opciones(_wa_id, texto, opciones, **_kwargs):
+        opciones_enviadas.append((texto, [i for i, _ in opciones]))
+
+    async def noop(*_a, **_k):
+        return None
+
+    monkeypatch.setattr(service, "_guardar_sesion", guardar)
+    monkeypatch.setattr(service, "enviar_opciones", enviar_opciones)
+    monkeypatch.setattr(service, "enviar_texto", noop)
+    monkeypatch.setattr(service, "enviar_pregunta", noop)
+
+    asyncio.run(
+        service._procesar_mensaje(
+            {
+                "id": f"m-{body}",
+                "from": "5212210000000",
+                "type": "text",
+                "text": {"body": body},
+            }
+        )
+    )
+    return guardado, opciones_enviadas
+
+
+def test_correccion_dos_niveles_llega_a_collar_y_agresivo(monkeypatch):
+    base = {
+        "nombre": "Miguel",
+        "cantidad": 1,
+        "tipo_animal": "perro",
+        "condicion": "estable",
+        "tamanio": "mediano",
+        "sexo": "macho",
+        "edad": "adulto",
+        "raza": "mestizo",
+        "tiene_collar": False,
+        "comportamiento": False,
+        "descripcion": "x",
+        "ubicacion": {"municipio": "Puebla"},
+        "referencia": "y",
+        "foto": {"media_id": "1"},
+    }
+
+    guardado, enviadas = _correr_correccion(
+        monkeypatch, "correccion", base, "correccion:animal"
+    )
+    assert guardado["estado"] == "correccion"
+    assert guardado["respuestas"]["_correccion_nivel"] == "animal"
+    ids_submenu = enviadas[-1][1]
+    assert "corregir:tiene_collar" in ids_submenu
+    assert "corregir:comportamiento" in ids_submenu
+    assert ids_submenu[-1] == "correccion:volver"
+
+    guardado, _ = _correr_correccion(
+        monkeypatch,
+        "correccion",
+        {**base, "_correccion_nivel": "animal"},
+        "corregir:comportamiento",
+    )
+    assert guardado["estado"] == "comportamiento"
+    assert guardado["respuestas"]["_corrigiendo"] == "comportamiento"
+    assert "_correccion_nivel" not in guardado["respuestas"]
