@@ -52,6 +52,12 @@ PREGUNTAS = {
         "¿Cuántos animales se encuentran aproximadamente? "
         "Escribe solo el número (por ejemplo: 8)."
     ),
+    "modo_grupo": (
+        "Viste varios animales. ¿Cómo son?\n\n"
+        "• *Mamá con crías*: una hembra adulta con sus cachorros\n"
+        "• *Grupo parecido*: varios de la misma especie, tamaño y estado\n"
+        "• *Son diferentes*: distinta especie, edad o condición"
+    ),
     "foto": (
         "📸 Envía una foto clara y reciente del animal. Procura que tenga buena luz, "
         "que el animal sea visible y que no sea una captura de pantalla.\n\n"
@@ -118,6 +124,11 @@ OPCIONES_INTERACTIVAS: dict[str, list[tuple[str, str]]] = {
         ("6", "6"),
         ("otro", "Otro (son más)"),
     ],
+    "modo_grupo": [
+        ("mama_crias", "🐕 Mamá con crías"),
+        ("grupo_parecido", "🐾 Grupo parecido"),
+        ("distintos", "🔀 Son diferentes"),
+    ],
     "tipo_animal": [("perro", "Perro"), ("gato", "Gato"), ("otro", "Otro")],
     "categoria_otro": [
         ("ave", "Ave"),
@@ -143,6 +154,19 @@ OPCIONES_INTERACTIVAS: dict[str, list[tuple[str, str]]] = {
     "trae_crias": [("si", "Sí"), ("no", "No")],
     "duplicado": [("mismo", "Es el mismo"), ("nuevo", "Es otro caso")],
 }
+
+# Máximo de animales distintos que se capturan uno por uno en WhatsApp.
+MAX_ANIMALES_DISTINTOS = 4
+
+# Campos de la ficha corta que se pregunta por cada animal en modo "distintos".
+CAMPOS_FICHA_ANIMAL = (
+    "tipo_animal",
+    "categoria_otro",
+    "especie_descripcion",
+    "condicion",
+    "tamanio",
+    "edad",
+)
 
 RAZAS_SUGERIDAS: dict[str, list[tuple[str, str]]] = {
     "perro": [
@@ -334,10 +358,15 @@ def _validar_respuesta(
 
 def _siguiente_estado(estado: str, respuestas: dict[str, Any]) -> str:
     tipo = respuestas.get("tipo_animal")
-    cantidad = respuestas.get("cantidad", 1)
+    cantidad = int(respuestas.get("cantidad", 1) or 1)
+    modo = respuestas.get("_modo")
+    # En "mamá con crías" la ficha es de una sola hembra adulta: se salta la
+    # pregunta de sexo y la de preñez/crías (ya sabemos que trae crías).
+    ficha_individual = cantidad == 1 or modo == "mama_crias"
     rutas_fijas = {
         "nombre": "cantidad",
-        "cantidad": "foto",
+        "cantidad": "modo_grupo" if cantidad > 1 else "foto",
+        "modo_grupo": "foto",
         "foto": "tipo_animal",
         "categoria_otro": (
             "especie_descripcion"
@@ -346,7 +375,7 @@ def _siguiente_estado(estado: str, respuestas: dict[str, Any]) -> str:
         ),
         "especie_descripcion": "condicion",
         "condicion": "tamanio",
-        "edad": "descripcion" if cantidad > 1 or tipo == "otro" else "raza",
+        "edad": "raza" if ficha_individual and tipo != "otro" else "descripcion",
         "descripcion": "ubicacion",
         "ubicacion": "referencia",
         "referencia": "confirmacion",
@@ -354,7 +383,7 @@ def _siguiente_estado(estado: str, respuestas: dict[str, Any]) -> str:
     if estado == "tipo_animal":
         return "categoria_otro" if tipo == "otro" else "condicion"
     if estado == "tamanio":
-        return "edad" if cantidad > 1 else "sexo"
+        return "sexo" if ficha_individual and modo != "mama_crias" else "edad"
     if estado == "sexo":
         return "edad"
     if estado == "raza":
@@ -362,6 +391,8 @@ def _siguiente_estado(estado: str, respuestas: dict[str, Any]) -> str:
     if estado == "tiene_collar":
         return "comportamiento" if tipo == "perro" else "es_domestico"
     if estado in {"comportamiento", "es_domestico"}:
+        if modo == "mama_crias":
+            return "descripcion"
         return "esta_prenada" if respuestas.get("sexo") == "hembra" else "descripcion"
     if estado == "esta_prenada":
         return "trae_crias"
@@ -379,18 +410,34 @@ def _resumen(respuestas: dict[str, Any]) -> str:
         or ubicacion.get("direccion")
         or "ubicación compartida"
     )
-    return (
-        "Confirma tu reporte:\n"
-        f"• Animal: {respuestas['tipo_animal']}\n"
-        f"• Cantidad: {respuestas['cantidad']}\n"
-        f"• Condición: {respuestas['condicion']}\n"
-        f"• Tamaño: {respuestas['tamanio']}\n"
-        f"• Edad: {respuestas['edad']}\n"
-        f"• Foto: {'sí' if respuestas.get('foto') else 'no'}\n"
-        f"• Lugar: {lugar}\n"
-        f"• Referencia: {respuestas['referencia']}\n\n"
-        "Responde SÍ para enviarlo o NO para cancelarlo."
-    )
+    lineas = ["Confirma tu reporte:"]
+    fichas = respuestas.get("_animales")
+    if fichas:
+        for i, ficha in enumerate(fichas, start=1):
+            partes = [
+                ficha.get("tipo_animal"),
+                ficha.get("condicion"),
+                ficha.get("tamanio"),
+                ficha.get("edad"),
+            ]
+            lineas.append(
+                f"• Animal {i}: " + ", ".join(p for p in partes if p)
+            )
+    else:
+        lineas.append(f"• Animal: {respuestas['tipo_animal']}")
+        if respuestas.get("_modo") == "mama_crias":
+            lineas.append(f"• Crías: {respuestas.get('numero_crias', '?')}")
+        else:
+            lineas.append(f"• Cantidad: {respuestas['cantidad']}")
+        lineas.append(f"• Condición: {respuestas['condicion']}")
+        lineas.append(f"• Tamaño: {respuestas['tamanio']}")
+        lineas.append(f"• Edad: {respuestas['edad']}")
+    lineas.append(f"• Foto: {'sí' if respuestas.get('foto') else 'no'}")
+    lineas.append(f"• Lugar: {lugar}")
+    lineas.append(f"• Referencia: {respuestas['referencia']}")
+    lineas.append("")
+    lineas.append("Responde SÍ para enviarlo o NO para cancelarlo.")
+    return "\n".join(lineas)
 
 
 def _sesion(wa_id: str) -> dict[str, Any] | None:
@@ -516,24 +563,38 @@ async def enviar_opciones(
     await _enviar_payload(wa_id, {"type": "interactive", "interactive": interactivo})
 
 
+def _prefijo_animal(respuestas: dict[str, Any] | None, estado: str) -> str:
+    """"Animal k de N:" mientras se captura una ficha en modo 'distintos'."""
+    if not respuestas or respuestas.get("_modo") != "distintos":
+        return ""
+    if estado not in CAMPOS_FICHA_ANIMAL:
+        return ""
+    idx = respuestas.get("_animal_idx")
+    total = respuestas.get("_animales_total")
+    if not idx or not total:
+        return ""
+    return f"*Animal {idx} de {total}:*\n"
+
+
 async def enviar_pregunta(
     wa_id: str, estado: str, respuestas: dict[str, Any] | None = None
 ) -> None:
+    prefijo = _prefijo_animal(respuestas, estado)
     if estado == "raza" and respuestas:
         sugeridas = RAZAS_SUGERIDAS.get(respuestas.get("tipo_animal"))
         if sugeridas:
             await enviar_opciones(
                 wa_id,
-                PREGUNTAS["raza"],
+                prefijo + PREGUNTAS["raza"],
                 [*sugeridas, ("otro", "Otra / no la sé")],
                 titulo_boton="Ver razas",
             )
             return
     opciones = OPCIONES_INTERACTIVAS.get(estado)
     if opciones:
-        await enviar_opciones(wa_id, PREGUNTAS[estado], opciones)
+        await enviar_opciones(wa_id, prefijo + PREGUNTAS[estado], opciones)
     else:
-        await enviar_texto(wa_id, PREGUNTAS[estado])
+        await enviar_texto(wa_id, prefijo + PREGUNTAS[estado])
 
 
 async def enviar_confirmacion(wa_id: str, respuestas: dict[str, Any]) -> None:
@@ -554,7 +615,9 @@ async def enviar_confirmacion(wa_id: str, respuestas: dict[str, Any]) -> None:
 async def enviar_menu_correccion(wa_id: str, respuestas: dict[str, Any]) -> None:
     """Menú superior: agrupa los campos para no rebasar el límite de 10 filas."""
     opciones: list[tuple[str, str]] = []
-    if any(campo in respuestas for campo, _ in CAMPOS_CORRECCION_ANIMAL):
+    if respuestas.get("_animales"):
+        opciones.append(("corregir:recapturar", "🐾 Recapturar animales"))
+    elif any(campo in respuestas for campo, _ in CAMPOS_CORRECCION_ANIMAL):
         opciones.append(("correccion:animal", "🐾 Datos del animal"))
     if any(campo in respuestas for campo, _ in CAMPOS_CORRECCION_LUGAR):
         opciones.append(("correccion:lugar", "📍 Lugar y situación"))
@@ -689,28 +752,38 @@ async def _crear_desde_respuestas(
     foto = (
         await _descargar_imagen(respuestas["foto"]) if respuestas.get("foto") else None
     )
-    tipo = respuestas["tipo_animal"]
-    raza = _normalizar(respuestas.get("raza", "")) or None
     mapas_raza = {
         "perro": {"mestizo", "labrador", "pitbull", "pastor aleman", "chihuahua"},
         "gato": {"comun", "siames", "persa"},
     }
-    raza_clave = (
-        raza
-        if raza in mapas_raza.get(tipo, set())
-        else (f"otro_{tipo}" if raza else None)
-    )
-    return await crear_reporte(
-        nombre=respuestas["nombre"],
-        apellido_paterno=None,
-        apellido_materno=None,
-        telefono=_telefono_local(wa_id),
-        email=None,
-        usuario_id=None,
-        fotos=[foto] if foto else None,
-        fotos_ordenes="[1]" if foto else None,
-        fotos_animal_index="[0]" if foto else None,
-        animales=[
+
+    def _raza_clave(tipo: str, valor: str | None) -> str | None:
+        raza = _normalizar(valor or "") or None
+        if raza is None:
+            return None
+        return raza if raza in mapas_raza.get(tipo, set()) else f"otro_{tipo}"
+
+    fichas = respuestas.get("_animales")
+    if fichas:
+        animales = [
+            AnimalInput(
+                tipo_animal=ficha["tipo_animal"],
+                condicion=ficha["condicion"],
+                tamanio=ficha["tamanio"],
+                sexo="desconocido",
+                edad_aproximada=ficha.get("edad"),
+                tipo_animal_otro_clave=ficha.get("categoria_otro"),
+                especie_descripcion=ficha.get("especie_descripcion"),
+                descripcion=respuestas["descripcion"],
+                orden=i,
+                es_grupo=False,
+                cantidad=1,
+            )
+            for i, ficha in enumerate(fichas, start=1)
+        ]
+    else:
+        cantidad = int(respuestas.get("cantidad", 1) or 1)
+        animales = [
             AnimalInput(
                 tipo_animal=respuestas["tipo_animal"],
                 condicion=respuestas["condicion"],
@@ -721,16 +794,27 @@ async def _crear_desde_respuestas(
                 esta_prenada=respuestas.get("esta_prenada"),
                 es_agresivo=respuestas.get("comportamiento"),
                 es_domestico_probable=respuestas.get("es_domestico"),
-                raza_clave=raza_clave,
+                raza_clave=_raza_clave(respuestas["tipo_animal"], respuestas.get("raza")),
                 tipo_animal_otro_clave=respuestas.get("categoria_otro"),
                 especie_descripcion=respuestas.get("especie_descripcion"),
                 descripcion=respuestas["descripcion"],
-                es_grupo=respuestas["cantidad"] > 1,
-                cantidad=respuestas["cantidad"],
+                es_grupo=cantidad > 1,
+                cantidad=cantidad,
                 trae_crias_nacidas=respuestas.get("trae_crias"),
                 numero_crias_nacidas=respuestas.get("numero_crias"),
             )
-        ],
+        ]
+    return await crear_reporte(
+        nombre=respuestas["nombre"],
+        apellido_paterno=None,
+        apellido_materno=None,
+        telefono=_telefono_local(wa_id),
+        email=None,
+        usuario_id=None,
+        fotos=[foto] if foto else None,
+        fotos_ordenes="[1]" if foto else None,
+        fotos_animal_index="[0]" if foto else None,
+        animales=animales,
         latitud=ubicacion.get("latitud"),
         longitud=ubicacion.get("longitud"),
         calle=None,
@@ -850,6 +934,17 @@ async def _procesar_mensaje(mensaje: dict[str, Any]) -> None:
                 if respuesta.startswith("corregir:")
                 else ""
             )
+            if campo == "recapturar" and respuestas.get("_animales_total"):
+                respuestas.pop("_correccion_nivel", None)
+                respuestas["_animales"] = []
+                respuestas["_animal_idx"] = 1
+                respuestas["_modo"] = "distintos"
+                respuestas["_recapturando"] = True
+                for clave in CAMPOS_FICHA_ANIMAL:
+                    respuestas.pop(clave, None)
+                _guardar_sesion(wa_id, "tipo_animal", respuestas)
+                await enviar_pregunta(wa_id, "tipo_animal", respuestas)
+                return
             if campo not in ETIQUETAS_CORRECCION or campo not in respuestas:
                 if nivel in {"animal", "lugar"}:
                     await enviar_submenu_correccion(wa_id, respuestas, nivel)
@@ -860,6 +955,42 @@ async def _procesar_mensaje(mensaje: dict[str, Any]) -> None:
             respuestas["_corrigiendo"] = campo
             _guardar_sesion(wa_id, campo, respuestas)
             await enviar_pregunta(wa_id, campo, respuestas)
+            return
+        if estado == "modo_grupo":
+            respuesta = (
+                _normalizar(contenido[1])
+                if contenido and contenido[0] == "text"
+                else ""
+            )
+            total = int(respuestas.get("cantidad", 2) or 2)
+            if respuesta == "mama_crias":
+                respuestas["_modo"] = "mama_crias"
+                respuestas["cantidad"] = 1
+                respuestas["sexo"] = "hembra"
+                respuestas["trae_crias"] = True
+                respuestas["numero_crias"] = max(total - 1, 1)
+            elif respuesta == "grupo_parecido":
+                respuestas["_modo"] = "grupo"
+            elif respuesta == "distintos":
+                if total > MAX_ANIMALES_DISTINTOS:
+                    respuestas["_modo"] = "grupo"
+                    await enviar_texto(
+                        wa_id,
+                        "Para más de "
+                        f"{MAX_ANIMALES_DISTINTOS} animales distintos con detalle "
+                        "conviene la app web. Aquí lo registraré como un grupo; "
+                        "cuéntame lo más importante de cada uno en la descripción.",
+                    )
+                else:
+                    respuestas["_modo"] = "distintos"
+                    respuestas["_animales"] = []
+                    respuestas["_animal_idx"] = 1
+                    respuestas["_animales_total"] = total
+            else:
+                await enviar_pregunta(wa_id, "modo_grupo", respuestas)
+                return
+            _guardar_sesion(wa_id, "foto", respuestas)
+            await enviar_pregunta(wa_id, "foto", respuestas)
             return
 
         if contenido is None:
@@ -883,11 +1014,32 @@ async def _procesar_mensaje(mensaje: dict[str, Any]) -> None:
             )
             return
         respuestas[estado] = valor
-        siguiente = (
-            "confirmacion"
-            if respuestas.pop("_corrigiendo", None) == estado
-            else _siguiente_estado(estado, respuestas)
-        )
+
+        # Bucle de captura para "animales distintos": al cerrar la ficha corta
+        # (última pregunta = edad) se guarda el animal y se pasa al siguiente.
+        if respuestas.get("_modo") == "distintos" and estado == "edad":
+            respuestas.setdefault("_animales", []).append(
+                {c: respuestas.get(c) for c in CAMPOS_FICHA_ANIMAL if respuestas.get(c)}
+            )
+            for clave in CAMPOS_FICHA_ANIMAL:
+                respuestas.pop(clave, None)
+            idx = respuestas.get("_animal_idx", 1)
+            total = respuestas.get("_animales_total", 1)
+            if idx < total:
+                respuestas["_animal_idx"] = idx + 1
+                _guardar_sesion(wa_id, "tipo_animal", respuestas)
+                await enviar_pregunta(wa_id, "tipo_animal", respuestas)
+                return
+            if respuestas.pop("_recapturando", None):
+                siguiente = "confirmacion"
+            else:
+                siguiente = "descripcion"
+        else:
+            siguiente = (
+                "confirmacion"
+                if respuestas.pop("_corrigiendo", None) == estado
+                else _siguiente_estado(estado, respuestas)
+            )
         _guardar_sesion(wa_id, siguiente, respuestas)
         if siguiente == "confirmacion":
             await enviar_confirmacion(wa_id, respuestas)

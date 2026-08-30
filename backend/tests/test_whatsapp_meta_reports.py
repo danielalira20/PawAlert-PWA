@@ -390,3 +390,132 @@ def test_correccion_dos_niveles_llega_a_collar_y_agresivo(monkeypatch):
     assert guardado["estado"] == "comportamiento"
     assert guardado["respuestas"]["_corrigiendo"] == "comportamiento"
     assert "_correccion_nivel" not in guardado["respuestas"]
+
+
+def test_siguiente_estado_varios_animales_pregunta_modo_grupo():
+    assert service._siguiente_estado("cantidad", {"cantidad": 1}) == "foto"
+    assert service._siguiente_estado("cantidad", {"cantidad": 4}) == "modo_grupo"
+    assert service._siguiente_estado("modo_grupo", {"cantidad": 4}) == "foto"
+
+
+def test_siguiente_estado_mama_crias_salta_sexo_y_prenez():
+    resp = {"cantidad": 1, "tipo_animal": "perro", "sexo": "hembra", "_modo": "mama_crias"}
+    assert service._siguiente_estado("tamanio", resp) == "edad"
+    assert service._siguiente_estado("edad", resp) == "raza"
+    assert service._siguiente_estado("comportamiento", resp) == "descripcion"
+
+
+def test_siguiente_estado_grupo_parecido_pregunta_una_vez():
+    resp = {"cantidad": 5, "tipo_animal": "perro", "_modo": "grupo"}
+    assert service._siguiente_estado("tamanio", resp) == "edad"
+    assert service._siguiente_estado("edad", resp) == "descripcion"
+
+
+def test_modo_grupo_mama_crias_precarga_datos(monkeypatch):
+    guardado, _ = _correr_correccion(
+        monkeypatch,
+        "modo_grupo",
+        {"nombre": "Ana", "cantidad": 5},
+        "mama_crias",
+    )
+    r = guardado["respuestas"]
+    assert guardado["estado"] == "foto"
+    assert r["_modo"] == "mama_crias"
+    assert r["cantidad"] == 1
+    assert r["sexo"] == "hembra"
+    assert r["trae_crias"] is True
+    assert r["numero_crias"] == 4
+
+
+def test_modo_grupo_distintos_inicializa_bucle(monkeypatch):
+    guardado, _ = _correr_correccion(
+        monkeypatch,
+        "modo_grupo",
+        {"nombre": "Ana", "cantidad": 3},
+        "distintos",
+    )
+    r = guardado["respuestas"]
+    assert guardado["estado"] == "foto"
+    assert r["_modo"] == "distintos"
+    assert r["_animal_idx"] == 1
+    assert r["_animales_total"] == 3
+    assert r["_animales"] == []
+
+
+def test_modo_grupo_distintos_muchos_cae_a_grupo(monkeypatch):
+    guardado, _ = _correr_correccion(
+        monkeypatch,
+        "modo_grupo",
+        {"nombre": "Ana", "cantidad": 9},
+        "distintos",
+    )
+    assert guardado["respuestas"]["_modo"] == "grupo"
+    assert "_animales" not in guardado["respuestas"]
+
+
+def test_bucle_distintos_cierra_ficha_y_pasa_al_siguiente(monkeypatch):
+    base = {
+        "nombre": "Ana",
+        "cantidad": 2,
+        "_modo": "distintos",
+        "_animal_idx": 1,
+        "_animales_total": 2,
+        "_animales": [],
+        "tipo_animal": "perro",
+        "condicion": "herido",
+        "tamanio": "mediano",
+    }
+    guardado, _ = _correr_correccion(monkeypatch, "edad", base, "adulto")
+    r = guardado["respuestas"]
+    assert guardado["estado"] == "tipo_animal"
+    assert r["_animal_idx"] == 2
+    assert len(r["_animales"]) == 1
+    assert r["_animales"][0]["tipo_animal"] == "perro"
+    assert "tipo_animal" not in r  # limpió la ficha para el siguiente animal
+
+
+def test_bucle_distintos_ultimo_animal_va_a_descripcion(monkeypatch):
+    base = {
+        "nombre": "Ana",
+        "cantidad": 2,
+        "_modo": "distintos",
+        "_animal_idx": 2,
+        "_animales_total": 2,
+        "_animales": [{"tipo_animal": "perro", "condicion": "herido",
+                       "tamanio": "mediano", "edad": "adulto"}],
+        "tipo_animal": "gato",
+        "condicion": "estable",
+        "tamanio": "pequeno",
+    }
+    guardado, _ = _correr_correccion(monkeypatch, "edad", base, "cachorro")
+    assert guardado["estado"] == "descripcion"
+    assert len(guardado["respuestas"]["_animales"]) == 2
+
+
+def test_crear_desde_respuestas_con_varios_animales(monkeypatch):
+    capturado = {}
+
+    async def fake_crear_reporte(**kwargs):
+        capturado.update(kwargs)
+        return {"id": "rep-1"}
+
+    monkeypatch.setattr(service, "crear_reporte", fake_crear_reporte)
+
+    respuestas = {
+        "nombre": "Ana",
+        "_animales": [
+            {"tipo_animal": "perro", "condicion": "herido", "tamanio": "grande",
+             "edad": "adulto"},
+            {"tipo_animal": "gato", "condicion": "estable", "tamanio": "pequeno",
+             "edad": "cachorro"},
+        ],
+        "descripcion": "Dos animales juntos en el mismo predio.",
+        "referencia": "Calle 5",
+        "ubicacion": {"municipio": "Puebla"},
+    }
+    asyncio.run(service._crear_desde_respuestas("5212210000000", respuestas))
+
+    animales = capturado["animales"]
+    assert [a.tipo_animal for a in animales] == ["perro", "gato"]
+    assert [a.orden for a in animales] == [1, 2]
+    assert all(a.cantidad == 1 and a.es_grupo is False for a in animales)
