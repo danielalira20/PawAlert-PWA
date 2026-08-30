@@ -435,6 +435,17 @@ POST /admin/adoptions/{profile_id}/restore
 Los nombres pueden agruparse en routers distintos, pero no debe cambiar su
 semantica, autoridad ni efectos transaccionales.
 
+La bandeja de solicitudes acepta opcionalmente `estado` y nunca devuelve
+borradores. Incluye datos de contacto, respuestas y enlaces documentales
+temporales solamente cuando la cuenta pertenece a la asociacion propietaria y
+esta continua activa y verificada. No devuelve `storage_path`.
+
+`request-information` recibe `informacion_solicitada` e `idempotency_key`;
+`select` recibe `idempotency_key`; `reject` recibe `motivo_interno`, una
+`categoria_publica` del catalogo acordado e `idempotency_key`. El motivo interno
+solo aparece en la bandeja privada de la asociacion. Ninguna de estas rutas
+programa la entrega ni finaliza la custodia.
+
 ## Respuestas y errores comunes
 
 - `401`: no existe una sesion valida;

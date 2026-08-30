@@ -494,6 +494,36 @@ class AdoptionApplicationWithdraw(AdoptionApplicationAction):
         return cleaned
 
 
+class AdoptionApplicationRequestInformation(AdoptionApplicationAction):
+    informacion_solicitada: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("informacion_solicitada")
+    @classmethod
+    def limpiar_informacion(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Indica qué información adicional necesitas")
+        return cleaned
+
+
+class AdoptionApplicationReject(AdoptionApplicationAction):
+    motivo_interno: str = Field(min_length=1, max_length=2000)
+    categoria_publica: Literal[
+        "requisitos_no_cumplidos",
+        "condiciones_no_compatibles",
+        "proceso_incompleto",
+        "otro",
+    ]
+
+    @field_validator("motivo_interno")
+    @classmethod
+    def limpiar_motivo_interno(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Registra el motivo interno del rechazo")
+        return cleaned
+
+
 class AdoptionApplicationRequirement(BaseModel):
     origen: Literal["pawalert", "asociacion"]
     clave: str
@@ -563,6 +593,65 @@ class AdoptionApplicationView(BaseModel):
     entrevista_detalle_privado: str | None = None
     categoria_rechazo_publica: str | None = None
     enviada_at: datetime | None = None
+    retirada_at: datetime | None = None
+    vencimiento_at: datetime | None = None
+    creada_at: datetime
+    actualizada_at: datetime
+
+
+class AdoptionApplicationApplicantView(BaseModel):
+    id: UUID
+    nombre: str
+    apellido_paterno: str | None = None
+    apellido_materno: str | None = None
+    email: str | None = None
+    telefono: str | None = None
+
+
+class AdoptionAssociationApplicationProfileView(BaseModel):
+    id: UUID
+    nombre_publico: str
+    estado: Literal[
+        "borrador",
+        "publicado",
+        "pausado",
+        "en_proceso",
+        "adoptado",
+        "retirado",
+        "fallecido",
+    ]
+
+
+class AdoptionAssociationApplicationView(BaseModel):
+    id: UUID
+    estado: Literal[
+        "enviada",
+        "requiere_informacion",
+        "en_evaluacion",
+        "entrevista_programada",
+        "seleccionada",
+        "rechazada",
+        "retirada",
+        "vencida",
+        "cerrada_por_adopcion",
+        "adopcion_confirmada",
+    ]
+    perfil: AdoptionAssociationApplicationProfileView
+    solicitante: AdoptionApplicationApplicantView
+    requisitos: list[AdoptionApplicationRequirement]
+    respuestas: list[AdoptionApplicationAnswerView]
+    informacion_solicitada: str | None = None
+    informacion_solicitada_at: datetime | None = None
+    entrevista_programada_at: datetime | None = None
+    entrevista_modalidad: Literal[
+        "presencial", "remota", "telefonica"
+    ] | None = None
+    entrevista_detalle_privado: str | None = None
+    seleccionada_at: datetime | None = None
+    motivo_rechazo_interno: str | None = None
+    categoria_rechazo_publica: str | None = None
+    rechazada_at: datetime | None = None
+    enviada_at: datetime
     retirada_at: datetime | None = None
     vencimiento_at: datetime | None = None
     creada_at: datetime

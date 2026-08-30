@@ -12,6 +12,8 @@ from app.models.adoption import (
     AdoptionApplicationAction,
     AdoptionApplicationDraftCreate,
     AdoptionApplicationDraftUpdate,
+    AdoptionApplicationReject,
+    AdoptionApplicationRequestInformation,
     AdoptionApplicationWithdraw,
     AdoptionIntakeCancel,
     AdoptionIntakeClarification,
@@ -64,6 +66,7 @@ ERROR_STATUS = {
     "adopcion_publica_no_encontrada": 404,
     "plantilla_requisitos_adopcion_no_encontrada": 404,
     "solicitud_adopcion_no_encontrada": 404,
+    "solicitud_adopcion_no_encontrada_asociacion": 404,
     "actor_no_es_custodio_activo": 403,
     "actor_no_es_proponente_ingreso": 403,
     "actor_no_pertenece_asociacion": 403,
@@ -87,6 +90,12 @@ ERROR_STATUS = {
     "solicitud_adopcion_respuestas_no_editables": 409,
     "solicitud_adopcion_no_enviable": 409,
     "solicitud_adopcion_no_retirable": 409,
+    "solicitud_adopcion_no_admite_informacion": 409,
+    "solicitud_adopcion_vencida": 409,
+    "perfil_adopcion_no_admite_seleccion": 409,
+    "solicitud_adopcion_no_seleccionable": 409,
+    "perfil_adopcion_seleccion_en_conflicto": 409,
+    "solicitud_adopcion_no_rechazable": 409,
     "perfil_adopcion_limite_fotos": 409,
     "foto_perfil_adopcion_no_encontrada": 404,
     "idempotency_key_ingreso_en_conflicto": 409,
@@ -108,6 +117,9 @@ ERROR_STATUS = {
     "idempotency_key_respuestas_adopcion_en_conflicto": 409,
     "idempotency_key_envio_adopcion_en_conflicto": 409,
     "idempotency_key_retiro_adopcion_en_conflicto": 409,
+    "idempotency_key_informacion_adopcion_en_conflicto": 409,
+    "idempotency_key_seleccion_adopcion_en_conflicto": 409,
+    "idempotency_key_rechazo_adopcion_en_conflicto": 409,
     "individuo_animal_invalido": 422,
     "fecha_disponibilidad_custodia_invalida": 422,
     "fotos_propuesta_invalidas": 422,
@@ -141,6 +153,9 @@ ERROR_STATUS = {
     "solicitud_adopcion_consentimientos_requeridos": 422,
     "retiro_solicitud_adopcion_incompleto": 422,
     "documento_solicitud_adopcion_invalido": 422,
+    "solicitud_informacion_adopcion_incompleta": 422,
+    "seleccion_solicitud_adopcion_incompleta": 422,
+    "rechazo_solicitud_adopcion_incompleto": 422,
     "solicitante_requiere_cuenta": 403,
     "solicitante_requiere_contacto_verificado": 403,
     "adopcion_documento_storage_no_disponible": 503,
@@ -159,6 +174,7 @@ ERROR_DETAIL = {
     "adopcion_publica_no_encontrada": "Esta adopción ya no está disponible.",
     "plantilla_requisitos_adopcion_no_encontrada": "No se encontró la plantilla dentro de tu asociación.",
     "solicitud_adopcion_no_encontrada": "No se encontró una solicitud de adopción propia con ese identificador.",
+    "solicitud_adopcion_no_encontrada_asociacion": "No se encontró la solicitud dentro de tu asociación.",
     "actor_no_es_custodio_activo": "Solo el hogar temporal actual puede proponer este ingreso.",
     "actor_no_es_proponente_ingreso": "Solo quien hizo la propuesta puede realizar esta acción.",
     "actor_no_pertenece_asociacion": "Esta acción corresponde a la asociación coordinadora.",
@@ -182,6 +198,12 @@ ERROR_DETAIL = {
     "solicitud_adopcion_respuestas_no_editables": "Esta solicitud ya no permite modificar respuestas.",
     "solicitud_adopcion_no_enviable": "Esta solicitud no puede enviarse desde su estado actual.",
     "solicitud_adopcion_no_retirable": "La solicitud seleccionada debe cancelarse primero con la asociación.",
+    "solicitud_adopcion_no_admite_informacion": "Esta solicitud no admite una nueva petición de información.",
+    "solicitud_adopcion_vencida": "La solicitud venció y ya no admite decisiones.",
+    "perfil_adopcion_no_admite_seleccion": "El perfil ya no admite seleccionar una solicitud.",
+    "solicitud_adopcion_no_seleccionable": "Esta solicitud no puede seleccionarse desde su estado actual.",
+    "perfil_adopcion_seleccion_en_conflicto": "Otra solicitud ya fue seleccionada para este animal.",
+    "solicitud_adopcion_no_rechazable": "Esta solicitud ya no puede rechazarse.",
     "perfil_adopcion_limite_fotos": "El perfil ya tiene el máximo de ocho fotografías.",
     "foto_perfil_adopcion_no_encontrada": "No se encontró la fotografía dentro de este perfil.",
     "individuo_animal_invalido": "Selecciona correctamente al animal de la ficha grupal.",
@@ -217,6 +239,9 @@ ERROR_DETAIL = {
     "solicitud_adopcion_consentimientos_requeridos": "Acepta los compromisos obligatorios de adopción para continuar.",
     "retiro_solicitud_adopcion_incompleto": "Indica por qué deseas retirar la solicitud.",
     "documento_solicitud_adopcion_invalido": "Adjunta una imagen o PDF válido de hasta 10 MB.",
+    "solicitud_informacion_adopcion_incompleta": "Indica claramente la información que necesitas.",
+    "seleccion_solicitud_adopcion_incompleta": "No se pudo identificar la solicitud que deseas seleccionar.",
+    "rechazo_solicitud_adopcion_incompleto": "Registra un motivo interno y una categoría pública válidos.",
     "solicitante_requiere_cuenta": "Necesitas una cuenta para solicitar una adopción.",
     "solicitante_requiere_contacto_verificado": "Verifica tu correo o teléfono antes de solicitar una adopción.",
     "adopcion_documento_storage_no_disponible": "No se pudo guardar el documento. Intenta nuevamente.",
@@ -241,6 +266,9 @@ ERROR_DETAIL = {
     "idempotency_key_respuestas_adopcion_en_conflicto": "El mismo guardado fue enviado antes con respuestas diferentes.",
     "idempotency_key_envio_adopcion_en_conflicto": "El mismo envío fue utilizado antes para otra solicitud.",
     "idempotency_key_retiro_adopcion_en_conflicto": "El mismo retiro fue enviado antes con datos diferentes.",
+    "idempotency_key_informacion_adopcion_en_conflicto": "La misma petición de información fue enviada antes con datos diferentes.",
+    "idempotency_key_seleccion_adopcion_en_conflicto": "La misma selección fue utilizada antes para otra solicitud.",
+    "idempotency_key_rechazo_adopcion_en_conflicto": "El mismo rechazo fue enviado antes con datos diferentes.",
 }
 
 
@@ -1257,14 +1285,14 @@ def _requisitos_snapshot_publicables(snapshot: object) -> list[dict]:
     return requirements
 
 
-def _respuestas_propias(
+def _respuestas_solicitudes(
     application_ids: list[str],
 ) -> dict[str, list[dict]]:
     grouped = {application_id: [] for application_id in application_ids}
     if not application_ids:
         return grouped
     answers = _query(
-        "listar respuestas propias de adopción",
+        "listar respuestas de solicitudes de adopción",
         lambda: supabase_admin.table("respuestas_solicitud_adopcion")
         .select(
             "solicitud_adopcion_id, pregunta_clave_snapshot, respuesta_json, "
@@ -1280,14 +1308,27 @@ def _respuestas_propias(
         document = None
         storage_path = answer.get("documento_storage_path")
         if storage_path:
-            try:
-                access = crear_url_firmada_adopcion(storage_path)
-            except Exception:
-                logger.warning(
-                    "No se pudo firmar un documento propio de adopción",
-                    exc_info=True,
+            expected_folder = (
+                f"adopciones/solicitudes/{application_id}/"
+            )
+            if (
+                not storage_path.startswith(expected_folder)
+                or ".." in storage_path.split("/")
+            ):
+                logger.error(
+                    "Ruta documental fuera de la solicitud %s",
+                    application_id,
                 )
                 access = None
+            else:
+                try:
+                    access = crear_url_firmada_adopcion(storage_path)
+                except Exception:
+                    logger.warning(
+                        "No se pudo firmar un documento privado de adopción",
+                        exc_info=True,
+                    )
+                    access = None
             document = {
                 "mime_type": answer["documento_mime_type"],
                 "size_bytes": answer["documento_size_bytes"],
@@ -1345,7 +1386,7 @@ def listar_mis_solicitudes(actor_user_id: str) -> list[dict]:
     associations_by_id = {
         association["id"]: association for association in associations
     }
-    answers = _respuestas_propias(application_ids)
+    answers = _respuestas_solicitudes(application_ids)
     photos = _fotos_publicas(profile_ids, solo_portada=True)
     result = []
     for application in applications:
@@ -1403,6 +1444,214 @@ def listar_mis_solicitudes(actor_user_id: str) -> list[dict]:
             }
         )
     return result
+
+
+def listar_solicitudes_asociacion(
+    profile_id: str,
+    association_id: str,
+    *,
+    state: str | None,
+) -> list[dict]:
+    allowed_states = {
+        "enviada",
+        "requiere_informacion",
+        "en_evaluacion",
+        "entrevista_programada",
+        "seleccionada",
+        "rechazada",
+        "retirada",
+        "vencida",
+        "cerrada_por_adopcion",
+        "adopcion_confirmada",
+    }
+    if state is not None and state not in allowed_states:
+        raise AdoptionServiceError("adopcion_respuesta_invalida", 422)
+
+    associations = _query(
+        "validar asociación para revisar solicitudes de adopción",
+        lambda: supabase_admin.table("asociaciones")
+        .select("id, activo, verificado")
+        .eq("id", association_id)
+        .limit(1),
+    )
+    if (
+        not associations
+        or associations[0].get("activo") is not True
+        or associations[0].get("verificado") is not True
+    ):
+        raise AdoptionServiceError("asociacion_no_operativa")
+
+    profiles = _query(
+        "validar perfil de adopción de la asociación",
+        lambda: supabase_admin.table("perfiles_adopcion")
+        .select("id, nombre_publico, estado")
+        .eq("id", profile_id)
+        .eq("asociacion_id", association_id)
+        .limit(1),
+    )
+    if not profiles:
+        raise AdoptionServiceError("perfil_adopcion_no_encontrado")
+    profile = profiles[0]
+
+    def application_query():
+        query = (
+            supabase_admin.table("solicitudes_adopcion")
+            .select(
+                "id, perfil_adopcion_id, solicitante_usuario_id, "
+                "requisitos_snapshot, estado, informacion_solicitada, "
+                "informacion_solicitada_at, entrevista_programada_at, "
+                "entrevista_modalidad, entrevista_detalle_privado, "
+                "seleccionada_at, motivo_rechazo_interno, "
+                "categoria_rechazo_publica, rechazada_at, enviada_at, "
+                "retirada_at, vencimiento_at, creada_at, actualizada_at"
+            )
+            .eq("perfil_adopcion_id", profile_id)
+            .eq("asociacion_id", association_id)
+            .neq("estado", "borrador")
+        )
+        if state is not None:
+            query = query.eq("estado", state)
+        return query.order("actualizada_at", desc=True)
+
+    applications = _query(
+        "listar solicitudes de adopción de la asociación",
+        application_query,
+    )
+    if not applications:
+        return []
+
+    application_ids = [application["id"] for application in applications]
+    applicant_ids = sorted(
+        {
+            application["solicitante_usuario_id"]
+            for application in applications
+        }
+    )
+    applicants = _query(
+        "resolver solicitantes de adopción para la asociación",
+        lambda: supabase_admin.table("usuarios")
+        .select(
+            "id, nombre, apellido_paterno, apellido_materno, email, telefono"
+        )
+        .in_("id", applicant_ids),
+    )
+    applicants_by_id = {
+        applicant["id"]: applicant for applicant in applicants
+    }
+    answers = _respuestas_solicitudes(application_ids)
+    result = []
+    for application in applications:
+        applicant = applicants_by_id.get(
+            application["solicitante_usuario_id"]
+        )
+        if not applicant or not applicant.get("nombre"):
+            raise AdoptionServiceError("adopcion_respuesta_invalida")
+        result.append(
+            {
+                "id": application["id"],
+                "estado": application["estado"],
+                "perfil": {
+                    "id": profile["id"],
+                    "nombre_publico": profile["nombre_publico"],
+                    "estado": profile["estado"],
+                },
+                "solicitante": {
+                    "id": applicant["id"],
+                    "nombre": applicant["nombre"],
+                    "apellido_paterno": applicant.get("apellido_paterno"),
+                    "apellido_materno": applicant.get("apellido_materno"),
+                    "email": applicant.get("email"),
+                    "telefono": applicant.get("telefono"),
+                },
+                "requisitos": _requisitos_snapshot_publicables(
+                    application.get("requisitos_snapshot")
+                ),
+                "respuestas": answers.get(application["id"], []),
+                "informacion_solicitada": application.get(
+                    "informacion_solicitada"
+                ),
+                "informacion_solicitada_at": application.get(
+                    "informacion_solicitada_at"
+                ),
+                "entrevista_programada_at": application.get(
+                    "entrevista_programada_at"
+                ),
+                "entrevista_modalidad": application.get(
+                    "entrevista_modalidad"
+                ),
+                "entrevista_detalle_privado": application.get(
+                    "entrevista_detalle_privado"
+                ),
+                "seleccionada_at": application.get("seleccionada_at"),
+                "motivo_rechazo_interno": application.get(
+                    "motivo_rechazo_interno"
+                ),
+                "categoria_rechazo_publica": application.get(
+                    "categoria_rechazo_publica"
+                ),
+                "rechazada_at": application.get("rechazada_at"),
+                "enviada_at": application["enviada_at"],
+                "retirada_at": application.get("retirada_at"),
+                "vencimiento_at": application.get("vencimiento_at"),
+                "creada_at": application["creada_at"],
+                "actualizada_at": application["actualizada_at"],
+            }
+        )
+    return result
+
+
+def solicitar_informacion_solicitud(
+    application_id: str,
+    association_id: str,
+    actor_user_id: str,
+    body: AdoptionApplicationRequestInformation,
+) -> dict:
+    return _rpc(
+        "solicitar_informacion_solicitud_adopcion",
+        {
+            "p_solicitud_adopcion_id": application_id,
+            "p_asociacion_id": association_id,
+            "p_actor_usuario_id": actor_user_id,
+            "p_informacion_solicitada": body.informacion_solicitada,
+            "p_idempotency_key": body.idempotency_key,
+        },
+    )
+
+
+def seleccionar_solicitud(
+    application_id: str,
+    association_id: str,
+    actor_user_id: str,
+    body: AdoptionApplicationAction,
+) -> dict:
+    return _rpc(
+        "seleccionar_solicitud_adopcion",
+        {
+            "p_solicitud_adopcion_id": application_id,
+            "p_asociacion_id": association_id,
+            "p_actor_usuario_id": actor_user_id,
+            "p_idempotency_key": body.idempotency_key,
+        },
+    )
+
+
+def rechazar_solicitud(
+    application_id: str,
+    association_id: str,
+    actor_user_id: str,
+    body: AdoptionApplicationReject,
+) -> dict:
+    return _rpc(
+        "rechazar_solicitud_adopcion",
+        {
+            "p_solicitud_adopcion_id": application_id,
+            "p_asociacion_id": association_id,
+            "p_actor_usuario_id": actor_user_id,
+            "p_motivo_interno": body.motivo_interno,
+            "p_categoria_publica": body.categoria_publica,
+            "p_idempotency_key": body.idempotency_key,
+        },
+    )
 
 
 def _normalizar_filtro_publico(value: object) -> str:

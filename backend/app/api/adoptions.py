@@ -5,9 +5,12 @@ from fastapi import APIRouter, File, Form, Header, HTTPException, Query, UploadF
 
 from app.db.supabase import supabase
 from app.models.adoption import (
+    AdoptionAssociationApplicationView,
     AdoptionApplicationAction,
     AdoptionApplicationDraftCreate,
     AdoptionApplicationDraftUpdate,
+    AdoptionApplicationReject,
+    AdoptionApplicationRequestInformation,
     AdoptionApplicationView,
     AdoptionApplicationWithdraw,
     AdoptionIntakeCancel,
@@ -456,6 +459,93 @@ def get_association_adoption_profile(
     return _call(
         lambda: adoption_service.obtener_perfil_asociacion(
             str(profile_id), association_id
+        )
+    )
+
+
+@router.get(
+    "/associations/me/adoptions/{profile_id}/applications",
+    response_model=list[AdoptionAssociationApplicationView],
+)
+def get_association_adoption_applications(
+    profile_id: UUID,
+    estado: Literal[
+        "enviada",
+        "requiere_informacion",
+        "en_evaluacion",
+        "entrevista_programada",
+        "seleccionada",
+        "rechazada",
+        "retirada",
+        "vencida",
+        "cerrada_por_adopcion",
+        "adopcion_confirmada",
+    ] | None = Query(None),
+    authorization: Optional[str] = Header(None),
+):
+    user = _authenticated_user(authorization)
+    association_id = _association_context(user)
+    return _call(
+        lambda: adoption_service.listar_solicitudes_asociacion(
+            str(profile_id),
+            association_id,
+            state=estado,
+        )
+    )
+
+
+@router.post(
+    "/adoption-applications/{application_id}/request-information",
+)
+def request_adoption_application_information(
+    application_id: UUID,
+    body: AdoptionApplicationRequestInformation,
+    authorization: Optional[str] = Header(None),
+):
+    user = _authenticated_user(authorization)
+    association_id = _association_context(user)
+    return _call(
+        lambda: adoption_service.solicitar_informacion_solicitud(
+            str(application_id),
+            association_id,
+            user["id"],
+            body,
+        )
+    )
+
+
+@router.post("/adoption-applications/{application_id}/select")
+def select_adoption_application(
+    application_id: UUID,
+    body: AdoptionApplicationAction,
+    authorization: Optional[str] = Header(None),
+):
+    user = _authenticated_user(authorization)
+    association_id = _association_context(user)
+    return _call(
+        lambda: adoption_service.seleccionar_solicitud(
+            str(application_id),
+            association_id,
+            user["id"],
+            body,
+        )
+    )
+
+
+@router.post("/adoption-applications/{application_id}/reject")
+def reject_adoption_application(
+    application_id: UUID,
+    body: AdoptionApplicationReject,
+    authorization: Optional[str] = Header(None),
+):
+    user = _authenticated_user(authorization)
+    association_id = _association_context(user)
+    return _call(
+        lambda: adoption_service.rechazar_solicitud(
+            str(application_id),
+            association_id,
+            user["id"],
+            body,
         )
     )
 
