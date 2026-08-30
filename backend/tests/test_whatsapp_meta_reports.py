@@ -727,6 +727,112 @@ def test_siguiente_estado_distintos_repite_ficha_completa():
     assert service._siguiente_estado("es_domestico", gato) == "descripcion_animal"
 
 
+def test_correccion_sexo_limpia_datos_dependientes():
+    respuestas = {
+        "sexo": "macho",
+        "esta_prenada": True,
+        "trae_crias": True,
+        "numero_crias": 3,
+    }
+    assert service._siguiente_tras_correccion("sexo", respuestas) == "confirmacion"
+    assert "esta_prenada" not in respuestas
+    assert "trae_crias" not in respuestas
+    assert "numero_crias" not in respuestas
+
+    respuestas["sexo"] = "hembra"
+    assert service._siguiente_tras_correccion("sexo", respuestas) == "esta_prenada"
+
+
+def test_correccion_tipo_limpia_campos_incompatibles():
+    respuestas = {
+        "tipo_animal": "gato",
+        "raza": "mestizo",
+        "tiene_collar": False,
+        "comportamiento": True,
+        "esta_prenada": False,
+    }
+    assert service._siguiente_tras_correccion("tipo_animal", respuestas) == "raza"
+    assert "raza" not in respuestas
+    assert "comportamiento" not in respuestas
+    assert "esta_prenada" not in respuestas
+
+
+def test_correccion_cantidad_recaptura_animales_y_conserva_lugar():
+    respuestas = {
+        "cantidad": 3,
+        "tipo_animal": "perro",
+        "foto": {"media_id": "anterior"},
+        "_modo": "grupo",
+        "descripcion": "Situación ya capturada",
+        "ubicacion": {"municipio": "Puebla"},
+        "referencia": "Frente al parque",
+    }
+    assert service._siguiente_tras_correccion("cantidad", respuestas) == "modo_grupo"
+    assert "tipo_animal" not in respuestas
+    assert "foto" not in respuestas
+    assert "_modo" not in respuestas
+    assert respuestas["descripcion"] == "Situación ya capturada"
+    assert respuestas["ubicacion"] == {"municipio": "Puebla"}
+    assert respuestas["_correccion_cantidad"] is True
+
+
+def test_correccion_a_hembra_pregunta_prenez_y_crias(monkeypatch):
+    base = {
+        "cantidad": 1,
+        "tipo_animal": "perro",
+        "condicion": "estable",
+        "tamanio": "mediano",
+        "sexo": "macho",
+        "edad": "adulto",
+        "foto": {"media_id": "foto"},
+        "descripcion": "Está cerca del tránsito",
+        "ubicacion": {"municipio": "Puebla"},
+        "referencia": "Frente al parque",
+        "_corrigiendo": "sexo",
+    }
+    guardado, _ = _correr_correccion(monkeypatch, "sexo", base, "hembra")
+    assert guardado["estado"] == "esta_prenada"
+    assert guardado["respuestas"]["_correccion_dependiente"] == "sexo"
+
+    guardado, _ = _correr_correccion(
+        monkeypatch, "esta_prenada", guardado["respuestas"], "no"
+    )
+    assert guardado["estado"] == "trae_crias"
+
+    guardado, _ = _correr_correccion(
+        monkeypatch, "trae_crias", guardado["respuestas"], "no"
+    )
+    assert guardado["estado"] == "confirmacion"
+    assert "_correccion_dependiente" not in guardado["respuestas"]
+
+
+def test_ubicacion_escrita_pide_confirmar_o_compartir_pin(monkeypatch):
+    guardado, opciones = _correr_correccion(
+        monkeypatch,
+        "ubicacion",
+        {"descripcion": "Dos perros en riesgo"},
+        "Parque Ecológico, Puebla",
+    )
+
+    assert guardado["estado"] == "ubicacion"
+    assert guardado["respuestas"]["_ubicacion_texto_pendiente"] == {
+        "municipio": "Parque Ecológico, Puebla"
+    }
+    assert opciones[-1][1] == ["ubicacion:compartir", "ubicacion:texto"]
+
+    guardado, _ = _correr_correccion(
+        monkeypatch,
+        "ubicacion",
+        guardado["respuestas"],
+        "ubicacion:texto",
+    )
+    assert guardado["estado"] == "referencia"
+    assert guardado["respuestas"]["ubicacion"] == {
+        "municipio": "Parque Ecológico, Puebla"
+    }
+    assert "_ubicacion_texto_pendiente" not in guardado["respuestas"]
+
+
 def test_descripcion_animal_es_opcional():
     assert service._validar_respuesta(
         "descripcion_animal", "text", "OMITIR"
