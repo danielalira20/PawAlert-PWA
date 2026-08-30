@@ -7,7 +7,12 @@ import pytest
 from fastapi import UploadFile
 from PIL import Image
 
-from app.models.event import EventUpdate
+from app.models.event import (
+    EventAdminRestore,
+    EventAdminSuspend,
+    EventReportCreate,
+    EventUpdate,
+)
 from app.services import event_service
 
 
@@ -399,3 +404,82 @@ def test_panel_de_asociacion_firma_imagen_y_retira_path_privado():
 
     assert result[0]["imagen_url"] == "https://signed.test/private-panel"
     assert path not in str(result)
+
+
+def test_reporte_evento_envia_solo_campos_contratados_a_rpc():
+    body = EventReportCreate(
+        motivo="informacion_falsa",
+        descripcion="La fecha anunciada no coincide con la información oficial.",
+        idempotency_key="event-report-001",
+    )
+    with patch.object(
+        event_service,
+        "_rpc",
+        return_value={
+            "id": "50000000-0000-0000-0000-000000000005",
+            "evento_id": EVENT_ID,
+            "estado": "pendiente",
+        },
+    ) as rpc:
+        event_service.reportar_evento(EVENT_ID, USER_ID, body)
+
+    assert rpc.call_args.args[:2] == (
+        "reportar_evento_asociacion",
+        {
+            "p_evento_id": EVENT_ID,
+            "p_actor_usuario_id": USER_ID,
+            "p_motivo": "informacion_falsa",
+            "p_descripcion": body.descripcion,
+            "p_idempotency_key": "event-report-001",
+        },
+    )
+
+
+def test_operaciones_admin_envian_actor_y_justificacion_a_rpc():
+    suspend = EventAdminSuspend(
+        motivo="El evento requiere una revisión administrativa.",
+        idempotency_key="event-suspend-001",
+    )
+    restore = EventAdminRestore(
+        resolucion="La asociación corrigió la información reportada.",
+        idempotency_key="event-restore-001",
+    )
+    operation = {
+        "id": EVENT_ID,
+        "estado": "pausado",
+        "event_id": "40000000-0000-0000-0000-000000000004",
+    }
+    with patch.object(event_service, "_rpc", return_value=operation) as rpc:
+        event_service.suspender_evento_admin(EVENT_ID, USER_ID, suspend)
+        event_service.restaurar_evento_admin(EVENT_ID, USER_ID, restore)
+
+    assert rpc.call_args_list[0].args[1]["p_motivo"] == suspend.motivo
+    assert rpc.call_args_list[1].args[1]["p_resolucion"] == restore.resolucion
+    assert all(
+        call.args[1]["p_actor_usuario_id"] == USER_ID
+        for call in rpc.call_args_list
+    )
+
+
+def test_listado_incidentes_admin_filtra_pagina_y_no_solicita_evidencia():
+    query = _query(data=[], count=24)
+    admin = MagicMock()
+    admin.table.return_value = query
+    with patch.object(event_service, "supabase_admin", admin):
+        result = event_service.listar_incidentes_eventos_admin(
+            estado="pendiente",
+            motivo="servicio_riesgoso",
+            evento_id=EVENT_ID,
+            pagina=2,
+            limite=10,
+        )
+
+    selected_fields = query.select.call_args.args[0]
+    assert "evidencia_storage_path" not in selected_fields
+    assert "roles" not in selected_fields
+    query.eq.assert_any_call("estado", "pendiente")
+    query.eq.assert_any_call("motivo", "servicio_riesgoso")
+    query.eq.assert_any_call("evento_id", EVENT_ID)
+    query.range.assert_called_once_with(10, 19)
+    assert result["total"] == 24
+    assert result["tiene_mas"] is True

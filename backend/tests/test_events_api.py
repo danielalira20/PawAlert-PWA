@@ -248,3 +248,125 @@ def test_asociacion_retira_imagen_principal():
     assert response.status_code == 200
     assert response.json()["imagen_url"] is None
     assert remove.call_args.args[:3] == (EVENT_ID, ASSOCIATION_ID, USER_ID)
+
+
+def test_usuario_autenticado_reporta_evento():
+    result = {
+        "id": "50000000-0000-0000-0000-000000000005",
+        "evento_id": EVENT_ID,
+        "motivo": "servicio_riesgoso",
+        "estado": "pendiente",
+        "creado_at": "2026-08-30T12:00:00+00:00",
+        "reintento": False,
+    }
+    with (
+        patch.object(
+            events,
+            "_authenticated_user",
+            return_value=_user("voluntario_externo", None),
+        ),
+        patch.object(
+            event_service, "reportar_evento", return_value=result
+        ) as report,
+    ):
+        response = client.post(
+            f"/events/{EVENT_ID}/report",
+            json={
+                "motivo": "servicio_riesgoso",
+                "descripcion": "No se informan medidas de seguridad suficientes.",
+                "idempotency_key": "event-report-001",
+            },
+            headers=AUTH,
+        )
+
+    assert response.status_code == 201
+    assert response.json()["estado"] == "pendiente"
+    assert report.call_args.args[:2] == (EVENT_ID, USER_ID)
+
+
+def test_rol_no_admin_no_puede_consultar_incidentes():
+    with (
+        patch.object(events, "_authenticated_user", return_value=_user()),
+        patch.object(
+            event_service, "listar_incidentes_eventos_admin"
+        ) as list_incidents,
+    ):
+        response = client.get("/admin/events/incidents", headers=AUTH)
+
+    assert response.status_code == 403
+    list_incidents.assert_not_called()
+
+
+def test_admin_consulta_incidentes_con_filtros():
+    result = {
+        "items": [],
+        "pagina": 2,
+        "limite": 10,
+        "total": 0,
+        "tiene_mas": False,
+    }
+    with (
+        patch.object(
+            events, "_authenticated_user", return_value=_user("admin", None)
+        ),
+        patch.object(
+            event_service,
+            "listar_incidentes_eventos_admin",
+            return_value=result,
+        ) as list_incidents,
+    ):
+        response = client.get(
+            "/admin/events/incidents?estado=pendiente"
+            "&motivo=informacion_falsa&pagina=2&limite=10",
+            headers=AUTH,
+        )
+
+    assert response.status_code == 200
+    assert list_incidents.call_args.kwargs == {
+        "estado": "pendiente",
+        "motivo": "informacion_falsa",
+        "evento_id": None,
+        "pagina": 2,
+        "limite": 10,
+    }
+
+
+def test_admin_suspende_y_restaura_evento():
+    with (
+        patch.object(
+            events, "_authenticated_user", return_value=_user("admin", None)
+        ),
+        patch.object(
+            event_service, "suspender_evento_admin", return_value=_operation(
+                "suspendido_admin"
+            )
+        ) as suspend,
+        patch.object(
+            event_service, "restaurar_evento_admin", return_value=_operation(
+                "pausado"
+            )
+        ) as restore,
+    ):
+        suspended = client.post(
+            f"/admin/events/{EVENT_ID}/suspend",
+            json={
+                "motivo": "Se requiere revisar la información publicada.",
+                "idempotency_key": "event-suspend-001",
+            },
+            headers=AUTH,
+        )
+        restored = client.post(
+            f"/admin/events/{EVENT_ID}/restore",
+            json={
+                "resolucion": "La información fue corregida por la asociación.",
+                "idempotency_key": "event-restore-001",
+            },
+            headers=AUTH,
+        )
+
+    assert suspended.status_code == 200
+    assert suspended.json()["estado"] == "suspendido_admin"
+    assert restored.status_code == 200
+    assert restored.json()["estado"] == "pausado"
+    assert suspend.call_args.args[:2] == (EVENT_ID, USER_ID)
+    assert restore.call_args.args[:2] == (EVENT_ID, USER_ID)

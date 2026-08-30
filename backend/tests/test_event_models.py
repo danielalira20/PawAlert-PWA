@@ -3,7 +3,14 @@ from datetime import datetime, timezone
 import pytest
 from pydantic import ValidationError
 
-from app.models.event import EventCancel, EventPause, EventUpdate
+from app.models.event import (
+    EventAdminRestore,
+    EventAdminSuspend,
+    EventCancel,
+    EventPause,
+    EventReportCreate,
+    EventUpdate,
+)
 
 
 def test_actualizacion_conserva_solo_campos_enviados():
@@ -76,4 +83,46 @@ def test_motivos_vacios_no_superan_validacion(model, field):
     with pytest.raises(ValidationError):
         model.model_validate(
             {field: "   ", "idempotency_key": "event-action-001"}
+        )
+
+
+def test_reporte_evento_normaliza_descripcion():
+    body = EventReportCreate(
+        motivo="servicio_riesgoso",
+        descripcion="  Se ofrecen servicios sin medidas de seguridad.  ",
+        idempotency_key="event-report-001",
+    )
+
+    assert body.descripcion == "Se ofrecen servicios sin medidas de seguridad."
+
+
+@pytest.mark.parametrize(
+    ("model", "field"),
+    [
+        (EventReportCreate, "descripcion"),
+        (EventAdminSuspend, "motivo"),
+        (EventAdminRestore, "resolucion"),
+    ],
+)
+def test_moderacion_rechaza_justificacion_corta(model, field):
+    payload = {
+        field: "muy corto",
+        "idempotency_key": "event-moderation-001",
+    }
+    if model is EventReportCreate:
+        payload["motivo"] = "otro"
+
+    with pytest.raises(ValidationError):
+        model.model_validate(payload)
+
+
+def test_reporte_evento_rechaza_campos_no_contratados():
+    with pytest.raises(ValidationError):
+        EventReportCreate.model_validate(
+            {
+                "motivo": "otro",
+                "descripcion": "Información suficiente del incidente.",
+                "idempotency_key": "event-report-002",
+                "evidencia_storage_path": "eventos/privado.jpg",
+            }
         )
