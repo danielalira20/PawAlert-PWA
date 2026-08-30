@@ -139,6 +139,35 @@ guardo. No envia push directamente: `/internal/push/run` debe conservar su
 propia programacion frecuente. Ejecutar varias instancias es seguro gracias a
 claims con expiracion e idempotencia en el outbox.
 
+#### Servicios Railway Cron
+
+El ejecutor `scripts/run_internal_job.py` permite que un servicio programado
+haga la llamada protegida y termine inmediatamente. Cada servicio cron usa el
+mismo repositorio con root directory `/backend` y comparte `CRON_SECRET` con
+el backend. Configura ademas:
+
+```env
+BACKEND_URL=https://tu-backend-publico.example
+```
+
+Servicio `event-lifecycle-cron`:
+
+```text
+Start Command: python scripts/run_internal_job.py events-lifecycle
+Cron Schedule: */15 * * * *
+```
+
+Servicio `push-dispatch-cron`:
+
+```text
+Start Command: python scripts/run_internal_job.py push
+Cron Schedule: */5 * * * *
+```
+
+El ejecutor devuelve un codigo distinto de cero ante errores HTTP, problemas
+de red, JSON invalido, `estado: error` o un campo `error`. Nunca registra el
+valor de `CRON_SECRET`.
+
 ### Escalamiento de resultados sensibles
 
 Los seguimientos por animales encontrados sin vida se escalan a la asociación
