@@ -5,6 +5,10 @@ import {
   eventValuesToWriteData,
   generateEventDescription,
   getEventStepCompletion,
+  getEventStepIssues,
+  isValidEventEmail,
+  isValidEventPhone,
+  isValidEventUrl,
   toggleEventOption,
   zonedDateTimeToIso,
 } from "../utils/eventForm";
@@ -131,5 +135,94 @@ describe("eventForm", () => {
     };
 
     expect(getEventStepCompletion(values)[1]).toBe(false);
+  });
+
+  it("acepta un evento completo y exige texto alternativo cuando hay imagen", () => {
+    const values = {
+      ...createInitialEventValues("usuario-1"),
+      tipo: "capacitacion" as const,
+      titulo: "Taller de cuidado animal",
+      fechaInicio: "2027-01-10",
+      horaInicio: "10:00",
+      fechaFin: "2027-01-10",
+      horaFin: "12:00",
+      lugarNombre: "Centro comunitario",
+      direccionPublica: "Calle principal 1",
+      municipio: "Puebla",
+      estadoUbicacion: "Puebla",
+      latitud: 19.04,
+      longitud: -98.2,
+      especies: ["Animales de compañía en general"],
+      publicos: ["Público general"],
+      requisitos: ["Sin requisitos adicionales"],
+      modalidadAcceso: "sin_registro" as const,
+      esGratuito: true,
+      cupoLimitado: false,
+      contactoNombre: "Coordinación comunitaria",
+      contactoEmail: "eventos@asociacion.mx",
+    };
+
+    expect(
+      getEventStepCompletion(values, {
+        now: new Date("2026-08-30T12:00:00Z"),
+      }),
+    ).toEqual([true, true, true, true, true]);
+    expect(
+      getEventStepIssues(values, {
+        hasImage: true,
+        now: new Date("2026-08-30T12:00:00Z"),
+      })[4],
+    ).toContain("Describe la imagen principal con texto alternativo.");
+  });
+
+  it("valida formatos institucionales y costo pagado mayor a cero", () => {
+    expect(isValidEventUrl("https://asociacion.mx/registro")).toBe(true);
+    expect(isValidEventUrl("javascript:alert(1)")).toBe(false);
+    expect(isValidEventEmail("eventos@asociacion.mx")).toBe(true);
+    expect(isValidEventEmail("correo-incompleto")).toBe(false);
+    expect(isValidEventPhone("+52 222 123 4567 ext. 4")).toBe(true);
+    expect(isValidEventPhone("123")).toBe(false);
+
+    const values = {
+      ...createInitialEventValues("usuario-1"),
+      esGratuito: false,
+      costo: "0",
+      cupoLimitado: false,
+      contactoNombre: "Asociación",
+      contactoEmail: "correo-incompleto",
+    };
+    expect(getEventStepIssues(values)[3]).toEqual(
+      expect.arrayContaining([
+        "Indica un costo mayor a cero.",
+        "Revisa el formato del correo institucional.",
+      ]),
+    );
+  });
+
+  it("no envía valores ocultos de opciones condicionales anteriores", () => {
+    const values = {
+      ...createInitialEventValues("usuario-1"),
+      tipo: "capacitacion" as const,
+      categoriaOtro: "Categoría anterior",
+      modalidadAcceso: "sin_registro" as const,
+      enlaceRegistro: "https://asociacion.mx/anterior",
+      instruccionesContacto: "Instrucciones anteriores",
+      latitud: 120,
+      longitud: -200,
+    };
+
+    expect(eventValuesToWriteData(values)).toMatchObject({
+      categoria_otro: null,
+      enlace_registro_externo: null,
+      instrucciones_contacto: null,
+      latitud: null,
+      longitud: null,
+    });
+  });
+
+  it("rechaza horarios inexistentes por cambio estacional", () => {
+    expect(
+      zonedDateTimeToIso("2026-03-08", "02:30", "America/Tijuana"),
+    ).toBeNull();
   });
 });

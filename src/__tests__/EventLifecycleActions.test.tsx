@@ -12,12 +12,13 @@ jest.mock("../components/AppModal", () => ({
 }));
 
 jest.mock("../context/AuthContext", () => ({
-  useAuth: () => ({ token: "token-asociacion" }),
+  useAuth: () => ({ token: mockToken }),
 }));
 
 const mockPublish = jest.fn();
 const mockPause = jest.fn();
 const mockCancel = jest.fn();
+let mockToken: string | null = "token-asociacion";
 
 jest.mock("../services/eventService", () => ({
   createEventIdempotencyKey: (action: string, eventId: string) =>
@@ -40,6 +41,7 @@ const publishedResponse = {
 describe("EventLifecycleActions", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockToken = "token-asociacion";
     mockPublish.mockResolvedValue(publishedResponse);
     mockPause.mockResolvedValue({ ...publishedResponse, estado: "pausado" });
     mockCancel.mockResolvedValue({ ...publishedResponse, estado: "cancelado" });
@@ -105,11 +107,53 @@ describe("EventLifecycleActions", () => {
 
     await waitFor(() => {
       expect(onPreparePublish).toHaveBeenCalledTimes(1);
-      expect(mockPublish).toHaveBeenCalledWith(
-        "token-asociacion",
-        "event-1",
-        { idempotency_key: "event:publish:event-1:test-key" },
-      );
+      expect(mockPublish).toHaveBeenCalledWith("token-asociacion", "event-1", {
+        idempotency_key: "event:publish:event-1:test-key",
+      });
     });
+  });
+
+  it("reutiliza la clave idempotente al reintentar la misma intención", async () => {
+    mockPublish
+      .mockRejectedValueOnce(new Error("Sin conexión"))
+      .mockResolvedValueOnce(publishedResponse);
+    const onError = jest.fn();
+    const view = await render(
+      <EventLifecycleActions
+        eventId="event-1"
+        onError={onError}
+        onSuccess={jest.fn()}
+        state="borrador"
+      />,
+    );
+
+    await fireEvent.press(view.getByText("Publicar evento"));
+    await fireEvent.press(view.getByText("Publicar ahora"));
+    await waitFor(() => expect(onError).toHaveBeenCalled());
+    await fireEvent.press(view.getByText("Publicar ahora"));
+
+    await waitFor(() => expect(mockPublish).toHaveBeenCalledTimes(2));
+    expect(mockPublish.mock.calls[0][2]).toEqual(mockPublish.mock.calls[1][2]);
+  });
+
+  it("informa cuando la sesión expiró antes de ejecutar una acción", async () => {
+    mockToken = null;
+    const onError = jest.fn();
+    const view = await render(
+      <EventLifecycleActions
+        eventId="event-1"
+        onError={onError}
+        onSuccess={jest.fn()}
+        state="borrador"
+      />,
+    );
+
+    await fireEvent.press(view.getByText("Publicar evento"));
+    await fireEvent.press(view.getByText("Publicar ahora"));
+
+    expect(mockPublish).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith(
+      "Tu sesión expiró. Inicia sesión nuevamente.",
+    );
   });
 });
