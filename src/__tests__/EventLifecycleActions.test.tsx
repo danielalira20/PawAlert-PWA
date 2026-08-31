@@ -6,10 +6,26 @@ jest.mock("@expo/vector-icons", () => ({ Ionicons: "Ionicons" }), {
   virtual: true,
 });
 
-jest.mock("../components/AppModal", () => ({
-  AppModal: ({ visible, children }: { visible: boolean; children: unknown }) =>
-    visible ? children : null,
-}));
+jest.mock("../components/AppModal", () => {
+  const { Text } = require("react-native");
+  return {
+    AppModal: ({
+      visible,
+      children,
+      fitContent,
+    }: {
+      visible: boolean;
+      children: unknown;
+      fitContent?: boolean;
+    }) =>
+      visible ? (
+        <>
+          <Text>{fitContent ? "Modal compacto" : "Modal expandido"}</Text>
+          {children}
+        </>
+      ) : null,
+  };
+});
 
 jest.mock("../context/AuthContext", () => ({
   useAuth: () => ({ token: mockToken }),
@@ -128,6 +144,7 @@ describe("EventLifecycleActions", () => {
     );
 
     await fireEvent.press(view.getByText("Publicar evento"));
+    expect(view.getByText("Modal compacto")).toBeTruthy();
     await fireEvent.press(view.getByText("Publicar ahora"));
     await waitFor(() => expect(onError).toHaveBeenCalled());
     await fireEvent.press(view.getByText("Publicar ahora"));
