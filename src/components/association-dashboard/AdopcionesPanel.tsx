@@ -6,7 +6,6 @@ import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { API_URL } from '../../constants/api';
 import { useAuth } from '../../context/AuthContext';
-import { useToast, Toast } from '../Toast';
 import { ImageLightbox } from '../common/ImageLightbox';
 
 const COLORS = {
@@ -31,14 +30,16 @@ const SHADOW_SM = {
 
 interface AdopcionIntake {
   id: string;
-  estado: 'pendiente' | 'en_revision' | 'aprobada' | 'rechazada' | 'solicitando_informacion';
+  estado: 'pendiente' | 'en_revision' | 'aprobada' | 'rechazada' | 'solicitando_informacion' | 'requiere_informacion';
   nombre_temporal: string | null;
-  fotos_propuesta: { foto_url: string; foto_url_expira_at: string }[]; 
+  fotos_propuesta: { foto_url: string; foto_url_expira_at: string }[];
   salud_conocida: string;
   temperamento_observado: string;
   motivo_propuesta: string;
   tiempo_custodia_adicional: string | null;
   compatibilidad_observada: any;
+  informacion_solicitada?: string | null; 
+  respuesta_informacion?: string | null; 
   creada_at: string;
   animal: {
     id: string;
@@ -53,12 +54,12 @@ interface AdopcionIntake {
 
 interface Props {
   visible: boolean;
+  showToast: (options: { type: 'success'|'error'|'warning'|'info', title: string, message: string }) => void; 
 }
 
-export function AdopcionesPanel({ visible }: Props) {
+export function AdopcionesPanel({ visible, showToast }: Props) {
   const { token } = useAuth();
   const { width: screenWidth } = useWindowDimensions();
-  const { toast, translateY, showToast } = useToast();
 
   const [propuestas, setPropuestas] = useState<AdopcionIntake[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -137,8 +138,6 @@ export function AdopcionesPanel({ visible }: Props) {
 
   return (
     <View style={{ flex: 1 }}>
-      <Toast toast={toast} translateY={translateY} />
-
       {isLoading ? (
         <View style={{ paddingVertical: 40, alignItems: 'center' }}>
           <ActivityIndicator size="large" color={COLORS.primary} />
@@ -244,9 +243,31 @@ export function AdopcionesPanel({ visible }: Props) {
                     <Text style={{ fontSize: 14, color: COLORS.textDark, lineHeight: 20 }}>{seleccionada.tiempo_custodia_adicional}</Text>
                   </>
                 )}
-              </View>
 
-              {!accionActiva ? (
+                {/* --- NUEVO: HILO DE CONVERSACIÓN --- */}
+                {seleccionada?.informacion_solicitada && (
+                  <>
+                    <Text style={{ fontSize: 12, color: COLORS.accent, fontWeight: '800', textTransform: 'uppercase', marginBottom: 4, marginTop: 16 }}>Tu solicitud de información</Text>
+                    <Text style={{ fontSize: 14, color: COLORS.textDark, lineHeight: 20 }}>{seleccionada.informacion_solicitada}</Text>
+                  </>
+                )}
+
+                {seleccionada?.respuesta_informacion && (
+                  <>
+                    <Text style={{ fontSize: 12, color: COLORS.primary, fontWeight: '800', textTransform: 'uppercase', marginBottom: 4, marginTop: 16 }}>Respuesta del hogar temporal</Text>
+                    <Text style={{ fontSize: 14, color: COLORS.textDark, lineHeight: 20 }}>{seleccionada.respuesta_informacion}</Text>
+                  </>
+                )}
+              </View>
+              
+              {/* --- NUEVO: LÓGICA DE BOTONES BLOQUEADOS --- */}
+              {seleccionada?.estado === 'requiere_informacion' || seleccionada?.estado === 'solicitando_informacion' ? (
+                <View style={{ backgroundColor: '#F3F4F6', padding: 16, borderRadius: 16, marginTop: 8, alignItems: 'center' }}>
+                  <Text style={{ fontSize: 14, color: COLORS.textLight, fontWeight: '700', textAlign: 'center' }}>
+                    Esperando respuesta del voluntario...
+                  </Text>
+                </View>
+              ) : !accionActiva ? (
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 8 }}>
                   <TouchableOpacity onPress={() => setAccionActiva('aprobar')} style={{ flexGrow: 1, paddingVertical: 14, backgroundColor: COLORS.accent, borderRadius: 16, alignItems: 'center' }}>
                     <Text style={{ color: COLORS.white, fontWeight: '800' }}>Aprobar ingreso</Text>
