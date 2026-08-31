@@ -14,6 +14,14 @@ import { AnimalCarousel } from '../components/common/AnimalCarousel';
 import ReportFormScreen from './ReportFormScreen';
 import type { AsociacionMapa } from './LeafletMap';
 import { ReportContentMenu } from '../components/reports/ReportContentMenu';
+import { PublicEventsPanel } from '../components/events/discovery/PublicEventsPanel';
+import {
+  EventMapModeSwitch,
+  type EventDiscoveryView,
+  type MapContentMode,
+} from '../components/events/discovery/EventMapModeSwitch';
+import { usePublicEventMap } from '../hooks/events/usePublicEventMap';
+import type { EventPublicSummary } from '../types/event';
 
 const LeafletMap = lazy(() => import('./LeafletMap'));
 
@@ -58,6 +66,9 @@ export default function MapScreen() {
   const [mostrarAsociaciones, setMostrarAsociaciones] = useState(false);
   const [aliados, setAliados] = useState<any[]>([]);
   const [mostrarAliados, setMostrarAliados] = useState(false);
+  const [contentMode, setContentMode] = useState<MapContentMode>('rescues');
+  const [eventView, setEventView] = useState<EventDiscoveryView>('list');
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [selectedReport, setSelectedReport] = useState<Reporte | null>(null);
   const [highlightedReportId, setHighlightedReportId] = useState<string | null>(null);
   const [selectedAsociacion, setSelectedAsociacion] = useState<AsociacionMapa | null>(null);
@@ -93,6 +104,14 @@ export default function MapScreen() {
   const clockTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isMobile = windowWidth < 768;
+  const {
+    events: mapEvents,
+    isLoading: isEventMapLoading,
+    error: eventMapError,
+    refresh: refreshEventMap,
+  } = usePublicEventMap(
+    contentMode === 'events' && (!isMobile || eventView === 'map'),
+  );
 
   //para actualizar el animal reporte
   const [fotoIndexPorReporte, setFotoIndexPorReporte] = useState<Record<string, number>>({});
@@ -167,6 +186,25 @@ export default function MapScreen() {
       }
       return next;
     });
+  };
+
+  const handleContentModeChange = (mode: MapContentMode) => {
+    setContentMode(mode);
+    setSelectedReport(null);
+    setSelectedAsociacion(null);
+    setHighlightedReportId(null);
+    setSelectedEventId(null);
+    setShowFiltersModal(false);
+    if (mode === 'events') {
+      setMostrarAsociaciones(false);
+      setMostrarAliados(false);
+      setSidebarView('list');
+    }
+  };
+
+  const handleLocatePublicEvent = (event: EventPublicSummary) => {
+    setSelectedEventId(event.id);
+    setEventView('map');
   };
 
   const handleClockPress = () => {
@@ -645,7 +683,9 @@ export default function MapScreen() {
           <Text style={{ fontSize: 20, fontWeight: '900', color: '#FFF', letterSpacing: -0.5 }}>PawAlert</Text>
           <View style={{ backgroundColor: 'rgba(255,255,255,0.22)', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3, alignSelf: 'flex-start', marginTop: 4 }}>
             <Text style={{ fontSize: 11, fontWeight: '700', color: '#FFF' }}>
-              {reportesFiltrados.length} {reportesFiltrados.length === 1 ? 'reporte activo' : 'reportes activos'}
+              {contentMode === 'events'
+                ? 'Agenda pública'
+                : `${reportesFiltrados.length} ${reportesFiltrados.length === 1 ? 'reporte activo' : 'reportes activos'}`}
             </Text>
           </View>
         </View>
@@ -656,7 +696,8 @@ export default function MapScreen() {
         )}
       </View>
       <Text style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', marginTop: 2 }}>
-        {sidebarView === 'list' ? 'Mapa de rescate · Puebla'
+        {contentMode === 'events' ? 'Actividades de asociaciones verificadas'
+          : sidebarView === 'list' ? 'Mapa de rescate · Puebla'
           : sidebarView === 'detail' ? 'Detalle del reporte'
             : sidebarView === 'asociacion' ? 'Detalle de la asociación'
               : 'Nuevo reporte'}
@@ -847,15 +888,18 @@ export default function MapScreen() {
   // ── Mapa ─────────────────────────────────────────────────────────────────────
   const renderMap = () => (
     <View style={{ flex: 1, position: 'relative' }}>
-      {renderFiltersDropdown()}
+      {contentMode === 'rescues' && renderFiltersDropdown()}
       {isClient ? (
         <Suspense fallback={<View style={{ flex: 1, backgroundColor: '#EAE0D0' }} />}>
           <LeafletMap
-            reportes={(mostrarAsociaciones || mostrarAliados) ? [] : reportesConPrivacidad}
-            zonas={(mostrarAsociaciones || mostrarAliados) ? [] : zonasAgregadas}
-            asociaciones={mostrarAsociaciones ? asociaciones : []}
-            aliados={mostrarAliados ? aliados : []}
+            reportes={contentMode === 'rescues' && !mostrarAsociaciones && !mostrarAliados ? reportesConPrivacidad : []}
+            zonas={contentMode === 'rescues' && !mostrarAsociaciones && !mostrarAliados ? zonasAgregadas : []}
+            asociaciones={contentMode === 'rescues' && mostrarAsociaciones ? asociaciones : []}
+            aliados={contentMode === 'rescues' && mostrarAliados ? aliados : []}
+            eventos={contentMode === 'events' ? mapEvents : []}
             selectedReportId={selectedReport?.id ?? highlightedReportId}
+            selectedEventId={selectedEventId}
+            fitToMarkers={contentMode === 'events'}
             showReportMenuInPopup={isMobile}
             onSelectReport={handleSelectReport}
             onHighlightReport={(reporte) => setHighlightedReportId(reporte.id)}
@@ -867,6 +911,7 @@ export default function MapScreen() {
               }
             }}
             onSelectAsociacion={handleSelectAsociacion}
+            onSelectEvent={(event) => setSelectedEventId(event.id)}
             onMapClick={handleMapClick}
           />
         </Suspense>
@@ -874,8 +919,19 @@ export default function MapScreen() {
         <View style={{ flex: 1, backgroundColor: '#EAE0D0' }} />
       )}
 
+      {contentMode === 'events' && isEventMapLoading && (
+        <View style={{ position: 'absolute', top: isMobile ? 70 : 16, alignSelf: 'center', backgroundColor: '#FFF', borderRadius: 18, paddingHorizontal: 14, paddingVertical: 9, zIndex: 1200, elevation: 10 }}>
+          <Text style={{ color: C.mid, fontSize: 10, fontWeight: '700' }}>Cargando eventos cercanos…</Text>
+        </View>
+      )}
+      {contentMode === 'events' && eventMapError && (
+        <TouchableOpacity onPress={() => void refreshEventMap()} style={{ position: 'absolute', top: isMobile ? 70 : 16, alignSelf: 'center', backgroundColor: '#FFF3F0', borderColor: '#F5C8C0', borderWidth: 1, borderRadius: 18, paddingHorizontal: 14, paddingVertical: 9, zIndex: 1200, elevation: 10 }}>
+          <Text style={{ color: '#C0392B', fontSize: 10, fontWeight: '700' }}>No se cargó la capa · Reintentar</Text>
+        </TouchableOpacity>
+      )}
+
       {/* Leyenda */}
-      <View style={{ position: 'absolute', top: 16, right: 16, backgroundColor: '#FFF', borderRadius: 12, padding: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8, zIndex: 999, elevation: 9 }}>
+      {contentMode === 'rescues' && <View style={{ position: 'absolute', top: isMobile ? 214 : 16, right: 16, backgroundColor: '#FFF', borderRadius: 12, padding: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8, zIndex: 999, elevation: 9 }}>
         <Text style={{ fontSize: 9, fontWeight: '800', color: C.dark, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>Condición</Text>
         {Object.entries(CONDICION).map(([key, cfg]) => (
           <View key={key} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4 }}>
@@ -884,9 +940,10 @@ export default function MapScreen() {
           </View>
         ))}
       </View>
+      }
 
       {/* Clock */}
-      {lastUpdated && (
+      {contentMode === 'rescues' && lastUpdated && (
         <TouchableOpacity
           onPress={handleClockPress}
           activeOpacity={isMobile ? 0.7 : 1}
@@ -910,17 +967,18 @@ export default function MapScreen() {
       )}
 
       {/* FAB */}
-      <TouchableOpacity
+      {contentMode === 'rescues' && <TouchableOpacity
         onPress={handleCrearReporte}
         style={{ position: 'absolute', bottom: TAB_BAR_CLEARANCE, right: 20, width: 52, height: 52, borderRadius: 26, backgroundColor: C.orange, alignItems: 'center', justifyContent: 'center', shadowColor: C.orange, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.45, shadowRadius: 12, zIndex: 1000, elevation: 10 }}
       >
         <Ionicons name="add" size={26} color="#FFF" />
       </TouchableOpacity>
+      }
 
       {/* Barra de filtros interactivos (solo mobile) */}
-      {isMobile && (
+      {isMobile && contentMode === 'rescues' && (
         <View style={{
-          position: 'absolute', top: 14, left: 12, right: 12,
+          position: 'absolute', top: 64, left: 12, right: 12,
           backgroundColor: 'rgba(255,255,255,0.97)',
           borderRadius: 16,
           shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
@@ -1212,9 +1270,32 @@ export default function MapScreen() {
 
   // ─── LAYOUT MOBILE WEB ────────────────────────────────────────────────────────
   if (isMobile) {
+    if (contentMode === 'events' && eventView === 'list') {
+      return (
+        <View style={{ flex: 1 }}>
+          <PublicEventsPanel onLocate={handleLocatePublicEvent} topInset={62} />
+          <EventMapModeSwitch
+            contentMode={contentMode}
+            eventView={eventView}
+            floating
+            showEventView
+            onContentModeChange={handleContentModeChange}
+            onEventViewChange={setEventView}
+          />
+        </View>
+      );
+    }
     return (
       <View style={{ flex: 1 }}>
         {renderMap()}
+        <EventMapModeSwitch
+          contentMode={contentMode}
+          eventView={eventView}
+          floating
+          showEventView
+          onContentModeChange={handleContentModeChange}
+          onEventViewChange={setEventView}
+        />
         {renderMobileBottomSheet()}
         {renderFormModal()}
         {renderImagenAmpliada()}
@@ -1230,9 +1311,17 @@ export default function MapScreen() {
       {/* Sidebar */}
       <View style={{ width: 340, flexShrink: 0, flexDirection: 'column', backgroundColor: C.bg, borderRightWidth: 1, borderRightColor: C.border, display: 'flex' as any }}>
         {renderSidebarHeader()}
+        <EventMapModeSwitch
+          contentMode={contentMode}
+          eventView={eventView}
+          onContentModeChange={handleContentModeChange}
+          onEventViewChange={setEventView}
+        />
 
         <View style={{ flex: 1, overflow: 'hidden' as any }}>
-          {sidebarView === 'list' && (
+          {contentMode === 'events' ? (
+            <PublicEventsPanel onLocate={handleLocatePublicEvent} />
+          ) : sidebarView === 'list' && (
             <View style={{ flex: 1 }}>
               {renderFiltros()}
               <ScrollView contentContainerStyle={{ padding: 10, gap: 8 }} showsVerticalScrollIndicator={false}>
