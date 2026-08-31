@@ -35,6 +35,7 @@ const DESKTOP_BREAKPOINT = 900;
 
 interface Props {
   onOpenMisReportes: () => void;
+  onOpenSavedEvents: () => void;
   onOpenAdminPanel?: () => void;
   onOpenCatalogo?: () => void;
   onOpenMisCanjes?: () => void;
@@ -58,6 +59,7 @@ interface Props {
 
 export function LoggedInProfile({
   onOpenMisReportes,
+  onOpenSavedEvents,
   onOpenAdminPanel,
   onOpenCatalogo,
   onOpenMisCanjes,
@@ -413,6 +415,11 @@ export function LoggedInProfile({
         icon="clipboard-outline"
         label="Mis Reportes"
         onPress={onOpenMisReportes}
+      />
+      <AccessRow
+        icon="bookmark-outline"
+        label="Mis eventos guardados"
+        onPress={onOpenSavedEvents}
       />
       {muestraSaldoReputacion && !esAliadoPuro && (
         <>
