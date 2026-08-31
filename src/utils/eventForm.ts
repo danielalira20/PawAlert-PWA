@@ -6,6 +6,7 @@ import {
   EXCLUSION_OPTIONS,
   REQUIREMENT_OPTIONS,
   SPECIES_OPTIONS,
+  TIME_ZONE_OPTIONS,
 } from "../constants/eventForm";
 import type {
   EventAssociationView,
@@ -65,9 +66,16 @@ export interface EventEditorValues {
   textoAlternativo: string;
 }
 
+export interface EventValidationOptions {
+  hasImage?: boolean;
+  now?: Date;
+}
+
 const defaultTimeZone = (() => {
   const resolved = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  return resolved?.startsWith("America/") ? resolved : "America/Mexico_City";
+  return TIME_ZONE_OPTIONS.some((option) => option.value === resolved)
+    ? resolved
+    : "America/Mexico_City";
 })();
 
 export function createInitialEventValues(userId = ""): EventEditorValues {
@@ -151,9 +159,7 @@ function partitionSelections(values: string[], catalog: readonly string[]) {
   return { known, other };
 }
 
-function costModeFromDetail(
-  detail: string | null | undefined,
-): CostMode {
+function costModeFromDetail(detail: string | null | undefined): CostMode {
   if (detail?.startsWith("Desde:")) return "desde";
   if (detail?.startsWith("Cuota de recuperación:")) return "recuperacion";
   if (detail?.startsWith("Costo base;")) return "variable";
@@ -205,25 +211,55 @@ export function zonedDateTimeToIso(
   const [year, month, day] = date.split("-").map(Number);
   const [hour, minute] = time.split(":").map(Number);
   if (![year, month, day, hour, minute].every(Number.isFinite)) return null;
-  const desired = Date.UTC(year, month - 1, day, hour, minute);
-  let guess = desired;
-  for (let iteration = 0; iteration < 2; iteration += 1) {
-    const observed = dateParts(new Date(guess).toISOString(), timeZone);
-    const [observedYear, observedMonth, observedDay] = observed.date
-      .split("-")
-      .map(Number);
-    const [observedHour, observedMinute] = observed.time.split(":").map(Number);
-    const observedUtc = Date.UTC(
-      observedYear,
-      observedMonth - 1,
-      observedDay,
-      observedHour,
-      observedMinute,
-    );
-    guess += desired - observedUtc;
+  try {
+    const desired = Date.UTC(year, month - 1, day, hour, minute);
+    let guess = desired;
+    for (let iteration = 0; iteration < 2; iteration += 1) {
+      const observed = dateParts(new Date(guess).toISOString(), timeZone);
+      const [observedYear, observedMonth, observedDay] = observed.date
+        .split("-")
+        .map(Number);
+      const [observedHour, observedMinute] = observed.time
+        .split(":")
+        .map(Number);
+      const observedUtc = Date.UTC(
+        observedYear,
+        observedMonth - 1,
+        observedDay,
+        observedHour,
+        observedMinute,
+      );
+      guess += desired - observedUtc;
+    }
+    const result = new Date(guess);
+    if (Number.isNaN(result.getTime())) return null;
+    const roundTrip = dateParts(result.toISOString(), timeZone);
+    if (roundTrip.date !== date || roundTrip.time !== time) return null;
+    return result.toISOString();
+  } catch {
+    return null;
   }
-  const result = new Date(guess);
-  return Number.isNaN(result.getTime()) ? null : result.toISOString();
+}
+
+export function isValidEventUrl(value: string) {
+  try {
+    const url = new URL(value.trim());
+    return (
+      (url.protocol === "https:" || url.protocol === "http:") &&
+      Boolean(url.hostname)
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function isValidEventEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
+export function isValidEventPhone(value: string) {
+  const digits = value.replace(/\D/g, "");
+  return digits.length >= 7 && digits.length <= 15;
 }
 
 function safeType(values: EventEditorValues) {
@@ -264,11 +300,19 @@ export function eventValuesToWriteData(
     values.cupoLimitado === true && Number.isInteger(capacity) && capacity > 0;
   const clinical =
     values.tipo === "vacunacion" || values.tipo === "esterilizacion";
+  const validCoordinates =
+    values.latitud != null &&
+    values.longitud != null &&
+    values.latitud >= -90 &&
+    values.latitud <= 90 &&
+    values.longitud >= -180 &&
+    values.longitud <= 180;
 
   return {
     responsable_operativo_usuario_id: values.responsableOperativoId || null,
     tipo: safeType(values),
-    categoria_otro: values.categoriaOtro.trim() || null,
+    categoria_otro:
+      values.tipo === "otro" ? values.categoriaOtro.trim() || null : null,
     titulo: values.titulo.trim() || null,
     descripcion:
       (values.descripcionPersonalizada
@@ -282,11 +326,17 @@ export function eventValuesToWriteData(
     direccion_publica: values.direccionPublica.trim() || null,
     municipio: values.municipio.trim() || null,
     estado_ubicacion: values.estadoUbicacion.trim() || null,
-    latitud: values.latitud,
-    longitud: values.longitud,
+    latitud: validCoordinates ? values.latitud : null,
+    longitud: validCoordinates ? values.longitud : null,
     modalidad_acceso: accessIsReady ? values.modalidadAcceso : null,
-    enlace_registro_externo: values.enlaceRegistro.trim() || null,
-    instrucciones_contacto: values.instruccionesContacto.trim() || null,
+    enlace_registro_externo:
+      values.modalidadAcceso === "registro_externo"
+        ? values.enlaceRegistro.trim() || null
+        : null,
+    instrucciones_contacto:
+      values.modalidadAcceso === "contacto_institucional"
+        ? values.instruccionesContacto.trim() || null
+        : null,
     especies_objetivo: [...values.especies, values.especieOtra.trim()].filter(
       Boolean,
     ),
@@ -432,7 +482,19 @@ export function eventValuesFromAssociation(
   };
 }
 
-export function getEventStepCompletion(values: EventEditorValues) {
+export function getEventStepCompletion(
+  values: EventEditorValues,
+  options?: EventValidationOptions,
+) {
+  return getEventStepIssues(values, options).map(
+    (issues) => issues.length === 0,
+  );
+}
+
+export function getEventStepIssues(
+  values: EventEditorValues,
+  { hasImage = false, now = new Date() }: EventValidationOptions = {},
+) {
   const clinical =
     values.tipo === "vacunacion" || values.tipo === "esterilizacion";
   const startsAt = zonedDateTimeToIso(
@@ -445,63 +507,105 @@ export function getEventStepCompletion(values: EventEditorValues) {
     values.horaFin,
     values.zonaHoraria,
   );
-  const accessReady =
-    values.modalidadAcceso === "sin_registro" ||
-    (values.modalidadAcceso === "registro_externo" &&
-      Boolean(values.enlaceRegistro.trim())) ||
-    (values.modalidadAcceso === "contacto_institucional" &&
-      Boolean(values.instruccionesContacto.trim()));
-  const validCost =
-    values.esGratuito === true ||
-    (values.esGratuito === false &&
-      Boolean(values.costo.trim()) &&
-      Number.isFinite(Number(values.costo.replace(",", "."))) &&
-      Number(values.costo.replace(",", ".")) >= 0);
-  const validCapacity =
-    values.cupoLimitado === false ||
-    (values.cupoLimitado === true &&
-      Number.isInteger(Number(values.cupoTotal)) &&
-      Number(values.cupoTotal) > 0);
-  return [
-    Boolean(
-      values.tipo &&
-      (values.tipo !== "otro" || values.categoriaOtro.trim()) &&
-      values.titulo.trim() &&
-      (values.descripcionPersonalizada
-        ? values.descripcion.trim()
-        : generateEventDescription(values)),
-    ),
-    Boolean(
-      startsAt &&
-      endsAt &&
-      new Date(startsAt) < new Date(endsAt) &&
-      new Date(endsAt) > new Date() &&
-      values.lugarNombre.trim() &&
-      values.direccionPublica.trim() &&
-      values.municipio.trim() &&
-      values.estadoUbicacion.trim() &&
-      values.latitud != null &&
-      values.longitud != null,
-    ),
-    Boolean(
-      values.especies.length + Number(Boolean(values.especieOtra.trim())) > 0 &&
-      values.publicos.length + Number(Boolean(values.publicoOtro.trim())) > 0 &&
-      values.requisitos.length + Number(Boolean(values.requisitoOtro.trim())) >
-        0 &&
-      accessReady,
-    ),
-    Boolean(
-      validCost &&
-      validCapacity &&
-      values.responsableOperativoId &&
-      values.contactoNombre.trim() &&
-      (values.contactoTelefono.trim() || values.contactoEmail.trim()) &&
-      (!clinical ||
-        (values.responsableProfesional.trim() &&
-          values.servicios.length +
-            Number(Boolean(values.servicioOtro.trim())) >
-            0)),
-    ),
-    true,
-  ];
+  const issues: string[][] = [[], [], [], [], []];
+
+  if (!values.tipo) issues[0].push("Selecciona el tipo de evento.");
+  if (values.tipo === "otro" && !values.categoriaOtro.trim())
+    issues[0].push("Describe la categoría del evento.");
+  if (!values.titulo.trim()) issues[0].push("Agrega un título público.");
+  if (values.descripcionPersonalizada && !values.descripcion.trim())
+    issues[0].push("Completa la descripción personalizada.");
+
+  if (!startsAt || !endsAt) {
+    issues[1].push("Selecciona un inicio y una finalización válidos.");
+  } else if (new Date(startsAt) >= new Date(endsAt)) {
+    issues[1].push("La finalización debe ser posterior al inicio.");
+  } else if (new Date(endsAt) <= now) {
+    issues[1].push("El evento debe finalizar en el futuro.");
+  }
+  if (!TIME_ZONE_OPTIONS.some((option) => option.value === values.zonaHoraria))
+    issues[1].push("Selecciona una zona horaria disponible.");
+  if (!values.lugarNombre.trim()) issues[1].push("Agrega el nombre del lugar.");
+  if (!values.direccionPublica.trim())
+    issues[1].push("Agrega la dirección pública.");
+  if (!values.municipio.trim()) issues[1].push("Agrega el municipio.");
+  if (!values.estadoUbicacion.trim()) issues[1].push("Agrega el estado.");
+  if (
+    values.latitud == null ||
+    values.longitud == null ||
+    values.latitud < -90 ||
+    values.latitud > 90 ||
+    values.longitud < -180 ||
+    values.longitud > 180
+  )
+    issues[1].push("Coloca un punto válido en el mapa.");
+
+  if (values.especies.length + Number(Boolean(values.especieOtra.trim())) === 0)
+    issues[2].push("Selecciona al menos una especie objetivo.");
+  if (values.publicos.length + Number(Boolean(values.publicoOtro.trim())) === 0)
+    issues[2].push("Selecciona al menos un público objetivo.");
+  if (
+    values.requisitos.length + Number(Boolean(values.requisitoOtro.trim())) ===
+    0
+  )
+    issues[2].push(
+      "Indica los requisitos o selecciona que no hay adicionales.",
+    );
+  if (!values.modalidadAcceso)
+    issues[2].push("Selecciona la modalidad de acceso.");
+  if (
+    values.modalidadAcceso === "registro_externo" &&
+    !isValidEventUrl(values.enlaceRegistro)
+  )
+    issues[2].push(
+      "Agrega un enlace oficial válido que inicie con http o https.",
+    );
+  if (
+    values.modalidadAcceso === "contacto_institucional" &&
+    !values.instruccionesContacto.trim()
+  )
+    issues[2].push("Explica cómo contactar a la asociación para registrarse.");
+
+  if (values.esGratuito == null)
+    issues[3].push("Indica si el evento es gratuito o tiene costo.");
+  if (values.esGratuito === false) {
+    const amount = Number(values.costo.replace(",", "."));
+    if (!values.costo.trim() || !Number.isFinite(amount) || amount <= 0)
+      issues[3].push("Indica un costo mayor a cero.");
+  }
+  if (values.cupoLimitado == null)
+    issues[3].push("Indica si existe un límite de lugares.");
+  if (
+    values.cupoLimitado === true &&
+    (!Number.isInteger(Number(values.cupoTotal)) ||
+      Number(values.cupoTotal) <= 0)
+  )
+    issues[3].push("Indica un número entero de lugares mayor a cero.");
+  if (!values.responsableOperativoId)
+    issues[3].push("Selecciona a la persona responsable del evento.");
+  if (!values.contactoNombre.trim())
+    issues[3].push("Agrega el nombre del contacto institucional.");
+  if (!values.contactoTelefono.trim() && !values.contactoEmail.trim())
+    issues[3].push("Agrega al menos un teléfono o correo institucional.");
+  if (
+    values.contactoTelefono.trim() &&
+    !isValidEventPhone(values.contactoTelefono)
+  )
+    issues[3].push("Revisa el formato del teléfono institucional.");
+  if (values.contactoEmail.trim() && !isValidEventEmail(values.contactoEmail))
+    issues[3].push("Revisa el formato del correo institucional.");
+  if (clinical) {
+    if (
+      values.servicios.length + Number(Boolean(values.servicioOtro.trim())) ===
+      0
+    )
+      issues[3].push("Selecciona al menos un servicio clínico.");
+    if (!values.responsableProfesional.trim())
+      issues[3].push("Identifica a la persona responsable profesional.");
+  }
+
+  if (hasImage && !values.textoAlternativo.trim())
+    issues[4].push("Describe la imagen principal con texto alternativo.");
+
+  return issues;
 }

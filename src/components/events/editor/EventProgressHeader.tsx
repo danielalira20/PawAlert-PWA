@@ -7,10 +7,12 @@ import { EventTheme } from "../../../constants/eventTheme";
 export function EventProgressHeader({
   step,
   completed,
+  disabled = false,
   onClose,
 }: {
   step: number;
   completed: boolean[];
+  disabled?: boolean;
   onClose: () => void;
 }) {
   return (
@@ -24,8 +26,10 @@ export function EventProgressHeader({
         </View>
         <TouchableOpacity
           accessibilityLabel="Cerrar editor"
+          accessibilityState={{ disabled }}
+          disabled={disabled}
           onPress={onClose}
-          style={styles.close}
+          style={[styles.close, disabled && styles.disabled]}
         >
           <Ionicons name="close" size={22} color={EventTheme.colors.surface} />
         </TouchableOpacity>
@@ -83,6 +87,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: 40,
   },
+  disabled: { opacity: 0.45 },
   steps: { flexDirection: "row", gap: 7, marginTop: 15 },
   stepItem: { flex: 1 },
   segment: {

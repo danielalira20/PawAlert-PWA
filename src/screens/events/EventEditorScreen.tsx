@@ -7,6 +7,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
+  Keyboard,
+  KeyboardAvoidingView,
   Platform,
   ScrollView,
   StyleSheet,
@@ -28,6 +30,7 @@ import {
 } from "../../components/events/editor/EventFormControls";
 import { EventLocationPicker } from "../../components/events/editor/EventLocationPicker";
 import { EventProgressHeader } from "../../components/events/editor/EventProgressHeader";
+import { EventValidationSummary } from "../../components/events/editor/EventValidationSummary";
 import { EventStatusChip } from "../../components/events/shared/EventStatusChip";
 import {
   ACCESS_MODE_OPTIONS,
@@ -62,6 +65,7 @@ import type {
   EventType,
 } from "../../types/event";
 import {
+  acquireEventActionLock,
   getIncompleteEventSteps,
   type EventLifecycleAction,
 } from "../../utils/eventLifecycle";
@@ -71,6 +75,7 @@ import {
   eventValuesToWriteData,
   generateEventDescription,
   getEventStepCompletion,
+  getEventStepIssues,
   toggleEventOption,
   type EventEditorValues,
 } from "../../utils/eventForm";
@@ -87,6 +92,7 @@ interface Props {
   eventId?: string;
   onClose: () => void;
   onEventCreated?: (eventId: string) => void;
+  presentation?: "screen" | "modal";
 }
 
 interface RemoteImageState {
@@ -124,6 +130,7 @@ export default function EventEditorScreen({
   eventId,
   onClose,
   onEventCreated,
+  presentation = "screen",
 }: Props) {
   const { width } = useWindowDimensions();
   const compact = width < 720;
@@ -136,8 +143,7 @@ export default function EventEditorScreen({
   const [currentEventId, setCurrentEventId] = useState(eventId);
   const [existingEvent, setExistingEvent] =
     useState<EventAssociationView | null>(null);
-  const [lifecycleState, setLifecycleState] =
-    useState<EventState>("borrador");
+  const [lifecycleState, setLifecycleState] = useState<EventState>("borrador");
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [isLoading, setIsLoading] = useState(Boolean(eventId));
   const [isSaving, setIsSaving] = useState(false);
@@ -151,10 +157,26 @@ export default function EventEditorScreen({
   const saveKeyRef = useRef<string | null>(null);
   const imageKeyRef = useRef<string | null>(null);
   const createdEventIdRef = useRef<string | null>(null);
+  const savingRef = useRef(false);
+  const scrollRef = useRef<ScrollView>(null);
 
   const patchValues = (patch: Partial<EventEditorValues>) =>
     setValues((current) => ({ ...current, ...patch }));
-  const completed = useMemo(() => getEventStepCompletion(values), [values]);
+  const previewUri =
+    imageAsset?.uri ||
+    (!imageRemoved ? remoteImage?.url || existingEvent?.imagen_url : null);
+  const validationOptions = useMemo(
+    () => ({ hasImage: Boolean(previewUri) }),
+    [previewUri],
+  );
+  const stepIssues = useMemo(
+    () => getEventStepIssues(values, validationOptions),
+    [validationOptions, values],
+  );
+  const completed = useMemo(
+    () => getEventStepCompletion(values, validationOptions),
+    [validationOptions, values],
+  );
   const incompleteSteps = useMemo(
     () => getIncompleteEventSteps(completed),
     [completed],
@@ -171,6 +193,10 @@ export default function EventEditorScreen({
     values.tipo === "vacunacion" || values.tipo === "esterilizacion";
 
   useEffect(() => {
+    scrollRef.current?.scrollTo({ y: 0, animated: false });
+  }, [step]);
+
+  useEffect(() => {
     let active = true;
     const load = async () => {
       if (eventId && createdEventIdRef.current === eventId) {
@@ -178,7 +204,10 @@ export default function EventEditorScreen({
         if (active) setIsLoading(false);
         return;
       }
-      if (!token) return;
+      if (!token) {
+        if (active) setIsLoading(false);
+        return;
+      }
       try {
         const [staffResponse, savedDraft] = await Promise.all([
           axios.get<StaffMember[]>(`${API_URL}/associations/me/staff`, {
@@ -242,50 +271,67 @@ export default function EventEditorScreen({
   };
 
   const pickImage = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      showToast({
-        type: "warning",
-        title: "Permiso necesario",
-        message:
-          "Autoriza el acceso a tus imágenes para seleccionar una fotografía.",
-      });
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      allowsEditing: true,
-      aspect: [16, 9],
-      quality: 0.82,
-    });
-    if (!result.canceled) {
-      const asset = result.assets[0];
-      setImageAsset(asset);
-      setImageRemoved(false);
-      if (!values.textoAlternativo.trim())
-        patchValues({
-          textoAlternativo: `Imagen de ${values.titulo.trim() || "evento comunitario"}`,
+    try {
+      const permission =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        showToast({
+          type: "warning",
+          title: "Permiso necesario",
+          message:
+            "Autoriza el acceso a tus imágenes para seleccionar una fotografía.",
         });
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsEditing: true,
+        aspect: [16, 9],
+        quality: 0.82,
+      });
+      if (!result.canceled) {
+        const asset = result.assets[0];
+        setImageAsset(asset);
+        setImageRemoved(false);
+        if (!values.textoAlternativo.trim())
+          patchValues({
+            textoAlternativo: `Imagen de ${values.titulo.trim() || "evento comunitario"}`,
+          });
+      }
+    } catch {
+      showToast({
+        type: "error",
+        title: "No pudimos abrir tus imágenes",
+        message: "Intenta nuevamente o continúa sin imagen principal.",
+      });
     }
   };
 
   const selectCurrentLocation = async () => {
-    const permission = await Location.requestForegroundPermissionsAsync();
-    if (!permission.granted) {
-      showToast({
-        type: "warning",
-        title: "Ubicación no disponible",
-        message: "Puedes elegir manualmente el punto en el mapa.",
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (!permission.granted) {
+        showToast({
+          type: "warning",
+          title: "Ubicación no disponible",
+          message: "Puedes elegir manualmente el punto en el mapa.",
+        });
+        return;
+      }
+      const position = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
       });
-      return;
+      patchValues({
+        latitud: position.coords.latitude,
+        longitud: position.coords.longitude,
+      });
+    } catch {
+      showToast({
+        type: "error",
+        title: "Ubicación no disponible",
+        message: "Elige manualmente el punto autorizado en el mapa.",
+      });
     }
-    const position = await Location.getCurrentPositionAsync({
-      accuracy: Location.Accuracy.Balanced,
-    });
-    patchValues({
-      latitud: position.coords.latitude,
-      longitud: position.coords.longitude,
-    });
   };
 
   const imageFormData = async () => {
@@ -312,8 +358,16 @@ export default function EventEditorScreen({
   };
 
   const synchronizeDraft = async (notify = true): Promise<string | null> => {
-    if (!token) return null;
-    if (imageAsset && !values.textoAlternativo.trim()) {
+    if (!token) {
+      showToast({
+        type: "error",
+        title: "Sesión requerida",
+        message: "Inicia sesión nuevamente para guardar el evento.",
+      });
+      return null;
+    }
+    if (!acquireEventActionLock(savingRef)) return null;
+    if (previewUri && !values.textoAlternativo.trim()) {
       showToast({
         type: "warning",
         title: "Falta describir la imagen",
@@ -321,6 +375,7 @@ export default function EventEditorScreen({
       });
       return null;
     }
+    Keyboard.dismiss();
     setIsSaving(true);
     try {
       await persistLocal();
@@ -427,12 +482,33 @@ export default function EventEditorScreen({
       showToast({ type: "error", title: "No pudimos guardar", message });
       return null;
     } finally {
+      savingRef.current = false;
       setIsSaving(false);
     }
   };
 
   const saveDraft = async () => {
     await synchronizeDraft(true);
+  };
+
+  const saveLocallyAndExit = async () => {
+    if (!acquireEventActionLock(savingRef)) return;
+    Keyboard.dismiss();
+    setIsSaving(true);
+    try {
+      await persistLocal();
+      setShowExit(false);
+      onClose();
+    } catch {
+      showToast({
+        type: "error",
+        title: "No pudimos guardar en el dispositivo",
+        message: "Sigue editando e intenta salir nuevamente.",
+      });
+    } finally {
+      savingRef.current = false;
+      setIsSaving(false);
+    }
   };
 
   const handleLifecycleSuccess = async (
@@ -470,13 +546,28 @@ export default function EventEditorScreen({
     });
   };
 
-  const toggleCustom = (field: CustomField) =>
+  const toggleCustom = (field: CustomField) => {
+    if (customFields.has(field)) {
+      const emptyValueByField: Record<
+        CustomField,
+        Partial<EventEditorValues>
+      > = {
+        servicio: { servicioOtro: "" },
+        especie: { especieOtra: "" },
+        publico: { publicoOtro: "" },
+        requisito: { requisitoOtro: "" },
+        documento: { documentoOtro: "" },
+        exclusion: { exclusionOtra: "" },
+      };
+      patchValues(emptyValueByField[field]);
+    }
     setCustomFields((current) => {
       const next = new Set(current);
       if (next.has(field)) next.delete(field);
       else next.add(field);
       return next;
     });
+  };
 
   const otherButton = (field: CustomField, label: string) => (
     <TouchableOpacity
@@ -509,14 +600,41 @@ export default function EventEditorScreen({
           selected={values.tipo ? [values.tipo] : []}
           multiple={false}
           onToggle={(tipo) =>
-            patchValues({
-              tipo,
-              servicios: [],
-              datosProfesionalesEstado:
-                tipo === "vacunacion" || tipo === "esterilizacion"
-                  ? "declarado"
-                  : "no_aplica",
-            })
+            patchValues(
+              (() => {
+                const nextClinical =
+                  tipo === "vacunacion" || tipo === "esterilizacion";
+                const currentClinical =
+                  values.tipo === "vacunacion" ||
+                  values.tipo === "esterilizacion";
+                return {
+                  tipo,
+                  categoriaOtro: tipo === "otro" ? values.categoriaOtro : "",
+                  servicios: [],
+                  servicioOtro: "",
+                  responsableProfesional: nextClinical
+                    ? currentClinical
+                      ? values.responsableProfesional
+                      : ""
+                    : "",
+                  cedulaProfesional: nextClinical
+                    ? currentClinical
+                      ? values.cedulaProfesional
+                      : ""
+                    : "",
+                  institucionProfesional: nextClinical
+                    ? currentClinical
+                      ? values.institucionProfesional
+                      : ""
+                    : "",
+                  datosProfesionalesEstado: nextClinical
+                    ? currentClinical
+                      ? values.datosProfesionalesEstado
+                      : "declarado"
+                    : "no_aplica",
+                };
+              })(),
+            )
           }
         />
         {values.tipo === "otro" && (
@@ -640,7 +758,7 @@ export default function EventEditorScreen({
               size={21}
               color={EventTheme.colors.primary}
             />
-            <View>
+            <View style={styles.dateCopy}>
               <Text style={styles.dateLabel}>Inicio</Text>
               <Text style={styles.dateValue}>
                 {dateLabel(values.fechaInicio, values.horaInicio)}
@@ -656,7 +774,7 @@ export default function EventEditorScreen({
               size={21}
               color={EventTheme.colors.primary}
             />
-            <View>
+            <View style={styles.dateCopy}>
               <Text style={styles.dateLabel}>Finalización</Text>
               <Text style={styles.dateValue}>
                 {dateLabel(values.fechaFin, values.horaFin)}
@@ -800,7 +918,19 @@ export default function EventEditorScreen({
           options={ACCESS_MODE_OPTIONS}
           selected={values.modalidadAcceso ? [values.modalidadAcceso] : []}
           multiple={false}
-          onToggle={(modalidadAcceso) => patchValues({ modalidadAcceso })}
+          onToggle={(modalidadAcceso) =>
+            patchValues({
+              modalidadAcceso,
+              enlaceRegistro:
+                modalidadAcceso === "registro_externo"
+                  ? values.enlaceRegistro
+                  : "",
+              instruccionesContacto:
+                modalidadAcceso === "contacto_institucional"
+                  ? values.instruccionesContacto
+                  : "",
+            })
+          }
         />
         {values.modalidadAcceso === "registro_externo" && (
           <EventTextField
@@ -809,6 +939,7 @@ export default function EventEditorScreen({
             label="Enlace oficial de registro"
             required
             value={values.enlaceRegistro}
+            maxLength={1000}
             onChangeText={(enlaceRegistro) => patchValues({ enlaceRegistro })}
             placeholder="https://..."
           />
@@ -819,6 +950,7 @@ export default function EventEditorScreen({
             required
             multiline
             value={values.instruccionesContacto}
+            maxLength={1000}
             onChangeText={(instruccionesContacto) =>
               patchValues({ instruccionesContacto })
             }
@@ -1076,9 +1208,6 @@ export default function EventEditorScreen({
     </View>
   );
 
-  const previewUri =
-    imageAsset?.uri ||
-    (!imageRemoved ? remoteImage?.url || existingEvent?.imagen_url : null);
   const lifecycleNoticeTitle =
     lifecycleState === "publicado"
       ? "El evento está publicado"
@@ -1132,6 +1261,7 @@ export default function EventEditorScreen({
                 onPress={() => {
                   setImageAsset(null);
                   setImageRemoved(true);
+                  patchValues({ textoAlternativo: "" });
                 }}
                 style={styles.imageAction}
               >
@@ -1173,10 +1303,15 @@ export default function EventEditorScreen({
             required
             value={values.textoAlternativo}
             maxLength={500}
+            editable={Boolean(imageAsset)}
             onChangeText={(textoAlternativo) =>
               patchValues({ textoAlternativo })
             }
-            hint="Describe brevemente lo importante de la imagen para lectores de pantalla."
+            hint={
+              imageAsset
+                ? "Describe brevemente lo importante de la imagen para lectores de pantalla."
+                : "Para cambiar este texto, reemplaza la imagen y guarda la nueva versión."
+            }
           />
         )}
       </EventFormSection>
@@ -1270,12 +1405,8 @@ export default function EventEditorScreen({
             }
           />
           <View style={styles.draftNoticeCopy}>
-            <Text style={styles.draftNoticeTitle}>
-              {lifecycleNoticeTitle}
-            </Text>
-            <Text style={styles.draftNoticeText}>
-              {lifecycleNoticeText}
-            </Text>
+            <Text style={styles.draftNoticeTitle}>{lifecycleNoticeTitle}</Text>
+            <Text style={styles.draftNoticeText}>{lifecycleNoticeText}</Text>
           </View>
         </View>
         <EventLifecycleActions
@@ -1297,14 +1428,18 @@ export default function EventEditorScreen({
     </View>
   );
 
-  const renderCurrentStep = () =>
-    [
-      renderStepOne,
-      renderStepTwo,
-      renderStepThree,
-      renderStepFour,
-      renderStepFive,
-    ][step - 1]();
+  const renderCurrentStep = () => (
+    <View style={styles.sections}>
+      {[
+        renderStepOne,
+        renderStepTwo,
+        renderStepThree,
+        renderStepFour,
+        renderStepFive,
+      ][step - 1]()}
+      <EventValidationSummary issues={stepIssues[step - 1]} />
+    </View>
+  );
 
   if (isLoading)
     return (
@@ -1315,20 +1450,37 @@ export default function EventEditorScreen({
     );
 
   return (
-    <View style={styles.screen}>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      style={styles.screen}
+    >
       <Toast toast={toast} translateY={translateY} />
-      <View style={[styles.shell, !compact && styles.shellDesktop]}>
+      <View
+        style={[
+          styles.shell,
+          !compact && presentation === "screen" && styles.shellDesktop,
+          presentation === "modal" && styles.shellModal,
+        ]}
+      >
         <EventProgressHeader
           step={step}
           completed={completed}
+          disabled={isSaving}
           onClose={() => setShowExit(true)}
         />
         <ScrollView
+          ref={scrollRef}
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
+          keyboardDismissMode={
+            Platform.OS === "ios" ? "interactive" : "on-drag"
+          }
+          keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {renderCurrentStep()}
+          <View style={isSaving ? styles.interactionsDisabled : undefined}>
+            {renderCurrentStep()}
+          </View>
         </ScrollView>
         <View style={[styles.footer, compact && styles.footerCompact]}>
           <TouchableOpacity
@@ -1336,6 +1488,7 @@ export default function EventEditorScreen({
             onPress={() => setStep((current) => Math.max(1, current - 1))}
             style={[
               styles.secondaryButton,
+              compact && styles.footerButtonCompact,
               step === 1 && styles.buttonDisabled,
             ]}
           >
@@ -1350,7 +1503,7 @@ export default function EventEditorScreen({
             <TouchableOpacity
               disabled={isSaving}
               onPress={() => void saveDraft()}
-              style={styles.saveButton}
+              style={[styles.saveButton, compact && styles.footerButtonCompact]}
             >
               {isSaving ? (
                 <ActivityIndicator color={EventTheme.colors.primary} />
@@ -1374,7 +1527,10 @@ export default function EventEditorScreen({
             <TouchableOpacity
               disabled={isSaving}
               onPress={() => setStep((current) => Math.min(5, current + 1))}
-              style={styles.primaryButton}
+              style={[
+                styles.primaryButton,
+                compact && styles.footerButtonCompact,
+              ]}
             >
               <Text style={styles.primaryButtonText}>Siguiente</Text>
               <Ionicons
@@ -1407,9 +1563,11 @@ export default function EventEditorScreen({
       />
 
       <AppModal
+        fitContent
         visible={showExit}
         onClose={() => setShowExit(false)}
         maxWidth={480}
+        dismissable={!isSaving}
       >
         <View style={styles.exitModal}>
           <View style={styles.exitIcon}>
@@ -1428,25 +1586,32 @@ export default function EventEditorScreen({
             style={[styles.exitActions, compact && styles.exitActionsCompact]}
           >
             <TouchableOpacity
+              disabled={isSaving}
               onPress={() => setShowExit(false)}
-              style={styles.secondaryButton}
+              style={[
+                styles.secondaryButton,
+                isSaving && styles.buttonDisabled,
+              ]}
             >
               <Text style={styles.secondaryButtonText}>Seguir editando</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              onPress={() => {
-                void persistLocal().finally(onClose);
-              }}
-              style={styles.primaryButton}
+              disabled={isSaving}
+              onPress={() => void saveLocallyAndExit()}
+              style={[styles.primaryButton, isSaving && styles.buttonDisabled]}
             >
-              <Text style={styles.primaryButtonText}>
-                Guardar localmente y salir
-              </Text>
+              {isSaving ? (
+                <ActivityIndicator color={EventTheme.colors.surface} />
+              ) : (
+                <Text style={styles.primaryButtonText}>
+                  Guardar localmente y salir
+                </Text>
+              )}
             </TouchableOpacity>
           </View>
         </View>
       </AppModal>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -1474,7 +1639,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.14,
     shadowRadius: 22,
   },
+  shellModal: {
+    borderRadius: EventTheme.radii.card,
+  },
   scroll: { flex: 1 },
+  interactionsDisabled: { pointerEvents: "none" },
   scrollContent: { padding: 22, paddingBottom: 34 },
   sections: { gap: 18 },
   twoColumns: { flexDirection: "row", gap: 12 },
@@ -1524,6 +1693,7 @@ const styles = StyleSheet.create({
     fontFamily: EventTheme.typography.medium,
     fontSize: 10,
   },
+  dateCopy: { flex: 1 },
   dateValue: {
     color: EventTheme.colors.text,
     fontFamily: EventTheme.typography.semiBold,
@@ -1606,6 +1776,7 @@ const styles = StyleSheet.create({
   imageActions: {
     backgroundColor: EventTheme.colors.surfaceWarm,
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: 18,
     padding: 10,
   },
@@ -1694,6 +1865,7 @@ const styles = StyleSheet.create({
     padding: 14,
   },
   footerCompact: { flexWrap: "wrap" },
+  footerButtonCompact: { flexBasis: "44%", flexGrow: 1 },
   primaryButton: {
     alignItems: "center",
     backgroundColor: EventTheme.colors.primary,
@@ -1759,7 +1931,6 @@ const styles = StyleSheet.create({
   exitModal: {
     alignItems: "center",
     backgroundColor: EventTheme.colors.surface,
-    flex: 1,
     justifyContent: "center",
     padding: 28,
   },
