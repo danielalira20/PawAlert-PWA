@@ -475,6 +475,7 @@ export function getEventStepCompletion(values: EventEditorValues) {
       startsAt &&
       endsAt &&
       new Date(startsAt) < new Date(endsAt) &&
+      new Date(endsAt) > new Date() &&
       values.lugarNombre.trim() &&
       values.direccionPublica.trim() &&
       values.municipio.trim() &&
