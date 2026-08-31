@@ -23,6 +23,7 @@ import { Brand } from '../constants/theme';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../config/supabase';
 
+
 interface Seguimiento {
   id: string;
   tipo: string;
@@ -131,6 +132,8 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
   const [modal, setModal] = useState<ModalMode>(null);
   const [seleccionada, setSeleccionada] = useState<Custodia | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [errors, setErrors] = useState<{ [key: string]: string }>({});
+  const [propuestasEnviadas, setPropuestasEnviadas] = useState<string[]>([]);
   const [form, setForm] = useState({
     condicion: '',
     salud: '',
@@ -196,6 +199,17 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
   const abrir = (modo: ModalMode, custodia: Custodia) => {
     setSeleccionada(custodia);
     setModal(modo);
+    
+    if (modo === 'proponer_adopcion') {
+      setErrors({
+        nombreTemporal: 'El nombre es obligatorio.',
+        salud: 'El estado de salud es obligatorio.',
+        temperamento: 'El temperamento es obligatorio.',
+        razonAdopcion: 'La razón de adopción es obligatoria.',
+      });
+    } else {
+      setErrors({});
+    }
     setForm({
       condicion: '',
       salud: '',
@@ -246,6 +260,49 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
     if (submitting) return;
     setModal(null);
     setSeleccionada(null);
+  };
+  const handleNombreTemporalChange = (val: string) => {
+    setForm({ ...form, nombreTemporal: val });
+    if (!val.trim()) {
+      setErrors(prev => ({ ...prev, nombreTemporal: 'El nombre es obligatorio.' }));
+    } else if (!/^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/.test(val)) { // Se quitaron los números (0-9)
+      setErrors(prev => ({ ...prev, nombreTemporal: 'Solo se permiten letras y espacios.' }));
+    } else {
+      setErrors(prev => ({ ...prev, nombreTemporal: '' }));
+    }
+  };
+
+  const handleSaludChange = (val: string) => {
+    setForm({ ...form, salud: val });
+    if (!val.trim()) {
+      setErrors(prev => ({ ...prev, salud: 'El estado de salud es obligatorio.' }));
+    } else if (!/[a-zA-ZáéíóúÁÉÍÓÚñÑ]/.test(val)) {
+      setErrors(prev => ({ ...prev, salud: 'Debe contener al menos una letra.' }));
+    } else {
+      setErrors(prev => ({ ...prev, salud: '' }));
+    }
+  };
+
+  const handleTemperamentoChange = (val: string) => {
+    setForm({ ...form, temperamento: val });
+    if (!val.trim()) {
+      setErrors(prev => ({ ...prev, temperamento: 'El temperamento es obligatorio.' }));
+    } else if (!/^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s,.-]+$/.test(val)) {
+      setErrors(prev => ({ ...prev, temperamento: 'Solo letras y signos básicos de puntuación.' }));
+    } else {
+      setErrors(prev => ({ ...prev, temperamento: '' }));
+    }
+  };
+
+  const handleRazonAdopcionChange = (val: string) => {
+    setForm({ ...form, razonAdopcion: val });
+    if (!val.trim()) {
+      setErrors(prev => ({ ...prev, razonAdopcion: 'La razón de adopción es obligatoria.' }));
+    } else if (!/[a-zA-ZáéíóúÁÉÍÓÚñÑ]/.test(val)) {
+      setErrors(prev => ({ ...prev, razonAdopcion: 'Debe contener al menos una letra.' }));
+    } else {
+      setErrors(prev => ({ ...prev, razonAdopcion: '' }));
+    }
   };
 
   const abrirRevision = async (custodia: Custodia) => {
@@ -562,23 +619,22 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
     );
   }, 'Tu parte quedó confirmada. La transferencia terminará cuando ambas partes confirmen.');
   const enviarPropuestaAdopcion = () => ejecutar(async () => {
-    if (!seleccionada || !form.nombreTemporal || !form.salud || !form.temperamento || !form.razonAdopcion || !fotoAnimal) {
-      throw new Error('Completa los campos obligatorios y adjunta una foto reciente.');
+    const hasErrors = Object.values(errors).some(e => e !== '') || !form.nombreTemporal || !form.salud || !form.temperamento || !form.razonAdopcion;
+    
+    if (hasErrors || !fotoAnimal) {
+      throw new Error('Revisa los errores en rojo y asegúrate de adjuntar una foto reciente.');
     }
 
-    const animalId = seleccionada.reporte.animales?.[0]?.id;
-    if (!animalId) {
+    const animalId = seleccionada?.reporte.animales?.[0]?.id;
+    if (!animalId || !seleccionada) {
       throw new Error('El backend no devolvió el ID del animal en la custodia.');
     }
 
-    // 1. Subimos la foto directo a Supabase Storage
     const foto_path = await subirFotoPropuesta(fotoAnimal);
-    
     if (!foto_path) {
       throw new Error('No se pudo obtener la ruta de la imagen tras subirla.');
     }
 
-    // 2. Mandamos el formulario con la ruta real que nos devolvió Storage
     await axios.post(
       `${API_URL}/custody/${seleccionada.id}/adoption-intake-requests`,
       {
@@ -589,12 +645,14 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
         temperamento_observado: form.temperamento,
         motivo_propuesta: form.razonAdopcion,
         idempotency_key: `propuesta_${Date.now()}_${seleccionada.id}`,
-        nombre_temporal: form.nombreTemporal,
-        compatibilidad: form.compatibilidad || null,
-        tiempo_custodia_adicional: form.tiempoCustodiaAdicional || null,
+        nombre_temporal: form.nombreTemporal || null,
+        compatibilidad_observada: form.compatibilidad ? { detalle: form.compatibilidad } : {},
       },
       { headers: { Authorization: `Bearer ${token}` } },
     );
+
+    // Ocultar botón de este caso tras propuesta exitosa
+    setPropuestasEnviadas(prev => [...prev, seleccionada.id]);
   }, 'La propuesta ha sido enviada a la asociación coordinadora.');
 
   const finalizarCustodia = () => ejecutar(async () => {
@@ -788,7 +846,7 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
                       {custodia.estado === 'activo' && (
                         <Action icon="camera-outline" label={custodia.seguimiento_inicial_pendiente ? 'Seguimiento inicial' : 'Nuevo seguimiento'} primary onPress={() => abrir('seguimiento', custodia)} />
                       )}
-                      {custodia.estado === 'activo' && (
+                      {custodia.estado === 'activo' && !propuestasEnviadas.includes(custodia.id) && (
                         <Action icon="home-outline" label="Proponer para adopción" primary onPress={() => abrir('proponer_adopcion', custodia)} />
                       )}
                       {custodia.estado === 'activo' && <Action icon="calendar-outline" label="Extender" onPress={() => abrir('extension', custodia)} />}
@@ -851,13 +909,14 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
             {modal === 'proponer_adopcion' && (
                 <>
                   <Text style={styles.modalCopy}>Propón a este animal para que la asociación lo evalúe y publique en la galería. Tú conservarás la custodia hasta la entrega.</Text>
-                  <Field label="Nombre temporal" value={form.nombreTemporal} onChangeText={(v) => setForm({ ...form, nombreTemporal: v })} placeholder="Ej. Firulais" />
-                  <Field label="Estado de salud" value={form.salud} onChangeText={(v) => setForm({ ...form, salud: v })} placeholder="Ej. Sano, vacunado" multiline />
-                  <Field label="Temperamento" value={form.temperamento} onChangeText={(v) => setForm({ ...form, temperamento: v })} placeholder="Ej. Juguetón, tranquilo" />
+                  <Field label="Nombre temporal" value={form.nombreTemporal} onChangeText={handleNombreTemporalChange} placeholder="Ej. Firulais" error={errors.nombreTemporal} />
+                  <Field label="Estado de salud" value={form.salud} onChangeText={handleSaludChange} placeholder="Ej. Sano, vacunado" multiline error={errors.salud} />
+                  <Field label="Temperamento" value={form.temperamento} onChangeText={handleTemperamentoChange} placeholder="Ej. Juguetón, tranquilo" error={errors.temperamento} />
                   <Field label="Compatibilidad (Opcional)" value={form.compatibilidad} onChangeText={(v) => setForm({ ...form, compatibilidad: v })} placeholder="Ej. Convive con niños y otros perros" />
-                  <Field label="Razón para adopción" value={form.razonAdopcion} onChangeText={(v) => setForm({ ...form, razonAdopcion: v })} placeholder="¿Por qué está listo para un hogar definitivo?" multiline />
-                  <Field label="Tiempo que puedes conservarlo" value={form.tiempoCustodiaAdicional} onChangeText={(v) => setForm({ ...form, tiempoCustodiaAdicional: v })} placeholder="Ej. 2 semanas" />
-                  <EvidenceButtons animal={fotoAnimal} entorno={null} gps={gps} initial={false} onAnimal={() => tomarFoto()} onEntorno={() => undefined} onGps={capturarGps} />                  <Submit label="Enviar propuesta" loading={submitting} onPress={enviarPropuestaAdopcion} />
+                  <Field label="Razón para adopción" value={form.razonAdopcion} onChangeText={handleRazonAdopcionChange} placeholder="¿Por qué está listo para un hogar definitivo?" multiline error={errors.razonAdopcion} />
+                  <Field label="Tiempo que puedes conservarlo (Opcional)" value={form.tiempoCustodiaAdicional} onChangeText={(v) => setForm({ ...form, tiempoCustodiaAdicional: v })} placeholder="Ej. 2 semanas" />
+                  <EvidenceButtons animal={fotoAnimal} entorno={null} gps={gps} initial={false} onAnimal={() => tomarFoto()} onEntorno={() => undefined} onGps={capturarGps} />
+                  <Submit label="Enviar propuesta" loading={submitting} onPress={enviarPropuestaAdopcion} />
                 </>
               )}
               {modal === 'seguimiento' && (
@@ -1164,8 +1223,22 @@ function Action({ icon, label, onPress, primary, danger }: { icon: keyof typeof 
   );
 }
 
-function Field(props: { label: string; value: string; onChangeText: (v: string) => void; placeholder: string; multiline?: boolean }) {
-  return <View style={{ marginBottom: 12 }}><Text style={styles.label}>{props.label}</Text><TextInput {...props} style={[styles.input, props.multiline && styles.textArea]} placeholderTextColor={Brand.textFaint} /></View>;
+function Field(props: { label: string; value: string; onChangeText: (v: string) => void; placeholder: string; multiline?: boolean; error?: string }) {
+  return (
+    <View style={{ marginBottom: 12 }}>
+      <Text style={styles.label}>{props.label}</Text>
+      <TextInput 
+        {...props} 
+        style={[
+          styles.input, 
+          props.multiline && styles.textArea,
+          props.error ? { borderColor: '#B84A3A', borderWidth: 1.5 } : null
+        ]} 
+        placeholderTextColor={Brand.textFaint} 
+      />
+      {props.error ? <Text style={{ color: '#B84A3A', fontSize: 11, fontWeight: '700', marginTop: 4 }}>{props.error}</Text> : null}
+    </View>
+  );
 }
 
 function EvidenceButtons({ animal, entorno, gps, initial, onAnimal, onEntorno, onGps }: any) {
