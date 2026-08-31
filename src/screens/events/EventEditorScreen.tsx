@@ -1579,8 +1579,9 @@ export default function EventEditorScreen({
           </View>
           <Text style={styles.exitTitle}>¿Salir del editor?</Text>
           <Text style={styles.exitText}>
-            Guardaremos este avance en el dispositivo. Usa “Guardar borrador” si
-            también quieres sincronizarlo con tu cuenta.
+            Guarda este avance en el dispositivo o sal sin conservar los cambios
+            de esta sesión. “Guardar borrador” también lo sincroniza con tu
+            cuenta.
           </Text>
           <View
             style={[styles.exitActions, compact && styles.exitActionsCompact]}
@@ -1590,6 +1591,8 @@ export default function EventEditorScreen({
               onPress={() => setShowExit(false)}
               style={[
                 styles.secondaryButton,
+                styles.exitActionButton,
+                compact && styles.exitActionButtonCompact,
                 isSaving && styles.buttonDisabled,
               ]}
             >
@@ -1597,8 +1600,36 @@ export default function EventEditorScreen({
             </TouchableOpacity>
             <TouchableOpacity
               disabled={isSaving}
+              onPress={() => {
+                Keyboard.dismiss();
+                setShowExit(false);
+                onClose();
+              }}
+              style={[
+                styles.secondaryButton,
+                styles.exitActionButton,
+                compact && styles.exitActionButtonCompact,
+                styles.discardButton,
+                isSaving && styles.buttonDisabled,
+              ]}
+            >
+              <Ionicons
+                name="exit-outline"
+                size={17}
+                color={EventTheme.colors.danger}
+              />
+              <Text style={styles.discardButtonText}>Salir sin guardar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              disabled={isSaving}
               onPress={() => void saveLocallyAndExit()}
-              style={[styles.primaryButton, isSaving && styles.buttonDisabled]}
+              style={[
+                styles.primaryButton,
+                styles.exitActionButton,
+                compact && styles.exitActionButtonCompact,
+                !compact && styles.exitPrimaryButton,
+                isSaving && styles.buttonDisabled,
+              ]}
             >
               {isSaving ? (
                 <ActivityIndicator color={EventTheme.colors.surface} />
@@ -1956,6 +1987,24 @@ const styles = StyleSheet.create({
     marginTop: 5,
     textAlign: "center",
   },
-  exitActions: { flexDirection: "row", gap: 10, marginTop: 20 },
+  exitActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    marginTop: 20,
+    width: "100%",
+  },
   exitActionsCompact: { flexDirection: "column" },
+  exitActionButton: { flexGrow: 1, minWidth: 150 },
+  exitActionButtonCompact: { flexGrow: 0, width: "100%" },
+  exitPrimaryButton: { flexBasis: "100%" },
+  discardButton: {
+    backgroundColor: EventTheme.colors.surface,
+    borderColor: EventTheme.colors.danger,
+  },
+  discardButtonText: {
+    color: EventTheme.colors.danger,
+    fontFamily: EventTheme.typography.bold,
+    fontSize: 12,
+  },
 });
