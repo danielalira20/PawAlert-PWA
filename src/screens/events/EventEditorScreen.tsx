@@ -19,6 +19,7 @@ import {
 import { Toast, useToast } from "../../components/Toast";
 import { AppModal } from "../../components/AppModal";
 import { EventDateTimeModal } from "../../components/events/editor/EventDateTimeModal";
+import { EventLifecycleActions } from "../../components/events/editor/EventLifecycleActions";
 import {
   EventChoiceField,
   EventFormSection,
@@ -27,6 +28,7 @@ import {
 } from "../../components/events/editor/EventFormControls";
 import { EventLocationPicker } from "../../components/events/editor/EventLocationPicker";
 import { EventProgressHeader } from "../../components/events/editor/EventProgressHeader";
+import { EventStatusChip } from "../../components/events/shared/EventStatusChip";
 import {
   ACCESS_MODE_OPTIONS,
   AUDIENCE_OPTIONS,
@@ -53,7 +55,16 @@ import {
   replaceAssociationEventImage,
   updateAssociationEvent,
 } from "../../services/eventService";
-import type { EventAssociationView, EventType } from "../../types/event";
+import type {
+  EventAssociationView,
+  EventOperationResponse,
+  EventState,
+  EventType,
+} from "../../types/event";
+import {
+  getIncompleteEventSteps,
+  type EventLifecycleAction,
+} from "../../utils/eventLifecycle";
 import {
   createInitialEventValues,
   eventValuesFromAssociation,
@@ -125,6 +136,8 @@ export default function EventEditorScreen({
   const [currentEventId, setCurrentEventId] = useState(eventId);
   const [existingEvent, setExistingEvent] =
     useState<EventAssociationView | null>(null);
+  const [lifecycleState, setLifecycleState] =
+    useState<EventState>("borrador");
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [isLoading, setIsLoading] = useState(Boolean(eventId));
   const [isSaving, setIsSaving] = useState(false);
@@ -137,10 +150,19 @@ export default function EventEditorScreen({
   const [showExit, setShowExit] = useState(false);
   const saveKeyRef = useRef<string | null>(null);
   const imageKeyRef = useRef<string | null>(null);
+  const createdEventIdRef = useRef<string | null>(null);
 
   const patchValues = (patch: Partial<EventEditorValues>) =>
     setValues((current) => ({ ...current, ...patch }));
   const completed = useMemo(() => getEventStepCompletion(values), [values]);
+  const incompleteSteps = useMemo(
+    () => getIncompleteEventSteps(completed),
+    [completed],
+  );
+  const publishReady = incompleteSteps.length === 0;
+  const lifecycleEditable = ["borrador", "publicado", "pausado"].includes(
+    lifecycleState,
+  );
   const generatedDescription = useMemo(
     () => generateEventDescription(values),
     [values],
@@ -151,6 +173,11 @@ export default function EventEditorScreen({
   useEffect(() => {
     let active = true;
     const load = async () => {
+      if (eventId && createdEventIdRef.current === eventId) {
+        createdEventIdRef.current = null;
+        if (active) setIsLoading(false);
+        return;
+      }
       if (!token) return;
       try {
         const [staffResponse, savedDraft] = await Promise.all([
@@ -167,6 +194,7 @@ export default function EventEditorScreen({
           const found = events.find((event) => event.id === eventId);
           if (!found) throw new Error("El evento ya no está disponible.");
           setExistingEvent(found);
+          setLifecycleState(found.estado);
           base = eventValuesFromAssociation(found);
         }
         if (savedDraft) {
@@ -283,15 +311,15 @@ export default function EventEditorScreen({
     return form;
   };
 
-  const saveDraft = async () => {
-    if (!token) return;
+  const synchronizeDraft = async (notify = true): Promise<string | null> => {
+    if (!token) return null;
     if (imageAsset && !values.textoAlternativo.trim()) {
       showToast({
         type: "warning",
         title: "Falta describir la imagen",
         message: "Agrega el texto alternativo antes de guardar el borrador.",
       });
-      return;
+      return null;
     }
     setIsSaving(true);
     try {
@@ -301,16 +329,33 @@ export default function EventEditorScreen({
         currentEventId,
       );
       const data = eventValuesToWriteData(values);
-      const response = currentEventId
-        ? await updateAssociationEvent(token, currentEventId, {
-            datos: data,
-            idempotency_key: saveKeyRef.current,
-          })
-        : await createAssociationEvent(token, {
+      let savedEventId = currentEventId;
+      if (currentEventId) {
+        try {
+          const response = await updateAssociationEvent(token, currentEventId, {
             datos: data,
             idempotency_key: saveKeyRef.current,
           });
-      const savedEventId = response.id;
+          savedEventId = response.id;
+        } catch (error) {
+          const normalized = normalizeEventApiError(error);
+          if (
+            normalized.status !== 409 ||
+            normalized.message !==
+              "La actualización no modifica ningún dato del evento."
+          ) {
+            throw error;
+          }
+          savedEventId = currentEventId;
+        }
+      } else {
+        const response = await createAssociationEvent(token, {
+          datos: data,
+          idempotency_key: saveKeyRef.current,
+        });
+        savedEventId = response.id;
+      }
+      if (!savedEventId) throw new Error("No se pudo identificar el borrador.");
       if (!currentEventId) {
         await AsyncStorage.removeItem(localDraftKey());
         setCurrentEventId(savedEventId);
@@ -318,6 +363,7 @@ export default function EventEditorScreen({
           localDraftKey(savedEventId),
           JSON.stringify({ values, step }),
         );
+        createdEventIdRef.current = savedEventId;
         onEventCreated?.(savedEventId);
       }
       saveKeyRef.current = null;
@@ -365,17 +411,63 @@ export default function EventEditorScreen({
         JSON.stringify({ values, step }),
       );
       setImageRemoved(false);
-      showToast({
-        type: "success",
-        title: "Borrador guardado",
-        message: "Tu avance quedó guardado y puedes continuar después.",
-      });
+      if (notify) {
+        const isDraft = lifecycleState === "borrador";
+        showToast({
+          type: "success",
+          title: isDraft ? "Borrador guardado" : "Cambios guardados",
+          message: isDraft
+            ? "Tu avance quedó guardado y puedes continuar después."
+            : "La información del evento quedó actualizada.",
+        });
+      }
+      return savedEventId;
     } catch (error) {
       const message = normalizeEventApiError(error).message;
       showToast({ type: "error", title: "No pudimos guardar", message });
+      return null;
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const saveDraft = async () => {
+    await synchronizeDraft(true);
+  };
+
+  const handleLifecycleSuccess = async (
+    response: EventOperationResponse,
+    action: EventLifecycleAction,
+  ) => {
+    const wasPaused = lifecycleState === "pausado";
+    setLifecycleState(response.estado);
+    setExistingEvent((current) =>
+      current
+        ? {
+            ...current,
+            estado: response.estado,
+            version_publica: response.version_publica,
+            actualizada_at: response.updated_at,
+          }
+        : current,
+    );
+    showToast({
+      type: "success",
+      title:
+        action === "publish"
+          ? wasPaused
+            ? "Evento reanudado"
+            : "Evento publicado"
+          : action === "pause"
+            ? "Evento pausado"
+            : "Evento cancelado",
+      message:
+        action === "publish"
+          ? "La agenda comunitaria ya refleja el evento publicado."
+          : action === "pause"
+            ? "El evento dejó de mostrarse temporalmente en la agenda pública."
+            : "La cancelación y su motivo quedaron registrados.",
+    });
   };
 
   const toggleCustom = (field: CustomField) =>
@@ -987,6 +1079,30 @@ export default function EventEditorScreen({
   const previewUri =
     imageAsset?.uri ||
     (!imageRemoved ? remoteImage?.url || existingEvent?.imagen_url : null);
+  const lifecycleNoticeTitle =
+    lifecycleState === "publicado"
+      ? "El evento está publicado"
+      : lifecycleState === "pausado"
+        ? publishReady
+          ? "El evento está listo para reanudarse"
+          : "Completa la información antes de reanudar"
+        : lifecycleState === "borrador"
+          ? publishReady
+            ? "El evento está listo para publicarse"
+            : "Completa la información pendiente"
+          : "El evento ya no admite cambios ordinarios";
+  const lifecycleNoticeText =
+    lifecycleState === "publicado"
+      ? "Puedes guardar cambios, pausarlo temporalmente o cancelarlo desde esta revisión."
+      : lifecycleState === "pausado" || lifecycleState === "borrador"
+        ? publishReady
+          ? "Antes de continuar guardaremos cualquier cambio pendiente y confirmaremos la operación."
+          : `Falta revisar: ${incompleteSteps.join(", ")}.`
+        : "Consulta su estado en el inventario de la asociación.";
+  const lifecycleNoticePositive =
+    lifecycleState === "publicado" ||
+    ((lifecycleState === "borrador" || lifecycleState === "pausado") &&
+      publishReady);
   const renderStepFive = () => (
     <View style={styles.sections}>
       <EventFormSection
@@ -1068,6 +1184,10 @@ export default function EventEditorScreen({
         title="Revisión del borrador"
         description="Puedes volver a cualquier paso para completar o corregir información."
       >
+        <View style={styles.currentStateRow}>
+          <Text style={styles.currentStateLabel}>Estado actual</Text>
+          <EventStatusChip state={lifecycleState} />
+        </View>
         {[
           [
             "Tipo",
@@ -1130,17 +1250,49 @@ export default function EventEditorScreen({
             </TouchableOpacity>
           ))}
         </View>
-        <View style={styles.draftNotice}>
+        <View
+          style={[
+            styles.draftNotice,
+            lifecycleNoticePositive && styles.publishReadyNotice,
+          ]}
+        >
           <Ionicons
-            name="information-circle-outline"
+            name={
+              lifecycleNoticePositive
+                ? "checkmark-circle-outline"
+                : "alert-circle-outline"
+            }
             size={21}
-            color={EventTheme.colors.primary}
+            color={
+              lifecycleNoticePositive
+                ? EventTheme.colors.secondary
+                : EventTheme.colors.primary
+            }
           />
-          <Text style={styles.draftNoticeText}>
-            FE-03A guarda el borrador y su imagen. La publicación y las acciones
-            de estado se incorporarán en FE-03B.
-          </Text>
+          <View style={styles.draftNoticeCopy}>
+            <Text style={styles.draftNoticeTitle}>
+              {lifecycleNoticeTitle}
+            </Text>
+            <Text style={styles.draftNoticeText}>
+              {lifecycleNoticeText}
+            </Text>
+          </View>
         </View>
+        <EventLifecycleActions
+          disabled={isSaving}
+          eventId={currentEventId}
+          onError={(message) =>
+            showToast({
+              type: "error",
+              title: "No pudimos cambiar el estado",
+              message,
+            })
+          }
+          onPreparePublish={() => synchronizeDraft(false)}
+          onSuccess={handleLifecycleSuccess}
+          publishReady={publishReady}
+          state={lifecycleState}
+        />
       </EventFormSection>
     </View>
   );
@@ -1194,24 +1346,30 @@ export default function EventEditorScreen({
             />
             <Text style={styles.secondaryButtonText}>Anterior</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            disabled={isSaving}
-            onPress={() => void saveDraft()}
-            style={styles.saveButton}
-          >
-            {isSaving ? (
-              <ActivityIndicator color={EventTheme.colors.primary} />
-            ) : (
-              <>
-                <Ionicons
-                  name="cloud-upload-outline"
-                  size={18}
-                  color={EventTheme.colors.primary}
-                />
-                <Text style={styles.saveButtonText}>Guardar borrador</Text>
-              </>
-            )}
-          </TouchableOpacity>
+          {lifecycleEditable && (
+            <TouchableOpacity
+              disabled={isSaving}
+              onPress={() => void saveDraft()}
+              style={styles.saveButton}
+            >
+              {isSaving ? (
+                <ActivityIndicator color={EventTheme.colors.primary} />
+              ) : (
+                <>
+                  <Ionicons
+                    name="cloud-upload-outline"
+                    size={18}
+                    color={EventTheme.colors.primary}
+                  />
+                  <Text style={styles.saveButtonText}>
+                    {lifecycleState === "borrador"
+                      ? "Guardar borrador"
+                      : "Guardar cambios"}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
           {step < 5 && (
             <TouchableOpacity
               disabled={isSaving}
@@ -1478,6 +1636,16 @@ const styles = StyleSheet.create({
     fontFamily: EventTheme.typography.semiBold,
     fontSize: 12,
   },
+  currentStateRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  currentStateLabel: {
+    color: EventTheme.colors.textMuted,
+    fontFamily: EventTheme.typography.semiBold,
+    fontSize: 11,
+  },
   completionList: { gap: 7, marginTop: 8 },
   completionRow: {
     alignItems: "center",
@@ -1502,12 +1670,19 @@ const styles = StyleSheet.create({
     gap: 9,
     padding: 13,
   },
+  publishReadyNotice: { backgroundColor: "#EAF7F6" },
+  draftNoticeCopy: { flex: 1 },
+  draftNoticeTitle: {
+    color: EventTheme.colors.text,
+    fontFamily: EventTheme.typography.bold,
+    fontSize: 11,
+  },
   draftNoticeText: {
     color: EventTheme.colors.textMuted,
-    flex: 1,
     fontFamily: EventTheme.typography.regular,
     fontSize: 11,
     lineHeight: 17,
+    marginTop: 2,
   },
   footer: {
     backgroundColor: EventTheme.colors.surface,

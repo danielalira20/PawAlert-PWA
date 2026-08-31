@@ -2,7 +2,11 @@ import { Ionicons } from "@expo/vector-icons";
 import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { EventTheme } from "../../../constants/eventTheme";
-import type { EventAssociationView } from "../../../types/event";
+import type {
+  EventAssociationView,
+  EventOperationResponse,
+} from "../../../types/event";
+import type { EventLifecycleAction } from "../../../utils/eventLifecycle";
 import {
   formatEventCost,
   formatEventSchedule,
@@ -10,11 +14,17 @@ import {
 } from "../../../utils/eventFormatters";
 import { EventStatusChip } from "../shared/EventStatusChip";
 import { EventTypeChip } from "../shared/EventTypeChip";
+import { EventLifecycleActions } from "../editor/EventLifecycleActions";
 
 interface AssociationEventCardProps {
   event: EventAssociationView;
   wide?: boolean;
   onManage?: (eventId: string) => void;
+  onLifecycleError?: (message: string) => void;
+  onLifecycleSuccess?: (
+    response: EventOperationResponse,
+    action: EventLifecycleAction,
+  ) => void | Promise<void>;
 }
 
 function displaySchedule(event: EventAssociationView) {
@@ -41,6 +51,8 @@ export function AssociationEventCard({
   event,
   wide = false,
   onManage,
+  onLifecycleError,
+  onLifecycleSuccess,
 }: AssociationEventCardProps) {
   const hasUsableImage = Boolean(
     event.imagen_url && !isEventImageUrlExpired(event.imagen_url_expira_at),
@@ -183,6 +195,15 @@ export function AssociationEventCard({
               </Text>
             </TouchableOpacity>
           )}
+        {!!onLifecycleError && !!onLifecycleSuccess && (
+          <EventLifecycleActions
+            eventId={event.id}
+            onError={onLifecycleError}
+            onSuccess={onLifecycleSuccess}
+            state={event.estado}
+            variant="card"
+          />
+        )}
       </View>
     </View>
   );

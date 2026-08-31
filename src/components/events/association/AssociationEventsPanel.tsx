@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-import { useMemo, useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   StyleSheet,
@@ -11,6 +11,7 @@ import {
 } from "react-native";
 
 import { EventTheme } from "../../../constants/eventTheme";
+import { Toast, useToast } from "../../Toast";
 import { useAssociationEvents } from "../../../hooks/events/useAssociationEvents";
 import {
   buildAssociationEventCounts,
@@ -69,10 +70,12 @@ function LoadingState({ wide }: { wide: boolean }) {
 
 export function AssociationEventsPanel() {
   const router = useRouter();
+  const hasFocusedRef = useRef(false);
   const { width } = useWindowDimensions();
   const wide = width >= 760;
   const { events, isLoading, isRefreshing, error, refresh } =
     useAssociationEvents();
+  const { toast, translateY, showToast } = useToast();
   const [filter, setFilter] = useState<AssociationEventFilter>("todos");
   const counts = useMemo(() => buildAssociationEventCounts(events), [events]);
   const visibleEvents = useMemo(
@@ -83,8 +86,16 @@ export function AssociationEventsPanel() {
     [events, filter],
   );
 
+  useFocusEffect(
+    useCallback(() => {
+      if (hasFocusedRef.current) void refresh();
+      else hasFocusedRef.current = true;
+    }, [refresh]),
+  );
+
   return (
     <View style={styles.panel}>
+      <Toast toast={toast} translateY={translateY} />
       <View style={styles.intro}>
         <View style={styles.introIcon}>
           <Ionicons
@@ -225,6 +236,26 @@ export function AssociationEventsPanel() {
                   params: { event_id: eventId },
                 })
               }
+              onLifecycleError={(message) =>
+                showToast({
+                  type: "error",
+                  title: "No pudimos cambiar el estado",
+                  message,
+                })
+              }
+              onLifecycleSuccess={async (_, action) => {
+                showToast({
+                  type: "success",
+                  title:
+                    action === "publish"
+                      ? "Evento reanudado"
+                      : action === "pause"
+                        ? "Evento pausado"
+                        : "Evento cancelado",
+                  message: "El inventario se está actualizando.",
+                });
+                await refresh();
+              }}
               wide={wide}
             />
           ))}
