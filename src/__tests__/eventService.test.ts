@@ -11,6 +11,8 @@ import {
   normalizeEventApiError,
   pauseAssociationEvent,
   publishAssociationEvent,
+  restoreEventAsAdmin,
+  suspendEventAsAdmin,
   unsaveEvent,
 } from '../services/eventService';
 
@@ -133,6 +135,40 @@ describe('eventService', () => {
         idempotency_key: 'event-pause-test-001',
       },
       { headers: { Authorization: 'Bearer token-asociacion' } },
+    );
+  });
+
+  it('conecta suspensión y restauración administrativa a sus contratos', async () => {
+    mockedAxios.post.mockResolvedValue({
+      data: { id: 'event-1', estado: 'suspendido_admin' },
+    });
+
+    await suspendEventAsAdmin('token-admin', 'event-1', {
+      motivo: 'Servicio potencialmente riesgoso pendiente de aclaración.',
+      idempotency_key: 'event-suspend-test-001',
+    });
+    await restoreEventAsAdmin('token-admin', 'event-1', {
+      resolucion: 'La información fue corregida y el incidente quedó atendido.',
+      idempotency_key: 'event-restore-test-001',
+    });
+
+    expect(mockedAxios.post).toHaveBeenNthCalledWith(
+      1,
+      `${API_URL}/admin/events/event-1/suspend`,
+      {
+        motivo: 'Servicio potencialmente riesgoso pendiente de aclaración.',
+        idempotency_key: 'event-suspend-test-001',
+      },
+      { headers: { Authorization: 'Bearer token-admin' } },
+    );
+    expect(mockedAxios.post).toHaveBeenNthCalledWith(
+      2,
+      `${API_URL}/admin/events/event-1/restore`,
+      {
+        resolucion: 'La información fue corregida y el incidente quedó atendido.',
+        idempotency_key: 'event-restore-test-001',
+      },
+      { headers: { Authorization: 'Bearer token-admin' } },
     );
   });
 
