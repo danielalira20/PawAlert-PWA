@@ -21,6 +21,7 @@ import { Toast, useToast } from '../components/Toast';
 import { API_URL } from '../constants/api';
 import { Brand } from '../constants/theme';
 import { useAuth } from '../context/AuthContext';
+import { supabase } from '../config/supabase';
 
 interface Seguimiento {
   id: string;
@@ -64,7 +65,7 @@ export interface Custodia {
   reporte: {
     id: string;
     foto_url?: string | null;
-    animales?: Array<{ tipo_animal?: string; condicion?: string; tamanio?: string }>;
+    animales?: Array<{ id: string; tipo_animal?: string; condicion?: string; tamanio?: string }>;
   };
   ultimo_seguimiento?: Seguimiento | null;
   seguimiento_anterior?: Seguimiento | null;
@@ -114,8 +115,7 @@ export interface Custodia {
   } | null;
 }
 
-type ModalMode = 'seguimiento' | 'relevo' | 'extension' | 'vencimiento' | 'validacion' | 'duda' | 'gestionar_duda' | 'responder_aclaracion' | 'aceptar' | 'autorizar_relevo' | 'transporte_relevo' | 'transferencia' | 'finalizar' | null;
-
+type ModalMode = 'seguimiento' | 'relevo' | 'extension' | 'vencimiento' | 'validacion' | 'duda' | 'gestionar_duda' | 'responder_aclaracion' | 'aceptar' | 'autorizar_relevo' | 'transporte_relevo' | 'transferencia' | 'finalizar' | 'proponer_adopcion' | null;
 interface Props {
   onClose?: () => void;
 }
@@ -155,6 +155,11 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
     posiblesInconsistencias: false,
     revisionMedica: false,
     revisionLegal: false,
+    nombreTemporal: '',
+    temperamento: '',
+    compatibilidad: '',
+    razonAdopcion: '',
+    tiempoCustodiaAdicional: '',
   });
   const [fotoAnimal, setFotoAnimal] = useState<string | null>(null);
   const [fotoEntorno, setFotoEntorno] = useState<string | null>(null);
@@ -215,6 +220,11 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
       posiblesInconsistencias: false,
       revisionMedica: false,
       revisionLegal: false,
+      nombreTemporal: '',
+      temperamento: '',
+      compatibilidad: '',
+      razonAdopcion: '',
+      tiempoCustodiaAdicional: '',
     });
     setFotoAnimal(null);
     setFotoEntorno(null);
@@ -297,6 +307,36 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
       { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' } },
     );
     return response.data.foto_url as string;
+  };
+
+  const subirFotoPropuesta = async (uri: string) => {
+    if (!seleccionada) return null;
+
+    // 1. ¡LA CLAVE! Le inyectamos tu sesión al cliente de Supabase.
+    // Usamos el token en ambos campos para evitar que Supabase lo rechace por formato inválido.
+    if (token) {
+      await supabase.auth.setSession({ 
+        access_token: token, 
+        refresh_token: token 
+      });
+    }
+
+    // 2. Usamos blob() en lugar de arrayBuffer(), es más seguro en React Native
+    const blob = await (await fetch(uri)).blob();
+    
+    // 3. El prefijo exacto que pide el backend
+    const filePath = `adopciones/ingresos/${seleccionada.id}_${Date.now()}.jpg`;
+
+    // 4. Subida al bucket
+    const { data, error } = await supabase.storage
+      .from('pawalert-adopciones-privado') 
+      .upload(filePath, blob, { contentType: 'image/jpeg' });
+
+    if (error) {
+      throw new Error(`Error de permisos en Storage: ${error.message}`);
+    }
+
+    return data.path; 
   };
 
   const ejecutar = async (accion: () => Promise<void>, exito: string) => {
@@ -521,6 +561,41 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
       { headers: { Authorization: `Bearer ${token}` } },
     );
   }, 'Tu parte quedó confirmada. La transferencia terminará cuando ambas partes confirmen.');
+  const enviarPropuestaAdopcion = () => ejecutar(async () => {
+    if (!seleccionada || !form.nombreTemporal || !form.salud || !form.temperamento || !form.razonAdopcion || !fotoAnimal) {
+      throw new Error('Completa los campos obligatorios y adjunta una foto reciente.');
+    }
+
+    const animalId = seleccionada.reporte.animales?.[0]?.id;
+    if (!animalId) {
+      throw new Error('El backend no devolvió el ID del animal en la custodia.');
+    }
+
+    // 1. Subimos la foto directo a Supabase Storage
+    const foto_path = await subirFotoPropuesta(fotoAnimal);
+    
+    if (!foto_path) {
+      throw new Error('No se pudo obtener la ruta de la imagen tras subirla.');
+    }
+
+    // 2. Mandamos el formulario con la ruta real que nos devolvió Storage
+    await axios.post(
+      `${API_URL}/custody/${seleccionada.id}/adoption-intake-requests`,
+      {
+        animal_id: animalId,
+        origen_individuo: 1, 
+        fotos_propuesta_paths: [foto_path],
+        salud_conocida: form.salud,
+        temperamento_observado: form.temperamento,
+        motivo_propuesta: form.razonAdopcion,
+        idempotency_key: `propuesta_${Date.now()}_${seleccionada.id}`,
+        nombre_temporal: form.nombreTemporal,
+        compatibilidad: form.compatibilidad || null,
+        tiempo_custodia_adicional: form.tiempoCustodiaAdicional || null,
+      },
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+  }, 'La propuesta ha sido enviada a la asociación coordinadora.');
 
   const finalizarCustodia = () => ejecutar(async () => {
     if (!seleccionada || !form.resolucion || form.comentario.trim().length < 3) {
@@ -713,6 +788,9 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
                       {custodia.estado === 'activo' && (
                         <Action icon="camera-outline" label={custodia.seguimiento_inicial_pendiente ? 'Seguimiento inicial' : 'Nuevo seguimiento'} primary onPress={() => abrir('seguimiento', custodia)} />
                       )}
+                      {custodia.estado === 'activo' && (
+                        <Action icon="home-outline" label="Proponer para adopción" primary onPress={() => abrir('proponer_adopcion', custodia)} />
+                      )}
                       {custodia.estado === 'activo' && <Action icon="calendar-outline" label="Extender" onPress={() => abrir('extension', custodia)} />}
                       {custodia.estado === 'activo' && <Action icon="swap-horizontal-outline" label="Necesito relevo" onPress={() => abrir('relevo', custodia)} />}
                       {custodia.aclaraciones?.some((a) => a.estado === 'enviada_voluntario') && (
@@ -770,6 +848,18 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
               <TouchableOpacity onPress={cerrarModal}><Ionicons name="close" size={22} color={Brand.textFaint} /></TouchableOpacity>
             </View>
             <ScrollView showsVerticalScrollIndicator={false}>
+            {modal === 'proponer_adopcion' && (
+                <>
+                  <Text style={styles.modalCopy}>Propón a este animal para que la asociación lo evalúe y publique en la galería. Tú conservarás la custodia hasta la entrega.</Text>
+                  <Field label="Nombre temporal" value={form.nombreTemporal} onChangeText={(v) => setForm({ ...form, nombreTemporal: v })} placeholder="Ej. Firulais" />
+                  <Field label="Estado de salud" value={form.salud} onChangeText={(v) => setForm({ ...form, salud: v })} placeholder="Ej. Sano, vacunado" multiline />
+                  <Field label="Temperamento" value={form.temperamento} onChangeText={(v) => setForm({ ...form, temperamento: v })} placeholder="Ej. Juguetón, tranquilo" />
+                  <Field label="Compatibilidad (Opcional)" value={form.compatibilidad} onChangeText={(v) => setForm({ ...form, compatibilidad: v })} placeholder="Ej. Convive con niños y otros perros" />
+                  <Field label="Razón para adopción" value={form.razonAdopcion} onChangeText={(v) => setForm({ ...form, razonAdopcion: v })} placeholder="¿Por qué está listo para un hogar definitivo?" multiline />
+                  <Field label="Tiempo que puedes conservarlo" value={form.tiempoCustodiaAdicional} onChangeText={(v) => setForm({ ...form, tiempoCustodiaAdicional: v })} placeholder="Ej. 2 semanas" />
+                  <EvidenceButtons animal={fotoAnimal} entorno={null} gps={gps} initial={false} onAnimal={() => tomarFoto()} onEntorno={() => undefined} onGps={capturarGps} />                  <Submit label="Enviar propuesta" loading={submitting} onPress={enviarPropuestaAdopcion} />
+                </>
+              )}
               {modal === 'seguimiento' && (
                 <>
                   <Field label="Condición actual" value={form.condicion} onChangeText={(v) => setForm({ ...form, condicion: v })} placeholder="Estable, herido, en recuperación..." />
@@ -1107,9 +1197,9 @@ function modalTitle(mode: ModalMode) {
     transporte_relevo: 'Confirmar traslado',
     transferencia: 'Confirmar transferencia',
     finalizar: 'Finalizar custodia',
+    proponer_adopcion: 'Proponer para adopción',
   } as any)[mode || ''] || '';
 }
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Brand.backgroundWarm },
   header: { flexDirection: 'row', gap: 16, padding: 22, borderBottomWidth: 1, borderBottomColor: '#E7D8C4' },
