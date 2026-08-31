@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -67,6 +68,7 @@ function LoadingState({ wide }: { wide: boolean }) {
 }
 
 export function AssociationEventsPanel() {
+  const router = useRouter();
   const { width } = useWindowDimensions();
   const wide = width >= 760;
   const { events, isLoading, isRefreshing, error, refresh } =
@@ -116,6 +118,19 @@ export function AssociationEventsPanel() {
           )}
         </TouchableOpacity>
       </View>
+
+      <TouchableOpacity
+        accessibilityRole="button"
+        onPress={() => router.push("/evento-editor")}
+        style={styles.createButton}
+      >
+        <Ionicons
+          name="add-circle-outline"
+          size={20}
+          color={EventTheme.colors.surface}
+        />
+        <Text style={styles.createButtonText}>Nuevo evento</Text>
+      </TouchableOpacity>
 
       {!isLoading && !error && (
         <>
@@ -201,7 +216,17 @@ export function AssociationEventsPanel() {
       ) : (
         <View style={styles.cards}>
           {visibleEvents.map((event) => (
-            <AssociationEventCard event={event} key={event.id} wide={wide} />
+            <AssociationEventCard
+              event={event}
+              key={event.id}
+              onManage={(eventId) =>
+                router.push({
+                  pathname: "/evento-editor",
+                  params: { event_id: eventId },
+                })
+              }
+              wide={wide}
+            />
           ))}
         </View>
       )}
@@ -261,6 +286,22 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: EventTheme.spacing.sm,
     marginBottom: EventTheme.spacing.md,
+  },
+  createButton: {
+    alignItems: "center",
+    alignSelf: "flex-start",
+    backgroundColor: EventTheme.colors.primary,
+    borderRadius: EventTheme.radii.control,
+    flexDirection: "row",
+    gap: 7,
+    marginBottom: EventTheme.spacing.md,
+    minHeight: EventTheme.layout.minimumTouchTarget,
+    paddingHorizontal: 17,
+  },
+  createButtonText: {
+    color: EventTheme.colors.surface,
+    fontFamily: EventTheme.typography.bold,
+    fontSize: 12,
   },
   summaryCard: {
     alignItems: "center",

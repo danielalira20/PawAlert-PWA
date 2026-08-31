@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Image, StyleSheet, Text, View } from "react-native";
+import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { EventTheme } from "../../../constants/eventTheme";
 import type { EventAssociationView } from "../../../types/event";
@@ -14,6 +14,7 @@ import { EventTypeChip } from "../shared/EventTypeChip";
 interface AssociationEventCardProps {
   event: EventAssociationView;
   wide?: boolean;
+  onManage?: (eventId: string) => void;
 }
 
 function displaySchedule(event: EventAssociationView) {
@@ -39,6 +40,7 @@ function displayLocation(event: EventAssociationView) {
 export function AssociationEventCard({
   event,
   wide = false,
+  onManage,
 }: AssociationEventCardProps) {
   const hasUsableImage = Boolean(
     event.imagen_url && !isEventImageUrlExpired(event.imagen_url_expira_at),
@@ -162,6 +164,25 @@ export function AssociationEventCard({
             year: "numeric",
           }).format(new Date(event.actualizada_at))}
         </Text>
+        {!!onManage &&
+          ["borrador", "publicado", "pausado"].includes(event.estado) && (
+            <TouchableOpacity
+              accessibilityRole="button"
+              onPress={() => onManage(event.id)}
+              style={styles.manageButton}
+            >
+              <Ionicons
+                name="create-outline"
+                size={17}
+                color={EventTheme.colors.surface}
+              />
+              <Text style={styles.manageButtonText}>
+                {event.estado === "borrador"
+                  ? "Continuar borrador"
+                  : "Editar evento"}
+              </Text>
+            </TouchableOpacity>
+          )}
       </View>
     </View>
   );
@@ -298,5 +319,20 @@ const styles = StyleSheet.create({
     fontFamily: EventTheme.typography.regular,
     fontSize: 10,
     marginTop: 12,
+  },
+  manageButton: {
+    alignItems: "center",
+    backgroundColor: EventTheme.colors.primary,
+    borderRadius: EventTheme.radii.control,
+    flexDirection: "row",
+    gap: 7,
+    justifyContent: "center",
+    marginTop: 14,
+    minHeight: EventTheme.layout.minimumTouchTarget,
+  },
+  manageButtonText: {
+    color: EventTheme.colors.surface,
+    fontFamily: EventTheme.typography.bold,
+    fontSize: 12,
   },
 });
