@@ -3,6 +3,16 @@ import type { EventState } from "../types/event";
 
 export type EventLifecycleAction = "publish" | "pause" | "cancel";
 
+export interface EventActionLock {
+  current: boolean;
+}
+
+export function acquireEventActionLock(lock: EventActionLock) {
+  if (lock.current) return false;
+  lock.current = true;
+  return true;
+}
+
 export function getEventLifecycleActions(
   state: EventState,
 ): EventLifecycleAction[] {

@@ -26,6 +26,7 @@ import {
 } from "../../../services/eventService";
 import type { EventOperationResponse, EventState } from "../../../types/event";
 import {
+  acquireEventActionLock,
   getEventLifecycleActions,
   type EventLifecycleAction,
 } from "../../../utils/eventLifecycle";
@@ -85,13 +86,14 @@ export function EventLifecycleActions({
   const [customReason, setCustomReason] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const actionKeyRef = useRef<string | null>(null);
+  const submittingRef = useRef(false);
   const actions = useMemo(() => getEventLifecycleActions(state), [state]);
   const resolvedReason =
     reason === EVENT_CUSTOM_REASON ? customReason.trim() : reason.trim();
   const needsReason = action === "pause" || action === "cancel";
 
   const closeModal = () => {
-    if (isSubmitting) return;
+    if (submittingRef.current) return;
     setAction(null);
     setReason("");
     setCustomReason("");
@@ -106,7 +108,12 @@ export function EventLifecycleActions({
   };
 
   const executeAction = async () => {
-    if (!action || !token || (needsReason && !resolvedReason)) return;
+    if (!action || (needsReason && !resolvedReason)) return;
+    if (!token) {
+      onError("Tu sesión expiró. Inicia sesión nuevamente.");
+      return;
+    }
+    if (!acquireEventActionLock(submittingRef)) return;
     setIsSubmitting(true);
     try {
       let resolvedEventId = eventId;
@@ -140,6 +147,7 @@ export function EventLifecycleActions({
     } catch (error) {
       onError(normalizeEventApiError(error).message);
     } finally {
+      submittingRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -215,11 +223,17 @@ export function EventLifecycleActions({
 
       <AppModal
         dismissable={!isSubmitting}
+        fitContent
         maxWidth={560}
         onClose={closeModal}
         visible={action != null}
       >
-        <ScrollView contentContainerStyle={styles.modal}>
+        <ScrollView
+          contentContainerStyle={styles.modal}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          style={styles.modalScroll}
+        >
           <View
             style={[
               styles.modalIcon,
@@ -288,6 +302,7 @@ export function EventLifecycleActions({
 
           <View style={styles.modalActions}>
             <TouchableOpacity
+              accessibilityRole="button"
               disabled={isSubmitting}
               onPress={closeModal}
               style={styles.backButton}
@@ -295,6 +310,10 @@ export function EventLifecycleActions({
               <Text style={styles.backLabel}>Volver</Text>
             </TouchableOpacity>
             <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityState={{
+                disabled: isSubmitting || (needsReason && !resolvedReason),
+              }}
               disabled={isSubmitting || (needsReason && !resolvedReason)}
               onPress={() => void executeAction()}
               style={[
@@ -347,6 +366,7 @@ const styles = StyleSheet.create({
   publishLabel: { color: EventTheme.colors.surface },
   cancelLabel: { color: EventTheme.colors.danger },
   disabled: { opacity: 0.42 },
+  modalScroll: { flexGrow: 0 },
   modal: { backgroundColor: EventTheme.colors.surface, padding: 27 },
   modalIcon: {
     alignItems: "center",
