@@ -9,6 +9,8 @@ import {
   listAdminEventIncidents,
   listMapEvents,
   normalizeEventApiError,
+  pauseAssociationEvent,
+  publishAssociationEvent,
   unsaveEvent,
 } from '../services/eventService';
 
@@ -104,6 +106,36 @@ describe('eventService', () => {
     );
   });
 
+  it('conecta publicación y pausa con sus contratos idempotentes', async () => {
+    mockedAxios.post.mockResolvedValue({
+      data: { id: 'event-1', estado: 'publicado' },
+    });
+
+    await publishAssociationEvent('token-asociacion', 'event-1', {
+      idempotency_key: 'event-publish-test-001',
+    });
+    await pauseAssociationEvent('token-asociacion', 'event-1', {
+      motivo: 'Cambio o confirmación de sede',
+      idempotency_key: 'event-pause-test-001',
+    });
+
+    expect(mockedAxios.post).toHaveBeenNthCalledWith(
+      1,
+      `${API_URL}/associations/me/events/event-1/publish`,
+      { idempotency_key: 'event-publish-test-001' },
+      { headers: { Authorization: 'Bearer token-asociacion' } },
+    );
+    expect(mockedAxios.post).toHaveBeenNthCalledWith(
+      2,
+      `${API_URL}/associations/me/events/event-1/pause`,
+      {
+        motivo: 'Cambio o confirmación de sede',
+        idempotency_key: 'event-pause-test-001',
+      },
+      { headers: { Authorization: 'Bearer token-asociacion' } },
+    );
+  });
+
   it('genera claves legibles y suficientemente únicas por operación', () => {
     expect(createEventIdempotencyKey('publish', 'event-1')).toBe(
       'event:publish:event-1:12345678-1234-4234-9234-123456789012',
@@ -136,4 +168,3 @@ describe('eventService', () => {
     );
   });
 });
-

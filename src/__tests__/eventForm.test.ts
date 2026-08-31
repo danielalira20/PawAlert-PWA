@@ -114,4 +114,22 @@ describe("eventForm", () => {
       true,
     ]);
   });
+
+  it("considera pendiente un horario que ya terminó", () => {
+    const values = {
+      ...createInitialEventValues("usuario-1"),
+      fechaInicio: "2020-01-01",
+      horaInicio: "10:00",
+      fechaFin: "2020-01-01",
+      horaFin: "12:00",
+      lugarNombre: "Centro comunitario",
+      direccionPublica: "Calle principal 1",
+      municipio: "Puebla",
+      estadoUbicacion: "Puebla",
+      latitud: 19.04,
+      longitud: -98.2,
+    };
+
+    expect(getEventStepCompletion(values)[1]).toBe(false);
+  });
 });
