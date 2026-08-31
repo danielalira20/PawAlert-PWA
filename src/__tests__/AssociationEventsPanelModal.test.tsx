@@ -47,10 +47,9 @@ jest.mock("../components/AppModal", () => {
   };
 });
 
-jest.mock(
-  "../components/events/association/AssociationEventFilters",
-  () => ({ AssociationEventFilters: () => null }),
-);
+jest.mock("../components/events/association/AssociationEventFilters", () => ({
+  AssociationEventFilters: () => null,
+}));
 
 jest.mock("../components/events/association/AssociationEventCard", () => {
   const { Text, TouchableOpacity } = require("react-native");
@@ -58,13 +57,20 @@ jest.mock("../components/events/association/AssociationEventCard", () => {
     AssociationEventCard: ({
       event,
       onManage,
+      wide,
     }: {
       event: { id: string };
       onManage: (eventId: string) => void;
+      wide: boolean;
     }) => (
-      <TouchableOpacity onPress={() => onManage(event.id)}>
-        <Text>Editar evento de prueba</Text>
-      </TouchableOpacity>
+      <>
+        <Text>
+          {wide ? "Tarjeta en cuadrícula" : "Tarjeta a ancho completo"}
+        </Text>
+        <TouchableOpacity onPress={() => onManage(event.id)}>
+          <Text>Editar evento de prueba</Text>
+        </TouchableOpacity>
+      </>
     ),
   };
 });
@@ -96,25 +102,26 @@ jest.mock("../screens/events/EventEditorScreen", () => {
 describe("AssociationEventsPanel modal", () => {
   beforeEach(() => mockRefresh.mockClear());
 
-  it("abre la creación dentro de un modal y refresca al cerrarlo", () => {
-    const view = render(<AssociationEventsPanel />);
+  it("abre la creación dentro de un modal y refresca al cerrarlo", async () => {
+    const view = await render(<AssociationEventsPanel />);
 
-    fireEvent.press(view.getByText("Nuevo evento"));
+    expect(view.getByText("Tarjeta a ancho completo")).toBeTruthy();
+    await fireEvent.press(view.getByText("Nuevo evento"));
 
     expect(view.getByLabelText("Editor modal")).toBeTruthy();
     expect(view.getByText("Editor nuevo")).toBeTruthy();
     expect(view.getByText("modal")).toBeTruthy();
 
-    fireEvent.press(view.getByText("Cerrar editor"));
+    await fireEvent.press(view.getByText("Cerrar editor"));
 
     expect(view.queryByLabelText("Editor modal")).toBeNull();
     expect(mockRefresh).toHaveBeenCalledTimes(1);
   });
 
-  it("abre la edición del evento seleccionado en el mismo modal", () => {
-    const view = render(<AssociationEventsPanel />);
+  it("abre la edición del evento seleccionado en el mismo modal", async () => {
+    const view = await render(<AssociationEventsPanel />);
 
-    fireEvent.press(view.getByText("Editar evento de prueba"));
+    await fireEvent.press(view.getByText("Editar evento de prueba"));
 
     expect(view.getByText("Editor event-1")).toBeTruthy();
     expect(view.getByText("modal")).toBeTruthy();

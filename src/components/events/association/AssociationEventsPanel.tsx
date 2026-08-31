@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -11,6 +11,8 @@ import {
 } from "react-native";
 
 import { EventTheme } from "../../../constants/eventTheme";
+import EventEditorScreen from "../../../screens/events/EventEditorScreen";
+import { AppModal } from "../../AppModal";
 import { Toast, useToast } from "../../Toast";
 import { useAssociationEvents } from "../../../hooks/events/useAssociationEvents";
 import {
@@ -69,7 +71,6 @@ function LoadingState({ wide }: { wide: boolean }) {
 }
 
 export function AssociationEventsPanel() {
-  const router = useRouter();
   const hasFocusedRef = useRef(false);
   const { width } = useWindowDimensions();
   const wide = width >= 760;
@@ -77,6 +78,7 @@ export function AssociationEventsPanel() {
     useAssociationEvents();
   const { toast, translateY, showToast } = useToast();
   const [filter, setFilter] = useState<AssociationEventFilter>("todos");
+  const [editor, setEditor] = useState<{ eventId?: string } | null>(null);
   const counts = useMemo(() => buildAssociationEventCounts(events), [events]);
   const visibleEvents = useMemo(
     () =>
@@ -85,6 +87,7 @@ export function AssociationEventsPanel() {
         : events.filter((event) => event.estado === filter),
     [events, filter],
   );
+  const useCardGrid = wide && visibleEvents.length > 1;
 
   useFocusEffect(
     useCallback(() => {
@@ -92,6 +95,11 @@ export function AssociationEventsPanel() {
       else hasFocusedRef.current = true;
     }, [refresh]),
   );
+
+  const closeEditor = () => {
+    setEditor(null);
+    void refresh();
+  };
 
   return (
     <View style={styles.panel}>
@@ -132,7 +140,7 @@ export function AssociationEventsPanel() {
 
       <TouchableOpacity
         accessibilityRole="button"
-        onPress={() => router.push("/evento-editor")}
+        onPress={() => setEditor({})}
         style={styles.createButton}
       >
         <Ionicons
@@ -230,12 +238,7 @@ export function AssociationEventsPanel() {
             <AssociationEventCard
               event={event}
               key={event.id}
-              onManage={(eventId) =>
-                router.push({
-                  pathname: "/evento-editor",
-                  params: { event_id: eventId },
-                })
-              }
+              onManage={(eventId) => setEditor({ eventId })}
               onLifecycleError={(message) =>
                 showToast({
                   type: "error",
@@ -256,11 +259,27 @@ export function AssociationEventsPanel() {
                 });
                 await refresh();
               }}
-              wide={wide}
+              wide={useCardGrid}
             />
           ))}
         </View>
       )}
+
+      <AppModal
+        maxWidth={920}
+        onClose={closeEditor}
+        showCloseButton={false}
+        visible={editor != null}
+      >
+        {editor && (
+          <EventEditorScreen
+            eventId={editor.eventId}
+            onClose={closeEditor}
+            onEventCreated={(eventId) => setEditor({ eventId })}
+            presentation="modal"
+          />
+        )}
+      </AppModal>
     </View>
   );
 }
