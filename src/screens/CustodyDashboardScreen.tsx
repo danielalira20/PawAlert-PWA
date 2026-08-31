@@ -108,6 +108,7 @@ export interface Custodia {
     ventana_fin?: string | null;
   } | null;
   puede_confirmar_recepcion?: boolean;
+  propuesta_adopcion_activa?: { id: string; estado: string; informacion_solicitada?: string | null } | null;
   pregunta_vencimiento?: {
     id: string;
     fecha_limite_consultada: string;
@@ -116,7 +117,7 @@ export interface Custodia {
   } | null;
 }
 
-type ModalMode = 'seguimiento' | 'relevo' | 'extension' | 'vencimiento' | 'validacion' | 'duda' | 'gestionar_duda' | 'responder_aclaracion' | 'aceptar' | 'autorizar_relevo' | 'transporte_relevo' | 'transferencia' | 'finalizar' | 'proponer_adopcion' | null;
+type ModalMode = 'seguimiento' | 'relevo' | 'extension' | 'vencimiento' | 'validacion' | 'duda' | 'gestionar_duda' | 'responder_aclaracion' | 'aceptar' | 'autorizar_relevo' | 'transporte_relevo' | 'transferencia' | 'finalizar' | 'proponer_adopcion' | 'responder_info_adopcion' | null;
 interface Props {
   onClose?: () => void;
 }
@@ -618,6 +619,19 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
       { headers: { Authorization: `Bearer ${token}` } },
     );
   }, 'Tu parte quedó confirmada. La transferencia terminará cuando ambas partes confirmen.');
+  const responderInfoAdopcion = () => ejecutar(async () => {
+    if (!seleccionada?.propuesta_adopcion_activa?.id || form.comentario.trim().length < 5) {
+      throw new Error('Escribe una respuesta clara y detallada para la asociación.');
+    }
+    await axios.post(
+      `${API_URL}/adoption-intake-requests/${seleccionada.propuesta_adopcion_activa.id}/clarifications`,
+      {
+        respuesta: form.comentario.trim(),
+        idempotency_key: `aclaracion_adopcion_${Date.now()}_${seleccionada.id}`
+      },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+  }, 'Tu respuesta ha sido enviada a la asociación.');
   const enviarPropuestaAdopcion = () => ejecutar(async () => {
     const hasErrors = Object.values(errors).some(e => e !== '') || !form.nombreTemporal || !form.salud || !form.temperamento || !form.razonAdopcion;
     
@@ -846,8 +860,21 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
                       {custodia.estado === 'activo' && (
                         <Action icon="camera-outline" label={custodia.seguimiento_inicial_pendiente ? 'Seguimiento inicial' : 'Nuevo seguimiento'} primary onPress={() => abrir('seguimiento', custodia)} />
                       )}
-                      {custodia.estado === 'activo' && !propuestasEnviadas.includes(custodia.id) && (
+                      {custodia.estado === 'activo' && !custodia.propuesta_adopcion_activa && !propuestasEnviadas.includes(custodia.id) && (
                         <Action icon="home-outline" label="Proponer para adopción" primary onPress={() => abrir('proponer_adopcion', custodia)} />
+                      )}
+
+                      {custodia.propuesta_adopcion_activa?.estado === 'requiere_informacion' && (
+                        <Action icon="chatbox-ellipses-outline" label="Responder a asociación" primary onPress={() => abrir('responder_info_adopcion', custodia)} />
+                      )}
+                      
+                      {/* Mostrar etiqueta si la propuesta ya está viva y no requiere info */}
+                      {(custodia.propuesta_adopcion_activa || propuestasEnviadas.includes(custodia.id)) && custodia.propuesta_adopcion_activa?.estado !== 'requiere_informacion' && (
+                        <View style={{ backgroundColor: '#F3F4F6', padding: 8, borderRadius: 11, alignItems: 'center', justifyContent: 'center', minHeight: 39, paddingHorizontal: 11 }}>
+                          <Text style={{ fontSize: 10, color: Brand.textMuted, fontWeight: '700' }}>
+                             🐾 Propuesta en revisión
+                          </Text>
+                        </View>
                       )}
                       {custodia.estado === 'activo' && <Action icon="calendar-outline" label="Extender" onPress={() => abrir('extension', custodia)} />}
                       {custodia.estado === 'activo' && <Action icon="swap-horizontal-outline" label="Necesito relevo" onPress={() => abrir('relevo', custodia)} />}
@@ -917,6 +944,18 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
                   <Field label="Tiempo que puedes conservarlo (Opcional)" value={form.tiempoCustodiaAdicional} onChangeText={(v) => setForm({ ...form, tiempoCustodiaAdicional: v })} placeholder="Ej. 2 semanas" />
                   <EvidenceButtons animal={fotoAnimal} entorno={null} gps={gps} initial={false} onAnimal={() => tomarFoto()} onEntorno={() => undefined} onGps={capturarGps} />
                   <Submit label="Enviar propuesta" loading={submitting} onPress={enviarPropuestaAdopcion} />
+                </>
+              )}
+              {modal === 'responder_info_adopcion' && seleccionada?.propuesta_adopcion_activa && (
+                <>
+                  <Text style={styles.modalCopy}>La asociación coordinadora revisó tu propuesta y necesita estos detalles para aprobarla:</Text>
+                  <View style={styles.messageCard}>
+                    <Text style={styles.messageText}>
+                      {seleccionada.propuesta_adopcion_activa.informacion_solicitada || 'Por favor, proporciona más detalles sobre la salud o comportamiento del animal.'}
+                    </Text>
+                  </View>
+                  <Field label="Tu respuesta" value={form.comentario} onChangeText={(v) => setForm({ ...form, comentario: v })} placeholder="Escribe aquí tu respuesta..." multiline />
+                  <Submit label="Enviar respuesta" loading={submitting} onPress={responderInfoAdopcion} />
                 </>
               )}
               {modal === 'seguimiento' && (
@@ -1271,6 +1310,7 @@ function modalTitle(mode: ModalMode) {
     transferencia: 'Confirmar transferencia',
     finalizar: 'Finalizar custodia',
     proponer_adopcion: 'Proponer para adopción',
+    responder_info_adopcion: 'Responder a la asociación',
   } as any)[mode || ''] || '';
 }
 const styles = StyleSheet.create({

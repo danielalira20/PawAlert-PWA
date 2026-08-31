@@ -18,6 +18,7 @@ import { useAuth } from '../context/AuthContext';
 import { validarNombre } from '../utils/validators';
 import { useWindowDimensions } from 'react-native';
 import { PostulacionesPanel } from '../components/association-dashboard/PostulacionesPanel';
+import { AdopcionesPanel } from '../components/association-dashboard/AdopcionesPanel';
 import { LotesInvitacionesPanel } from '../components/association-dashboard/LotesInvitacionesPanel';
 import { DeceasedFollowupPanel } from '../components/association-dashboard/DeceasedFollowupPanel';
 import { Animated } from 'react-native';
@@ -103,7 +104,7 @@ interface HistorialEvento {
 }
 
 type FiltroAsignacion = 'todas' | 'pendientes' | 'aceptadas' | 'rechazadas';
-type ActiveTab = 'reportes' | 'seguimientos' | 'postulaciones' | 'voluntarios' | 'lotes' | 'configuracion';
+type ActiveTab = 'reportes' | 'seguimientos' | 'postulaciones' | 'adopciones' | 'voluntarios' | 'lotes' | 'configuracion';
 
 type TabAsignacion = 'staff' | 'voluntarios';
 type EstadoVoluntarios = 'cargando' | 'candidatos' | 'esperando_confirmacion' | 'confirmado' | 'rechazado_mostrando_siguiente' | 'sin_candidatos';
@@ -1347,6 +1348,25 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                   </Text>
                 </TouchableOpacity>
 
+                <TouchableOpacity
+                  onPress={() => setActiveTab('adopciones')}
+                  style={{
+                    paddingBottom: 12,
+                    marginRight: 24,
+                    flexShrink: 0,
+                    borderBottomWidth: activeTab === 'adopciones' ? 3 : 0,
+                    borderBottomColor: COLORS.primary
+                  }}
+                >
+                  <Text style={{
+                    fontSize: 16,
+                    fontWeight: activeTab === 'adopciones' ? '800' : '600',
+                    color: activeTab === 'adopciones' ? COLORS.primary : COLORS.textLight
+                  }}>
+                    Adopciones
+                  </Text>
+                </TouchableOpacity>
+
                 {user?.rol !== 'staff' && (
                   <TouchableOpacity
                     onPress={() => setActiveTab('voluntarios')}
@@ -1417,6 +1437,8 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                       ? 'Seguimientos sensibles'
                     : activeTab === 'postulaciones'
                       ? 'Postulaciones de voluntarios'
+                    : activeTab === 'adopciones'
+                      ? 'Propuestas de adopción'
                       : activeTab === 'lotes'
                         ? 'Lotes de aliados'
                         : activeTab === 'configuracion'
@@ -1713,6 +1735,8 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                 <DeceasedFollowupPanel visible={activeTab === 'seguimientos'} />
               ) : activeTab === 'postulaciones' ? (
                 <PostulacionesPanel visible={activeTab === 'postulaciones'} />
+              ) : activeTab === 'adopciones' ? (
+                <AdopcionesPanel visible={activeTab === 'adopciones'} />
               ) : activeTab === 'lotes' ? (
                 <LotesInvitacionesPanel visible={activeTab === 'lotes'} />
               ) : activeTab === 'voluntarios' ? (

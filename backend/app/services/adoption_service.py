@@ -369,7 +369,16 @@ def resolver_ingreso(
     actor_user_id: str,
     body: AdoptionIntakeResolve,
 ) -> dict:
-    return _rpc(
+    # 1. Obtener la solicitud original para saber a quién notificar
+    solicitud = _query(
+        "obtener_solicitud_base",
+        lambda: supabase_admin.table("solicitudes_ingreso_adopcion")
+        .select("custodia_id, propuesto_por_usuario_id")
+        .eq("id", request_id)
+        .limit(1)
+    )
+
+    resultado = _rpc(
         "resolver_solicitud_ingreso_adopcion",
         {
             "p_solicitud_id": request_id,
@@ -381,6 +390,22 @@ def resolver_ingreso(
         },
     )
 
+    # 2. Si la asociación pide información, insertamos la notificación
+    if solicitud and body.decision == "solicitar_informacion":
+        from datetime import datetime, timezone
+        try:
+            supabase_admin.table("notificaciones_custodia").insert({
+                "custodia_id": solicitud[0]["custodia_id"],
+                "usuario_id": solicitud[0]["propuesto_por_usuario_id"],
+                "tipo": "aclaracion_adopcion",
+                "mensaje": f"La asociación necesita más información sobre tu propuesta de adopción: {body.motivo}",
+                "leida": False,
+                "creada_at": datetime.now(timezone.utc).isoformat()
+            }).execute()
+        except Exception:
+            logger.warning("No se pudo crear la notificación de aclaración de adopción")
+
+    return resultado
 
 def crear_perfil_formal(
     association_id: str,
