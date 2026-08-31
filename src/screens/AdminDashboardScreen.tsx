@@ -32,7 +32,7 @@ import { AssocLocationMap } from '../components/admin-dashboard/AssocLocationMap
 import { PhotoGallery } from '../components/admin-dashboard/PhotoGallery';
 import { ActionBar } from '../components/admin-dashboard/ActionBar';
 import { AdminActionButton } from '../components/admin-dashboard/AdminActionButton';
-import { ReportModerationPanel } from '../components/admin-dashboard/ReportModerationPanel';
+import { EventModerationWorkspace } from '../components/events/admin/EventModerationWorkspace';
 import { ProblemasCanjesPanel } from '../components/admin-dashboard/ProblemasCanjesPanel';
 import { AdminStatsPanel } from '../components/admin-dashboard/AdminStatsPanel';
 import { DeceasedFollowupPanel } from '../components/association-dashboard/DeceasedFollowupPanel';
@@ -433,7 +433,7 @@ export default function AdminDashboardScreen({ onClose }: Props) {
             style={[styles.tab, tab === 'moderacion' && styles.tabActiva]}
           >
             <Text style={[styles.tabText, tab === 'moderacion' && styles.tabTextActiva]}>
-              Reportes
+              Moderación
             </Text>
             {moderacionPendiente > 0 && (
               <View style={styles.tabBadge}>
@@ -595,7 +595,7 @@ export default function AdminDashboardScreen({ onClose }: Props) {
           showToast={showToast}
         />
       ) : tab === 'moderacion' ? (
-        <ReportModerationPanel
+        <EventModerationWorkspace
           onCountChange={setModeracionPendiente}
           showToast={showToast}
         />
