@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -26,20 +26,48 @@ const PASO_NOMBRES = ['Datos Básicos', 'Estado Médico', 'Fotografías', 'Requi
 const TOTAL_PASOS = 5;
 
 export default function AdoptionProfileEditorScreen() {
-  const { id } = useLocalSearchParams(); // Capturamos el ID de la URL
+  const { id } = useLocalSearchParams();
   const { token } = useAuth();
   const { toast, translateY, showToast } = useToast();
 
   const [isLoading, setIsLoading] = useState(true);
   const [paso, setPaso] = useState(1);
   const [perfil, setPerfil] = useState<any>(null);
+  
+  // --- NUEVO: Estado para validaciones en tiempo real ---
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Estados base del formulario (Paso 1)
+  // Estados (Paso 1)
   const [nombrePublico, setNombrePublico] = useState('');
+  const [zonaGeneral, setZonaGeneral] = useState('');
+  const [selectedTipoAnimal, setSelectedTipoAnimal] = useState('');
+  const [selectedTamanio, setSelectedTamanio] = useState('');
   const [sexo, setSexo] = useState('desconocido');
   const [edad, setEdad] = useState('desconocido');
   const [descripcion, setDescripcion] = useState('');
   const [personalidad, setPersonalidad] = useState('');
+  
+  const [tiposAnimales, setTiposAnimales] = useState<any[]>([]);
+  const [tamanios, setTamanios] = useState<any[]>([]);
+
+  useEffect(() => {
+    cargarCatalogos();
+    cargarPerfil();
+  }, [id]);
+
+ const cargarCatalogos = async () => {
+    try {
+      const config = { headers: { Authorization: `Bearer ${token}` } };
+      const [resAnimales, resTamanios] = await Promise.all([
+        axios.get(`${API_URL}/catalogos/tipos-animales`, config), 
+        axios.get(`${API_URL}/catalogos/tamanios`, config)     
+      ]);
+      setTiposAnimales(resAnimales.data || []);
+      setTamanios(resTamanios.data || []);
+    } catch (error: any) {
+      console.log('Error catálogos:', error.response?.data || error.message);
+    }
+  };
 
   // Estados Médicos (Paso 2)
   const [salud, setSalud] = useState('');
@@ -48,50 +76,44 @@ export default function AdoptionProfileEditorScreen() {
   const [vacunas, setVacunas] = useState('desconocido');
   const [esterilizacion, setEsterilizacion] = useState('desconocido');
 
-  // --- NUEVO: Estados y funciones de Fotos (Paso 3) ---
+  // Fotos (Paso 3)
   const [fotos, setFotos] = useState<any[]>([]);
-  // --- NUEVO: Requisitos y Guardado (Paso 4 y 5) ---
+  
+  // Requisitos y Guardado (Paso 4 y 5)
   const [requisitos, setRequisitos] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [revisionMedicaConfirmada, setRevisionMedicaConfirmada] = useState(false);
+  const [revisionJuridicaConfirmada, setRevisionJuridicaConfirmada] = useState(false);
 
   const captureFoto = async () => {
     if (fotos.length >= 8) {
-      showToast({ type: 'warning', title: 'Límite alcanzado', message: 'Máximo 8 fotos permitidas por perfil.' });
+      showToast({ type: 'warning', title: 'Límite alcanzado', message: 'Máximo 8 fotos permitidas.' });
       return;
     }
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permissionResult.granted) {
-      showToast({ type: 'error', title: 'Permiso denegado', message: 'Necesitamos acceso a la galería para las fotos.' });
-      return;
-    }
+    if (!permissionResult.granted) return;
+    
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 });
     if (!result.canceled && result.assets.length > 0) {
       setFotos([...fotos, { id: Date.now().toString(), foto_url: result.assets[0].uri, orden: fotos.length + 1 }]);
+      setErrors(prev => ({ ...prev, foto: '' })); // Limpia error de foto al subir una
     }
   };
 
   const handleDeleteFoto = (id: string) => {
     setFotos(fotos.filter((f) => f.id !== id).map((f, i) => ({ ...f, orden: i + 1 })));
   };
+
   const handleMoveFoto = (index: number, direction: 'up' | 'down') => {
     if (direction === 'up' && index === 0) return;
     if (direction === 'down' && index === fotos.length - 1) return;
-
     const nuevasFotos = [...fotos];
     const swapIndex = direction === 'up' ? index - 1 : index + 1;
-    
-    // Intercambiamos posiciones
     const temp = nuevasFotos[index];
     nuevasFotos[index] = nuevasFotos[swapIndex];
     nuevasFotos[swapIndex] = temp;
-
-    // Actualizamos el estado y reasignamos el orden
     setFotos(nuevasFotos.map((f, i) => ({ ...f, orden: i + 1 })));
   };
-
-  useEffect(() => {
-    cargarPerfil();
-  }, [id]);
 
   const cargarPerfil = async () => {
     if (!token || !id) return;
@@ -103,6 +125,9 @@ export default function AdoptionProfileEditorScreen() {
       const data = res.data;
       setPerfil(data);
       setNombrePublico(data.nombre_publico || '');
+      setZonaGeneral(data.zona_general || '');
+      setSelectedTipoAnimal(data.tipo_animal_id || '');
+      setSelectedTamanio(data.tamanio_id || '');
       setSexo(data.sexo || 'desconocido');
       setEdad(data.edad_aproximada || 'desconocido');
       setDescripcion(data.descripcion || '');
@@ -122,15 +147,154 @@ export default function AdoptionProfileEditorScreen() {
     }
   };
 
+  // --- FUNCIONES DE VALIDACIÓN ---
+  const validarPaso1 = () => {
+    const newErrors: Record<string, string> = {};
+    if (!nombrePublico.trim()) newErrors.nombre = 'Este campo es obligatorio.';
+    if (!zonaGeneral.trim()) newErrors.zona = 'La zona es obligatoria.';
+    if (!selectedTipoAnimal) newErrors.tipo = 'Selecciona una especie.';
+    if (!selectedTamanio) newErrors.tamanio = 'Selecciona un tamaño.';
+    if (!descripcion.trim()) newErrors.descripcion = 'La historia es obligatoria.';
+    if (!personalidad.trim()) newErrors.personalidad = 'La personalidad es obligatoria.';
+    
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const validarPaso2 = () => {
+    const newErrors: Record<string, string> = {};
+    if (!salud.trim()) newErrors.salud = 'Debes indicar el estado de salud general.';
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const validarPaso3 = () => {
+    const newErrors: Record<string, string> = {};
+    if (fotos.length === 0) {
+      newErrors.foto = 'Sube al menos 1 fotografía para la portada.';
+      setErrors(newErrors);
+      showToast({ type: 'warning', title: 'Faltan fotos', message: 'Debes subir al menos 1 fotografía.' });
+      return false;
+    }
+    setErrors({});
+    return true;
+  };
+
   const handleSiguiente = () => {
-    if (paso < TOTAL_PASOS) setPaso(paso + 1);
+    let valido = false;
+    if (paso === 1) valido = validarPaso1();
+    else if (paso === 2) valido = validarPaso2();
+    else if (paso === 3) valido = validarPaso3();
+    else valido = true; // Paso 4 no tiene campos obligatorios
+
+    if (valido && paso < TOTAL_PASOS) {
+      setPaso(paso + 1);
+    }
   };
 
   const handleAnterior = () => {
-    if (paso === 1) {
-      router.back();
-    } else {
-      setPaso(paso - 1);
+    if (paso === 1) router.back();
+    else setPaso(paso - 1);
+  };
+
+  const handleGuardarPerfil = async (publicar = false) => {
+    // Barrido final de seguridad antes de publicar
+    if (publicar) {
+      if (!validarPaso1() || !validarPaso2() || !validarPaso3()) {
+        showToast({ type: 'error', title: 'Campos incompletos', message: 'Revisa los pasos anteriores, faltan campos obligatorios.' });
+        return;
+      }
+      if (!revisionMedicaConfirmada || !revisionJuridicaConfirmada) {
+        showToast({ type: 'warning', title: 'Requisito pendiente', message: 'Debes confirmar ambas revisiones antes de publicar.' });
+        return;
+      }
+    }
+
+    setIsSaving(true);
+    try {
+      const payloadData = {
+        nombre_publico: nombrePublico.trim(),
+        zona_general: zonaGeneral.trim(),
+        tipo_animal_id: selectedTipoAnimal, 
+        tamanio_id: selectedTamanio,
+        sexo,
+        edad_aproximada: edad,
+        descripcion: descripcion.trim(),
+        personalidad: personalidad.trim(),
+        salud_conocida: salud.trim(),
+        tratamientos: tratamientos.trim() || null,
+        necesidades_especiales: necesidades.trim() || null,
+        vacunacion_estado: vacunas,
+        esterilizacion_estado: esterilizacion,
+      };
+
+      // 1. Guardamos el borrador (Textos y datos básicos)
+      await axios.patch(`${API_URL}/associations/me/adoptions/${id}`, {
+        datos: payloadData,
+        idempotency_key: `update_${id}_${Date.now()}`
+      }, { headers: { Authorization: `Bearer ${token}` } });
+
+      // 2. Subimos y APROBAMOS las fotos
+      for (let i = 0; i < fotos.length; i++) {
+        const foto = fotos[i];
+        let photoId = foto.id;
+
+        if (!foto.id.includes('-')) {
+          const formData = new FormData();
+          
+          if (Platform.OS === 'web') {
+            const res = await fetch(foto.foto_url);
+            const blob = await res.blob();
+            formData.append('photo', blob, `foto_${Date.now()}.jpg`);
+          } else {
+            formData.append('photo', { uri: foto.foto_url, name: `foto_${Date.now()}.jpg`, type: 'image/jpeg' } as any);
+          }
+          
+          formData.append('orden', String(foto.orden));
+          formData.append('idempotency_key', `photo_${id}_${Date.now()}_${i}`);
+
+          const resUpload = await axios.post(`${API_URL}/associations/me/adoptions/${id}/photos`, formData, {
+            headers: {
+              'Content-Type': 'multipart/form-data',
+              Authorization: `Bearer ${token}`
+            }
+          });
+          photoId = resUpload.data.id; 
+        }
+
+        if (publicar) {
+          try {
+            await axios.post(`${API_URL}/associations/me/adoptions/${id}/photos/${photoId}/review`, {
+              aprobada: true,
+              idempotency_key: `review_${photoId}_${Date.now()}_${i}`
+            }, { headers: { Authorization: `Bearer ${token}` } });
+          } catch (err) {
+            console.log("Aviso al aprobar foto:", err);
+          }
+        }
+      }
+
+      // 3. ¡Publicamos el perfil!
+      if (publicar) {
+        await axios.post(`${API_URL}/associations/me/adoptions/${id}/publish`, {
+          revision_medica_confirmada: true,
+          revision_juridica_confirmada: true,
+          idempotency_key: `publish_${id}_${Date.now()}`
+        }, { headers: { Authorization: `Bearer ${token}` } });
+      }
+
+      showToast({ type: 'success', title: '¡Éxito!', message: publicar ? 'El perfil ha sido publicado.' : 'Borrador guardado.' });
+      setTimeout(() => { if (router.canGoBack()) router.back(); }, 1500);
+      
+    } catch (error: any) {
+      const detail = error.response?.data?.detail;
+      const errMsg = Array.isArray(detail) 
+        ? `Campo '${detail[0].loc[detail[0].loc.length - 1]}': ${detail[0].msg}` 
+        : (typeof detail === 'string' ? detail : null);
+        
+      showToast({ type: 'error', title: 'Error del servidor', message: errMsg || 'Hubo un problema al guardar el expediente.' });
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -143,9 +307,7 @@ export default function AdoptionProfileEditorScreen() {
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>Expediente de Adopción</Text>
-          <Text style={styles.headerSubtitle}>
-            Paso {paso} de {TOTAL_PASOS}: {PASO_NOMBRES[paso - 1]}
-          </Text>
+          <Text style={styles.headerSubtitle}>Paso {paso} de {TOTAL_PASOS}: {PASO_NOMBRES[paso - 1]}</Text>
         </View>
         <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
           <Feather name="x" size={20} color="#FFFFFF" />
@@ -164,26 +326,60 @@ export default function AdoptionProfileEditorScreen() {
         <Text style={styles.formSectionTitle}>Datos Públicos del Animal</Text>
         <Text style={styles.formSectionSubtitle}>Esta información será visible en la galería de adopciones.</Text>
         
-        <Input 
-          label="Nombre Público" 
-          placeholder="Ej. Max" 
-          value={nombrePublico} 
-          onChangeText={setNombrePublico} 
-          required 
-        />
+        <Input label="Nombre Público" placeholder="Ej. Max" value={nombrePublico} onChangeText={(v) => { setNombrePublico(v); setErrors(prev => ({...prev, nombre: ''})) }} error={errors.nombre} required />
+        <Input label="Zona General (Ciudad, Estado)" placeholder="Ej. Puebla, Pue." value={zonaGeneral} onChangeText={(v) => { setZonaGeneral(v); setErrors(prev => ({...prev, zona: ''})) }} error={errors.zona} required />
         
-        <Input label="Historia y Descripción" placeholder="¿Cómo llegó a la asociación? ¿Qué le gusta hacer?" value={descripcion} onChangeText={setDescripcion} multiline style={{ height: 90, textAlignVertical: 'top' } as any} required />
-        <Input label="Personalidad" placeholder="Ej. Es muy tranquilo y cariñoso." value={personalidad} onChangeText={setPersonalidad} multiline style={{ height: 70, textAlignVertical: 'top' } as any} required />
+        <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.textDark, marginBottom: 8, marginTop: 8 }}>Especie *</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: errors.tipo ? 4 : 16 }}>
+          {tiposAnimales.map(tipo => (
+            <TouchableOpacity key={tipo.id} onPress={() => { setSelectedTipoAnimal(tipo.id); setErrors(prev => ({...prev, tipo: ''})) }} style={{ paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: selectedTipoAnimal === tipo.id ? COLORS.primary : (errors.tipo ? COLORS.danger : '#D1D5DB'), backgroundColor: selectedTipoAnimal === tipo.id ? 'rgba(236,128,43,0.1)' : COLORS.bgWhite, alignItems: 'center' }}>
+              <Text style={{ color: selectedTipoAnimal === tipo.id ? COLORS.primary : COLORS.textDark, fontWeight: selectedTipoAnimal === tipo.id ? '800' : '600', textTransform: 'capitalize', fontSize: 12 }}>{tipo.descripcion}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        {errors.tipo && <Text style={{ color: COLORS.danger, fontSize: 12, marginBottom: 16 }}>{errors.tipo}</Text>}
+
+        <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.textDark, marginBottom: 8 }}>Tamaño *</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: errors.tamanio ? 4 : 16 }}>
+          {tamanios.map(tamanio => (
+            <TouchableOpacity key={tamanio.id} onPress={() => { setSelectedTamanio(tamanio.id); setErrors(prev => ({...prev, tamanio: ''})) }} style={{ paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: selectedTamanio === tamanio.id ? COLORS.primary : (errors.tamanio ? COLORS.danger : '#D1D5DB'), backgroundColor: selectedTamanio === tamanio.id ? 'rgba(236,128,43,0.1)' : COLORS.bgWhite, alignItems: 'center' }}>
+              <Text style={{ color: selectedTamanio === tamanio.id ? COLORS.primary : COLORS.textDark, fontWeight: selectedTamanio === tamanio.id ? '800' : '600', textTransform: 'capitalize', fontSize: 12 }}>{tamanio.descripcion}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        {errors.tamanio && <Text style={{ color: COLORS.danger, fontSize: 12, marginBottom: 16 }}>{errors.tamanio}</Text>}
+
+        <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.textDark, marginBottom: 8 }}>Sexo</Text>
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+          {(['macho', 'hembra', 'desconocido'] as const).map(opcion => (
+            <TouchableOpacity key={opcion} onPress={() => setSexo(opcion)} style={{ flex: 1, paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: sexo === opcion ? COLORS.primary : '#D1D5DB', backgroundColor: sexo === opcion ? 'rgba(236,128,43,0.1)' : COLORS.bgWhite, alignItems: 'center' }}>
+              <Text style={{ color: sexo === opcion ? COLORS.primary : COLORS.textDark, fontWeight: sexo === opcion ? '800' : '600', textTransform: 'capitalize', fontSize: 12 }}>{opcion}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.textDark, marginBottom: 8 }}>Edad aproximada</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+          {(['cachorro', 'joven', 'adulto', 'senior', 'desconocido'] as const).map(opcion => (
+            <TouchableOpacity key={opcion} onPress={() => setEdad(opcion)} style={{ paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: edad === opcion ? COLORS.primary : '#D1D5DB', backgroundColor: edad === opcion ? 'rgba(236,128,43,0.1)' : COLORS.bgWhite, alignItems: 'center' }}>
+              <Text style={{ color: edad === opcion ? COLORS.primary : COLORS.textDark, fontWeight: edad === opcion ? '800' : '600', textTransform: 'capitalize', fontSize: 12 }}>{opcion}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <Input label="Historia y Descripción" placeholder="¿Cómo llegó a la asociación?" value={descripcion} onChangeText={(v) => { setDescripcion(v); setErrors(prev => ({...prev, descripcion: ''})) }} error={errors.descripcion} multiline style={{ height: 90, textAlignVertical: 'top' } as any} required />
+        <Input label="Personalidad" placeholder="Ej. Es muy tranquilo y cariñoso." value={personalidad} onChangeText={(v) => { setPersonalidad(v); setErrors(prev => ({...prev, personalidad: ''})) }} error={errors.personalidad} multiline style={{ height: 70, textAlignVertical: 'top' } as any} required />
       </View>
     </ScrollView>
   );
-const renderPaso2 = () => (
+
+  const renderPaso2 = () => (
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
       <View style={styles.formSection}>
         <Text style={styles.formSectionTitle}>Estado Médico</Text>
         <Text style={styles.formSectionSubtitle}>Transparencia sobre la salud actual del animal.</Text>
         
-        <Input label="Salud General" placeholder="Ej. Sano, en tratamiento por desnutrición." value={salud} onChangeText={setSalud} multiline style={{ height: 70, textAlignVertical: 'top' } as any} required />
+        <Input label="Salud General" placeholder="Ej. Sano, en tratamiento..." value={salud} onChangeText={(v) => { setSalud(v); setErrors(prev => ({...prev, salud: ''})) }} error={errors.salud} multiline style={{ height: 70, textAlignVertical: 'top' } as any} required />
         <Input label="Tratamientos Activos (Opcional)" placeholder="Ej. Requiere curaciones diarias." value={tratamientos} onChangeText={setTratamientos} multiline style={{ height: 70, textAlignVertical: 'top' } as any} />
         <Input label="Necesidades Especiales (Opcional)" placeholder="Ej. Dieta especial, usa silla de ruedas." value={necesidades} onChangeText={setNecesidades} multiline style={{ height: 70, textAlignVertical: 'top' } as any} />
 
@@ -207,6 +403,7 @@ const renderPaso2 = () => (
       </View>
     </ScrollView>
   );
+
   const renderPaso3 = () => (
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
       <View style={styles.formSection}>
@@ -224,15 +421,12 @@ const renderPaso2 = () => (
                 <Text style={{ color: COLORS.danger, fontWeight: '700', fontSize: 12 }}>Eliminar foto</Text>
               </TouchableOpacity>
             </View>
-            
-            {/* Controles para reordenar */}
             <View style={{ alignItems: 'center', gap: 6, paddingRight: 4 }}>
               {index > 0 ? (
                 <TouchableOpacity onPress={() => handleMoveFoto(index, 'up')} style={{ backgroundColor: COLORS.bgWhite, padding: 6, borderRadius: 8, elevation: 1 }}>
                   <Ionicons name="chevron-up" size={18} color={COLORS.textDark} />
                 </TouchableOpacity>
               ) : <View style={{ height: 30 }} />}
-              
               {index < fotos.length - 1 ? (
                 <TouchableOpacity onPress={() => handleMoveFoto(index, 'down')} style={{ backgroundColor: COLORS.bgWhite, padding: 6, borderRadius: 8, elevation: 1 }}>
                   <Ionicons name="chevron-down" size={18} color={COLORS.textDark} />
@@ -242,66 +436,20 @@ const renderPaso2 = () => (
           </View>
         ))}
 
-        {fotos.length < 8 && (
-          <TouchableOpacity onPress={captureFoto} style={{ padding: 16, backgroundColor: 'rgba(236, 128, 43, 0.1)', borderRadius: 20, alignItems: 'center', borderWidth: 2, borderColor: COLORS.primary, borderStyle: 'dashed', marginTop: 8 }}>
-            <Text style={{ color: COLORS.primary, fontWeight: '700' }}><Ionicons name="camera" size={16}/> Agregar foto</Text>
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity onPress={captureFoto} style={{ padding: 16, backgroundColor: 'rgba(236, 128, 43, 0.1)', borderRadius: 20, alignItems: 'center', borderWidth: 2, borderColor: errors.foto ? COLORS.danger : COLORS.primary, borderStyle: 'dashed', marginTop: 8 }}>
+          <Text style={{ color: errors.foto ? COLORS.danger : COLORS.primary, fontWeight: '700' }}><Ionicons name="camera" size={16}/> Agregar foto</Text>
+        </TouchableOpacity>
+        {errors.foto && <Text style={{ color: COLORS.danger, fontSize: 12, marginTop: 8 }}>{errors.foto}</Text>}
       </View>
     </ScrollView>
   );
-  const handleGuardarPerfil = async (publicar = false) => {
-    setIsSaving(true);
-    try {
-      const payload = {
-        nombre_publico: nombrePublico.trim(),
-        sexo,
-        edad_aproximada: edad,
-        descripcion: descripcion.trim(),
-        personalidad: personalidad.trim(),
-        salud_conocida: salud.trim(),
-        tratamientos: tratamientos.trim(),
-        necesidades_especiales: necesidades.trim(),
-        vacunacion_estado: vacunas,
-        esterilizacion_estado: esterilizacion,
-        requisitos_adicionales: requisitos.trim(),
-        estado: publicar ? 'publicado' : 'borrador',
-      };
-
-      // Guardamos la información de texto
-      await axios.patch(`${API_URL}/associations/me/adoptions/${id}`, payload, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-
-      // Nota: Aquí iría la lógica multipart/form-data si subimos fotos nuevas
-      // Por ahora simularemos el éxito del guardado del expediente.
-
-      showToast({ type: 'success', title: '¡Éxito!', message: publicar ? 'El perfil ha sido publicado.' : 'Borrador guardado correctamente.' });
-      
-      setTimeout(() => {
-        if (router.canGoBack()) router.back();
-      }, 1500);
-    } catch (error) {
-      showToast({ type: 'error', title: 'Error', message: 'No pudimos guardar el perfil.' });
-    } finally {
-      setIsSaving(false);
-    }
-  };
 
   const renderPaso4 = () => (
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
       <View style={styles.formSection}>
         <Text style={styles.formSectionTitle}>Requisitos Específicos</Text>
-        <Text style={styles.formSectionSubtitle}>PawAlert ya solicita INEy cuestionario base. ¿Hay algo más que este animal necesite?</Text>
-        
-        <Input 
-          label="Requisitos Adicionales (Opcional)" 
-          placeholder="Ej. Barda de más de 2 metros, sin niños pequeños..." 
-          value={requisitos} 
-          onChangeText={setRequisitos} 
-          multiline 
-          style={{ height: 120, textAlignVertical: 'top' } as any} 
-        />
+        <Text style={styles.formSectionSubtitle}>PawAlert ya solicita INE y cuestionario base. ¿Hay algo más que este animal necesite?</Text>
+        <Input label="Requisitos Adicionales (Opcional)" placeholder="Ej. Barda de más de 2 metros..." value={requisitos} onChangeText={setRequisitos} multiline style={{ height: 120, textAlignVertical: 'top' } as any} />
       </View>
     </ScrollView>
   );
@@ -312,7 +460,7 @@ const renderPaso2 = () => (
         <Text style={styles.formSectionTitle}>Revisión Final</Text>
         <Text style={styles.formSectionSubtitle}>Revisa que todo esté correcto antes de abrir las puertas a una nueva familia.</Text>
         
-        <View style={{ backgroundColor: COLORS.grayLight, padding: 20, borderRadius: 20, marginBottom: 24 }}>
+        <View style={{ backgroundColor: COLORS.grayLight, padding: 20, borderRadius: 20, marginBottom: 16 }}>
           <Text style={{ fontSize: 16, fontWeight: '800', color: COLORS.textDark, marginBottom: 12 }}>Resumen del Perfil</Text>
           <Text style={{ color: COLORS.textDark, marginBottom: 4 }}>• <Text style={{ fontWeight: '700' }}>Nombre:</Text> {nombrePublico || 'Sin asignar'}</Text>
           <Text style={{ color: COLORS.textDark, marginBottom: 4 }}>• <Text style={{ fontWeight: '700' }}>Sexo:</Text> {sexo}</Text>
@@ -320,25 +468,32 @@ const renderPaso2 = () => (
           <Text style={{ color: COLORS.textDark, marginBottom: 4 }}>• <Text style={{ fontWeight: '700' }}>Fotos adjuntas:</Text> {fotos.length}</Text>
         </View>
 
+        <TouchableOpacity activeOpacity={0.8} onPress={() => setRevisionMedicaConfirmada(!revisionMedicaConfirmada)} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.bgWhite, padding: 16, borderRadius: 16, borderWidth: 1.5, borderColor: revisionMedicaConfirmada ? COLORS.primary : COLORS.border, marginBottom: 12 }}>
+          <View style={{ width: 24, height: 24, borderRadius: 8, borderWidth: 2, borderColor: revisionMedicaConfirmada ? COLORS.primary : COLORS.textLight, alignItems: 'center', justifyContent: 'center', marginRight: 12, backgroundColor: revisionMedicaConfirmada ? COLORS.primary : 'transparent' }}>
+            {revisionMedicaConfirmada && <Ionicons name="checkmark" size={16} color={COLORS.bgWhite} />}
+          </View>
+          <Text style={{ flex: 1, fontSize: 13, color: COLORS.textDark, fontWeight: revisionMedicaConfirmada ? '700' : '500' }}>Confirmo que este animal cuenta con valoración médica registrada y está en condiciones de iniciar un proceso de adopción.</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity activeOpacity={0.8} onPress={() => setRevisionJuridicaConfirmada(!revisionJuridicaConfirmada)} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.bgWhite, padding: 16, borderRadius: 16, borderWidth: 1.5, borderColor: revisionJuridicaConfirmada ? COLORS.primary : COLORS.border, marginBottom: 24 }}>
+          <View style={{ width: 24, height: 24, borderRadius: 8, borderWidth: 2, borderColor: revisionJuridicaConfirmada ? COLORS.primary : COLORS.textLight, alignItems: 'center', justifyContent: 'center', marginRight: 12, backgroundColor: revisionJuridicaConfirmada ? COLORS.primary : 'transparent' }}>
+            {revisionJuridicaConfirmada && <Ionicons name="checkmark" size={16} color={COLORS.bgWhite} />}
+          </View>
+          <Text style={{ flex: 1, fontSize: 13, color: COLORS.textDark, fontWeight: revisionJuridicaConfirmada ? '700' : '500' }}>Confirmo que el animal está fuera de peligro, no existe disputa de propiedad ni búsqueda activa de un posible tutor.</Text>
+        </TouchableOpacity>
+
         <View style={{ flexDirection: 'row', gap: 12 }}>
-          <TouchableOpacity 
-            onPress={() => handleGuardarPerfil(false)} 
-            disabled={isSaving} 
-            style={{ flex: 1, paddingVertical: 16, backgroundColor: COLORS.bgWhite, borderWidth: 2, borderColor: COLORS.primary, borderRadius: 20, alignItems: 'center' }}
-          >
+          <TouchableOpacity onPress={() => handleGuardarPerfil(false)} disabled={isSaving} style={{ flex: 1, paddingVertical: 16, backgroundColor: COLORS.bgWhite, borderWidth: 2, borderColor: COLORS.primary, borderRadius: 20, alignItems: 'center' }}>
             <Text style={{ color: COLORS.primary, fontWeight: '800' }}>Guardar Borrador</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
-            onPress={() => handleGuardarPerfil(true)} 
-            disabled={isSaving} 
-            style={{ flex: 1, paddingVertical: 16, backgroundColor: COLORS.primary, borderRadius: 20, alignItems: 'center' }}
-          >
+          <TouchableOpacity onPress={() => handleGuardarPerfil(true)} disabled={isSaving} style={{ flex: 1, paddingVertical: 16, backgroundColor: COLORS.primary, borderRadius: 20, alignItems: 'center', opacity: (!revisionMedicaConfirmada || !revisionJuridicaConfirmada) ? 0.6 : 1 }}>
             {isSaving ? <ActivityIndicator color={COLORS.bgWhite} /> : <Text style={{ color: COLORS.bgWhite, fontWeight: '800' }}>¡Publicar Perfil!</Text>}
           </TouchableOpacity>
         </View>
       </View>
     </ScrollView>
   );
+
   if (isLoading) {
     return (
       <View style={styles.outerContainer}>
@@ -363,7 +518,6 @@ const renderPaso2 = () => (
             {paso === 4 && renderPaso4()}
             {paso === 5 && renderPaso5()}
             
-            {/* Ocultamos el botón de 'Siguiente' en el último paso porque ahí están los botones de Guardar/Publicar */}
             {paso < TOTAL_PASOS && (
               <TouchableOpacity onPress={handleSiguiente} style={styles.submitButton}>
                 <Text style={styles.submitButtonText}>Siguiente →</Text>
@@ -377,15 +531,9 @@ const renderPaso2 = () => (
 }
 
 const styles = StyleSheet.create({
-  outerContainer: {
-    flex: 1, backgroundColor: 'rgba(38,30,24,0.8)', // Fondo oscuro elegante
-    justifyContent: 'center', alignItems: 'center', padding: 20
-  },
+  outerContainer: { flex: 1, backgroundColor: 'rgba(38,30,24,0.8)', justifyContent: 'center', alignItems: 'center', padding: 20 },
   centeredContent: { width: '100%', maxWidth: FORM_MAX_WIDTH, maxHeight: '95%', alignSelf: 'center' }, 
-  cardContainer: {
-    backgroundColor: COLORS.bgWhite, borderRadius: 32, overflow: 'hidden', flexShrink: 1, 
-    shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.25, shadowRadius: 20, elevation: 15,
-  },
+  cardContainer: { backgroundColor: COLORS.bgWhite, borderRadius: 32, overflow: 'hidden', flexShrink: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.25, shadowRadius: 20, elevation: 15 },
   headerSection: { paddingHorizontal: 32, paddingTop: 24, paddingBottom: 32, backgroundColor: COLORS.bgTeal, position: 'relative', zIndex: 1 },
   headerTitle: { fontSize: 24, fontWeight: '900', color: COLORS.bgWhite },
   headerSubtitle: { fontSize: 13, fontWeight: '600', color: COLORS.bgWhite, opacity: 0.9, marginTop: 4 },
@@ -398,6 +546,5 @@ const styles = StyleSheet.create({
   formSectionTitle: { fontSize: 20, fontWeight: '800', color: COLORS.textDark, marginBottom: 4 },
   formSectionSubtitle: { fontSize: 13, color: COLORS.textLight, marginBottom: 16 },
   submitButton: { backgroundColor: COLORS.primary, paddingVertical: 18, borderRadius: 24, alignItems: 'center', marginTop: 16 },
-  submitButtonText: { color: COLORS.bgWhite, fontWeight: '900', fontSize: 16 },
-  placeholderText: { fontSize: 16, color: COLORS.textLight, textAlign: 'center', marginTop: 40, fontWeight: '600' }
+  submitButtonText: { color: COLORS.bgWhite, fontWeight: '900', fontSize: 16 }
 });
