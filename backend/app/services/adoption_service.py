@@ -379,11 +379,11 @@ def resolver_ingreso(
     actor_user_id: str,
     body: AdoptionIntakeResolve,
 ) -> dict:
-    # 1. Obtener la solicitud original para saber a quién notificar
+    # 1. Agregamos "fotos_propuesta_paths" al select
     solicitud = _query(
         "obtener_solicitud_base",
         lambda: supabase_admin.table("solicitudes_ingreso_adopcion")
-        .select("custodia_id, propuesto_por_usuario_id, reporte_id") # <-- AÑADIDO reporte_id
+        .select("custodia_id, propuesto_por_usuario_id, reporte_id, fotos_propuesta_paths") 
         .eq("id", request_id)
         .limit(1)
     )
@@ -400,7 +400,26 @@ def resolver_ingreso(
         },
     )
 
-    # 2. Si la asociación pide información, insertamos las notificaciones
+    # --- NUEVO: Copiar fotos de la propuesta al nuevo perfil ---
+    if body.decision == "aprobar" and solicitud and solicitud[0].get("fotos_propuesta_paths"):
+        try:
+            perfiles = supabase_admin.table("perfiles_adopcion").select("id").eq("solicitud_ingreso_id", request_id).execute()
+            if perfiles.data:
+                perfil_id = perfiles.data[0]["id"]
+                fotos_insert = []
+                for i, path in enumerate(solicitud[0]["fotos_propuesta_paths"]):
+                    fotos_insert.append({
+                        "perfil_adopcion_id": perfil_id,
+                        "storage_path": path,
+                        "orden": i + 1,
+                        "aprobada_publicacion": False
+                    })
+                if fotos_insert:
+                    supabase_admin.table("fotos_perfil_adopcion").insert(fotos_insert).execute()
+        except Exception as e:
+            logger.warning(f"No se pudieron copiar las fotos al perfil: {e}")
+
+    # 2. (El resto del código de notificaciones se queda igual...)
     if solicitud and body.decision == "solicitar_informacion":
         from datetime import datetime, timezone
         try:
@@ -816,6 +835,8 @@ def listar_ingresos_asociacion(association_id: str) -> list[dict]:
             "informacion_respondida_at, motivo_resolucion, creada_at, actualizada_at"
         )
         .eq("asociacion_id", association_id)
+        # --- AÑADIDO: Ocultar las aprobadas o rechazadas de la bandeja ---
+        .in_("estado", ["pendiente", "en_revision", "requiere_informacion", "solicitando_informacion"])
         .order("creada_at", desc=True),
     )
     return [

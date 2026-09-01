@@ -63,6 +63,8 @@ interface AdopcionProfile {
   edad_aproximada: string;
   fotos?: { foto_url: string }[];
   actualizado_at: string;
+  origen?: string;
+  solicitud_ingreso_id?: string | null;
 }
 
 interface Props {
@@ -352,6 +354,15 @@ export function AdopcionesPanel({ visible, showToast, onClose }: Props) {
                       <Text style={{ fontSize: 13, color: COLORS.textLight, textTransform: 'capitalize', marginTop: 4 }}>
                         {perfil.sexo} · {perfil.edad_aproximada}
                       </Text>
+                      
+                      {perfil.solicitud_ingreso_id && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6, gap: 4 }}>
+                          <Ionicons name="person-circle-outline" size={14} color={COLORS.accent} />
+                          <Text style={{ fontSize: 11, color: COLORS.textDark, fontWeight: '600' }} numberOfLines={1}>
+                            Propuesto por Voluntario
+                          </Text>
+                        </View>
+                      )}
                       
                       <Text style={{ fontSize: 10, color: COLORS.textLight, marginTop: 10 }}>
                         Actualizado hace {formatDistanceToNow(new Date(perfil.actualizado_at), { locale: es })}
