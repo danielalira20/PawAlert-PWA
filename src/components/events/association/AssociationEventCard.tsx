@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useState } from "react";
 import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { EventTheme } from "../../../constants/eventTheme";
@@ -12,13 +13,13 @@ import {
   formatEventSchedule,
   isEventImageUrlExpired,
 } from "../../../utils/eventFormatters";
+import { ImageLightbox } from "../../common/ImageLightbox";
 import { EventStatusChip } from "../shared/EventStatusChip";
 import { EventTypeChip } from "../shared/EventTypeChip";
 import { EventLifecycleActions } from "../editor/EventLifecycleActions";
 
 interface AssociationEventCardProps {
   event: EventAssociationView;
-  wide?: boolean;
   onManage?: (eventId: string) => void;
   onLifecycleError?: (message: string) => void;
   onLifecycleSuccess?: (
@@ -49,163 +50,185 @@ function displayLocation(event: EventAssociationView) {
 
 export function AssociationEventCard({
   event,
-  wide = false,
   onManage,
   onLifecycleError,
   onLifecycleSuccess,
 }: AssociationEventCardProps) {
+  const [lightboxVisible, setLightboxVisible] = useState(false);
   const hasUsableImage = Boolean(
     event.imagen_url && !isEventImageUrlExpired(event.imagen_url_expira_at),
   );
 
   return (
-    <View style={[styles.card, wide ? styles.cardWide : styles.cardNarrow]}>
-      <View style={styles.imageArea}>
-        {hasUsableImage ? (
-          <Image
-            accessibilityLabel={
-              event.imagen_texto_alternativo ||
-              `Imagen de ${event.titulo || "evento"}`
-            }
-            resizeMode="cover"
-            source={{ uri: event.imagen_url! }}
-            style={styles.image}
-          />
-        ) : (
-          <View style={styles.imagePlaceholder}>
-            <View style={styles.placeholderIcon}>
-              <Ionicons
-                name="calendar-outline"
-                size={30}
-                color={EventTheme.colors.primary}
-              />
-            </View>
-            <Text style={styles.placeholderText}>
-              {event.imagen_url
-                ? "Imagen por actualizar"
-                : "Agrega una imagen al evento"}
-            </Text>
-          </View>
-        )}
-        <View style={styles.statusPosition}>
-          <EventStatusChip state={event.estado} />
-        </View>
-      </View>
-
-      <View style={styles.body}>
-        <EventTypeChip
-          type={event.tipo}
-          customCategory={event.categoria_otro}
-        />
-        <Text numberOfLines={2} style={styles.title}>
-          {event.titulo?.trim() || "Evento sin título"}
-        </Text>
-
-        <View style={styles.detailRow}>
-          <Ionicons
-            name="calendar-outline"
-            size={16}
-            color={EventTheme.colors.primary}
-          />
-          <Text style={styles.detailText}>{displaySchedule(event)}</Text>
-        </View>
-        <View style={styles.detailRow}>
-          <Ionicons
-            name="location-outline"
-            size={16}
-            color={EventTheme.colors.primary}
-          />
-          <Text numberOfLines={2} style={styles.detailText}>
-            {displayLocation(event)}
-          </Text>
-        </View>
-
-        <View style={styles.metadata}>
-          <View style={styles.metadataItem}>
-            <Ionicons
-              name="wallet-outline"
-              size={15}
-              color={EventTheme.colors.textMuted}
+    <>
+      <View style={styles.card}>
+        <TouchableOpacity
+          activeOpacity={hasUsableImage ? 0.9 : 1}
+          disabled={!hasUsableImage}
+          onPress={() => setLightboxVisible(true)}
+          style={styles.imageArea}
+        >
+          {hasUsableImage ? (
+            <Image
+              accessibilityLabel={
+                event.imagen_texto_alternativo ||
+                `Imagen de ${event.titulo || "evento"}`
+              }
+              resizeMode="contain"
+              source={{ uri: event.imagen_url! }}
+              style={styles.image}
             />
-            <Text style={styles.metadataText}>
-              {formatEventCost(
-                event.es_gratuito,
-                event.costo_centavos,
-                event.moneda,
-              )}
-            </Text>
-          </View>
-          <View style={styles.metadataItem}>
-            <Ionicons
-              name="people-outline"
-              size={15}
-              color={EventTheme.colors.textMuted}
-            />
-            <Text style={styles.metadataText}>
-              {event.cupo_total == null
-                ? "Sin cupo definido"
-                : `${event.cupo_total} lugares`}
-            </Text>
-          </View>
-        </View>
-
-        {event.estado === "suspendido_admin" && (
-          <View style={styles.suspensionNotice}>
-            <Ionicons
-              name="shield-outline"
-              size={18}
-              color={EventTheme.colors.danger}
-            />
-            <View style={styles.suspensionCopy}>
-              <Text style={styles.suspensionTitle}>
-                Revisión administrativa
-              </Text>
-              <Text style={styles.suspensionText}>
-                {event.motivo_suspension ||
-                  "Consulta con administración antes de volver a publicar."}
+          ) : (
+            <View style={styles.imagePlaceholder}>
+              <View style={styles.placeholderIcon}>
+                <Ionicons
+                  name="calendar-outline"
+                  size={22}
+                  color={EventTheme.colors.primary}
+                />
+              </View>
+              <Text style={styles.placeholderText}>
+                {event.imagen_url
+                  ? "Imagen por actualizar"
+                  : "Agrega una imagen"}
               </Text>
             </View>
-          </View>
-        )}
-
-        <Text style={styles.updatedText}>
-          Actualizado{" "}
-          {new Intl.DateTimeFormat("es-MX", {
-            day: "numeric",
-            month: "short",
-            year: "numeric",
-          }).format(new Date(event.actualizada_at))}
-        </Text>
-        {!!onManage &&
-          ["borrador", "publicado", "pausado"].includes(event.estado) && (
-            <TouchableOpacity
-              accessibilityRole="button"
-              onPress={() => onManage(event.id)}
-              style={styles.manageButton}
-            >
-              <Ionicons
-                name="create-outline"
-                size={17}
-                color={EventTheme.colors.surface}
-              />
-              <Text style={styles.manageButtonText}>
-                {event.estado === "borrador"
-                  ? "Continuar borrador"
-                  : "Editar evento"}
-              </Text>
-            </TouchableOpacity>
           )}
-        {!!onLifecycleError && !!onLifecycleSuccess && (
-          <EventLifecycleActions
-            eventId={event.id}
-            onError={onLifecycleError}
-            onSuccess={onLifecycleSuccess}
-            state={event.estado}
-            variant="card"
+          <View style={styles.statusPosition}>
+            <EventStatusChip state={event.estado} />
+          </View>
+          {hasUsableImage && (
+            <View style={styles.expandHint}>
+              <Ionicons name="expand-outline" size={12} color="#FFFFFF" />
+            </View>
+          )}
+        </TouchableOpacity>
+
+        <View style={styles.body}>
+          <EventTypeChip
+            type={event.tipo}
+            customCategory={event.categoria_otro}
           />
-        )}
+          <Text numberOfLines={2} style={styles.title}>
+            {event.titulo?.trim() || "Evento sin título"}
+          </Text>
+
+          <View style={styles.detailRow}>
+            <Ionicons
+              name="calendar-outline"
+              size={13}
+              color={EventTheme.colors.primary}
+            />
+            <Text numberOfLines={2} style={styles.detailText}>
+              {displaySchedule(event)}
+            </Text>
+          </View>
+          <View style={styles.detailRow}>
+            <Ionicons
+              name="location-outline"
+              size={13}
+              color={EventTheme.colors.primary}
+            />
+            <Text numberOfLines={2} style={styles.detailText}>
+              {displayLocation(event)}
+            </Text>
+          </View>
+
+          <View style={styles.metadata}>
+            <View style={styles.metadataItem}>
+              <Ionicons
+                name="wallet-outline"
+                size={13}
+                color={EventTheme.colors.textMuted}
+              />
+              <Text style={styles.metadataText}>
+                {formatEventCost(
+                  event.es_gratuito,
+                  event.costo_centavos,
+                  event.moneda,
+                )}
+              </Text>
+            </View>
+            <View style={styles.metadataItem}>
+              <Ionicons
+                name="people-outline"
+                size={13}
+                color={EventTheme.colors.textMuted}
+              />
+              <Text style={styles.metadataText}>
+                {event.cupo_total == null
+                  ? "Sin cupo"
+                  : `${event.cupo_total} lugares`}
+              </Text>
+            </View>
+          </View>
+
+          {event.estado === "suspendido_admin" && (
+            <View style={styles.suspensionNotice}>
+              <Ionicons
+                name="shield-outline"
+                size={15}
+                color={EventTheme.colors.danger}
+              />
+              <View style={styles.suspensionCopy}>
+                <Text style={styles.suspensionTitle}>
+                  Revisión administrativa
+                </Text>
+                <Text numberOfLines={3} style={styles.suspensionText}>
+                  {event.motivo_suspension ||
+                    "Consulta con administración antes de volver a publicar."}
+                </Text>
+              </View>
+            </View>
+          )}
+
+          <Text style={styles.updatedText}>
+            Actualizado{" "}
+            {new Intl.DateTimeFormat("es-MX", {
+              day: "numeric",
+              month: "short",
+              year: "numeric",
+            }).format(new Date(event.actualizada_at))}
+          </Text>
+          {!!onManage &&
+            ["borrador", "publicado", "pausado"].includes(event.estado) && (
+              <TouchableOpacity
+                accessibilityRole="button"
+                onPress={() => onManage(event.id)}
+                style={styles.manageButton}
+              >
+                <Ionicons
+                  name="create-outline"
+                  size={15}
+                  color={EventTheme.colors.surface}
+                />
+                <Text style={styles.manageButtonText}>
+                  {event.estado === "borrador"
+                    ? "Continuar borrador"
+                    : "Editar evento"}
+                </Text>
+              </TouchableOpacity>
+            )}
+          {!!onLifecycleError && !!onLifecycleSuccess && (
+            <EventLifecycleActions
+              eventId={event.id}
+              onError={onLifecycleError}
+              onSuccess={onLifecycleSuccess}
+              state={event.estado}
+              variant="card"
+            />
+          )}
+        </View>
       </View>
-    </View>
+
+      {hasUsableImage && (
+        <ImageLightbox
+          visible={lightboxVisible}
+          fotos={[event.imagen_url!]}
+          onClose={() => setLightboxVisible(false)}
+        />
+      )}
+    </>
   );
 }
 
@@ -216,25 +239,18 @@ const styles = StyleSheet.create({
     borderRadius: EventTheme.radii.card,
     borderWidth: 1,
     elevation: 3,
+    flexBasis: 250,
+    flexGrow: 1,
+    maxWidth: 300,
     overflow: "hidden",
     shadowColor: "#4A3728",
-    shadowOffset: { width: 0, height: 5 },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.09,
-    shadowRadius: 12,
-  },
-  cardWide: {
-    flexBasis: "47%",
-    flexGrow: 1,
-    maxWidth: 440,
-    minWidth: 300,
-  },
-  cardNarrow: {
-    flexBasis: "100%",
-    width: "100%",
+    shadowRadius: 10,
   },
   imageArea: {
-    backgroundColor: EventTheme.colors.surfaceWarm,
-    height: 172,
+    backgroundColor: "#2E2A26",
+    height: 150,
     position: "relative",
   },
   image: {
@@ -243,52 +259,64 @@ const styles = StyleSheet.create({
   },
   imagePlaceholder: {
     alignItems: "center",
+    backgroundColor: EventTheme.colors.surfaceWarm,
     height: "100%",
     justifyContent: "center",
-    padding: EventTheme.spacing.md,
+    padding: EventTheme.spacing.sm,
   },
   placeholderIcon: {
     alignItems: "center",
     backgroundColor: "#FFF0E2",
-    borderRadius: 22,
-    height: 52,
+    borderRadius: 18,
+    height: 40,
     justifyContent: "center",
-    marginBottom: EventTheme.spacing.sm,
-    width: 52,
+    marginBottom: 6,
+    width: 40,
   },
   placeholderText: {
     color: EventTheme.colors.textMuted,
     fontFamily: EventTheme.typography.medium,
-    fontSize: 12,
+    fontSize: 11,
   },
   statusPosition: {
     position: "absolute",
-    right: 12,
-    top: 12,
+    right: 10,
+    top: 10,
+  },
+  expandHint: {
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.55)",
+    borderRadius: 12,
+    bottom: 10,
+    height: 24,
+    justifyContent: "center",
+    left: 10,
+    position: "absolute",
+    width: 24,
   },
   body: {
-    padding: EventTheme.spacing.md,
+    padding: 12,
   },
   title: {
     color: EventTheme.colors.text,
     fontFamily: EventTheme.typography.bold,
-    fontSize: 18,
-    lineHeight: 24,
-    marginBottom: 14,
-    marginTop: 10,
+    fontSize: 15,
+    lineHeight: 20,
+    marginBottom: 9,
+    marginTop: 8,
   },
   detailRow: {
     alignItems: "flex-start",
     flexDirection: "row",
-    gap: 8,
-    marginBottom: 9,
+    gap: 6,
+    marginBottom: 6,
   },
   detailText: {
     color: EventTheme.colors.text,
     flex: 1,
     fontFamily: EventTheme.typography.medium,
-    fontSize: 12,
-    lineHeight: 18,
+    fontSize: 11,
+    lineHeight: 16,
   },
   metadata: {
     borderTopColor: EventTheme.colors.border,
@@ -296,8 +324,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 10,
-    marginTop: 5,
-    paddingTop: 12,
+    marginTop: 4,
+    paddingTop: 10,
   },
   metadataItem: {
     alignItems: "center",
@@ -307,7 +335,7 @@ const styles = StyleSheet.create({
   metadataText: {
     color: EventTheme.colors.textMuted,
     fontFamily: EventTheme.typography.medium,
-    fontSize: 11,
+    fontSize: 10,
   },
   suspensionNotice: {
     alignItems: "flex-start",
@@ -316,9 +344,9 @@ const styles = StyleSheet.create({
     borderRadius: EventTheme.radii.control,
     borderWidth: 1,
     flexDirection: "row",
-    gap: 9,
-    marginTop: 14,
-    padding: 12,
+    gap: 8,
+    marginTop: 10,
+    padding: 10,
   },
   suspensionCopy: {
     flex: 1,
@@ -326,34 +354,34 @@ const styles = StyleSheet.create({
   suspensionTitle: {
     color: EventTheme.colors.danger,
     fontFamily: EventTheme.typography.bold,
-    fontSize: 12,
+    fontSize: 11,
   },
   suspensionText: {
     color: EventTheme.colors.text,
     fontFamily: EventTheme.typography.regular,
-    fontSize: 11,
-    lineHeight: 17,
+    fontSize: 10,
+    lineHeight: 15,
     marginTop: 2,
   },
   updatedText: {
     color: EventTheme.colors.textFaint,
     fontFamily: EventTheme.typography.regular,
-    fontSize: 10,
-    marginTop: 12,
+    fontSize: 9,
+    marginTop: 10,
   },
   manageButton: {
     alignItems: "center",
     backgroundColor: EventTheme.colors.primary,
     borderRadius: EventTheme.radii.control,
     flexDirection: "row",
-    gap: 7,
+    gap: 6,
     justifyContent: "center",
-    marginTop: 14,
-    minHeight: EventTheme.layout.minimumTouchTarget,
+    marginTop: 10,
+    minHeight: 40,
   },
   manageButtonText: {
     color: EventTheme.colors.surface,
     fontFamily: EventTheme.typography.bold,
-    fontSize: 12,
+    fontSize: 11,
   },
 });

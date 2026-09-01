@@ -165,16 +165,18 @@ export function EventLifecycleActions({
         {actions.map((availableAction) => {
           const isPublish = availableAction === "publish";
           const isCancel = availableAction === "cancel";
+          const isCard = variant === "card";
           const actionDisabled =
             disabled || (isPublish && !publishReady) || isSubmitting;
-          const label =
+          const baseLabel =
             availableAction === "publish"
               ? state === "pausado"
-                ? "Reanudar evento"
-                : "Publicar evento"
+                ? "Reanudar"
+                : "Publicar"
               : availableAction === "pause"
-                ? "Pausar evento"
-                : "Cancelar evento";
+                ? "Pausar"
+                : "Cancelar";
+          const label = isCard ? baseLabel : `${baseLabel} evento`;
           return (
             <TouchableOpacity
               accessibilityRole="button"
@@ -184,6 +186,7 @@ export function EventLifecycleActions({
               onPress={() => openAction(availableAction)}
               style={[
                 styles.actionButton,
+                isCard && styles.cardActionButton,
                 isPublish && styles.publishButton,
                 !isPublish && styles.outlineButton,
                 isCancel && styles.cancelButton,
@@ -340,7 +343,7 @@ export function EventLifecycleActions({
 
 const styles = StyleSheet.create({
   actions: { flexDirection: "row", flexWrap: "wrap", gap: 9 },
-  cardActions: { marginTop: 9 },
+  cardActions: { flexWrap: "nowrap", marginTop: 9 },
   editorActions: { marginTop: 4 },
   actionButton: {
     alignItems: "center",
@@ -351,6 +354,7 @@ const styles = StyleSheet.create({
     minHeight: EventTheme.layout.minimumTouchTarget,
     paddingHorizontal: 14,
   },
+  cardActionButton: { flex: 1, paddingHorizontal: 8 },
   publishButton: { backgroundColor: EventTheme.colors.primary },
   outlineButton: {
     backgroundColor: EventTheme.colors.surface,

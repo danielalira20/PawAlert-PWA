@@ -6,7 +6,6 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  useWindowDimensions,
   View,
 } from "react-native";
 
@@ -46,17 +45,11 @@ function SummaryCard({
   );
 }
 
-function LoadingState({ wide }: { wide: boolean }) {
+function LoadingState() {
   return (
     <View accessibilityLabel="Cargando eventos" style={styles.cards}>
-      {[0, 1].map((item) => (
-        <View
-          key={item}
-          style={[
-            styles.skeletonCard,
-            wide ? styles.skeletonWide : styles.skeletonNarrow,
-          ]}
-        >
+      {[0, 1, 2].map((item) => (
+        <View key={item} style={styles.skeletonCard}>
           <View style={styles.skeletonImage} />
           <View style={styles.skeletonBody}>
             <View style={[styles.skeletonLine, { width: "36%" }]} />
@@ -72,8 +65,6 @@ function LoadingState({ wide }: { wide: boolean }) {
 
 export function AssociationEventsPanel() {
   const hasFocusedRef = useRef(false);
-  const { width } = useWindowDimensions();
-  const wide = width >= 760;
   const { events, isLoading, isRefreshing, error, refresh } =
     useAssociationEvents();
   const { toast, translateY, showToast } = useToast();
@@ -87,7 +78,6 @@ export function AssociationEventsPanel() {
         : events.filter((event) => event.estado === filter),
     [events, filter],
   );
-  const useCardGrid = wide && visibleEvents.length > 1;
 
   useFocusEffect(
     useCallback(() => {
@@ -188,7 +178,7 @@ export function AssociationEventsPanel() {
       )}
 
       {isLoading ? (
-        <LoadingState wide={wide} />
+        <LoadingState />
       ) : error ? (
         <View style={styles.messageState}>
           <View style={styles.messageIconDanger}>
@@ -259,7 +249,6 @@ export function AssociationEventsPanel() {
                 });
                 await refresh();
               }}
-              wide={useCardGrid}
             />
           ))}
         </View>
@@ -389,6 +378,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: EventTheme.spacing.md,
+    justifyContent: "center",
   },
   messageState: {
     alignItems: "center",
@@ -452,21 +442,14 @@ const styles = StyleSheet.create({
     borderColor: EventTheme.colors.border,
     borderRadius: EventTheme.radii.card,
     borderWidth: 1,
-    overflow: "hidden",
-  },
-  skeletonWide: {
-    flexBasis: "47%",
+    flexBasis: 250,
     flexGrow: 1,
-    maxWidth: 440,
-    minWidth: 300,
-  },
-  skeletonNarrow: {
-    flexBasis: "100%",
-    width: "100%",
+    maxWidth: 300,
+    overflow: "hidden",
   },
   skeletonImage: {
     backgroundColor: "#EFE7DE",
-    height: 172,
+    height: 150,
   },
   skeletonBody: {
     gap: 11,
