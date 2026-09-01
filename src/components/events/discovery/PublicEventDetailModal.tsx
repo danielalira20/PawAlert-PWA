@@ -6,7 +6,6 @@ import {
   Alert,
   Image,
   Linking,
-  Platform,
   ScrollView,
   Share,
   StyleSheet,
@@ -28,6 +27,7 @@ import {
   formatEventSchedule,
   isEventImageUrlExpired,
 } from "../../../utils/eventFormatters";
+import { buildEventDeepLinkUrl } from "../../../utils/eventDeepLink";
 import { SavedEventButton } from "../saved/SavedEventButton";
 import { EventTypeChip } from "../shared/EventTypeChip";
 import { EventReportModal } from "./EventReportModal";
@@ -125,15 +125,17 @@ export function PublicEventDetailModal({
 
   const shareEvent = async (detail: EventPublicDetail) => {
     const message = `${detail.titulo}\n${formatEventSchedule(detail.inicia_at, detail.termina_at, detail.zona_horaria)}\n${detail.lugar_nombre}, ${detail.direccion_publica}\nOrganiza: ${detail.asociacion.nombre}`;
-    const url =
-      Platform.OS === "web" && typeof window !== "undefined"
-        ? `${window.location.origin}/map`
-        : undefined;
+    const url = buildEventDeepLinkUrl(
+      detail.id,
+      typeof window !== "undefined" && window.location
+        ? window.location.origin
+        : undefined,
+    );
     try {
       await Share.share({
         title: detail.titulo,
         message,
-        ...(url ? { url } : {}),
+        url,
       });
     } catch (shareError) {
       if (shareError instanceof Error && shareError.name === "AbortError") {

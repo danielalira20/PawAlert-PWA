@@ -31,6 +31,7 @@ interface PublicEventsPanelProps {
   filters?: PublicEventFilterState;
   onFiltersChange?: (filters: PublicEventFilterState) => void;
   onLocate?: (event: EventPublicSummary) => void;
+  onOpenDetail?: (eventId: string) => void;
   topInset?: number;
 }
 
@@ -55,6 +56,7 @@ export function PublicEventsPanel({
   filters: controlledFilters,
   onFiltersChange,
   onLocate,
+  onOpenDetail,
   topInset = 0,
 }: PublicEventsPanelProps) {
   const [internalFilters, setInternalFilters] = useState(
@@ -178,9 +180,10 @@ export function PublicEventsPanel({
                     message,
                   })
                 }
-                onOpenDetail={(selectedEvent) =>
-                  setDetailEventId(selectedEvent.id)
-                }
+                onOpenDetail={(selectedEvent) => {
+                  if (onOpenDetail) onOpenDetail(selectedEvent.id);
+                  else setDetailEventId(selectedEvent.id);
+                }}
                 onLocate={onLocate}
                 onSavedChange={(saved) =>
                   showToast({
@@ -220,27 +223,29 @@ export function PublicEventsPanel({
           </View>
         )}
       </ScrollView>
-      <PublicEventDetailModal
-        eventId={detailEventId}
-        onClose={() => setDetailEventId(null)}
-        onError={(message) =>
-          showToast({
-            type: "error",
-            title: "No pudimos actualizar el evento",
-            message,
-          })
-        }
-        onLocate={onLocate}
-        onSavedChange={(saved) =>
-          showToast({
-            type: "success",
-            title: saved ? "Evento guardado" : "Evento eliminado",
-            message: saved
-              ? "Lo encontrarás en tu perfil. Guardar no reserva un lugar."
-              : "Tu agenda quedó actualizada.",
-          })
-        }
-      />
+      {!onOpenDetail && (
+        <PublicEventDetailModal
+          eventId={detailEventId}
+          onClose={() => setDetailEventId(null)}
+          onError={(message) =>
+            showToast({
+              type: "error",
+              title: "No pudimos actualizar el evento",
+              message,
+            })
+          }
+          onLocate={onLocate}
+          onSavedChange={(saved) =>
+            showToast({
+              type: "success",
+              title: saved ? "Evento guardado" : "Evento eliminado",
+              message: saved
+                ? "Lo encontrarás en tu perfil. Guardar no reserva un lugar."
+                : "Tu agenda quedó actualizada.",
+            })
+          }
+        />
+      )}
     </View>
   );
 }

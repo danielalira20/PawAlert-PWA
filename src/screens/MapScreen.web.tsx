@@ -29,6 +29,7 @@ import {
   INITIAL_PUBLIC_EVENT_FILTERS,
   type EventMapBounds,
 } from '../components/events/discovery/eventDiscoveryFilters';
+import { normalizeEventDeepLinkId } from '../utils/eventDeepLink';
 
 const LeafletMap = lazy(() => import('./LeafletMap'));
 
@@ -64,7 +65,8 @@ type SidebarView = 'list' | 'detail' | 'form' | 'asociacion';
 // ─── Componente principal ─────────────────────────────────────────────────────
 export default function MapScreen() {
   const { isLoggedIn, token } = useAuth();
-  const params = useLocalSearchParams<{ action?: string }>();
+  const params = useLocalSearchParams<{ action?: string; event_id?: string | string[] }>();
+  const deepLinkedEventId = normalizeEventDeepLinkId(params.event_id);
   const [windowWidth, setWindowWidth] = useState(Dimensions.get('window').width);
   const [isClient, setIsClient] = useState(false);
   const [reportes, setReportes] = useState<Reporte[]>([]);
@@ -228,7 +230,23 @@ export default function MapScreen() {
   const handleOpenMapEvent = (eventId: string) => {
     setSelectedEventId(eventId);
     setDetailEventId(eventId);
+    router.setParams({ event_id: eventId });
   };
+
+  const handleCloseEventDetail = () => {
+    setDetailEventId(null);
+    router.setParams({ event_id: undefined });
+  };
+
+  useEffect(() => {
+    if (!deepLinkedEventId) return;
+    setContentMode('events');
+    setSelectedEventId(deepLinkedEventId);
+    setDetailEventId(deepLinkedEventId);
+    setMostrarAsociaciones(false);
+    setMostrarAliados(false);
+    setSidebarView('list');
+  }, [deepLinkedEventId]);
 
   const handleEventFiltersChange = (filters: PublicEventFilterState) => {
     setEventFilters(filters);
@@ -1333,6 +1351,7 @@ export default function MapScreen() {
             filters={eventFilters}
             onFiltersChange={handleEventFiltersChange}
             onLocate={handleLocatePublicEvent}
+            onOpenDetail={handleOpenMapEvent}
             topInset={62}
           />
           <EventMapModeSwitch
@@ -1362,7 +1381,7 @@ export default function MapScreen() {
         {renderImagenAmpliada()}
         <PublicEventDetailModal
           eventId={detailEventId}
-          onClose={() => setDetailEventId(null)}
+          onClose={handleCloseEventDetail}
           onError={(message) => Alert.alert('No pudimos actualizar el evento', message)}
           onLocate={handleLocatePublicEvent}
           onSavedChange={(saved) => Alert.alert(saved ? 'Evento guardado' : 'Evento eliminado', 'Tu agenda quedó actualizada.')}
@@ -1392,6 +1411,7 @@ export default function MapScreen() {
               filters={eventFilters}
               onFiltersChange={handleEventFiltersChange}
               onLocate={handleLocatePublicEvent}
+              onOpenDetail={handleOpenMapEvent}
             />
           ) : sidebarView === 'list' && (
             <View style={{ flex: 1 }}>
@@ -1420,7 +1440,7 @@ export default function MapScreen() {
 
       <PublicEventDetailModal
         eventId={detailEventId}
-        onClose={() => setDetailEventId(null)}
+        onClose={handleCloseEventDetail}
         onError={(message) => Alert.alert('No pudimos actualizar el evento', message)}
         onLocate={handleLocatePublicEvent}
         onSavedChange={(saved) => Alert.alert(saved ? 'Evento guardado' : 'Evento eliminado', 'Tu agenda quedó actualizada.')}
