@@ -355,6 +355,19 @@ def listar_mis_custodias(authorization: Optional[str] = Header(None)):
         .order("inicio_at", desc=True)
         .execute()
     ).data or []
+
+    custodia_ids = [c["id"] for c in custodias]
+    propuestas_activas = {}
+    if custodia_ids:
+        prop_data = (
+            supabase_admin.table("solicitudes_ingreso_adopcion")
+            .select("id, custodia_id, estado, informacion_solicitada") 
+            .in_("custodia_id", custodia_ids)
+            .in_("estado", ["pendiente", "en_revision", "requiere_informacion"])
+            .execute()
+        ).data or []
+        propuestas_activas = {p["custodia_id"]: p for p in prop_data}
+
     notificaciones = (
         supabase_admin.table("notificaciones_custodia")
         .select("id, custodia_id, tipo, mensaje, leida, creada_at")
@@ -372,6 +385,7 @@ def listar_mis_custodias(authorization: Optional[str] = Header(None)):
                 "transferencia_activa": _transferencia_activa(c["id"], incluir_destino=True),
                 "oferta_relevo": _oferta_relevo_para_voluntario(c["id"]),
                 "seguimiento_inicial_pendiente": not bool(c.get("seguimiento_inicial_at")),
+                "propuesta_adopcion_activa": propuestas_activas.get(c["id"]),
                 "aclaraciones": [
                     a for a in _aclaraciones_activas(c["id"])
                     if a["estado"] in ("enviada_voluntario", "respondida")

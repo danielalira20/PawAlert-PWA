@@ -52,6 +52,7 @@ class AdoptionIntakeCreate(BaseModel):
 
 class AdoptionIntakeClarification(BaseModel):
     respuesta: str = Field(min_length=1, max_length=4000)
+    nueva_foto_path: str | None = Field(default=None, max_length=500)
     idempotency_key: str = Field(min_length=8, max_length=200)
 
     @field_validator("respuesta", "idempotency_key")

@@ -336,6 +336,16 @@ def responder_aclaracion(
     actor_user_id: str,
     body: AdoptionIntakeClarification,
 ) -> dict:
+    # 1. Si el voluntario mandó una foto nueva para aclarar, reemplazamos la anterior
+    if body.nueva_foto_path:
+        try:
+            supabase_admin.table("solicitudes_ingreso_adopcion").update({
+                "fotos_propuesta_paths": [body.nueva_foto_path]
+            }).eq("id", request_id).execute()
+        except Exception:
+            logger.warning("No se pudo reemplazar la foto de la propuesta de adopción")
+
+    # 2. Registramos el texto de la respuesta y cambiamos el estado
     return _rpc(
         "responder_aclaracion_ingreso_adopcion",
         {
@@ -369,7 +379,16 @@ def resolver_ingreso(
     actor_user_id: str,
     body: AdoptionIntakeResolve,
 ) -> dict:
-    return _rpc(
+    # 1. Obtener la solicitud original para saber a quién notificar
+    solicitud = _query(
+        "obtener_solicitud_base",
+        lambda: supabase_admin.table("solicitudes_ingreso_adopcion")
+        .select("custodia_id, propuesto_por_usuario_id, reporte_id") # <-- AÑADIDO reporte_id
+        .eq("id", request_id)
+        .limit(1)
+    )
+
+    resultado = _rpc(
         "resolver_solicitud_ingreso_adopcion",
         {
             "p_solicitud_id": request_id,
@@ -381,6 +400,32 @@ def resolver_ingreso(
         },
     )
 
+    # 2. Si la asociación pide información, insertamos las notificaciones
+    if solicitud and body.decision == "solicitar_informacion":
+        from datetime import datetime, timezone
+        try:
+            # Notificación en el dashboard de Custodia
+            supabase_admin.table("notificaciones_custodia").insert({
+                "custodia_id": solicitud[0]["custodia_id"],
+                "usuario_id": solicitud[0]["propuesto_por_usuario_id"],
+                "tipo": "aclaracion_adopcion",
+                "mensaje": f"La asociación necesita más información sobre tu propuesta de adopción: {body.motivo}",
+                "leida": False,
+                "creada_at": datetime.now(timezone.utc).isoformat()
+            }).execute()
+
+            # NUEVO: Notificación en la campanita general (NotificacionesScreen)
+            supabase_admin.table("notificaciones_moderacion").insert({
+                "usuario_id": solicitud[0]["propuesto_por_usuario_id"],
+                "reporte_id": solicitud[0]["reporte_id"],
+                "tipo": "aclaracion_adopcion",
+                "mensaje": "La asociación solicitó más información sobre tu propuesta de adopción.",
+                "leida": False
+            }).execute()
+        except Exception:
+            logger.warning("No se pudo crear la notificación de aclaración de adopción")
+
+    return resultado
 
 def crear_perfil_formal(
     association_id: str,

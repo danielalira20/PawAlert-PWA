@@ -21,6 +21,8 @@ import { Toast, useToast } from '../components/Toast';
 import { API_URL } from '../constants/api';
 import { Brand } from '../constants/theme';
 import { useAuth } from '../context/AuthContext';
+import { supabase } from '../config/supabase';
+
 
 interface Seguimiento {
   id: string;
@@ -64,7 +66,7 @@ export interface Custodia {
   reporte: {
     id: string;
     foto_url?: string | null;
-    animales?: Array<{ tipo_animal?: string; condicion?: string; tamanio?: string }>;
+    animales?: Array<{ id: string; tipo_animal?: string; condicion?: string; tamanio?: string }>;
   };
   ultimo_seguimiento?: Seguimiento | null;
   seguimiento_anterior?: Seguimiento | null;
@@ -106,6 +108,7 @@ export interface Custodia {
     ventana_fin?: string | null;
   } | null;
   puede_confirmar_recepcion?: boolean;
+  propuesta_adopcion_activa?: { id: string; estado: string; informacion_solicitada?: string | null } | null;
   pregunta_vencimiento?: {
     id: string;
     fecha_limite_consultada: string;
@@ -114,8 +117,7 @@ export interface Custodia {
   } | null;
 }
 
-type ModalMode = 'seguimiento' | 'relevo' | 'extension' | 'vencimiento' | 'validacion' | 'duda' | 'gestionar_duda' | 'responder_aclaracion' | 'aceptar' | 'autorizar_relevo' | 'transporte_relevo' | 'transferencia' | 'finalizar' | null;
-
+type ModalMode = 'seguimiento' | 'relevo' | 'extension' | 'vencimiento' | 'validacion' | 'duda' | 'gestionar_duda' | 'responder_aclaracion' | 'aceptar' | 'autorizar_relevo' | 'transporte_relevo' | 'transferencia' | 'finalizar' | 'proponer_adopcion' | 'responder_info_adopcion' | null;
 interface Props {
   onClose?: () => void;
 }
@@ -131,6 +133,8 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
   const [modal, setModal] = useState<ModalMode>(null);
   const [seleccionada, setSeleccionada] = useState<Custodia | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [errors, setErrors] = useState<{ [key: string]: string }>({});
+  const [propuestasEnviadas, setPropuestasEnviadas] = useState<string[]>([]);
   const [form, setForm] = useState({
     condicion: '',
     salud: '',
@@ -155,6 +159,11 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
     posiblesInconsistencias: false,
     revisionMedica: false,
     revisionLegal: false,
+    nombreTemporal: '',
+    temperamento: '',
+    compatibilidad: '',
+    razonAdopcion: '',
+    tiempoCustodiaAdicional: '',
   });
   const [fotoAnimal, setFotoAnimal] = useState<string | null>(null);
   const [fotoEntorno, setFotoEntorno] = useState<string | null>(null);
@@ -191,6 +200,17 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
   const abrir = (modo: ModalMode, custodia: Custodia) => {
     setSeleccionada(custodia);
     setModal(modo);
+    
+    if (modo === 'proponer_adopcion') {
+      setErrors({
+        nombreTemporal: 'El nombre es obligatorio.',
+        salud: 'El estado de salud es obligatorio.',
+        temperamento: 'El temperamento es obligatorio.',
+        razonAdopcion: 'La razón de adopción es obligatoria.',
+      });
+    } else {
+      setErrors({});
+    }
     setForm({
       condicion: '',
       salud: '',
@@ -215,6 +235,11 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
       posiblesInconsistencias: false,
       revisionMedica: false,
       revisionLegal: false,
+      nombreTemporal: '',
+      temperamento: '',
+      compatibilidad: '',
+      razonAdopcion: '',
+      tiempoCustodiaAdicional: '',
     });
     setFotoAnimal(null);
     setFotoEntorno(null);
@@ -236,6 +261,57 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
     if (submitting) return;
     setModal(null);
     setSeleccionada(null);
+  };
+  const handleNombreTemporalChange = (val: string) => {
+    setForm({ ...form, nombreTemporal: val });
+    if (!val.trim()) {
+      setErrors(prev => ({ ...prev, nombreTemporal: 'El nombre es obligatorio.' }));
+    } else if (!/^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/.test(val)) { // Se quitaron los números (0-9)
+      setErrors(prev => ({ ...prev, nombreTemporal: 'Solo se permiten letras y espacios.' }));
+    } else {
+      setErrors(prev => ({ ...prev, nombreTemporal: '' }));
+    }
+  };
+  const handleRespuestaAdopcionChange = (val: string) => {
+    setForm({ ...form, comentario: val });
+    if (val.trim().length < 5) {
+      setErrors(prev => ({ ...prev, respuestaAdopcion: 'La respuesta debe tener al menos 5 caracteres.' }));
+    } else {
+      setErrors(prev => ({ ...prev, respuestaAdopcion: '' }));
+    }
+  };
+
+  const handleSaludChange = (val: string) => {
+    setForm({ ...form, salud: val });
+    if (!val.trim()) {
+      setErrors(prev => ({ ...prev, salud: 'El estado de salud es obligatorio.' }));
+    } else if (!/[a-zA-ZáéíóúÁÉÍÓÚñÑ]/.test(val)) {
+      setErrors(prev => ({ ...prev, salud: 'Debe contener al menos una letra.' }));
+    } else {
+      setErrors(prev => ({ ...prev, salud: '' }));
+    }
+  };
+
+  const handleTemperamentoChange = (val: string) => {
+    setForm({ ...form, temperamento: val });
+    if (!val.trim()) {
+      setErrors(prev => ({ ...prev, temperamento: 'El temperamento es obligatorio.' }));
+    } else if (!/^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s,.-]+$/.test(val)) {
+      setErrors(prev => ({ ...prev, temperamento: 'Solo letras y signos básicos de puntuación.' }));
+    } else {
+      setErrors(prev => ({ ...prev, temperamento: '' }));
+    }
+  };
+
+  const handleRazonAdopcionChange = (val: string) => {
+    setForm({ ...form, razonAdopcion: val });
+    if (!val.trim()) {
+      setErrors(prev => ({ ...prev, razonAdopcion: 'La razón de adopción es obligatoria.' }));
+    } else if (!/[a-zA-ZáéíóúÁÉÍÓÚñÑ]/.test(val)) {
+      setErrors(prev => ({ ...prev, razonAdopcion: 'Debe contener al menos una letra.' }));
+    } else {
+      setErrors(prev => ({ ...prev, razonAdopcion: '' }));
+    }
   };
 
   const abrirRevision = async (custodia: Custodia) => {
@@ -297,6 +373,36 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
       { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' } },
     );
     return response.data.foto_url as string;
+  };
+
+  const subirFotoPropuesta = async (uri: string) => {
+    if (!seleccionada) return null;
+
+    // 1. ¡LA CLAVE! Le inyectamos tu sesión al cliente de Supabase.
+    // Usamos el token en ambos campos para evitar que Supabase lo rechace por formato inválido.
+    if (token) {
+      await supabase.auth.setSession({ 
+        access_token: token, 
+        refresh_token: token 
+      });
+    }
+
+    // 2. Usamos blob() en lugar de arrayBuffer(), es más seguro en React Native
+    const blob = await (await fetch(uri)).blob();
+    
+    // 3. El prefijo exacto que pide el backend
+    const filePath = `adopciones/ingresos/${seleccionada.id}_${Date.now()}.jpg`;
+
+    // 4. Subida al bucket
+    const { data, error } = await supabase.storage
+      .from('pawalert-adopciones-privado') 
+      .upload(filePath, blob, { contentType: 'image/jpeg' });
+
+    if (error) {
+      throw new Error(`Error de permisos en Storage: ${error.message}`);
+    }
+
+    return data.path; 
   };
 
   const ejecutar = async (accion: () => Promise<void>, exito: string) => {
@@ -521,6 +627,64 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
       { headers: { Authorization: `Bearer ${token}` } },
     );
   }, 'Tu parte quedó confirmada. La transferencia terminará cuando ambas partes confirmen.');
+  const responderInfoAdopcion = () => ejecutar(async () => {
+    if (!seleccionada?.propuesta_adopcion_activa?.id) throw new Error('Propuesta no encontrada.');
+    if (form.comentario.trim().length < 5) {
+      setErrors(prev => ({ ...prev, respuestaAdopcion: 'La respuesta debe tener al menos 5 caracteres.' }));
+      throw new Error('Escribe una respuesta clara y detallada para la asociación.');
+    }
+    
+    let nueva_foto_path = null;
+    if (fotoAnimal) {
+       nueva_foto_path = await subirFotoPropuesta(fotoAnimal);
+    }
+
+    await axios.post(
+      `${API_URL}/adoption-intake-requests/${seleccionada.propuesta_adopcion_activa.id}/clarifications`,
+      {
+        respuesta: form.comentario.trim(),
+        nueva_foto_path,
+        idempotency_key: `aclaracion_adopcion_${Date.now()}_${seleccionada.id}`
+      },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+  }, 'Tu respuesta y evidencia han sido enviadas a la asociación.');
+  const enviarPropuestaAdopcion = () => ejecutar(async () => {
+    const hasErrors = Object.values(errors).some(e => e !== '') || !form.nombreTemporal || !form.salud || !form.temperamento || !form.razonAdopcion;
+    
+    if (hasErrors || !fotoAnimal) {
+      throw new Error('Revisa los errores en rojo y asegúrate de adjuntar una foto reciente.');
+    }
+
+    const animalId = seleccionada?.reporte.animales?.[0]?.id;
+    if (!animalId || !seleccionada) {
+      throw new Error('El backend no devolvió el ID del animal en la custodia.');
+    }
+
+    const foto_path = await subirFotoPropuesta(fotoAnimal);
+    if (!foto_path) {
+      throw new Error('No se pudo obtener la ruta de la imagen tras subirla.');
+    }
+
+    await axios.post(
+      `${API_URL}/custody/${seleccionada.id}/adoption-intake-requests`,
+      {
+        animal_id: animalId,
+        origen_individuo: 1, 
+        fotos_propuesta_paths: [foto_path],
+        salud_conocida: form.salud,
+        temperamento_observado: form.temperamento,
+        motivo_propuesta: form.razonAdopcion,
+        idempotency_key: `propuesta_${Date.now()}_${seleccionada.id}`,
+        nombre_temporal: form.nombreTemporal || null,
+        compatibilidad_observada: form.compatibilidad ? { detalle: form.compatibilidad } : {},
+      },
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+
+    // Ocultar botón de este caso tras propuesta exitosa
+    setPropuestasEnviadas(prev => [...prev, seleccionada.id]);
+  }, 'La propuesta ha sido enviada a la asociación coordinadora.');
 
   const finalizarCustodia = () => ejecutar(async () => {
     if (!seleccionada || !form.resolucion || form.comentario.trim().length < 3) {
@@ -713,6 +877,22 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
                       {custodia.estado === 'activo' && (
                         <Action icon="camera-outline" label={custodia.seguimiento_inicial_pendiente ? 'Seguimiento inicial' : 'Nuevo seguimiento'} primary onPress={() => abrir('seguimiento', custodia)} />
                       )}
+                      {custodia.estado === 'activo' && !custodia.propuesta_adopcion_activa && !propuestasEnviadas.includes(custodia.id) && (
+                        <Action icon="home-outline" label="Proponer para adopción" primary onPress={() => abrir('proponer_adopcion', custodia)} />
+                      )}
+
+                      {custodia.propuesta_adopcion_activa?.estado === 'requiere_informacion' && (
+                        <Action icon="chatbox-ellipses-outline" label="Responder a asociación" primary onPress={() => abrir('responder_info_adopcion', custodia)} />
+                      )}
+                      
+                      {/* Mostrar etiqueta si la propuesta ya está viva y no requiere info */}
+                      {(custodia.propuesta_adopcion_activa || propuestasEnviadas.includes(custodia.id)) && custodia.propuesta_adopcion_activa?.estado !== 'requiere_informacion' && (
+                        <View style={{ backgroundColor: '#F3F4F6', padding: 8, borderRadius: 11, alignItems: 'center', justifyContent: 'center', minHeight: 39, paddingHorizontal: 11 }}>
+                          <Text style={{ fontSize: 10, color: Brand.textMuted, fontWeight: '700' }}>
+                             🐾 Propuesta en revisión
+                          </Text>
+                        </View>
+                      )}
                       {custodia.estado === 'activo' && <Action icon="calendar-outline" label="Extender" onPress={() => abrir('extension', custodia)} />}
                       {custodia.estado === 'activo' && <Action icon="swap-horizontal-outline" label="Necesito relevo" onPress={() => abrir('relevo', custodia)} />}
                       {custodia.aclaraciones?.some((a) => a.estado === 'enviada_voluntario') && (
@@ -770,6 +950,43 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
               <TouchableOpacity onPress={cerrarModal}><Ionicons name="close" size={22} color={Brand.textFaint} /></TouchableOpacity>
             </View>
             <ScrollView showsVerticalScrollIndicator={false}>
+            {modal === 'proponer_adopcion' && (
+                <>
+                  <Text style={styles.modalCopy}>Propón a este animal para que la asociación lo evalúe y publique en la galería. Tú conservarás la custodia hasta la entrega.</Text>
+                  <Field label="Nombre temporal" value={form.nombreTemporal} onChangeText={handleNombreTemporalChange} placeholder="Ej. Firulais" error={errors.nombreTemporal} />
+                  <Field label="Estado de salud" value={form.salud} onChangeText={handleSaludChange} placeholder="Ej. Sano, vacunado" multiline error={errors.salud} />
+                  <Field label="Temperamento" value={form.temperamento} onChangeText={handleTemperamentoChange} placeholder="Ej. Juguetón, tranquilo" error={errors.temperamento} />
+                  <Field label="Compatibilidad (Opcional)" value={form.compatibilidad} onChangeText={(v) => setForm({ ...form, compatibilidad: v })} placeholder="Ej. Convive con niños y otros perros" />
+                  <Field label="Razón para adopción" value={form.razonAdopcion} onChangeText={handleRazonAdopcionChange} placeholder="¿Por qué está listo para un hogar definitivo?" multiline error={errors.razonAdopcion} />
+                  <Field label="Tiempo que puedes conservarlo (Opcional)" value={form.tiempoCustodiaAdicional} onChangeText={(v) => setForm({ ...form, tiempoCustodiaAdicional: v })} placeholder="Ej. 2 semanas" />
+                  <EvidenceButtons animal={fotoAnimal} entorno={null} gps={gps} initial={false} onAnimal={() => tomarFoto()} onEntorno={() => undefined} onGps={capturarGps} />
+                  <Submit label="Enviar propuesta" loading={submitting} onPress={enviarPropuestaAdopcion} />
+                </>
+              )}
+              {modal === 'responder_info_adopcion' && seleccionada?.propuesta_adopcion_activa && (
+                <>
+                  <Text style={styles.modalCopy}>La asociación coordinadora revisó tu propuesta y necesita estos detalles para aprobarla:</Text>
+                  <View style={styles.messageCard}>
+                    <Text style={styles.messageText}>
+                      {seleccionada.propuesta_adopcion_activa.informacion_solicitada || 'Por favor, proporciona más detalles sobre la salud o comportamiento del animal.'}
+                    </Text>
+                  </View>
+                  
+                  <Field 
+                    label="Tu respuesta" 
+                    value={form.comentario} 
+                    onChangeText={handleRespuestaAdopcionChange} 
+                    placeholder="Escribe aquí tu respuesta..." 
+                    multiline 
+                    error={errors.respuestaAdopcion}
+                  />
+
+                  <Text style={styles.modalCopy}>Si la asociación te pidió una nueva foto (por borrosa o desactualizada), adjúntala aquí. Reemplazará a la original.</Text>
+                  <Action icon={fotoAnimal ? 'checkmark-circle' : 'camera-outline'} label={fotoAnimal ? 'Foto lista' : 'Adjuntar foto'} onPress={() => tomarFoto()} />
+                  
+                  <Submit label="Enviar respuesta" loading={submitting} onPress={responderInfoAdopcion} />
+                </>
+              )}
               {modal === 'seguimiento' && (
                 <>
                   <Field label="Condición actual" value={form.condicion} onChangeText={(v) => setForm({ ...form, condicion: v })} placeholder="Estable, herido, en recuperación..." />
@@ -1074,8 +1291,22 @@ function Action({ icon, label, onPress, primary, danger }: { icon: keyof typeof 
   );
 }
 
-function Field(props: { label: string; value: string; onChangeText: (v: string) => void; placeholder: string; multiline?: boolean }) {
-  return <View style={{ marginBottom: 12 }}><Text style={styles.label}>{props.label}</Text><TextInput {...props} style={[styles.input, props.multiline && styles.textArea]} placeholderTextColor={Brand.textFaint} /></View>;
+function Field(props: { label: string; value: string; onChangeText: (v: string) => void; placeholder: string; multiline?: boolean; error?: string }) {
+  return (
+    <View style={{ marginBottom: 12 }}>
+      <Text style={styles.label}>{props.label}</Text>
+      <TextInput 
+        {...props} 
+        style={[
+          styles.input, 
+          props.multiline && styles.textArea,
+          props.error ? { borderColor: '#B84A3A', borderWidth: 1.5 } : null
+        ]} 
+        placeholderTextColor={Brand.textFaint} 
+      />
+      {props.error ? <Text style={{ color: '#B84A3A', fontSize: 11, fontWeight: '700', marginTop: 4 }}>{props.error}</Text> : null}
+    </View>
+  );
 }
 
 function EvidenceButtons({ animal, entorno, gps, initial, onAnimal, onEntorno, onGps }: any) {
@@ -1107,9 +1338,10 @@ function modalTitle(mode: ModalMode) {
     transporte_relevo: 'Confirmar traslado',
     transferencia: 'Confirmar transferencia',
     finalizar: 'Finalizar custodia',
+    proponer_adopcion: 'Proponer para adopción',
+    responder_info_adopcion: 'Responder a la asociación',
   } as any)[mode || ''] || '';
 }
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Brand.backgroundWarm },
   header: { flexDirection: 'row', gap: 16, padding: 22, borderBottomWidth: 1, borderBottomColor: '#E7D8C4' },
