@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useState } from "react";
 import {
   ActivityIndicator,
   ScrollView,
@@ -12,6 +13,7 @@ import {
 import { EventTheme } from "../../../constants/eventTheme";
 import { useSavedEvents } from "../../../context/events/SavedEventsContext";
 import { Toast, useToast } from "../../Toast";
+import { PublicEventDetailModal } from "../discovery/PublicEventDetailModal";
 import { SavedEventCard } from "./SavedEventCard";
 
 export function shouldUseSavedEventsGrid(width: number, count: number) {
@@ -43,6 +45,7 @@ function LoadingState({ wide }: { wide: boolean }) {
 }
 
 export function SavedEventsPanel({ onClose }: { onClose: () => void }) {
+  const [detailEventId, setDetailEventId] = useState<string | null>(null);
   const { width } = useWindowDimensions();
   const { savedEvents, isLoading, isRefreshing, error, refresh } =
     useSavedEvents();
@@ -163,6 +166,7 @@ export function SavedEventsPanel({ onClose }: { onClose: () => void }) {
                     message,
                   })
                 }
+                onOpenDetail={setDetailEventId}
                 onRemoved={() =>
                   showToast({
                     type: "success",
@@ -177,6 +181,25 @@ export function SavedEventsPanel({ onClose }: { onClose: () => void }) {
           </View>
         )}
       </ScrollView>
+      <PublicEventDetailModal
+        eventId={detailEventId}
+        onClose={() => setDetailEventId(null)}
+        onError={(message) =>
+          showToast({
+            type: "error",
+            title: "No pudimos actualizar el evento",
+            message,
+          })
+        }
+        onSavedChange={(saved) => {
+          if (!saved) setDetailEventId(null);
+          showToast({
+            type: "success",
+            title: saved ? "Evento guardado" : "Evento eliminado de guardados",
+            message: "Tu agenda quedó actualizada.",
+          });
+        }}
+      />
     </View>
   );
 }

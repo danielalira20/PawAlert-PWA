@@ -3,7 +3,7 @@ import axios from 'axios';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Dimensions, Image, Modal, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Animated, Dimensions, Image, Modal, Text, TouchableOpacity, View } from 'react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import MapView, { Callout, Circle, Region } from 'react-native-maps';
 import { TrackedMarker } from './TrackedMarker';
@@ -16,6 +16,7 @@ import { Reporte, ZonaAgregada, getAnimales, condicionMasGrave, especieMasGrave,
 import { AnimalCarousel } from '../components/common/AnimalCarousel';
 import ReportFormScreen from './ReportFormScreen';
 import { PublicEventsPanel } from '../components/events/discovery/PublicEventsPanel';
+import { PublicEventDetailModal } from '../components/events/discovery/PublicEventDetailModal';
 import {
   EventMapModeSwitch,
   type EventDiscoveryView,
@@ -291,6 +292,7 @@ export default function MapScreen() {
   const [contentMode, setContentMode] = useState<MapContentMode>('rescues');
   const [eventView, setEventView] = useState<EventDiscoveryView>('list');
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [detailEventId, setDetailEventId] = useState<string | null>(null);
   const [eventFilters, setEventFilters] = useState<PublicEventFilterState>(INITIAL_PUBLIC_EVENT_FILTERS);
   const [eventMapBounds, setEventMapBounds] = useState<EventMapBounds | null>(null);
   const [pendingEventMapBounds, setPendingEventMapBounds] = useState<EventMapBounds | null>(null);
@@ -373,6 +375,11 @@ export default function MapScreen() {
     setPendingEventMapBounds(null);
     setSelectedEventId(event.id);
     setEventView('map');
+  };
+
+  const handleOpenMapEvent = (eventId: string) => {
+    setSelectedEventId(eventId);
+    setDetailEventId(eventId);
   };
 
   const handleEventFiltersChange = (filters: PublicEventFilterState) => {
@@ -617,7 +624,7 @@ export default function MapScreen() {
             <TrackedMarker
               key={`event-${event.id}`}
               coordinate={{ latitude: event.latitud, longitude: event.longitud }}
-              onPress={() => setSelectedEventId(event.id)}
+              onPress={() => handleOpenMapEvent(event.id)}
             >
               <EventMarker event={event} selected={selectedEventId === event.id} />
               <Callout tooltip={false}>
@@ -692,6 +699,14 @@ export default function MapScreen() {
         showEventView
         onContentModeChange={handleContentModeChange}
         onEventViewChange={setEventView}
+      />
+
+      <PublicEventDetailModal
+        eventId={detailEventId}
+        onClose={() => setDetailEventId(null)}
+        onError={(message) => Alert.alert('No pudimos actualizar el evento', message)}
+        onLocate={handleLocatePublicEvent}
+        onSavedChange={(saved) => Alert.alert(saved ? 'Evento guardado' : 'Evento eliminado', 'Tu agenda quedó actualizada.')}
       />
 
       {contentMode === 'events' && eventView === 'map' && isEventMapLoading && (

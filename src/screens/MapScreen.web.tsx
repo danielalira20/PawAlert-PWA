@@ -4,7 +4,7 @@ import axios from 'axios';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Dimensions, Image, Modal, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Animated, Dimensions, Image, Modal, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import AuthGateModal from '../components/AuthGateModal';
 import { API_URL } from '../constants/api';
@@ -15,6 +15,7 @@ import ReportFormScreen from './ReportFormScreen';
 import type { AsociacionMapa } from './LeafletMap';
 import { ReportContentMenu } from '../components/reports/ReportContentMenu';
 import { PublicEventsPanel } from '../components/events/discovery/PublicEventsPanel';
+import { PublicEventDetailModal } from '../components/events/discovery/PublicEventDetailModal';
 import {
   EventMapModeSwitch,
   type EventDiscoveryView,
@@ -75,6 +76,7 @@ export default function MapScreen() {
   const [contentMode, setContentMode] = useState<MapContentMode>('rescues');
   const [eventView, setEventView] = useState<EventDiscoveryView>('list');
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [detailEventId, setDetailEventId] = useState<string | null>(null);
   const [eventFilters, setEventFilters] = useState<PublicEventFilterState>(INITIAL_PUBLIC_EVENT_FILTERS);
   const [eventMapBounds, setEventMapBounds] = useState<EventMapBounds | null>(null);
   const [pendingEventMapBounds, setPendingEventMapBounds] = useState<EventMapBounds | null>(null);
@@ -221,6 +223,11 @@ export default function MapScreen() {
     setPendingEventMapBounds(null);
     setSelectedEventId(event.id);
     setEventView('map');
+  };
+
+  const handleOpenMapEvent = (eventId: string) => {
+    setSelectedEventId(eventId);
+    setDetailEventId(eventId);
   };
 
   const handleEventFiltersChange = (filters: PublicEventFilterState) => {
@@ -935,7 +942,7 @@ export default function MapScreen() {
               }
             }}
             onSelectAsociacion={handleSelectAsociacion}
-            onSelectEvent={(event) => setSelectedEventId(event.id)}
+            onSelectEvent={(event) => handleOpenMapEvent(event.id)}
             onEventBoundsChange={setPendingEventMapBounds}
             onMapClick={handleMapClick}
           />
@@ -1353,6 +1360,13 @@ export default function MapScreen() {
         {renderMobileBottomSheet()}
         {renderFormModal()}
         {renderImagenAmpliada()}
+        <PublicEventDetailModal
+          eventId={detailEventId}
+          onClose={() => setDetailEventId(null)}
+          onError={(message) => Alert.alert('No pudimos actualizar el evento', message)}
+          onLocate={handleLocatePublicEvent}
+          onSavedChange={(saved) => Alert.alert(saved ? 'Evento guardado' : 'Evento eliminado', 'Tu agenda quedó actualizada.')}
+        />
         <AuthGateModal visible={isAuthGateVisible} onClose={() => setIsAuthGateVisible(false)} onGuest={() => setSidebarView('form')} />
       </View>
     );
@@ -1403,6 +1417,14 @@ export default function MapScreen() {
 
       {/* Mapa */}
       {renderMap()}
+
+      <PublicEventDetailModal
+        eventId={detailEventId}
+        onClose={() => setDetailEventId(null)}
+        onError={(message) => Alert.alert('No pudimos actualizar el evento', message)}
+        onLocate={handleLocatePublicEvent}
+        onSavedChange={(saved) => Alert.alert(saved ? 'Evento guardado' : 'Evento eliminado', 'Tu agenda quedó actualizada.')}
+      />
 
       {renderImagenAmpliada()}
       <AuthGateModal visible={isAuthGateVisible} onClose={() => setIsAuthGateVisible(false)} onGuest={() => setSidebarView('form')} />

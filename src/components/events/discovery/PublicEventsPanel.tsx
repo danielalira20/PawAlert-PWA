@@ -15,6 +15,7 @@ import { usePublicEvents } from "../../../hooks/events/usePublicEvents";
 import type { EventPublicSummary } from "../../../types/event";
 import { Toast, useToast } from "../../Toast";
 import { PublicEventCard } from "./PublicEventCard";
+import { PublicEventDetailModal } from "./PublicEventDetailModal";
 import {
   PublicEventFilters,
   type PublicEventFilterState,
@@ -59,6 +60,7 @@ export function PublicEventsPanel({
   const [internalFilters, setInternalFilters] = useState(
     INITIAL_PUBLIC_EVENT_FILTERS,
   );
+  const [detailEventId, setDetailEventId] = useState<string | null>(null);
   const filters = controlledFilters ?? internalFilters;
   const setFilters = onFiltersChange ?? setInternalFilters;
   const query = useMemo(() => buildPublicEventQuery(filters), [filters]);
@@ -176,6 +178,9 @@ export function PublicEventsPanel({
                     message,
                   })
                 }
+                onOpenDetail={(selectedEvent) =>
+                  setDetailEventId(selectedEvent.id)
+                }
                 onLocate={onLocate}
                 onSavedChange={(saved) =>
                   showToast({
@@ -215,6 +220,27 @@ export function PublicEventsPanel({
           </View>
         )}
       </ScrollView>
+      <PublicEventDetailModal
+        eventId={detailEventId}
+        onClose={() => setDetailEventId(null)}
+        onError={(message) =>
+          showToast({
+            type: "error",
+            title: "No pudimos actualizar el evento",
+            message,
+          })
+        }
+        onLocate={onLocate}
+        onSavedChange={(saved) =>
+          showToast({
+            type: "success",
+            title: saved ? "Evento guardado" : "Evento eliminado",
+            message: saved
+              ? "Lo encontrarás en tu perfil. Guardar no reserva un lugar."
+              : "Tu agenda quedó actualizada.",
+          })
+        }
+      />
     </View>
   );
 }

@@ -15,6 +15,7 @@ import { SavedEventButton } from "../saved/SavedEventButton";
 interface PublicEventCardProps {
   event: EventPublicSummary;
   onError: (message: string) => void;
+  onOpenDetail?: (event: EventPublicSummary) => void;
   onLocate?: (event: EventPublicSummary) => void;
   onSavedChange?: (saved: boolean) => void;
 }
@@ -22,6 +23,7 @@ interface PublicEventCardProps {
 export function PublicEventCard({
   event,
   onError,
+  onOpenDetail,
   onLocate,
   onSavedChange,
 }: PublicEventCardProps) {
@@ -131,9 +133,23 @@ export function PublicEventCard({
         </View>
 
         <View style={styles.actions}>
+          {onOpenDetail && (
+            <TouchableOpacity
+              accessibilityRole="button"
+              onPress={() => onOpenDetail(event)}
+              style={styles.detailButton}
+            >
+              <Ionicons
+                name="eye-outline"
+                size={17}
+                color={EventTheme.colors.primary}
+              />
+              <Text style={styles.detailButtonText}>Ver detalles</Text>
+            </TouchableOpacity>
+          )}
           <SavedEventButton
             event={event}
-            fullWidth={!onLocate}
+            fullWidth={!onLocate && !onOpenDetail}
             onError={onError}
             onSuccess={onSavedChange}
           />
@@ -262,6 +278,25 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     minHeight: EventTheme.layout.minimumTouchTarget,
     paddingHorizontal: 12,
+  },
+  detailButton: {
+    alignItems: "center",
+    backgroundColor: EventTheme.colors.surfaceWarm,
+    borderColor: EventTheme.colors.border,
+    borderRadius: EventTheme.radii.control,
+    borderWidth: 1,
+    flexDirection: "row",
+    flexGrow: 1,
+    gap: 6,
+    justifyContent: "center",
+    minHeight: EventTheme.layout.minimumTouchTarget,
+    paddingHorizontal: 12,
+    width: "100%",
+  },
+  detailButtonText: {
+    color: EventTheme.colors.primary,
+    fontFamily: EventTheme.typography.bold,
+    fontSize: 11,
   },
   locateText: {
     color: EventTheme.colors.primary,

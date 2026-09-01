@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Image, StyleSheet, Text, View } from "react-native";
+import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { EventTheme } from "../../../constants/eventTheme";
 import type { EventSavedView } from "../../../types/event";
@@ -16,6 +16,7 @@ interface SavedEventCardProps {
   savedEvent: EventSavedView;
   wide: boolean;
   onError: (message: string) => void;
+  onOpenDetail: (eventId: string) => void;
   onRemoved: () => void;
 }
 
@@ -23,6 +24,7 @@ export function SavedEventCard({
   savedEvent,
   wide,
   onError,
+  onOpenDetail,
   onRemoved,
 }: SavedEventCardProps) {
   const event = savedEvent.evento;
@@ -132,6 +134,18 @@ export function SavedEventCard({
         </View>
 
         <View style={styles.actionArea}>
+          <TouchableOpacity
+            accessibilityRole="button"
+            onPress={() => onOpenDetail(event.id)}
+            style={styles.detailButton}
+          >
+            <Ionicons
+              name="eye-outline"
+              size={17}
+              color={EventTheme.colors.primary}
+            />
+            <Text style={styles.detailButtonText}>Ver detalles</Text>
+          </TouchableOpacity>
           <SavedEventButton
             event={event}
             fullWidth
@@ -247,5 +261,22 @@ const styles = StyleSheet.create({
     fontFamily: EventTheme.typography.medium,
     fontSize: 10,
   },
-  actionArea: { marginTop: 14 },
+  actionArea: { gap: 8, marginTop: 14 },
+  detailButton: {
+    alignItems: "center",
+    backgroundColor: EventTheme.colors.surfaceWarm,
+    borderColor: EventTheme.colors.border,
+    borderRadius: EventTheme.radii.control,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 7,
+    justifyContent: "center",
+    minHeight: EventTheme.layout.minimumTouchTarget,
+    width: "100%",
+  },
+  detailButtonText: {
+    color: EventTheme.colors.primary,
+    fontFamily: EventTheme.typography.bold,
+    fontSize: 12,
+  },
 });
