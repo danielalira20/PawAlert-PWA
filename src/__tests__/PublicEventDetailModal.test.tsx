@@ -130,6 +130,52 @@ describe("PublicEventDetailModal", () => {
     expect(view.getByText("Ver en mapa")).toBeTruthy();
   });
 
+  it("permite reintentar o cerrar cuando el detalle dejó de estar disponible", async () => {
+    const retry = jest.fn();
+    const onClose = jest.fn();
+    mockedUsePublicEventDetail.mockReturnValue({
+      event: null,
+      isLoading: false,
+      error: "El evento ya no está disponible.",
+      retry,
+    });
+    const view = await render(
+      <PublicEventDetailModal
+        eventId="event-1"
+        onClose={onClose}
+        onError={jest.fn()}
+      />,
+    );
+
+    expect(view.getByText("El evento no está disponible")).toBeTruthy();
+    await fireEvent.press(view.getByLabelText("Reintentar carga del evento"));
+    expect(retry).toHaveBeenCalledTimes(1);
+    await fireEvent.press(view.getByLabelText("Cerrar detalle sin reintentar"));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("explica que se necesita sesión antes de abrir el reporte", async () => {
+    mockedUsePublicEventDetail.mockReturnValue({
+      event: detail,
+      isLoading: false,
+      error: null,
+      retry: jest.fn(),
+    });
+    const onError = jest.fn();
+    const view = await render(
+      <PublicEventDetailModal
+        eventId="event-1"
+        onClose={jest.fn()}
+        onError={onError}
+      />,
+    );
+
+    await fireEvent.press(view.getByLabelText(`Reportar ${detail.titulo}`));
+    expect(onError).toHaveBeenCalledWith(
+      "Inicia sesión para reportar información de este evento.",
+    );
+  });
+
   it("amplía la imagen dentro del mismo modal y permite volver al detalle", async () => {
     mockedUsePublicEventDetail.mockReturnValue({
       event: {
