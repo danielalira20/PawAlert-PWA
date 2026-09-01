@@ -181,7 +181,7 @@ export function AdopcionesPanel({ visible, showToast }: Props) {
                     {prop.nombre_temporal || 'Sin nombre'}
                   </Text>
                   <Text style={{ fontSize: 13, color: COLORS.textLight, textTransform: 'capitalize', marginTop: 2 }}>
-                    {prop.animal?.tipo_animal || 'Animal'} · {prop.animal?.tamanio || 'Tamaño N/A'}
+                    {prop.animal?.tipo_animal || 'Animal'} en resguardo
                   </Text>
                   <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6, gap: 4 }}>
                     <Ionicons name="person-circle-outline" size={14} color={COLORS.accent} />

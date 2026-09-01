@@ -383,7 +383,7 @@ def resolver_ingreso(
     solicitud = _query(
         "obtener_solicitud_base",
         lambda: supabase_admin.table("solicitudes_ingreso_adopcion")
-        .select("custodia_id, propuesto_por_usuario_id")
+        .select("custodia_id, propuesto_por_usuario_id, reporte_id") # <-- AÑADIDO reporte_id
         .eq("id", request_id)
         .limit(1)
     )
@@ -400,10 +400,11 @@ def resolver_ingreso(
         },
     )
 
-    # 2. Si la asociación pide información, insertamos la notificación
+    # 2. Si la asociación pide información, insertamos las notificaciones
     if solicitud and body.decision == "solicitar_informacion":
         from datetime import datetime, timezone
         try:
+            # Notificación en el dashboard de Custodia
             supabase_admin.table("notificaciones_custodia").insert({
                 "custodia_id": solicitud[0]["custodia_id"],
                 "usuario_id": solicitud[0]["propuesto_por_usuario_id"],
@@ -411,6 +412,15 @@ def resolver_ingreso(
                 "mensaje": f"La asociación necesita más información sobre tu propuesta de adopción: {body.motivo}",
                 "leida": False,
                 "creada_at": datetime.now(timezone.utc).isoformat()
+            }).execute()
+
+            # NUEVO: Notificación en la campanita general (NotificacionesScreen)
+            supabase_admin.table("notificaciones_moderacion").insert({
+                "usuario_id": solicitud[0]["propuesto_por_usuario_id"],
+                "reporte_id": solicitud[0]["reporte_id"],
+                "tipo": "aclaracion_adopcion",
+                "mensaje": "La asociación solicitó más información sobre tu propuesta de adopción.",
+                "leida": False
             }).execute()
         except Exception:
             logger.warning("No se pudo crear la notificación de aclaración de adopción")

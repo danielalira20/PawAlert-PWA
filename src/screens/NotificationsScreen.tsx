@@ -57,6 +57,7 @@ const TYPE_STYLE: Record<string, { icon: keyof typeof Ionicons.glyphMap; color: 
   insignia_mejorada: { icon: 'trophy-outline', color: '#C9971C', bg: '#FBF3DC', label: 'Insignia mejorada' },
   restriccion_activada: { icon: 'warning-outline', color: '#D6453D', bg: '#FDEDEC', label: 'Restricción activa' },
   restriccion_levantada: { icon: 'checkmark-done-outline', color: '#209653', bg: '#EAF8F0', label: 'Restricción levantada' },
+  aclaracion_adopcion: { icon: 'chatbox-ellipses-outline', color: '#8B5CF6', bg: '#F3EEFF', label: 'Información requerida' }, 
 };
 
 function notificationDate(value: string) {
