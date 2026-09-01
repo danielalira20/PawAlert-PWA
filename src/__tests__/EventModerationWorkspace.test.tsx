@@ -44,7 +44,7 @@ describe("EventModerationWorkspace", () => {
       items: [],
       pagina: 1,
       limite: 1,
-      total: filters.estado === "pendiente" ? 3 : 1,
+      total: filters?.estado === "pendiente" ? 3 : 1,
       tiene_mas: false,
     }));
   });
