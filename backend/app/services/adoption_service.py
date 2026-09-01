@@ -1931,7 +1931,7 @@ def _fotos_publicas(
     return grouped
 
 
-def _consultar_perfiles_publicos(profile_id: str | None = None) -> list[dict]:
+def _consultar_perfiles_publicos(profile_id: str | None = None, asociacion_id: str | None = None) -> list[dict]:
     def query():
         result = (
             supabase_admin.table("perfiles_adopcion")
@@ -1941,7 +1941,9 @@ def _consultar_perfiles_publicos(profile_id: str | None = None) -> list[dict]:
         )
         if profile_id:
             result = result.eq("id", profile_id).limit(1)
-        else:
+        if asociacion_id:
+            result = result.eq("asociacion_id", asociacion_id)
+        if not profile_id:
             result = result.order("publicado_at", desc=True).order(
                 "id", desc=True
             )
@@ -1980,10 +1982,11 @@ def listar_adopciones_publicas(
     edad: str | None,
     zona: str | None,
     compatible_con: str | None,
+    asociacion_id: str | None = None,
     pagina: int,
     limite: int,
 ) -> dict:
-    profiles = _consultar_perfiles_publicos()
+    profiles = _consultar_perfiles_publicos(asociacion_id=asociacion_id)
     associations, catalogs = _contexto_publico_perfiles(profiles)
     species_filter = _normalizar_filtro_publico(especie)
     size_filter = _normalizar_filtro_publico(tamanio)

@@ -106,6 +106,7 @@ def get_public_adoptions(
     ] | None = Query(None),
     zona: str | None = Query(None, min_length=1, max_length=120),
     compatible_con: str | None = Query(None, min_length=1, max_length=80),
+    asociacion_id: UUID | None = Query(None),
     pagina: int = Query(1, ge=1),
     limite: int = Query(20, ge=1, le=50),
 ):
@@ -116,6 +117,7 @@ def get_public_adoptions(
             edad=edad,
             zona=zona,
             compatible_con=compatible_con,
+            asociacion_id=str(asociacion_id) if asociacion_id else None,
             pagina=pagina,
             limite=limite,
         )
