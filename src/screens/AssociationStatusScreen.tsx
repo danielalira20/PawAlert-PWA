@@ -1736,7 +1736,7 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
               ) : activeTab === 'postulaciones' ? (
                 <PostulacionesPanel visible={activeTab === 'postulaciones'} />
               ) : activeTab === 'adopciones' ? (
-                <AdopcionesPanel visible={activeTab === 'adopciones'} showToast={showToast} />
+                <AdopcionesPanel visible={activeTab === 'adopciones'} showToast={showToast} onClose={onClose} />
               ) : activeTab === 'lotes' ? (
                 <LotesInvitacionesPanel visible={activeTab === 'lotes'} />
               ) : activeTab === 'voluntarios' ? (

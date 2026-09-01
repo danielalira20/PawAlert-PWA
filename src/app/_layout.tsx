@@ -56,6 +56,7 @@ export default function RootLayout() {
         <Stack.Screen name="ofertas-asociacion" options={{ presentation: 'transparentModal', animation: 'fade', headerShown: false }} />
         <Stack.Screen name="registro-comunitario" options={{ presentation: 'transparentModal', animation: 'fade', headerShown: false }} />
         <Stack.Screen name="aportacion" options={{ presentation: 'transparentModal', animation: 'fade', headerShown: false }} />
+        <Stack.Screen name="editor-adopcion/[id]" options={{ presentation: 'transparentModal', animation: 'fade', headerShown: false }} />
       </Stack>
     </AuthProvider>
     </GestureHandlerRootView>
