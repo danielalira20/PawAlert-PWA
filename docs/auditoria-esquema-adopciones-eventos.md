@@ -194,12 +194,61 @@ durante la primera version.
 - eventos guardados;
 - historial y RLS.
 
-### `0090_adopciones_eventos_operaciones.sql`
+### `0090_adopciones_eventos_infraestructura_operativa.sql`
 
-- transiciones atomicas;
-- ampliacion del outbox;
-- claims y jobs;
+- ampliacion segura del outbox;
+- validadores compartidos de asociacion y administracion;
+- ejecuciones y claims idempotentes para cron;
 - permisos de funciones.
+
+### `0091_adopciones_ingreso_perfiles_operaciones.sql`
+
+- propuesta idempotente desde una custodia activa;
+- respuesta de aclaraciones y cancelacion por el custodio;
+- resolucion por la asociacion, con un solo borrador al aprobar;
+- creacion de perfiles por ingreso formal de la asociacion;
+- publicacion con foto, revision y requisitos versionados;
+- pausa y reanudacion auditadas;
+- avisos de ingreso vinculados al outbox.
+
+### `0092_adopciones_editor_fotografias_operaciones.sql`
+
+- edicion de campos publicables en borrador o pausa;
+- invalidacion de revisiones cuando cambia el perfil;
+- registro privado de fotografias con metadatos verificados;
+- revision explicita de fotografias publicables;
+- retiro auditado y limpieza posterior del objeto en Storage.
+
+### `0093_adopciones_plantillas_requisitos_operaciones.sql`
+
+- historial asociado directamente a cada version de plantilla;
+- validacion cerrada de preguntas, tipos, opciones y sensibilidad;
+- creacion concurrente segura de la siguiente version borrador;
+- reemplazo atomico del contenido mientras siga en borrador;
+- activacion que retira la version anterior en la misma transaccion;
+- retiro de requisitos adicionales sin eliminar los requisitos base.
+
+### `0094_adopciones_claves_requisitos_reservadas.sql`
+
+- comprobacion previa de colisiones ya existentes;
+- reserva de claves base mediante trigger para cualquier ruta de escritura;
+- rechazo sin borrar ni renombrar automaticamente informacion de la asociacion.
+
+### `0095_adopciones_solicitudes_operaciones.sql`
+
+- cuenta autenticada con correo o telefono confirmado;
+- borrador idempotente con snapshot de requisitos base y personalizados;
+- respuestas tipadas y documentos ligados al expediente privado correcto;
+- envio con comprobacion de campos obligatorios y consentimientos;
+- retiro voluntario solo antes de seleccionar a la persona adoptante.
+
+### Migraciones operativas posteriores
+
+- solicitudes, seleccion, entregas y seguimientos;
+- publicacion, cambios y ciclo de vida de eventos.
+
+Estas transiciones se separan para que cada grupo pueda probarse e integrarse
+sin mezclar estados de adopcion, custodia y eventos en una sola operacion.
 
 ## Riesgos detectados y respuesta
 

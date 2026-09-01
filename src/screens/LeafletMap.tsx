@@ -9,6 +9,9 @@ import { Reporte, ZonaAgregada, getAnimales, condicionMasGrave, especieMasGrave,
 import { ICON_MULTIPLE } from '../constants/mapIcons';
 import { Brand } from '@/constants/theme';
 import { RADIO_METROS_ESTOY_AQUI } from '../hooks/useUbicacionEnVivo';
+import type { EventMapItem } from '../types/event';
+import { EVENT_CAPACITY_META, EVENT_TYPE_META, formatEventSchedule } from '../utils/eventFormatters';
+import type { EventMapBounds } from '../components/events/discovery/eventDiscoveryFilters';
 
 const INITIAL_CENTER: [number, number] = [19.0414, -98.2063];
 const INITIAL_ZOOM = 13;
@@ -322,6 +325,32 @@ const createAssocPin = (selected = false) => {
       <div style="width:3px;height:3px;border-radius:50%;background:${ASOC_DARK};opacity:0.8;"></div>
     </div>`;
 
+  const totalH = size + 14;
+  return L.divIcon({
+    className: 'pawalert-marker',
+    html,
+    iconSize: [size + 8, totalH],
+    iconAnchor: [(size + 8) / 2, totalH],
+  });
+};
+
+// ─── Pin de evento (calendario por categoría) ────────────────────────────────
+const createEventPin = (event: EventMapItem, selected = false) => {
+  const meta = EVENT_TYPE_META[event.tipo];
+  const size = selected ? 50 : 42;
+  const shadow = selected
+    ? `0 6px 24px ${meta.color}99, 0 0 0 3px white, 0 0 0 5px ${meta.color}55`
+    : `0 3px 12px ${meta.color}77`;
+  const html = `
+    <div style="display:flex;flex-direction:column;align-items:center;transform:scale(${selected ? 1.1 : 1});transform-origin:bottom center;">
+      <div style="width:${size}px;height:${size}px;border-radius:50%;border:3px solid ${meta.color};background:${meta.backgroundColor};box-shadow:${shadow};display:flex;align-items:center;justify-content:center;">
+        <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='21' height='21'>
+          <path fill='${meta.color}' d='M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V9h14v11zM7 11h5v5H7z'/>
+        </svg>
+      </div>
+      <div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:9px solid ${meta.color};margin-top:-1px;"></div>
+      <div style="width:3px;height:3px;border-radius:50%;background:${meta.color};opacity:.8;"></div>
+    </div>`;
   const totalH = size + 14;
   return L.divIcon({
     className: 'pawalert-marker',
@@ -662,22 +691,68 @@ function ColoniaInfoPanel({
   );
 }
 
+function FocusSelectedEvent({
+  event,
+}: {
+  event: EventMapItem | undefined;
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!event) return;
+    map.setView(
+      [event.latitud, event.longitud],
+      Math.max(map.getZoom(), 15),
+      { animate: true },
+    );
+  }, [event, map]);
+
+  return null;
+}
+
+function EventBoundsListener({
+  enabled,
+  onBoundsChange,
+}: {
+  enabled: boolean;
+  onBoundsChange?: (bounds: EventMapBounds) => void;
+}) {
+  useMapEvents({
+    dragend: (event) => {
+      if (!enabled || !onBoundsChange) return;
+      const bounds = event.target.getBounds();
+      onBoundsChange({
+        latitudeMin: bounds.getSouth(),
+        latitudeMax: bounds.getNorth(),
+        longitudeMin: bounds.getWest(),
+        longitudeMax: bounds.getEast(),
+      });
+    },
+  });
+  return null;
+}
+
 // ─── Props ────────────────────────────────────────────────────────────────────
 interface LeafletMapProps {
   reportes: Reporte[];
   zonas?: ZonaAgregada[];
   asociaciones?: AsociacionMapa[];
   aliados?: AliadoMapa[];
+  eventos?: EventMapItem[];
   selectedReportId?: string | null;
+  selectedEventId?: string | null;
   getMarkerColor?: (reporte: Reporte) => string;
   width?: string | number;
   height?: string | number;
   fitToMarkers?: boolean;
+  trackEventBounds?: boolean;
   showReportMenuInPopup?: boolean;
   onSelectReport: (reporte: Reporte) => void;
   onHighlightReport?: (reporte: Reporte) => void;
   onReportModerated?: (reporteId: string) => void;
   onSelectAsociacion?: (asociacion: AsociacionMapa) => void;
+  onSelectEvent?: (event: EventMapItem) => void;
+  onEventBoundsChange?: (bounds: EventMapBounds) => void;
   onMapClick: () => void;
   bottomOffset?: number;
   coloniasToggleBottom?: number;
@@ -693,16 +768,21 @@ export default function LeafletMap({
   zonas = [],
   asociaciones = [],
   aliados = [],
+  eventos = [],
   getMarkerColor,
   selectedReportId,
+  selectedEventId,
   onSelectReport,
   onHighlightReport,
   onReportModerated,
   onSelectAsociacion,
+  onSelectEvent,
+  onEventBoundsChange,
   onMapClick,
   width,
   height,
   fitToMarkers = false,
+  trackEventBounds = false,
   showReportMenuInPopup = true,
   bottomOffset = 20,
   coloniasToggleBottom,
@@ -732,11 +812,12 @@ export default function LeafletMap({
         ...zonas.map((zona) => [zona.latitud, zona.longitud]),
         ...asociaciones.map((asociacion) => [asociacion.latitud, asociacion.longitud]),
         ...aliados.map((aliado) => [aliado.latitud, aliado.longitud]),
+        ...eventos.map((event) => [event.latitud, event.longitud]),
       ].filter(
         (position): position is [number, number] =>
           typeof position[0] === 'number' && typeof position[1] === 'number',
       ),
-    [aliados, asociaciones, reportes, zonas],
+    [aliados, asociaciones, eventos, reportes, zonas],
   );
 
   useEffect(() => {
@@ -940,6 +1021,13 @@ export default function LeafletMap({
           onSelectColonia={setColoniaSeleccionada}
           data={coloniasData}
         />
+        <FocusSelectedEvent
+          event={eventos.find((event) => event.id === selectedEventId)}
+        />
+        <EventBoundsListener
+          enabled={trackEventBounds}
+          onBoundsChange={onEventBoundsChange}
+        />
         {(() => {
           const reporteSeleccionado = reportes.find(
             (reporte): reporte is Reporte & { latitud: number; longitud: number } =>
@@ -1020,6 +1108,40 @@ export default function LeafletMap({
               </Marker>
             );
           })}
+        {eventos.map((event) => {
+          const typeMeta = EVENT_TYPE_META[event.tipo];
+          const capacityMeta = EVENT_CAPACITY_META[event.cupo_estado];
+          return (
+            <Marker
+              key={`event-${event.id}`}
+              position={[event.latitud, event.longitud]}
+              icon={createEventPin(event, selectedEventId === event.id)}
+              eventHandlers={{ click: () => onSelectEvent?.(event) }}
+            >
+              <Popup closeButton={false} className="pp-wrap" offset={[0, -6]}>
+                <div className="pp-accent" style={{ background: typeMeta.color }} />
+                <div className="pp-body">
+                  <PopupCloseButton />
+                  <div className="pp-title" style={{ paddingRight: 32 }}>
+                    {event.titulo}
+                  </div>
+                  <div className="pp-badges">
+                    <span className="pp-badge" style={{ background: typeMeta.backgroundColor, color: typeMeta.color }}>
+                      {typeMeta.label}
+                    </span>
+                    <span className="pp-badge" style={{ background: capacityMeta.backgroundColor, color: capacityMeta.color }}>
+                      {capacityMeta.label}
+                    </span>
+                  </div>
+                  <div className="pp-loc">
+                    {formatEventSchedule(event.inicia_at, event.termina_at, event.zona_horaria)}
+                  </div>
+                  <div className="pp-loc">{event.asociacion.nombre}</div>
+                </div>
+              </Popup>
+            </Marker>
+          );
+        })}
         {asociaciones
           .filter((a): a is AsociacionMapa & { latitud: number; longitud: number } =>
             a.latitud !== null && a.longitud !== null)

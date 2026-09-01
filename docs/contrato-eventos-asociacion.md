@@ -193,9 +193,11 @@ contrato del modulo de adopciones.
 La implementacion debe separar como minimo:
 
 - `eventos_asociacion`;
+- `versiones_evento_asociacion`;
 - `eventos_colaboradores`;
 - `eventos_perfiles_adopcion`;
 - `eventos_guardados`;
+- `reportes_evento_asociacion`;
 - `historial_evento`.
 
 Restricciones minimas:
@@ -214,6 +216,38 @@ horario y ubicacion.
 
 ## Contrato HTTP propuesto
 
+### Estado de implementacion de JASS-02
+
+La API base ya expone lectura publica, administracion del evento por su
+asociacion y guardados del usuario. Sus modelos rechazan campos desconocidos,
+fechas sin zona horaria, rangos invertidos y actualizaciones vacias. Los
+errores conocidos de las RPC se traducen a respuestas `403`, `404`, `409` o
+`422` sin devolver detalles internos de PostgreSQL.
+
+La consulta `GET /events` pagina con `pagina` y `limite`, y admite `tipo`,
+`asociacion_id`, `municipio`, `especie`, `gratuito`, `desde` y `hasta`.
+`GET /events/map` usa una ventana maxima de 90 dias y permite acotar latitud y
+longitud. Ambas consultas solo devuelven eventos publicados de asociaciones
+activas y verificadas.
+
+JASS-03 incorpora una imagen principal opcional por evento en el bucket
+privado `pawalert-eventos-privado`. El backend valida y normaliza la imagen,
+elimina metadatos, conserva solo su `storage_path` interno y entrega URLs
+firmadas temporales junto con su expiracion. Reemplazar o retirar la imagen de
+un evento publicado crea una nueva version, deja historial y notifica a sus
+usuarios suscritos sin incluir rutas privadas.
+
+JASS-05 incorpora el reporte autenticado y la moderacion administrativa. La
+denuncia se conserva como dato privado, no revela al reportante en el historial
+del evento y solo administracion puede consultar incidentes. Suspender oculta
+un evento publicado o pausado; restaurarlo lo deja `pausado`, por lo que la
+asociacion debe revisarlo y publicarlo nuevamente. Ambas operaciones son
+atomicas, auditables e idempotentes mediante la migracion
+`0102_eventos_moderacion.sql`.
+
+Continuan fuera del alcance implementado los colaboradores y la vinculacion de
+perfiles de adopcion que se enumeran mas abajo.
+
 Lectura publica:
 
 ```text
@@ -227,6 +261,7 @@ Usuario autenticado:
 ```text
 POST   /events/{event_id}/save
 DELETE /events/{event_id}/save
+POST   /events/{event_id}/report
 GET    /me/saved-events
 ```
 
@@ -236,12 +271,31 @@ Asociacion verificada:
 GET   /associations/me/events
 POST  /associations/me/events
 PATCH /associations/me/events/{event_id}
+PUT   /associations/me/events/{event_id}/image
+DELETE /associations/me/events/{event_id}/image
 POST  /associations/me/events/{event_id}/publish
 POST  /associations/me/events/{event_id}/pause
 POST  /associations/me/events/{event_id}/cancel
 POST  /associations/me/events/{event_id}/collaborators
 POST  /associations/me/events/{event_id}/adoption-profiles
 ```
+
+Las escrituras basicas se apoyan en RPC atomicas versionadas en la migracion
+`0097_eventos_operaciones_basicas.sql`:
+
+- `crear_borrador_evento_asociacion`;
+- `actualizar_evento_asociacion`;
+- `publicar_evento_asociacion`;
+- `pausar_evento_asociacion`;
+- `cancelar_evento_asociacion`;
+- `guardar_evento_asociacion`;
+- `dejar_de_guardar_evento_asociacion`.
+
+Las operaciones de asociacion bloquean el evento, validan nuevamente rol,
+pertenencia, verificacion y actividad, y registran historial e idempotencia en
+la misma transaccion. Publicar tambien crea un snapshot inmutable; editar un
+evento que ya tuvo una version publica crea la siguiente version. Guardar un
+evento es una suscripcion a cambios y nunca modifica el cupo.
 
 Colaborador invitado:
 
@@ -267,8 +321,15 @@ Un job idempotente ejecutado cada 15 minutos:
 
 - mueve `publicado` a `finalizado` al superar la fecha de fin;
 - archiva eventos finalizados 30 dias despues de su fecha de fin;
+- encola un recordatorio unico dentro de las 24 horas previas para cada
+  usuario que tenga guardado un evento publicado de una asociacion operativa;
 - no publica, cancela ni modifica eventos por su cuenta;
 - encola avisos mediante outbox sin enviar dentro de la transaccion.
+
+El recordatorio usa la combinacion usuario, evento y fecha de inicio como
+identidad. Reprogramar el inicio permite un nuevo aviso, pero los reintentos de
+la misma fecha no generan duplicados. El aviso no reserva cupo. La
+finalizacion se notifica una sola vez; el archivado es silencioso.
 
 Eventos minimos de historial y notificacion:
 
@@ -277,12 +338,14 @@ Eventos minimos de historial y notificacion:
 - `evento_actualizado`;
 - `evento_pausado`;
 - `evento_cancelado`;
+- `evento_recordatorio_24h`;
 - `evento_finalizado`;
 - `evento_archivado`;
 - `evento_guardado`;
 - `colaborador_evento_invitado`;
 - `colaborador_evento_aceptado`;
 - `evento_suspendido_admin`.
+- `evento_restaurado_admin`.
 
 Los usuarios que guardaron el evento reciben cambios relevantes y
 cancelaciones. Las notificaciones no prometen cupo ni atencion y nunca incluyen
@@ -290,9 +353,12 @@ datos privados de terceros.
 
 ## Moderacion y seguridad
 
-La aplicacion debe permitir reportar un evento por informacion falsa, servicio
-riesgoso, ubicacion incorrecta, cobro no informado u otra causa. Administracion
-puede suspenderlo sin borrar historial.
+La aplicacion permite reportar un evento por informacion falsa, servicio
+riesgoso, ubicacion incorrecta, cobro no informado u otra causa. Un usuario no
+puede mantener dos denuncias abiertas sobre el mismo evento. Administracion
+puede suspenderlo sin borrar historial, revisar las denuncias y restaurarlo a
+`pausado` con una resolucion. Los avisos de suspension y restauracion no
+incluyen el motivo privado, la resolucion ni la identidad del reportante.
 
 Para eventos clinicos, el perfil publico diferencia claramente entre:
 

@@ -29,6 +29,7 @@ import { Animal, getAnimales, totalAnimales, animalMasGrave, ReportUrgencySnapsh
 import { AnimalCarousel } from '../components/common/AnimalCarousel';
 import { ImageLightbox } from '../components/common/ImageLightbox';
 import { getPaginationWindow, getReportsPerPage } from '../utils/reportPagination';
+import { AssociationEventsPanel } from '../components/events/association/AssociationEventsPanel';
 
 // ─── PALETA DE COLORES PETZEN ───
 const COLORS = {
@@ -109,7 +110,7 @@ interface HistorialEvento {
 }
 
 type FiltroAsignacion = 'todas' | 'pendientes' | 'aceptadas' | 'rechazadas';
-type ActiveTab = 'reportes' | 'avistamientos' | 'seguimientos' | 'postulaciones' | 'voluntarios' | 'lotes' | 'configuracion';
+type ActiveTab = 'reportes' | 'avistamientos' | 'eventos' | 'seguimientos' | 'postulaciones' | 'voluntarios' | 'lotes' | 'configuracion';
 
 type TabAsignacion = 'staff' | 'voluntarios';
 type EstadoVoluntarios = 'cargando' | 'candidatos' | 'esperando_confirmacion' | 'confirmado' | 'rechazado_mostrando_siguiente' | 'sin_candidatos';
@@ -1336,6 +1337,25 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                 </TouchableOpacity>
 
                 <TouchableOpacity
+                  onPress={() => setActiveTab('eventos')}
+                  style={{
+                    paddingBottom: 12,
+                    marginRight: 24,
+                    flexShrink: 0,
+                    borderBottomWidth: activeTab === 'eventos' ? 3 : 0,
+                    borderBottomColor: COLORS.primary
+                  }}
+                >
+                  <Text style={{
+                    fontSize: 16,
+                    fontWeight: activeTab === 'eventos' ? '800' : '600',
+                    color: activeTab === 'eventos' ? COLORS.primary : COLORS.textLight
+                  }}>
+                    Eventos
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
                   onPress={() => setActiveTab('seguimientos')}
                   style={{
                     paddingBottom: 12,
@@ -1441,6 +1461,8 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                     ? 'Reportes asignados'
                     : activeTab === 'avistamientos'
                       ? 'Avistamientos por validar'
+                    : activeTab === 'eventos'
+                      ? 'Eventos de la asociación'
                     : activeTab === 'seguimientos'
                       ? 'Seguimientos sensibles'
                     : activeTab === 'postulaciones'
@@ -1739,6 +1761,8 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
 
               ) : activeTab === 'avistamientos' ? (
                 <AvistamientosPendientesPanel visible={activeTab === 'avistamientos'} />
+              ) : activeTab === 'eventos' ? (
+                <AssociationEventsPanel />
               ) : activeTab === 'seguimientos' ? (
                 <DeceasedFollowupPanel visible={activeTab === 'seguimientos'} />
               ) : activeTab === 'postulaciones' ? (

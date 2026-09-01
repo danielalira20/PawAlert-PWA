@@ -87,6 +87,8 @@ def test_respuesta_conserva_pregunta_y_origen_exactos():
 
 def test_documentos_solo_usan_bucket_privado_y_limite_acordado():
     assert "documento_storage_path LIKE 'adopciones/solicitudes/%'" in MIGRACION
+    assert "documento_mime_type IS NOT NULL" in MIGRACION
+    assert "documento_size_bytes IS NOT NULL" in MIGRACION
     assert "documento_size_bytes <= 10485760" in MIGRACION
     assert "application/pdf" in MIGRACION
     assert "es_sensible_snapshot = true" in MIGRACION

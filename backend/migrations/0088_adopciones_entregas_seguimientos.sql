@@ -120,9 +120,11 @@ CREATE TABLE IF NOT EXISTS public.entregas_adopcion (
     (
       acuerdo_storage_path LIKE 'adopciones/entregas/%'
       AND acuerdo_storage_path !~ '(^|/)\.\.(/|$)'
+      AND acuerdo_mime_type IS NOT NULL
       AND acuerdo_mime_type IN (
         'image/jpeg', 'image/png', 'image/webp', 'application/pdf'
       )
+      AND acuerdo_size_bytes IS NOT NULL
       AND acuerdo_size_bytes > 0
       AND acuerdo_size_bytes <= 10485760
     )
@@ -192,9 +194,11 @@ CREATE TABLE IF NOT EXISTS public.confirmaciones_entrega_adopcion (
     (
       evidencia_storage_path LIKE 'adopciones/entregas/%'
       AND evidencia_storage_path !~ '(^|/)\.\.(/|$)'
+      AND evidencia_mime_type IS NOT NULL
       AND evidencia_mime_type IN (
         'image/jpeg', 'image/png', 'image/webp', 'application/pdf'
       )
+      AND evidencia_size_bytes IS NOT NULL
       AND evidencia_size_bytes > 0
       AND evidencia_size_bytes <= 10485760
     )

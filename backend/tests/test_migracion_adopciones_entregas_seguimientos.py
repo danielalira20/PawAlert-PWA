@@ -61,6 +61,10 @@ def test_documentos_y_evidencias_se_guardan_en_rutas_privadas():
     assert "acuerdo_storage_path LIKE 'adopciones/entregas/%'" in MIGRACION
     assert "evidencia_storage_path LIKE 'adopciones/entregas/%'" in MIGRACION
     assert "storage_path LIKE 'adopciones/seguimientos/%'" in MIGRACION
+    assert "acuerdo_mime_type IS NOT NULL" in MIGRACION
+    assert "acuerdo_size_bytes IS NOT NULL" in MIGRACION
+    assert "evidencia_mime_type IS NOT NULL" in MIGRACION
+    assert "evidencia_size_bytes IS NOT NULL" in MIGRACION
     assert MIGRACION.count("10485760") >= 3
 
 

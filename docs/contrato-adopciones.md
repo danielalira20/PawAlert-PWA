@@ -192,6 +192,25 @@ debe indicar si es obligatoria y por que se solicita.
 Al enviar una solicitud se guarda una copia versionada de los requisitos y
 preguntas vigentes. Cambiar la plantilla no altera solicitudes ya enviadas.
 
+El snapshot se crea desde el primer borrador, no hasta presionar Enviar. Esto
+evita que un formulario guardado cambie de preguntas durante una recarga o
+mientras la persona lo completa. Solamente la persona propietaria del borrador
+puede modificar sus respuestas. Los documentos deben pertenecer a la carpeta
+privada de ese mismo expediente.
+
+La asociacion administra sus preguntas adicionales mediante versiones. Puede
+editar libremente un borrador, pero una version activa o retirada es
+inmutable. Para cambiarla crea un nuevo borrador; al activarlo, la version
+anterior se retira dentro de la misma transaccion. Retirar la plantilla activa
+deja solamente los requisitos base para publicaciones futuras y no altera los
+perfiles o solicitudes que conservaron una version anterior.
+
+Las claves de los requisitos base estan reservadas. Una pregunta propia no
+puede reutilizarlas, aunque tenga otro texto o tipo de respuesta. El detalle
+publico del animal devuelve la version base y las preguntas adicionales que
+quedaron vinculadas al publicar esa ficha, incluso si despues la asociacion
+activo una version nueva.
+
 ## Estados de solicitud del adoptante
 
 `solicitudes_adopcion.estado` acepta:
@@ -208,6 +227,12 @@ preguntas vigentes. Cambiar la plantilla no altera solicitudes ya enviadas.
 - `cerrada_por_adopcion`;
 - `adopcion_confirmada`.
 
+El primer envio cambia `borrador` a `enviada`. Cuando la asociacion pidio
+informacion adicional, la persona puede editar solamente ese expediente y al
+reenviarlo pasa a `en_evaluacion`. El retiro voluntario se permite antes de la
+seleccion; una solicitud `seleccionada` requiere cancelar primero la
+coordinacion con la asociacion.
+
 El solicitante puede editar solo un `borrador`, responder una aclaracion o
 retirar una solicitud que aun no tenga entrega completada. Una solicitud
 enviada conserva sus respuestas originales y agrega aclaraciones separadas.
@@ -215,6 +240,12 @@ enviada conserva sus respuestas originales y agrega aclaraciones separadas.
 El rechazo exige un motivo interno y una categoria comunicable. No deben
 enviarse al usuario notas sensibles, comparaciones con otras personas ni
 acusaciones no revisadas.
+
+Las categorias publicas permitidas son `requisitos_no_cumplidos`,
+`condiciones_no_compatibles`, `proceso_incompleto` y `otro`. El frontend
+traduce esas claves a mensajes cuidadosos; el motivo interno permanece visible
+solo para la asociacion y administracion. Pedir informacion o rechazar encola
+una notificacion sin copiar en su payload la aclaracion ni el motivo interno.
 
 ## Seleccion y concurrencia
 
@@ -231,6 +262,8 @@ Seleccionar una solicitud es una operacion atomica que debe:
 Un segundo intento concurrente debe devolver `409 conflicto` sin cambios
 parciales. Si la seleccion se cancela, la asociacion decide si el perfil vuelve
 a `publicado` o `pausado`; solo entonces puede seleccionar otra solicitud.
+Seleccionar tampoco crea la entrega ni cambia custodia o reporte: esas acciones
+pertenecen al siguiente tramo del flujo.
 
 ## Entrega y relacion con custodia
 
@@ -345,6 +378,7 @@ Solicitante autenticado:
 ```text
 POST  /adoptions/{profile_id}/applications/draft
 PATCH /adoption-applications/{application_id}/draft
+POST  /adoption-applications/{application_id}/documents
 POST  /adoption-applications/{application_id}/submit
 POST  /adoption-applications/{application_id}/withdraw
 GET   /me/adoption-applications
@@ -368,9 +402,19 @@ Asociacion verificada:
 GET   /associations/me/adoption-intake-requests
 POST  /adoption-intake-requests/{request_id}/resolve
 POST  /associations/me/adoptions
+GET   /associations/me/adoptions
+GET   /associations/me/adoptions/{profile_id}
 PATCH /associations/me/adoptions/{profile_id}
+POST  /associations/me/adoptions/{profile_id}/photos
+POST  /associations/me/adoptions/{profile_id}/photos/{photo_id}/review
+DELETE /associations/me/adoptions/{profile_id}/photos/{photo_id}
 POST  /associations/me/adoptions/{profile_id}/publish
 POST  /associations/me/adoptions/{profile_id}/pause
+GET   /associations/me/adoption-requirement-templates
+POST  /associations/me/adoption-requirement-templates
+PUT   /associations/me/adoption-requirement-templates/{template_id}
+POST  /associations/me/adoption-requirement-templates/{template_id}/activate
+POST  /associations/me/adoption-requirement-templates/{template_id}/retire
 GET   /associations/me/adoptions/{profile_id}/applications
 POST  /adoption-applications/{application_id}/request-information
 POST  /adoption-applications/{application_id}/select
@@ -391,6 +435,17 @@ POST /admin/adoptions/{profile_id}/restore
 Los nombres pueden agruparse en routers distintos, pero no debe cambiar su
 semantica, autoridad ni efectos transaccionales.
 
+La bandeja de solicitudes acepta opcionalmente `estado` y nunca devuelve
+borradores. Incluye datos de contacto, respuestas y enlaces documentales
+temporales solamente cuando la cuenta pertenece a la asociacion propietaria y
+esta continua activa y verificada. No devuelve `storage_path`.
+
+`request-information` recibe `informacion_solicitada` e `idempotency_key`;
+`select` recibe `idempotency_key`; `reject` recibe `motivo_interno`, una
+`categoria_publica` del catalogo acordado e `idempotency_key`. El motivo interno
+solo aparece en la bandeja privada de la asociacion. Ninguna de estas rutas
+programa la entrega ni finaliza la custodia.
+
 ## Respuestas y errores comunes
 
 - `401`: no existe una sesion valida;
@@ -404,7 +459,33 @@ Las respuestas de escritura incluyen `id`, `estado`, `updated_at` y un
 
 ## Privacidad y almacenamiento
 
-Las fotografias aprobadas del perfil pueden ser publicas. Permanecen privadas:
+### Lectura publica
+
+La galeria se consulta sin autenticacion mediante `GET /adoptions`. Acepta los
+filtros `especie`, `tamanio`, `edad`, `zona` y `compatible_con`, junto con
+`pagina` y `limite`. El limite maximo es 50. `GET /adoptions/{perfil_id}`
+entrega el detalle de una ficha que siga disponible.
+
+Ambas rutas muestran exclusivamente perfiles con `estado = publicado`,
+`estado_moderacion = visible` y una asociacion que conserve `activo = true` y
+`verificado = true`. La galeria devuelve una portada y el detalle devuelve
+todas las fotografias aprobadas para publicacion. Las URLs son temporales; un
+fallo al firmar una imagen no revela su ruta ni vuelve publica la carpeta.
+
+La respuesta publica se construye mediante una lista explicita de campos. No
+incluye identificadores de custodia, reporte o animal, datos del custodio,
+coordenadas, domicilio, telefono, correo, documentos, notas de moderacion,
+confirmaciones internas ni `storage_path`. La asociacion se identifica solo
+con nombre, descripcion y logo publicos.
+
+La carga de una fotografia usa `multipart/form-data` con `photo`, `orden`,
+`texto_alternativo` e `idempotency_key`. El backend valida el archivo real,
+lo convierte a JPEG sin EXIF y registra la fotografia como no aprobada. Una
+asociacion debe revisarla expresamente antes de publicar el perfil.
+
+Las fotografias aprobadas pueden mostrarse en el perfil publico mediante URLs
+firmadas, pero su bucket y `storage_path` permanecen privados. Tambien
+permanecen privados:
 
 - identificaciones y comprobantes de domicilio;
 - contratos y firmas;
@@ -412,9 +493,16 @@ Las fotografias aprobadas del perfil pueden ser publicas. Permanecen privadas:
 - notas internas y motivos sensibles;
 - evidencias de entrega y seguimiento que contengan datos personales.
 
-Los documentos privados se entregan mediante URLs firmadas de corta duracion.
-El backend valida permiso antes de firmar cada acceso. Las notificaciones no
-incluyen documentos, coordenadas, domicilios ni notas internas.
+Los documentos y fotografias privadas se entregan mediante URLs firmadas de
+corta duracion. El backend valida permiso antes de firmar cada acceso y nunca
+devuelve `storage_path`. Las notificaciones no incluyen documentos,
+coordenadas, domicilios ni notas internas.
+
+La carga documental utiliza `multipart/form-data` con `document`,
+`question_key` e `idempotency_key`. Solo acepta JPG, PNG, WEBP o PDF de hasta
+10 MB. Las imagenes se normalizan sin EXIF y todos los archivos se guardan en
+la carpeta privada de la solicitud propietaria. El listado propio puede
+devolver una URL firmada temporal, pero nunca la ruta persistida.
 
 ## Historial y notificaciones
 
