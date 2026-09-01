@@ -170,4 +170,27 @@ describe("PublicEventsPanel", () => {
     expect(view.getByText("Detalle abierto: event-1")).toBeTruthy();
     expect(view.getByText("Eventos comunitarios")).toBeTruthy();
   });
+
+  it("delega la apertura al contenedor cuando debe sincronizar la URL", async () => {
+    mockedUsePublicEvents.mockReturnValue({
+      events: [{ id: "event-1", titulo: "Jornada comunitaria" }],
+      total: 1,
+      hasMore: false,
+      isLoading: false,
+      isLoadingMore: false,
+      isRefreshing: false,
+      error: null,
+      refresh: jest.fn(),
+      loadMore: jest.fn(),
+    });
+    const onOpenDetail = jest.fn();
+    const view = await render(
+      <PublicEventsPanel onOpenDetail={onOpenDetail} />,
+    );
+
+    await fireEvent.press(view.getByText("Jornada comunitaria"));
+
+    expect(onOpenDetail).toHaveBeenCalledWith("event-1");
+    expect(view.queryByText("Detalle abierto: event-1")).toBeNull();
+  });
 });
