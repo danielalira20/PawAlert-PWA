@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
-import { Feather } from '@expo/vector-icons';
+import { Feather, Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import axios from 'axios';
 import { API_URL } from '../../constants/api';
 import { useAuth } from '../../context/AuthContext';
@@ -47,6 +48,44 @@ export default function AdoptionProfileEditorScreen() {
   const [vacunas, setVacunas] = useState('desconocido');
   const [esterilizacion, setEsterilizacion] = useState('desconocido');
 
+  // --- NUEVO: Estados y funciones de Fotos (Paso 3) ---
+  const [fotos, setFotos] = useState<any[]>([]);
+
+  const captureFoto = async () => {
+    if (fotos.length >= 8) {
+      showToast({ type: 'warning', title: 'Límite alcanzado', message: 'Máximo 8 fotos permitidas por perfil.' });
+      return;
+    }
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permissionResult.granted) {
+      showToast({ type: 'error', title: 'Permiso denegado', message: 'Necesitamos acceso a la galería para las fotos.' });
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 });
+    if (!result.canceled && result.assets.length > 0) {
+      setFotos([...fotos, { id: Date.now().toString(), foto_url: result.assets[0].uri, orden: fotos.length + 1 }]);
+    }
+  };
+
+  const handleDeleteFoto = (id: string) => {
+    setFotos(fotos.filter((f) => f.id !== id).map((f, i) => ({ ...f, orden: i + 1 })));
+  };
+  const handleMoveFoto = (index: number, direction: 'up' | 'down') => {
+    if (direction === 'up' && index === 0) return;
+    if (direction === 'down' && index === fotos.length - 1) return;
+
+    const nuevasFotos = [...fotos];
+    const swapIndex = direction === 'up' ? index - 1 : index + 1;
+    
+    // Intercambiamos posiciones
+    const temp = nuevasFotos[index];
+    nuevasFotos[index] = nuevasFotos[swapIndex];
+    nuevasFotos[swapIndex] = temp;
+
+    // Actualizamos el estado y reasignamos el orden
+    setFotos(nuevasFotos.map((f, i) => ({ ...f, orden: i + 1 })));
+  };
+
   useEffect(() => {
     cargarPerfil();
   }, [id]);
@@ -70,6 +109,7 @@ export default function AdoptionProfileEditorScreen() {
       setNecesidades(data.necesidades_especiales || '');
       setVacunas(data.vacunacion_estado || 'desconocido');
       setEsterilizacion(data.esterilizacion_estado || 'desconocido');
+      setFotos(data.fotos || []); 
     } catch (error) {
       showToast({ type: 'error', title: 'Error', message: 'No pudimos cargar el expediente.' });
       setTimeout(() => router.back(), 2000);
@@ -173,6 +213,49 @@ const renderPaso2 = () => (
       </View>
     </ScrollView>
   );
+  const renderPaso3 = () => (
+    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <View style={styles.formSection}>
+        <Text style={styles.formSectionTitle}>Fotografías del Animal</Text>
+        <Text style={styles.formSectionSubtitle}>Sube hasta 8 fotos claras. La primera será la foto de portada en la galería.</Text>
+
+        {fotos.map((f, index) => (
+          <View key={f.id} style={{ flexDirection: 'row', gap: 16, backgroundColor: COLORS.grayLight, padding: 12, borderRadius: 20, marginBottom: 12, alignItems: 'center' }}>
+            <Image source={{ uri: f.foto_url }} style={{ width: 70, height: 70, borderRadius: 12, backgroundColor: '#2E2A26' }} />
+            <View style={{ flex: 1, justifyContent: 'center' }}>
+              <Text style={{ fontSize: 14, fontWeight: '800', color: COLORS.textDark, marginBottom: 4 }}>
+                {index === 0 ? 'Foto de Portada' : `Foto ${index + 1}`}
+              </Text>
+              <TouchableOpacity onPress={() => handleDeleteFoto(f.id)}>
+                <Text style={{ color: COLORS.danger, fontWeight: '700', fontSize: 12 }}>Eliminar foto</Text>
+              </TouchableOpacity>
+            </View>
+            
+            {/* Controles para reordenar */}
+            <View style={{ alignItems: 'center', gap: 6, paddingRight: 4 }}>
+              {index > 0 ? (
+                <TouchableOpacity onPress={() => handleMoveFoto(index, 'up')} style={{ backgroundColor: COLORS.bgWhite, padding: 6, borderRadius: 8, elevation: 1 }}>
+                  <Ionicons name="chevron-up" size={18} color={COLORS.textDark} />
+                </TouchableOpacity>
+              ) : <View style={{ height: 30 }} />}
+              
+              {index < fotos.length - 1 ? (
+                <TouchableOpacity onPress={() => handleMoveFoto(index, 'down')} style={{ backgroundColor: COLORS.bgWhite, padding: 6, borderRadius: 8, elevation: 1 }}>
+                  <Ionicons name="chevron-down" size={18} color={COLORS.textDark} />
+                </TouchableOpacity>
+              ) : <View style={{ height: 30 }} />}
+            </View>
+          </View>
+        ))}
+
+        {fotos.length < 8 && (
+          <TouchableOpacity onPress={captureFoto} style={{ padding: 16, backgroundColor: 'rgba(236, 128, 43, 0.1)', borderRadius: 20, alignItems: 'center', borderWidth: 2, borderColor: COLORS.primary, borderStyle: 'dashed', marginTop: 8 }}>
+            <Text style={{ color: COLORS.primary, fontWeight: '700' }}><Ionicons name="camera" size={16}/> Agregar foto</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    </ScrollView>
+  );
   if (isLoading) {
     return (
       <View style={styles.outerContainer}>
@@ -193,7 +276,7 @@ const renderPaso2 = () => (
           <View style={styles.bodySection}>
             {paso === 1 && renderPaso1()}
             {paso === 2 && renderPaso2()}
-            {paso === 3 && <Text style={styles.placeholderText}>Aquí irá el gestor de Fotografías</Text>}
+            {paso === 3 && renderPaso3()}
             {paso === 4 && <Text style={styles.placeholderText}>Aquí irán los Requisitos Adicionales</Text>}
             {paso === 5 && <Text style={styles.placeholderText}>Aquí irá la previsualización y el botón de Publicar</Text>}
             
