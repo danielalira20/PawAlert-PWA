@@ -15,6 +15,14 @@ from app.utils.animal_shaping import shape_animal_embed, shape_animal_response, 
 import json
 
 
+class FotoAnimalRechazada(HTTPException):
+    """422 compatible con la PWA que conserva qué fotografía fue rechazada."""
+
+    def __init__(self, animal_index: int, detail: str) -> None:
+        super().__init__(status_code=422, detail=detail)
+        self.animal_index = animal_index
+
+
 def _analizar_similitud_visual_si_habilitada(
     *,
     reporte_id: str,
@@ -249,10 +257,12 @@ async def crear_reporte(
     fotos: list | None = None,
     fotos_ordenes: str | None = None,
     fotos_animal_index: str | None = None,
+    fotos_vision_resultados: str | None = None,
     estado_ubicacion: str | None = None,
     usuario_id: str | None = None,
     es_duplicado_confirmado: bool | None = None,
     reporte_original_id: str | None = None,
+    ubicacion_fuente: str | None = None,
 ) -> dict:
 
     # La verificación de duplicados considera el caso completo (todas las
@@ -356,7 +366,9 @@ async def crear_reporte(
         "razones_validacion": [],
         "latitud": latitud,
         "longitud": longitud,
-        "ubicacion_fuente": "gps" if latitud and longitud else "manual",
+        "ubicacion_fuente": ubicacion_fuente or (
+            "gps" if latitud is not None and longitud is not None else "manual"
+        ),
         "calle": calle,
         "colonia": colonia,
         "municipio": municipio,
@@ -414,6 +426,11 @@ async def crear_reporte(
         if fotos:
             ordenes = json.loads(fotos_ordenes) if fotos_ordenes and fotos_ordenes.strip() else []
             indices = json.loads(fotos_animal_index) if fotos_animal_index and fotos_animal_index.strip() else []
+            resultados_previos = (
+                json.loads(fotos_vision_resultados)
+                if fotos_vision_resultados and fotos_vision_resultados.strip()
+                else []
+            )
             for i, foto in enumerate(fotos):
                 if foto and foto.filename:
                     from app.services.report_moderation_service import calcular_phash, registrar_phash_reporte
@@ -423,12 +440,19 @@ async def crear_reporte(
                     animal_id_actual = animal_ids[animal_idx]
                     contenido_foto = await foto.read()
 
-                    resultado_vision = verificar_foto_animal(contenido_foto, foto.content_type)
+                    resultado_vision = (
+                        resultados_previos[i]
+                        if i < len(resultados_previos)
+                        and isinstance(resultados_previos[i], dict)
+                        else verificar_foto_animal(contenido_foto, foto.content_type)
+                    )
 
                     if resultado_vision.get("es_animal_real") is False:
-                        raise HTTPException(
-                            status_code=422,
-                            detail=mensaje_rechazo(resultado_vision.get("categoria_rechazo")),
+                        raise FotoAnimalRechazada(
+                            animal_index=animal_idx,
+                            detail=mensaje_rechazo(
+                                resultado_vision.get("categoria_rechazo")
+                            ),
                         )
 
                     from app.services.image_evidence_service import ImagenEvidenciaInvalida, procesar_imagen_evidencia

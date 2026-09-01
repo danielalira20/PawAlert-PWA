@@ -1,0 +1,18 @@
+{
+  "name": "PawAlert",
+  "short_name": "PawAlert",
+  "description": "Red comunitaria para reportar y coordinar el rescate de animales.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#FFF9F2",
+  "theme_color": "#EC802B",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "any",
+      "type": "image/x-icon",
+      "purpose": "any"
+    }
+  ]
+}

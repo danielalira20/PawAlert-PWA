@@ -3,61 +3,261 @@
 from __future__ import annotations
 
 import logging
+import json
 import unicodedata
 from io import BytesIO
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import httpx
-from fastapi import UploadFile
+from fastapi import HTTPException, UploadFile
+from PIL import Image, UnidentifiedImageError
 from starlette.datastructures import Headers
 
 from app.config import settings
 from app.db.supabase import supabase_admin
 from app.models.report import AnimalInput
-from app.services.report_service import crear_reporte
+from app.services.report_service import FotoAnimalRechazada, crear_reporte
+from app.services.report_photo_vision_service import mensaje_rechazo, verificar_foto_animal
 
 
 logger = logging.getLogger(__name__)
 
+
+class FotoAnimalInvalida(ValueError):
+    """Conserva qué ficha necesita reemplazar su fotografía."""
+
+    def __init__(self, indice: int, detalle: str) -> None:
+        super().__init__(detalle)
+        self.indice = indice
+
 INICIO = "nombre"
+SITIO_PAWALERT = "https://paw-alert-pwa.vercel.app"
+MARCA_AVISO_INACTIVIDAD = "_aviso_inactividad"
+TOLERANCIA_MENSAJE_ATRASADO_SEGUNDOS = 30
+MAX_ANTIGUEDAD_MENSAJE_SIN_SESION_MINUTOS = 5
+
+COMANDOS_REINICIO = {
+    "nuevo reporte",
+    "nuevo reporte.",
+    "quiero hacer un reporte",
+    "quiero hacer otro reporte",
+    "quiero reportar",
+    "hacer un reporte",
+    "hacer otro reporte",
+    "reiniciar",
+    "empezar de nuevo",
+    "comenzar de nuevo",
+}
 
 PREGUNTAS = {
-    "nombre": "🐾 Vamos a crear tu reporte de PawAlert.\n\n¿Cuál es tu nombre?",
-    "cantidad": "¿Cuántos animales son aproximadamente? Responde con un número (1, 2, 3...).",
+    "nombre": (
+        "🐾 *¡Bienvenido a PawAlert!*\n\n"
+        "Te guiaré paso a paso para crear un reporte y ayudar a un animal. "
+        "Tus respuestas se guardarán únicamente para completar el reporte.\n\n"
+        "Para comenzar, ¿cuál es tu nombre?"
+    ),
+    "cantidad": (
+        "¿Cuántos animales viste? Elige una opción.\n"
+        "Si son más de 6, elige *Otro (son más)* y te pediré el número."
+    ),
+    "cantidad_detalle": (
+        "¿Cuántos animales se encuentran aproximadamente? "
+        "Escribe solo el número (por ejemplo: 8)."
+    ),
+    "modo_grupo": (
+        "Viste varios animales. ¿Cómo son?\n\n"
+        "• *Mamá con crías*: una hembra adulta con sus cachorros\n"
+        "• *Grupo parecido*: varios de la misma especie, tamaño y estado\n"
+        "• *Son diferentes*: distinta especie, edad o condición"
+    ),
     "foto": (
-        "Envía una foto clara del animal. Si estás reportando un grupo y no puedes "
-        "fotografiarlos juntos, escribe OMITIR."
+        "📸 Envía una foto clara y reciente del animal. Procura que tenga buena luz, "
+        "que el animal sea visible y que no sea una captura de pantalla.\n\n"
+        "Si la foto no permite validar el caso, te pediré otra. Si reportas un grupo "
+        "y no puedes fotografiarlos juntos, escribe OMITIR."
     ),
-    "tipo_animal": "¿Qué animal estás reportando? Responde: perro, gato u otro.",
-    "categoria_otro": "¿Qué categoría es? Responde: ave, reptil, roedor, fauna silvestre u otro.",
-    "especie_descripcion": "Describe qué especie es (por ejemplo: caballo o tlacuache).",
-    "condicion": "¿Cómo se encuentra? Responde: estable, herido o grave.",
-    "tamanio": "¿De qué tamaño es? Responde: pequeño, mediano o grande.",
-    "sexo": "¿Cuál es su sexo? Responde: macho, hembra o desconocido.",
-    "edad": "¿Qué edad aproximada tiene? Responde: cachorro, joven, adulto, senior o desconocido.",
-    "raza": "¿Qué raza parece ser? Escribe la raza o responde OTRO si no está en la lista.",
-    "tiene_collar": "¿Tiene collar? Responde SÍ o NO.",
-    "comportamiento": "¿Parece agresivo? Responde SÍ o NO.",
-    "es_domestico": "¿Parece doméstico o se deja acercar? Responde SÍ o NO.",
-    "esta_prenada": "¿Parece estar preñada? Responde SÍ o NO.",
-    "trae_crias": "¿Trae crías con ella? Responde SÍ o NO.",
+    "tipo_animal": "¿Qué animal estás reportando?",
+    "categoria_otro": "¿Qué tipo de animal es?",
+    "especie_descripcion": (
+        "¿Qué especie es? Escríbelo (por ejemplo: caballo, tlacuache, zarigüeya, tortuga)."
+    ),
+    "condicion": (
+        "¿Cómo se encuentra?\n"
+        "• *Estable*: se mueve bien, sin heridas visibles\n"
+        "• *Herido*: sangra, cojea o tiene lesiones\n"
+        "• *Grave*: no se levanta o está muy débil"
+    ),
+    "tamanio": "¿De qué tamaño es?",
+    "sexo": "¿Cuál es su sexo? Si no puedes saberlo, elige *No sé*.",
+    "edad": "¿Qué edad aproximada tiene?",
+    "raza": (
+        "¿Qué raza parece tener? Elige una opción de la lista.\n"
+        "Si no la reconoces o es mestizo/criollo, elige *Otra / no la sé*."
+    ),
+    "tiene_collar": "¿Trae collar, correa o placa?",
+    "comportamiento": (
+        "¿Se comporta agresivo? (gruñe, intenta morder o no deja que nadie se acerque)"
+    ),
+    "es_domestico": (
+        "¿Se ve como un animal de casa? (aseado, confiado, se deja acercar). "
+        "Si se ve callejero o asustadizo, elige *No*."
+    ),
+    "esta_prenada": "¿Se ve preñada? (panza abultada)",
+    "trae_crias": "¿Está acompañada de crías o cachorros?",
     "numero_crias": "¿Cuántas crías aproximadamente? Responde con un número o escribe OMITIR.",
-    "descripcion": "Describe brevemente al animal y la situación (máximo 300 caracteres).",
-    "ubicacion": (
-        "Comparte tu ubicación usando el clip de WhatsApp, o escribe el municipio "
-        "donde se encuentra el animal."
+    "descripcion_animal": (
+        "Describe a este animal: señas particulares, color o algo que ayude a "
+        "identificarlo. Máximo 300 caracteres. Si no deseas agregar detalles, "
+        "escribe OMITIR."
     ),
-    "referencia": "Escribe una referencia breve del lugar y del animal.",
+    "descripcion": (
+        "Cuéntame *la situación*: ¿qué está pasando?, ¿hace cuánto lo viste?, "
+        "¿hay algún riesgo cerca (tráfico, otros animales, gente)? "
+        "Máximo 300 caracteres."
+    ),
+    "ubicacion": (
+        "📍 ¿Cómo prefieres indicar dónde está el animal?\n\n"
+        "De preferencia, comparte el *pin GPS*: nos permite ubicar al animal "
+        "con mayor precisión y agilizar la atención.\n\n"
+        "Si no puedes o prefieres no compartirlo, selecciona *Escribir dirección*."
+    ),
+    "referencia": (
+        "Agrega una *referencia diferente a la dirección*: un negocio o punto "
+        "conocido cercano, color de fachada, esquina, etc. Máximo 300 caracteres. "
+        "Si no hay otra referencia, escribe OMITIR."
+    ),
     "duplicado": (
         "Encontramos un reporte cercano que podría ser el mismo caso. "
         "Responde MISMO para vincularlo o NUEVO si es una situación distinta."
     ),
 }
 
+OPCIONES_INTERACTIVAS: dict[str, list[tuple[str, str]]] = {
+    "cantidad": [
+        ("1", "1"),
+        ("2", "2"),
+        ("3", "3"),
+        ("4", "4"),
+        ("5", "5"),
+        ("6", "6"),
+        ("otro", "Otro (son más)"),
+    ],
+    "modo_grupo": [
+        ("mama_crias", "🐕 Mamá con crías"),
+        ("grupo_parecido", "🐾 Grupo parecido"),
+        ("distintos", "🔀 Son diferentes"),
+    ],
+    "tipo_animal": [("perro", "Perro"), ("gato", "Gato"), ("otro", "Otro")],
+    "categoria_otro": [
+        ("ave", "Ave"),
+        ("reptil", "Reptil"),
+        ("roedor", "Roedor"),
+        ("fauna silvestre", "Fauna silvestre"),
+        ("otro", "Otro"),
+    ],
+    "condicion": [("estable", "Estable"), ("herido", "Herido"), ("grave", "Grave")],
+    "tamanio": [("pequeno", "Pequeño"), ("mediano", "Mediano"), ("grande", "Grande")],
+    "sexo": [("macho", "Macho"), ("hembra", "Hembra"), ("desconocido", "No sé")],
+    "edad": [
+        ("cachorro", "Cachorro"),
+        ("joven", "Joven"),
+        ("adulto", "Adulto"),
+        ("senior", "Senior"),
+        ("desconocido", "No sé"),
+    ],
+    "tiene_collar": [("si", "Sí"), ("no", "No")],
+    "comportamiento": [("si", "Sí"), ("no", "No")],
+    "es_domestico": [("si", "Sí"), ("no", "No")],
+    "esta_prenada": [("si", "Sí"), ("no", "No")],
+    "trae_crias": [("si", "Sí"), ("no", "No")],
+    "duplicado": [("mismo", "Es el mismo"), ("nuevo", "Es otro caso")],
+}
+
+OPCIONES_UBICACION = [
+    ("ubicacion:compartir", "Compartir pin GPS"),
+    ("ubicacion:escribir", "Escribir dirección"),
+]
+
+# Máximo de animales distintos que se capturan uno por uno en WhatsApp.
+MAX_ANIMALES_DISTINTOS = 4
+
+# Campos de la ficha completa que se pregunta por cada animal en modo "distintos".
+CAMPOS_FICHA_ANIMAL = (
+    "foto",
+    "tipo_animal",
+    "categoria_otro",
+    "especie_descripcion",
+    "condicion",
+    "tamanio",
+    "sexo",
+    "edad",
+    "raza",
+    "tiene_collar",
+    "comportamiento",
+    "es_domestico",
+    "esta_prenada",
+    "trae_crias",
+    "numero_crias",
+    "descripcion_animal",
+    "_validacion_foto",
+)
+
+RAZAS_SUGERIDAS: dict[str, list[tuple[str, str]]] = {
+    "perro": [
+        ("mestizo", "Mestizo / criollo"),
+        ("labrador", "Labrador"),
+        ("pitbull", "Pitbull"),
+        ("pastor aleman", "Pastor alemán"),
+        ("chihuahua", "Chihuahua"),
+    ],
+    "gato": [
+        ("comun", "Común / criollo"),
+        ("siames", "Siamés"),
+        ("persa", "Persa"),
+    ],
+}
+
+# Campos que se pueden corregir desde el resumen, agrupados para no rebasar
+# el límite de 10 filas por lista de WhatsApp.
+CAMPOS_CORRECCION_ANIMAL: list[tuple[str, str]] = [
+    ("tipo_animal", "Tipo de animal"),
+    ("cantidad", "Cantidad de animales"),
+    ("condicion", "Condición"),
+    ("tamanio", "Tamaño"),
+    ("sexo", "Sexo"),
+    ("edad", "Edad"),
+    ("raza", "Raza"),
+    ("descripcion_animal", "Descripción del animal"),
+    ("tiene_collar", "¿Tiene collar?"),
+    ("comportamiento", "¿Parece agresivo?"),
+    ("es_domestico", "¿Parece de casa?"),
+    ("esta_prenada", "¿Está preñada?"),
+    ("trae_crias", "¿Trae crías?"),
+]
+CAMPOS_CORRECCION_LUGAR: list[tuple[str, str]] = [
+    ("ubicacion", "Ubicación (mapa/texto)"),
+    ("referencia", "Referencia del lugar"),
+    ("descripcion", "Situación"),
+]
+ETIQUETAS_CORRECCION: dict[str, str] = {
+    campo: etiqueta
+    for campo, etiqueta in [
+        *CAMPOS_CORRECCION_ANIMAL,
+        *CAMPOS_CORRECCION_LUGAR,
+        ("foto", "Fotografía"),
+    ]
+}
+
+
 def _normalizar(texto: str) -> str:
     texto = unicodedata.normalize("NFKD", texto.strip().lower())
     return "".join(c for c in texto if not unicodedata.combining(c))
+
+
+def _es_reinicio(texto: str) -> bool:
+    """Detecta la orden de empezar un reporte nuevo desde cualquier paso."""
+    return " ".join(_normalizar(texto).split()) in COMANDOS_REINICIO
 
 
 def _telefono_local(wa_id: str) -> str:
@@ -86,7 +286,10 @@ def _contenido(mensaje: dict[str, Any]) -> tuple[str, Any] | None:
         return "text", (mensaje.get("text") or {}).get("body", "").strip()
     if tipo == "location":
         ubicacion = mensaje.get("location") or {}
-        if ubicacion.get("latitude") is not None and ubicacion.get("longitude") is not None:
+        if (
+            ubicacion.get("latitude") is not None
+            and ubicacion.get("longitude") is not None
+        ):
             return "location", {
                 "latitud": float(ubicacion["latitude"]),
                 "longitud": float(ubicacion["longitude"]),
@@ -101,6 +304,13 @@ def _contenido(mensaje: dict[str, Any]) -> tuple[str, Any] | None:
                 "mime_type": imagen.get("mime_type"),
                 "sha256": imagen.get("sha256"),
             }
+    if tipo == "interactive":
+        interactivo = mensaje.get("interactive") or {}
+        respuesta = (
+            interactivo.get("button_reply") or interactivo.get("list_reply") or {}
+        )
+        if respuesta.get("id"):
+            return "text", str(respuesta["id"]).strip()
     return None
 
 
@@ -113,7 +323,9 @@ def _booleano(texto: str) -> bool | None:
     return None
 
 
-def _validar_respuesta(estado: str, tipo: str, valor: Any) -> tuple[bool, Any, str | None]:
+def _validar_respuesta(
+    estado: str, tipo: str, valor: Any
+) -> tuple[bool, Any, str | None]:
     if estado == "foto":
         if tipo == "image":
             return True, valor, None
@@ -124,11 +336,15 @@ def _validar_respuesta(estado: str, tipo: str, valor: Any) -> tuple[bool, Any, s
         if tipo == "location":
             return True, valor, None
         if isinstance(valor, str) and len(valor.strip()) >= 2:
-            return True, {"municipio": valor.strip()}, None
+            return True, {"direccion": valor.strip()}, None
         return False, None, PREGUNTAS[estado]
 
     if tipo != "text" or not valor:
-        return False, None, "Por ahora necesito una respuesta escrita. " + PREGUNTAS[estado]
+        return (
+            False,
+            None,
+            "Por ahora necesito una respuesta escrita. " + PREGUNTAS[estado],
+        )
 
     texto = valor.strip()
     normalizado = _normalizar(texto)
@@ -145,10 +361,18 @@ def _validar_respuesta(estado: str, tipo: str, valor: Any) -> tuple[bool, Any, s
     if estado == "nombre" and not (2 <= len(texto) <= 100):
         return False, None, "Escribe un nombre de entre 2 y 100 caracteres."
     if estado == "cantidad":
+        if normalizado == "otro":
+            return False, None, PREGUNTAS["cantidad_detalle"]
         if not texto.isdigit() or not (1 <= int(texto) <= 99):
-            return False, None, "Escribe una cantidad entre 1 y 99."
+            return False, None, "Elige una opción o escribe un número entre 1 y 99."
         return True, int(texto), None
-    if estado in {"tiene_collar", "comportamiento", "es_domestico", "esta_prenada", "trae_crias"}:
+    if estado in {
+        "tiene_collar",
+        "comportamiento",
+        "es_domestico",
+        "esta_prenada",
+        "trae_crias",
+    }:
         booleano = _booleano(texto)
         if booleano is None:
             return False, None, PREGUNTAS[estado]
@@ -159,6 +383,14 @@ def _validar_respuesta(estado: str, tipo: str, valor: Any) -> tuple[bool, Any, s
         if not texto.isdigit() or not (1 <= int(texto) <= 99):
             return False, None, "Escribe una cantidad entre 1 y 99 o responde OMITIR."
         return True, int(texto), None
+    if estado == "descripcion_animal":
+        if normalizado == "omitir":
+            return True, None, None
+        if not (2 <= len(texto) <= 300):
+            return False, None, "Escribe entre 2 y 300 caracteres o responde OMITIR."
+        return True, texto, None
+    if estado == "referencia" and normalizado == "omitir":
+        return True, None, None
     if estado in {"descripcion", "referencia"} and not (2 <= len(texto) <= 300):
         return False, None, "Escribe una respuesta de entre 2 y 300 caracteres."
     if estado == "especie_descripcion" and not (2 <= len(texto) <= 100):
@@ -170,15 +402,29 @@ def _validar_respuesta(estado: str, tipo: str, valor: Any) -> tuple[bool, Any, s
 
 def _siguiente_estado(estado: str, respuestas: dict[str, Any]) -> str:
     tipo = respuestas.get("tipo_animal")
-    cantidad = respuestas.get("cantidad", 1)
+    cantidad = int(respuestas.get("cantidad", 1) or 1)
+    modo = respuestas.get("_modo")
+    # En "mamá con crías" la ficha es de una sola hembra adulta: se salta la
+    # pregunta de sexo y la de preñez/crías (ya sabemos que trae crías).
+    ficha_individual = cantidad == 1 or modo in {"mama_crias", "distintos"}
     rutas_fijas = {
         "nombre": "cantidad",
-        "cantidad": "foto",
+        "cantidad": "modo_grupo" if cantidad > 1 else "foto",
+        "modo_grupo": "foto",
         "foto": "tipo_animal",
-        "categoria_otro": "especie_descripcion" if respuestas.get("categoria_otro") == "otro" else "condicion",
+        "categoria_otro": (
+            "especie_descripcion"
+            if respuestas.get("categoria_otro") == "otro"
+            else "condicion"
+        ),
         "especie_descripcion": "condicion",
         "condicion": "tamanio",
-        "edad": "descripcion" if cantidad > 1 or tipo == "otro" else "raza",
+        "edad": (
+            "raza"
+            if ficha_individual and tipo != "otro"
+            else "descripcion_animal" if modo == "distintos" else "descripcion"
+        ),
+        "descripcion_animal": "descripcion",
         "descripcion": "ubicacion",
         "ubicacion": "referencia",
         "referencia": "confirmacion",
@@ -186,7 +432,7 @@ def _siguiente_estado(estado: str, respuestas: dict[str, Any]) -> str:
     if estado == "tipo_animal":
         return "categoria_otro" if tipo == "otro" else "condicion"
     if estado == "tamanio":
-        return "edad" if cantidad > 1 else "sexo"
+        return "sexo" if ficha_individual and modo != "mama_crias" else "edad"
     if estado == "sexo":
         return "edad"
     if estado == "raza":
@@ -194,37 +440,164 @@ def _siguiente_estado(estado: str, respuestas: dict[str, Any]) -> str:
     if estado == "tiene_collar":
         return "comportamiento" if tipo == "perro" else "es_domestico"
     if estado in {"comportamiento", "es_domestico"}:
-        return "esta_prenada" if respuestas.get("sexo") == "hembra" else "descripcion"
+        if modo == "mama_crias":
+            return "descripcion"
+        if respuestas.get("sexo") == "hembra" and respuestas.get("edad") != "cachorro":
+            return "esta_prenada"
+        return "descripcion_animal" if ficha_individual else "descripcion"
     if estado == "esta_prenada":
         return "trae_crias"
     if estado == "trae_crias":
-        return "numero_crias" if respuestas.get("trae_crias") else "descripcion"
+        if respuestas.get("trae_crias"):
+            return "numero_crias"
+        return "descripcion_animal" if ficha_individual else "descripcion"
     if estado == "numero_crias":
-        return "descripcion"
+        return "descripcion_animal" if ficha_individual else "descripcion"
     return rutas_fijas[estado]
 
 
+def _limpiar_ficha_animal(respuestas: dict[str, Any]) -> None:
+    for clave in CAMPOS_FICHA_ANIMAL:
+        respuestas.pop(clave, None)
+    for clave in (
+        "_animales",
+        "_animales_total",
+        "_animal_idx",
+        "_modo",
+        "_recapturando",
+        "_reemplazando_foto_idx",
+    ):
+        respuestas.pop(clave, None)
+
+
+def _siguiente_tras_correccion(
+    campo: str, respuestas: dict[str, Any]
+) -> str:
+    """Limpia respuestas incompatibles y devuelve el siguiente paso necesario."""
+    if campo == "cantidad":
+        cantidad = int(respuestas.get("cantidad", 1) or 1)
+        _limpiar_ficha_animal(respuestas)
+        respuestas["cantidad"] = cantidad
+        respuestas["_correccion_cantidad"] = True
+        return "modo_grupo" if cantidad > 1 else "foto"
+
+    if campo == "tipo_animal":
+        for clave in (
+            "categoria_otro",
+            "especie_descripcion",
+            "raza",
+            "tiene_collar",
+            "comportamiento",
+            "es_domestico",
+            "esta_prenada",
+            "trae_crias",
+            "numero_crias",
+        ):
+            respuestas.pop(clave, None)
+        return (
+            "categoria_otro"
+            if respuestas.get("tipo_animal") == "otro"
+            else "raza"
+        )
+
+    if campo == "sexo":
+        for clave in ("esta_prenada", "trae_crias", "numero_crias"):
+            respuestas.pop(clave, None)
+        return (
+            "esta_prenada"
+            if respuestas.get("sexo") == "hembra"
+            and respuestas.get("edad") != "cachorro"
+            else "confirmacion"
+        )
+
+    if campo == "edad" and respuestas.get("edad") == "cachorro":
+        for clave in ("esta_prenada", "trae_crias", "numero_crias"):
+            respuestas.pop(clave, None)
+        return "confirmacion"
+
+    if campo == "trae_crias":
+        if respuestas.get("trae_crias"):
+            respuestas.pop("numero_crias", None)
+            return "numero_crias"
+        respuestas.pop("numero_crias", None)
+
+    return "confirmacion"
+
+
 def _resumen(respuestas: dict[str, Any]) -> str:
+    def si_no(valor: Any) -> str:
+        return "sí" if valor is True else "no"
+
     ubicacion = respuestas.get("ubicacion") or {}
-    lugar = ubicacion.get("municipio") or ubicacion.get("direccion") or "ubicación compartida"
-    return (
-        "Confirma tu reporte:\n"
-        f"• Animal: {respuestas['tipo_animal']}\n"
-        f"• Cantidad: {respuestas['cantidad']}\n"
-        f"• Condición: {respuestas['condicion']}\n"
-        f"• Tamaño: {respuestas['tamanio']}\n"
-        f"• Edad: {respuestas['edad']}\n"
-        f"• Foto: {'sí' if respuestas.get('foto') else 'no'}\n"
-        f"• Lugar: {lugar}\n"
-        f"• Referencia: {respuestas['referencia']}\n\n"
-        "Responde SÍ para enviarlo o NO para cancelarlo."
+    lugar = (
+        ubicacion.get("municipio")
+        or ubicacion.get("direccion")
+        or ubicacion.get("nombre")
+        or "ubicación compartida"
     )
+    tipo_ubicacion = (
+        "GPS compartida"
+        if ubicacion.get("latitud") is not None
+        and ubicacion.get("longitud") is not None
+        else "dirección escrita"
+    )
+    lineas = ["Confirma tu reporte:"]
+    fichas = respuestas.get("_animales")
+    if fichas:
+        for i, ficha in enumerate(fichas, start=1):
+            partes = [
+                ficha.get("tipo_animal"),
+                ficha.get("condicion"),
+                ficha.get("tamanio"),
+                ficha.get("sexo"),
+                ficha.get("edad"),
+            ]
+            lineas.append(
+                f"• Animal {i}: "
+                + ", ".join(p for p in partes if p)
+                + f"; foto: {'sí' if ficha.get('foto') else 'no'}"
+            )
+    else:
+        lineas.append(f"• Animal: {respuestas['tipo_animal']}")
+        if respuestas.get("_modo") == "mama_crias":
+            lineas.append(f"• Crías: {respuestas.get('numero_crias', '?')}")
+        else:
+            lineas.append(f"• Cantidad: {respuestas['cantidad']}")
+        lineas.append(f"• Condición: {respuestas['condicion']}")
+        lineas.append(f"• Tamaño: {respuestas['tamanio']}")
+        lineas.append(f"• Sexo: {respuestas.get('sexo', 'desconocido')}")
+        lineas.append(f"• Edad: {respuestas['edad']}")
+        if respuestas.get("raza"):
+            lineas.append(f"• Raza: {respuestas['raza']}")
+        if respuestas.get("tiene_collar") is not None:
+            lineas.append(f"• Collar, correa o placa: {si_no(respuestas['tiene_collar'])}")
+        if respuestas.get("comportamiento") is not None:
+            lineas.append(f"• Se comporta agresivo: {si_no(respuestas['comportamiento'])}")
+        if respuestas.get("es_domestico") is not None:
+            lineas.append(f"• Parece de casa: {si_no(respuestas['es_domestico'])}")
+        if respuestas.get("esta_prenada") is not None:
+            lineas.append(f"• Parece preñada: {si_no(respuestas['esta_prenada'])}")
+        if respuestas.get("trae_crias") is not None:
+            lineas.append(f"• Acompañada de crías: {si_no(respuestas['trae_crias'])}")
+        if respuestas.get("numero_crias"):
+            lineas.append(f"• Número de crías: {respuestas['numero_crias']}")
+        if respuestas.get("descripcion_animal"):
+            lineas.append(f"• Descripción del animal: {respuestas['descripcion_animal']}")
+        lineas.append(f"• Foto: {'sí' if respuestas.get('foto') else 'no'}")
+    if respuestas.get("descripcion"):
+        lineas.append(f"• Situación: {respuestas['descripcion']}")
+    lineas.append(f"• Lugar ({tipo_ubicacion}): {lugar}")
+    if respuestas.get("referencia"):
+        lineas.append(f"• Referencia: {respuestas['referencia']}")
+    lineas.append("")
+    lineas.append("Responde SÍ para enviarlo o NO para cancelarlo.")
+    return "\n".join(lineas)
 
 
 def _sesion(wa_id: str) -> dict[str, Any] | None:
     resultado = (
         supabase_admin.table("whatsapp_reporte_sesiones")
-        .select("wa_id, estado, respuestas")
+        .select("wa_id, estado, respuestas, creado_at, actualizado_at")
         .eq("wa_id", wa_id)
         .limit(1)
         .execute()
@@ -245,7 +618,134 @@ def _guardar_sesion(wa_id: str, estado: str, respuestas: dict[str, Any]) -> None
 
 
 def _eliminar_sesion(wa_id: str) -> None:
-    supabase_admin.table("whatsapp_reporte_sesiones").delete().eq("wa_id", wa_id).execute()
+    supabase_admin.table("whatsapp_reporte_sesiones").delete().eq(
+        "wa_id", wa_id
+    ).execute()
+
+
+def _reclamar_envio(wa_id: str, estado_esperado: str) -> bool:
+    """Impide que dos respuestas simultáneas creen el mismo reporte dos veces."""
+    resultado = (
+        supabase_admin.table("whatsapp_reporte_sesiones")
+        .update(
+            {
+                "estado": "procesando_envio",
+                "actualizado_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+        .eq("wa_id", wa_id)
+        .eq("estado", estado_esperado)
+        .execute()
+    )
+    return bool(resultado.data)
+
+
+def _fecha_sesion(valor: str) -> datetime:
+    return datetime.fromisoformat(valor.replace("Z", "+00:00"))
+
+
+def _fecha_mensaje_meta(mensaje: dict[str, Any]) -> datetime | None:
+    try:
+        return datetime.fromtimestamp(int(mensaje["timestamp"]), tz=timezone.utc)
+    except (KeyError, TypeError, ValueError, OSError):
+        return None
+
+
+def _mensaje_llego_atrasado(
+    mensaje: dict[str, Any],
+    sesion: dict[str, Any] | None,
+    ahora: datetime | None = None,
+) -> bool:
+    fecha_mensaje = _fecha_mensaje_meta(mensaje)
+    if fecha_mensaje is None:
+        return False
+    ahora = ahora or datetime.now(timezone.utc)
+    if sesion and sesion.get("actualizado_at"):
+        ultima_actividad = _fecha_sesion(sesion["actualizado_at"])
+        return (
+            fecha_mensaje
+            + timedelta(seconds=TOLERANCIA_MENSAJE_ATRASADO_SEGUNDOS)
+            < ultima_actividad
+        )
+    return ahora - fecha_mensaje > timedelta(
+        minutes=MAX_ANTIGUEDAD_MENSAJE_SIN_SESION_MINUTOS
+    )
+
+
+async def procesar_inactividad_sesiones(
+    ahora: datetime | None = None,
+) -> dict[str, int]:
+    """Avisa al alcanzar el umbral y elimina la sesión al vencer."""
+    if (
+        not settings.whatsapp_meta_access_token
+        or not settings.whatsapp_meta_phone_number_id
+    ):
+        return {"avisadas": 0, "expiradas": 0}
+
+    ahora = ahora or datetime.now(timezone.utc)
+    minutos_aviso = settings.whatsapp_session_warning_minutes
+    minutos_expiracion = settings.whatsapp_session_expiration_minutes
+    minutos_despues_aviso = minutos_expiracion - minutos_aviso
+    limite_consulta = ahora - timedelta(
+        minutes=min(minutos_aviso, minutos_despues_aviso)
+    )
+    resultado = (
+        supabase_admin.table("whatsapp_reporte_sesiones")
+        .select("wa_id, estado, respuestas, actualizado_at")
+        .lte("actualizado_at", limite_consulta.isoformat())
+        .execute()
+    )
+    avisadas = 0
+    expiradas = 0
+
+    for sesion in resultado.data or []:
+        wa_id = sesion["wa_id"]
+        actualizado_at = sesion["actualizado_at"]
+        respuestas = dict(sesion.get("respuestas") or {})
+        antiguedad = ahora - _fecha_sesion(actualizado_at)
+
+        if respuestas.get(MARCA_AVISO_INACTIVIDAD):
+            if antiguedad < timedelta(minutes=minutos_despues_aviso):
+                continue
+            eliminado = (
+                supabase_admin.table("whatsapp_reporte_sesiones")
+                .delete()
+                .eq("wa_id", wa_id)
+                .eq("actualizado_at", actualizado_at)
+                .execute()
+            )
+            if not eliminado.data:
+                continue
+            expiradas += 1
+            await enviar_texto(
+                wa_id,
+                "⌛ *Tu sesión expiró por inactividad*\n\n"
+                "El reporte incompleto fue descartado y la sesión ha terminado.\n\n"
+                "Para comenzar uno nuevo, escribe *QUIERO HACER UN REPORTE*.",
+            )
+            continue
+
+        if antiguedad < timedelta(minutes=minutos_aviso):
+            continue
+        respuestas[MARCA_AVISO_INACTIVIDAD] = True
+        reclamado = (
+            supabase_admin.table("whatsapp_reporte_sesiones")
+            .update({"respuestas": respuestas, "actualizado_at": ahora.isoformat()})
+            .eq("wa_id", wa_id)
+            .eq("actualizado_at", actualizado_at)
+            .execute()
+        )
+        if not reclamado.data:
+            continue
+        avisadas += 1
+        await enviar_texto(
+            wa_id,
+            "⏳ *Tu reporte sigue pendiente*\n\n"
+            f"La sesión expirará en {minutos_despues_aviso} minutos por inactividad. "
+            "Responde *CONTINUAR* para conservarla o *CANCELAR* para descartarla.",
+        )
+
+    return {"avisadas": avisadas, "expiradas": expiradas}
 
 
 def _registrar_mensaje(message_id: str, wa_id: str) -> bool:
@@ -264,14 +764,18 @@ def _registrar_mensaje(message_id: str, wa_id: str) -> bool:
     return True
 
 
-def _olvidar_mensaje(message_id: str) -> None:
-    supabase_admin.table("whatsapp_mensajes_recibidos").delete().eq(
-        "message_id", message_id
-    ).execute()
+async def enviar_texto(wa_id: str, texto: str, *, preview_url: bool = False) -> None:
+    await _enviar_payload(
+        wa_id,
+        {"type": "text", "text": {"preview_url": preview_url, "body": texto}},
+    )
 
 
-async def enviar_texto(wa_id: str, texto: str) -> None:
-    if not settings.whatsapp_meta_access_token or not settings.whatsapp_meta_phone_number_id:
+async def _enviar_payload(wa_id: str, contenido: dict[str, Any]) -> None:
+    if (
+        not settings.whatsapp_meta_access_token
+        or not settings.whatsapp_meta_phone_number_id
+    ):
         raise RuntimeError("WhatsApp Cloud API no está configurada")
     url = (
         f"https://graph.facebook.com/{settings.whatsapp_meta_graph_version}/"
@@ -285,11 +789,169 @@ async def enviar_texto(wa_id: str, texto: str) -> None:
                 "messaging_product": "whatsapp",
                 "recipient_type": "individual",
                 "to": wa_id,
-                "type": "text",
-                "text": {"preview_url": False, "body": texto},
+                **contenido,
             },
         )
     respuesta.raise_for_status()
+
+
+async def enviar_opciones(
+    wa_id: str,
+    texto: str,
+    opciones: list[tuple[str, str]],
+    *,
+    titulo_boton: str = "Ver opciones",
+) -> None:
+    if len(opciones) <= 3:
+        interactivo = {
+            "type": "button",
+            "body": {"text": texto},
+            "action": {
+                "buttons": [
+                    {
+                        "type": "reply",
+                        "reply": {"id": identificador, "title": titulo[:20]},
+                    }
+                    for identificador, titulo in opciones
+                ]
+            },
+        }
+    else:
+        interactivo = {
+            "type": "list",
+            "body": {"text": texto},
+            "action": {
+                "button": titulo_boton[:20],
+                "sections": [
+                    {
+                        "title": "Opciones",
+                        "rows": [
+                            {"id": identificador, "title": titulo[:24]}
+                            for identificador, titulo in opciones[:10]
+                        ],
+                    }
+                ],
+            },
+        }
+    await _enviar_payload(wa_id, {"type": "interactive", "interactive": interactivo})
+
+
+def _prefijo_animal(respuestas: dict[str, Any] | None, estado: str) -> str:
+    """"Animal k de N:" mientras se captura una ficha en modo 'distintos'."""
+    if not respuestas or respuestas.get("_modo") != "distintos":
+        return ""
+    if estado not in CAMPOS_FICHA_ANIMAL:
+        return ""
+    idx = respuestas.get("_animal_idx")
+    total = respuestas.get("_animales_total")
+    if not idx or not total:
+        return ""
+    return f"*Animal {idx} de {total}:*\n"
+
+
+async def enviar_pregunta(
+    wa_id: str, estado: str, respuestas: dict[str, Any] | None = None
+) -> None:
+    prefijo = _prefijo_animal(respuestas, estado)
+    if estado == "tipo_animal" and respuestas and respuestas.get("_tipo_detectado"):
+        detectado = respuestas["_tipo_detectado"]
+        etiqueta = {"perro": "perro", "gato": "gato", "otro": "otro animal"}[detectado]
+        await enviar_opciones(
+            wa_id,
+            prefijo + f"La foto parece mostrar un *{etiqueta}*. ¿Es correcto?",
+            [
+                ("tipo_detectado:confirmar", "Sí, es correcto"),
+                ("tipo_detectado:cambiar", "Cambiar tipo"),
+            ],
+        )
+        return
+    if estado == "ubicacion" and respuestas:
+        if respuestas.get("_esperando_ubicacion_texto"):
+            await enviar_texto(
+                wa_id,
+                "✍️ Escribe la dirección en este formato:\n"
+                "*calle y número, colonia, municipio, estado*.\n\n"
+                "Ejemplo: Avenida Juárez 2318, colonia La Paz, Puebla, Puebla.",
+            )
+        elif respuestas.get("_esperando_ubicacion_gps"):
+            await enviar_texto(
+                wa_id,
+                "📍 Comparte el pin con el clip 📎 de WhatsApp: "
+                "*Ubicación → Enviar tu ubicación actual*.",
+            )
+        else:
+            await enviar_opciones(wa_id, PREGUNTAS[estado], OPCIONES_UBICACION)
+        return
+    if estado == "raza" and respuestas:
+        sugeridas = RAZAS_SUGERIDAS.get(respuestas.get("tipo_animal"))
+        if sugeridas:
+            await enviar_opciones(
+                wa_id,
+                prefijo + PREGUNTAS["raza"],
+                [*sugeridas, ("otro", "Otra / no la sé")],
+                titulo_boton="Ver razas",
+            )
+            return
+    opciones = OPCIONES_INTERACTIVAS.get(estado)
+    if opciones:
+        await enviar_opciones(wa_id, prefijo + PREGUNTAS[estado], opciones)
+    else:
+        await enviar_texto(wa_id, prefijo + PREGUNTAS[estado])
+
+
+async def enviar_confirmacion(wa_id: str, respuestas: dict[str, Any]) -> None:
+    await enviar_opciones(
+        wa_id,
+        _resumen(respuestas).replace(
+            "Responde SÍ para enviarlo o NO para cancelarlo.",
+            "Elige una opción para continuar.",
+        ),
+        [
+            ("confirmar", "Enviar reporte"),
+            ("corregir", "Corregir datos"),
+            ("cancelar", "Cancelar"),
+        ],
+    )
+
+
+async def enviar_menu_correccion(wa_id: str, respuestas: dict[str, Any]) -> None:
+    """Menú superior: agrupa los campos para no rebasar el límite de 10 filas."""
+    opciones: list[tuple[str, str]] = []
+    if respuestas.get("_animales"):
+        opciones.append(("corregir:recapturar", "🐾 Recapturar animales"))
+    elif any(campo in respuestas for campo, _ in CAMPOS_CORRECCION_ANIMAL):
+        opciones.append(("correccion:animal", "🐾 Datos del animal"))
+    if any(campo in respuestas for campo, _ in CAMPOS_CORRECCION_LUGAR):
+        opciones.append(("correccion:lugar", "📍 Lugar y situación"))
+    if respuestas.get("foto"):
+        opciones.append(("corregir:foto", "📷 Fotografía"))
+    opciones.append(("corregir:ninguno", "✅ Está todo bien"))
+    await enviar_opciones(
+        wa_id,
+        "¿Qué quieres corregir?",
+        opciones,
+        titulo_boton="Ver campos",
+    )
+
+
+async def enviar_submenu_correccion(
+    wa_id: str, respuestas: dict[str, Any], grupo: str
+) -> None:
+    campos = (
+        CAMPOS_CORRECCION_ANIMAL if grupo == "animal" else CAMPOS_CORRECCION_LUGAR
+    )
+    opciones = [
+        (f"corregir:{campo}", etiqueta)
+        for campo, etiqueta in campos
+        if campo in respuestas
+    ][:9]
+    opciones.append(("correccion:volver", "⬅️ Volver"))
+    titulo = (
+        "¿Qué dato del animal quieres corregir?"
+        if grupo == "animal"
+        else "¿Qué dato del lugar quieres corregir?"
+    )
+    await enviar_opciones(wa_id, titulo, opciones, titulo_boton="Ver campos")
 
 
 async def _descargar_imagen(media: dict[str, Any]) -> UploadFile:
@@ -311,11 +973,129 @@ async def _descargar_imagen(media: dict[str, Any]) -> UploadFile:
     mime = datos.get("mime_type") or media.get("mime_type") or "image/jpeg"
     extensiones = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
     if mime not in extensiones:
-        raise ValueError("Formato de fotografía no admitido")
+        raise ValueError(
+            "El formato no es compatible. Envía una imagen JPG, PNG o WEBP."
+        )
+    try:
+        with Image.open(BytesIO(contenido)) as imagen:
+            imagen.verify()
+    except (UnidentifiedImageError, OSError, ValueError) as error:
+        raise ValueError(
+            "El archivo no parece ser una fotografía válida. Toma o selecciona otra imagen."
+        ) from error
     return UploadFile(
         file=BytesIO(contenido),
         filename=f"whatsapp.{extensiones[mime]}",
         headers=Headers({"content-type": mime}),
+    )
+
+
+async def _validar_foto_inmediatamente(media: dict[str, Any]) -> dict[str, Any]:
+    """Aplica el mismo filtro de la PWA en cuanto WhatsApp recibe la imagen."""
+    archivo = await _descargar_imagen(media)
+    contenido = await archivo.read()
+    return verificar_foto_animal(contenido, archivo.content_type or "image/jpeg")
+
+
+async def _pedir_nueva_foto(
+    wa_id: str,
+    respuestas: dict[str, Any],
+    detalle: str,
+) -> None:
+    """Conserva el formulario y devuelve al usuario únicamente al paso de foto."""
+    respuestas.pop("foto", None)
+    respuestas["_corrigiendo"] = "foto"
+    _guardar_sesion(wa_id, "foto", respuestas)
+    await enviar_texto(
+        wa_id,
+        "⚠️ *Necesito otra fotografía*\n\n"
+        f"{detalle.strip()}\n\n"
+        "No perdiste tus demás respuestas. Envía aquí una foto nueva y volveré a "
+        "mostrarte el resumen.",
+    )
+
+
+async def _pedir_nueva_foto_animal(
+    wa_id: str,
+    respuestas: dict[str, Any],
+    indice: int,
+    detalle: str,
+) -> None:
+    """Conserva las fichas y reemplaza solamente la foto rechazada."""
+    respuestas["_reemplazando_foto_idx"] = indice
+    _guardar_sesion(wa_id, "foto", respuestas)
+    await enviar_texto(
+        wa_id,
+        "⚠️ *Necesito otra fotografía para el animal "
+        f"{indice + 1}*\n\n{detalle.strip()}\n\n"
+        "No perdiste las demás fichas. Envía aquí una foto nueva y volveré "
+        "a mostrarte el resumen.",
+    )
+
+
+async def _crear_reporte_con_recuperacion(
+    wa_id: str,
+    respuestas: dict[str, Any],
+    **opciones: Any,
+) -> dict[str, Any] | None:
+    try:
+        return await _crear_desde_respuestas(wa_id, respuestas, **opciones)
+    except FotoAnimalInvalida as error:
+        await _pedir_nueva_foto_animal(
+            wa_id, respuestas, error.indice, str(error)
+        )
+        return None
+    except ValueError as error:
+        await _pedir_nueva_foto(wa_id, respuestas, str(error))
+        return None
+    except HTTPException as error:
+        if isinstance(error, FotoAnimalRechazada) and respuestas.get("_animales"):
+            detalle = (
+                error.detail
+                if isinstance(error.detail, str)
+                else "La foto no pasó la validación."
+            )
+            await _pedir_nueva_foto_animal(
+                wa_id, respuestas, error.animal_index, detalle
+            )
+            return None
+        if error.status_code != 422 or not respuestas.get("foto"):
+            raise
+        detalle = (
+            error.detail
+            if isinstance(error.detail, str)
+            else "La foto no pasó la validación."
+        )
+        await _pedir_nueva_foto(wa_id, respuestas, detalle)
+        return None
+
+
+async def _crear_reporte_reclamado(
+    wa_id: str,
+    respuestas: dict[str, Any],
+    estado_reintento: str,
+    **opciones: Any,
+) -> dict[str, Any] | None:
+    """Libera el bloqueo si ocurre un error inesperado antes de crear el reporte."""
+    try:
+        return await _crear_reporte_con_recuperacion(
+            wa_id, respuestas, **opciones
+        )
+    except Exception:
+        _guardar_sesion(wa_id, estado_reintento, respuestas)
+        raise
+
+
+async def _enviar_reporte_creado(wa_id: str, reporte_id: str) -> None:
+    await enviar_texto(
+        wa_id,
+        "✅ *¡Reporte enviado correctamente!*\n\n"
+        "Gracias por tomarte el tiempo de ayudar. Tu reporte ya está disponible "
+        "para la comunidad de PawAlert. Esta sesión ha terminado.\n\n"
+        f"🧾 *Folio:* {reporte_id}\n"
+        f"🌐 *Consulta PawAlert:* {SITIO_PAWALERT}\n\n"
+        "Si necesitas crear otro reporte, escribe *NUEVO REPORTE*.",
+        preview_url=True,
     )
 
 
@@ -327,25 +1107,86 @@ async def _crear_desde_respuestas(
     reporte_original_id: str | None = None,
 ) -> dict[str, Any]:
     ubicacion = respuestas["ubicacion"]
-    foto = await _descargar_imagen(respuestas["foto"]) if respuestas.get("foto") else None
-    tipo = respuestas["tipo_animal"]
-    raza = _normalizar(respuestas.get("raza", "")) or None
+    if (
+        ubicacion.get("direccion")
+        and ubicacion.get("latitud") is None
+        and ubicacion.get("longitud") is None
+    ):
+        from app.services.geocoding_service import geocodificar_direccion
+
+        geocodificada = await geocodificar_direccion(ubicacion["direccion"])
+        if geocodificada:
+            ubicacion.update(
+                {
+                    "latitud": geocodificada["latitud"],
+                    "longitud": geocodificada["longitud"],
+                    "calle": geocodificada.get("calle"),
+                    "colonia": geocodificada.get("colonia"),
+                    "municipio": geocodificada.get("municipio"),
+                    "estado": geocodificada.get("estado"),
+                    # La ubicación proviene de una dirección escrita por el
+                    # usuario. Aunque obtengamos coordenadas por geocodificación,
+                    # el enum existente solo distingue "manual" de "gps".
+                    "_fuente": "manual",
+                }
+            )
+    foto = (
+        await _descargar_imagen(respuestas["foto"]) if respuestas.get("foto") else None
+    )
     mapas_raza = {
         "perro": {"mestizo", "labrador", "pitbull", "pastor aleman", "chihuahua"},
         "gato": {"comun", "siames", "persa"},
     }
-    raza_clave = raza if raza in mapas_raza.get(tipo, set()) else (f"otro_{tipo}" if raza else None)
-    return await crear_reporte(
-        nombre=respuestas["nombre"],
-        apellido_paterno=None,
-        apellido_materno=None,
-        telefono=_telefono_local(wa_id),
-        email=None,
-        usuario_id=None,
-        fotos=[foto] if foto else None,
-        fotos_ordenes="[1]" if foto else None,
-        fotos_animal_index="[0]" if foto else None,
-        animales=[
+
+    def _raza_clave(tipo: str, valor: str | None) -> str | None:
+        raza = _normalizar(valor or "") or None
+        if raza is None:
+            return None
+        return raza if raza in mapas_raza.get(tipo, set()) else f"otro_{tipo}"
+
+    def _descripcion_ficha(ficha: dict[str, Any]) -> str:
+        propia = str(ficha.get("descripcion_animal") or "").strip()
+        situacion = str(respuestas.get("descripcion") or "").strip()
+        partes = [propia] if propia else []
+        if situacion:
+            partes.append(f"Situación general: {situacion}")
+        return "\n".join(partes)[:300]
+
+    fichas = respuestas.get("_animales")
+    if fichas:
+        fotos = []
+        for indice, ficha in enumerate(fichas):
+            try:
+                fotos.append(await _descargar_imagen(ficha["foto"]))
+            except ValueError as error:
+                raise FotoAnimalInvalida(indice, str(error)) from error
+        animales = [
+            AnimalInput(
+                tipo_animal=ficha["tipo_animal"],
+                condicion=ficha["condicion"],
+                tamanio=ficha["tamanio"],
+                sexo=ficha.get("sexo", "desconocido"),
+                edad_aproximada=ficha.get("edad"),
+                tiene_collar=ficha.get("tiene_collar"),
+                esta_prenada=ficha.get("esta_prenada"),
+                es_agresivo=ficha.get("comportamiento"),
+                es_domestico_probable=ficha.get("es_domestico"),
+                raza_clave=_raza_clave(ficha["tipo_animal"], ficha.get("raza")),
+                tipo_animal_otro_clave=ficha.get("categoria_otro"),
+                especie_descripcion=ficha.get("especie_descripcion"),
+                descripcion=_descripcion_ficha(ficha),
+                orden=i,
+                es_grupo=False,
+                cantidad=1,
+                trae_crias_nacidas=ficha.get("trae_crias"),
+                numero_crias_nacidas=ficha.get("numero_crias"),
+            )
+            for i, ficha in enumerate(fichas, start=1)
+        ]
+    else:
+        fotos = [foto] if foto else None
+        cantidad = int(respuestas.get("cantidad", 1) or 1)
+        animales = [
             AnimalInput(
                 tipo_animal=respuestas["tipo_animal"],
                 condicion=respuestas["condicion"],
@@ -356,25 +1197,49 @@ async def _crear_desde_respuestas(
                 esta_prenada=respuestas.get("esta_prenada"),
                 es_agresivo=respuestas.get("comportamiento"),
                 es_domestico_probable=respuestas.get("es_domestico"),
-                raza_clave=raza_clave,
+                raza_clave=_raza_clave(respuestas["tipo_animal"], respuestas.get("raza")),
                 tipo_animal_otro_clave=respuestas.get("categoria_otro"),
                 especie_descripcion=respuestas.get("especie_descripcion"),
-                descripcion=respuestas["descripcion"],
-                es_grupo=respuestas["cantidad"] > 1,
-                cantidad=respuestas["cantidad"],
+                descripcion=_descripcion_ficha(respuestas),
+                es_grupo=cantidad > 1,
+                cantidad=cantidad,
                 trae_crias_nacidas=respuestas.get("trae_crias"),
                 numero_crias_nacidas=respuestas.get("numero_crias"),
             )
-        ],
+        ]
+    return await crear_reporte(
+        nombre=respuestas["nombre"],
+        apellido_paterno=None,
+        apellido_materno=None,
+        telefono=_telefono_local(wa_id),
+        email=None,
+        usuario_id=None,
+        fotos=fotos,
+        fotos_ordenes=str(list(range(1, len(fotos) + 1))) if fotos else None,
+        fotos_animal_index=(
+            str(list(range(len(fotos)))) if fichas and fotos else "[0]" if fotos else None
+        ),
+        fotos_vision_resultados=(
+            json.dumps([ficha.get("_validacion_foto") for ficha in fichas])
+            if fichas and fotos
+            else json.dumps([respuestas.get("_validacion_foto")]) if fotos else None
+        ),
+        animales=animales,
         latitud=ubicacion.get("latitud"),
         longitud=ubicacion.get("longitud"),
-        calle=None,
-        colonia=None,
+        calle=ubicacion.get("calle") or ubicacion.get("direccion"),
+        colonia=ubicacion.get("colonia"),
         municipio=ubicacion.get("municipio"),
-        estado_ubicacion=None,
+        estado_ubicacion=ubicacion.get("estado"),
         referencia=respuestas["referencia"],
         es_duplicado_confirmado=es_duplicado_confirmado,
         reporte_original_id=reporte_original_id,
+        ubicacion_fuente=ubicacion.get("_fuente") or (
+            "gps"
+            if ubicacion.get("latitud") is not None
+            and ubicacion.get("longitud") is not None
+            else "manual"
+        ),
     )
 
 
@@ -389,52 +1254,213 @@ async def _procesar_mensaje(mensaje: dict[str, Any]) -> None:
 
     try:
         sesion = _sesion(wa_id)
+        if _mensaje_llego_atrasado(mensaje, sesion):
+            logger.info("Mensaje atrasado de Meta ignorado: %s", message_id)
+            return
+
+        if contenido and contenido[0] == "text" and _es_reinicio(contenido[1]):
+            _eliminar_sesion(wa_id)
+            _guardar_sesion(wa_id, INICIO, {})
+            await enviar_pregunta(wa_id, INICIO)
+            return
+
         if sesion is None:
             _guardar_sesion(wa_id, INICIO, {})
-            await enviar_texto(wa_id, PREGUNTAS[INICIO])
+            await enviar_pregunta(wa_id, INICIO)
             return
 
         estado = sesion["estado"]
         respuestas = dict(sesion.get("respuestas") or {})
+        comando = (
+            _normalizar(contenido[1])
+            if contenido and contenido[0] == "text"
+            else ""
+        )
+        if comando in {"cancelar", "cancela"}:
+            _eliminar_sesion(wa_id)
+            await enviar_texto(
+                wa_id,
+                "🟠 *Reporte cancelado*\n\n"
+                "La sesión ha terminado y no se guardó ningún reporte.\n\n"
+                "Cuando quieras comenzar uno nuevo, escribe "
+                "*QUIERO HACER UN REPORTE*.",
+            )
+            return
+        if comando == "continuar":
+            respuestas.pop(MARCA_AVISO_INACTIVIDAD, None)
+            _guardar_sesion(wa_id, estado, respuestas)
+            if estado == "confirmacion":
+                await enviar_confirmacion(wa_id, respuestas)
+            elif estado == "correccion":
+                await enviar_menu_correccion(wa_id, respuestas)
+            else:
+                await enviar_pregunta(wa_id, estado, respuestas)
+            return
+        if estado == "procesando_envio":
+            await enviar_texto(
+                wa_id,
+                "⏳ Tu reporte ya se está procesando. En un momento recibirás "
+                "el folio de confirmación.",
+            )
+            return
         if estado == "duplicado":
-            respuesta = _normalizar(contenido[1]) if contenido and contenido[0] == "text" else ""
+            respuesta = (
+                _normalizar(contenido[1])
+                if contenido and contenido[0] == "text"
+                else ""
+            )
             if respuesta not in {"mismo", "nuevo"}:
-                await enviar_texto(wa_id, PREGUNTAS["duplicado"])
+                await enviar_pregunta(wa_id, "duplicado")
                 return
-            reporte = await _crear_desde_respuestas(
+            if not _reclamar_envio(wa_id, "duplicado"):
+                await enviar_texto(
+                    wa_id,
+                    "⏳ Tu reporte ya se está procesando. En un momento recibirás "
+                    "el folio de confirmación.",
+                )
+                return
+            reporte = await _crear_reporte_reclamado(
                 wa_id,
                 respuestas,
+                "duplicado",
                 es_duplicado_confirmado=True,
                 reporte_original_id=(
                     respuestas.get("_duplicado_id") if respuesta == "mismo" else None
                 ),
             )
+            if reporte is None:
+                return
             _eliminar_sesion(wa_id)
-            await enviar_texto(
-                wa_id,
-                f"✅ Reporte creado correctamente.\nFolio: {reporte['id']}\nGracias por ayudar.",
-            )
+            await _enviar_reporte_creado(wa_id, str(reporte["id"]))
             return
         if estado == "confirmacion":
-            respuesta = _normalizar(contenido[1]) if contenido and contenido[0] == "text" else ""
+            respuesta = (
+                _normalizar(contenido[1])
+                if contenido and contenido[0] == "text"
+                else ""
+            )
             if respuesta in {"no", "cancelar", "cancela"}:
                 _eliminar_sesion(wa_id)
-                await enviar_texto(wa_id, "Reporte cancelado. Escribe cualquier mensaje para comenzar otro.")
+                await enviar_texto(
+                    wa_id,
+                    "🟠 *Reporte cancelado*\n\n"
+                    "La sesión ha terminado y no se guardó ningún reporte. "
+                    "Cuando quieras intentarlo de nuevo, "
+                    "escribe *Quiero hacer un reporte*.",
+                )
+                return
+            if respuesta in {"corregir", "corregir datos"}:
+                _guardar_sesion(wa_id, "correccion", respuestas)
+                await enviar_menu_correccion(wa_id, respuestas)
                 return
             if respuesta not in {"si", "s", "confirmar", "confirmo"}:
-                await enviar_texto(wa_id, "Responde SÍ para enviar el reporte o NO para cancelarlo.")
+                await enviar_confirmacion(wa_id, respuestas)
                 return
-            reporte = await _crear_desde_respuestas(wa_id, respuestas)
+            if not _reclamar_envio(wa_id, "confirmacion"):
+                await enviar_texto(
+                    wa_id,
+                    "⏳ Tu reporte ya se está procesando. En un momento recibirás "
+                    "el folio de confirmación.",
+                )
+                return
+            reporte = await _crear_reporte_reclamado(
+                wa_id, respuestas, "confirmacion"
+            )
+            if reporte is None:
+                return
             if reporte.get("posible_duplicado"):
                 respuestas["_duplicado_id"] = reporte["reporte_existente"]["id"]
                 _guardar_sesion(wa_id, "duplicado", respuestas)
-                await enviar_texto(wa_id, PREGUNTAS["duplicado"])
+                await enviar_pregunta(wa_id, "duplicado")
                 return
             _eliminar_sesion(wa_id)
-            await enviar_texto(
-                wa_id,
-                f"✅ Reporte creado correctamente.\nFolio: {reporte['id']}\nGracias por ayudar.",
+            await _enviar_reporte_creado(wa_id, str(reporte["id"]))
+            return
+        if estado == "correccion":
+            respuesta = (
+                _normalizar(contenido[1])
+                if contenido and contenido[0] == "text"
+                else ""
             )
+            nivel = respuestas.get("_correccion_nivel")
+            if respuesta == "correccion:volver":
+                respuestas.pop("_correccion_nivel", None)
+                _guardar_sesion(wa_id, "correccion", respuestas)
+                await enviar_menu_correccion(wa_id, respuestas)
+                return
+            if respuesta in {"correccion:animal", "correccion:lugar"}:
+                grupo = respuesta.split(":", 1)[1]
+                respuestas["_correccion_nivel"] = grupo
+                _guardar_sesion(wa_id, "correccion", respuestas)
+                await enviar_submenu_correccion(wa_id, respuestas, grupo)
+                return
+            if respuesta == "corregir:ninguno":
+                respuestas.pop("_correccion_nivel", None)
+                _guardar_sesion(wa_id, "confirmacion", respuestas)
+                await enviar_confirmacion(wa_id, respuestas)
+                return
+            campo = (
+                respuesta.removeprefix("corregir:")
+                if respuesta.startswith("corregir:")
+                else ""
+            )
+            if campo == "recapturar" and respuestas.get("_animales_total"):
+                respuestas.pop("_correccion_nivel", None)
+                respuestas["_animales"] = []
+                respuestas["_animal_idx"] = 1
+                respuestas["_modo"] = "distintos"
+                respuestas["_recapturando"] = True
+                for clave in CAMPOS_FICHA_ANIMAL:
+                    respuestas.pop(clave, None)
+                _guardar_sesion(wa_id, "foto", respuestas)
+                await enviar_pregunta(wa_id, "foto", respuestas)
+                return
+            if campo not in ETIQUETAS_CORRECCION or campo not in respuestas:
+                if nivel in {"animal", "lugar"}:
+                    await enviar_submenu_correccion(wa_id, respuestas, nivel)
+                else:
+                    await enviar_menu_correccion(wa_id, respuestas)
+                return
+            respuestas.pop("_correccion_nivel", None)
+            respuestas["_corrigiendo"] = campo
+            _guardar_sesion(wa_id, campo, respuestas)
+            await enviar_pregunta(wa_id, campo, respuestas)
+            return
+        if estado == "modo_grupo":
+            respuesta = (
+                _normalizar(contenido[1])
+                if contenido and contenido[0] == "text"
+                else ""
+            )
+            total = int(respuestas.get("cantidad", 2) or 2)
+            if respuesta == "mama_crias":
+                respuestas["_modo"] = "mama_crias"
+                respuestas["cantidad"] = 1
+                respuestas["sexo"] = "hembra"
+                respuestas["trae_crias"] = True
+                respuestas["numero_crias"] = max(total - 1, 1)
+            elif respuesta == "grupo_parecido":
+                respuestas["_modo"] = "grupo"
+            elif respuesta == "distintos":
+                if total > MAX_ANIMALES_DISTINTOS:
+                    respuestas["_modo"] = "grupo"
+                    await enviar_texto(
+                        wa_id,
+                        "Para más de "
+                        f"{MAX_ANIMALES_DISTINTOS} animales distintos con detalle "
+                        "conviene la app web. Aquí lo registraré como un grupo; "
+                        "cuéntame lo más importante de cada uno en la descripción.",
+                    )
+                else:
+                    respuestas["_modo"] = "distintos"
+                    respuestas["_animales"] = []
+                    respuestas["_animal_idx"] = 1
+                    respuestas["_animales_total"] = total
+            else:
+                await enviar_pregunta(wa_id, "modo_grupo", respuestas)
+                return
+            _guardar_sesion(wa_id, "foto", respuestas)
+            await enviar_pregunta(wa_id, "foto", respuestas)
             return
 
         if contenido is None:
@@ -443,22 +1469,159 @@ async def _procesar_mensaje(mensaje: dict[str, Any]) -> None:
                 "Todavía no puedo procesar ese tipo de mensaje. " + PREGUNTAS[estado],
             )
             return
+        if estado == "ubicacion" and contenido[0] == "text":
+            opcion_ubicacion = _normalizar(str(contenido[1]))
+            if opcion_ubicacion == "ubicacion:compartir":
+                respuestas.pop("_esperando_ubicacion_texto", None)
+                respuestas["_esperando_ubicacion_gps"] = True
+                _guardar_sesion(wa_id, estado, respuestas)
+                await enviar_pregunta(wa_id, estado, respuestas)
+                return
+            if opcion_ubicacion in {"ubicacion:escribir", "ubicacion:texto"}:
+                respuestas.pop("_esperando_ubicacion_gps", None)
+                respuestas["_esperando_ubicacion_texto"] = True
+                _guardar_sesion(wa_id, estado, respuestas)
+                await enviar_pregunta(wa_id, estado, respuestas)
+                return
+            if not respuestas.get("_esperando_ubicacion_texto"):
+                await enviar_pregunta(wa_id, estado, respuestas)
+                return
+            texto_ubicacion = str(contenido[1]).strip()
+            if len(texto_ubicacion) < 8:
+                await enviar_texto(
+                    wa_id,
+                    "La dirección parece incompleta. Incluye calle, colonia y municipio.",
+                )
+                await enviar_pregunta(wa_id, estado, respuestas)
+                return
+            contenido = ("text", texto_ubicacion)
+            respuestas.pop("_esperando_ubicacion_texto", None)
+        elif estado == "ubicacion" and contenido[0] == "location":
+            respuestas.pop("_esperando_ubicacion_texto", None)
+            respuestas.pop("_esperando_ubicacion_gps", None)
+        if estado == "tipo_animal" and contenido[0] == "text":
+            opcion_tipo = _normalizar(str(contenido[1]))
+            if opcion_tipo == "tipo_detectado:cambiar":
+                respuestas.pop("_tipo_detectado", None)
+                _guardar_sesion(wa_id, estado, respuestas)
+                await enviar_pregunta(wa_id, estado, respuestas)
+                return
+            if opcion_tipo == "tipo_detectado:confirmar":
+                contenido = ("text", respuestas.get("_tipo_detectado", ""))
+                respuestas.pop("_tipo_detectado", None)
         valido, valor, error = _validar_respuesta(estado, *contenido)
         if not valido:
-            await enviar_texto(wa_id, error or PREGUNTAS[estado])
+            if error and error != PREGUNTAS[estado]:
+                await enviar_texto(wa_id, error)
+            else:
+                await enviar_pregunta(wa_id, estado, respuestas)
             return
-        if estado == "foto" and valor is None and respuestas.get("cantidad", 1) == 1:
-            await enviar_texto(wa_id, "La foto es obligatoria para un animal individual. " + PREGUNTAS[estado])
+        if estado == "foto" and valor is None and (
+            respuestas.get("cantidad", 1) == 1
+            or respuestas.get("_modo") == "distintos"
+        ):
+            await enviar_texto(
+                wa_id,
+                "La foto es obligatoria para cada animal individual. "
+                + PREGUNTAS[estado],
+            )
             return
+        if estado == "foto" and valor is not None:
+            try:
+                resultado_vision = await _validar_foto_inmediatamente(valor)
+            except ValueError as error:
+                await enviar_texto(wa_id, str(error) + "\n\n" + PREGUNTAS["foto"])
+                return
+            if resultado_vision.get("es_animal_real") is False:
+                await enviar_texto(
+                    wa_id,
+                    "⚠️ *La fotografía no fue aceptada*\n\n"
+                    + mensaje_rechazo(resultado_vision.get("categoria_rechazo"))
+                    + "\n\nEnvía otra foto para continuar.",
+                )
+                return
+            respuestas["_validacion_foto"] = resultado_vision
+            detectado = resultado_vision.get("tipo_animal_detectado")
+            if detectado in {"perro", "gato", "otro"}:
+                respuestas["_tipo_detectado"] = detectado
+
         respuestas[estado] = valor
-        siguiente = _siguiente_estado(estado, respuestas)
+        respuestas.pop(MARCA_AVISO_INACTIVIDAD, None)
+
+        indice_foto = respuestas.pop("_reemplazando_foto_idx", None)
+        if estado == "foto" and indice_foto is not None:
+            respuestas["_animales"][indice_foto]["foto"] = valor
+            respuestas["_animales"][indice_foto]["_validacion_foto"] = respuestas.pop(
+                "_validacion_foto", None
+            )
+            respuestas.pop("foto", None)
+            _guardar_sesion(wa_id, "confirmacion", respuestas)
+            await enviar_confirmacion(wa_id, respuestas)
+            return
+
+        # Bucle de captura para "animales distintos": al cerrar la ficha completa
+        # se guarda el animal y se pasa al siguiente.
+        if respuestas.get("_modo") == "distintos" and estado == "descripcion_animal":
+            respuestas.setdefault("_animales", []).append(
+                {
+                    campo: respuestas[campo]
+                    for campo in CAMPOS_FICHA_ANIMAL
+                    if campo in respuestas and respuestas[campo] is not None
+                }
+            )
+            for clave in CAMPOS_FICHA_ANIMAL:
+                respuestas.pop(clave, None)
+            idx = respuestas.get("_animal_idx", 1)
+            total = respuestas.get("_animales_total", 1)
+            if idx < total:
+                respuestas["_animal_idx"] = idx + 1
+                _guardar_sesion(wa_id, "foto", respuestas)
+                await enviar_pregunta(wa_id, "foto", respuestas)
+                return
+            if respuestas.pop("_recapturando", None) or respuestas.pop(
+                "_correccion_cantidad", None
+            ):
+                siguiente = "confirmacion"
+            else:
+                siguiente = "descripcion"
+        else:
+            corrigiendo = respuestas.pop("_corrigiendo", None)
+            if corrigiendo == estado:
+                siguiente = _siguiente_tras_correccion(estado, respuestas)
+                if siguiente != "confirmacion" and estado in {
+                    "tipo_animal",
+                    "sexo",
+                    "trae_crias",
+                }:
+                    respuestas["_correccion_dependiente"] = estado
+            else:
+                siguiente = _siguiente_estado(estado, respuestas)
+                correccion_dependiente = respuestas.get("_correccion_dependiente")
+                termina_tipo_otro = (
+                    correccion_dependiente == "tipo_animal"
+                    and (
+                        estado == "especie_descripcion"
+                        or estado == "categoria_otro"
+                        and respuestas.get("categoria_otro") != "otro"
+                    )
+                )
+                if correccion_dependiente and (
+                    siguiente in {"descripcion_animal", "descripcion"}
+                    or termina_tipo_otro
+                ):
+                    respuestas.pop("_correccion_dependiente", None)
+                    siguiente = "confirmacion"
+                if respuestas.get("_correccion_cantidad") and siguiente == "descripcion":
+                    respuestas.pop("_correccion_cantidad", None)
+                    siguiente = "confirmacion"
         _guardar_sesion(wa_id, siguiente, respuestas)
-        await enviar_texto(
-            wa_id,
-            _resumen(respuestas) if siguiente == "confirmacion" else PREGUNTAS[siguiente],
-        )
+        if siguiente == "confirmacion":
+            await enviar_confirmacion(wa_id, respuestas)
+        else:
+            await enviar_pregunta(wa_id, siguiente, respuestas)
     except Exception:
-        _olvidar_mensaje(message_id)
+        # El message_id permanece registrado: Meta puede reenviar el webhook,
+        # pero nunca volveremos a ejecutar una mutación que quizá ya ocurrió.
         raise
 
 

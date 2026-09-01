@@ -898,6 +898,7 @@ export default function MapScreen() {
             onSelectAsociacion={handleSelectAsociacion}
             onMapClick={handleMapClick}
             ubicacionEnVivo={ubicacionEnVivo}
+            bottomOffset={TAB_BAR_CLEARANCE}
           />
         </Suspense>
       ) : (

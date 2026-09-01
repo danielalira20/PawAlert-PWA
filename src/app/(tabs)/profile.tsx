@@ -150,6 +150,7 @@ export default function ProfileScreen() {
         onOpenAliadoForm={() => setIsAliadoFormVisible(true)}
         onOpenAliadoDashboard={() => setIsAliadoDashboardVisible(true)}
         onOpenCustodyDashboard={() => setIsCustodyVisible(true)}
+        onOpenPendingSync={() => router.push('/pendientes-sincronizacion')}
         onLogout={logout}
         capacidadesRefreshKey={capacidadesRefreshKey}
         reputacionRefreshKey={reputacionRefreshKey}

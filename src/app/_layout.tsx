@@ -12,6 +12,7 @@ import { useEffect } from 'react';
 import '../../global.css';
 import { AuthProvider } from '../context/AuthContext';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import NetworkStatusBanner from '../components/NetworkStatusBanner';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -28,11 +29,27 @@ export default function RootLayout() {
     if (fontsLoaded) SplashScreen.hideAsync();
   }, [fontsLoaded]);
 
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+    navigator.serviceWorker.register('/firebase-messaging-sw.js').catch(() => {
+      // La aplicación continúa con red aunque el navegador no permita PWA.
+    });
+    const syncWhenOnline = () => {
+      import('../services/offlineReportQueue')
+        .then(({ retryPendingReports }) => retryPendingReports())
+        .catch(() => undefined);
+    };
+    window.addEventListener('online', syncWhenOnline);
+    if (navigator.onLine) syncWhenOnline();
+    return () => window.removeEventListener('online', syncWhenOnline);
+  }, []);
+
   if (!fontsLoaded) return null;
 
   return (
      <GestureHandlerRootView style={{ flex: 1 }}>
     <AuthProvider>
+      <NetworkStatusBanner />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="association-status" />
@@ -54,6 +71,7 @@ export default function RootLayout() {
         <Stack.Screen name="como-ayudar" options={{ presentation: 'transparentModal', animation: 'fade', headerShown: false }} />
         <Stack.Screen name="notificaciones-aliado" options={{ presentation: 'transparentModal', animation: 'fade', headerShown: false }} />
         <Stack.Screen name="notificaciones" options={{ presentation: 'transparentModal', animation: 'fade', headerShown: false }} />
+        <Stack.Screen name="pendientes-sincronizacion" />
         <Stack.Screen name="ofertas-asociacion" options={{ presentation: 'transparentModal', animation: 'fade', headerShown: false }} />
         <Stack.Screen name="registro-comunitario" options={{ presentation: 'transparentModal', animation: 'fade', headerShown: false }} />
         <Stack.Screen name="aportacion" options={{ presentation: 'transparentModal', animation: 'fade', headerShown: false }} />

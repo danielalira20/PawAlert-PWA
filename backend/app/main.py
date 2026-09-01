@@ -93,7 +93,26 @@ async def expiracion_en_segundo_plano():
         # Espera 1 hora (3600 segundos) antes de volver a revisar
         await asyncio.sleep(3600)
 
+
+async def sesiones_whatsapp_en_segundo_plano():
+    from app.services.whatsapp_report_service import procesar_inactividad_sesiones
+
+    while True:
+        try:
+            resultado = await procesar_inactividad_sesiones()
+            if resultado["avisadas"] or resultado["expiradas"]:
+                print(
+                    "[CRON WHATSAPP] "
+                    f"Avisadas: {resultado['avisadas']}; "
+                    f"expiradas: {resultado['expiradas']}."
+                )
+        except Exception as error:
+            logger.exception("Error al procesar sesiones inactivas de WhatsApp: %s", error)
+
+        await asyncio.sleep(60)
+
 @app.on_event("startup")
 async def iniciar_tareas_fondo():
     print("[SISTEMA] Iniciando Cron interno automático de expiración de canjes...")
     asyncio.create_task(expiracion_en_segundo_plano())
+    asyncio.create_task(sesiones_whatsapp_en_segundo_plano())

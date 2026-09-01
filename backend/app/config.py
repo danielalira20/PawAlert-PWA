@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     whatsapp_meta_app_secret: str = ""
     whatsapp_meta_phone_number_id: str = ""
     whatsapp_meta_graph_version: str = "v25.0"
+    whatsapp_session_warning_minutes: int = Field(default=15, gt=0)
+    whatsapp_session_expiration_minutes: int = Field(default=25, gt=0)
     require_phone_verification: bool = False
     frontend_url: str = "https://paw-alert-pwa.vercel.app"
     cors_origins: str = ""
@@ -88,6 +90,17 @@ class Settings(BaseSettings):
         ):
             raise ValueError(
                 "VROOM secondary ETA must be greater than the candidate window"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def validate_whatsapp_session_windows(self):
+        if (
+            self.whatsapp_session_expiration_minutes
+            <= self.whatsapp_session_warning_minutes
+        ):
+            raise ValueError(
+                "WhatsApp session expiration must be greater than its warning"
             )
         return self
 
