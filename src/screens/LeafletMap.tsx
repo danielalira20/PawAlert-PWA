@@ -418,6 +418,7 @@ interface LeafletMapProps {
   onHighlightReport?: (reporte: Reporte) => void;
   onReportModerated?: (reporteId: string) => void;
   onSelectAsociacion?: (asociacion: AsociacionMapa) => void;
+  onSelectAdopciones?: (asociacion: AsociacionMapa) => void;
   onMapClick: () => void;
 }
 
@@ -433,6 +434,7 @@ export default function LeafletMap({
   onHighlightReport,
   onReportModerated,
   onSelectAsociacion,
+  onSelectAdopciones,
   onMapClick,
   width,
   height,
@@ -630,10 +632,22 @@ export default function LeafletMap({
                   {onSelectAsociacion && (
                     <button
                       className="pp-btn"
-                      style={{ background: ASOC_COLOR, color: '#FFF' }}
+                      style={{ background: ASOC_COLOR, color: '#FFF', marginBottom: 8 }}
                       onClick={() => onSelectAsociacion(asociacion)}
                     >
                       Ver más →
+                    </button>
+                  )}
+                  {onSelectAdopciones && (
+                    <button
+                      className="pp-btn"
+                      style={{ background: '#FDF8F4', color: '#EC802B', border: '1px solid #EC802B', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelectAdopciones(asociacion);
+                      }}
+                    >
+                      🐾 Peluditos en adopción
                     </button>
                   )}
                 </div>
