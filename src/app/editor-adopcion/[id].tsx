@@ -50,6 +50,9 @@ export default function AdoptionProfileEditorScreen() {
 
   // --- NUEVO: Estados y funciones de Fotos (Paso 3) ---
   const [fotos, setFotos] = useState<any[]>([]);
+  // --- NUEVO: Requisitos y Guardado (Paso 4 y 5) ---
+  const [requisitos, setRequisitos] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
   const captureFoto = async () => {
     if (fotos.length >= 8) {
@@ -110,6 +113,7 @@ export default function AdoptionProfileEditorScreen() {
       setVacunas(data.vacunacion_estado || 'desconocido');
       setEsterilizacion(data.esterilizacion_estado || 'desconocido');
       setFotos(data.fotos || []); 
+      setRequisitos(data.requisitos_adicionales || '');
     } catch (error) {
       showToast({ type: 'error', title: 'Error', message: 'No pudimos cargar el expediente.' });
       setTimeout(() => router.back(), 2000);
@@ -168,19 +172,9 @@ export default function AdoptionProfileEditorScreen() {
           required 
         />
         
-        <Input 
-          label="Historia y Descripción" 
-          placeholder="¿Cómo es su día a día? ¿Qué le gusta hacer?" 
-          value={descripcion} 
-          onChangeText={setDescripcion} 
-          multiline 
-          style={{ height: 100, textAlignVertical: 'top' } as any} 
-        />
+        <Input label="Historia y Descripción" placeholder="¿Cómo llegó a la asociación? ¿Qué le gusta hacer?" value={descripcion} onChangeText={setDescripcion} multiline style={{ height: 90, textAlignVertical: 'top' } as any} required />
+        <Input label="Personalidad" placeholder="Ej. Es muy tranquilo y cariñoso." value={personalidad} onChangeText={setPersonalidad} multiline style={{ height: 70, textAlignVertical: 'top' } as any} required />
       </View>
-
-      <TouchableOpacity onPress={handleSiguiente} style={styles.submitButton}>
-        <Text style={styles.submitButtonText}>Siguiente →</Text>
-      </TouchableOpacity>
     </ScrollView>
   );
 const renderPaso2 = () => (
@@ -256,6 +250,95 @@ const renderPaso2 = () => (
       </View>
     </ScrollView>
   );
+  const handleGuardarPerfil = async (publicar = false) => {
+    setIsSaving(true);
+    try {
+      const payload = {
+        nombre_publico: nombrePublico.trim(),
+        sexo,
+        edad_aproximada: edad,
+        descripcion: descripcion.trim(),
+        personalidad: personalidad.trim(),
+        salud_conocida: salud.trim(),
+        tratamientos: tratamientos.trim(),
+        necesidades_especiales: necesidades.trim(),
+        vacunacion_estado: vacunas,
+        esterilizacion_estado: esterilizacion,
+        requisitos_adicionales: requisitos.trim(),
+        estado: publicar ? 'publicado' : 'borrador',
+      };
+
+      // Guardamos la información de texto
+      await axios.patch(`${API_URL}/associations/me/adoptions/${id}`, payload, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      // Nota: Aquí iría la lógica multipart/form-data si subimos fotos nuevas
+      // Por ahora simularemos el éxito del guardado del expediente.
+
+      showToast({ type: 'success', title: '¡Éxito!', message: publicar ? 'El perfil ha sido publicado.' : 'Borrador guardado correctamente.' });
+      
+      setTimeout(() => {
+        if (router.canGoBack()) router.back();
+      }, 1500);
+    } catch (error) {
+      showToast({ type: 'error', title: 'Error', message: 'No pudimos guardar el perfil.' });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const renderPaso4 = () => (
+    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <View style={styles.formSection}>
+        <Text style={styles.formSectionTitle}>Requisitos Específicos</Text>
+        <Text style={styles.formSectionSubtitle}>PawAlert ya solicita INEy cuestionario base. ¿Hay algo más que este animal necesite?</Text>
+        
+        <Input 
+          label="Requisitos Adicionales (Opcional)" 
+          placeholder="Ej. Barda de más de 2 metros, sin niños pequeños..." 
+          value={requisitos} 
+          onChangeText={setRequisitos} 
+          multiline 
+          style={{ height: 120, textAlignVertical: 'top' } as any} 
+        />
+      </View>
+    </ScrollView>
+  );
+
+  const renderPaso5 = () => (
+    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <View style={styles.formSection}>
+        <Text style={styles.formSectionTitle}>Revisión Final</Text>
+        <Text style={styles.formSectionSubtitle}>Revisa que todo esté correcto antes de abrir las puertas a una nueva familia.</Text>
+        
+        <View style={{ backgroundColor: COLORS.grayLight, padding: 20, borderRadius: 20, marginBottom: 24 }}>
+          <Text style={{ fontSize: 16, fontWeight: '800', color: COLORS.textDark, marginBottom: 12 }}>Resumen del Perfil</Text>
+          <Text style={{ color: COLORS.textDark, marginBottom: 4 }}>• <Text style={{ fontWeight: '700' }}>Nombre:</Text> {nombrePublico || 'Sin asignar'}</Text>
+          <Text style={{ color: COLORS.textDark, marginBottom: 4 }}>• <Text style={{ fontWeight: '700' }}>Sexo:</Text> {sexo}</Text>
+          <Text style={{ color: COLORS.textDark, marginBottom: 4 }}>• <Text style={{ fontWeight: '700' }}>Edad:</Text> {edad}</Text>
+          <Text style={{ color: COLORS.textDark, marginBottom: 4 }}>• <Text style={{ fontWeight: '700' }}>Fotos adjuntas:</Text> {fotos.length}</Text>
+        </View>
+
+        <View style={{ flexDirection: 'row', gap: 12 }}>
+          <TouchableOpacity 
+            onPress={() => handleGuardarPerfil(false)} 
+            disabled={isSaving} 
+            style={{ flex: 1, paddingVertical: 16, backgroundColor: COLORS.bgWhite, borderWidth: 2, borderColor: COLORS.primary, borderRadius: 20, alignItems: 'center' }}
+          >
+            <Text style={{ color: COLORS.primary, fontWeight: '800' }}>Guardar Borrador</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            onPress={() => handleGuardarPerfil(true)} 
+            disabled={isSaving} 
+            style={{ flex: 1, paddingVertical: 16, backgroundColor: COLORS.primary, borderRadius: 20, alignItems: 'center' }}
+          >
+            {isSaving ? <ActivityIndicator color={COLORS.bgWhite} /> : <Text style={{ color: COLORS.bgWhite, fontWeight: '800' }}>¡Publicar Perfil!</Text>}
+          </TouchableOpacity>
+        </View>
+      </View>
+    </ScrollView>
+  );
   if (isLoading) {
     return (
       <View style={styles.outerContainer}>
@@ -277,12 +360,13 @@ const renderPaso2 = () => (
             {paso === 1 && renderPaso1()}
             {paso === 2 && renderPaso2()}
             {paso === 3 && renderPaso3()}
-            {paso === 4 && <Text style={styles.placeholderText}>Aquí irán los Requisitos Adicionales</Text>}
-            {paso === 5 && <Text style={styles.placeholderText}>Aquí irá la previsualización y el botón de Publicar</Text>}
+            {paso === 4 && renderPaso4()}
+            {paso === 5 && renderPaso5()}
             
-            {paso > 1 && (
+            {/* Ocultamos el botón de 'Siguiente' en el último paso porque ahí están los botones de Guardar/Publicar */}
+            {paso < TOTAL_PASOS && (
               <TouchableOpacity onPress={handleSiguiente} style={styles.submitButton}>
-                <Text style={styles.submitButtonText}>{paso === TOTAL_PASOS ? 'Publicar Perfil' : 'Siguiente →'}</Text>
+                <Text style={styles.submitButtonText}>Siguiente →</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -297,9 +381,9 @@ const styles = StyleSheet.create({
     flex: 1, backgroundColor: 'rgba(38,30,24,0.8)', // Fondo oscuro elegante
     justifyContent: 'center', alignItems: 'center', padding: 20
   },
-  centeredContent: { width: '100%', maxWidth: FORM_MAX_WIDTH, maxHeight: '95%', alignSelf: 'center', flex: 1 },
+  centeredContent: { width: '100%', maxWidth: FORM_MAX_WIDTH, maxHeight: '95%', alignSelf: 'center' }, 
   cardContainer: {
-    flex: 1, backgroundColor: COLORS.bgWhite, borderRadius: 32, overflow: 'hidden',
+    backgroundColor: COLORS.bgWhite, borderRadius: 32, overflow: 'hidden', flexShrink: 1, 
     shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.25, shadowRadius: 20, elevation: 15,
   },
   headerSection: { paddingHorizontal: 32, paddingTop: 24, paddingBottom: 32, backgroundColor: COLORS.bgTeal, position: 'relative', zIndex: 1 },
@@ -308,7 +392,7 @@ const styles = StyleSheet.create({
   headerBackButton: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   closeButton: { backgroundColor: 'rgba(255,255,255,0.3)', padding: 8, borderRadius: 20 },
   decorationImage: { width: 120, height: 120, position: 'absolute', bottom: -10, right: 30, zIndex: 0 },
-  bodySection: { flex: 1, backgroundColor: COLORS.bgWhite, borderTopLeftRadius: 40, borderTopRightRadius: 40, paddingHorizontal: 32, paddingTop: 32, paddingBottom: 20, zIndex: 2 },
+  bodySection: { backgroundColor: COLORS.bgWhite, borderTopLeftRadius: 40, borderTopRightRadius: 40, paddingHorizontal: 32, paddingTop: 32, paddingBottom: 20, zIndex: 2, flexShrink: 1 }, 
   scrollContent: { paddingBottom: 40 },
   formSection: { marginBottom: 24 },
   formSectionTitle: { fontSize: 20, fontWeight: '800', color: COLORS.textDark, marginBottom: 4 },
