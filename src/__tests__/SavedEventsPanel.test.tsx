@@ -34,6 +34,10 @@ jest.mock("../components/events/saved/SavedEventCard", () => {
   };
 });
 
+jest.mock("../components/events/discovery/PublicEventDetailModal", () => ({
+  PublicEventDetailModal: () => null,
+}));
+
 const mockedUseSavedEvents = useSavedEvents as jest.Mock;
 
 describe("SavedEventsPanel", () => {

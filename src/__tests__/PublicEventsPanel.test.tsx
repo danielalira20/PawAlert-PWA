@@ -25,11 +25,27 @@ jest.mock("../components/Toast", () => ({
 }));
 
 jest.mock("../components/events/discovery/PublicEventCard", () => {
+  const { Text, TouchableOpacity } = require("react-native");
+  return {
+    PublicEventCard: ({
+      event,
+      onOpenDetail,
+    }: {
+      event: { id: string; titulo: string };
+      onOpenDetail: (event: { id: string; titulo: string }) => void;
+    }) => (
+      <TouchableOpacity onPress={() => onOpenDetail(event)}>
+        <Text>{event.titulo}</Text>
+      </TouchableOpacity>
+    ),
+  };
+});
+
+jest.mock("../components/events/discovery/PublicEventDetailModal", () => {
   const { Text } = require("react-native");
   return {
-    PublicEventCard: ({ event }: { event: { titulo: string } }) => (
-      <Text>{event.titulo}</Text>
-    ),
+    PublicEventDetailModal: ({ eventId }: { eventId: string | null }) =>
+      eventId ? <Text>{`Detalle abierto: ${eventId}`}</Text> : null,
   };
 });
 
@@ -133,5 +149,25 @@ describe("PublicEventsPanel", () => {
       ...filters,
       species: "Gatos",
     });
+  });
+
+  it("abre el detalle sin abandonar el listado ni reiniciar sus filtros", async () => {
+    mockedUsePublicEvents.mockReturnValue({
+      events: [{ id: "event-1", titulo: "Jornada comunitaria" }],
+      total: 1,
+      hasMore: false,
+      isLoading: false,
+      isLoadingMore: false,
+      isRefreshing: false,
+      error: null,
+      refresh: jest.fn(),
+      loadMore: jest.fn(),
+    });
+    const view = await render(<PublicEventsPanel />);
+
+    await fireEvent.press(view.getByText("Jornada comunitaria"));
+
+    expect(view.getByText("Detalle abierto: event-1")).toBeTruthy();
+    expect(view.getByText("Eventos comunitarios")).toBeTruthy();
   });
 });
