@@ -12,46 +12,23 @@ import {
 
 import { EventTheme } from "../../../constants/eventTheme";
 import { usePublicEvents } from "../../../hooks/events/usePublicEvents";
-import type {
-  EventPublicFilters,
-  EventPublicSummary,
-} from "../../../types/event";
+import type { EventPublicSummary } from "../../../types/event";
 import { Toast, useToast } from "../../Toast";
 import { PublicEventCard } from "./PublicEventCard";
 import {
   PublicEventFilters,
   type PublicEventFilterState,
 } from "./PublicEventFilters";
+import {
+  buildPublicEventQuery,
+  INITIAL_PUBLIC_EVENT_FILTERS,
+} from "./eventDiscoveryFilters";
 
-const INITIAL_FILTERS: PublicEventFilterState = {
-  type: "todos",
-  cost: "todos",
-  date: "todos",
-  species: "todos",
-  municipality: "todos",
-};
-
-export function buildPublicEventQuery(
-  filters: PublicEventFilterState,
-  now = new Date(),
-): Omit<EventPublicFilters, "pagina" | "limite"> {
-  const query: Omit<EventPublicFilters, "pagina" | "limite"> = {};
-  if (filters.type !== "todos") query.tipo = filters.type;
-  if (filters.cost !== "todos") query.gratuito = filters.cost === "gratuito";
-  if (filters.species !== "todos") query.especie = filters.species;
-  if (filters.municipality !== "todos") {
-    query.municipio = filters.municipality;
-  }
-  if (filters.date !== "todos") {
-    const until = new Date(now);
-    until.setDate(until.getDate() + (filters.date === "7_dias" ? 7 : 30));
-    query.desde = now.toISOString();
-    query.hasta = until.toISOString();
-  }
-  return query;
-}
+export { buildPublicEventQuery } from "./eventDiscoveryFilters";
 
 interface PublicEventsPanelProps {
+  filters?: PublicEventFilterState;
+  onFiltersChange?: (filters: PublicEventFilterState) => void;
   onLocate?: (event: EventPublicSummary) => void;
   topInset?: number;
 }
@@ -74,10 +51,16 @@ function LoadingCards() {
 }
 
 export function PublicEventsPanel({
+  filters: controlledFilters,
+  onFiltersChange,
   onLocate,
   topInset = 0,
 }: PublicEventsPanelProps) {
-  const [filters, setFilters] = useState(INITIAL_FILTERS);
+  const [internalFilters, setInternalFilters] = useState(
+    INITIAL_PUBLIC_EVENT_FILTERS,
+  );
+  const filters = controlledFilters ?? internalFilters;
+  const setFilters = onFiltersChange ?? setInternalFilters;
   const query = useMemo(() => buildPublicEventQuery(filters), [filters]);
   const {
     events,

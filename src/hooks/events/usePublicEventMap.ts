@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   listMapEvents,
@@ -22,17 +22,26 @@ export function usePublicEventMap(
   const [events, setEvents] = useState<EventMapItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const requestIdRef = useRef(0);
 
   const loadEvents = useCallback(async () => {
-    if (!enabled) return;
+    if (!enabled) {
+      requestIdRef.current += 1;
+      setIsLoading(false);
+      return;
+    }
+    const requestId = ++requestIdRef.current;
     setIsLoading(true);
     setError(null);
     try {
-      setEvents(await listMapEvents({ ...filters, limite: 500 }));
+      const response = await listMapEvents({ ...filters, limite: 500 });
+      if (requestId !== requestIdRef.current) return;
+      setEvents(response);
     } catch (requestError) {
+      if (requestId !== requestIdRef.current) return;
       setError(normalizeEventApiError(requestError).message);
     } finally {
-      setIsLoading(false);
+      if (requestId === requestIdRef.current) setIsLoading(false);
     }
   }, [enabled, filters]);
 

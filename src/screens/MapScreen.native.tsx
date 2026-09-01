@@ -2,7 +2,7 @@ import { Feather, Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Dimensions, Image, Modal, Text, TouchableOpacity, View } from 'react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import MapView, { Callout, Circle, Region } from 'react-native-maps';
@@ -28,6 +28,12 @@ import {
   EVENT_TYPE_META,
   formatEventSchedule,
 } from '../utils/eventFormatters';
+import type { PublicEventFilterState } from '../components/events/discovery/PublicEventFilters';
+import {
+  buildEventMapQuery,
+  INITIAL_PUBLIC_EVENT_FILTERS,
+  type EventMapBounds,
+} from '../components/events/discovery/eventDiscoveryFilters';
 
 const { width, height } = Dimensions.get('window');
 
@@ -285,17 +291,44 @@ export default function MapScreen() {
   const [contentMode, setContentMode] = useState<MapContentMode>('rescues');
   const [eventView, setEventView] = useState<EventDiscoveryView>('list');
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [eventFilters, setEventFilters] = useState<PublicEventFilterState>(INITIAL_PUBLIC_EVENT_FILTERS);
+  const [eventMapBounds, setEventMapBounds] = useState<EventMapBounds | null>(null);
+  const [pendingEventMapBounds, setPendingEventMapBounds] = useState<EventMapBounds | null>(null);
   const [selectedReport, setSelectedReport] = useState<Reporte | null>(null);
   const [isFormVisible, setIsFormVisible] = useState(false);
   const [isAuthGateVisible, setIsAuthGateVisible] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [, setTick] = useState(0);
+  const mapRef = useRef<MapView | null>(null);
+  const eventMapGestureRef = useRef(false);
+  const eventMapQuery = useMemo(
+    () => buildEventMapQuery(eventFilters, eventMapBounds),
+    [eventFilters, eventMapBounds],
+  );
   const {
     events: mapEvents,
     isLoading: isEventMapLoading,
     error: eventMapError,
     refresh: refreshEventMap,
-  } = usePublicEventMap(contentMode === 'events' && eventView === 'map');
+  } = usePublicEventMap(
+    contentMode === 'events' && eventView === 'map',
+    eventMapQuery,
+  );
+
+  useEffect(() => {
+    if (!selectedEventId || eventView !== 'map') return;
+    const event = mapEvents.find((item) => item.id === selectedEventId);
+    if (!event) return;
+    mapRef.current?.animateToRegion(
+      {
+        latitude: event.latitud,
+        longitude: event.longitud,
+        latitudeDelta: 0.015,
+        longitudeDelta: 0.015,
+      },
+      350,
+    );
+  }, [eventView, mapEvents, selectedEventId]);
 
   // ── Filtros — portados de MapScreen.web.tsx ──────────────────────────────
   const [filtro, setFiltro] = useState('todos');
@@ -336,8 +369,28 @@ export default function MapScreen() {
   };
 
   const handleLocatePublicEvent = (event: EventPublicSummary) => {
+    setEventMapBounds(null);
+    setPendingEventMapBounds(null);
     setSelectedEventId(event.id);
     setEventView('map');
+  };
+
+  const handleEventFiltersChange = (filters: PublicEventFilterState) => {
+    setEventFilters(filters);
+    setEventMapBounds(null);
+    setPendingEventMapBounds(null);
+    setSelectedEventId(null);
+  };
+
+  const handleEventRegionChange = (region: Region) => {
+    if (contentMode !== 'events' || eventView !== 'map' || !eventMapGestureRef.current) return;
+    eventMapGestureRef.current = false;
+    setPendingEventMapBounds({
+      latitudeMin: region.latitude - region.latitudeDelta / 2,
+      latitudeMax: region.latitude + region.latitudeDelta / 2,
+      longitudeMin: region.longitude - region.longitudeDelta / 2,
+      longitudeMax: region.longitude + region.longitudeDelta / 2,
+    });
   };
 
   const sheetY = useRef(new Animated.Value(300)).current;
@@ -447,7 +500,12 @@ export default function MapScreen() {
   if (contentMode === 'events' && eventView === 'list') {
     return (
       <View style={{ flex: 1 }}>
-        <PublicEventsPanel onLocate={handleLocatePublicEvent} topInset={62} />
+        <PublicEventsPanel
+          filters={eventFilters}
+          onFiltersChange={handleEventFiltersChange}
+          onLocate={handleLocatePublicEvent}
+          topInset={62}
+        />
         <EventMapModeSwitch
           contentMode={contentMode}
           eventView={eventView}
@@ -463,9 +521,14 @@ export default function MapScreen() {
   return (
     <View style={{ flex: 1 }}>
       <MapView
+        ref={mapRef}
         style={{ width, height }}
         initialRegion={INITIAL_REGION}
         onPress={() => { if (selectedReport) hideSheet(); }}
+        onPanDrag={() => {
+          if (contentMode === 'events') eventMapGestureRef.current = true;
+        }}
+        onRegionChangeComplete={handleEventRegionChange}
         showsUserLocation
         showsMyLocationButton={false}
       >
@@ -655,6 +718,42 @@ export default function MapScreen() {
         >
           <Text style={{ color: COLORS.orangeDark, fontSize: 12, fontWeight: '800', textAlign: 'center' }}>
             No se pudo cargar la capa de eventos. Toca para reintentar.
+          </Text>
+        </TouchableOpacity>
+      )}
+
+      {contentMode === 'events' && eventView === 'map' && pendingEventMapBounds && !isEventMapLoading && (
+        <TouchableOpacity
+          accessibilityRole="button"
+          onPress={() => {
+            setEventMapBounds(pendingEventMapBounds);
+            setPendingEventMapBounds(null);
+            setSelectedEventId(null);
+          }}
+          style={{
+            position: 'absolute', top: 72, alignSelf: 'center', zIndex: 1400,
+            backgroundColor: COLORS.orange, borderRadius: 18,
+            paddingHorizontal: 16, paddingVertical: 10, elevation: 7,
+          }}
+        >
+          <Text style={{ color: '#FFF', fontSize: 11, fontWeight: '800' }}>
+            Buscar en esta zona
+          </Text>
+        </TouchableOpacity>
+      )}
+
+      {contentMode === 'events' && eventView === 'map' && eventMapBounds && !pendingEventMapBounds && !isEventMapLoading && (
+        <TouchableOpacity
+          accessibilityRole="button"
+          onPress={() => setEventMapBounds(null)}
+          style={{
+            position: 'absolute', top: 72, alignSelf: 'center', zIndex: 1400,
+            backgroundColor: '#FFF', borderColor: COLORS.orange, borderWidth: 1,
+            borderRadius: 18, paddingHorizontal: 16, paddingVertical: 9, elevation: 7,
+          }}
+        >
+          <Text style={{ color: COLORS.orangeDark, fontSize: 11, fontWeight: '800' }}>
+            Ver todos los eventos
           </Text>
         </TouchableOpacity>
       )}

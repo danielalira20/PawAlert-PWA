@@ -3,7 +3,7 @@ import { ICON_CAT, ICON_CLOCK, ICON_CALENDAR, ICON_DOG, ICON_PAW, ICON_WARNING }
 import axios from 'axios';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Dimensions, Image, Modal, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import AuthGateModal from '../components/AuthGateModal';
@@ -22,6 +22,12 @@ import {
 } from '../components/events/discovery/EventMapModeSwitch';
 import { usePublicEventMap } from '../hooks/events/usePublicEventMap';
 import type { EventPublicSummary } from '../types/event';
+import type { PublicEventFilterState } from '../components/events/discovery/PublicEventFilters';
+import {
+  buildEventMapQuery,
+  INITIAL_PUBLIC_EVENT_FILTERS,
+  type EventMapBounds,
+} from '../components/events/discovery/eventDiscoveryFilters';
 
 const LeafletMap = lazy(() => import('./LeafletMap'));
 
@@ -69,6 +75,9 @@ export default function MapScreen() {
   const [contentMode, setContentMode] = useState<MapContentMode>('rescues');
   const [eventView, setEventView] = useState<EventDiscoveryView>('list');
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [eventFilters, setEventFilters] = useState<PublicEventFilterState>(INITIAL_PUBLIC_EVENT_FILTERS);
+  const [eventMapBounds, setEventMapBounds] = useState<EventMapBounds | null>(null);
+  const [pendingEventMapBounds, setPendingEventMapBounds] = useState<EventMapBounds | null>(null);
   const [selectedReport, setSelectedReport] = useState<Reporte | null>(null);
   const [highlightedReportId, setHighlightedReportId] = useState<string | null>(null);
   const [selectedAsociacion, setSelectedAsociacion] = useState<AsociacionMapa | null>(null);
@@ -104,6 +113,10 @@ export default function MapScreen() {
   const clockTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isMobile = windowWidth < 768;
+  const eventMapQuery = useMemo(
+    () => buildEventMapQuery(eventFilters, eventMapBounds),
+    [eventFilters, eventMapBounds],
+  );
   const {
     events: mapEvents,
     isLoading: isEventMapLoading,
@@ -111,6 +124,7 @@ export default function MapScreen() {
     refresh: refreshEventMap,
   } = usePublicEventMap(
     contentMode === 'events' && (!isMobile || eventView === 'map'),
+    eventMapQuery,
   );
 
   //para actualizar el animal reporte
@@ -203,8 +217,17 @@ export default function MapScreen() {
   };
 
   const handleLocatePublicEvent = (event: EventPublicSummary) => {
+    setEventMapBounds(null);
+    setPendingEventMapBounds(null);
     setSelectedEventId(event.id);
     setEventView('map');
+  };
+
+  const handleEventFiltersChange = (filters: PublicEventFilterState) => {
+    setEventFilters(filters);
+    setEventMapBounds(null);
+    setPendingEventMapBounds(null);
+    setSelectedEventId(null);
   };
 
   const handleClockPress = () => {
@@ -899,7 +922,8 @@ export default function MapScreen() {
             eventos={contentMode === 'events' ? mapEvents : []}
             selectedReportId={selectedReport?.id ?? highlightedReportId}
             selectedEventId={selectedEventId}
-            fitToMarkers={contentMode === 'events'}
+            fitToMarkers={contentMode === 'events' && eventMapBounds === null}
+            trackEventBounds={contentMode === 'events'}
             showReportMenuInPopup={isMobile}
             onSelectReport={handleSelectReport}
             onHighlightReport={(reporte) => setHighlightedReportId(reporte.id)}
@@ -912,6 +936,7 @@ export default function MapScreen() {
             }}
             onSelectAsociacion={handleSelectAsociacion}
             onSelectEvent={(event) => setSelectedEventId(event.id)}
+            onEventBoundsChange={setPendingEventMapBounds}
             onMapClick={handleMapClick}
           />
         </Suspense>
@@ -927,6 +952,30 @@ export default function MapScreen() {
       {contentMode === 'events' && eventMapError && (
         <TouchableOpacity onPress={() => void refreshEventMap()} style={{ position: 'absolute', top: isMobile ? 70 : 16, alignSelf: 'center', backgroundColor: '#FFF3F0', borderColor: '#F5C8C0', borderWidth: 1, borderRadius: 18, paddingHorizontal: 14, paddingVertical: 9, zIndex: 1200, elevation: 10 }}>
           <Text style={{ color: '#C0392B', fontSize: 10, fontWeight: '700' }}>No se cargó la capa · Reintentar</Text>
+        </TouchableOpacity>
+      )}
+
+      {contentMode === 'events' && pendingEventMapBounds && !isEventMapLoading && (
+        <TouchableOpacity
+          accessibilityRole="button"
+          onPress={() => {
+            setEventMapBounds(pendingEventMapBounds);
+            setPendingEventMapBounds(null);
+            setSelectedEventId(null);
+          }}
+          style={{ position: 'absolute', top: isMobile ? 72 : 16, alignSelf: 'center', backgroundColor: C.orange, borderRadius: 18, paddingHorizontal: 16, paddingVertical: 10, zIndex: 1201, elevation: 10 }}
+        >
+          <Text style={{ color: '#FFF', fontSize: 10, fontWeight: '800' }}>Buscar en esta zona</Text>
+        </TouchableOpacity>
+      )}
+
+      {contentMode === 'events' && eventMapBounds && !pendingEventMapBounds && !isEventMapLoading && (
+        <TouchableOpacity
+          accessibilityRole="button"
+          onPress={() => setEventMapBounds(null)}
+          style={{ position: 'absolute', top: isMobile ? 72 : 16, alignSelf: 'center', backgroundColor: '#FFF', borderColor: C.orange, borderWidth: 1, borderRadius: 18, paddingHorizontal: 16, paddingVertical: 9, zIndex: 1200, elevation: 10 }}
+        >
+          <Text style={{ color: C.orangeDark, fontSize: 10, fontWeight: '800' }}>Ver todos los eventos</Text>
         </TouchableOpacity>
       )}
 
@@ -1273,7 +1322,12 @@ export default function MapScreen() {
     if (contentMode === 'events' && eventView === 'list') {
       return (
         <View style={{ flex: 1 }}>
-          <PublicEventsPanel onLocate={handleLocatePublicEvent} topInset={62} />
+          <PublicEventsPanel
+            filters={eventFilters}
+            onFiltersChange={handleEventFiltersChange}
+            onLocate={handleLocatePublicEvent}
+            topInset={62}
+          />
           <EventMapModeSwitch
             contentMode={contentMode}
             eventView={eventView}
@@ -1320,7 +1374,11 @@ export default function MapScreen() {
 
         <View style={{ flex: 1, overflow: 'hidden' as any }}>
           {contentMode === 'events' ? (
-            <PublicEventsPanel onLocate={handleLocatePublicEvent} />
+            <PublicEventsPanel
+              filters={eventFilters}
+              onFiltersChange={handleEventFiltersChange}
+              onLocate={handleLocatePublicEvent}
+            />
           ) : sidebarView === 'list' && (
             <View style={{ flex: 1 }}>
               {renderFiltros()}

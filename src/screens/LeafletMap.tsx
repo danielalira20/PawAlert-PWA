@@ -8,6 +8,7 @@ import { Reporte, ZonaAgregada, getAnimales, condicionMasGrave, especieMasGrave,
 import { ICON_MULTIPLE } from '../constants/mapIcons';
 import type { EventMapItem } from '../types/event';
 import { EVENT_CAPACITY_META, EVENT_TYPE_META, formatEventSchedule } from '../utils/eventFormatters';
+import type { EventMapBounds } from '../components/events/discovery/eventDiscoveryFilters';
 
 const INITIAL_CENTER: [number, number] = [19.0414, -98.2063];
 const INITIAL_ZOOM = 13;
@@ -430,6 +431,47 @@ function FitToMarkers({
   return null;
 }
 
+function FocusSelectedEvent({
+  event,
+}: {
+  event: EventMapItem | undefined;
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!event) return;
+    map.setView(
+      [event.latitud, event.longitud],
+      Math.max(map.getZoom(), 15),
+      { animate: true },
+    );
+  }, [event, map]);
+
+  return null;
+}
+
+function EventBoundsListener({
+  enabled,
+  onBoundsChange,
+}: {
+  enabled: boolean;
+  onBoundsChange?: (bounds: EventMapBounds) => void;
+}) {
+  useMapEvents({
+    dragend: (event) => {
+      if (!enabled || !onBoundsChange) return;
+      const bounds = event.target.getBounds();
+      onBoundsChange({
+        latitudeMin: bounds.getSouth(),
+        latitudeMax: bounds.getNorth(),
+        longitudeMin: bounds.getWest(),
+        longitudeMax: bounds.getEast(),
+      });
+    },
+  });
+  return null;
+}
+
 // ─── Props ────────────────────────────────────────────────────────────────────
 interface LeafletMapProps {
   reportes: Reporte[];
@@ -443,12 +485,14 @@ interface LeafletMapProps {
   width?: string | number;
   height?: string | number;
   fitToMarkers?: boolean;
+  trackEventBounds?: boolean;
   showReportMenuInPopup?: boolean;
   onSelectReport: (reporte: Reporte) => void;
   onHighlightReport?: (reporte: Reporte) => void;
   onReportModerated?: (reporteId: string) => void;
   onSelectAsociacion?: (asociacion: AsociacionMapa) => void;
   onSelectEvent?: (event: EventMapItem) => void;
+  onEventBoundsChange?: (bounds: EventMapBounds) => void;
   onMapClick: () => void;
 }
 
@@ -467,10 +511,12 @@ export default function LeafletMap({
   onReportModerated,
   onSelectAsociacion,
   onSelectEvent,
+  onEventBoundsChange,
   onMapClick,
   width,
   height,
   fitToMarkers = false,
+  trackEventBounds = false,
   showReportMenuInPopup = true,
 }: LeafletMapProps) {
   // Zona seleccionada (visitantes sin sesión): al hacer click en un pin de
@@ -560,6 +606,13 @@ export default function LeafletMap({
         />
         <MapClickHandler onMapClick={onMapClick} />
         <FitToMarkers enabled={fitToMarkers} positions={markerPositions} />
+        <FocusSelectedEvent
+          event={eventos.find((event) => event.id === selectedEventId)}
+        />
+        <EventBoundsListener
+          enabled={trackEventBounds}
+          onBoundsChange={onEventBoundsChange}
+        />
         {(() => {
           const reporteSeleccionado = reportes.find(
             (reporte): reporte is Reporte & { latitud: number; longitud: number } =>
