@@ -1,9 +1,10 @@
-import { render } from "@testing-library/react-native";
+import { fireEvent, render } from "@testing-library/react-native";
 
 import {
   buildPublicEventQuery,
   PublicEventsPanel,
 } from "../components/events/discovery/PublicEventsPanel";
+import { buildEventMapQuery } from "../components/events/discovery/eventDiscoveryFilters";
 import { usePublicEvents } from "../hooks/events/usePublicEvents";
 
 jest.mock("@expo/vector-icons", () => ({ Ionicons: "Ionicons" }), {
@@ -72,11 +73,65 @@ describe("PublicEventsPanel", () => {
     });
   });
 
+  it("comparte los filtros y límites visibles con la capa del mapa", () => {
+    const now = new Date("2026-08-31T12:00:00.000Z");
+    expect(
+      buildEventMapQuery(
+        {
+          type: "vacunacion",
+          cost: "con_costo",
+          date: "30_dias",
+          species: "Gatos",
+          municipality: "Puebla",
+        },
+        {
+          latitudeMin: 18.9,
+          latitudeMax: 19.2,
+          longitudeMin: -98.4,
+          longitudeMax: -98.1,
+        },
+        now,
+      ),
+    ).toEqual({
+      tipo: "vacunacion",
+      gratuito: false,
+      especie: "Gatos",
+      municipio: "Puebla",
+      desde: "2026-08-31T12:00:00.000Z",
+      hasta: "2026-09-30T12:00:00.000Z",
+      latitud_min: 18.9,
+      latitud_max: 19.2,
+      longitud_min: -98.4,
+      longitud_max: -98.1,
+    });
+  });
+
   it("muestra un estado vacío claro dentro de la agenda pública", async () => {
     const view = await render(<PublicEventsPanel />);
 
     expect(view.getByText("Eventos comunitarios")).toBeTruthy();
     expect(view.getByText("No encontramos eventos")).toBeTruthy();
     expect(view.getByText("Categoría")).toBeTruthy();
+  });
+
+  it("notifica los filtros al contenedor para conservarlos entre lista y mapa", async () => {
+    const onFiltersChange = jest.fn();
+    const filters = {
+      type: "todos" as const,
+      cost: "todos" as const,
+      date: "todos" as const,
+      species: "todos" as const,
+      municipality: "todos" as const,
+    };
+    const view = await render(
+      <PublicEventsPanel filters={filters} onFiltersChange={onFiltersChange} />,
+    );
+
+    await fireEvent.press(view.getByText("Gatos"));
+
+    expect(onFiltersChange).toHaveBeenCalledWith({
+      ...filters,
+      species: "Gatos",
+    });
   });
 });

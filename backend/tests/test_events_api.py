@@ -72,6 +72,26 @@ def test_mapa_rechaza_limites_geograficos_invertidos():
     map_events.assert_not_called()
 
 
+def test_mapa_publico_comparte_filtros_de_descubrimiento():
+    with patch.object(
+        event_service, "listar_eventos_mapa", return_value=[]
+    ) as map_events:
+        response = client.get(
+            "/events/map?tipo=vacunacion&municipio=Puebla&especie=Gatos"
+            "&gratuito=false&desde=2026-09-01T00:00:00%2B00:00"
+            "&hasta=2026-10-01T00:00:00%2B00:00"
+        )
+
+    assert response.status_code == 200
+    assert map_events.call_args.kwargs["tipo"] == "vacunacion"
+    assert map_events.call_args.kwargs["municipio"] == "Puebla"
+    assert map_events.call_args.kwargs["especie"] == "Gatos"
+    assert map_events.call_args.kwargs["gratuito"] is False
+    assert map_events.call_args.kwargs["desde"].isoformat() == (
+        "2026-09-01T00:00:00+00:00"
+    )
+
+
 def test_asociacion_crea_borrador_con_su_contexto():
     with (
         patch.object(events, "_authenticated_user", return_value=_user()),
