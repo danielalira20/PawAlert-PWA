@@ -9,6 +9,7 @@ import {
   formatEventSchedule,
   isEventImageUrlExpired,
 } from "../../../utils/eventFormatters";
+import { abrirUbicacionEnMaps } from "../../../utils/eventMapsLink";
 import { EventTypeChip } from "../shared/EventTypeChip";
 import { SavedEventButton } from "./SavedEventButton";
 
@@ -85,7 +86,17 @@ export function SavedEventCard({
             )}
           </Text>
         </View>
-        <View style={styles.detailRow}>
+        <TouchableOpacity
+          accessibilityRole="link"
+          accessibilityLabel={`Ver ${event.municipio}, ${event.estado_ubicacion} en Maps`}
+          activeOpacity={0.6}
+          onPress={() =>
+            abrirUbicacionEnMaps({
+              direccion: `${event.municipio}, ${event.estado_ubicacion}, México`,
+            })
+          }
+          style={styles.detailRow}
+        >
           <Ionicons
             name="location-outline"
             size={16}
@@ -94,7 +105,7 @@ export function SavedEventCard({
           <Text numberOfLines={1} style={styles.detailText}>
             {event.municipio} · {event.estado_ubicacion}
           </Text>
-        </View>
+        </TouchableOpacity>
         <View style={styles.detailRow}>
           <Ionicons
             name="business-outline"

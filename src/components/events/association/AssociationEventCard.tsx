@@ -13,6 +13,10 @@ import {
   formatEventSchedule,
   isEventImageUrlExpired,
 } from "../../../utils/eventFormatters";
+import {
+  abrirUbicacionEnMaps,
+  tieneUbicacionMapeable,
+} from "../../../utils/eventMapsLink";
 import { ImageLightbox } from "../../common/ImageLightbox";
 import { EventStatusChip } from "../shared/EventStatusChip";
 import { EventTypeChip } from "../shared/EventTypeChip";
@@ -123,7 +127,26 @@ export function AssociationEventCard({
               {displaySchedule(event)}
             </Text>
           </View>
-          <View style={styles.detailRow}>
+          <TouchableOpacity
+            accessibilityRole="link"
+            accessibilityLabel={`Ver ${displayLocation(event)} en Maps`}
+            activeOpacity={0.6}
+            disabled={
+              !tieneUbicacionMapeable({
+                latitud: event.latitud,
+                longitud: event.longitud,
+                direccion: displayLocation(event),
+              })
+            }
+            onPress={() =>
+              abrirUbicacionEnMaps({
+                latitud: event.latitud,
+                longitud: event.longitud,
+                direccion: displayLocation(event),
+              })
+            }
+            style={styles.detailRow}
+          >
             <Ionicons
               name="location-outline"
               size={13}
@@ -132,7 +155,7 @@ export function AssociationEventCard({
             <Text numberOfLines={2} style={styles.detailText}>
               {displayLocation(event)}
             </Text>
-          </View>
+          </TouchableOpacity>
 
           <View style={styles.metadata}>
             <View style={styles.metadataItem}>

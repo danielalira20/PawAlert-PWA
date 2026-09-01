@@ -28,6 +28,7 @@ import {
   isEventImageUrlExpired,
 } from "../../../utils/eventFormatters";
 import { buildEventDeepLinkUrl } from "../../../utils/eventDeepLink";
+import { abrirUbicacionEnMaps } from "../../../utils/eventMapsLink";
 import { SavedEventButton } from "../saved/SavedEventButton";
 import { EventTypeChip } from "../shared/EventTypeChip";
 import { EventReportModal } from "./EventReportModal";
@@ -380,7 +381,19 @@ export function PublicEventDetailModal({
                         )}
                       </Text>
                     </View>
-                    <View style={styles.summaryItem}>
+                    <TouchableOpacity
+                      accessibilityRole="link"
+                      accessibilityLabel={`Ver ${event.lugar_nombre} en Maps`}
+                      activeOpacity={0.6}
+                      onPress={() =>
+                        abrirUbicacionEnMaps({
+                          latitud: event.latitud,
+                          longitud: event.longitud,
+                          direccion: `${event.direccion_publica}, ${event.municipio}, ${event.estado_ubicacion}`,
+                        })
+                      }
+                      style={styles.summaryItem}
+                    >
                       <Ionicons
                         name="location-outline"
                         size={18}
@@ -392,7 +405,7 @@ export function PublicEventDetailModal({
                         {event.direccion_publica}, {event.municipio},{" "}
                         {event.estado_ubicacion}
                       </Text>
-                    </View>
+                    </TouchableOpacity>
                     <View style={styles.summaryItem}>
                       <Ionicons
                         name="wallet-outline"
