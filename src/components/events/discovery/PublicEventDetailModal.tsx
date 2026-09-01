@@ -47,8 +47,10 @@ interface DetailSectionProps {
 }
 
 function DetailSection({ icon, title, children }: DetailSectionProps) {
+  const { width } = useWindowDimensions();
+  const compact = width < 640;
   return (
-    <View style={styles.section}>
+    <View style={[styles.section, compact && styles.sectionCompact]}>
       <View style={styles.sectionHeading}>
         <View style={styles.sectionIcon}>
           <Ionicons name={icon} size={17} color={EventTheme.colors.secondary} />
@@ -163,7 +165,7 @@ export function PublicEventDetailModal({
 
   return (
     <AppModal
-      fitContent
+      fitContent={!compact}
       maxWidth={imageExpanded ? 1080 : 680}
       onClose={imageExpanded ? () => setImageExpanded(false) : onClose}
       showCloseButton={false}
@@ -288,7 +290,7 @@ export function PublicEventDetailModal({
               <ScrollView
                 contentContainerStyle={styles.scrollContent}
                 showsVerticalScrollIndicator={false}
-                style={styles.scroll}
+                style={[styles.scroll, compact && styles.scrollFill]}
               >
                 {imageAvailable ? (
                   <TouchableOpacity
@@ -385,8 +387,10 @@ export function PublicEventDetailModal({
                         color={EventTheme.colors.primary}
                       />
                       <Text style={styles.summaryText}>
-                        {event.lugar_nombre}\n{event.direccion_publica},{" "}
-                        {event.municipio}, {event.estado_ubicacion}
+                        {event.lugar_nombre}
+                        {"\n"}
+                        {event.direccion_publica}, {event.municipio},{" "}
+                        {event.estado_ubicacion}
                       </Text>
                     </View>
                     <View style={styles.summaryItem}>
@@ -675,7 +679,7 @@ const styles = StyleSheet.create({
     minHeight: 360,
     width: "100%",
   },
-  modalCompact: { maxHeight: "100%" },
+  modalCompact: { flex: 1, maxHeight: "100%" },
   headerBar: {
     alignItems: "center",
     backgroundColor: EventTheme.colors.secondary,
@@ -738,6 +742,7 @@ const styles = StyleSheet.create({
   },
   stateActions: { flexDirection: "row", gap: 9, marginTop: 20 },
   scroll: { flexShrink: 1, minHeight: 0 },
+  scrollFill: { flexGrow: 1 },
   scrollContent: { paddingBottom: 8 },
   hero: { backgroundColor: EventTheme.colors.surfaceWarm, height: 210 },
   heroCompact: { height: 170 },
@@ -936,7 +941,7 @@ const styles = StyleSheet.create({
     gap: 10,
     marginTop: 10,
   },
-  sectionGridCompact: { flexDirection: "column" },
+  sectionGridCompact: { flexDirection: "column", gap: 10 },
   section: {
     backgroundColor: EventTheme.colors.surface,
     borderColor: EventTheme.colors.border,
@@ -946,6 +951,12 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     minWidth: 250,
     padding: 14,
+  },
+  sectionCompact: {
+    flexBasis: "auto",
+    flexGrow: 0,
+    minWidth: 0,
+    width: "100%",
   },
   sectionHeading: {
     alignItems: "center",
