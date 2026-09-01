@@ -3,7 +3,8 @@ import { View, Text, Image, TouchableOpacity, StyleSheet, Dimensions } from 'rea
 import { Ionicons } from '@expo/vector-icons';
 
 const { width } = Dimensions.get('window');
-const CARD_WIDTH = width / 2 - 24; // Dos columnas con padding
+const isDesktop = width > 768;
+const CARD_WIDTH = isDesktop ? 290 : width / 2 - 24;
 
 export function AdoptionCard({ perfil, onPress }: { perfil: any, onPress: () => void }) {
   const fotoUrl = perfil.foto_portada?.foto_url;
