@@ -801,6 +801,10 @@ def listar_eventos_mapa(
     *,
     tipo: str | None,
     municipio: str | None,
+    especie: str | None,
+    gratuito: bool | None,
+    desde: datetime | None,
+    hasta: datetime | None,
     latitud_min: float | None,
     latitud_max: float | None,
     longitud_min: float | None,
@@ -822,6 +826,14 @@ def listar_eventos_mapa(
             query = query.eq("tipo", tipo)
         if municipio:
             query = query.ilike("municipio", f"%{municipio.strip()}%")
+        if especie:
+            query = query.contains("especies_objetivo", [especie])
+        if gratuito is not None:
+            query = query.eq("es_gratuito", gratuito)
+        if desde:
+            query = query.gte("inicia_at", desde.isoformat())
+        if hasta:
+            query = query.lte("inicia_at", hasta.isoformat())
         if latitud_min is not None:
             query = query.gte("latitud", latitud_min)
         if latitud_max is not None:
