@@ -33,6 +33,11 @@ import { EventProgressHeader } from "../../components/events/editor/EventProgres
 import { EventValidationSummary } from "../../components/events/editor/EventValidationSummary";
 import { EventStatusChip } from "../../components/events/shared/EventStatusChip";
 import {
+  buscarDirecciones,
+  geocodificarInverso,
+  type ResultadoGeocodificacion,
+} from "../../utils/geocoding";
+import {
   ACCESS_MODE_OPTIONS,
   AUDIENCE_OPTIONS,
   COST_MODE_OPTIONS,
@@ -159,9 +164,68 @@ export default function EventEditorScreen({
   const createdEventIdRef = useRef<string | null>(null);
   const savingRef = useRef(false);
   const scrollRef = useRef<ScrollView>(null);
+  const [busquedaUbicacion, setBusquedaUbicacion] = useState("");
+  const [resultadosUbicacion, setResultadosUbicacion] = useState<
+    ResultadoGeocodificacion[]
+  >([]);
+  const [buscandoUbicacion, setBuscandoUbicacion] = useState(false);
 
   const patchValues = (patch: Partial<EventEditorValues>) =>
     setValues((current) => ({ ...current, ...patch }));
+
+  // ─── Sugerencias de dirección (Nominatim, igual que el form de reportes) ───
+  useEffect(() => {
+    const consulta = busquedaUbicacion.trim();
+    if (consulta.length < 4) {
+      setResultadosUbicacion([]);
+      return;
+    }
+    let activo = true;
+    setBuscandoUbicacion(true);
+    const timeout = setTimeout(async () => {
+      const encontrados = await buscarDirecciones(consulta);
+      if (!activo) return;
+      setResultadosUbicacion(encontrados);
+      setBuscandoUbicacion(false);
+    }, 600);
+    return () => {
+      activo = false;
+      clearTimeout(timeout);
+    };
+  }, [busquedaUbicacion]);
+
+  const aplicarResultadoUbicacion = (resultado: ResultadoGeocodificacion) => {
+    setValues((current) => ({
+      ...current,
+      latitud: resultado.latitud,
+      longitud: resultado.longitud,
+      direccionPublica:
+        [resultado.calle, resultado.colonia].filter(Boolean).join(", ") ||
+        resultado.nombreCompleto ||
+        current.direccionPublica,
+      municipio: resultado.municipio || current.municipio,
+      estadoUbicacion: resultado.estado || current.estadoUbicacion,
+    }));
+    setBusquedaUbicacion("");
+    setResultadosUbicacion([]);
+  };
+
+  const completarDireccionDesdePin = async (
+    latitud: number,
+    longitud: number,
+  ) => {
+    const resultado = await geocodificarInverso(latitud, longitud);
+    if (!resultado) return;
+    setValues((current) => ({
+      ...current,
+      municipio: resultado.municipio || current.municipio,
+      estadoUbicacion: resultado.estado || current.estadoUbicacion,
+      direccionPublica:
+        current.direccionPublica.trim() ||
+        [resultado.calle, resultado.colonia].filter(Boolean).join(", ") ||
+        resultado.nombreCompleto,
+    }));
+  };
   const previewUri =
     imageAsset?.uri ||
     (!imageRemoved ? remoteImage?.url || existingEvent?.imagen_url : null);
@@ -325,6 +389,10 @@ export default function EventEditorScreen({
         latitud: position.coords.latitude,
         longitud: position.coords.longitude,
       });
+      void completarDireccionDesdePin(
+        position.coords.latitude,
+        position.coords.longitude,
+      );
     } catch {
       showToast({
         type: "error",
@@ -797,10 +865,47 @@ export default function EventEditorScreen({
         title="Lugar público"
         description="Coloca el pin en el establecimiento o punto autorizado donde se realizará la actividad."
       >
+        <EventTextField
+          label="Buscar dirección"
+          hint="Escribe una calle o lugar y elige una sugerencia para colocar el pin."
+          value={busquedaUbicacion}
+          onChangeText={setBusquedaUbicacion}
+          placeholder="Ej. Avenida Juárez 100, Puebla"
+        />
+        {buscandoUbicacion && (
+          <Text style={styles.searchHint}>Buscando direcciones…</Text>
+        )}
+        {resultadosUbicacion.length > 0 && (
+          <View style={styles.searchResults}>
+            {resultadosUbicacion.map((resultado, index) => (
+              <TouchableOpacity
+                key={`${resultado.latitud}-${resultado.longitud}-${index}`}
+                onPress={() => aplicarResultadoUbicacion(resultado)}
+                style={[
+                  styles.searchResultItem,
+                  index === resultadosUbicacion.length - 1 &&
+                    styles.searchResultItemLast,
+                ]}
+              >
+                <Ionicons
+                  name="location-outline"
+                  size={15}
+                  color={EventTheme.colors.primary}
+                />
+                <Text numberOfLines={2} style={styles.searchResultText}>
+                  {resultado.nombreCompleto}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
         <EventLocationPicker
           latitud={values.latitud}
           longitud={values.longitud}
-          onChange={(latitud, longitud) => patchValues({ latitud, longitud })}
+          onChange={(latitud, longitud) => {
+            patchValues({ latitud, longitud });
+            void completarDireccionDesdePin(latitud, longitud);
+          }}
         />
         <TouchableOpacity
           onPress={() => void selectCurrentLocation()}
@@ -1478,7 +1583,12 @@ export default function EventEditorScreen({
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <View style={isSaving ? styles.interactionsDisabled : undefined}>
+          <View
+            style={[
+              styles.formColumn,
+              isSaving && styles.interactionsDisabled,
+            ]}
+          >
             {renderCurrentStep()}
           </View>
         </ScrollView>
@@ -1664,7 +1774,7 @@ const styles = StyleSheet.create({
     elevation: 5,
     flex: undefined,
     height: "94%",
-    maxWidth: 940,
+    maxWidth: 760,
     shadowColor: "#4A3728",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.14,
@@ -1676,6 +1786,11 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   interactionsDisabled: { pointerEvents: "none" },
   scrollContent: { padding: 22, paddingBottom: 34 },
+  formColumn: {
+    alignSelf: "center",
+    maxWidth: 560,
+    width: "100%",
+  },
   sections: { gap: 18 },
   twoColumns: { flexDirection: "row", gap: 12 },
   oneColumn: { flexDirection: "column" },
@@ -1742,6 +1857,36 @@ const styles = StyleSheet.create({
     color: EventTheme.colors.primary,
     fontFamily: EventTheme.typography.bold,
     fontSize: 12,
+  },
+  searchHint: {
+    color: EventTheme.colors.textMuted,
+    fontFamily: EventTheme.typography.regular,
+    fontSize: 11,
+  },
+  searchResults: {
+    backgroundColor: EventTheme.colors.surface,
+    borderColor: EventTheme.colors.border,
+    borderRadius: EventTheme.radii.control,
+    borderWidth: 1,
+    overflow: "hidden",
+  },
+  searchResultItem: {
+    alignItems: "flex-start",
+    borderBottomColor: EventTheme.colors.border,
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    gap: 8,
+    padding: 11,
+  },
+  searchResultItemLast: {
+    borderBottomWidth: 0,
+  },
+  searchResultText: {
+    color: EventTheme.colors.text,
+    flex: 1,
+    fontFamily: EventTheme.typography.medium,
+    fontSize: 11,
+    lineHeight: 16,
   },
   fieldNote: {
     color: EventTheme.colors.textFaint,

@@ -255,7 +255,7 @@ export function AssociationEventsPanel() {
       )}
 
       <AppModal
-        maxWidth={920}
+        maxWidth={760}
         onClose={closeEditor}
         showCloseButton={false}
         visible={editor != null}

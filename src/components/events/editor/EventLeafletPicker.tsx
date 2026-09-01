@@ -2,6 +2,11 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { MapContainer, Marker, TileLayer, useMapEvents } from "react-leaflet";
 
+const cartoApiKey = process.env.EXPO_PUBLIC_CARTO_API_KEY;
+const CARTO_LIGHT_TILE_URL = cartoApiKey
+  ? `https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png?key=${encodeURIComponent(cartoApiKey)}`
+  : "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
+
 const pinIcon = L.divIcon({
   className: "event-editor-pin",
   html: '<div style="width:22px;height:22px;border-radius:50%;background:#EC802B;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,.35)"></div>',
@@ -35,7 +40,7 @@ export default function EventLeafletPicker({
   width,
   height,
 }: Props) {
-  const center: [number, number] = [latitud ?? 19.4326, longitud ?? -99.1332];
+  const center: [number, number] = [latitud ?? 19.0414, longitud ?? -98.2063];
   return (
     <MapContainer
       key={`${center[0]}-${center[1]}`}
@@ -45,7 +50,7 @@ export default function EventLeafletPicker({
     >
       <TileLayer
         attribution="&copy; OpenStreetMap contributors &copy; CARTO"
-        url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+        url={CARTO_LIGHT_TILE_URL}
       />
       <ClickHandler onChange={onChange} />
       {latitud != null && longitud != null && (
