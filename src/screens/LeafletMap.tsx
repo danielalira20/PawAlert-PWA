@@ -680,6 +680,7 @@ interface LeafletMapProps {
   onSelectAsociacion?: (asociacion: AsociacionMapa) => void;
   onMapClick: () => void;
   bottomOffset?: number;
+  coloniasToggleBottom?: number;
   // "Estoy aquí" (ver src/hooks/useUbicacionEnVivo.ts): punto personal del
   // usuario en el mapa, puramente visual. No se comparte con nadie ni se
   // guarda en el backend -- si viene null/undefined no se dibuja nada.
@@ -704,6 +705,7 @@ export default function LeafletMap({
   fitToMarkers = false,
   showReportMenuInPopup = true,
   bottomOffset = 20,
+  coloniasToggleBottom,
   ubicacionEnVivo = null,
 }: LeafletMapProps) {
   // Zona seleccionada (visitantes sin sesión): al hacer click en un pin de
@@ -897,7 +899,7 @@ export default function LeafletMap({
       {/* Botón toggle de colonias */}
       <button
         className={`colonias-toggle ${mostrarColonias ? 'active' : 'inactive'}`}
-        style={{ bottom: bottomOffset + 68 }}
+        style={{ bottom: coloniasToggleBottom ?? bottomOffset + 68 }}
         onClick={() => {
           setMostrarColonias(v => !v);
           if (mostrarColonias) setColoniaSeleccionada(null);

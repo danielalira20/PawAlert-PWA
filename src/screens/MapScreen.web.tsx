@@ -43,6 +43,11 @@ const ESTADO: Record<string, { color: string; label: string; bg: string }> = {
   sin_cobertura: { color: '#E67E22', label: 'Sin cobertura', bg: '#FEF9E7' },
 };
 const TAB_BAR_CLEARANCE = 18 + 68 + 12;
+const MAP_ACTION_GAP = 12;
+const CREATE_REPORT_BUTTON_SIZE = 52;
+const LOCATION_BUTTON_SIZE = 38;
+const COLONIAS_BUTTON_BOTTOM = TAB_BAR_CLEARANCE + CREATE_REPORT_BUTTON_SIZE + MAP_ACTION_GAP;
+const LOCATION_BUTTON_BOTTOM = COLONIAS_BUTTON_BOTTOM + CREATE_REPORT_BUTTON_SIZE + MAP_ACTION_GAP;
 
 const getCfg = (map: Record<string, any>, key: string) =>
   map[key?.toLowerCase()] ?? { color: '#95A5A6', label: key ?? '', bg: '#F2F3F4' };
@@ -899,6 +904,7 @@ export default function MapScreen() {
             onMapClick={handleMapClick}
             ubicacionEnVivo={ubicacionEnVivo}
             bottomOffset={TAB_BAR_CLEARANCE}
+            coloniasToggleBottom={COLONIAS_BUTTON_BOTTOM}
           />
         </Suspense>
       ) : (
@@ -946,8 +952,8 @@ export default function MapScreen() {
         accessibilityLabel={estadoUbicacion === 'activo' ? 'Dejar de mostrar mi ubicación' : 'Mostrar mi ubicación en el mapa'}
         onPress={toggleUbicacionEnVivo}
         style={{
-          position: 'absolute', bottom: TAB_BAR_CLEARANCE + 52 + 12, right: 27,
-          width: 38, height: 38, borderRadius: 19, backgroundColor: '#FFFFFF',
+          position: 'absolute', bottom: LOCATION_BUTTON_BOTTOM, right: 27,
+          width: LOCATION_BUTTON_SIZE, height: LOCATION_BUTTON_SIZE, borderRadius: LOCATION_BUTTON_SIZE / 2, backgroundColor: '#FFFFFF',
           alignItems: 'center', justifyContent: 'center',
           shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 6,
           zIndex: 1000, elevation: 10,
@@ -969,7 +975,7 @@ export default function MapScreen() {
           accessibilityLabel="Reintentar activar mi ubicación"
           onPress={activarUbicacion}
           style={{
-            position: 'absolute', bottom: TAB_BAR_CLEARANCE + 52 + 12, right: 74, left: 16,
+            position: 'absolute', bottom: LOCATION_BUTTON_BOTTOM, right: 74, left: 16,
             backgroundColor: 'rgba(255,255,255,0.96)', borderRadius: 13,
             paddingHorizontal: 12, paddingVertical: 9, zIndex: 999, elevation: 9,
           }}
