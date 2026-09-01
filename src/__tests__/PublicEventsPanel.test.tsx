@@ -125,7 +125,6 @@ describe("PublicEventsPanel", () => {
   it("muestra un estado vacío claro dentro de la agenda pública", async () => {
     const view = await render(<PublicEventsPanel />);
 
-    expect(view.getByText("Eventos comunitarios")).toBeTruthy();
     expect(view.getByText("No encontramos eventos")).toBeTruthy();
     expect(view.getByText("Categoría")).toBeTruthy();
   });
@@ -168,7 +167,7 @@ describe("PublicEventsPanel", () => {
     await fireEvent.press(view.getByText("Jornada comunitaria"));
 
     expect(view.getByText("Detalle abierto: event-1")).toBeTruthy();
-    expect(view.getByText("Eventos comunitarios")).toBeTruthy();
+    expect(view.getByText("Jornada comunitaria")).toBeTruthy();
   });
 
   it("delega la apertura al contenedor cuando debe sincronizar la URL", async () => {

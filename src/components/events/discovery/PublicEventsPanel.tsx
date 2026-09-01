@@ -68,7 +68,6 @@ export function PublicEventsPanel({
   const query = useMemo(() => buildPublicEventQuery(filters), [filters]);
   const {
     events,
-    total,
     hasMore,
     isLoading,
     isLoadingMore,
@@ -82,40 +81,6 @@ export function PublicEventsPanel({
   return (
     <View style={[styles.panel, topInset > 0 && { paddingTop: topInset }]}>
       <Toast toast={toast} translateY={translateY} />
-      <View style={styles.intro}>
-        <View style={styles.introIcon}>
-          <Ionicons
-            name="calendar-outline"
-            size={21}
-            color={EventTheme.colors.primary}
-          />
-        </View>
-        <View style={styles.introCopy}>
-          <Text style={styles.introTitle}>Eventos comunitarios</Text>
-          <Text style={styles.introText}>
-            {isLoading
-              ? "Consultando la agenda pública…"
-              : `${total} ${total === 1 ? "actividad disponible" : "actividades disponibles"}`}
-          </Text>
-        </View>
-        <TouchableOpacity
-          accessibilityLabel="Actualizar eventos públicos"
-          accessibilityRole="button"
-          disabled={isRefreshing}
-          onPress={() => void refresh()}
-          style={styles.refreshButton}
-        >
-          {isRefreshing ? (
-            <ActivityIndicator color={EventTheme.colors.primary} size="small" />
-          ) : (
-            <Ionicons
-              name="refresh-outline"
-              size={19}
-              color={EventTheme.colors.primary}
-            />
-          )}
-        </TouchableOpacity>
-      </View>
 
       <PublicEventFilters value={filters} onChange={setFilters} />
 
@@ -255,45 +220,6 @@ const styles = StyleSheet.create({
     backgroundColor: EventTheme.colors.background,
     flex: 1,
     width: "100%",
-  },
-  intro: {
-    alignItems: "center",
-    backgroundColor: EventTheme.colors.surfaceWarm,
-    borderBottomColor: EventTheme.colors.border,
-    borderBottomWidth: 1,
-    flexDirection: "row",
-    padding: 12,
-  },
-  introIcon: {
-    alignItems: "center",
-    backgroundColor: "#FFF0E2",
-    borderRadius: 17,
-    height: 40,
-    justifyContent: "center",
-    marginRight: 10,
-    width: 40,
-  },
-  introCopy: { flex: 1 },
-  introTitle: {
-    color: EventTheme.colors.text,
-    fontFamily: EventTheme.typography.bold,
-    fontSize: 13,
-  },
-  introText: {
-    color: EventTheme.colors.textMuted,
-    fontFamily: EventTheme.typography.regular,
-    fontSize: 9,
-    lineHeight: 14,
-    marginTop: 1,
-  },
-  refreshButton: {
-    alignItems: "center",
-    backgroundColor: EventTheme.colors.surface,
-    borderRadius: 15,
-    height: EventTheme.layout.minimumTouchTarget,
-    justifyContent: "center",
-    marginLeft: 7,
-    width: EventTheme.layout.minimumTouchTarget,
   },
   scrollContent: { flexGrow: 1, padding: 10, paddingBottom: 104 },
   cards: {
