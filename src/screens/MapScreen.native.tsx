@@ -565,6 +565,13 @@ export default function MapScreen() {
           onContentModeChange={handleContentModeChange}
           onEventViewChange={setEventView}
         />
+        <PublicEventDetailModal
+          eventId={detailEventId}
+          onClose={handleCloseEventDetail}
+          onError={(message) => Alert.alert('No pudimos actualizar el evento', message)}
+          onLocate={handleLocatePublicEvent}
+          onSavedChange={(saved) => Alert.alert(saved ? 'Evento guardado' : 'Evento eliminado', 'Tu agenda quedó actualizada.')}
+        />
       </View>
     );
   }
