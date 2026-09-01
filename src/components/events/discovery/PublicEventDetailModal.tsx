@@ -259,12 +259,16 @@ export function PublicEventDetailModal({
               </Text>
               <View style={styles.stateActions}>
                 <TouchableOpacity
+                  accessibilityLabel="Cerrar detalle sin reintentar"
+                  accessibilityRole="button"
                   onPress={onClose}
                   style={styles.secondaryButton}
                 >
                   <Text style={styles.secondaryButtonText}>Cerrar</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
+                  accessibilityLabel="Reintentar carga del evento"
+                  accessibilityRole="button"
                   onPress={() => void retry()}
                   style={styles.primaryButton}
                 >
@@ -454,6 +458,8 @@ export function PublicEventDetailModal({
                         </TouchableOpacity>
                       )}
                     <TouchableOpacity
+                      accessibilityLabel={`Compartir ${event.titulo}`}
+                      accessibilityRole="button"
                       onPress={() => void shareEvent(event)}
                       style={styles.quickActionSecondary}
                     >
@@ -467,6 +473,8 @@ export function PublicEventDetailModal({
                       </Text>
                     </TouchableOpacity>
                     <TouchableOpacity
+                      accessibilityLabel={`Reportar ${event.titulo}`}
+                      accessibilityRole="button"
                       onPress={() => {
                         if (!token) {
                           onError(
@@ -617,6 +625,8 @@ export function PublicEventDetailModal({
                 />
                 {onLocate && (
                   <TouchableOpacity
+                    accessibilityLabel={`Ver ${event.titulo} en el mapa`}
+                    accessibilityRole="button"
                     onPress={() => {
                       onClose();
                       onLocate(event);

@@ -2,10 +2,14 @@ import { Ionicons } from "@expo/vector-icons";
 import { useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 
@@ -40,6 +44,7 @@ export function EventReportModal({
   onError,
   onSuccess,
 }: EventReportModalProps) {
+  const { height } = useWindowDimensions();
   const [reason, setReason] = useState<EventReportReason | null>(null);
   const [description, setDescription] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -89,107 +94,134 @@ export function EventReportModal({
 
   return (
     <AppModal fitContent maxWidth={520} onClose={close} visible={visible}>
-      <View style={styles.content}>
-        <View style={styles.icon}>
-          <Ionicons
-            name="flag-outline"
-            size={27}
-            color={EventTheme.colors.primary}
-          />
-        </View>
-        <Text style={styles.title}>Reportar este evento</Text>
-        <Text style={styles.subtitle}>
-          Selecciona el motivo que mejor describe el problema. El equipo de
-          PawAlert revisará la información.
-        </Text>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={styles.keyboardArea}
+      >
+        <ScrollView
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          style={[styles.scroll, { maxHeight: Math.max(260, height - 120) }]}
+        >
+          <View style={styles.icon}>
+            <Ionicons
+              name="flag-outline"
+              size={27}
+              color={EventTheme.colors.primary}
+            />
+          </View>
+          <Text style={styles.title}>Reportar este evento</Text>
+          <Text style={styles.subtitle}>
+            Selecciona el motivo que mejor describe el problema. El equipo de
+            PawAlert revisará la información.
+          </Text>
 
-        <Text style={styles.label}>Motivo</Text>
-        <View style={styles.reasons}>
-          {REASONS.map(([value, label]) => {
-            const selected = reason === value;
-            return (
-              <TouchableOpacity
-                key={value}
-                onPress={() => setReason(value)}
-                style={[styles.reason, selected && styles.reasonSelected]}
-              >
-                <Ionicons
-                  name={selected ? "radio-button-on" : "radio-button-off"}
-                  size={17}
-                  color={
-                    selected
-                      ? EventTheme.colors.primary
-                      : EventTheme.colors.textMuted
-                  }
-                />
-                <Text
-                  style={[
-                    styles.reasonText,
-                    selected && styles.reasonTextSelected,
-                  ]}
+          <Text style={styles.label}>Motivo</Text>
+          <View style={styles.reasons}>
+            {REASONS.map(([value, label]) => {
+              const selected = reason === value;
+              return (
+                <TouchableOpacity
+                  accessibilityLabel={`Motivo: ${label}`}
+                  accessibilityRole="radio"
+                  accessibilityState={{
+                    checked: selected,
+                    disabled: isSubmitting,
+                  }}
+                  disabled={isSubmitting}
+                  key={value}
+                  onPress={() => setReason(value)}
+                  style={[styles.reason, selected && styles.reasonSelected]}
                 >
-                  {label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+                  <Ionicons
+                    name={selected ? "radio-button-on" : "radio-button-off"}
+                    size={17}
+                    color={
+                      selected
+                        ? EventTheme.colors.primary
+                        : EventTheme.colors.textMuted
+                    }
+                  />
+                  <Text
+                    style={[
+                      styles.reasonText,
+                      selected && styles.reasonTextSelected,
+                    ]}
+                  >
+                    {label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
 
-        <Text style={styles.label}>¿Qué ocurrió?</Text>
-        <TextInput
-          accessibilityLabel="Descripción del reporte"
-          editable={!isSubmitting}
-          maxLength={2000}
-          multiline
-          onChangeText={setDescription}
-          placeholder="Describe brevemente la información que debe revisarse"
-          placeholderTextColor={EventTheme.colors.textFaint}
-          style={styles.input}
-          textAlignVertical="top"
-          value={description}
-        />
-        <Text style={styles.hint}>
-          {remainingHint > 0
-            ? `Escribe ${remainingHint} caracteres más.`
-            : "La descripción está lista para enviarse."}
-        </Text>
+          <Text style={styles.label}>¿Qué ocurrió?</Text>
+          <TextInput
+            accessibilityLabel="Descripción del reporte"
+            editable={!isSubmitting}
+            maxLength={2000}
+            multiline
+            onChangeText={setDescription}
+            placeholder="Describe brevemente la información que debe revisarse"
+            placeholderTextColor={EventTheme.colors.textFaint}
+            style={styles.input}
+            textAlignVertical="top"
+            value={description}
+          />
+          <Text style={styles.hint}>
+            {remainingHint > 0
+              ? `Escribe ${remainingHint} caracteres más.`
+              : "La descripción está lista para enviarse."}
+          </Text>
 
-        <View style={styles.actions}>
-          <TouchableOpacity
-            disabled={isSubmitting}
-            onPress={close}
-            style={styles.cancelButton}
-          >
-            <Text style={styles.cancelText}>Volver</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            disabled={!canSubmit}
-            onPress={() => void submit()}
-            style={[styles.submitButton, !canSubmit && styles.disabled]}
-          >
-            {isSubmitting ? (
-              <ActivityIndicator
-                color={EventTheme.colors.surface}
-                size="small"
-              />
-            ) : (
-              <Ionicons
-                name="send-outline"
-                size={17}
-                color={EventTheme.colors.surface}
-              />
-            )}
-            <Text style={styles.submitText}>
-              {isSubmitting ? "Enviando…" : "Enviar reporte"}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+          <View style={styles.actions}>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityState={{ disabled: isSubmitting }}
+              disabled={isSubmitting}
+              onPress={close}
+              style={styles.cancelButton}
+            >
+              <Text style={styles.cancelText}>Volver</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              accessibilityLabel="Enviar reporte del evento"
+              accessibilityRole="button"
+              accessibilityState={{ disabled: !canSubmit, busy: isSubmitting }}
+              disabled={!canSubmit}
+              onPress={() => void submit()}
+              style={[styles.submitButton, !canSubmit && styles.disabled]}
+            >
+              {isSubmitting ? (
+                <ActivityIndicator
+                  color={EventTheme.colors.surface}
+                  size="small"
+                />
+              ) : (
+                <Ionicons
+                  name="send-outline"
+                  size={17}
+                  color={EventTheme.colors.surface}
+                />
+              )}
+              <Text style={styles.submitText}>
+                {isSubmitting ? "Enviando…" : "Enviar reporte"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </AppModal>
   );
 }
 
 const styles = StyleSheet.create({
+  keyboardArea: {
+    backgroundColor: EventTheme.colors.surface,
+    flexShrink: 1,
+  },
+  scroll: { flexShrink: 1 },
   content: {
     alignItems: "center",
     backgroundColor: EventTheme.colors.surface,
