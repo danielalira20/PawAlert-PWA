@@ -272,6 +272,14 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
       setErrors(prev => ({ ...prev, nombreTemporal: '' }));
     }
   };
+  const handleRespuestaAdopcionChange = (val: string) => {
+    setForm({ ...form, comentario: val });
+    if (val.trim().length < 5) {
+      setErrors(prev => ({ ...prev, respuestaAdopcion: 'La respuesta debe tener al menos 5 caracteres.' }));
+    } else {
+      setErrors(prev => ({ ...prev, respuestaAdopcion: '' }));
+    }
+  };
 
   const handleSaludChange = (val: string) => {
     setForm({ ...form, salud: val });
@@ -620,18 +628,27 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
     );
   }, 'Tu parte quedó confirmada. La transferencia terminará cuando ambas partes confirmen.');
   const responderInfoAdopcion = () => ejecutar(async () => {
-    if (!seleccionada?.propuesta_adopcion_activa?.id || form.comentario.trim().length < 5) {
+    if (!seleccionada?.propuesta_adopcion_activa?.id) throw new Error('Propuesta no encontrada.');
+    if (form.comentario.trim().length < 5) {
+      setErrors(prev => ({ ...prev, respuestaAdopcion: 'La respuesta debe tener al menos 5 caracteres.' }));
       throw new Error('Escribe una respuesta clara y detallada para la asociación.');
     }
+    
+    let nueva_foto_path = null;
+    if (fotoAnimal) {
+       nueva_foto_path = await subirFotoPropuesta(fotoAnimal);
+    }
+
     await axios.post(
       `${API_URL}/adoption-intake-requests/${seleccionada.propuesta_adopcion_activa.id}/clarifications`,
       {
         respuesta: form.comentario.trim(),
+        nueva_foto_path,
         idempotency_key: `aclaracion_adopcion_${Date.now()}_${seleccionada.id}`
       },
       { headers: { Authorization: `Bearer ${token}` } }
     );
-  }, 'Tu respuesta ha sido enviada a la asociación.');
+  }, 'Tu respuesta y evidencia han sido enviadas a la asociación.');
   const enviarPropuestaAdopcion = () => ejecutar(async () => {
     const hasErrors = Object.values(errors).some(e => e !== '') || !form.nombreTemporal || !form.salud || !form.temperamento || !form.razonAdopcion;
     
@@ -954,7 +971,19 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
                       {seleccionada.propuesta_adopcion_activa.informacion_solicitada || 'Por favor, proporciona más detalles sobre la salud o comportamiento del animal.'}
                     </Text>
                   </View>
-                  <Field label="Tu respuesta" value={form.comentario} onChangeText={(v) => setForm({ ...form, comentario: v })} placeholder="Escribe aquí tu respuesta..." multiline />
+                  
+                  <Field 
+                    label="Tu respuesta" 
+                    value={form.comentario} 
+                    onChangeText={handleRespuestaAdopcionChange} 
+                    placeholder="Escribe aquí tu respuesta..." 
+                    multiline 
+                    error={errors.respuestaAdopcion}
+                  />
+
+                  <Text style={styles.modalCopy}>Si la asociación te pidió una nueva foto (por borrosa o desactualizada), adjúntala aquí. Reemplazará a la original.</Text>
+                  <Action icon={fotoAnimal ? 'checkmark-circle' : 'camera-outline'} label={fotoAnimal ? 'Foto lista' : 'Adjuntar foto'} onPress={() => tomarFoto()} />
+                  
                   <Submit label="Enviar respuesta" loading={submitting} onPress={responderInfoAdopcion} />
                 </>
               )}

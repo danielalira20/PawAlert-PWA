@@ -336,6 +336,16 @@ def responder_aclaracion(
     actor_user_id: str,
     body: AdoptionIntakeClarification,
 ) -> dict:
+    # 1. Si el voluntario mandó una foto nueva para aclarar, reemplazamos la anterior
+    if body.nueva_foto_path:
+        try:
+            supabase_admin.table("solicitudes_ingreso_adopcion").update({
+                "fotos_propuesta_paths": [body.nueva_foto_path]
+            }).eq("id", request_id).execute()
+        except Exception:
+            logger.warning("No se pudo reemplazar la foto de la propuesta de adopción")
+
+    # 2. Registramos el texto de la respuesta y cambiamos el estado
     return _rpc(
         "responder_aclaracion_ingreso_adopcion",
         {
