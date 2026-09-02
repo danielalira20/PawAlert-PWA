@@ -68,6 +68,14 @@ const CREATE_REPORT_BUTTON_SIZE = 52;
 const LOCATION_BUTTON_SIZE = 38;
 const COLONIAS_BUTTON_BOTTOM = TAB_BAR_CLEARANCE + CREATE_REPORT_BUTTON_SIZE + MAP_ACTION_GAP;
 const LOCATION_BUTTON_BOTTOM = COLONIAS_BUTTON_BOTTOM + CREATE_REPORT_BUTTON_SIZE + MAP_ACTION_GAP;
+// En móvil, el buscador aparece después de las tres filas de filtros. La
+// ficha seleccionada deja libre tanto la barra inferior como el riel derecho
+// de acciones (ubicación, colonias y nuevo reporte).
+const MOBILE_FILTERS_TOP = 20;
+const MOBILE_COLONIA_SEARCH_TOP = 162;
+const MOBILE_GUIDE_TOP = 156;
+const MOBILE_LEGEND_TOP = 248;
+const MOBILE_COLONIA_INFO_BOTTOM = TAB_BAR_CLEARANCE + 40;
 
 const getCfg = (map: Record<string, any>, key: string) =>
   map[key?.toLowerCase()] ?? { color: '#95A5A6', label: key ?? '', bg: '#F2F3F4' };
@@ -135,7 +143,7 @@ export default function MapScreen() {
 
   const renderMapGuide = () => (
     <>
-      <View style={{ position: 'absolute', top: isMobile ? 200 : 126, right: 18, zIndex: 2400, elevation: 20 }}>
+      <View style={{ position: 'absolute', top: isMobile ? MOBILE_GUIDE_TOP : 126, right: 18, zIndex: 2400, elevation: 20 }}>
         <GuideHelpButton sectionName="Mapa" onPress={mapGuide.startGuide} showUnreadDot={mapGuide.showPrompt} />
       </View>
       <CoachMarksTour visible={mapGuide.showGuide} steps={mapGuideSteps} onClose={mapGuide.closeGuide} />
@@ -1061,6 +1069,8 @@ export default function MapScreen() {
             ubicacionEnVivo={ubicacionEnVivo}
             bottomOffset={TAB_BAR_CLEARANCE}
             coloniasToggleBottom={COLONIAS_BUTTON_BOTTOM}
+            coloniaSearchTop={isMobile ? MOBILE_COLONIA_SEARCH_TOP : 20}
+            coloniaInfoBottom={isMobile ? MOBILE_COLONIA_INFO_BOTTOM : 36}
           />
         </Suspense>
       ) : (
@@ -1103,7 +1113,7 @@ export default function MapScreen() {
       )}
 
       {/* Leyenda */}
-      {contentMode === 'rescues' && <View style={{ position: 'absolute', top: isMobile ? 292 : 18, right: 18, backgroundColor: 'rgba(255,254,252,0.92)', borderRadius: 16, paddingVertical: 11, paddingHorizontal: 13, borderWidth: 1, borderColor: 'rgba(255,255,255,0.75)', shadowColor: '#32271D', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.12, shadowRadius: 20, zIndex: 999, elevation: 9, backdropFilter: 'blur(18px)' } as any}>
+      {contentMode === 'rescues' && <View style={{ position: 'absolute', top: isMobile ? MOBILE_LEGEND_TOP : 18, right: 18, backgroundColor: 'rgba(255,254,252,0.92)', borderRadius: 16, paddingVertical: 11, paddingHorizontal: 13, borderWidth: 1, borderColor: 'rgba(255,255,255,0.75)', shadowColor: '#32271D', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.12, shadowRadius: 20, zIndex: 999, elevation: 9, backdropFilter: 'blur(18px)' } as any}>
         <Text style={{ fontSize: 9, fontWeight: '800', color: C.dark, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>Condición</Text>
         {Object.entries(CONDICION).map(([key, cfg]) => (
           <View key={key} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4 }}>
@@ -1194,7 +1204,7 @@ export default function MapScreen() {
       {/* Barra de filtros interactivos (solo mobile) */}
       {isMobile && contentMode === 'rescues' && (
         <View ref={filtersTourRef} collapsable={false} style={{
-          position: 'absolute', top: 64, left: 12, right: 12,
+          position: 'absolute', top: MOBILE_FILTERS_TOP, left: 12, right: 12,
           backgroundColor: 'rgba(255,255,255,0.97)',
           borderRadius: 16,
           shadowColor: '#000', shadowOffset: { width: 0, height: 2 },

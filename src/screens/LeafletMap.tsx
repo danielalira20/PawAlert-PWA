@@ -642,9 +642,11 @@ function ColoniasLayer({
 function ColoniaSearchBar({
   data,
   onSelectColonia,
+  top,
 }: {
   data: GeoJSON.FeatureCollection | null;
   onSelectColonia: (cp: number) => void;
+  top: number;
 }) {
   const [query, setQuery] = useState('');
   const [showResults, setShowResults] = useState(false);
@@ -668,9 +670,10 @@ function ColoniaSearchBar({
   }, [query, data]);
 
   return (
-    <div style={{ position: 'absolute', top: 20, left: 20, right: 20, zIndex: 1000, maxWidth: 400, margin: '0 auto' }}>
+    <div className="colonia-search" style={{ top }}>
       <input
         type="text"
+        aria-label="Buscar colonia o código postal"
         placeholder="Buscar colonia o CP..."
         value={query}
         onChange={e => { setQuery(e.target.value); setShowResults(true); }}
@@ -723,13 +726,13 @@ function ColoniaInfoPanel({
   reportes,
   onClose,
   data,
-  bottomOffset,
+  bottom,
 }: {
   cp: number;
   reportes: Reporte[];
   onClose: () => void;
   data: GeoJSON.FeatureCollection | null;
-  bottomOffset?: number;
+  bottom: number;
 }) {
   const feature = useMemo(() => data?.features.find(f => f.properties?.cp === cp), [data, cp]);
   let nombre = feature?.properties?.nombre;
@@ -753,8 +756,8 @@ function ColoniaInfoPanel({
   ).length;
 
   return (
-    <div className="colonia-info-panel" style={{ bottom: (bottomOffset ?? 20) + 16 }}>
-      <button className="colonia-info-close" onClick={onClose} aria-label="Cerrar">×</button>
+    <div className="colonia-info-panel" style={{ bottom }}>
+      <button className="colonia-info-close" onClick={onClose} aria-label="Cerrar información de colonia">×</button>
       <div className="colonia-info-header">
         <div className="colonia-info-icon">
           <Ionicons name="location" size={24} color="#FF7F50" />
@@ -848,6 +851,8 @@ interface LeafletMapProps {
   onMapClick: () => void;
   bottomOffset?: number;
   coloniasToggleBottom?: number;
+  coloniaSearchTop?: number;
+  coloniaInfoBottom?: number;
   // "Estoy aquí" (ver src/hooks/useUbicacionEnVivo.ts): punto personal del
   // usuario en el mapa, puramente visual. No se comparte con nadie ni se
   // guarda en el backend -- si viene null/undefined no se dibuja nada.
@@ -879,6 +884,8 @@ export default function LeafletMap({
   showReportMenuInPopup = true,
   bottomOffset = 20,
   coloniasToggleBottom,
+  coloniaSearchTop = 20,
+  coloniaInfoBottom = 36,
   ubicacionEnVivo = null,
 }: LeafletMapProps) {
   // Zona seleccionada (visitantes sin sesión): al hacer click en un pin de
@@ -925,7 +932,10 @@ export default function LeafletMap({
     }
   }, []);
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+    <div
+      className={mostrarColonias ? 'leaflet-map-shell colonias-visible' : 'leaflet-map-shell'}
+      style={{ position: 'relative', width: '100%', height: '100%' }}
+    >
       <style>{`
         .pawalert-marker { background:none !important; border:none !important; }
         .leaflet-container {
@@ -956,7 +966,8 @@ export default function LeafletMap({
         }
         .leaflet-control-zoom a:hover { background:#FFF1E7 !important; color:#D96317 !important; }
         @media (max-width:767px) {
-          .leaflet-top.leaflet-left { top:190px; }
+          .leaflet-top.leaflet-left { top:146px; }
+          .colonias-visible .leaflet-top.leaflet-left { top:206px; }
         }
         .pawalert-pin-shell {
           position:relative;
@@ -1027,6 +1038,12 @@ export default function LeafletMap({
         .colonias-toggle:active { transform:translateY(0); }
         .colonias-toggle-icon { font-size:24px; line-height:1; }
 
+        /* ── Buscador de colonias ───────────────────── */
+        .colonia-search {
+          position:absolute; left:20px; right:20px; z-index:1100;
+          max-width:400px; margin:0 auto;
+        }
+
         /* ── Colonia tooltip ─────────────────────────── */
         .colonia-tooltip {
           background:rgba(92,74,58,0.92) !important;
@@ -1045,7 +1062,7 @@ export default function LeafletMap({
 
         /* ── Colonia info panel ──────────────────────── */
         .colonia-info-panel {
-          position:fixed; left:0; right:0; margin:0 auto; z-index:1000;
+          position:absolute; left:0; right:0; margin:0 auto; z-index:1000;
           box-sizing:border-box;
           background:rgba(255,254,252,.96);
           border:1px solid rgba(255,255,255,.8);
@@ -1105,6 +1122,22 @@ export default function LeafletMap({
           color:#9B8B7A; text-transform:uppercase;
           letter-spacing:0.4px; margin-top:3px;
         }
+        @media (max-width:767px) {
+          .colonia-search {
+            left:12px; right:68px; max-width:none;
+          }
+          .colonia-info-panel {
+            left:16px; right:88px; width:auto; max-width:none; margin:0;
+            border-radius:20px; padding:14px;
+          }
+          .colonia-info-header { gap:10px; margin-bottom:12px; padding-right:20px; }
+          .colonia-info-icon { width:36px; height:36px; flex:0 0 36px; }
+          .colonia-info-title { font-size:14px; line-height:18px; }
+          .colonia-info-stats { gap:5px; }
+          .colonia-stat { padding:8px 2px; }
+          .colonia-stat-num { font-size:16px; }
+          .colonia-stat-label { font-size:8px; letter-spacing:.2px; }
+        }
         @media (prefers-reduced-motion: reduce) {
           .pawalert-pin-shell, .pawalert-pin-shell.is-selected,
           .pawalert-pin-shell.is-selected::before, .colonia-info-panel {
@@ -1135,6 +1168,7 @@ export default function LeafletMap({
         <ColoniaSearchBar
           data={coloniasPueblaData as any}
           onSelectColonia={setColoniaSeleccionada}
+          top={coloniaSearchTop}
         />
       )}
 
@@ -1145,7 +1179,7 @@ export default function LeafletMap({
           reportes={reportes}
           onClose={() => setColoniaSeleccionada(null)}
           data={coloniasPueblaData as any}
-          bottomOffset={bottomOffset}
+          bottom={coloniaInfoBottom}
         />
       )}
 
