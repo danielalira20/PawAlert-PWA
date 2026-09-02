@@ -18,6 +18,7 @@ import { consumeAuthIntent } from '../../utils/authIntent';
 import { getPostAuthDestination, getPostAuthExplanation } from '../../utils/postAuthNavigation';
 import { validarNombre } from '../../utils/validators';
 import ForgotPasswordFlowScreen from '../../screens/ForgotPasswordFlowScreen';
+import { isNetworkUnavailable } from '../../utils/networkError';
 
 // ─── Tokens visuales (idénticos a LoginScreen) ───────────────────────────────
 const C = {
@@ -193,7 +194,11 @@ export function LoggedOutProfile() {
         setSuccessMessage('¡Bienvenida de vuelta!');
       }
     } catch (error: any) {
-      showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'Correo o contraseña incorrectos' });
+      if (isNetworkUnavailable(error)) {
+        showToast({ type: 'warning', title: 'Sin conexión', message: 'Revisa tu red para poder iniciar sesión.' }, 4200);
+      } else {
+        showToast({ type: 'error', title: 'No pudimos iniciar sesión', message: error?.response?.data?.detail || 'Correo o contraseña incorrectos.' });
+      }
     } finally {
       setIsLoading(false);
     }
@@ -830,5 +835,4 @@ const styles = StyleSheet.create({
   newHereText: { fontSize: 13, color: Brand.textMuted },
   newHereLink: { color: Brand.primary, fontWeight: '700' },
 });
-
 

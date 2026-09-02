@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timezone
 from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -483,3 +484,38 @@ def test_listado_incidentes_admin_filtra_pagina_y_no_solicita_evidencia():
     query.range.assert_called_once_with(10, 19)
     assert result["total"] == 24
     assert result["tiene_mas"] is True
+
+
+def test_mapa_publico_aplica_filtros_compartidos_y_limites_geograficos():
+    query = _query(data=[])
+    admin = MagicMock()
+    admin.table.return_value = query
+    starts_at = datetime(2026, 9, 1, tzinfo=timezone.utc)
+    ends_at = datetime(2026, 9, 30, tzinfo=timezone.utc)
+
+    with patch.object(event_service, "supabase_admin", admin):
+        event_service.listar_eventos_mapa(
+            tipo="vacunacion",
+            municipio="Puebla",
+            especie="Gatos",
+            gratuito=False,
+            desde=starts_at,
+            hasta=ends_at,
+            latitud_min=18.9,
+            latitud_max=19.2,
+            longitud_min=-98.4,
+            longitud_max=-98.1,
+            limite=50,
+        )
+
+    query.eq.assert_any_call("tipo", "vacunacion")
+    query.eq.assert_any_call("es_gratuito", False)
+    query.ilike.assert_called_once_with("municipio", "%Puebla%")
+    query.contains.assert_called_once_with("especies_objetivo", ["Gatos"])
+    query.gte.assert_any_call("inicia_at", starts_at.isoformat())
+    query.lte.assert_any_call("inicia_at", ends_at.isoformat())
+    query.gte.assert_any_call("latitud", 18.9)
+    query.lte.assert_any_call("latitud", 19.2)
+    query.gte.assert_any_call("longitud", -98.4)
+    query.lte.assert_any_call("longitud", -98.1)
+    query.limit.assert_called_once_with(50)

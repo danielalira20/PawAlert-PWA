@@ -10,6 +10,9 @@ import { ActivityIndicator, Dimensions, Image, Linking, Modal, Platform, ScrollV
 import { Ionicons } from '@expo/vector-icons';
 import { Toast, useToast } from '../components/Toast';
 import { BusquedaNoLocalizadoPanel } from '../components/association-dashboard/BusquedaNoLocalizadoPanel';
+import { AvistamientosPendientesPanel } from '../components/association-dashboard/AvistamientosPendientesPanel';
+import RecorridoAvistamientosMap from '../components/association-dashboard/RecorridoAvistamientosMap';
+import type { PuntoRecorrido } from '../components/association-dashboard/recorridoAvistamientos.types';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
@@ -27,6 +30,7 @@ import { Animal, getAnimales, totalAnimales, animalMasGrave, ReportUrgencySnapsh
 import { AnimalCarousel } from '../components/common/AnimalCarousel';
 import { ImageLightbox } from '../components/common/ImageLightbox';
 import { getPaginationWindow, getReportsPerPage } from '../utils/reportPagination';
+import { AssociationEventsPanel } from '../components/events/association/AssociationEventsPanel';
 
 // ─── PALETA DE COLORES PETZEN ───
 const COLORS = {
@@ -76,6 +80,7 @@ interface ReporteAsignado extends ReportUrgencySnapshot {
   asignacion_id: string;
   reporte_id: string;
   estado_asignacion_clave: string;
+  asociacion_asignada_id?: string | null;
   estado_reporte: string;
   confirmacion_voluntario?: string | null;
   ultimo_rechazo?: { nombre_voluntario: string; creado_at: string } | null;
@@ -101,10 +106,12 @@ interface HistorialEvento {
   reportante_nombre?: string;
   usuario_nombre?: string | null;
   nota?: string | null;
+  latitud?: number | null;
+  longitud?: number | null;
 }
 
 type FiltroAsignacion = 'todas' | 'pendientes' | 'aceptadas' | 'rechazadas';
-type ActiveTab = 'reportes' | 'seguimientos' | 'postulaciones' | 'adopciones' | 'voluntarios' | 'lotes' | 'configuracion';
+type ActiveTab = 'reportes' | 'avistamientos' | 'eventos' | 'seguimientos' | 'postulaciones' | 'adopciones' | 'voluntarios' | 'lotes' | 'configuracion';
 
 type TabAsignacion = 'staff' | 'voluntarios';
 type EstadoVoluntarios = 'cargando' | 'candidatos' | 'esperando_confirmacion' | 'confirmado' | 'rechazado_mostrando_siguiente' | 'sin_candidatos';
@@ -324,6 +331,7 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
     cancelacion_reportante_avisada: { label: 'Solicitud de cancelación del reportante', icon: 'information-circle-outline' },
     hito_llegue_refugio: { label: 'Llegada al refugio', icon: 'home-outline' },
     caso_cerrado: { label: 'Caso cerrado', icon: 'checkmark-done-circle-outline' },
+    ubicacion_confirmada: { label: 'Avistamiento validado', icon: 'eye-outline' },
   };
 
 
@@ -1311,6 +1319,44 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                 </TouchableOpacity>
 
                 <TouchableOpacity
+                  onPress={() => setActiveTab('avistamientos')}
+                  style={{
+                    paddingBottom: 12,
+                    marginRight: 24,
+                    flexShrink: 0,
+                    borderBottomWidth: activeTab === 'avistamientos' ? 3 : 0,
+                    borderBottomColor: COLORS.primary
+                  }}
+                >
+                  <Text style={{
+                    fontSize: 16,
+                    fontWeight: activeTab === 'avistamientos' ? '800' : '600',
+                    color: activeTab === 'avistamientos' ? COLORS.primary : COLORS.textLight
+                  }}>
+                    Avistamientos
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => setActiveTab('eventos')}
+                  style={{
+                    paddingBottom: 12,
+                    marginRight: 24,
+                    flexShrink: 0,
+                    borderBottomWidth: activeTab === 'eventos' ? 3 : 0,
+                    borderBottomColor: COLORS.primary
+                  }}
+                >
+                  <Text style={{
+                    fontSize: 16,
+                    fontWeight: activeTab === 'eventos' ? '800' : '600',
+                    color: activeTab === 'eventos' ? COLORS.primary : COLORS.textLight
+                  }}>
+                    Eventos
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
                   onPress={() => setActiveTab('seguimientos')}
                   style={{
                     paddingBottom: 12,
@@ -1433,6 +1479,10 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                 <Text style={{ fontSize: 22, fontWeight: 'bold', color: COLORS.textDark }}>
                   {activeTab === 'reportes'
                     ? 'Reportes asignados'
+                    : activeTab === 'avistamientos'
+                      ? 'Avistamientos por validar'
+                    : activeTab === 'eventos'
+                      ? 'Eventos de la asociación'
                     : activeTab === 'seguimientos'
                       ? 'Seguimientos sensibles'
                     : activeTab === 'postulaciones'
@@ -1731,6 +1781,10 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                   )}
                 </>
 
+              ) : activeTab === 'avistamientos' ? (
+                <AvistamientosPendientesPanel visible={activeTab === 'avistamientos'} />
+              ) : activeTab === 'eventos' ? (
+                <AssociationEventsPanel />
               ) : activeTab === 'seguimientos' ? (
                 <DeceasedFollowupPanel visible={activeTab === 'seguimientos'} />
               ) : activeTab === 'postulaciones' ? (
@@ -2153,6 +2207,48 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                 {/* ── Línea de tiempo: sub-filtros "Por cerrar" y "Completados" ── */}
                 {(subFiltroAceptadas === 'por_cerrar' || subFiltroAceptadas === 'completados') && (
                   <View style={{ marginTop: 24 }}>
+                    {(() => {
+                      // Recorrido del caso: reporte original + avistamientos validados,
+                      // en orden cronológico (historialTimeline ya viene ASC por created_at).
+                      // Solo se listan aquí los eventos con coordenadas conocidas.
+                      const eventosConUbicacion = (historialTimeline || []).filter(
+                        (evento) => evento.latitud != null && evento.longitud != null,
+                      );
+                      if (eventosConUbicacion.length < 2) {
+                        return null;
+                      }
+                      const puntosRecorrido: PuntoRecorrido[] = eventosConUbicacion.map((evento, idx) => ({
+                        latitud: Number(evento.latitud),
+                        longitud: Number(evento.longitud),
+                        esOrigen: evento.tipo_evento === 'reporte_creado',
+                        esMasReciente: idx === eventosConUbicacion.length - 1,
+                        etiqueta: (TIMELINE_LABELS[evento.tipo_evento] || { label: evento.tipo_evento }).label,
+                      }));
+                      return (
+                        <View style={{ marginBottom: 20 }}>
+                          <Text style={{ fontSize: 18, fontWeight: '800', color: COLORS.textDark, marginBottom: 4 }}>Recorrido del caso</Text>
+                          <Text style={{ fontSize: 12, color: COLORS.textLight, marginBottom: 10 }}>
+                            Línea recta entre el reporte y cada avistamiento validado. El punto más grande es el más reciente.
+                          </Text>
+                          <RecorridoAvistamientosMap puntos={puntosRecorrido} height={220} />
+                          <View style={{ flexDirection: 'row', gap: 16, marginTop: 10, flexWrap: 'wrap' }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              <View style={{ width: 12, height: 12, borderRadius: 3, backgroundColor: '#8C7A6B' }} />
+                              <Text style={{ fontSize: 11, color: COLORS.textLight }}>Reporte original</Text>
+                            </View>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#66BCB4' }} />
+                              <Text style={{ fontSize: 11, color: COLORS.textLight }}>Avistamiento validado</Text>
+                            </View>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              <View style={{ width: 14, height: 14, borderRadius: 7, backgroundColor: '#EC802B' }} />
+                              <Text style={{ fontSize: 11, color: COLORS.textLight }}>Última ubicación conocida</Text>
+                            </View>
+                          </View>
+                        </View>
+                      );
+                    })()}
+
                     <Text style={{ fontSize: 18, fontWeight: '800', color: COLORS.textDark, marginBottom: 12 }}>Línea de tiempo</Text>
 
                     {isLoadingHistorial ? (

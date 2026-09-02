@@ -354,6 +354,10 @@ export interface EventPublicFilters {
 export interface EventMapFilters {
   tipo?: EventType;
   municipio?: string;
+  especie?: string;
+  gratuito?: boolean;
+  desde?: string;
+  hasta?: string;
   latitud_min?: number;
   latitud_max?: number;
   longitud_min?: number;

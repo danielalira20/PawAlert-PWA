@@ -20,6 +20,10 @@ export type PushPermissionState =
 
 const STORAGE_KEY = '@pawalert_push_token';
 
+export async function getPushSetupMessage(): Promise<string | null> {
+  return null;
+}
+
 export async function getPushPermissionState(): Promise<PushPermissionState> {
   const estado = await hasPermission(getMessaging());
   const autorizado = estado === AuthorizationStatus.AUTHORIZED

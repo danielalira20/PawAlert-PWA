@@ -20,6 +20,14 @@ class Settings(BaseSettings):
     whatsapp_notifications_enabled: bool = False
     twilio_webhook_base_url: str = ""
     twilio_validate_signatures: bool = True
+    # WhatsApp Cloud API (Meta) — canal conversacional para crear reportes.
+    whatsapp_meta_verify_token: str = ""
+    whatsapp_meta_access_token: str = ""
+    whatsapp_meta_app_secret: str = ""
+    whatsapp_meta_phone_number_id: str = ""
+    whatsapp_meta_graph_version: str = "v25.0"
+    whatsapp_session_warning_minutes: int = Field(default=15, gt=0)
+    whatsapp_session_expiration_minutes: int = Field(default=25, gt=0)
     require_phone_verification: bool = False
     frontend_url: str = "https://paw-alert-pwa.vercel.app"
     cors_origins: str = ""
@@ -45,7 +53,36 @@ class Settings(BaseSettings):
     firebase_service_account_json: str = ""
     google_application_credentials: str = ""
 
+    # Avistamientos: filtro de cercanía para poder INTENTAR registrar uno.
+    # Solo aplica a reportante del caso y voluntario verificado cercano;
+    # asociación/staff quedan exentos (pueden registrar info de terceros).
+    radio_entrada_avistamiento_metros: int = Field(default=500, gt=0)
 
+    # Avistamientos, auto-validación (Fase 3). Condición 2: trust score
+    # mínimo Y distancia máxima al punto de referencia del caso, ambas
+    # juntas. Condición 3: dos avistamientos del mismo animal que caigan
+    # dentro de AMBAS ventanas (distancia y tiempo) se corroboran entre sí.
+    trust_score_minimo_auto_validacion: int = Field(default=60, ge=0, le=100)
+    radio_coherencia_avistamiento_metros: int = Field(default=800, gt=0)
+    radio_corroboracion_avistamiento_metros: int = Field(default=50, gt=0)
+    ventana_corroboracion_avistamiento_minutos: int = Field(default=5, gt=0)
+
+    # Avistamientos, fuente testigo_cercano (Entrega C). Reusa
+    # trust_score_minimo_auto_validacion de arriba como umbral de ENTRADA
+    # (no solo de auto-validacion) para esta fuente mas abierta. El cap
+    # es anti-spam: como testigo_cercano nunca se auto-valida, cada
+    # registro se queda pendiente hasta revision de asociacion.
+    avistamiento_cap_pendientes_testigo_cercano: int = Field(default=3, gt=0)
+
+    # Avistamientos: verificacion visual contra la(s) foto(s) originales del
+    # animal reportado (Gemini multimodal). Si la probabilidad de que sea el
+    # mismo animal cae por debajo de este umbral, se adjunta una advertencia
+    # NO bloqueante para quien revise el caso -- solo se bloquea el registro
+    # si Gemini determina que la foto no muestra un animal real o que la
+    # especie no es compatible con la reportada.
+    avistamiento_umbral_probabilidad_mismo_animal: float = Field(
+        default=0.5, ge=0, le=1
+    )
 
     @model_validator(mode="after")
     def validate_vroom_route_windows(self):
@@ -55,6 +92,17 @@ class Settings(BaseSettings):
         ):
             raise ValueError(
                 "VROOM secondary ETA must be greater than the candidate window"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def validate_whatsapp_session_windows(self):
+        if (
+            self.whatsapp_session_expiration_minutes
+            <= self.whatsapp_session_warning_minutes
+        ):
+            raise ValueError(
+                "WhatsApp session expiration must be greater than its warning"
             )
         return self
 

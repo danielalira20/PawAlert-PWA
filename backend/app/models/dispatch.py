@@ -497,6 +497,13 @@ class LocationSource(str, Enum):
     confirmacion_reportante = "confirmacion_reportante"
     voluntario_asignado = "voluntario_asignado"
     voluntario_verificado = "voluntario_verificado"
+    # Entrega C: testigo cercano al caso que no tiene ya un camino propio
+    # arriba (voluntario_interno, donante_comunitario, patrocinador_
+    # institucional, o el reportante viendo un caso que no es el suyo).
+    # A diferencia de voluntario_verificado, se gana por trust_score en vez
+    # de una ubicacion declarada, y nunca se auto-valida -- ver
+    # avistamiento_service._resolver_fuente / _validar_condiciones_auto_validacion.
+    testigo_cercano = "testigo_cercano"
     asociacion = "asociacion"
     administracion = "administracion"
 
@@ -540,6 +547,10 @@ class AvistamientoCreate(BaseModel):
     movilidad_observada: ObservedMobility | None = None
     direccion_observada: str | None = None
     comentario: str | None = None
+    # Evidencia fotografica opcional, subida antes via
+    # POST /reports/{id}/avistamientos/foto. El body sigue siendo JSON: solo
+    # viaja la referencia, no el archivo.
+    evidencia_id: str | None = None
 
 
 class AvistamientoResult(BaseModel):
@@ -547,5 +558,7 @@ class AvistamientoResult(BaseModel):
     reporte_id: str
     animal_id: str
     fuente: LocationSource
-    estado_validacion: Literal["pendiente", "validado", "rechazado"]
+    estado_validacion: Literal[
+        "pendiente", "validado", "rechazado", "superado_por_otro"
+    ]
     registrado_at: datetime

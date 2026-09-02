@@ -2,6 +2,7 @@ import React from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { MapContainer, Marker, Circle, TileLayer } from 'react-leaflet';
+import { CARTO_LIGHT_TILE_URL } from '@/constants/mapTiles';
 
 const pinIcon = L.divIcon({
   className: 'assoc-pin',
@@ -35,7 +36,7 @@ export default function AssocLeafletMap({ latitud, longitud, radioKm, width, hei
     >
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-        url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+        url={CARTO_LIGHT_TILE_URL}
       />
       <Circle
         center={[latitud, longitud]}

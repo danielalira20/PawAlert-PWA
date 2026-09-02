@@ -5,6 +5,7 @@ export type PushPermissionState =
   | 'granted';
 
 export function getPushPermissionState(): Promise<PushPermissionState>;
+export function getPushSetupMessage(): Promise<string | null>;
 
 export function enablePushNotifications(
   accessToken: string,

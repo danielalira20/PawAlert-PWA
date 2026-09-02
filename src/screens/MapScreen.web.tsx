@@ -3,8 +3,8 @@ import { ICON_CAT, ICON_CLOCK, ICON_CALENDAR, ICON_DOG, ICON_PAW, ICON_WARNING }
 import axios from 'axios';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Dimensions, Image, Modal, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Animated, Dimensions, Image, Modal, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import AuthGateModal from '../components/AuthGateModal';
 import { API_URL } from '../constants/api';
@@ -15,6 +15,25 @@ import ReportFormScreen from './ReportFormScreen';
 import type { AsociacionMapa } from './LeafletMap';
 import { ReportContentMenu } from '../components/reports/ReportContentMenu';
 import { AssociationAdoptionsModal } from '../components/adopciones/AssociationAdoptionsModal';
+import { AvistamientoEntryButton } from '../components/avistamientos/AvistamientoEntryButton';
+import { Brand } from '../constants/theme';
+import { useUbicacionEnVivo } from '../hooks/useUbicacionEnVivo';
+import { PublicEventsPanel } from '../components/events/discovery/PublicEventsPanel';
+import { PublicEventDetailModal } from '../components/events/discovery/PublicEventDetailModal';
+import {
+  EventMapModeSwitch,
+  type EventDiscoveryView,
+  type MapContentMode,
+} from '../components/events/discovery/EventMapModeSwitch';
+import { usePublicEventMap } from '../hooks/events/usePublicEventMap';
+import type { EventPublicSummary } from '../types/event';
+import type { PublicEventFilterState } from '../components/events/discovery/PublicEventFilters';
+import {
+  buildEventMapQuery,
+  INITIAL_PUBLIC_EVENT_FILTERS,
+  type EventMapBounds,
+} from '../components/events/discovery/eventDiscoveryFilters';
+import { normalizeEventDeepLinkId } from '../utils/eventDeepLink';
 
 const LeafletMap = lazy(() => import('./LeafletMap'));
 
@@ -41,6 +60,11 @@ const ESTADO: Record<string, { color: string; label: string; bg: string }> = {
   sin_cobertura: { color: '#E67E22', label: 'Sin cobertura', bg: '#FEF9E7' },
 };
 const TAB_BAR_CLEARANCE = 18 + 68 + 12;
+const MAP_ACTION_GAP = 12;
+const CREATE_REPORT_BUTTON_SIZE = 52;
+const LOCATION_BUTTON_SIZE = 38;
+const COLONIAS_BUTTON_BOTTOM = TAB_BAR_CLEARANCE + CREATE_REPORT_BUTTON_SIZE + MAP_ACTION_GAP;
+const LOCATION_BUTTON_BOTTOM = COLONIAS_BUTTON_BOTTOM + CREATE_REPORT_BUTTON_SIZE + MAP_ACTION_GAP;
 
 const getCfg = (map: Record<string, any>, key: string) =>
   map[key?.toLowerCase()] ?? { color: '#95A5A6', label: key ?? '', bg: '#F2F3F4' };
@@ -50,7 +74,8 @@ type SidebarView = 'list' | 'detail' | 'form' | 'asociacion';
 // ─── Componente principal ─────────────────────────────────────────────────────
 export default function MapScreen() {
   const { isLoggedIn, token } = useAuth();
-  const params = useLocalSearchParams<{ action?: string }>();
+  const params = useLocalSearchParams<{ action?: string; event_id?: string | string[] }>();
+  const deepLinkedEventId = normalizeEventDeepLinkId(params.event_id);
   const [windowWidth, setWindowWidth] = useState(Dimensions.get('window').width);
   const [isClient, setIsClient] = useState(false);
   const [reportes, setReportes] = useState<Reporte[]>([]);
@@ -59,6 +84,13 @@ export default function MapScreen() {
   const [mostrarAsociaciones, setMostrarAsociaciones] = useState(false);
   const [aliados, setAliados] = useState<any[]>([]);
   const [mostrarAliados, setMostrarAliados] = useState(false);
+  const [contentMode, setContentMode] = useState<MapContentMode>('rescues');
+  const [eventView, setEventView] = useState<EventDiscoveryView>('list');
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [detailEventId, setDetailEventId] = useState<string | null>(null);
+  const [eventFilters, setEventFilters] = useState<PublicEventFilterState>(INITIAL_PUBLIC_EVENT_FILTERS);
+  const [eventMapBounds, setEventMapBounds] = useState<EventMapBounds | null>(null);
+  const [pendingEventMapBounds, setPendingEventMapBounds] = useState<EventMapBounds | null>(null);
   const [selectedReport, setSelectedReport] = useState<Reporte | null>(null);
   const [highlightedReportId, setHighlightedReportId] = useState<string | null>(null);
   const [selectedAsociacion, setSelectedAsociacion] = useState<AsociacionMapa | null>(null);
@@ -70,6 +102,28 @@ export default function MapScreen() {
   const [isAuthGateVisible, setIsAuthGateVisible] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [, setTick] = useState(0);
+
+  // "Estoy aquí" (ver src/hooks/useUbicacionEnVivo.ts): punto personal en el
+  // mapa, puramente visual, no se comparte con nadie. Vive aquí (Mapa de
+  // rescate) y no en "Casos cerca de mí".
+  const {
+    estado: estadoUbicacion,
+    posicion: posicionEnVivo,
+    desactualizado: ubicacionDesactualizada,
+    activar: activarUbicacion,
+    desactivar: desactivarUbicacion,
+  } = useUbicacionEnVivo();
+  const toggleUbicacionEnVivo = () => {
+    if (estadoUbicacion === 'activo') {
+      desactivarUbicacion();
+    } else {
+      activarUbicacion();
+    }
+  };
+  const ubicacionEnVivo =
+    estadoUbicacion === 'activo' && posicionEnVivo
+      ? { latitud: posicionEnVivo.latitud, longitud: posicionEnVivo.longitud, desactualizado: ubicacionDesactualizada }
+      : null;
 
   // Imagen ampliada (modal con soporte de carrusel) — DEBE vivir dentro del componente
   const [imagenAmpliada, setImagenAmpliada] = useState<{ fotos: string[]; index: number } | null>(null);
@@ -96,6 +150,19 @@ export default function MapScreen() {
   const clockTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isMobile = windowWidth < 768;
+  const eventMapQuery = useMemo(
+    () => buildEventMapQuery(eventFilters, eventMapBounds),
+    [eventFilters, eventMapBounds],
+  );
+  const {
+    events: mapEvents,
+    isLoading: isEventMapLoading,
+    error: eventMapError,
+    refresh: refreshEventMap,
+  } = usePublicEventMap(
+    contentMode === 'events' && (!isMobile || eventView === 'map'),
+    eventMapQuery,
+  );
 
   //para actualizar el animal reporte
   const [fotoIndexPorReporte, setFotoIndexPorReporte] = useState<Record<string, number>>({});
@@ -170,6 +237,55 @@ export default function MapScreen() {
       }
       return next;
     });
+  };
+
+  const handleContentModeChange = (mode: MapContentMode) => {
+    setContentMode(mode);
+    setSelectedReport(null);
+    setSelectedAsociacion(null);
+    setHighlightedReportId(null);
+    setSelectedEventId(null);
+    setShowFiltersModal(false);
+    if (mode === 'events') {
+      setMostrarAsociaciones(false);
+      setMostrarAliados(false);
+      setSidebarView('list');
+    }
+  };
+
+  const handleLocatePublicEvent = (event: EventPublicSummary) => {
+    setEventMapBounds(null);
+    setPendingEventMapBounds(null);
+    setSelectedEventId(event.id);
+    setEventView('map');
+  };
+
+  const handleOpenMapEvent = (eventId: string) => {
+    setSelectedEventId(eventId);
+    setDetailEventId(eventId);
+    router.setParams({ event_id: eventId });
+  };
+
+  const handleCloseEventDetail = () => {
+    setDetailEventId(null);
+    router.setParams({ event_id: undefined });
+  };
+
+  useEffect(() => {
+    if (!deepLinkedEventId) return;
+    setContentMode('events');
+    setSelectedEventId(deepLinkedEventId);
+    setDetailEventId(deepLinkedEventId);
+    setMostrarAsociaciones(false);
+    setMostrarAliados(false);
+    setSidebarView('list');
+  }, [deepLinkedEventId]);
+
+  const handleEventFiltersChange = (filters: PublicEventFilterState) => {
+    setEventFilters(filters);
+    setEventMapBounds(null);
+    setPendingEventMapBounds(null);
+    setSelectedEventId(null);
   };
 
   const handleClockPress = () => {
@@ -522,6 +638,10 @@ export default function MapScreen() {
           <AnimalCarousel key={r.id} animales={animales} onIndexChange={(i) => setFotoIndexPorReporte((prev) => ({ ...prev, [r.id]: i }))} />
         </View>
 
+        {!['cerrado', 'cancelado_por_reportante', 'rechazado', 'rescatado'].includes(r.estado_reporte ?? '') && (
+          <AvistamientoEntryButton reporte={{ id: r.id }} />
+        )}
+
         <View style={{ backgroundColor: '#FFF5EE', borderRadius: 10, padding: 10, marginTop: 4 }}>
           <Text style={{ fontSize: 10, color: C.orange, fontStyle: 'italic' }}>📍 Ubicación exacta protegida por privacidad</Text>
         </View>
@@ -657,7 +777,9 @@ export default function MapScreen() {
           <Text style={{ fontSize: 20, fontWeight: '900', color: '#FFF', letterSpacing: -0.5 }}>PawAlert</Text>
           <View style={{ backgroundColor: 'rgba(255,255,255,0.22)', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3, alignSelf: 'flex-start', marginTop: 4 }}>
             <Text style={{ fontSize: 11, fontWeight: '700', color: '#FFF' }}>
-              {reportesFiltrados.length} {reportesFiltrados.length === 1 ? 'reporte activo' : 'reportes activos'}
+              {contentMode === 'events'
+                ? 'Agenda pública'
+                : `${reportesFiltrados.length} ${reportesFiltrados.length === 1 ? 'reporte activo' : 'reportes activos'}`}
             </Text>
           </View>
         </View>
@@ -668,7 +790,8 @@ export default function MapScreen() {
         )}
       </View>
       <Text style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', marginTop: 2 }}>
-        {sidebarView === 'list' ? 'Mapa de rescate · Puebla'
+        {contentMode === 'events' ? 'Actividades de asociaciones verificadas'
+          : sidebarView === 'list' ? 'Mapa de rescate · Puebla'
           : sidebarView === 'detail' ? 'Detalle del reporte'
             : sidebarView === 'asociacion' ? 'Detalle de la asociación'
               : 'Nuevo reporte'}
@@ -859,15 +982,19 @@ export default function MapScreen() {
   // ── Mapa ─────────────────────────────────────────────────────────────────────
   const renderMap = () => (
     <View style={{ flex: 1, position: 'relative' }}>
-      {renderFiltersDropdown()}
+      {contentMode === 'rescues' && renderFiltersDropdown()}
       {isClient ? (
         <Suspense fallback={<View style={{ flex: 1, backgroundColor: '#EAE0D0' }} />}>
           <LeafletMap
-            reportes={(mostrarAsociaciones || mostrarAliados) ? [] : reportesConPrivacidad}
-            zonas={(mostrarAsociaciones || mostrarAliados) ? [] : zonasAgregadas}
-            asociaciones={mostrarAsociaciones ? asociaciones : []}
-            aliados={mostrarAliados ? aliados : []}
+            reportes={contentMode === 'rescues' && !mostrarAsociaciones && !mostrarAliados ? reportesConPrivacidad : []}
+            zonas={contentMode === 'rescues' && !mostrarAsociaciones && !mostrarAliados ? zonasAgregadas : []}
+            asociaciones={contentMode === 'rescues' && mostrarAsociaciones ? asociaciones : []}
+            aliados={contentMode === 'rescues' && mostrarAliados ? aliados : []}
+            eventos={contentMode === 'events' ? mapEvents : []}
             selectedReportId={selectedReport?.id ?? highlightedReportId}
+            selectedEventId={selectedEventId}
+            fitToMarkers={contentMode === 'events' && eventMapBounds === null}
+            trackEventBounds={contentMode === 'events'}
             showReportMenuInPopup={isMobile}
             onSelectReport={handleSelectReport}
             onHighlightReport={(reporte) => setHighlightedReportId(reporte.id)}
@@ -883,15 +1010,55 @@ export default function MapScreen() {
               setAsocAdopciones({ id: asoc.id, nombre: asoc.nombre });
               setModalAdopcionesVisible(true);
             }}
+            onSelectEvent={(event) => handleOpenMapEvent(event.id)}
+            onEventBoundsChange={setPendingEventMapBounds}
             onMapClick={handleMapClick}
+            ubicacionEnVivo={ubicacionEnVivo}
+            bottomOffset={TAB_BAR_CLEARANCE}
+            coloniasToggleBottom={COLONIAS_BUTTON_BOTTOM}
           />
         </Suspense>
       ) : (
         <View style={{ flex: 1, backgroundColor: '#EAE0D0' }} />
       )}
 
+      {contentMode === 'events' && isEventMapLoading && (
+        <View style={{ position: 'absolute', top: isMobile ? 70 : 16, alignSelf: 'center', backgroundColor: '#FFF', borderRadius: 18, paddingHorizontal: 14, paddingVertical: 9, zIndex: 1200, elevation: 10 }}>
+          <Text style={{ color: C.mid, fontSize: 10, fontWeight: '700' }}>Cargando eventos cercanos…</Text>
+        </View>
+      )}
+      {contentMode === 'events' && eventMapError && (
+        <TouchableOpacity onPress={() => void refreshEventMap()} style={{ position: 'absolute', top: isMobile ? 70 : 16, alignSelf: 'center', backgroundColor: '#FFF3F0', borderColor: '#F5C8C0', borderWidth: 1, borderRadius: 18, paddingHorizontal: 14, paddingVertical: 9, zIndex: 1200, elevation: 10 }}>
+          <Text style={{ color: '#C0392B', fontSize: 10, fontWeight: '700' }}>No se cargó la capa · Reintentar</Text>
+        </TouchableOpacity>
+      )}
+
+      {contentMode === 'events' && pendingEventMapBounds && !isEventMapLoading && (
+        <TouchableOpacity
+          accessibilityRole="button"
+          onPress={() => {
+            setEventMapBounds(pendingEventMapBounds);
+            setPendingEventMapBounds(null);
+            setSelectedEventId(null);
+          }}
+          style={{ position: 'absolute', top: isMobile ? 72 : 16, alignSelf: 'center', backgroundColor: C.orange, borderRadius: 18, paddingHorizontal: 16, paddingVertical: 10, zIndex: 1201, elevation: 10 }}
+        >
+          <Text style={{ color: '#FFF', fontSize: 10, fontWeight: '800' }}>Buscar en esta zona</Text>
+        </TouchableOpacity>
+      )}
+
+      {contentMode === 'events' && eventMapBounds && !pendingEventMapBounds && !isEventMapLoading && (
+        <TouchableOpacity
+          accessibilityRole="button"
+          onPress={() => setEventMapBounds(null)}
+          style={{ position: 'absolute', top: isMobile ? 72 : 16, alignSelf: 'center', backgroundColor: '#FFF', borderColor: C.orange, borderWidth: 1, borderRadius: 18, paddingHorizontal: 16, paddingVertical: 9, zIndex: 1200, elevation: 10 }}
+        >
+          <Text style={{ color: C.orangeDark, fontSize: 10, fontWeight: '800' }}>Ver todos los eventos</Text>
+        </TouchableOpacity>
+      )}
+
       {/* Leyenda */}
-      <View style={{ position: 'absolute', top: 16, right: 16, backgroundColor: '#FFF', borderRadius: 12, padding: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8, zIndex: 999, elevation: 9 }}>
+      {contentMode === 'rescues' && <View style={{ position: 'absolute', top: isMobile ? 214 : 16, right: 16, backgroundColor: '#FFF', borderRadius: 12, padding: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8, zIndex: 999, elevation: 9 }}>
         <Text style={{ fontSize: 9, fontWeight: '800', color: C.dark, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>Condición</Text>
         {Object.entries(CONDICION).map(([key, cfg]) => (
           <View key={key} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4 }}>
@@ -900,9 +1067,10 @@ export default function MapScreen() {
           </View>
         ))}
       </View>
+      }
 
       {/* Clock */}
-      {lastUpdated && (
+      {contentMode === 'rescues' && lastUpdated && (
         <TouchableOpacity
           onPress={handleClockPress}
           activeOpacity={isMobile ? 0.7 : 1}
@@ -925,18 +1093,61 @@ export default function MapScreen() {
         </TouchableOpacity>
       )}
 
-      {/* FAB */}
+      {/* Estoy aquí */}
       <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel={estadoUbicacion === 'activo' ? 'Dejar de mostrar mi ubicación' : 'Mostrar mi ubicación en el mapa'}
+        onPress={toggleUbicacionEnVivo}
+        style={{
+          position: 'absolute', bottom: LOCATION_BUTTON_BOTTOM, right: 27,
+          width: LOCATION_BUTTON_SIZE, height: LOCATION_BUTTON_SIZE, borderRadius: LOCATION_BUTTON_SIZE / 2, backgroundColor: '#FFFFFF',
+          alignItems: 'center', justifyContent: 'center',
+          shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 6,
+          zIndex: 1000, elevation: 10,
+        }}
+      >
+        {estadoUbicacion === 'solicitando' ? (
+          <ActivityIndicator size="small" color={Brand.info} />
+        ) : (
+          <Ionicons
+            name={estadoUbicacion === 'activo' ? 'locate' : 'locate-outline'}
+            size={18}
+            color={estadoUbicacion === 'denegado' || estadoUbicacion === 'error' ? '#E74C3C' : estadoUbicacion === 'activo' ? Brand.info : C.mid}
+          />
+        )}
+      </TouchableOpacity>
+      {(estadoUbicacion === 'denegado' || estadoUbicacion === 'error') && (
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="Reintentar activar mi ubicación"
+          onPress={activarUbicacion}
+          style={{
+            position: 'absolute', bottom: LOCATION_BUTTON_BOTTOM, right: 74, left: 16,
+            backgroundColor: 'rgba(255,255,255,0.96)', borderRadius: 13,
+            paddingHorizontal: 12, paddingVertical: 9, zIndex: 999, elevation: 9,
+          }}
+        >
+          <Text style={{ color: C.dark, fontSize: 10, fontWeight: '700' }}>
+            {estadoUbicacion === 'denegado'
+              ? 'Necesitamos tu ubicación. Actívala en los permisos del navegador y toca para reintentar.'
+              : 'No pudimos obtener tu ubicación. Toca para reintentar.'}
+          </Text>
+        </TouchableOpacity>
+      )}
+
+      {/* FAB */}
+      {contentMode === 'rescues' && <TouchableOpacity
         onPress={handleCrearReporte}
         style={{ position: 'absolute', bottom: TAB_BAR_CLEARANCE, right: 20, width: 52, height: 52, borderRadius: 26, backgroundColor: C.orange, alignItems: 'center', justifyContent: 'center', shadowColor: C.orange, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.45, shadowRadius: 12, zIndex: 1000, elevation: 10 }}
       >
         <Ionicons name="add" size={26} color="#FFF" />
       </TouchableOpacity>
+      }
 
       {/* Barra de filtros interactivos (solo mobile) */}
-      {isMobile && (
+      {isMobile && contentMode === 'rescues' && (
         <View style={{
-          position: 'absolute', top: 14, left: 12, right: 12,
+          position: 'absolute', top: 64, left: 12, right: 12,
           backgroundColor: 'rgba(255,255,255,0.97)',
           borderRadius: 16,
           shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
@@ -1133,6 +1344,9 @@ export default function MapScreen() {
               <AnimalCarousel key={r.id} animales={animales} compact onIndexChange={(i) => setFotoIndexPorReporte((prev) => ({ ...prev, [r.id]: i }))} />
             </View>
           )}
+          {!['cerrado', 'cancelado_por_reportante', 'rechazado', 'rescatado'].includes(r.estado_reporte ?? '') && (
+            <AvistamientoEntryButton reporte={{ id: r.id }} onBeforeNavigate={hideSheet} />
+          )}
           <View style={{ backgroundColor: '#FFF5EE', borderRadius: 10, padding: 8, marginTop: 12 }}>
             <Text style={{ fontSize: 10, color: C.orange, fontStyle: 'italic' }}>📍 Ubicación exacta protegida por privacidad</Text>
           </View>
@@ -1228,12 +1442,55 @@ export default function MapScreen() {
 
   // ─── LAYOUT MOBILE WEB ────────────────────────────────────────────────────────
   if (isMobile) {
+    if (contentMode === 'events' && eventView === 'list') {
+      return (
+        <View style={{ flex: 1 }}>
+          <PublicEventsPanel
+            filters={eventFilters}
+            onFiltersChange={handleEventFiltersChange}
+            onLocate={handleLocatePublicEvent}
+            onOpenDetail={handleOpenMapEvent}
+            topInset={62}
+          />
+          <EventMapModeSwitch
+            contentMode={contentMode}
+            eventView={eventView}
+            floating
+            showEventView
+            onContentModeChange={handleContentModeChange}
+            onEventViewChange={setEventView}
+          />
+          <PublicEventDetailModal
+            eventId={detailEventId}
+            onClose={handleCloseEventDetail}
+            onError={(message) => Alert.alert('No pudimos actualizar el evento', message)}
+            onLocate={handleLocatePublicEvent}
+            onSavedChange={(saved) => Alert.alert(saved ? 'Evento guardado' : 'Evento eliminado', 'Tu agenda quedó actualizada.')}
+          />
+        </View>
+      );
+    }
     return (
       <View style={{ flex: 1 }}>
         {renderMap()}
+        <EventMapModeSwitch
+          contentMode={contentMode}
+          eventView={eventView}
+          floating
+          showEventView
+          onContentModeChange={handleContentModeChange}
+          onEventViewChange={setEventView}
+        />
         {renderMobileBottomSheet()}
         {renderFormModal()}
         {renderImagenAmpliada()}
+        <PublicEventDetailModal
+          eventId={detailEventId}
+          onClose={handleCloseEventDetail}
+          onError={(message) => Alert.alert('No pudimos actualizar el evento', message)}
+          onLocate={handleLocatePublicEvent}
+          onSavedChange={(saved) => Alert.alert(saved ? 'Evento guardado' : 'Evento eliminado', 'Tu agenda quedó actualizada.')}
+        />
         <AuthGateModal visible={isAuthGateVisible} onClose={() => setIsAuthGateVisible(false)} onGuest={() => setSidebarView('form')} />
       </View>
     );
@@ -1246,9 +1503,22 @@ export default function MapScreen() {
       {/* Sidebar */}
       <View style={{ width: 340, flexShrink: 0, flexDirection: 'column', backgroundColor: C.bg, borderRightWidth: 1, borderRightColor: C.border, display: 'flex' as any }}>
         {renderSidebarHeader()}
+        <EventMapModeSwitch
+          contentMode={contentMode}
+          eventView={eventView}
+          onContentModeChange={handleContentModeChange}
+          onEventViewChange={setEventView}
+        />
 
         <View style={{ flex: 1, overflow: 'hidden' as any }}>
-          {sidebarView === 'list' && (
+          {contentMode === 'events' ? (
+            <PublicEventsPanel
+              filters={eventFilters}
+              onFiltersChange={handleEventFiltersChange}
+              onLocate={handleLocatePublicEvent}
+              onOpenDetail={handleOpenMapEvent}
+            />
+          ) : sidebarView === 'list' && (
             <View style={{ flex: 1 }}>
               {renderFiltros()}
               <ScrollView contentContainerStyle={{ padding: 10, gap: 8 }} showsVerticalScrollIndicator={false}>
@@ -1272,6 +1542,14 @@ export default function MapScreen() {
 
       {/* Mapa */}
       {renderMap()}
+
+      <PublicEventDetailModal
+        eventId={detailEventId}
+        onClose={handleCloseEventDetail}
+        onError={(message) => Alert.alert('No pudimos actualizar el evento', message)}
+        onLocate={handleLocatePublicEvent}
+        onSavedChange={(saved) => Alert.alert(saved ? 'Evento guardado' : 'Evento eliminado', 'Tu agenda quedó actualizada.')}
+      />
 
       {renderImagenAmpliada()}
       <AuthGateModal visible={isAuthGateVisible} onClose={() => setIsAuthGateVisible(false)} onGuest={() => setSidebarView('form')} />

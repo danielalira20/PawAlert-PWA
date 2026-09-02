@@ -1,0 +1,324 @@
+import { Ionicons } from "@expo/vector-icons";
+import { useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+
+import { EventTheme } from "../../../constants/eventTheme";
+import { usePublicEvents } from "../../../hooks/events/usePublicEvents";
+import type { EventPublicSummary } from "../../../types/event";
+import { Toast, useToast } from "../../Toast";
+import { PublicEventCard } from "./PublicEventCard";
+import { PublicEventDetailModal } from "./PublicEventDetailModal";
+import {
+  PublicEventFilters,
+  type PublicEventFilterState,
+} from "./PublicEventFilters";
+import {
+  buildPublicEventQuery,
+  INITIAL_PUBLIC_EVENT_FILTERS,
+} from "./eventDiscoveryFilters";
+
+export { buildPublicEventQuery } from "./eventDiscoveryFilters";
+
+interface PublicEventsPanelProps {
+  filters?: PublicEventFilterState;
+  onFiltersChange?: (filters: PublicEventFilterState) => void;
+  onLocate?: (event: EventPublicSummary) => void;
+  onOpenDetail?: (eventId: string) => void;
+  topInset?: number;
+}
+
+function LoadingCards() {
+  return (
+    <View accessibilityLabel="Cargando eventos públicos" style={styles.cards}>
+      {[0, 1].map((item) => (
+        <View key={item} style={styles.skeleton}>
+          <View style={styles.skeletonImage} />
+          <View style={styles.skeletonBody}>
+            <View style={[styles.skeletonLine, { width: "38%" }]} />
+            <View style={[styles.skeletonLine, styles.skeletonTitle]} />
+            <View style={[styles.skeletonLine, { width: "84%" }]} />
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+export function PublicEventsPanel({
+  filters: controlledFilters,
+  onFiltersChange,
+  onLocate,
+  onOpenDetail,
+  topInset = 0,
+}: PublicEventsPanelProps) {
+  const [internalFilters, setInternalFilters] = useState(
+    INITIAL_PUBLIC_EVENT_FILTERS,
+  );
+  const [detailEventId, setDetailEventId] = useState<string | null>(null);
+  const filters = controlledFilters ?? internalFilters;
+  const setFilters = onFiltersChange ?? setInternalFilters;
+  const query = useMemo(() => buildPublicEventQuery(filters), [filters]);
+  const {
+    events,
+    hasMore,
+    isLoading,
+    isLoadingMore,
+    isRefreshing,
+    error,
+    refresh,
+    loadMore,
+  } = usePublicEvents(query);
+  const { toast, translateY, showToast } = useToast();
+
+  return (
+    <View style={[styles.panel, topInset > 0 && { paddingTop: topInset }]}>
+      <Toast toast={toast} translateY={translateY} />
+
+      <PublicEventFilters value={filters} onChange={setFilters} />
+
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            colors={[EventTheme.colors.primary]}
+            onRefresh={() => void refresh()}
+            refreshing={isRefreshing}
+            tintColor={EventTheme.colors.primary}
+          />
+        }
+        showsVerticalScrollIndicator={false}
+      >
+        {isLoading ? (
+          <LoadingCards />
+        ) : error ? (
+          <View style={styles.messageState}>
+            <View style={styles.messageIconDanger}>
+              <Ionicons
+                name="cloud-offline-outline"
+                size={27}
+                color={EventTheme.colors.danger}
+              />
+            </View>
+            <Text style={styles.messageTitle}>
+              No pudimos cargar los eventos
+            </Text>
+            <Text style={styles.messageText}>{error}</Text>
+            <TouchableOpacity
+              onPress={() => void refresh()}
+              style={styles.retryButton}
+            >
+              <Text style={styles.retryText}>Intentar nuevamente</Text>
+            </TouchableOpacity>
+          </View>
+        ) : events.length === 0 ? (
+          <View style={styles.messageState}>
+            <View style={styles.messageIconEmpty}>
+              <Ionicons
+                name="calendar-clear-outline"
+                size={28}
+                color={EventTheme.colors.primary}
+              />
+            </View>
+            <Text style={styles.messageTitle}>No encontramos eventos</Text>
+            <Text style={styles.messageText}>
+              Prueba otra combinación de categoría, fecha o preferencias.
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.cards}>
+            {events.map((event) => (
+              <PublicEventCard
+                event={event}
+                key={event.id}
+                onError={(message) =>
+                  showToast({
+                    type: "error",
+                    title: "No pudimos guardar el evento",
+                    message,
+                  })
+                }
+                onOpenDetail={(selectedEvent) => {
+                  if (onOpenDetail) onOpenDetail(selectedEvent.id);
+                  else setDetailEventId(selectedEvent.id);
+                }}
+                onLocate={onLocate}
+                onSavedChange={(saved) =>
+                  showToast({
+                    type: "success",
+                    title: saved ? "Evento guardado" : "Evento eliminado",
+                    message: saved
+                      ? "Lo encontrarás en tu perfil. Guardar no reserva un lugar."
+                      : "Tu agenda quedó actualizada.",
+                  })
+                }
+              />
+            ))}
+            {hasMore && (
+              <TouchableOpacity
+                accessibilityRole="button"
+                disabled={isLoadingMore}
+                onPress={() => void loadMore()}
+                style={styles.moreButton}
+              >
+                {isLoadingMore ? (
+                  <ActivityIndicator
+                    color={EventTheme.colors.primary}
+                    size="small"
+                  />
+                ) : (
+                  <Ionicons
+                    name="chevron-down-outline"
+                    size={17}
+                    color={EventTheme.colors.primary}
+                  />
+                )}
+                <Text style={styles.moreText}>
+                  {isLoadingMore ? "Cargando…" : "Mostrar más eventos"}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+      </ScrollView>
+      {!onOpenDetail && (
+        <PublicEventDetailModal
+          eventId={detailEventId}
+          onClose={() => setDetailEventId(null)}
+          onError={(message) =>
+            showToast({
+              type: "error",
+              title: "No pudimos actualizar el evento",
+              message,
+            })
+          }
+          onLocate={onLocate}
+          onSavedChange={(saved) =>
+            showToast({
+              type: "success",
+              title: saved ? "Evento guardado" : "Evento eliminado",
+              message: saved
+                ? "Lo encontrarás en tu perfil. Guardar no reserva un lugar."
+                : "Tu agenda quedó actualizada.",
+            })
+          }
+        />
+      )}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  panel: {
+    backgroundColor: EventTheme.colors.background,
+    flex: 1,
+    width: "100%",
+  },
+  scrollContent: { flexGrow: 1, padding: 10, paddingBottom: 104 },
+  cards: {
+    alignItems: "center",
+    alignSelf: "center",
+    gap: 10,
+    maxWidth: 440,
+    width: "100%",
+  },
+  messageState: {
+    alignItems: "center",
+    alignSelf: "center",
+    backgroundColor: EventTheme.colors.surface,
+    borderColor: EventTheme.colors.border,
+    borderRadius: EventTheme.radii.card,
+    borderWidth: 1,
+    maxWidth: 420,
+    paddingHorizontal: 22,
+    paddingVertical: 34,
+    width: "100%",
+  },
+  messageIconEmpty: {
+    alignItems: "center",
+    backgroundColor: "#FFF0E2",
+    borderRadius: 22,
+    height: 52,
+    justifyContent: "center",
+    marginBottom: 11,
+    width: 52,
+  },
+  messageIconDanger: {
+    alignItems: "center",
+    backgroundColor: "#FCE8E4",
+    borderRadius: 22,
+    height: 52,
+    justifyContent: "center",
+    marginBottom: 11,
+    width: 52,
+  },
+  messageTitle: {
+    color: EventTheme.colors.text,
+    fontFamily: EventTheme.typography.bold,
+    fontSize: 14,
+    textAlign: "center",
+  },
+  messageText: {
+    color: EventTheme.colors.textMuted,
+    fontFamily: EventTheme.typography.regular,
+    fontSize: 10,
+    lineHeight: 16,
+    marginTop: 4,
+    textAlign: "center",
+  },
+  retryButton: {
+    backgroundColor: EventTheme.colors.primary,
+    borderRadius: EventTheme.radii.control,
+    marginTop: 14,
+    minHeight: EventTheme.layout.minimumTouchTarget,
+    paddingHorizontal: 17,
+    justifyContent: "center",
+  },
+  retryText: {
+    color: EventTheme.colors.surface,
+    fontFamily: EventTheme.typography.bold,
+    fontSize: 11,
+  },
+  moreButton: {
+    alignItems: "center",
+    alignSelf: "center",
+    borderColor: EventTheme.colors.primary,
+    borderRadius: EventTheme.radii.control,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 6,
+    justifyContent: "center",
+    minHeight: EventTheme.layout.minimumTouchTarget,
+    paddingHorizontal: 18,
+  },
+  moreText: {
+    color: EventTheme.colors.primary,
+    fontFamily: EventTheme.typography.bold,
+    fontSize: 11,
+  },
+  skeleton: {
+    alignSelf: "center",
+    backgroundColor: EventTheme.colors.surface,
+    borderColor: EventTheme.colors.border,
+    borderRadius: EventTheme.radii.card,
+    borderWidth: 1,
+    maxWidth: 420,
+    overflow: "hidden",
+    width: "100%",
+  },
+  skeletonImage: { backgroundColor: "#EFE7DE", height: 142 },
+  skeletonBody: { gap: 10, padding: 14 },
+  skeletonLine: {
+    backgroundColor: "#EFE7DE",
+    borderRadius: 7,
+    height: 10,
+  },
+  skeletonTitle: { height: 17, width: "72%" },
+});

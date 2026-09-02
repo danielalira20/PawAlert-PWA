@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { Animated, StyleSheet, Text, View } from 'react-native';
+import { Animated, Platform, StyleSheet, Text, View } from 'react-native';
 
 export type ToastType = 'error' | 'success' | 'warning' | 'info';
 
@@ -93,7 +93,7 @@ export function useToast() {
 
       Animated.spring(translateY, {
         toValue: 0,
-        useNativeDriver: true,
+        useNativeDriver: Platform.OS !== 'web',
         bounciness: 8,
       }).start();
 
@@ -101,7 +101,7 @@ export function useToast() {
         Animated.timing(translateY, {
           toValue: -120,
           duration: 300,
-          useNativeDriver: true,
+          useNativeDriver: Platform.OS !== 'web',
         }).start(() => setToast(null));
       }, duration);
     },

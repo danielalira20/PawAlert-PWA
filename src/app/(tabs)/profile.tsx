@@ -23,6 +23,7 @@ import { LoggedInProfile } from '../../components/profile/LoggedInProfile';
 import { CatalogoRecompensasScreen } from '../../screens/CatalogoRecompensasScreen';
 import { MisCanjesScreen } from '../../screens/MisCanjesScreen';
 import { EscanerCanjeScreen } from '../../screens/EscanerCanjeScreen';
+import { SavedEventsPanel } from '../../components/events/saved/SavedEventsPanel';
 
 const { width } = Dimensions.get('window');
 const isWeb = Platform.OS === 'web';
@@ -38,6 +39,7 @@ export default function ProfileScreen() {
   const [isAdminVisible, setIsAdminVisible] = useState(false);
   const [isAssociationVisible, setIsAssociationVisible] = useState(false);
   const [isMisReportesVisible, setIsMisReportesVisible] = useState(false);
+  const [isSavedEventsVisible, setIsSavedEventsVisible] = useState(false);
   const [isStaffVisible, setIsStaffVisible] = useState(false);
   // Panel de asignación de staff (candidatos, modo de asignación,
   // postulaciones, mis voluntarios) — distinto de isStaffVisible, que abre
@@ -108,6 +110,7 @@ export default function ProfileScreen() {
   useEffect(() => {
     if (!isLoggedIn) {
       setIsMisReportesVisible(false);
+      setIsSavedEventsVisible(false);
       setIsAdminVisible(false);
       setIsAssociationVisible(false);
       setIsStaffVisible(false);
@@ -136,6 +139,7 @@ export default function ProfileScreen() {
     <>
       <LoggedInProfile
         onOpenMisReportes={() => setIsMisReportesVisible(true)}
+        onOpenSavedEvents={() => setIsSavedEventsVisible(true)}
         onOpenAdminPanel={() => setIsAdminVisible(true)}
         onOpenCatalogo={() => setIsCatalogoVisible(true)}
         onOpenMisCanjes={() => setIsMisCanjesVisible(true)}
@@ -150,6 +154,7 @@ export default function ProfileScreen() {
         onOpenAliadoForm={() => setIsAliadoFormVisible(true)}
         onOpenAliadoDashboard={() => setIsAliadoDashboardVisible(true)}
         onOpenCustodyDashboard={() => setIsCustodyVisible(true)}
+        onOpenPendingSync={() => router.push('/pendientes-sincronizacion')}
         onLogout={logout}
         capacidadesRefreshKey={capacidadesRefreshKey}
         reputacionRefreshKey={reputacionRefreshKey}
@@ -158,6 +163,17 @@ export default function ProfileScreen() {
       {isMisReportesVisible && (
         <MisReportesScreen onClose={() => setIsMisReportesVisible(false)} />
       )}
+
+      <AppModal
+        maxWidth={880}
+        onClose={() => setIsSavedEventsVisible(false)}
+        showCloseButton={false}
+        visible={isSavedEventsVisible}
+      >
+        {isSavedEventsVisible && (
+          <SavedEventsPanel onClose={() => setIsSavedEventsVisible(false)} />
+        )}
+      </AppModal>
 
       <AppModal visible={isCatalogoVisible} onClose={() => setIsCatalogoVisible(false)} maxWidth={1000}>
         {isCatalogoVisible && <CatalogoRecompensasScreen onClose={() => setIsCatalogoVisible(false)} onCanjeExitoso={() => setReputacionRefreshKey(k => k + 1)} />}

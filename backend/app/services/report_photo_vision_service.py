@@ -15,6 +15,7 @@ SCHEMA = {
             "enum": [
                 "no_hay_animal",
                 "peluche_o_figura",
+                "imagen_generada_ia",
                 "captura_pantalla_o_descarga",
                 "imagen_no_clara",
             ],
@@ -24,6 +25,11 @@ SCHEMA = {
         "condicion_estimada": {
             "type": "string",
             "enum": ["estable", "herido", "grave"],
+            "nullable": True,
+        },
+        "tipo_animal_detectado": {
+            "type": "string",
+            "enum": ["perro", "gato", "otro"],
             "nullable": True,
         },
         "calidad_identificacion": {
@@ -36,6 +42,23 @@ SCHEMA = {
 }
 
 MENSAJE_IMAGEN_NO_CLARA = "La foto no se ve clara, intenta con mejor luz o más de cerca."
+MENSAJES_RECHAZO = {
+    "no_hay_animal": (
+        "No detectamos un animal en la foto. Envía otra donde el animal sea visible."
+    ),
+    "peluche_o_figura": (
+        "Detectamos que la imagen parece mostrar un peluche, figura o dibujo. "
+        "Envía una foto directa del animal real."
+    ),
+    "imagen_generada_ia": (
+        "Detectamos señales de que la imagen podría estar generada o alterada con IA. "
+        "Envía una foto directa y sin modificaciones del animal real."
+    ),
+    "captura_pantalla_o_descarga": (
+        "Detectamos que la imagen parece una captura de pantalla o una descarga de "
+        "internet. Envía una fotografía tomada directamente al animal."
+    ),
+}
 MENSAJE_RECHAZO_GENERICO = (
     "No pudimos confirmar que la foto muestra un animal real. "
     "Intenta con otra fotografía tomada directamente."
@@ -49,7 +72,7 @@ MENSAJE_ADVERTENCIA_IDENTIFICACION = (
 def mensaje_rechazo(categoria: str | None) -> str:
     if categoria == "imagen_no_clara":
         return MENSAJE_IMAGEN_NO_CLARA
-    return MENSAJE_RECHAZO_GENERICO
+    return MENSAJES_RECHAZO.get(categoria, MENSAJE_RECHAZO_GENERICO)
 
 
 def mensaje_advertencia_identificacion() -> str:
@@ -65,7 +88,8 @@ def verificar_foto_animal(contenido: bytes, content_type: str = "image/jpeg") ->
                 "text": (
                     "Evalúa si esta fotografía muestra un animal real y en qué condición "
                     "aparente está. Rechaza si no hay ningún animal, si es un peluche, "
-                    "figura o dibujo, si es una captura de pantalla o una imagen descargada "
+                    "figura o dibujo, si parece generada o alterada con inteligencia "
+                    "artificial, si es una captura de pantalla o una imagen descargada "
                     "de internet (busca activamente marcas de agua o texto superpuesto de "
                     "bancos de imágenes, logos, elementos de interfaz de navegador o "
                     "aplicación que indiquen una captura de pantalla, o fondos de estudio "
@@ -84,6 +108,7 @@ def verificar_foto_animal(contenido: bytes, content_type: str = "image/jpeg") ->
                     "para que alguien pueda reconocerlo en persona más tarde — por ejemplo, "
                     "una foto de espaldas o sin el rostro visible tiene calidad de "
                     "identificación limitada aunque el animal sí sea real. "
+                    "Identifica además si el animal es perro, gato u otro. "
                     "No tomes decisiones finales de rescate; esto es solo un filtro de "
                     "calidad y una estimación informativa de la condición del animal."
                 )

@@ -145,12 +145,23 @@ def get_public_events(
 def get_public_events_map(
     tipo: EventType | None = Query(None),
     municipio: str | None = Query(None, min_length=1, max_length=120),
+    especie: str | None = Query(None, min_length=1, max_length=80),
+    gratuito: bool | None = Query(None),
+    desde: datetime | None = Query(None),
+    hasta: datetime | None = Query(None),
     latitud_min: float | None = Query(None, ge=-90, le=90),
     latitud_max: float | None = Query(None, ge=-90, le=90),
     longitud_min: float | None = Query(None, ge=-180, le=180),
     longitud_max: float | None = Query(None, ge=-180, le=180),
     limite: int = Query(250, ge=1, le=500),
 ):
+    _require_aware(desde, "desde")
+    _require_aware(hasta, "hasta")
+    if desde is not None and hasta is not None and desde > hasta:
+        raise HTTPException(
+            status_code=422,
+            detail="El filtro desde debe ser anterior o igual a hasta",
+        )
     if (
         latitud_min is not None
         and latitud_max is not None
@@ -173,6 +184,10 @@ def get_public_events_map(
         lambda: event_service.listar_eventos_mapa(
             tipo=tipo,
             municipio=municipio,
+            especie=especie,
+            gratuito=gratuito,
+            desde=desde,
+            hasta=hasta,
             latitud_min=latitud_min,
             latitud_max=latitud_max,
             longitud_min=longitud_min,

@@ -11,7 +11,9 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import '../../global.css';
 import { AuthProvider } from '../context/AuthContext';
+import { SavedEventsProvider } from '../context/events/SavedEventsContext';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import NetworkStatusBanner from '../components/NetworkStatusBanner';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -28,11 +30,28 @@ export default function RootLayout() {
     if (fontsLoaded) SplashScreen.hideAsync();
   }, [fontsLoaded]);
 
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+    navigator.serviceWorker.register('/firebase-messaging-sw.js').catch(() => {
+      // La aplicación continúa con red aunque el navegador no permita PWA.
+    });
+    const syncWhenOnline = () => {
+      import('../services/offlineReportQueue')
+        .then(({ retryPendingReports }) => retryPendingReports())
+        .catch(() => undefined);
+    };
+    window.addEventListener('online', syncWhenOnline);
+    if (navigator.onLine) syncWhenOnline();
+    return () => window.removeEventListener('online', syncWhenOnline);
+  }, []);
+
   if (!fontsLoaded) return null;
 
   return (
      <GestureHandlerRootView style={{ flex: 1 }}>
     <AuthProvider>
+      <SavedEventsProvider>
+      <NetworkStatusBanner />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="association-status" />
@@ -48,16 +67,20 @@ export default function RootLayout() {
         <Stack.Screen name="forgot-password" options={{ presentation: 'modal' }} />
         <Stack.Screen name="completar-cuenta" options={{ presentation: 'modal' }} />
         <Stack.Screen name="confirmacion-permanencia" />
+        <Stack.Screen name="registrar-avistamiento" options={{ presentation: 'transparentModal', animation: 'fade', headerShown: false }} />
         <Stack.Screen name="capacidades" options={{ presentation: 'transparentModal', headerShown: false }} />
         <Stack.Screen name="crear-necesidad" options={{ presentation: 'transparentModal', animation: 'fade' }} />
         <Stack.Screen name="como-ayudar" options={{ presentation: 'transparentModal', animation: 'fade', headerShown: false }} />
         <Stack.Screen name="notificaciones-aliado" options={{ presentation: 'transparentModal', animation: 'fade', headerShown: false }} />
         <Stack.Screen name="notificaciones" options={{ presentation: 'transparentModal', animation: 'fade', headerShown: false }} />
+        <Stack.Screen name="pendientes-sincronizacion" />
         <Stack.Screen name="ofertas-asociacion" options={{ presentation: 'transparentModal', animation: 'fade', headerShown: false }} />
         <Stack.Screen name="registro-comunitario" options={{ presentation: 'transparentModal', animation: 'fade', headerShown: false }} />
         <Stack.Screen name="aportacion" options={{ presentation: 'transparentModal', animation: 'fade', headerShown: false }} />
+        <Stack.Screen name="evento-editor" options={{ presentation: 'modal', animation: 'slide_from_bottom', headerShown: false }} />
         <Stack.Screen name="editor-adopcion/[id]" options={{ presentation: 'transparentModal', animation: 'fade', headerShown: false }} />
       </Stack>
+      </SavedEventsProvider>
     </AuthProvider>
     </GestureHandlerRootView>
   );

@@ -66,6 +66,7 @@ def test_carga_sensible_usa_almacenamiento_privado(make_query) -> None:
         patch.object(reports, "_obtener_usuario_autenticado", return_value=_usuario()),
         patch.object(reports, "supabase", cliente),
         patch.object(reports, "supabase_admin", cliente),
+        patch("app.services.evidence_service.supabase_admin", cliente),
         patch(
             "app.services.storage_service.subir_bytes_privados",
             new=AsyncMock(

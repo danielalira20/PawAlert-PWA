@@ -2,7 +2,7 @@
 
 from typing import Optional
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, File, Header, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from app.db.supabase import supabase
@@ -14,6 +14,11 @@ router = APIRouter()
 
 class ValidarAvistamientoRequest(BaseModel):
     aprobar: bool
+    # Solo tiene efecto cuando aprobar=False y la fuente es testigo_cercano
+    # (Entrega C): dispara un incidente confirmado contra quien registro el
+    # avistamiento (ver avistamiento_service._registrar_incidente_avistamiento_falso).
+    # Para las demas fuentes/combinaciones no hace nada.
+    es_falso: bool = False
 
 
 def _obtener_usuario_autenticado(authorization: Optional[str]) -> dict:
@@ -49,6 +54,48 @@ def crear_avistamiento(
     )
 
 
+@router.post("/{reporte_id}/avistamientos/foto", status_code=201)
+async def subir_foto_avistamiento(
+    reporte_id: str,
+    foto: UploadFile = File(...),
+    authorization: Optional[str] = Header(None),
+) -> dict:
+    """Paso 1 de 2 para adjuntar foto a un avistamiento: sube y sanitiza la
+    imagen, extrae su EXIF y devuelve un `evidencia_id`. Ese id se manda
+    luego en el body JSON de `POST /{reporte_id}/avistamientos`.
+
+    Reusa la infraestructura de evidencia de hitos (`reporte_evidencias`);
+    control de acceso identico al de registrar un avistamiento.
+    """
+    usuario = _obtener_usuario_autenticado(authorization)
+    avistamiento_service.autorizar_subida_evidencia(reporte_id, usuario["id"])
+
+    from app.services.evidence_service import subir_evidencia_suelta
+
+    return await subir_evidencia_suelta(
+        foto,
+        reporte_id=reporte_id,
+        usuario_id=usuario["id"],
+        carpeta="reportes/avistamientos",
+    )
+
+
+@router.get("/{reporte_id}/avistamientos/elegible")
+def avistamiento_elegible(
+    reporte_id: str,
+    latitud: float,
+    longitud: float,
+    authorization: Optional[str] = Header(None),
+) -> dict:
+    """Elegibilidad para registrar un avistamiento desde el GPS dado, sin crear
+    nada. asociacion/staff -> elegible:true sin cálculo de distancia; reportante
+    / voluntario verificado -> elegible + distancia_metros + radio_metros."""
+    usuario = _obtener_usuario_autenticado(authorization)
+    return avistamiento_service.evaluar_elegibilidad(
+        reporte_id, usuario["id"], latitud, longitud
+    )
+
+
 @router.post("/{reporte_id}/avistamientos/{avistamiento_id}/validar")
 def validar_avistamiento(
     reporte_id: str,
@@ -58,5 +105,5 @@ def validar_avistamiento(
 ) -> AvistamientoResult:
     usuario = _obtener_usuario_autenticado(authorization)
     return avistamiento_service.validar_avistamiento(
-        avistamiento_id, usuario["id"], body.aprobar
+        avistamiento_id, usuario["id"], body.aprobar, body.es_falso
     )
