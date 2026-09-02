@@ -1192,6 +1192,7 @@ async def obtener_reportes_voluntario(usuario_id: str, rol: str = None) -> dict:
             "llegada_zona_registrada": r["id"] in reportes_con_llegada_zona,
             "animal_no_localizado_registrado": r["id"] in reportes_con_busqueda_sin_resultado,
             "animal_bajo_resguardo_registrado": r["id"] in reportes_con_animal_bajo_resguardo,
+            "navegacion_disponible": r["id"] in rutas_confirmadas,
             "ruta": rutas_confirmadas.get(r["id"]),
             "distancia_linea_recta_km": (
                 _distancia_km(

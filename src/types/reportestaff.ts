@@ -19,6 +19,7 @@ export interface ReporteStaff {
   };
   distancia_km?: number | null;
   distancia_linea_recta_km?: number | null;
+  navegacion_disponible?: boolean;
   ruta?: {
     status: 'complete' | 'unavailable' | null;
     duration_seconds: number | null;
