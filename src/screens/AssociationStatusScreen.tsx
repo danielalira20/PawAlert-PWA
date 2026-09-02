@@ -262,6 +262,8 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
   const [diasRecepcion, setDiasRecepcion] = useState<number[]>([1, 2, 3, 4, 5, 6, 7]);
   const [horaInicioRecepcion, setHoraInicioRecepcion] = useState('00:00');
   const [horaFinRecepcion, setHoraFinRecepcion] = useState('23:59');
+  const [participaRescates, setParticipaRescates] = useState(true);
+  const [participaAdopciones, setParticipaAdopciones] = useState(true);
   const [isSavingConfig, setIsSavingConfig] = useState(false);
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
 
@@ -463,6 +465,8 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
         setDiasRecepcion(res.data.dias_recepcion || [1, 2, 3, 4, 5, 6, 7]);
         setHoraInicioRecepcion(String(res.data.hora_inicio_recepcion || '00:00').slice(0, 5));
         setHoraFinRecepcion(String(res.data.hora_fin_recepcion || '23:59').slice(0, 5));
+        setParticipaRescates(res.data.participa_rescates ?? true);
+        setParticipaAdopciones(res.data.participa_adopciones ?? true);
       }
     } catch (error) {
       console.error(error);
@@ -492,6 +496,10 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
       showToast({ type: 'warning', title: 'Capacidad inválida', message: 'Los casos críticos no pueden superar la capacidad total.' });
       return;
     }
+    if (!participaRescates && !participaAdopciones) {
+      showToast({ type: 'warning', title: 'Elige al menos un eje', message: 'Debes dejar activo rescates, adopciones, o ambos.' });
+      return;
+    }
     if (!recepcionReportes24h) {
       const horaValida = /^([01]\d|2[0-3]):[0-5]\d$/;
       if (!diasRecepcion.length) {
@@ -518,6 +526,8 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
         dias_recepcion: diasRecepcion,
         hora_inicio_recepcion: horaInicioRecepcion,
         hora_fin_recepcion: horaFinRecepcion,
+        participa_rescates: participaRescates,
+        participa_adopciones: participaAdopciones,
       }, { headers: { Authorization: `Bearer ${token}` } });
       showToast({ type: 'success', title: '¡Listo!', message: 'Configuración guardada.' });
     } catch (error: any) {
@@ -1896,6 +1906,47 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
               {activeTab === 'configuracion' && user?.rol !== 'staff' && (
               <>
               <View style={{ backgroundColor: COLORS.cardBg, padding: 28, borderRadius: 32, ...SHADOW_MD }}>
+                <Text style={{ fontSize: 22, fontWeight: '800', color: COLORS.textDark, marginBottom: 6 }}>Ejes de participación</Text>
+                <Text style={{ fontSize: 13, color: COLORS.textLight, marginBottom: 20 }}>Elige en qué parte de PawAlert quiere participar tu asociación. Se guarda junto con el resto de esta pantalla.</Text>
+
+                {isLoadingConfig ? (
+                  <ActivityIndicator color={COLORS.primary} />
+                ) : (
+                  <View style={{ gap: 18 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <View style={{ flex: 1, marginRight: 12 }}>
+                        <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.textDark }}>Rescates</Text>
+                        <Text style={{ fontSize: 12, color: COLORS.textLight, marginTop: 2 }}>Recibir reportes nuevos y coordinar su atención.</Text>
+                      </View>
+                      <Switch
+                        value={participaRescates}
+                        onValueChange={setParticipaRescates}
+                        trackColor={{ false: '#D7CEC5', true: COLORS.accent }}
+                        thumbColor={COLORS.white}
+                      />
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <View style={{ flex: 1, marginRight: 12 }}>
+                        <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.textDark }}>Adopciones</Text>
+                        <Text style={{ fontSize: 12, color: COLORS.textLight, marginTop: 2 }}>Publicar animales y gestionar solicitudes de adopción.</Text>
+                      </View>
+                      <Switch
+                        value={participaAdopciones}
+                        onValueChange={setParticipaAdopciones}
+                        trackColor={{ false: '#D7CEC5', true: COLORS.accent }}
+                        thumbColor={COLORS.white}
+                      />
+                    </View>
+                    {!participaRescates && !participaAdopciones && (
+                      <Text style={{ fontSize: 12, color: COLORS.danger, fontWeight: '700' }}>
+                        Debes dejar al menos un eje activo.
+                      </Text>
+                    )}
+                  </View>
+                )}
+              </View>
+
+              <View style={{ backgroundColor: COLORS.cardBg, padding: 28, borderRadius: 32, marginTop: 32, ...SHADOW_MD }}>
                 <Text style={{ fontSize: 22, fontWeight: '800', color: COLORS.textDark, marginBottom: 6 }}>Modo de asignación de casos</Text>
                 <Text style={{ fontSize: 13, color: COLORS.textLight, marginBottom: 20 }}>Define cómo se le asigna un voluntario a cada reporte que reciben.</Text>
 
