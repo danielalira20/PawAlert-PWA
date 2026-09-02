@@ -77,7 +77,12 @@ export default function CompactEventsMap({ filters, onSelectEvent }: CompactEven
               {formatEventSchedule(selectedEvent.inicia_at, selectedEvent.termina_at, selectedEvent.zona_horaria)}
             </Text>
           </View>
-          <TouchableOpacity onPress={() => onSelectEvent(selectedEvent)} style={styles.detailButton}>
+          <TouchableOpacity
+            accessibilityLabel={`Ver detalles de ${selectedEvent.titulo}`}
+            accessibilityRole="button"
+            onPress={() => onSelectEvent(selectedEvent)}
+            style={styles.detailButton}
+          >
             <Text style={styles.detailButtonText}>Ver detalles</Text>
           </TouchableOpacity>
         </View>
@@ -92,7 +97,12 @@ export default function CompactEventsMap({ filters, onSelectEvent }: CompactEven
         <View style={styles.overlay}>
           <Ionicons name="map-outline" size={24} color={EventTheme.colors.primary} />
           <Text style={styles.errorText}>No pudimos cargar el mapa</Text>
-          <TouchableOpacity onPress={() => void refresh()} style={styles.retryButton}>
+          <TouchableOpacity
+            accessibilityLabel="Reintentar carga del mapa de eventos"
+            accessibilityRole="button"
+            onPress={() => void refresh()}
+            style={styles.retryButton}
+          >
             <Text style={styles.retryText}>Reintentar</Text>
           </TouchableOpacity>
         </View>

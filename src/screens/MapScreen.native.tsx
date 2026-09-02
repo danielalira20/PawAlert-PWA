@@ -417,11 +417,7 @@ export default function MapScreen() {
 
   useEffect(() => {
     if (!deepLinkedEventId) return;
-    setContentMode('events');
-    setSelectedEventId(deepLinkedEventId);
-    setDetailEventId(deepLinkedEventId);
-    setMostrarAsociaciones(false);
-    setEventView('list');
+    router.replace({ pathname: '/events', params: { event_id: deepLinkedEventId } });
   }, [deepLinkedEventId]);
 
   const handleEventFiltersChange = (filters: PublicEventFilterState) => {
