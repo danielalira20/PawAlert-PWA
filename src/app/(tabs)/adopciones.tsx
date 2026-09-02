@@ -1,17 +1,23 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, FlatList, ActivityIndicator, TouchableOpacity, StyleSheet, Dimensions, Platform, Modal, ScrollView, Image, Linking } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { View, Text, FlatList, ActivityIndicator, TouchableOpacity, StyleSheet, Dimensions, Platform, Modal, ScrollView, Image, Linking, Alert } from 'react-native';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import axios from 'axios';
 import { useWindowDimensions } from 'react-native';
 import * as Location from 'expo-location';
 import { useFocusEffect } from 'expo-router';
 import { API_URL } from '../../constants/api';
+import { createAdoptionPoster, downloadAdoptionPosterBlob, getAdoptionPosterAssets, shareAdoptionPosterBlob } from '../../utils/adoptionPoster';
 // IMPORTAMOS LA NUEVA TARJETA
 import { AdoptionCardGlobal } from '../../components/adopciones/AdoptionCardGlobal';
+import { CoachMarksTour } from '../../components/onboarding/CoachMarksTour';
+import { GuideHelpButton, SectionGuidePrompt } from '../../components/onboarding/SectionGuidePrompt';
+import { useSectionGuide } from '../../hooks/useSectionGuide';
+import { useAuth } from '../../context/AuthContext';
 
 const C = { primary: '#EC802B', bg: '#FFFFFF', bgSoft: '#F9F6F0', textDark: '#4A3728', textLight: '#8C7A6B' };
 
 export default function AdopcionesGlobalScreen() {
+  const { user } = useAuth();
   const { width } = useWindowDimensions();
   const isDesktop = width > 768;
 
@@ -32,6 +38,66 @@ export default function AdopcionesGlobalScreen() {
   const [isLoadingDetalle, setIsLoadingDetalle] = useState(false);
   const [fotoExpandida, setFotoExpandida] = useState<string | null>(null);
   const [mostrarContacto, setMostrarContacto] = useState(false);
+  const introTourRef = useRef<View>(null);
+  const filtersTourRef = useRef<View>(null);
+  const galleryTourRef = useRef<View>(null);
+  const adoptionGuide = useSectionGuide({ sectionKey: 'adopciones', userId: user?.id });
+  const adoptionGuideSteps = [
+    {
+      key: 'intro', title: 'Encuentra un nuevo compañero',
+      description: 'Explora animales publicados por asociaciones y conoce cuáles están disponibles para adopción.',
+      icon: 'heart-outline' as const, accent: C.primary, targetRef: introTourRef,
+    },
+    {
+      key: 'filters', title: 'Filtra por especie',
+      description: 'Muestra todos los perfiles o enfócate únicamente en perros o gatos.',
+      icon: 'options-outline' as const, accent: '#4FAFA7', targetRef: filtersTourRef,
+    },
+    {
+      key: 'profiles', title: 'Conoce cada historia',
+      description: 'Toca una tarjeta para revisar su personalidad, estado médico y los datos de la asociación.',
+      icon: 'paw-outline' as const, accent: '#E9A63A', targetRef: galleryTourRef,
+    },
+  ];
+  const [posterAction, setPosterAction] = useState<'share' | 'download' | null>(null);
+  const [posterBlob, setPosterBlob] = useState<Blob | null>(null);
+  const [posterError, setPosterError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!perfilDetalle || perfilDetalle === true) {
+      setPosterBlob(null);
+      setPosterError(null);
+      return;
+    }
+    setPosterBlob(null);
+    setPosterError(null);
+    (async () => {
+      try {
+        const assets = getAdoptionPosterAssets();
+        const blob = await createAdoptionPoster(perfilDetalle, assets);
+        if (!cancelled) setPosterBlob(blob);
+      } catch (error: any) {
+        if (!cancelled) setPosterError(error?.message || 'No se pudo preparar la ficha.');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [perfilDetalle]);
+
+  const handlePoster = async (action: 'share' | 'download') => {
+    if (!perfilDetalle || perfilDetalle === true || !posterBlob) return;
+    setPosterAction(action);
+    try {
+      if (action === 'share') {
+        const result = await shareAdoptionPosterBlob(posterBlob, perfilDetalle);
+        if (result === 'downloaded' && Platform.OS !== 'web') Alert.alert('Ficha descargada', 'Tu dispositivo guardó la imagen lista para compartir.');
+      } else downloadAdoptionPosterBlob(posterBlob, perfilDetalle);
+    } catch (error: any) {
+      if (error?.name !== 'AbortError') setPosterError(error?.message || 'No pudimos completar la acción.');
+    } finally {
+      setPosterAction(null);
+    }
+  };
 
   useEffect(() => {
     (async () => {
@@ -144,12 +210,14 @@ export default function AdopcionesGlobalScreen() {
     <View style={styles.container}>
       {/* HEADER Y FILTROS */}
       <View style={styles.header}>
-        <Text style={styles.title}>Encuentra a tu mejor amigo</Text>
-        <Text style={styles.subtitle}>
-          {location ? "Ordenados por cercanía a ti" : "Mostrando todos los disponibles"}
-        </Text>
+        <View ref={introTourRef} collapsable={false}>
+          <Text style={styles.title}>Encuentra a tu mejor amigo</Text>
+          <Text style={styles.subtitle}>
+            {location ? "Ordenados por cercanía a ti" : "Mostrando todos los disponibles"}
+          </Text>
+        </View>
         
-        <View style={styles.filtrosRow}>
+        <View ref={filtersTourRef} collapsable={false} style={styles.filtrosRow}>
           <FiltroBoton label="Todos" valor={null} icon="paw" />
           <FiltroBoton label="Perros" valor="perro" icon="logo-octocat" />
           <FiltroBoton label="Gatos" valor="gato" icon="logo-octocat" />
@@ -157,6 +225,7 @@ export default function AdopcionesGlobalScreen() {
       </View>
 
       {/* GALERÍA */}
+      <View ref={galleryTourRef} collapsable={false} style={styles.galleryArea}>
       {isLoading && perfiles.length === 0 ? (
         <View style={styles.center}><ActivityIndicator size="large" color={C.primary} /></View>
       ) : perfiles.length === 0 ? (
@@ -192,6 +261,7 @@ export default function AdopcionesGlobalScreen() {
           )}
         />
       )}
+      </View>
 
       {/* MODAL DE DETALLE DEL PERRITO */}
       <Modal visible={!!perfilDetalle} animationType="fade" transparent={true} onRequestClose={() => setPerfilDetalle(null)}>
@@ -291,6 +361,22 @@ export default function AdopcionesGlobalScreen() {
                     </View>
                   </View>
 
+                  <View style={styles.posterActions}>
+                    <View style={{ flex: 1, minWidth: 180, paddingRight: 8 }}>
+                      <Text style={styles.posterTitle}>Ayúdale a encontrar hogar</Text>
+                      <Text style={styles.posterSubtitle}>Ficha vertical lista para historias y redes sociales.</Text>
+                    </View>
+                    <TouchableOpacity style={[styles.posterIconButton, !posterBlob && { opacity: 0.55 }]} onPress={() => handlePoster('share')} disabled={!!posterAction || !posterBlob}>
+                      {posterAction === 'share' || (!posterBlob && !posterError) ? <ActivityIndicator size="small" color={C.primary} /> : <Ionicons name="share-social-outline" size={21} color={C.primary} />}
+                      <Text style={styles.posterIconText}>Compartir</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.posterIconButton, !posterBlob && { opacity: 0.55 }]} onPress={() => handlePoster('download')} disabled={!!posterAction || !posterBlob}>
+                      {posterAction === 'download' || (!posterBlob && !posterError) ? <ActivityIndicator size="small" color={C.primary} /> : <Ionicons name="download-outline" size={21} color={C.primary} />}
+                      <Text style={styles.posterIconText}>Descargar</Text>
+                    </TouchableOpacity>
+                    {!!posterError && <Text style={styles.posterError}>{posterError}</Text>}
+                  </View>
+
                   {/* Botón de Adopción o Datos de Contacto */}
                   {!mostrarContacto ? (
                     <TouchableOpacity style={styles.adoptButton} onPress={() => setMostrarContacto(true)}>
@@ -343,12 +429,26 @@ export default function AdopcionesGlobalScreen() {
         </Modal>
       </Modal>
 
+      <View style={styles.guideButton}>
+        <GuideHelpButton sectionName="Adopciones" onPress={adoptionGuide.startGuide} showUnreadDot={adoptionGuide.showPrompt} />
+      </View>
+      <CoachMarksTour visible={adoptionGuide.showGuide} steps={adoptionGuideSteps} onClose={adoptionGuide.closeGuide} />
+      <SectionGuidePrompt
+        visible={adoptionGuide.showPrompt}
+        sectionName="Adopciones"
+        description="Te mostramos cómo filtrar perfiles y consultar la historia de cada animal."
+        onStart={adoptionGuide.startGuide}
+        onDismiss={adoptionGuide.dismissPrompt}
+      />
+
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: C.bgSoft },
+  container: { flex: 1, backgroundColor: C.bgSoft, position: 'relative' },
+  galleryArea: { flex: 1 },
+  guideButton: { position: 'absolute', top: Platform.OS === 'ios' ? 54 : 18, right: 18, zIndex: 2400, elevation: 20 },
   header: { paddingHorizontal: 24, paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingBottom: 20, backgroundColor: C.bg, borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
   title: { fontSize: 24, fontWeight: '900', color: C.textDark, marginBottom: 4 },
   subtitle: { fontSize: 13, color: C.textLight, marginBottom: 16 },
@@ -369,6 +469,12 @@ const styles = StyleSheet.create({
   closeButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: C.bgSoft, alignItems: 'center', justifyContent: 'center' },
   sectionTitle: { fontSize: 18, fontWeight: '800', color: C.textDark, marginBottom: 8 },
   bodyText: { fontSize: 14, color: '#566573', lineHeight: 22 },
+  posterActions: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, backgroundColor: '#FFF8EF', borderWidth: 1, borderColor: '#F2DCC2', borderRadius: 18, padding: 14, marginBottom: 20 },
+  posterTitle: { fontSize: 14, fontWeight: '800', color: C.textDark },
+  posterSubtitle: { fontSize: 11, color: C.textLight, lineHeight: 16, marginTop: 2 },
+  posterIconButton: { minWidth: 78, height: 58, borderRadius: 14, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#F2DCC2', alignItems: 'center', justifyContent: 'center' },
+  posterIconText: { color: C.primary, fontSize: 10, fontWeight: '800', marginTop: 2 },
+  posterError: { width: '100%', color: '#B42318', fontSize: 11, fontWeight: '700', marginTop: 4 },
   detailBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.bg, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB' },
   detailBadgeText: { fontSize: 12, color: C.textDark, fontWeight: '700', marginLeft: 6, textTransform: 'capitalize' },
   adoptButton: { flexDirection: 'row', backgroundColor: C.primary, paddingVertical: 16, borderRadius: 24, justifyContent: 'center', alignItems: 'center', marginTop: 10 },

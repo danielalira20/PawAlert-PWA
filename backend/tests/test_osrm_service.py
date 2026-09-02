@@ -1,12 +1,16 @@
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
 
 from app.models.dispatch import (
+    RouteGeometryPoint,
     RouteMatrixRequest,
     RouteRequest,
+    RouteResult,
     RoutingErrorCode,
+    RoutingMode,
     RoutingPoint,
     RoutingStatus,
 )
@@ -29,6 +33,14 @@ def route_request() -> RouteRequest:
     return RouteRequest(
         origin=RoutingPoint(id="vol-1", latitude=19.04, longitude=-98.20),
         destination=RoutingPoint(id="rep-1", latitude=19.06, longitude=-98.22),
+    )
+
+
+def guided_route_request() -> RouteRequest:
+    return RouteRequest(
+        origin=RoutingPoint(id="vol-1", latitude=19.04, longitude=-98.20),
+        destination=RoutingPoint(id="rep-1", latitude=19.06, longitude=-98.22),
+        include_steps=True,
     )
 
 
@@ -198,6 +210,61 @@ def test_get_route_returns_duration_distance_and_geojson_geometry():
     assert "/route/v1/driving/" in get.call_args.args[0]
     assert get.call_args.kwargs["params"]["geometries"] == "geojson"
     assert get.call_args.kwargs["params"]["overview"] == "full"
+    assert get.call_args.kwargs["params"]["steps"] == "false"
+
+
+def test_get_guided_route_requests_and_normalizes_steps():
+    payload = {
+        "code": "Ok",
+        "routes": [{
+            "duration": 420.5,
+            "distance": 3100.2,
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [[-98.20, 19.04], [-98.22, 19.06]],
+            },
+            "legs": [{
+                "steps": [
+                    {
+                        "distance": 320.0,
+                        "duration": 44.0,
+                        "name": "Avenida 11 Sur",
+                        "maneuver": {
+                            "type": "turn",
+                            "modifier": "right",
+                            "location": [-98.2081, 19.043],
+                        },
+                    },
+                    {
+                        "distance": 15,
+                        "duration": 4,
+                        "name": "",
+                        "maneuver": {
+                            "type": "unknown-provider-value",
+                            "location": [-98.22, 19.06],
+                        },
+                    },
+                    {"distance": "invalid", "maneuver": {}},
+                ],
+            }],
+        }],
+    }
+    with patch.object(
+        osrm_service.httpx,
+        "get",
+        return_value=response(200, payload),
+    ) as get:
+        result = osrm_service.get_route(guided_route_request())
+
+    assert result.status == RoutingStatus.complete
+    assert get.call_args.kwargs["params"]["steps"] == "true"
+    assert len(result.steps) == 2
+    assert result.steps[0].type == "turn"
+    assert result.steps[0].modifier == "right"
+    assert result.steps[0].street_name == "Avenida 11 Sur"
+    assert result.steps[0].location == (-98.2081, 19.043)
+    assert result.steps[1].type == "unknown-provider-value"
+    assert result.steps[1].modifier is None
 
 
 def test_get_route_preserves_no_route_as_controlled_result():
@@ -230,3 +297,66 @@ def test_get_route_rejects_incomplete_geometry():
 
     assert result.status == RoutingStatus.unavailable
     assert result.error_code == RoutingErrorCode.invalid_response
+
+
+def test_configured_route_modes_requires_dedicated_non_driving_urls():
+    with (
+        patch.object(osrm_service.settings, "osrm_base_url", "https://car"),
+        patch.object(osrm_service.settings, "osrm_driving_base_url", ""),
+        patch.object(osrm_service.settings, "osrm_cycling_base_url", ""),
+        patch.object(osrm_service.settings, "osrm_walking_base_url", ""),
+    ):
+        assert osrm_service.configured_route_modes() == [RoutingMode.driving]
+
+
+def test_probe_route_modes_reports_each_profile_without_exposing_urls():
+    complete = RouteResult(
+        origin_id="health-origin",
+        destination_id="health-destination",
+        duration_seconds=120,
+        distance_meters=800,
+        geometry=[
+            RouteGeometryPoint(latitude=19.0414, longitude=-98.2063),
+            RouteGeometryPoint(latitude=19.0436, longitude=-98.2035),
+        ],
+        status=RoutingStatus.complete,
+        calculated_at=datetime.now(timezone.utc),
+    )
+    with (
+        patch.object(osrm_service.settings, "osrm_base_url", "https://car"),
+        patch.object(osrm_service.settings, "osrm_driving_base_url", ""),
+        patch.object(
+            osrm_service.settings,
+            "osrm_cycling_base_url",
+            "https://bike",
+        ),
+        patch.object(osrm_service.settings, "osrm_walking_base_url", ""),
+        patch.object(osrm_service, "get_route", return_value=complete) as route,
+    ):
+        result = osrm_service.probe_route_modes()
+
+    assert result == {
+        "status": "complete",
+        "modes": {
+            "driving": {
+                "configured": True,
+                "status": "complete",
+                "error_code": None,
+            },
+            "cycling": {
+                "configured": True,
+                "status": "complete",
+                "error_code": None,
+            },
+            "walking": {
+                "configured": False,
+                "status": "disabled",
+                "error_code": None,
+            },
+        },
+    }
+    assert [call.args[0].mode for call in route.call_args_list] == [
+        RoutingMode.driving,
+        RoutingMode.cycling,
+    ]
+    assert "https://" not in str(result)

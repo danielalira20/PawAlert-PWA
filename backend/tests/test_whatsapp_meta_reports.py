@@ -425,6 +425,7 @@ def test_doble_envio_simultaneo_crea_un_solo_reporte_y_folio(monkeypatch):
         service, "_reclamar_envio", lambda *_a: next(reclamos)
     )
     monkeypatch.setattr(service, "_eliminar_sesion", lambda *_a: None)
+    monkeypatch.setattr(service, "_guardar_sesion", lambda *_a: None)
 
     async def crear(*_args, **_kwargs):
         creados.append(True)
@@ -533,16 +534,93 @@ def test_cron_avisa_y_expira_sesiones_sin_duplicar(monkeypatch):
 
 def test_despedida_incluye_folio_sitio_y_vista_previa(monkeypatch):
     enviado = {}
+    valoracion = {}
 
     async def enviar(_wa_id, texto, *, preview_url=False):
         enviado.update(texto=texto, preview_url=preview_url)
 
+    async def enviar_opciones(_wa_id, texto, opciones, **kwargs):
+        valoracion.update(texto=texto, opciones=opciones, kwargs=kwargs)
+
     monkeypatch.setattr(service, "enviar_texto", enviar)
+    monkeypatch.setattr(service, "enviar_opciones", enviar_opciones)
     asyncio.run(service._enviar_reporte_creado("5212210000000", "folio-123"))
 
     assert "folio-123" in enviado["texto"]
     assert service.SITIO_PAWALERT in enviado["texto"]
     assert enviado["preview_url"] is True
+    assert "experiencia" in valoracion["texto"]
+    assert len(valoracion["opciones"]) == 5
+
+
+def test_confirmacion_incluye_formato_visual_y_foto(monkeypatch):
+    enviado = {}
+
+    async def enviar(_wa_id, texto, opciones, **kwargs):
+        enviado.update(texto=texto, opciones=opciones, kwargs=kwargs)
+
+    respuestas = {
+        "tipo_animal": "perro",
+        "cantidad": 1,
+        "condicion": "herido",
+        "tamanio": "mediano",
+        "sexo": "macho",
+        "edad": "joven",
+        "descripcion_animal": "Café con pecho blanco",
+        "descripcion": "Está cerca del tránsito",
+        "ubicacion": {"direccion": "Centro, Puebla"},
+        "foto": {"media_id": "foto-123"},
+    }
+
+    monkeypatch.setattr(service, "enviar_opciones", enviar)
+    asyncio.run(service.enviar_confirmacion("5212210000000", respuestas))
+
+    assert "*CONFIRMA TU REPORTE*" in enviado["texto"]
+    assert "*Datos del animal*" in enviado["texto"]
+    assert "*Situación actual*" in enviado["texto"]
+    assert enviado["kwargs"]["imagen_media_id"] == "foto-123"
+
+
+def test_valoracion_se_guarda_por_folio_y_cierra_sesion(monkeypatch):
+    guardadas = []
+    eliminadas = []
+    mensajes = []
+
+    monkeypatch.setattr(service, "_registrar_mensaje", lambda *_a: True)
+    monkeypatch.setattr(
+        service,
+        "_sesion",
+        lambda _wa_id: {
+            "estado": "valoracion",
+            "respuestas": {"reporte_id": "folio-123"},
+        },
+    )
+    monkeypatch.setattr(
+        service, "_guardar_valoracion", lambda folio, puntos: guardadas.append((folio, puntos))
+    )
+    monkeypatch.setattr(service, "_eliminar_sesion", eliminadas.append)
+
+    async def enviar(_wa_id, texto, **_kwargs):
+        mensajes.append(texto)
+
+    monkeypatch.setattr(service, "enviar_texto", enviar)
+    asyncio.run(
+        service._procesar_mensaje(
+            {
+                "id": "rating-1",
+                "from": "5212210000000",
+                "type": "interactive",
+                "interactive": {
+                    "type": "list_reply",
+                    "list_reply": {"id": "valoracion:5", "title": "5/5"},
+                },
+            }
+        )
+    )
+
+    assert guardadas == [("folio-123", 5)]
+    assert eliminadas == ["5212210000000"]
+    assert "Gracias" in mensajes[0]
 
 
 def test_es_reinicio_reconoce_ordenes_de_nuevo_reporte():

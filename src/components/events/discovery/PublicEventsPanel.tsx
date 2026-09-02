@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, type RefObject, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   RefreshControl,
@@ -36,6 +36,8 @@ interface PublicEventsPanelProps {
   onOpenDetail?: (eventId: string) => void;
   topInset?: number;
   headerContent?: ReactNode;
+  filtersTourRef?: RefObject<View | null>;
+  resultsTourRef?: RefObject<View | null>;
 }
 
 function LoadingCards({ grid = false }: { grid?: boolean }) {
@@ -66,6 +68,8 @@ export function PublicEventsPanel({
   onOpenDetail,
   topInset = 0,
   headerContent,
+  filtersTourRef,
+  resultsTourRef,
 }: PublicEventsPanelProps) {
   const [internalFilters, setInternalFilters] = useState(
     INITIAL_PUBLIC_EVENT_FILTERS,
@@ -136,6 +140,7 @@ export function PublicEventsPanel({
         )}
         <View style={[styles.discoveryLayout, twoColumnLayout && styles.discoveryLayoutWide]}>
           <View style={styles.resultsColumn}>
+        <View ref={filtersTourRef} collapsable={false}>
         {compactFilters ? (
           <View style={styles.compactFilterSection}>
             <TouchableOpacity
@@ -167,7 +172,9 @@ export function PublicEventsPanel({
         ) : (
           <PublicEventFilters value={filters} onChange={setFilters} />
         )}
+        </View>
 
+        <View ref={resultsTourRef} collapsable={false}>
         <View style={styles.resultsHeader}>
           <View>
             <Text style={styles.resultsEyebrow}>AGENDA</Text>
@@ -291,6 +298,7 @@ export function PublicEventsPanel({
             )}
           </View>
         )}
+        </View>
           </View>
           {asideContent && twoColumnLayout && (
             <View style={styles.asideColumn}>{asideContent}</View>

@@ -38,6 +38,9 @@ import {
   type EventMapBounds,
 } from '../components/events/discovery/eventDiscoveryFilters';
 import { normalizeEventDeepLinkId } from '../utils/eventDeepLink';
+import { CoachMarksTour } from '../components/onboarding/CoachMarksTour';
+import { GuideHelpButton, SectionGuidePrompt } from '../components/onboarding/SectionGuidePrompt';
+import { useSectionGuide } from '../hooks/useSectionGuide';
 
 const { width, height } = Dimensions.get('window');
 
@@ -283,7 +286,7 @@ function EventMarker({ event, selected }: { event: EventMapItem; selected: boole
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 export default function MapScreen() {
-  const { isLoggedIn, token } = useAuth();
+  const { isLoggedIn, token, user } = useAuth();
   const params = useLocalSearchParams<{ action?: string; event_id?: string | string[] }>();
   const deepLinkedEventId = normalizeEventDeepLinkId(params.event_id);
   const [reportes, setReportes] = useState<Reporte[]>([]);
@@ -307,6 +310,27 @@ export default function MapScreen() {
   const [, setTick] = useState(0);
   const mapRef = useRef<MapView | null>(null);
   const eventMapGestureRef = useRef(false);
+  const mapTourRef = useRef<View>(null);
+  const filtersTourRef = useRef<View>(null);
+  const reportTourRef = useRef<any>(null);
+  const mapGuide = useSectionGuide({ sectionKey: 'mapa', userId: user?.id });
+  const mapGuideSteps = useMemo(() => [
+    {
+      key: 'map', title: 'Explora los reportes cercanos',
+      description: 'Cada marcador representa un animal o una zona con reportes. Tócalo para consultar la información disponible.',
+      icon: 'map-outline' as const, accent: COLORS.teal, targetRef: mapTourRef,
+    },
+    {
+      key: 'filters', title: 'Encuentra lo que necesitas',
+      description: 'Filtra los reportes por condición, especie, urgencia o asociación.',
+      icon: 'options-outline' as const, accent: '#E9A63A', targetRef: filtersTourRef,
+    },
+    {
+      key: 'report', title: 'Crea un reporte',
+      description: 'Usa este botón cuando encuentres un animal perdido, abandonado o en situación de riesgo.',
+      icon: 'add-circle-outline' as const, accent: COLORS.orange, targetRef: reportTourRef,
+    },
+  ], []);
   const eventMapQuery = useMemo(
     () => buildEventMapQuery(eventFilters, eventMapBounds),
     [eventFilters, eventMapBounds],
@@ -564,7 +588,7 @@ export default function MapScreen() {
   }
 
   return (
-    <View style={{ flex: 1 }}>
+    <View ref={mapTourRef} collapsable={false} style={{ flex: 1 }}>
       <MapView
         ref={mapRef}
         style={{ width, height }}
@@ -815,7 +839,7 @@ export default function MapScreen() {
       {/* Barra de filtros interactivos — portada de MapScreen.web.tsx.
           Reemplaza al chip simple de "X reportes activos" que había antes
           (ese conteo ya lo muestra el pill "Todos" de aquí abajo). */}
-      {contentMode === 'rescues' && <View style={{
+      {contentMode === 'rescues' && <View ref={filtersTourRef} collapsable={false} style={{
         position: 'absolute', top: 64, left: 12, right: 12,
         backgroundColor: 'rgba(255,255,255,0.97)',
         borderRadius: 16,
@@ -934,6 +958,7 @@ export default function MapScreen() {
 
       {/* FAB */}
       {contentMode === 'rescues' && <TouchableOpacity
+        ref={reportTourRef}
         onPress={handleCrearReporte}
         style={{
           position: 'absolute', bottom: selectedReport ? 230 : 100, right: 20,
@@ -946,6 +971,18 @@ export default function MapScreen() {
         <Ionicons name="add" size={28} color="#FFFFFF" />
       </TouchableOpacity>
       }
+
+      <View style={{ position: 'absolute', top: 16, right: 18, zIndex: 2400, elevation: 20 }}>
+        <GuideHelpButton sectionName="Mapa" onPress={mapGuide.startGuide} showUnreadDot={mapGuide.showPrompt} />
+      </View>
+      <CoachMarksTour visible={mapGuide.showGuide} steps={mapGuideSteps} onClose={mapGuide.closeGuide} />
+      <SectionGuidePrompt
+        visible={mapGuide.showPrompt}
+        sectionName="Mapa"
+        description="Conoce los marcadores, filtros y cómo crear un reporte desde el mapa."
+        onStart={mapGuide.startGuide}
+        onDismiss={mapGuide.dismissPrompt}
+      />
 
       {/* Bottom Sheet */}
       {contentMode === 'rescues' && selectedReport && (() => {

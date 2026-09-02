@@ -13,11 +13,16 @@ import { EventTheme } from '../constants/eventTheme';
 import type { EventMapItem, EventPublicDetail, EventPublicSummary } from '../types/event';
 import { normalizeEventDeepLinkId } from '../utils/eventDeepLink';
 import { abrirUbicacionEnMaps } from '../utils/eventMapsLink';
+import { CoachMarksTour } from '../components/onboarding/CoachMarksTour';
+import { GuideHelpButton, SectionGuidePrompt } from '../components/onboarding/SectionGuidePrompt';
+import { useSectionGuide } from '../hooks/useSectionGuide';
+import { useAuth } from '../context/AuthContext';
 
 const CompactEventsMap = lazy(() => import('../components/events/discovery/CompactEventsMap'));
 const EVENT_HERO_IMAGE = require('../assets/images/paw_eventos.png');
 
 export default function EventsScreen() {
+  const { user } = useAuth();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const isCompact = width < 760;
@@ -27,6 +32,33 @@ export default function EventsScreen() {
   const [detailEventId, setDetailEventId] = useState<string | null>(null);
   const entrance = useRef(new Animated.Value(0)).current;
   const { toast, translateY, showToast } = useToast();
+  const heroTourRef = useRef<View>(null);
+  const filtersTourRef = useRef<View>(null);
+  const resultsTourRef = useRef<View>(null);
+  const mapTourRef = useRef<View>(null);
+  const eventsGuide = useSectionGuide({ sectionKey: 'eventos', userId: user?.id });
+  const eventGuideSteps = [
+    {
+      key: 'discover', title: 'Descubre actividades con propósito',
+      description: 'Aquí encontrarás jornadas, ferias y eventos creados por asociaciones de la comunidad.',
+      icon: 'calendar-outline' as const, accent: EventTheme.colors.primary, targetRef: heroTourRef,
+    },
+    {
+      key: 'filters', title: 'Encuentra el evento ideal',
+      description: 'Filtra la agenda por categoría, fecha y modalidad para encontrar opciones relevantes para ti.',
+      icon: 'options-outline' as const, accent: '#4FAFA7', targetRef: filtersTourRef,
+    },
+    {
+      key: 'agenda', title: 'Consulta y guarda tus favoritos',
+      description: 'Abre una tarjeta para conocer todos los detalles, ubicar el evento o guardarlo en tu perfil.',
+      icon: 'bookmark-outline' as const, accent: '#E9A63A', targetRef: resultsTourRef,
+    },
+    ...(!isCompact ? [{
+      key: 'map', title: 'Ubica cada evento en el mapa',
+      description: 'Consulta dónde se realizará cada actividad. Toca un marcador para abrir el evento y revisar cómo llegar.',
+      icon: 'map-outline' as const, accent: '#3F8F87', targetRef: mapTourRef,
+    }] : []),
+  ];
 
   useEffect(() => {
     Animated.timing(entrance, {
@@ -116,7 +148,7 @@ export default function EventsScreen() {
       <Toast toast={toast} translateY={translateY} />
       <PublicEventsPanel
         asideContent={
-          <View accessibilityLabel="Mapa de eventos disponibles" style={styles.mapCard}>
+          <View ref={mapTourRef} collapsable={false} accessibilityLabel="Mapa de eventos disponibles" style={styles.mapCard}>
             <View style={styles.mapCardHeader}>
               <View>
                 <Text style={styles.mapTitle}>Eventos en el mapa</Text>
@@ -135,10 +167,12 @@ export default function EventsScreen() {
         }
         filters={filters}
         headerContent={
-          <View style={{ paddingTop: Platform.OS === 'web' ? 0 : Math.max(insets.top, 8) }}>
+          <View ref={heroTourRef} collapsable={false} style={{ paddingTop: Platform.OS === 'web' ? 0 : Math.max(insets.top, 8) }}>
             {hero}
           </View>
         }
+        filtersTourRef={filtersTourRef}
+        resultsTourRef={resultsTourRef}
         onFiltersChange={setFilters}
         onLocate={openEventLocation}
         onOpenDetail={setDetailEventId}
@@ -164,6 +198,17 @@ export default function EventsScreen() {
           })
         }
       />
+      <View style={[styles.guideButton, { top: Platform.OS === 'web' ? 18 : Math.max(insets.top + 10, 18) }]}>
+        <GuideHelpButton sectionName="Eventos" onPress={eventsGuide.startGuide} showUnreadDot={eventsGuide.showPrompt} />
+      </View>
+      <CoachMarksTour visible={eventsGuide.showGuide} steps={eventGuideSteps} onClose={eventsGuide.closeGuide} />
+      <SectionGuidePrompt
+        visible={eventsGuide.showPrompt}
+        sectionName="Eventos"
+        description="Conoce cómo filtrar la agenda, consultar actividades y guardar tus favoritas."
+        onStart={eventsGuide.startGuide}
+        onDismiss={eventsGuide.dismissPrompt}
+      />
     </View>
   );
 }
@@ -173,6 +218,7 @@ const styles = StyleSheet.create({
     backgroundColor: EventTheme.colors.background,
     flex: 1,
   },
+  guideButton: { position: 'absolute', right: 18, zIndex: 2400, elevation: 20 },
   heroSection: {
     backgroundColor: EventTheme.colors.primary,
     overflow: 'hidden',

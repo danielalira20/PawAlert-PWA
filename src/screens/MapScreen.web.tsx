@@ -33,15 +33,19 @@ import {
   type EventMapBounds,
 } from '../components/events/discovery/eventDiscoveryFilters';
 import { normalizeEventDeepLinkId } from '../utils/eventDeepLink';
+import { MapTheme } from '../constants/mapTheme';
+import { CoachMarksTour } from '../components/onboarding/CoachMarksTour';
+import { GuideHelpButton, SectionGuidePrompt } from '../components/onboarding/SectionGuidePrompt';
+import { useSectionGuide } from '../hooks/useSectionGuide';
 
 const LeafletMap = lazy(() => import('./LeafletMap'));
 
 // ─── Paleta ───────────────────────────────────────────────────────────────────
 const C = {
-  orange: '#EC802B', orangeDark: '#D4691A',
-  teal: '#66BCB4', beige: '#E8CCAD',
-  bg: '#FFFAF6', border: '#F0E8DC',
-  dark: '#1A1A1A', mid: '#5C4A3A', light: '#9B8B7A',
+  orange: MapTheme.colors.rescueOrange, orangeDark: MapTheme.colors.rescueOrangePressed,
+  teal: MapTheme.colors.aqua, beige: '#E8CCAD',
+  bg: MapTheme.colors.canvas, border: MapTheme.colors.hairline,
+  dark: MapTheme.colors.ink, mid: MapTheme.colors.muted, light: MapTheme.colors.subtle,
 };
 
 const CONDICION: Record<string, { color: string; label: string; bg: string }> = {
@@ -72,7 +76,7 @@ type SidebarView = 'list' | 'detail' | 'form' | 'asociacion';
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 export default function MapScreen() {
-  const { isLoggedIn, token } = useAuth();
+  const { isLoggedIn, token, user } = useAuth();
   const params = useLocalSearchParams<{ action?: string; event_id?: string | string[] }>();
   const deepLinkedEventId = normalizeEventDeepLinkId(params.event_id);
   const [windowWidth, setWindowWidth] = useState(Dimensions.get('window').width);
@@ -101,6 +105,49 @@ export default function MapScreen() {
   const [isAuthGateVisible, setIsAuthGateVisible] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [, setTick] = useState(0);
+  const mapTourRef = useRef<View>(null);
+  const sidebarTourRef = useRef<View>(null);
+  const filtersTourRef = useRef<View>(null);
+  const reportTourRef = useRef<any>(null);
+  const mapGuide = useSectionGuide({ sectionKey: 'mapa', userId: user?.id });
+  const mapGuideSteps = useMemo(() => [
+    {
+      key: 'sidebar', title: 'Revisa los casos activos',
+      description: 'La barra lateral reúne los reportes cercanos. Selecciona una tarjeta para localizar el caso y consultar sus datos.',
+      icon: 'list-outline' as const, accent: C.orange, targetRef: windowWidth < 768 ? mapTourRef : sidebarTourRef,
+    },
+    {
+      key: 'map', title: 'Explora los pines del mapa',
+      description: 'El color indica la condición del animal y el número señala cuántos animales incluye el reporte. Toca un pin para abrir su resumen.',
+      icon: 'location-outline' as const, accent: C.teal, targetRef: mapTourRef,
+    },
+    {
+      key: 'filters', title: 'Encuentra lo que necesitas',
+      description: 'Filtra por condición, especie o urgencia y consulta asociaciones y aliados en el mapa.',
+      icon: 'options-outline' as const, accent: '#E9A63A', targetRef: filtersTourRef,
+    },
+    {
+      key: 'report', title: 'Crea un reporte',
+      description: 'Usa este botón cuando encuentres un animal perdido, abandonado o en situación de riesgo.',
+      icon: 'add-circle-outline' as const, accent: C.orange, targetRef: reportTourRef,
+    },
+  ], [windowWidth]);
+
+  const renderMapGuide = () => (
+    <>
+      <View style={{ position: 'absolute', top: isMobile ? 200 : 126, right: 18, zIndex: 2400, elevation: 20 }}>
+        <GuideHelpButton sectionName="Mapa" onPress={mapGuide.startGuide} showUnreadDot={mapGuide.showPrompt} />
+      </View>
+      <CoachMarksTour visible={mapGuide.showGuide} steps={mapGuideSteps} onClose={mapGuide.closeGuide} />
+      <SectionGuidePrompt
+        visible={mapGuide.showPrompt}
+        sectionName="Mapa"
+        description="Conoce los marcadores, filtros y cómo crear un reporte desde el mapa."
+        onStart={mapGuide.startGuide}
+        onDismiss={mapGuide.dismissPrompt}
+      />
+    </>
+  );
 
   // "Estoy aquí" (ver src/hooks/useUbicacionEnVivo.ts): punto personal en el
   // mapa, puramente visual, no se comparte con nadie. Vive aquí (Mapa de
@@ -494,14 +541,15 @@ export default function MapScreen() {
         onPress={() => handleSelectReport(reporte)}
         style={{
           flexDirection: 'row', gap: compact ? 8 : 10,
-          padding: compact ? 8 : 10,
-          borderRadius: 14, borderWidth: 1.5,
+          padding: compact ? 9 : 12,
+          borderRadius: MapTheme.radius.card, borderWidth: 1,
           borderColor: isSelected ? condCfg.color : C.border,
-          backgroundColor: isSelected ? condCfg.bg : '#FFFFFF',
+          backgroundColor: isSelected ? condCfg.bg : MapTheme.colors.surface,
           shadowColor: isSelected ? condCfg.color : '#000',
-          shadowOffset: { width: 0, height: 1 },
-          shadowOpacity: isSelected ? 0.15 : 0.04,
-          shadowRadius: isSelected ? 8 : 3,
+          shadowOffset: { width: 0, height: isSelected ? 6 : 2 },
+          shadowOpacity: isSelected ? 0.14 : 0.055,
+          shadowRadius: isSelected ? 16 : 8,
+          transform: [{ scale: isSelected ? 1 : 0.995 }],
         }}
       >
         {isSelected && (
@@ -765,12 +813,15 @@ export default function MapScreen() {
 
   // ── Sidebar header ───────────────────────────────────────────────────────────
   const renderSidebarHeader = () => (
-    <View style={{ backgroundColor: C.orange, paddingTop: 20, paddingBottom: 14, paddingHorizontal: 18 }}>
+    <View style={{ backgroundColor: MapTheme.colors.surface, paddingTop: 22, paddingBottom: 18, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: C.border }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <View>
-          <Text style={{ fontSize: 20, fontWeight: '900', color: '#FFF', letterSpacing: -0.5 }}>PawAlert</Text>
-          <View style={{ backgroundColor: 'rgba(255,255,255,0.22)', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3, alignSelf: 'flex-start', marginTop: 4 }}>
-            <Text style={{ fontSize: 11, fontWeight: '700', color: '#FFF' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
+            <View style={{ width: 11, height: 11, borderRadius: 6, backgroundColor: C.orange, shadowColor: C.orange, shadowOpacity: 0.35, shadowRadius: 8 }} />
+            <Text style={{ fontSize: 22, fontFamily: 'Poppins_800ExtraBold', color: C.dark, letterSpacing: -0.8 }}>PawAlert</Text>
+          </View>
+          <View style={{ backgroundColor: '#FFF1E7', borderRadius: MapTheme.radius.pill, paddingHorizontal: 10, paddingVertical: 4, alignSelf: 'flex-start', marginTop: 7 }}>
+            <Text style={{ fontSize: 11, fontFamily: 'Poppins_600SemiBold', color: C.orange }}>
               {contentMode === 'events'
                 ? 'Agenda pública'
                 : `${reportesFiltrados.length} ${reportesFiltrados.length === 1 ? 'reporte activo' : 'reportes activos'}`}
@@ -778,12 +829,12 @@ export default function MapScreen() {
           </View>
         </View>
         {(sidebarView !== 'list') && (
-          <TouchableOpacity onPress={() => { setSidebarView('list'); setSelectedReport(null); setSelectedAsociacion(null); }} style={{ backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 8, padding: 6 }}>
-            <Feather name="arrow-left" size={16} color="#FFF" />
+          <TouchableOpacity accessibilityLabel="Volver al listado" onPress={() => { setSidebarView('list'); setSelectedReport(null); setSelectedAsociacion(null); }} style={{ backgroundColor: '#F2EFEB', borderRadius: 12, padding: 9 }}>
+            <Feather name="arrow-left" size={17} color={C.dark} />
           </TouchableOpacity>
         )}
       </View>
-      <Text style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', marginTop: 2 }}>
+      <Text style={{ fontSize: 10, fontFamily: 'Poppins_500Medium', color: C.light, marginTop: 6, letterSpacing: 0.2 }}>
         {contentMode === 'events' ? 'Actividades de asociaciones verificadas'
           : sidebarView === 'list' ? 'Mapa de rescate · Puebla'
           : sidebarView === 'detail' ? 'Detalle del reporte'
@@ -801,7 +852,7 @@ export default function MapScreen() {
   const masSeleccionado = showFiltersModal || filtrosExtraActivos;
 
   const renderFiltros = () => (
-    <View style={{ borderBottomWidth: 1, borderBottomColor: C.border, flexShrink: 0, flexDirection: 'row' }}>
+    <View ref={filtersTourRef} collapsable={false} style={{ borderBottomWidth: 1, borderBottomColor: C.border, flexShrink: 0, flexDirection: 'row', backgroundColor: 'rgba(255,254,252,0.94)' }}>
       {/* Columna 1: Gravedad */}
       <View style={{ flex: 1, padding: 12, borderRightWidth: 1, borderRightColor: C.border }}>
         <Text style={{ fontSize: 10, fontWeight: '800', color: C.light, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 8 }}>
@@ -856,7 +907,7 @@ export default function MapScreen() {
               height: 26, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 4
             }}>
             <Text style={{ fontSize: 10, fontWeight: '700', color: masSeleccionado ? '#FFF' : C.orange, lineHeight: 13 }}>
-              Más...
+              Más
             </Text>
             <Ionicons name={showFiltersModal ? 'chevron-up' : 'chevron-down'} size={11} color={masSeleccionado ? '#FFF' : C.orange} />
           </TouchableOpacity>
@@ -877,7 +928,7 @@ export default function MapScreen() {
         />
         <Animated.View style={{
           position: 'absolute', top: 76, left: 12, width: 280, zIndex: 1000,
-          backgroundColor: '#FFF', borderRadius: 18, padding: 18,
+          backgroundColor: 'rgba(255,254,252,0.98)', borderRadius: MapTheme.radius.panel, padding: 18,
           shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.18, shadowRadius: 20, elevation: 12,
           opacity: filtersAnim,
           transform: [
@@ -975,7 +1026,7 @@ export default function MapScreen() {
 
   // ── Mapa ─────────────────────────────────────────────────────────────────────
   const renderMap = () => (
-    <View style={{ flex: 1, position: 'relative' }}>
+    <View ref={mapTourRef} collapsable={false} style={{ flex: 1, position: 'relative' }}>
       {contentMode === 'rescues' && renderFiltersDropdown()}
       {isClient ? (
         <Suspense fallback={<View style={{ flex: 1, backgroundColor: '#EAE0D0' }} />}>
@@ -1052,7 +1103,7 @@ export default function MapScreen() {
       )}
 
       {/* Leyenda */}
-      {contentMode === 'rescues' && <View style={{ position: 'absolute', top: isMobile ? 214 : 16, right: 16, backgroundColor: '#FFF', borderRadius: 12, padding: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8, zIndex: 999, elevation: 9 }}>
+      {contentMode === 'rescues' && <View style={{ position: 'absolute', top: isMobile ? 292 : 18, right: 18, backgroundColor: 'rgba(255,254,252,0.92)', borderRadius: 16, paddingVertical: 11, paddingHorizontal: 13, borderWidth: 1, borderColor: 'rgba(255,255,255,0.75)', shadowColor: '#32271D', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.12, shadowRadius: 20, zIndex: 999, elevation: 9, backdropFilter: 'blur(18px)' } as any}>
         <Text style={{ fontSize: 9, fontWeight: '800', color: C.dark, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>Condición</Text>
         {Object.entries(CONDICION).map(([key, cfg]) => (
           <View key={key} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4 }}>
@@ -1131,16 +1182,18 @@ export default function MapScreen() {
 
       {/* FAB */}
       {contentMode === 'rescues' && <TouchableOpacity
+        ref={reportTourRef}
+        accessibilityLabel="Crear un nuevo reporte"
         onPress={handleCrearReporte}
-        style={{ position: 'absolute', bottom: TAB_BAR_CLEARANCE, right: 20, width: 52, height: 52, borderRadius: 26, backgroundColor: C.orange, alignItems: 'center', justifyContent: 'center', shadowColor: C.orange, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.45, shadowRadius: 12, zIndex: 1000, elevation: 10 }}
+        style={{ position: 'absolute', bottom: TAB_BAR_CLEARANCE, right: 20, width: 58, height: 58, borderRadius: 29, backgroundColor: C.orange, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: 'rgba(255,255,255,0.9)', shadowColor: C.orange, shadowOffset: { width: 0, height: 9 }, shadowOpacity: 0.34, shadowRadius: 20, zIndex: 1000, elevation: 10 }}
       >
-        <Ionicons name="add" size={26} color="#FFF" />
+        <Ionicons name="add" size={28} color="#FFF" />
       </TouchableOpacity>
       }
 
       {/* Barra de filtros interactivos (solo mobile) */}
       {isMobile && contentMode === 'rescues' && (
-        <View style={{
+        <View ref={filtersTourRef} collapsable={false} style={{
           position: 'absolute', top: 64, left: 12, right: 12,
           backgroundColor: 'rgba(255,255,255,0.97)',
           borderRadius: 16,
@@ -1470,7 +1523,8 @@ export default function MapScreen() {
           onSavedChange={(saved) => Alert.alert(saved ? 'Evento guardado' : 'Evento eliminado', 'Tu agenda quedó actualizada.')}
         />
         <AuthGateModal visible={isAuthGateVisible} onClose={() => setIsAuthGateVisible(false)} onGuest={() => setSidebarView('form')} />
-        
+        {renderMapGuide()}
+
         {/* AQUÍ AGREGAMOS EL MODAL PARA LA VISTA DE CELULAR */}
         <AssociationAdoptionsModal
           visible={modalAdopcionesVisible}
@@ -1487,7 +1541,7 @@ export default function MapScreen() {
     <View style={{ flex: 1, flexDirection: 'row', backgroundColor: C.bg }}>
 
       {/* Sidebar */}
-      <View style={{ width: 340, flexShrink: 0, flexDirection: 'column', backgroundColor: C.bg, borderRightWidth: 1, borderRightColor: C.border, display: 'flex' as any }}>
+      <View ref={sidebarTourRef} collapsable={false} style={{ width: 376, flexShrink: 0, flexDirection: 'column', backgroundColor: C.bg, borderRightWidth: 1, borderRightColor: C.border, display: 'flex' as any, shadowColor: '#32271D', shadowOffset: { width: 12, height: 0 }, shadowOpacity: 0.06, shadowRadius: 24, zIndex: 2 }}>
         {renderSidebarHeader()}
         <View style={{ flex: 1, overflow: 'hidden' as any }}>
           {contentMode === 'events' ? (
@@ -1500,7 +1554,7 @@ export default function MapScreen() {
           ) : sidebarView === 'list' && (
             <View style={{ flex: 1 }}>
               {renderFiltros()}
-              <ScrollView contentContainerStyle={{ padding: 10, gap: 8 }} showsVerticalScrollIndicator={false}>
+              <ScrollView contentContainerStyle={{ padding: 14, gap: 10, paddingBottom: 28 }} showsVerticalScrollIndicator={false}>
                 {reportesFiltrados.length === 0
                   ? <View style={{ alignItems: 'center', paddingVertical: 40 }}>
                     <Text style={{ fontSize: 32, marginBottom: 10 }}>🐾</Text>
@@ -1532,6 +1586,7 @@ export default function MapScreen() {
 
       {renderImagenAmpliada()}
       <AuthGateModal visible={isAuthGateVisible} onClose={() => setIsAuthGateVisible(false)} onGuest={() => setSidebarView('form')} />
+      {renderMapGuide()}
       
       <AssociationAdoptionsModal
         visible={modalAdopcionesVisible}

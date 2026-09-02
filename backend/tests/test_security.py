@@ -504,7 +504,9 @@ def test_reportes_voluntario_conservan_coordenadas_exactas(make_query):
 
     assert resultado["en_accion"][0]["latitud"] == 19.0432167
     assert resultado["en_accion"][0]["longitud"] == -98.1987654
+    assert resultado["en_accion"][0]["confirmacion_voluntario"] == "confirmado"
     assert resultado["en_accion"][0]["distancia_linea_recta_km"] == 21.4
+    assert resultado["en_accion"][0]["navegacion_disponible"] is False
 
 
 def _reporte_embed(reporte_id: str) -> dict:
@@ -626,6 +628,8 @@ def test_reportes_voluntario_recupera_ruta_confirmada(make_query):
         },
         "ruta_error_codigo": None,
         "ruta_calculada_at": "2026-08-20T12:00:00+00:00",
+        "ruta_destino_latitud": 19.08,
+        "ruta_destino_longitud": -98.24,
     }])
     supabase_admin = MagicMock()
     supabase_admin.table.return_value = rutas
@@ -644,6 +648,11 @@ def test_reportes_voluntario_recupera_ruta_confirmada(make_query):
     assert ruta["status"] == "complete"
     assert ruta["duration_seconds"] == 420
     assert ruta["distance_meters"] == 3100
+    assert ruta["destination"] == {
+        "latitude": 19.08,
+        "longitude": -98.24,
+    }
+    assert resultado["en_accion"][0]["navegacion_disponible"] is True
     assert resultado["en_accion"][0]["distancia_linea_recta_km"] == 0.0
     rutas.eq.assert_any_call("usuario_asignado_id", "user-vol-1")
     rutas.eq.assert_any_call("estado", "confirmada")

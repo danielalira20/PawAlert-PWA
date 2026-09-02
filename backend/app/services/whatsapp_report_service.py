@@ -541,9 +541,10 @@ def _resumen(respuestas: dict[str, Any]) -> str:
         and ubicacion.get("longitud") is not None
         else "dirección escrita"
     )
-    lineas = ["Confirma tu reporte:"]
+    lineas = ["🐾 *CONFIRMA TU REPORTE*"]
     fichas = respuestas.get("_animales")
     if fichas:
+        lineas.extend(["", "*Animales*"])
         for i, ficha in enumerate(fichas, start=1):
             partes = [
                 ficha.get("tipo_animal"),
@@ -553,45 +554,60 @@ def _resumen(respuestas: dict[str, Any]) -> str:
                 ficha.get("edad"),
             ]
             lineas.append(
-                f"• Animal {i}: "
+                f"• *Animal {i}:* "
                 + ", ".join(p for p in partes if p)
-                + f"; foto: {'sí' if ficha.get('foto') else 'no'}"
+                + f" · Foto: {'sí' if ficha.get('foto') else 'no'}"
             )
     else:
-        lineas.append(f"• Animal: {respuestas['tipo_animal']}")
+        lineas.extend(["", "*Datos del animal*"])
+        lineas.append(f"🐾 *Animal:* {respuestas['tipo_animal']}")
         if respuestas.get("_modo") == "mama_crias":
-            lineas.append(f"• Crías: {respuestas.get('numero_crias', '?')}")
+            lineas.append(f"👶 *Crías:* {respuestas.get('numero_crias', '?')}")
         else:
-            lineas.append(f"• Cantidad: {respuestas['cantidad']}")
-        lineas.append(f"• Condición: {respuestas['condicion']}")
-        lineas.append(f"• Tamaño: {respuestas['tamanio']}")
-        lineas.append(f"• Sexo: {respuestas.get('sexo', 'desconocido')}")
-        lineas.append(f"• Edad: {respuestas['edad']}")
+            lineas.append(f"🔢 *Cantidad:* {respuestas['cantidad']}")
+        lineas.append(f"🩺 *Condición:* {respuestas['condicion']}")
+        lineas.append(
+            "📋 *Características:* "
+            f"{respuestas['tamanio']} · "
+            f"{respuestas.get('sexo', 'desconocido')} · {respuestas['edad']}"
+        )
         if respuestas.get("raza"):
-            lineas.append(f"• Raza: {respuestas['raza']}")
+            lineas.append(f"🧬 *Raza:* {respuestas['raza']}")
         if respuestas.get("tiene_collar") is not None:
-            lineas.append(f"• Collar, correa o placa: {si_no(respuestas['tiene_collar'])}")
+            lineas.append(f"🏷️ *Collar, correa o placa:* {si_no(respuestas['tiene_collar'])}")
         if respuestas.get("comportamiento") is not None:
-            lineas.append(f"• Se comporta agresivo: {si_no(respuestas['comportamiento'])}")
+            lineas.append(f"⚠️ *Se comporta agresivo:* {si_no(respuestas['comportamiento'])}")
         if respuestas.get("es_domestico") is not None:
-            lineas.append(f"• Parece de casa: {si_no(respuestas['es_domestico'])}")
+            lineas.append(f"🏠 *Parece de casa:* {si_no(respuestas['es_domestico'])}")
         if respuestas.get("esta_prenada") is not None:
-            lineas.append(f"• Parece preñada: {si_no(respuestas['esta_prenada'])}")
+            lineas.append(f"• *Parece preñada:* {si_no(respuestas['esta_prenada'])}")
         if respuestas.get("trae_crias") is not None:
-            lineas.append(f"• Acompañada de crías: {si_no(respuestas['trae_crias'])}")
+            lineas.append(f"• *Acompañada de crías:* {si_no(respuestas['trae_crias'])}")
         if respuestas.get("numero_crias"):
-            lineas.append(f"• Número de crías: {respuestas['numero_crias']}")
+            lineas.append(f"• *Número de crías:* {respuestas['numero_crias']}")
         if respuestas.get("descripcion_animal"):
-            lineas.append(f"• Descripción del animal: {respuestas['descripcion_animal']}")
-        lineas.append(f"• Foto: {'sí' if respuestas.get('foto') else 'no'}")
+            lineas.extend(
+                ["", "🔎 *Descripción del animal*", respuestas["descripcion_animal"]]
+            )
     if respuestas.get("descripcion"):
-        lineas.append(f"• Situación: {respuestas['descripcion']}")
-    lineas.append(f"• Lugar ({tipo_ubicacion}): {lugar}")
+        lineas.extend(["", "🚨 *Situación actual*", respuestas["descripcion"]])
+    lineas.extend(["", f"📍 *Ubicación ({tipo_ubicacion})*", lugar])
     if respuestas.get("referencia"):
-        lineas.append(f"• Referencia: {respuestas['referencia']}")
+        lineas.append(f"🧭 *Referencia:* {respuestas['referencia']}")
     lineas.append("")
-    lineas.append("Responde SÍ para enviarlo o NO para cancelarlo.")
+    lineas.append("Revisa la información antes de enviarla.")
     return "\n".join(lineas)
+
+
+def _media_id_resumen(respuestas: dict[str, Any]) -> str | None:
+    foto = respuestas.get("foto")
+    if isinstance(foto, dict) and foto.get("media_id"):
+        return str(foto["media_id"])
+    for ficha in respuestas.get("_animales") or []:
+        foto_ficha = ficha.get("foto")
+        if isinstance(foto_ficha, dict) and foto_ficha.get("media_id"):
+            return str(foto_ficha["media_id"])
+    return None
 
 
 def _sesion(wa_id: str) -> dict[str, Any] | None:
@@ -620,6 +636,13 @@ def _guardar_sesion(wa_id: str, estado: str, respuestas: dict[str, Any]) -> None
 def _eliminar_sesion(wa_id: str) -> None:
     supabase_admin.table("whatsapp_reporte_sesiones").delete().eq(
         "wa_id", wa_id
+    ).execute()
+
+
+def _guardar_valoracion(reporte_id: str, puntuacion: int) -> None:
+    supabase_admin.table("whatsapp_reporte_valoraciones").upsert(
+        {"reporte_id": reporte_id, "puntuacion": puntuacion},
+        on_conflict="reporte_id",
     ).execute()
 
 
@@ -703,6 +726,13 @@ async def procesar_inactividad_sesiones(
         actualizado_at = sesion["actualizado_at"]
         respuestas = dict(sesion.get("respuestas") or {})
         antiguedad = ahora - _fecha_sesion(actualizado_at)
+
+        if sesion.get("estado") == "valoracion":
+            if antiguedad >= timedelta(minutes=minutos_expiracion):
+                supabase_admin.table("whatsapp_reporte_sesiones").delete().eq(
+                    "wa_id", wa_id
+                ).eq("actualizado_at", actualizado_at).execute()
+            continue
 
         if respuestas.get(MARCA_AVISO_INACTIVIDAD):
             if antiguedad < timedelta(minutes=minutos_despues_aviso):
@@ -801,6 +831,7 @@ async def enviar_opciones(
     opciones: list[tuple[str, str]],
     *,
     titulo_boton: str = "Ver opciones",
+    imagen_media_id: str | None = None,
 ) -> None:
     if len(opciones) <= 3:
         interactivo = {
@@ -816,6 +847,11 @@ async def enviar_opciones(
                 ]
             },
         }
+        if imagen_media_id:
+            interactivo["header"] = {
+                "type": "image",
+                "image": {"id": imagen_media_id},
+            }
     else:
         interactivo = {
             "type": "list",
@@ -911,6 +947,7 @@ async def enviar_confirmacion(wa_id: str, respuestas: dict[str, Any]) -> None:
             ("corregir", "Corregir datos"),
             ("cancelar", "Cancelar"),
         ],
+        imagen_media_id=_media_id_resumen(respuestas),
     )
 
 
@@ -1089,13 +1126,19 @@ async def _crear_reporte_reclamado(
 async def _enviar_reporte_creado(wa_id: str, reporte_id: str) -> None:
     await enviar_texto(
         wa_id,
-        "✅ *¡Reporte enviado correctamente!*\n\n"
-        "Gracias por tomarte el tiempo de ayudar. Tu reporte ya está disponible "
-        "para la comunidad de PawAlert. Esta sesión ha terminado.\n\n"
-        f"🧾 *Folio:* {reporte_id}\n"
-        f"🌐 *Consulta PawAlert:* {SITIO_PAWALERT}\n\n"
-        "Si necesitas crear otro reporte, escribe *NUEVO REPORTE*.",
+        "✅ *REPORTE PUBLICADO*\n\n"
+        "Gracias por ayudar a un animal. El reporte ya está disponible para la "
+        "comunidad de PawAlert.\n\n"
+        f"🧾 *Folio*\n{reporte_id}\n\n"
+        f"🌐 *Ver en PawAlert*\n{SITIO_PAWALERT}",
         preview_url=True,
+    )
+    await enviar_opciones(
+        wa_id,
+        "⭐ *¿Cómo fue tu experiencia con el bot?*\n"
+        "Tu valoración nos ayuda a mejorar PawAlert.",
+        [(f"valoracion:{puntos}", f"{'⭐' * puntos}  {puntos}/5") for puntos in range(5, 0, -1)],
+        titulo_boton="Calificar",
     )
 
 
@@ -1303,6 +1346,40 @@ async def _procesar_mensaje(mensaje: dict[str, Any]) -> None:
                 "el folio de confirmación.",
             )
             return
+        if estado == "valoracion":
+            respuesta = (
+                _normalizar(contenido[1])
+                if contenido and contenido[0] == "text"
+                else ""
+            )
+            if not respuesta.startswith("valoracion:"):
+                await enviar_opciones(
+                    wa_id,
+                    "⭐ Elige una valoración del *1 al 5*.",
+                    [
+                        (f"valoracion:{puntos}", f"{'⭐' * puntos}  {puntos}/5")
+                        for puntos in range(5, 0, -1)
+                    ],
+                    titulo_boton="Calificar",
+                )
+                return
+            try:
+                puntuacion = int(respuesta.split(":", 1)[1])
+            except (IndexError, ValueError):
+                puntuacion = 0
+            if puntuacion not in range(1, 6):
+                await enviar_texto(wa_id, "La valoración debe ser del 1 al 5.")
+                return
+            reporte_id = str(respuestas.get("reporte_id") or "")
+            if reporte_id:
+                _guardar_valoracion(reporte_id, puntuacion)
+            _eliminar_sesion(wa_id)
+            await enviar_texto(
+                wa_id,
+                "💚 *¡Gracias por tu valoración!*\n\n"
+                "Si necesitas ayudar a otro animal, escribe *NUEVO REPORTE*.",
+            )
+            return
         if estado == "duplicado":
             respuesta = (
                 _normalizar(contenido[1])
@@ -1330,7 +1407,9 @@ async def _procesar_mensaje(mensaje: dict[str, Any]) -> None:
             )
             if reporte is None:
                 return
-            _eliminar_sesion(wa_id)
+            _guardar_sesion(
+                wa_id, "valoracion", {"reporte_id": str(reporte["id"])}
+            )
             await _enviar_reporte_creado(wa_id, str(reporte["id"]))
             return
         if estado == "confirmacion":
@@ -1373,7 +1452,9 @@ async def _procesar_mensaje(mensaje: dict[str, Any]) -> None:
                 _guardar_sesion(wa_id, "duplicado", respuestas)
                 await enviar_pregunta(wa_id, "duplicado")
                 return
-            _eliminar_sesion(wa_id)
+            _guardar_sesion(
+                wa_id, "valoracion", {"reporte_id": str(reporte["id"])}
+            )
             await _enviar_reporte_creado(wa_id, str(reporte["id"]))
             return
         if estado == "correccion":

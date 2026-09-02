@@ -1,6 +1,7 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, useWindowDimensions, Modal, TextInput, ActivityIndicator, Platform, Image } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { validarNombre } from '../../utils/validators';
 import { Ionicons } from '@expo/vector-icons';
 import { Toast, useToast } from '../Toast';import { LinearGradient } from 'expo-linear-gradient';
@@ -30,6 +31,8 @@ import { OperationalAvailabilityCard } from './OperationalAvailabilityCard';
 import { SaldoReputacionCard } from './SaldoReputacionCard';
 import { ImpactoInsigniasToggle } from './ImpactoInsigniasToggle';
 import { AvatarSelector } from './AvatarSelector';
+import { CoachMarksTour } from '../onboarding/CoachMarksTour';
+import { GuideHelpButton, SectionGuidePrompt } from '../onboarding/SectionGuidePrompt';
 
 const DESKTOP_BREAKPOINT = 900;
 const brandLogo = require('../../assets/logo/logo_pawAlert.png');
@@ -83,6 +86,14 @@ export function LoggedInProfile({
   const { user, token } = useAuth();
   const { width } = useWindowDimensions();
   const isDesktop = width >= DESKTOP_BREAKPOINT;
+  const profileScrollRef = useRef<ScrollView>(null);
+  const identityTourRef = useRef<View>(null);
+  const dataTourRef = useRef<View>(null);
+  const accessTourRef = useRef<View>(null);
+  const impactTourRef = useRef<View>(null);
+  const isProfileFocusedRef = useRef(false);
+  const [showProfileGuide, setShowProfileGuide] = useState(false);
+  const [showProfileGuidePrompt, setShowProfileGuidePrompt] = useState(false);
 
   const esAdmin = !!user?.es_admin;
   const esAsociacion = !!user?.asociacion_id && user?.rol === 'asociacion';
@@ -116,6 +127,119 @@ export function LoggedInProfile({
 
   const [showAvatarSelector, setShowAvatarSelector] = useState(false);
   const [localAvatarId, setLocalAvatarId] = useState<string | null>(user?.avatar_id ?? null);
+
+  const profileGuideStorageKey = `pawalert:coach-marks:perfil:v2:${user?.id ?? 'guest'}`;
+  const profileGuidePromptKey = `pawalert:coach-marks:perfil:prompt:v2:${user?.id ?? 'guest'}`;
+  const profileGuideSteps = useMemo(() => [
+    {
+      key: 'identity',
+      title: 'Tu identidad en PawAlert',
+      description: 'Aquí puedes reconocer tu cuenta, cambiar tu avatar y consultar el rol con el que participas en la comunidad.',
+      icon: 'person-circle-outline' as const,
+      accent: '#F07C2B',
+      targetRef: identityTourRef,
+    },
+    {
+      key: 'data',
+      title: 'Tus datos, siempre al día',
+      description: 'Revisa y actualiza tu información personal y de contacto para recibir avisos importantes sobre tus reportes.',
+      icon: 'id-card-outline' as const,
+      accent: '#4FAFA7',
+      targetRef: dataTourRef,
+    },
+    {
+      key: 'access',
+      title: 'Todo lo que puedes gestionar',
+      description: 'Desde Accesos puedes consultar reportes, eventos guardados, recompensas y las herramientas disponibles para tu rol.',
+      icon: 'grid-outline' as const,
+      accent: '#E86A38',
+      targetRef: accessTourRef,
+    },
+    {
+      key: 'impact',
+      title: 'Mira el impacto de tu ayuda',
+      description: 'Tus estadísticas resumen cómo contribuyes a PawAlert. Cada reporte y acción puede acercar a un animal a recibir apoyo.',
+      icon: 'sparkles-outline' as const,
+      accent: '#6E63C7',
+      targetRef: impactTourRef,
+    },
+  ], []);
+
+  useFocusEffect(
+    useCallback(() => {
+      isProfileFocusedRef.current = true;
+      return () => {
+        isProfileFocusedRef.current = false;
+        setShowProfileGuide(false);
+        setShowProfileGuidePrompt(false);
+      };
+    }, []),
+  );
+
+  useEffect(() => {
+    let active = true;
+    const timer = setTimeout(async () => {
+      try {
+        const [completed, promptSeen] = await Promise.all([
+          AsyncStorage.getItem(profileGuideStorageKey),
+          AsyncStorage.getItem(profileGuidePromptKey),
+        ]);
+        if (
+          active &&
+          isProfileFocusedRef.current &&
+          completed !== 'completed' &&
+          promptSeen !== 'seen'
+        ) {
+          setShowProfileGuidePrompt(true);
+        }
+      } catch {
+        // La guía sigue disponible manualmente si el almacenamiento local falla.
+      }
+    }, 700);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [profileGuidePromptKey, profileGuideStorageKey]);
+
+  const rememberProfileGuidePrompt = useCallback(async () => {
+    try {
+      await AsyncStorage.setItem(profileGuidePromptKey, 'seen');
+    } catch {
+      // La guía sigue funcionando aunque no se pueda guardar la preferencia.
+    }
+  }, [profileGuidePromptKey]);
+
+  const startProfileGuide = useCallback(() => {
+    setShowProfileGuidePrompt(false);
+    void rememberProfileGuidePrompt();
+    setShowProfileGuide(true);
+  }, [rememberProfileGuidePrompt]);
+
+  const dismissProfileGuidePrompt = useCallback(() => {
+    setShowProfileGuidePrompt(false);
+    void rememberProfileGuidePrompt();
+  }, [rememberProfileGuidePrompt]);
+
+  const closeProfileGuide = useCallback(async (completed: boolean) => {
+    setShowProfileGuide(false);
+    if (completed) {
+      try {
+        await AsyncStorage.setItem(profileGuideStorageKey, 'completed');
+      } catch {
+        // No bloqueamos la navegación si el dispositivo no permite persistir.
+      }
+    }
+  }, [profileGuideStorageKey]);
+
+  const prepareProfileGuideStep = useCallback((index: number) => {
+    if (isDesktop) {
+      profileScrollRef.current?.scrollTo({ y: index === 3 ? 180 : 0, animated: true });
+      return;
+    }
+    const mobileOffsets = [0, 250, 650, 1120];
+    profileScrollRef.current?.scrollTo({ y: mobileOffsets[index] ?? 0, animated: true });
+  }, [isDesktop]);
 
   useEffect(() => {
     if (user?.avatar_id !== undefined) {
@@ -537,6 +661,12 @@ export function LoggedInProfile({
           )}
         </>
       )}
+      <AccessRow
+        icon="compass-outline"
+        label="Ver guía de Mi Perfil"
+        onPress={startProfileGuide}
+        isLast
+      />
     </>
   );
 
@@ -548,23 +678,30 @@ export function LoggedInProfile({
         <Toast toast={toast} translateY={translateY} />
         <PawPatternBackground />
 
-        <ScrollView contentContainerStyle={styles.desktopScrollContent}>
+        <ScrollView ref={profileScrollRef} contentContainerStyle={styles.desktopScrollContent}>
           <View style={styles.desktopInner}>
 
             {/* Encabezado de página */}
             <View style={styles.pageHeader}>
-              <Image source={brandLogo} style={styles.pageHeaderLogo} resizeMode="cover" />
-              <View>
-                <Text style={styles.pageTitle}>Mi Perfil</Text>
-                <Text style={styles.pageSubtitle}>PawAlert · Gestión de cuenta</Text>
+              <View style={styles.pageHeaderIdentity}>
+                <Image source={brandLogo} style={styles.pageHeaderLogo} resizeMode="cover" />
+                <View>
+                  <Text style={styles.pageTitle}>Mi Perfil</Text>
+                  <Text style={styles.pageSubtitle}>PawAlert · Gestión de cuenta</Text>
+                </View>
               </View>
+              <GuideHelpButton
+                sectionName="Mi Perfil"
+                onPress={startProfileGuide}
+                showUnreadDot={showProfileGuidePrompt}
+              />
             </View>
 
             {/* Fila de 2 columnas: sidebar + tu impacto */}
             <View style={styles.desktopRow}>
               <View style={styles.desktopLeft}>
                 <View style={styles.unifiedCard}>
-                  <View style={styles.avatarSection}>
+                  <View ref={identityTourRef} collapsable={false} style={styles.avatarSection}>
                     <View style={[styles.avatarWrap, esVoluntarioExterno && styles.avatarWrapVoluntarioExterno]}>
                       <AssocAvatar nombre={nombreCompleto || 'Usuario'} logoUrl={null} avatarId={localAvatarId} size="lg" />
                     </View>
@@ -587,26 +724,25 @@ export function LoggedInProfile({
                     </View>
                   )}
 
-                  <View style={styles.divider} />
-
-                  <View style={styles.sectionPadding}>
-                    <ProfileDataCard 
-                      nombre={user.nombre} 
-                      apellidos={`${user.apellido_paterno || ''} ${user.apellido_materno || ''}`.trim()} 
-                      bare 
-                      onEditPress={handleOpenModal} 
-                    />
+                  <View ref={dataTourRef} collapsable={false}>
+                    <View style={styles.divider} />
+                    <View style={styles.sectionPadding}>
+                      <ProfileDataCard
+                        nombre={user.nombre}
+                        apellidos={`${user.apellido_paterno || ''} ${user.apellido_materno || ''}`.trim()}
+                        bare
+                        onEditPress={handleOpenModal}
+                      />
+                    </View>
+                    <View style={styles.divider} />
+                    <View style={styles.sectionPadding}>
+                      <AccountDataCard telefono={displayTelefono} email={user.email} bare onEditPress={handleOpenModal} />
+                    </View>
                   </View>
 
                   <View style={styles.divider} />
 
-                  <View style={styles.sectionPadding}>
-                    <AccountDataCard telefono={displayTelefono} email={user.email} bare onEditPress={handleOpenModal} />
-                  </View>
-
-                  <View style={styles.divider} />
-
-                  <View style={styles.sectionPadding}>
+                  <View ref={accessTourRef} collapsable={false} style={styles.sectionPadding}>
                     <Text style={styles.accessTitle}>Accesos</Text>
                     {accesos}
                   </View>
@@ -618,7 +754,7 @@ export function LoggedInProfile({
                 </TouchableOpacity>
               </View>
 
-              <View style={styles.desktopRight}>
+              <View ref={impactTourRef} collapsable={false} style={styles.desktopRight}>
                 {esVoluntarioActivo && token && (
                   <OperationalAvailabilityCard token={token} />
                 )}
@@ -646,6 +782,19 @@ export function LoggedInProfile({
           currentAvatarId={localAvatarId}
           onSelect={(newAvatarId) => setLocalAvatarId(newAvatarId)}
         />
+        <CoachMarksTour
+          visible={showProfileGuide}
+          steps={profileGuideSteps}
+          onStepChange={prepareProfileGuideStep}
+          onClose={closeProfileGuide}
+        />
+        <SectionGuidePrompt
+          visible={showProfileGuidePrompt}
+          sectionName="Mi Perfil"
+          description="Te mostramos dónde actualizar tus datos, consultar tus accesos y revisar el impacto de tu ayuda."
+          onStart={startProfileGuide}
+          onDismiss={dismissProfileGuidePrompt}
+        />
       </View>
     );
   }
@@ -654,36 +803,46 @@ export function LoggedInProfile({
   return (
     <View style={{ flex: 1 }}>
       <Toast toast={toast} translateY={translateY} />
-      <ScrollView style={styles.screen} contentContainerStyle={{ paddingBottom: 40 }}>
-      <LinearGradient
-        colors={[Brand.primary, Brand.primaryDark]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.mobileBanner}
-      >
-        <View style={styles.avatarRing}>
-          <AssocAvatar nombre={nombreCompleto || 'Usuario'} logoUrl={null} avatarId={localAvatarId} size="lg" />
-        </View>
-        <View style={{ marginTop: 12, marginBottom: 8 }}>
-          {esAdmin && <RoleBadge rol="admin" variant="onColor" />}
-          {esAsociacion && <RoleBadge rol="asociacion" variant="onColor" />}
-          {esStaff && <RoleBadge rol="staff" variant="onColor" />}
-          {esVoluntarioInterno && <RoleBadge rol="voluntario_interno" variant="onColor" />}
-          {esVoluntarioExterno && <RoleBadge rol="voluntario_externo" variant="onColor" />}
-          {esAliadoPuro && (
-            <RoleBadge rol={tipoPerfilApoyo as 'aliado_local' | 'patrocinador_institucional'} variant="onColor" />
-          )}
-          {!esAdmin && !esAsociacion && !esStaff && !esVoluntarioInterno && !esVoluntarioExterno && !esAliadoPuro && (
-            <RoleBadge rol="reportante" variant="onColor" />
-          )}
-        </View>
-        <Text style={styles.nombreOnColor}>{nombreCompleto || 'Usuario'}</Text>
-        <Text style={styles.emailOnColor}>{user.email}</Text>
-        <TouchableOpacity onPress={() => setShowAvatarSelector(true)} style={styles.editAvatarBtnMobile} activeOpacity={0.7}>
-          <Ionicons name="camera-outline" size={14} color="#FFF" />
-          <Text style={styles.editAvatarBtnTextMobile}>Cambiar foto</Text>
-        </TouchableOpacity>
-      </LinearGradient>
+      <ScrollView ref={profileScrollRef} style={styles.screen} contentContainerStyle={{ paddingBottom: 40 }}>
+      <View ref={identityTourRef} collapsable={false}>
+        <LinearGradient
+          colors={[Brand.primary, Brand.primaryDark]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.mobileBanner}
+        >
+          <View style={styles.mobileGuideButton}>
+            <GuideHelpButton
+              sectionName="Mi Perfil"
+              onPress={startProfileGuide}
+              inverted
+              showUnreadDot={showProfileGuidePrompt}
+            />
+          </View>
+          <View style={styles.avatarRing}>
+            <AssocAvatar nombre={nombreCompleto || 'Usuario'} logoUrl={null} avatarId={localAvatarId} size="lg" />
+          </View>
+          <View style={{ marginTop: 12, marginBottom: 8 }}>
+            {esAdmin && <RoleBadge rol="admin" variant="onColor" />}
+            {esAsociacion && <RoleBadge rol="asociacion" variant="onColor" />}
+            {esStaff && <RoleBadge rol="staff" variant="onColor" />}
+            {esVoluntarioInterno && <RoleBadge rol="voluntario_interno" variant="onColor" />}
+            {esVoluntarioExterno && <RoleBadge rol="voluntario_externo" variant="onColor" />}
+            {esAliadoPuro && (
+              <RoleBadge rol={tipoPerfilApoyo as 'aliado_local' | 'patrocinador_institucional'} variant="onColor" />
+            )}
+            {!esAdmin && !esAsociacion && !esStaff && !esVoluntarioInterno && !esVoluntarioExterno && !esAliadoPuro && (
+              <RoleBadge rol="reportante" variant="onColor" />
+            )}
+          </View>
+          <Text style={styles.nombreOnColor}>{nombreCompleto || 'Usuario'}</Text>
+          <Text style={styles.emailOnColor}>{user.email}</Text>
+          <TouchableOpacity onPress={() => setShowAvatarSelector(true)} style={styles.editAvatarBtnMobile} activeOpacity={0.7}>
+            <Ionicons name="camera-outline" size={14} color="#FFF" />
+            <Text style={styles.editAvatarBtnTextMobile}>Cambiar foto</Text>
+          </TouchableOpacity>
+        </LinearGradient>
+      </View>
 
       <View style={styles.mobileCentered}>
         {muestraSaldoReputacion && (
@@ -692,23 +851,24 @@ export function LoggedInProfile({
           </View>
         )}
 
-        <View style={styles.section}>
-          <ProfileDataCard 
-            nombre={user.nombre} 
-            apellidos={`${user.apellido_paterno || ''} ${user.apellido_materno || ''}`.trim()} 
-            onEditPress={handleOpenModal} 
-          />
-        </View>
-
-        <View style={styles.section}>
-          <AccountDataCard telefono={displayTelefono} email={user.email} onEditPress={handleOpenModal} />
+        <View ref={dataTourRef} collapsable={false}>
+          <View style={styles.section}>
+            <ProfileDataCard
+              nombre={user.nombre}
+              apellidos={`${user.apellido_paterno || ''} ${user.apellido_materno || ''}`.trim()}
+              onEditPress={handleOpenModal}
+            />
+          </View>
+          <View style={styles.section}>
+            <AccountDataCard telefono={displayTelefono} email={user.email} onEditPress={handleOpenModal} />
+          </View>
         </View>
 
         {esVoluntarioActivo && token && (
           <OperationalAvailabilityCard token={token} />
         )}
 
-        <View style={styles.section}>
+        <View ref={accessTourRef} collapsable={false} style={styles.section}>
           <View style={styles.accessCard}>
             <Text style={styles.accessTitle}>Accesos</Text>
             {accesos}
@@ -722,7 +882,7 @@ export function LoggedInProfile({
 
         {/* Estadísticas — a propósito AL FINAL, debajo de Cerrar sesión, para
             no desplazar la estructura móvil que ya funcionaba bien */}
-        <View style={{ marginTop: 24 }}>
+        <View ref={impactTourRef} collapsable={false} style={{ marginTop: 24 }}>
           {esAliadoPuro ? aliadoImpactElement : (
             <>
               {impactStatsElement}
@@ -743,6 +903,19 @@ export function LoggedInProfile({
         onSelect={(newAvatarId) => setLocalAvatarId(newAvatarId)}
       />
     </ScrollView>
+      <CoachMarksTour
+        visible={showProfileGuide}
+        steps={profileGuideSteps}
+        onStepChange={prepareProfileGuideStep}
+        onClose={closeProfileGuide}
+      />
+      <SectionGuidePrompt
+        visible={showProfileGuidePrompt}
+        sectionName="Mi Perfil"
+        description="Te mostramos dónde actualizar tus datos, consultar tus accesos y revisar el impacto de tu ayuda."
+        onStart={startProfileGuide}
+        onDismiss={dismissProfileGuidePrompt}
+      />
     </View>
   );
 }
@@ -752,6 +925,7 @@ const styles = StyleSheet.create({
 
   mobileCentered: { width: '100%', maxWidth: 480, alignSelf: 'center', paddingHorizontal: 20, paddingTop: 16 },
   mobileBanner: {
+    position: 'relative',
     alignItems: 'center',
     paddingTop: 56,
     paddingBottom: 26,
@@ -764,6 +938,7 @@ const styles = StyleSheet.create({
     shadowRadius: 14,
     elevation: 4,
   },
+  mobileGuideButton: { position: 'absolute', top: 48, right: 18, zIndex: 4 },
   avatarRing: { padding: 4, borderRadius: 46, backgroundColor: 'rgba(255,255,255,0.9)' },
   nombreOnColor: { fontSize: 19, fontWeight: '800', color: '#fff', marginTop: 14, textAlign: 'center' },
   emailOnColor: { fontSize: 13, color: 'rgba(255,255,255,0.85)', marginTop: 2, textAlign: 'center' },
@@ -781,7 +956,8 @@ const styles = StyleSheet.create({
 
   desktopScrollContent: { paddingHorizontal: 40, paddingTop: 32, paddingBottom: 40 },
   desktopInner: { width: '100%', maxWidth: 1100, alignSelf: 'center' },
-  pageHeader: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 28 },
+  pageHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 },
+  pageHeaderIdentity: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   pageHeaderLogo: { width: 64, height: 64 },
   pageTitle: { fontSize: 26, fontWeight: '900', color: Brand.textDark, lineHeight: 30 },
   pageSubtitle: { fontSize: 12, fontWeight: '700', color: '#B0966E', marginTop: 2 },
