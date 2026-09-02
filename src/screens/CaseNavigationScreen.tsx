@@ -50,6 +50,8 @@ export default function CaseNavigationScreen({ reportId, onClose }: Props) {
     ? 500
     : Math.max(260, Math.min(320, Math.round(height * 0.42)));
   const [fitRequestId, setFitRequestId] = useState(0);
+  const [followRequestId, setFollowRequestId] = useState(0);
+  const [followUser, setFollowUser] = useState(true);
   const [activeStepIndex, setActiveStepIndex] = useState(0);
   const startedForReportRef = useRef<string | null>(null);
   const attemptedDestinationRevisionRef = useRef<string | null>(null);
@@ -74,9 +76,7 @@ export default function CaseNavigationScreen({ reportId, onClose }: Props) {
   } = useCaseNavigation(reportId);
   const automaticRecalculation = useAutomaticRouteRecalculation({
     enabled:
-      trackingState === "active" &&
-      !accessRevoked &&
-      !destinationChanged,
+      trackingState === "active" && !accessRevoked && !destinationChanged,
     origin: liveOrigin,
     routeOrigin: currentRoute?.origin ?? null,
     geometry: currentRoute?.route.geometry ?? null,
@@ -291,6 +291,8 @@ export default function CaseNavigationScreen({ reportId, onClose }: Props) {
               geometry={currentRoute.route.geometry}
               height={mapHeight}
               fitRequestId={fitRequestId}
+              followUser={followUser}
+              followRequestId={followRequestId}
             />
             {isRefreshing && (
               <View style={styles.refreshingBadge}>
@@ -337,8 +339,15 @@ export default function CaseNavigationScreen({ reportId, onClose }: Props) {
                       : "Detectamos un desvío. Estamos actualizando la ruta desde tu ubicación."
                     : automaticRecalculation.state === "stale_route"
                       ? "La ruta venció mientras avanzabas. Se actualizará cuando termine el intervalo de seguridad."
-                    : "Detectamos un desvío. La ruta se actualizará cuando termine el intervalo de seguridad."
+                      : "Detectamos un desvío. La ruta se actualizará cuando termine el intervalo de seguridad."
                 }
+              />
+            )}
+            {automaticRecalculation.state === "gps_imprecise" && (
+              <StatusNotice
+                icon="locate-outline"
+                tone="warning"
+                text="La señal GPS es imprecisa. Conservamos la ruta y esperaremos una lectura confiable antes de recalcular."
               />
             )}
 
@@ -425,19 +434,58 @@ export default function CaseNavigationScreen({ reportId, onClose }: Props) {
               ]}
             >
               <TouchableOpacity
-                accessibilityLabel="Centrar toda la ruta"
-                onPress={() => setFitRequestId((value) => value + 1)}
+                accessibilityLabel="Seguir mi ubicación"
+                accessibilityState={{ selected: followUser }}
+                onPress={() => {
+                  setFollowUser(true);
+                  setFollowRequestId((value) => value + 1);
+                }}
                 style={[
                   styles.secondaryButton,
+                  followUser && styles.secondaryButtonSelected,
+                  isNarrow && styles.fullWidthButton,
+                ]}
+              >
+                <Ionicons
+                  name="locate-outline"
+                  size={19}
+                  color={followUser ? Brand.secondary : Brand.textDark}
+                />
+                <Text
+                  style={[
+                    styles.secondaryButtonText,
+                    followUser && styles.secondaryButtonTextSelected,
+                  ]}
+                >
+                  Seguirme
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                accessibilityLabel="Ver la ruta completa"
+                accessibilityState={{ selected: !followUser }}
+                onPress={() => {
+                  setFollowUser(false);
+                  setFitRequestId((value) => value + 1);
+                }}
+                style={[
+                  styles.secondaryButton,
+                  !followUser && styles.secondaryButtonSelected,
                   isNarrow && styles.fullWidthButton,
                 ]}
               >
                 <Ionicons
                   name="scan-outline"
                   size={19}
-                  color={Brand.textDark}
+                  color={!followUser ? Brand.secondary : Brand.textDark}
                 />
-                <Text style={styles.secondaryButtonText}>Centrar ruta</Text>
+                <Text
+                  style={[
+                    styles.secondaryButtonText,
+                    !followUser && styles.secondaryButtonTextSelected,
+                  ]}
+                >
+                  Ruta completa
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 accessibilityLabel="Recalcular ruta desde mi ubicación"
@@ -886,6 +934,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "800",
   },
+  secondaryButtonSelected: {
+    borderColor: "#9ED5CF",
+    backgroundColor: "#EAF7F5",
+  },
+  secondaryButtonTextSelected: { color: Brand.secondary },
   primaryButton: {
     flex: 1,
     minHeight: 48,

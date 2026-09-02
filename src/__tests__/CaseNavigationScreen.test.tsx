@@ -8,6 +8,7 @@ import {
 import { AppState } from "react-native";
 
 import CaseNavigationScreen from "../screens/CaseNavigationScreen";
+import CaseNavigationMap from "../components/navigation/CaseNavigationMap";
 import { useAuth } from "../context/AuthContext";
 import { useCaseNavigation } from "../hooks/useCaseNavigation";
 import type { NavigationRouteComplete } from "../types/navigation";
@@ -18,7 +19,7 @@ jest.mock("@expo/vector-icons", () => ({ Ionicons: "Ionicons" }), {
 
 jest.mock("../components/navigation/CaseNavigationMap", () => ({
   __esModule: true,
-  default: "CaseNavigationMap",
+  default: jest.fn(() => null),
 }));
 
 jest.mock("../context/AuthContext", () => ({ useAuth: jest.fn() }));
@@ -28,7 +29,13 @@ jest.mock("../hooks/useCaseNavigation", () => ({
 
 const mockedUseAuth = useAuth as jest.Mock;
 const mockedUseCaseNavigation = useCaseNavigation as jest.Mock;
+const mockedCaseNavigationMap = CaseNavigationMap as jest.Mock;
 let handleAppStateChange: ((state: "active") => void) | null = null;
+
+function latestMapProps() {
+  const calls = mockedCaseNavigationMap.mock.calls;
+  return calls[calls.length - 1]?.[0];
+}
 
 const route: NavigationRouteComplete = {
   contract_version: 1,
@@ -139,15 +146,27 @@ describe("CaseNavigationScreen", () => {
     expect(view.getByText("5.4 km")).toBeTruthy();
     expect(view.getByText("Última ubicación confirmada")).toBeTruthy();
     expect(view.getByText("Siguiente indicación")).toBeTruthy();
-    expect(
-      view.getByText("Gira a la derecha en Avenida 11 Sur"),
-    ).toBeTruthy();
+    expect(view.getByText("Gira a la derecha en Avenida 11 Sur")).toBeTruthy();
     expect(view.getByText("En 2.4 km")).toBeTruthy();
     expect(
       view.getByText(
         "Ubicación en vivo activa mientras mantengas PawAlert abierta.",
       ),
     ).toBeTruthy();
+
+    expect(latestMapProps().followUser).toBe(true);
+
+    await act(async () => {
+      fireEvent.press(view.getByLabelText("Ver la ruta completa"));
+    });
+    expect(latestMapProps().followUser).toBe(false);
+    expect(latestMapProps().fitRequestId).toBe(1);
+
+    await act(async () => {
+      fireEvent.press(view.getByLabelText("Seguir mi ubicación"));
+    });
+    expect(latestMapProps().followUser).toBe(true);
+    expect(latestMapProps().followRequestId).toBe(1);
 
     fireEvent.press(view.getByText("Recalcular"));
     expect(recalculate).toHaveBeenCalledTimes(1);

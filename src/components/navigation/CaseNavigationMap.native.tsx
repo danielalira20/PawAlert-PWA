@@ -17,6 +17,8 @@ export default function CaseNavigationMap({
   lineStyle = "route",
   height = 360,
   fitRequestId = 0,
+  followUser = false,
+  followRequestId = 0,
 }: CaseNavigationMapProps) {
   const mapRef = useRef<MapView>(null);
   const originCoordinate = useMemo(
@@ -55,10 +57,22 @@ export default function CaseNavigationMap({
       animated: true,
     });
   }, [bounds]);
+  const focusOrigin = useCallback(() => {
+    mapRef.current?.animateCamera(
+      { center: originCoordinate, zoom: 16 },
+      { duration: 250 },
+    );
+  }, [originCoordinate]);
 
   useEffect(() => {
+    if (followUser) return;
     fitRoute();
-  }, [fitRequestId, fitRoute, height]);
+  }, [fitRequestId, fitRoute, followUser, height]);
+
+  useEffect(() => {
+    if (!followUser) return;
+    focusOrigin();
+  }, [focusOrigin, followRequestId, followUser]);
 
   return (
     <View
@@ -69,7 +83,7 @@ export default function CaseNavigationMap({
         ref={mapRef}
         style={StyleSheet.absoluteFillObject}
         initialRegion={initialRegion}
-        onMapReady={fitRoute}
+        onMapReady={followUser ? focusOrigin : fitRoute}
       >
         {routeCoordinates.length >= 2 && (
           <Polyline

@@ -11,6 +11,8 @@ export interface CaseNavigationMapProps {
   lineStyle?: "route" | "fallback";
   height?: number;
   fitRequestId?: number;
+  followUser?: boolean;
+  followRequestId?: number;
 }
 
 export interface MapCoordinate {

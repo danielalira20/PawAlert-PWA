@@ -35,14 +35,18 @@ const destinationIcon = L.divIcon({
 
 function FitNavigationBounds({
   coordinates,
+  enabled,
   fitRequestId,
 }: {
   coordinates: [number, number][];
+  enabled: boolean;
   fitRequestId: number;
 }) {
   const map = useMap();
 
   useEffect(() => {
+    if (!enabled) return;
+
     let frame = 0;
 
     const fitRoute = () => {
@@ -79,7 +83,28 @@ function FitNavigationBounds({
       observer.disconnect();
       window.cancelAnimationFrame(frame);
     };
-  }, [coordinates, fitRequestId, map]);
+  }, [coordinates, enabled, fitRequestId, map]);
+
+  return null;
+}
+
+function FollowNavigationOrigin({
+  enabled,
+  origin,
+  followRequestId,
+}: {
+  enabled: boolean;
+  origin: [number, number];
+  followRequestId: number;
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!enabled) return;
+
+    map.stop();
+    map.setView(origin, Math.max(map.getZoom(), 16), { animate: false });
+  }, [enabled, followRequestId, map, origin]);
 
   return null;
 }
@@ -91,9 +116,15 @@ export default function CaseNavigationLeafletMap({
   lineStyle = "route",
   height = 360,
   fitRequestId = 0,
+  followUser = false,
+  followRequestId = 0,
 }: LeafletProps) {
   const originCoordinate = useMemo(
     () => ({ latitude: origin.latitude, longitude: origin.longitude }),
+    [origin.latitude, origin.longitude],
+  );
+  const originPosition = useMemo(
+    () => [origin.latitude, origin.longitude] as [number, number],
     [origin.latitude, origin.longitude],
   );
   const destinationCoordinate = useMemo(
@@ -137,7 +168,13 @@ export default function CaseNavigationLeafletMap({
     >
       <FitNavigationBounds
         coordinates={bounds}
+        enabled={!followUser}
         fitRequestId={fitRequestId}
+      />
+      <FollowNavigationOrigin
+        enabled={followUser}
+        origin={originPosition}
+        followRequestId={followRequestId}
       />
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
