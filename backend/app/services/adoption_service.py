@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import unicodedata
+import math
 from hashlib import sha256
 from typing import Callable
 
@@ -20,6 +21,7 @@ from app.models.adoption import (
     AdoptionIntakeCreate,
     AdoptionIntakeResolve,
     AdoptionProfilePause,
+    AdoptionProfileMarkAdopted,
     AdoptionProfilePhotoRemove,
     AdoptionProfilePhotoReview,
     AdoptionProfilePublish,
@@ -379,11 +381,11 @@ def resolver_ingreso(
     actor_user_id: str,
     body: AdoptionIntakeResolve,
 ) -> dict:
-    # 1. Obtener la solicitud original para saber a quién notificar
+    # 1. Agregamos "fotos_propuesta_paths" al select
     solicitud = _query(
         "obtener_solicitud_base",
         lambda: supabase_admin.table("solicitudes_ingreso_adopcion")
-        .select("custodia_id, propuesto_por_usuario_id, reporte_id") # <-- AÑADIDO reporte_id
+        .select("custodia_id, propuesto_por_usuario_id, reporte_id, fotos_propuesta_paths") 
         .eq("id", request_id)
         .limit(1)
     )
@@ -400,7 +402,26 @@ def resolver_ingreso(
         },
     )
 
-    # 2. Si la asociación pide información, insertamos las notificaciones
+    # --- NUEVO: Copiar fotos de la propuesta al nuevo perfil ---
+    if body.decision == "aprobar" and solicitud and solicitud[0].get("fotos_propuesta_paths"):
+        try:
+            perfiles = supabase_admin.table("perfiles_adopcion").select("id").eq("solicitud_ingreso_id", request_id).execute()
+            if perfiles.data:
+                perfil_id = perfiles.data[0]["id"]
+                fotos_insert = []
+                for i, path in enumerate(solicitud[0]["fotos_propuesta_paths"]):
+                    fotos_insert.append({
+                        "perfil_adopcion_id": perfil_id,
+                        "storage_path": path,
+                        "orden": i + 1,
+                        "aprobada_publicacion": False
+                    })
+                if fotos_insert:
+                    supabase_admin.table("fotos_perfil_adopcion").insert(fotos_insert).execute()
+        except Exception as e:
+            logger.warning(f"No se pudieron copiar las fotos al perfil: {e}")
+
+    # 2. (El resto del código de notificaciones se queda igual...)
     if solicitud and body.decision == "solicitar_informacion":
         from datetime import datetime, timezone
         try:
@@ -479,7 +500,46 @@ def pausar_perfil(
         },
     )
 
+def marcar_perfil_adoptado(
+    profile_id: str,
+    association_id: str,
+    actor_user_id: str,
+    body: AdoptionProfileMarkAdopted,
+) -> dict:
+    perfil = _obtener_perfil_asociacion(profile_id, association_id)
+    if perfil.get("estado") == "adoptado":
+        return perfil
 
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+    
+    try:
+        # 1. Actualizamos el estado del perfil
+        response = supabase_admin.table("perfiles_adopcion").update({
+            "estado": "adoptado",
+            "adoptado_at": now,
+            "actualizado_at": now
+        }).eq("id", profile_id).eq("asociacion_id", association_id).execute()
+
+        if not response.data:
+            raise AdoptionServiceError("perfil_adopcion_no_encontrado")
+            
+        # 2. Registramos el movimiento en el historial
+        supabase_admin.table("historial_adopcion").insert({
+            "asociacion_id": association_id,
+            "perfil_adopcion_id": profile_id,
+            "actor_usuario_id": actor_user_id,
+            "tipo_evento": "marcado_adoptado_directamente",
+            "estado_anterior": perfil.get("estado"),
+            "estado_nuevo": "adoptado",
+            "idempotency_key": body.idempotency_key,
+        }).execute()
+            
+        return response.data[0]
+    except Exception as error:
+        logger.exception("Fallo al marcar adopción como adoptada")
+        raise AdoptionServiceError("adopcion_operacion_no_disponible") from error
+    
 def actualizar_perfil(
     profile_id: str,
     association_id: str,
@@ -816,6 +876,8 @@ def listar_ingresos_asociacion(association_id: str) -> list[dict]:
             "informacion_respondida_at, motivo_resolucion, creada_at, actualizada_at"
         )
         .eq("asociacion_id", association_id)
+        # --- AÑADIDO: Ocultar las aprobadas o rechazadas de la bandeja ---
+        .in_("estado", ["pendiente", "en_revision", "requiere_informacion", "solicitando_informacion"])
         .order("creada_at", desc=True),
     )
     return [
@@ -1773,7 +1835,7 @@ def _contexto_publico_perfiles(
         rows = _query(
             "resolver asociaciones de adopciones públicas",
             lambda: supabase_admin.table("asociaciones")
-            .select("id, nombre, acerca_de, logo_url, activo, verificado")
+            .select("id, nombre, acerca_de, logo_url, contacto_email, contacto_telefono, activo, verificado, latitud, longitud")
             .in_("id", sorted(association_ids))
             .eq("activo", True)
             .eq("verificado", True),
@@ -1784,6 +1846,10 @@ def _contexto_publico_perfiles(
                 "nombre": row["nombre"],
                 "acerca_de": row.get("acerca_de"),
                 "logo_url": row.get("logo_url"),
+                "email": row.get("contacto_email"),
+                "telefono": row.get("contacto_telefono"),
+                "latitud": row.get("latitud"),
+                "longitud": row.get("longitud"),
             }
             for row in rows
             if row.get("id")
@@ -1910,7 +1976,7 @@ def _fotos_publicas(
     return grouped
 
 
-def _consultar_perfiles_publicos(profile_id: str | None = None) -> list[dict]:
+def _consultar_perfiles_publicos(profile_id: str | None = None, asociacion_id: str | None = None) -> list[dict]:
     def query():
         result = (
             supabase_admin.table("perfiles_adopcion")
@@ -1920,7 +1986,9 @@ def _consultar_perfiles_publicos(profile_id: str | None = None) -> list[dict]:
         )
         if profile_id:
             result = result.eq("id", profile_id).limit(1)
-        else:
+        if asociacion_id:
+            result = result.eq("asociacion_id", asociacion_id)
+        if not profile_id:
             result = result.order("publicado_at", desc=True).order(
                 "id", desc=True
             )
@@ -1959,21 +2027,30 @@ def listar_adopciones_publicas(
     edad: str | None,
     zona: str | None,
     compatible_con: str | None,
+    asociacion_id: str | None = None,
+    lat: float | None = None,
+    lng: float | None = None,
     pagina: int,
     limite: int,
 ) -> dict:
-    profiles = _consultar_perfiles_publicos()
+    profiles = _consultar_perfiles_publicos(asociacion_id=asociacion_id)
     associations, catalogs = _contexto_publico_perfiles(profiles)
     species_filter = _normalizar_filtro_publico(especie)
     size_filter = _normalizar_filtro_publico(tamanio)
     zone_filter = _normalizar_filtro_publico(zona)
     public_profiles: list[dict] = []
 
+    # Fórmula de Haversine para distancia en KM
+    def calcular_distancia(lat1, lon1, lat2, lon2):
+        if None in (lat1, lon1, lat2, lon2): return float('inf')
+        R = 6371.0
+        dlat = math.radians(float(lat2) - float(lat1))
+        dlon = math.radians(float(lon2) - float(lon1))
+        a = math.sin(dlat / 2)**2 + math.cos(math.radians(float(lat1))) * math.cos(math.radians(float(lat2))) * math.sin(dlon / 2)**2
+        return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
     for profile in profiles:
-        if (
-            profile.get("estado") != "publicado"
-            or profile.get("estado_moderacion") != "visible"
-        ):
+        if profile.get("estado") != "publicado" or profile.get("estado_moderacion") != "visible":
             continue
         association = associations.get(profile.get("asociacion_id"))
         if not association:
@@ -1981,38 +2058,33 @@ def listar_adopciones_publicas(
         shaped = _serializar_perfil_publico(profile, association, catalogs)
         if not shaped:
             continue
-        if species_filter and _normalizar_filtro_publico(
-            shaped["tipo_animal"]["clave"]
-        ) != species_filter:
-            continue
-        if size_filter and _normalizar_filtro_publico(
-            shaped["tamanio"]["clave"]
-        ) != size_filter:
-            continue
-        if edad and shaped["edad_aproximada"] != edad:
-            continue
-        if zone_filter and zone_filter not in _normalizar_filtro_publico(
-            shaped["zona_general"]
-        ):
-            continue
-        if not _perfil_coincide_compatibilidad(profile, compatible_con):
-            continue
+            
+        # Filtros
+        if species_filter and _normalizar_filtro_publico(shaped["tipo_animal"]["clave"]) != species_filter: continue
+        if size_filter and _normalizar_filtro_publico(shaped["tamanio"]["clave"]) != size_filter: continue
+        if edad and shaped["edad_aproximada"] != edad: continue
+        if zone_filter and zone_filter not in _normalizar_filtro_publico(shaped["zona_general"]): continue
+        if not _perfil_coincide_compatibilidad(profile, compatible_con): continue
+        
+        # Calcular distancia si se enviaron coordenadas
+        shaped["distancia_km"] = calcular_distancia(lat, lng, association.get("latitud"), association.get("longitud"))
         public_profiles.append(shaped)
 
-    public_profiles.sort(
-        key=lambda profile: (profile["publicado_at"], profile["id"]),
-        reverse=True,
-    )
+    # Ordenar primero por fecha (por defecto)
+    public_profiles.sort(key=lambda p: (p["publicado_at"], p["id"]), reverse=True)
+    
+    # Si hay coordenadas, ordenar por distancia (los más cercanos primero)
+    if lat is not None and lng is not None:
+        public_profiles.sort(key=lambda p: p.get("distancia_km", float('inf')))
+
     total = len(public_profiles)
     start = (pagina - 1) * limite
     page_items = public_profiles[start : start + limite]
-    photos = _fotos_publicas(
-        [profile["id"] for profile in page_items],
-        solo_portada=True,
-    )
+    photos = _fotos_publicas([profile["id"] for profile in page_items], solo_portada=True)
     for profile in page_items:
         profile_photos = photos.get(profile["id"], [])
         profile["foto_portada"] = profile_photos[0] if profile_photos else None
+        
     return {
         "items": page_items,
         "pagina": pagina,
@@ -2020,7 +2092,6 @@ def listar_adopciones_publicas(
         "total": total,
         "tiene_mas": start + len(page_items) < total,
     }
-
 
 def obtener_adopcion_publica(profile_id: str) -> dict:
     profiles = _consultar_perfiles_publicos(profile_id)

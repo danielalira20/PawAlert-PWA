@@ -63,6 +63,8 @@ interface AdopcionProfile {
   edad_aproximada: string;
   fotos?: { foto_url: string }[];
   actualizado_at: string;
+  origen?: string;
+  solicitud_ingreso_id?: string | null;
 }
 
 interface Props {
@@ -99,6 +101,44 @@ export function AdopcionesPanel({ visible, showToast, onClose }: Props) {
     salud_conocida: '',
   });
   const [directErrors, setDirectErrors] = useState<Record<string, string>>({});
+  
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  const pausarPerfil = async (id: string) => {
+    setActionLoading(id);
+    try {
+      await axios.post(`${API_URL}/associations/me/adoptions/${id}/pause`, {
+        motivo: 'Pausado para edición o resguardo temporal',
+        idempotency_key: `pause_${id}_${Date.now()}`
+      }, { headers: { Authorization: `Bearer ${token}` } });
+      showToast({ type: 'success', title: 'Perfil pausado', message: 'Ya no es visible en el catálogo y puedes editarlo.' });
+      cargarDatos();
+    } catch (error: any) {
+      showToast({ type: 'error', title: 'Error', message: error?.response?.data?.detail || 'No se pudo pausar el perfil.' });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const marcarAdoptado = async (id: string) => {
+    setActionLoading(id);
+    try {
+      await axios.post(`${API_URL}/associations/me/adoptions/${id}/mark-adopted`, {
+        idempotency_key: `adopt_${id}_${Date.now()}`
+      }, { headers: { Authorization: `Bearer ${token}` } });
+      showToast({ type: 'success', title: '¡Felicidades!', message: 'El peludito ha sido marcado como adoptado.' });
+      cargarDatos();
+    } catch (error: any) {
+      // Capturamos un 404 en caso de que aún no exista este endpoint en el backend
+      if (error?.response?.status === 404) {
+        showToast({ type: 'info', title: 'Falta endpoint', message: 'Se requiere agregar la ruta rápida de adopción en el backend.' });
+      } else {
+        showToast({ type: 'error', title: 'Error', message: 'No se pudo marcar como adoptado.' });
+      }
+    } finally {
+      setActionLoading(null);
+    }
+  };
 
   const cargarDatos = useCallback(async () => {
     if (!token || !visible) return;
@@ -320,12 +360,23 @@ export function AdopcionesPanel({ visible, showToast, onClose }: Props) {
                   key={perfil.id}
                   activeOpacity={0.8}
                   onPress={() => {
+                    if (perfil.estado === 'publicado') {
+                      showToast({ type: 'warning', title: 'Perfil publicado', message: 'Debes pausar la adopción primero para poder editar el expediente.' });
+                      return;
+                    }
+                    if (perfil.estado === 'adoptado') {
+                      showToast({ type: 'info', title: 'Adoptado', message: 'Este expediente ya está cerrado porque fue adoptado.' });
+                      return;
+                    }
                     if (onClose) onClose();
                     router.push(`/editor-adopcion/${perfil.id}` as any);
                   }} 
                   style={{
                     flexGrow: 1, flexBasis: 280, maxWidth: screenWidth >= 768 ? '48%' : '100%',
-                    backgroundColor: COLORS.white, borderRadius: 20, padding: 16, borderWidth: 1, borderColor: '#F0E6D2'
+                    backgroundColor: perfil.estado === 'adoptado' ? '#F9FAFB' : COLORS.white, 
+                    borderRadius: 20, padding: 16, borderWidth: 1, 
+                    borderColor: perfil.estado === 'adoptado' ? '#E5E7EB' : '#F0E6D2',
+                    opacity: perfil.estado === 'adoptado' ? 0.7 : 1
                   }}
                 >
                   <View style={{ flexDirection: 'row', gap: 12 }}>
@@ -342,8 +393,8 @@ export function AdopcionesPanel({ visible, showToast, onClose }: Props) {
                         <Text style={{ fontSize: 16, fontWeight: '800', color: COLORS.textDark, flex: 1 }} numberOfLines={1}>
                           {perfil.nombre_publico || 'Borrador sin nombre'}
                         </Text>
-                        <View style={{ backgroundColor: perfil.estado === 'publicado' ? 'rgba(32,150,83,0.1)' : 'rgba(236,128,43,0.1)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }}>
-                          <Text style={{ color: perfil.estado === 'publicado' ? '#209653' : COLORS.primary, fontSize: 9, fontWeight: '800', textTransform: 'uppercase' }}>
+                        <View style={{ backgroundColor: perfil.estado === 'publicado' ? 'rgba(32,150,83,0.1)' : perfil.estado === 'adoptado' ? 'rgba(107,114,128,0.1)' : 'rgba(236,128,43,0.1)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }}>
+                          <Text style={{ color: perfil.estado === 'publicado' ? '#209653' : perfil.estado === 'adoptado' ? '#6B7280' : COLORS.primary, fontSize: 9, fontWeight: '800', textTransform: 'uppercase' }}>
                             {perfil.estado.replace('_', ' ')}
                           </Text>
                         </View>
@@ -353,11 +404,51 @@ export function AdopcionesPanel({ visible, showToast, onClose }: Props) {
                         {perfil.sexo} · {perfil.edad_aproximada}
                       </Text>
                       
+                      {perfil.solicitud_ingreso_id && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6, gap: 4 }}>
+                          <Ionicons name="person-circle-outline" size={14} color={COLORS.accent} />
+                          <Text style={{ fontSize: 11, color: COLORS.textDark, fontWeight: '600' }} numberOfLines={1}>
+                            Propuesto por Voluntario
+                          </Text>
+                        </View>
+                      )}
+                      
                       <Text style={{ fontSize: 10, color: COLORS.textLight, marginTop: 10 }}>
                         Actualizado hace {formatDistanceToNow(new Date(perfil.actualizado_at), { locale: es })}
                       </Text>
                     </View>
                   </View>
+
+                  {/* NUEVO: Botones de Acción si está publicado */}
+                  {perfil.estado === 'publicado' && (
+                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderColor: '#F0E6D2' }}>
+                      <TouchableOpacity 
+                        onPress={() => pausarPerfil(perfil.id)}
+                        disabled={actionLoading === perfil.id}
+                        style={{ flex: 1, backgroundColor: '#F3F4F6', paddingVertical: 10, borderRadius: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}
+                      >
+                        {actionLoading === perfil.id ? <ActivityIndicator size="small" color={COLORS.textDark} /> : (
+                          <>
+                            <Ionicons name="pause" size={14} color={COLORS.textDark} style={{ marginRight: 4 }} />
+                            <Text style={{ color: COLORS.textDark, fontWeight: '700', fontSize: 12 }}>Pausar</Text>
+                          </>
+                        )}
+                      </TouchableOpacity>
+                      
+                      <TouchableOpacity 
+                        onPress={() => marcarAdoptado(perfil.id)}
+                        disabled={actionLoading === perfil.id}
+                        style={{ flex: 1, backgroundColor: 'rgba(32,150,83,0.1)', paddingVertical: 10, borderRadius: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}
+                      >
+                        {actionLoading === perfil.id ? <ActivityIndicator size="small" color="#209653" /> : (
+                          <>
+                            <Ionicons name="heart" size={14} color="#209653" style={{ marginRight: 4 }} />
+                            <Text style={{ color: '#209653', fontWeight: '700', fontSize: 12 }}>Adoptado</Text>
+                          </>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  )}
                 </TouchableOpacity>
               ))}
             </View>

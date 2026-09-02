@@ -9,7 +9,7 @@ export function normalizeEventDeepLinkId(
 }
 
 export function buildEventDeepLinkPath(eventId: string): string {
-  return `/map?event_id=${encodeURIComponent(eventId.trim())}`;
+  return `/events?event_id=${encodeURIComponent(eventId.trim())}`;
 }
 
 export function buildEventDeepLinkUrl(
