@@ -1,14 +1,34 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
-import { CircleMarker, MapContainer, TileLayer, useMap } from 'react-leaflet';
+import { MapContainer, Marker, TileLayer, useMap } from 'react-leaflet';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 
 import { EventTheme } from '../../../constants/eventTheme';
+import { CARTO_LIGHT_TILE_URL } from '../../../constants/mapTiles';
 import { usePublicEventMap } from '../../../hooks/events/usePublicEventMap';
 import { EVENT_TYPE_META, formatEventSchedule } from '../../../utils/eventFormatters';
 import type { EventMapItem } from '../../../types/event';
 import type { CompactEventsMapProps } from './CompactEventsMap.types';
+
+function createEventPin(event: EventMapItem, selected = false) {
+  const meta = EVENT_TYPE_META[event.tipo];
+  const size = selected ? 46 : 38;
+  return L.divIcon({
+    className: 'pawalert-event-marker',
+    html: `<div style="display:flex;flex-direction:column;align-items:center;transform-origin:bottom center;transform:scale(${selected ? 1.08 : 1})">
+      <div style="width:${size}px;height:${size}px;border-radius:50%;border:3px solid ${meta.color};background:${meta.backgroundColor};box-shadow:0 4px 14px ${meta.color}70;display:flex;align-items:center;justify-content:center">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="19" height="19" aria-hidden="true">
+          <path fill="${meta.color}" d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.89-2-2-2Zm0 16H5V9h14v11ZM7 11h5v5H7v-5Z"/>
+        </svg>
+      </div>
+      <div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:9px solid ${meta.color};margin-top:-1px"></div>
+    </div>`,
+    iconAnchor: [(size + 8) / 2, size + 9],
+    iconSize: [size + 8, size + 9],
+  });
+}
 
 function FitEventBounds({ events }: { events: EventMapItem[] }) {
   const map = useMap();
@@ -28,8 +48,26 @@ function FitEventBounds({ events }: { events: EventMapItem[] }) {
   return null;
 }
 
-export default function CompactEventsMap({ filters, onSelectEvent }: CompactEventsMapProps) {
-  const { events, error, isLoading, refresh } = usePublicEventMap(true, filters);
+function KeepMapSized() {
+  const map = useMap();
+
+  useEffect(() => {
+    const container = map.getContainer();
+    const updateSize = () => map.invalidateSize({ animate: false });
+    const frame = requestAnimationFrame(updateSize);
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updateSize) : null;
+    observer?.observe(container);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer?.disconnect();
+    };
+  }, [map]);
+
+  return null;
+}
+
+export default function CompactEventsMap({ onSelectEvent }: CompactEventsMapProps) {
+  const { events, error, isLoading, refresh } = usePublicEventMap(true);
   const [selectedEvent, setSelectedEvent] = useState<EventMapItem | null>(null);
 
   useEffect(() => {
@@ -48,22 +86,19 @@ export default function CompactEventsMap({ filters, onSelectEvent }: CompactEven
         zoom={11}
         zoomControl={false}
       >
+        <KeepMapSized />
         <TileLayer
           attribution="&copy; OpenStreetMap &copy; CARTO"
-          url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+          url={CARTO_LIGHT_TILE_URL}
         />
         <FitEventBounds events={events} />
         {events.map((event) => {
-          const meta = EVENT_TYPE_META[event.tipo];
           return (
-            <CircleMarker
-              center={[event.latitud, event.longitud]}
+            <Marker
+              icon={createEventPin(event, selectedEvent?.id === event.id)}
               eventHandlers={{ click: () => setSelectedEvent(event) }}
-              fillColor={meta.color}
-              fillOpacity={0.92}
               key={event.id}
-              pathOptions={{ color: '#FFFFFF', weight: 3 }}
-              radius={9}
+              position={[event.latitud, event.longitud]}
             />
           );
         })}
@@ -118,7 +153,7 @@ export default function CompactEventsMap({ filters, onSelectEvent }: CompactEven
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: { flex: 1, height: '100%', position: 'relative', width: '100%' },
   overlay: {
     alignItems: 'center',
     backgroundColor: 'rgba(250,247,242,0.94)',

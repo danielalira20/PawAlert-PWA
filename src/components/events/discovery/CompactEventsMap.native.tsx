@@ -9,8 +9,8 @@ import { EVENT_TYPE_META, formatEventSchedule } from '../../../utils/eventFormat
 import type { EventMapItem } from '../../../types/event';
 import type { CompactEventsMapProps } from './CompactEventsMap.types';
 
-export default function CompactEventsMap({ filters, onSelectEvent }: CompactEventsMapProps) {
-  const { events, error, isLoading, refresh } = usePublicEventMap(true, filters);
+export default function CompactEventsMap({ onSelectEvent }: CompactEventsMapProps) {
+  const { events, error, isLoading, refresh } = usePublicEventMap(true);
   const mapRef = useRef<MapView | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<EventMapItem | null>(null);
 
@@ -50,8 +50,11 @@ export default function CompactEventsMap({ filters, onSelectEvent }: CompactEven
               coordinate={{ latitude: event.latitud, longitude: event.longitud }}
               key={event.id}
               onPress={() => setSelectedEvent(event)}
-              pinColor={meta.color}
-            />
+            >
+              <View style={[styles.eventMarker, { backgroundColor: meta.backgroundColor, borderColor: meta.color }]}>
+                <Ionicons name="calendar" size={18} color={meta.color} />
+              </View>
+            </Marker>
           );
         })}
       </MapView>
@@ -106,6 +109,14 @@ export default function CompactEventsMap({ filters, onSelectEvent }: CompactEven
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  eventMarker: {
+    alignItems: 'center',
+    borderRadius: 21,
+    borderWidth: 3,
+    height: 42,
+    justifyContent: 'center',
+    width: 42,
+  },
   overlay: {
     alignItems: 'center',
     backgroundColor: 'rgba(250,247,242,0.94)',

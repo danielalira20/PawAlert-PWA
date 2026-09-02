@@ -1,13 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, Image, Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PublicEventDetailModal } from '../components/events/discovery/PublicEventDetailModal';
 import type { PublicEventFilterState } from '../components/events/discovery/PublicEventFilters';
 import { PublicEventsPanel } from '../components/events/discovery/PublicEventsPanel';
-import { buildEventMapQuery, INITIAL_PUBLIC_EVENT_FILTERS } from '../components/events/discovery/eventDiscoveryFilters';
+import { INITIAL_PUBLIC_EVENT_FILTERS } from '../components/events/discovery/eventDiscoveryFilters';
 import { Toast, useToast } from '../components/Toast';
 import { EventTheme } from '../constants/eventTheme';
 import type { EventMapItem, EventPublicDetail, EventPublicSummary } from '../types/event';
@@ -26,7 +26,6 @@ export default function EventsScreen() {
   const [filters, setFilters] = useState<PublicEventFilterState>(INITIAL_PUBLIC_EVENT_FILTERS);
   const [detailEventId, setDetailEventId] = useState<string | null>(null);
   const entrance = useRef(new Animated.Value(0)).current;
-  const mapQuery = useMemo(() => buildEventMapQuery(filters), [filters]);
   const { toast, translateY, showToast } = useToast();
 
   useEffect(() => {
@@ -129,7 +128,7 @@ export default function EventsScreen() {
             </View>
             <View style={styles.mapViewport}>
               <Suspense fallback={<View style={styles.mapLoading}><ActivityIndicator color={EventTheme.colors.primary} /></View>}>
-                <CompactEventsMap filters={mapQuery} onSelectEvent={openMapEvent} />
+                <CompactEventsMap onSelectEvent={openMapEvent} />
               </Suspense>
             </View>
           </View>
@@ -258,7 +257,7 @@ const styles = StyleSheet.create({
   mapTitle: { color: EventTheme.colors.text, fontFamily: EventTheme.typography.bold, fontSize: 13 },
   mapSubtitle: { color: EventTheme.colors.textMuted, fontFamily: EventTheme.typography.regular, fontSize: 9, marginTop: 1 },
   mapBadge: { alignItems: 'center', backgroundColor: '#FFF0E2', borderRadius: 14, height: 32, justifyContent: 'center', width: 32 },
-  mapViewport: { flex: 1, minHeight: 215, overflow: 'hidden' },
+  mapViewport: { flex: 1, minHeight: 215, overflow: 'hidden', width: '100%' },
   mapLoading: { alignItems: 'center', backgroundColor: EventTheme.colors.surfaceWarm, flex: 1, justifyContent: 'center' },
   decorCircleTop: {
     backgroundColor: 'rgba(255,255,255,0.07)',
