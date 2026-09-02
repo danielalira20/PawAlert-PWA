@@ -1122,7 +1122,8 @@ async def obtener_reportes_voluntario(usuario_id: str, rol: str = None) -> dict:
             .select(
                 "reporte_id, ruta_status, ruta_duracion_segundos, "
                 "ruta_distancia_metros, ruta_geometria, ruta_error_codigo, "
-                "ruta_calculada_at"
+                "ruta_calculada_at, ruta_destino_latitud, "
+                "ruta_destino_longitud"
             )
             .eq("usuario_asignado_id", usuario_id)
             .eq("estado", "confirmada")
@@ -1142,6 +1143,15 @@ async def obtener_reportes_voluntario(usuario_id: str, rol: str = None) -> dict:
                     "calculated_at": (
                         str(ruta["ruta_calculada_at"])
                         if ruta.get("ruta_calculada_at")
+                        else None
+                    ),
+                    "destination": (
+                        {
+                            "latitude": float(ruta["ruta_destino_latitud"]),
+                            "longitude": float(ruta["ruta_destino_longitud"]),
+                        }
+                        if ruta.get("ruta_destino_latitud") is not None
+                        and ruta.get("ruta_destino_longitud") is not None
                         else None
                     ),
                 }

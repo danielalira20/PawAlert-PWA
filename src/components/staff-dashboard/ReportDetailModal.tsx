@@ -17,6 +17,11 @@ import { ConditionBadge } from './ConditionBadge';
 import { AnimalCarousel } from '../common/AnimalCarousel';
 import type { ReporteStaff } from '../../types/reportestaff';
 import { getAnimales, animalMasGrave, totalAnimales } from '../../types/reporte';
+import {
+  buildExternalNavigationUrl,
+  resolveExternalNavigationDestination,
+  type ExternalNavigationProvider,
+} from '../../services/externalNavigationService';
 
 const DESKTOP_BREAKPOINT = 900;
 
@@ -61,23 +66,15 @@ export function ReportDetailModal({
   const isDesktop = width >= DESKTOP_BREAKPOINT;
   const requiereLlegadaZona = esHogarTemporal || esVoluntarioInterno;
 
-  const tieneCoordenadas =
-    typeof reporte?.latitud === 'number' &&
-    Number.isFinite(reporte.latitud) &&
-    typeof reporte?.longitud === 'number' &&
-    Number.isFinite(reporte.longitud);
+  const destinoNavegacion = reporte ? resolveExternalNavigationDestination(reporte) : null;
   const tieneRuta =
     reporte?.ruta?.status === 'complete' &&
     typeof reporte.ruta.duration_seconds === 'number' &&
     typeof reporte.ruta.distance_meters === 'number';
 
-  const abrirNavegacion = async (proveedor: 'google' | 'waze') => {
-    if (!tieneCoordenadas || !reporte) return;
-    const destino = `${reporte.latitud},${reporte.longitud}`;
-    const url =
-      proveedor === 'google'
-        ? `https://www.google.com/maps/dir/?api=1&destination=${destino}`
-        : `https://www.waze.com/ul?ll=${destino}&navigate=yes`;
+  const abrirNavegacion = async (proveedor: ExternalNavigationProvider) => {
+    if (!destinoNavegacion) return;
+    const url = buildExternalNavigationUrl(proveedor, destinoNavegacion);
 
     try {
       await Linking.openURL(url);
@@ -156,7 +153,7 @@ export function ReportDetailModal({
                     </View>
                   </View>
                 ) : null}
-                {tieneCoordenadas && (
+                {destinoNavegacion && (
                   <View style={styles.navigationActions}>
                     <TouchableOpacity
                       accessibilityLabel="Abrir ruta en Google Maps"

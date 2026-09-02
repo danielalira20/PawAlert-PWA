@@ -28,6 +28,10 @@ export interface ReporteStaff {
     } | null;
     error_code: string | null;
     calculated_at: string | null;
+    destination?: {
+      latitude: number;
+      longitude: number;
+    } | null;
   } | null;
   // Motor de sugerencias Ruta 1 (BACK01/BACK02) — controlan si se muestra
   // el botón "Registrar llegada a veterinaria": solo aplica cuando ya se
