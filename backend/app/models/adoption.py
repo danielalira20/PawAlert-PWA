@@ -249,6 +249,16 @@ class AdoptionProfilePause(BaseModel):
             raise ValueError("El texto no puede estar vacío")
         return cleaned
 
+class AdoptionProfileMarkAdopted(BaseModel):
+    idempotency_key: str = Field(min_length=8, max_length=200)
+
+    @field_validator("idempotency_key")
+    @classmethod
+    def limpiar_idempotencia(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("La clave de idempotencia no puede estar vacía")
+        return cleaned
 
 class AdoptionPublicCatalogItem(BaseModel):
     clave: str

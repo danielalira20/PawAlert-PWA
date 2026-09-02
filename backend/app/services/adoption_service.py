@@ -20,6 +20,7 @@ from app.models.adoption import (
     AdoptionIntakeCreate,
     AdoptionIntakeResolve,
     AdoptionProfilePause,
+    AdoptionProfileMarkAdopted,
     AdoptionProfilePhotoRemove,
     AdoptionProfilePhotoReview,
     AdoptionProfilePublish,
@@ -498,7 +499,46 @@ def pausar_perfil(
         },
     )
 
+def marcar_perfil_adoptado(
+    profile_id: str,
+    association_id: str,
+    actor_user_id: str,
+    body: AdoptionProfileMarkAdopted,
+) -> dict:
+    perfil = _obtener_perfil_asociacion(profile_id, association_id)
+    if perfil.get("estado") == "adoptado":
+        return perfil
 
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+    
+    try:
+        # 1. Actualizamos el estado del perfil
+        response = supabase_admin.table("perfiles_adopcion").update({
+            "estado": "adoptado",
+            "adoptado_at": now,
+            "actualizado_at": now
+        }).eq("id", profile_id).eq("asociacion_id", association_id).execute()
+
+        if not response.data:
+            raise AdoptionServiceError("perfil_adopcion_no_encontrado")
+            
+        # 2. Registramos el movimiento en el historial
+        supabase_admin.table("historial_adopcion").insert({
+            "asociacion_id": association_id,
+            "perfil_adopcion_id": profile_id,
+            "actor_usuario_id": actor_user_id,
+            "tipo_evento": "marcado_adoptado_directamente",
+            "estado_anterior": perfil.get("estado"),
+            "estado_nuevo": "adoptado",
+            "idempotency_key": body.idempotency_key,
+        }).execute()
+            
+        return response.data[0]
+    except Exception as error:
+        logger.exception("Fallo al marcar adopción como adoptada")
+        raise AdoptionServiceError("adopcion_operacion_no_disponible") from error
+    
 def actualizar_perfil(
     profile_id: str,
     association_id: str,

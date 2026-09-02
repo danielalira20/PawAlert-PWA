@@ -18,6 +18,7 @@ from app.models.adoption import (
     AdoptionIntakeCreate,
     AdoptionIntakeResolve,
     AdoptionProfilePause,
+    AdoptionProfileMarkAdopted,
     AdoptionProfilePhotoRemove,
     AdoptionProfilePhotoReview,
     AdoptionProfilePublish,
@@ -666,6 +667,23 @@ def pause_adoption_profile(
     association_id = _association_context(user)
     return _call(
         lambda: adoption_service.pausar_perfil(
+            str(profile_id),
+            association_id,
+            user["id"],
+            body,
+        )
+    )
+
+@router.post("/associations/me/adoptions/{profile_id}/mark-adopted")
+def mark_profile_adopted(
+    profile_id: UUID,
+    body: AdoptionProfileMarkAdopted,
+    authorization: Optional[str] = Header(None),
+):
+    user = _authenticated_user(authorization)
+    association_id = _association_context(user)
+    return _call(
+        lambda: adoption_service.marcar_perfil_adoptado(
             str(profile_id),
             association_id,
             user["id"],
