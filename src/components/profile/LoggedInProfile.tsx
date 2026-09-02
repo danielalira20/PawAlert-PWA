@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useFocusEffect } from 'expo-router';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, useWindowDimensions, Modal, TextInput, ActivityIndicator, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, useWindowDimensions, Modal, TextInput, ActivityIndicator, Platform, Image } from 'react-native';
 import { validarNombre } from '../../utils/validators';
 import { Ionicons } from '@expo/vector-icons';
 import { Toast, useToast } from '../Toast';import { LinearGradient } from 'expo-linear-gradient';
@@ -32,6 +32,7 @@ import { ImpactoInsigniasToggle } from './ImpactoInsigniasToggle';
 import { AvatarSelector } from './AvatarSelector';
 
 const DESKTOP_BREAKPOINT = 900;
+const brandLogo = require('../../assets/logo/logo_pawAlert.png');
 
 interface Props {
   onOpenMisReportes: () => void;
@@ -552,14 +553,7 @@ export function LoggedInProfile({
 
             {/* Encabezado de página */}
             <View style={styles.pageHeader}>
-              <LinearGradient
-                colors={[Brand.primary, Brand.primaryDark]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.pageHeaderIcon}
-              >
-                <Ionicons name="paw" size={20} color="#fff" />
-              </LinearGradient>
+              <Image source={brandLogo} style={styles.pageHeaderLogo} resizeMode="cover" />
               <View>
                 <Text style={styles.pageTitle}>Mi Perfil</Text>
                 <Text style={styles.pageSubtitle}>PawAlert · Gestión de cuenta</Text>
@@ -788,18 +782,7 @@ const styles = StyleSheet.create({
   desktopScrollContent: { paddingHorizontal: 40, paddingTop: 32, paddingBottom: 40 },
   desktopInner: { width: '100%', maxWidth: 1100, alignSelf: 'center' },
   pageHeader: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 28 },
-  pageHeaderIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: Brand.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 3,
-  },
+  pageHeaderLogo: { width: 64, height: 64 },
   pageTitle: { fontSize: 26, fontWeight: '900', color: Brand.textDark, lineHeight: 30 },
   pageSubtitle: { fontSize: 12, fontWeight: '700', color: '#B0966E', marginTop: 2 },
 
