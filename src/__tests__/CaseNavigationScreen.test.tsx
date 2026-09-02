@@ -60,7 +60,16 @@ const route: NavigationRouteComplete = {
         [-98.22, 19.06],
       ],
     },
-    steps: [],
+    steps: [
+      {
+        type: "turn",
+        modifier: "right",
+        street_name: "Avenida 11 Sur",
+        distance_meters: 320,
+        duration_seconds: 44,
+        location: [-98.2081, 19.043],
+      },
+    ],
   },
   calculated_at: "2026-09-01T18:30:01.000Z",
   expires_at: "2026-09-01T18:32:01.000Z",
@@ -127,6 +136,11 @@ describe("CaseNavigationScreen", () => {
     expect(view.getByText("12 min")).toBeTruthy();
     expect(view.getByText("5.4 km")).toBeTruthy();
     expect(view.getByText("Última ubicación confirmada")).toBeTruthy();
+    expect(view.getByText("Siguiente indicación")).toBeTruthy();
+    expect(
+      view.getByText("Gira a la derecha en Avenida 11 Sur"),
+    ).toBeTruthy();
+    expect(view.getByText("En 320 m")).toBeTruthy();
     expect(
       view.getByText("Pulsa Recalcular para actualizar tu ubicación."),
     ).toBeTruthy();

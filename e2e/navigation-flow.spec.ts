@@ -188,7 +188,16 @@ async function prepareAuthenticatedNavigation(
               [-98.2582, 19.0474],
             ],
           },
-          steps: [],
+          steps: [
+            {
+              type: 'turn',
+              modifier: 'right',
+              street_name: 'Avenida 11 Sur',
+              distance_meters: 320,
+              duration_seconds: 44,
+              location: [-98.2081, 19.043],
+            },
+          ],
         },
         expires_at: '2026-09-01T15:06:00.000Z',
         error_code: null,
@@ -220,6 +229,10 @@ test('muestra, recalcula y retira una ruta de asignación confirmada', async ({
   await expect(page.getByText('Última ubicación confirmada')).toBeVisible();
   await expect(page.getByText('12 min')).toBeVisible();
   await expect(page.getByText('5.4 km')).toBeVisible();
+  await expect(
+    page.getByText('Gira a la derecha en Avenida 11 Sur'),
+  ).toBeVisible();
+  await expect(page.getByText('En 320 m')).toBeVisible();
   await expect(
     page.getByLabel('Mapa de navegación del caso'),
   ).toBeVisible();

@@ -26,6 +26,8 @@ import {
   formatNavigationAge,
   formatNavigationDistance,
   formatNavigationDuration,
+  formatNavigationInstruction,
+  formatNavigationStepDistance,
 } from "../utils/navigationPresentation";
 import type { NavigationGeometry } from "../types/navigation";
 
@@ -167,6 +169,7 @@ export default function CaseNavigationScreen({ reportId, onClose }: Props) {
   const routeUsesLatestDestination =
     !capabilities?.destination_revision ||
     currentRoute?.destination.revision === capabilities.destination_revision;
+  const nextStep = currentRoute?.route.steps[0] ?? null;
   const emptyStateTitle = accessRevoked
     ? "La navegación ya no está disponible"
     : error?.code === "no_route"
@@ -282,6 +285,28 @@ export default function CaseNavigationScreen({ reportId, onClose }: Props) {
                 tone="error"
                 text={`${error.message} La ruta anterior permanece visible.`}
               />
+            )}
+
+            {nextStep && (
+              <View
+                accessibilityLabel="Siguiente indicación de navegación"
+                style={styles.nextInstruction}
+              >
+                <View style={styles.nextInstructionIcon}>
+                  <Ionicons name="navigate" size={22} color="#FFFFFF" />
+                </View>
+                <View style={styles.nextInstructionCopy}>
+                  <Text style={styles.nextInstructionLabel}>
+                    Siguiente indicación
+                  </Text>
+                  <Text style={styles.nextInstructionTitle}>
+                    {formatNavigationInstruction(nextStep)}
+                  </Text>
+                  <Text style={styles.nextInstructionDistance}>
+                    {formatNavigationStepDistance(nextStep)}
+                  </Text>
+                </View>
+              </View>
             )}
 
             <View style={styles.destinationRow}>
@@ -676,6 +701,44 @@ const styles = StyleSheet.create({
   details: { width: "100%", paddingHorizontal: 18, paddingTop: 20, gap: 18 },
   detailsDesktop: { maxWidth: 900, alignSelf: "center", paddingHorizontal: 24 },
   detailsMobile: { paddingHorizontal: 16, paddingTop: 16, gap: 16 },
+  nextInstruction: {
+    minHeight: 86,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 13,
+    backgroundColor: "#2F7771",
+  },
+  nextInstructionIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.16)",
+  },
+  nextInstructionCopy: { flex: 1, minWidth: 0 },
+  nextInstructionLabel: {
+    color: "#DDF3F0",
+    fontSize: 9,
+    fontWeight: "800",
+    textTransform: "uppercase",
+  },
+  nextInstructionTitle: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    lineHeight: 21,
+    fontWeight: "800",
+    marginTop: 2,
+  },
+  nextInstructionDistance: {
+    color: "#DDF3F0",
+    fontSize: 11,
+    fontWeight: "700",
+    marginTop: 3,
+  },
   destinationRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   destinationIcon: {
     width: 42,
