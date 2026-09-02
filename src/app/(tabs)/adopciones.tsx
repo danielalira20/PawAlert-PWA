@@ -1,14 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, FlatList, ActivityIndicator, TouchableOpacity, StyleSheet, Dimensions, Platform } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { View, Text, FlatList, ActivityIndicator, TouchableOpacity, StyleSheet, Dimensions, Platform, Modal, ScrollView, Image, Linking } from 'react-native';
+import { Ionicons, Feather } from '@expo/vector-icons';
 import axios from 'axios';
 import * as Location from 'expo-location';
-import { router } from 'expo-router';
 import { API_URL } from '../../constants/api';
 import { AdoptionCard } from '../../components/adopciones/AdoptionCard';
 
 const C = { primary: '#EC802B', bg: '#FFFFFF', bgSoft: '#F9F6F0', textDark: '#4A3728', textLight: '#8C7A6B' };
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 const isDesktop = width > 768;
 
 export default function AdopcionesGlobalScreen() {
@@ -17,6 +16,12 @@ export default function AdopcionesGlobalScreen() {
   const [filtroEspecie, setFiltroEspecie] = useState<string | null>(null);
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
 
+  // Estados para el Modal de Detalle
+  const [perfilDetalle, setPerfilDetalle] = useState<any>(null);
+  const [isLoadingDetalle, setIsLoadingDetalle] = useState(false);
+  const [fotoExpandida, setFotoExpandida] = useState<string | null>(null);
+  const [mostrarContacto, setMostrarContacto] = useState(false);
+
   useEffect(() => {
     (async () => {
       let { status } = await Location.requestForegroundPermissionsAsync();
@@ -24,14 +29,12 @@ export default function AdopcionesGlobalScreen() {
         let loc = await Location.getCurrentPositionAsync({});
         setLocation({ lat: loc.coords.latitude, lng: loc.coords.longitude });
       } else {
-        // Si no da permiso, igual cargamos sin distancia
         cargarGaleria(null, null);
       }
     })();
   }, []);
 
   useEffect(() => {
-    // Cuando ya tengamos la ubicación (o sepamos que no la dio), cargamos
     if (location !== undefined) {
       cargarGaleria(location?.lat, location?.lng, filtroEspecie);
     }
@@ -50,6 +53,21 @@ export default function AdopcionesGlobalScreen() {
       console.log('Error cargando galería:', error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const verDetallePerrito = async (id: string) => {
+    setPerfilDetalle(true); // true momentáneo para abrir el modal y mostrar el loading
+    setMostrarContacto(false);
+    setIsLoadingDetalle(true);
+    try {
+      const res = await axios.get(`${API_URL}/adoptions/${id}`);
+      setPerfilDetalle(res.data);
+    } catch (error) {
+      console.log('Error cargando detalle:', error);
+      setPerfilDetalle(null);
+    } finally {
+      setIsLoadingDetalle(false);
     }
   };
 
@@ -102,12 +120,162 @@ export default function AdopcionesGlobalScreen() {
           renderItem={({ item }) => (
             <AdoptionCard 
               perfil={item} 
-              // Usa la ruta que creaste anteriormente para el detalle público
-              onPress={() => router.push(`/adopcion/${item.id}` as any)} 
+              onPress={() => verDetallePerrito(item.id)} 
             />
           )}
         />
       )}
+
+      {/* MODAL DE DETALLE DEL PERRITO */}
+      <Modal visible={!!perfilDetalle} animationType="fade" transparent={true} onRequestClose={() => setPerfilDetalle(null)}>
+        <View style={styles.overlay}>
+          <View style={styles.modalContent}>
+            
+            {/* Header del Modal */}
+            <View style={styles.headerModal}>
+              <TouchableOpacity onPress={() => setPerfilDetalle(null)} style={{ marginRight: 16 }}>
+                <Feather name="arrow-left" size={24} color={C.textDark} />
+              </TouchableOpacity>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.subtitleModal}>Detalle de adopción</Text>
+                <Text style={styles.titleModal} numberOfLines={1}>
+                  {typeof perfilDetalle === 'object' ? perfilDetalle?.nombre_publico : 'Cargando...'}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setPerfilDetalle(null)} style={styles.closeButton}>
+                <Ionicons name="close" size={24} color={C.textDark} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Contenido del Detalle */}
+            <View style={{ flex: 1 }}>
+              {isLoadingDetalle || !perfilDetalle || perfilDetalle === true ? (
+                 <View style={styles.center}><ActivityIndicator size="large" color={C.primary} /></View>
+              ) : (
+                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 24 }}>
+                  {/* Carrusel / Foto principal */}
+                  {perfilDetalle.fotos && perfilDetalle.fotos.length > 0 ? (
+                    <View style={{ position: 'relative', height: 250, marginBottom: 16, borderRadius: 16, overflow: 'hidden', backgroundColor: '#FAF3EA' }}>
+                      <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false}>
+                        {perfilDetalle.fotos.map((foto: any, index: number) => (
+                          <View key={index} style={{ width: isDesktop ? 976 : width - 48, height: 250, justifyContent: 'center', alignItems: 'center' }}>
+                            <Image source={{ uri: foto.foto_url }} style={{ width: '100%', height: '100%' }} resizeMode="contain" />
+                            <TouchableOpacity 
+                              onPress={() => setFotoExpandida(foto.foto_url)}
+                              style={{ position: 'absolute', bottom: 12, right: 12, backgroundColor: 'rgba(0,0,0,0.6)', padding: 8, borderRadius: 20 }}
+                            >
+                              <Feather name="maximize-2" size={16} color="#FFF" />
+                            </TouchableOpacity>
+                          </View>
+                        ))}
+                      </ScrollView>
+                    </View>
+                  ) : (
+                    <View style={{ height: 250, backgroundColor: '#FAF3EA', borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginBottom: 16 }}>
+                      <Ionicons name="paw" size={64} color="#EDC55B" />
+                    </View>
+                  )}
+
+                  {/* Badges de Información */}
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 24 }}>
+                    <View style={styles.detailBadge}>
+                      <Ionicons name="calendar-outline" size={14} color={C.textLight} />
+                      <Text style={styles.detailBadgeText}>{perfilDetalle.edad_aproximada}</Text>
+                    </View>
+                    <View style={styles.detailBadge}>
+                      <Ionicons name="resize-outline" size={14} color={C.textLight} />
+                      <Text style={styles.detailBadgeText}>{perfilDetalle.tamanio?.descripcion}</Text>
+                    </View>
+                    <View style={styles.detailBadge}>
+                      <Ionicons name={perfilDetalle.sexo === 'macho' ? 'male' : 'female'} size={14} color={perfilDetalle.sexo === 'macho' ? '#3498DB' : '#E74C3C'} />
+                      <Text style={styles.detailBadgeText}>{perfilDetalle.sexo}</Text>
+                    </View>
+                  </View>
+
+                  {/* Textos de Detalles */}
+                  <View style={{ marginBottom: 20 }}>
+                    <Text style={styles.sectionTitle}>Su historia</Text>
+                    <Text style={styles.bodyText}>{perfilDetalle.descripcion}</Text>
+                  </View>
+
+                  <View style={{ marginBottom: 20 }}>
+                    <Text style={styles.sectionTitle}>Personalidad</Text>
+                    <Text style={styles.bodyText}>{perfilDetalle.personalidad}</Text>
+                  </View>
+
+                  {/* Sección de Estado Médico */}
+                  <View style={{ marginBottom: 24 }}>
+                    <Text style={styles.sectionTitle}>Estado médico</Text>
+                    <Text style={styles.bodyText}>{perfilDetalle.salud_conocida || 'No especificado'}</Text>
+                    
+                    <View style={{ marginTop: 12, gap: 8 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <Ionicons name="checkmark-circle" size={18} color={perfilDetalle.vacunacion_estado === 'completo' ? '#27AE60' : C.textLight} />
+                        <Text style={{ fontSize: 14, color: C.textDark, marginLeft: 8, textTransform: 'capitalize', fontWeight: '600' }}>
+                          Vacunas: {perfilDetalle.vacunacion_estado?.replace('_', ' ') || 'Desconocido'}
+                        </Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <Ionicons name="checkmark-circle" size={18} color={perfilDetalle.esterilizacion_estado === 'completo' ? '#27AE60' : C.textLight} />
+                        <Text style={{ fontSize: 14, color: C.textDark, marginLeft: 8, textTransform: 'capitalize', fontWeight: '600' }}>
+                          Esterilización: {perfilDetalle.esterilizacion_estado?.replace('_', ' ') || 'Desconocido'}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  {/* Botón de Adopción o Datos de Contacto */}
+                  {!mostrarContacto ? (
+                    <TouchableOpacity style={styles.adoptButton} onPress={() => setMostrarContacto(true)}>
+                      <Ionicons name="heart" size={20} color={C.bg} style={{ marginRight: 8 }} />
+                      <Text style={styles.adoptButtonText}>¡Quiero Adoptarlo!</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <View style={{ backgroundColor: '#FDF8F4', borderRadius: 16, padding: 20, marginTop: 10, borderWidth: 1, borderColor: '#E5E7EB', alignItems: 'center' }}>
+                      <Text style={{ fontSize: 15, fontWeight: '800', color: C.textDark, marginBottom: 16 }}>Contacta a la Asociación</Text>
+                      
+                      {perfilDetalle.asociacion?.telefono && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+                          <Ionicons name="logo-whatsapp" size={20} color="#25D366" />
+                          <Text style={{ fontSize: 15, color: C.textDark, marginLeft: 8, fontWeight: '600' }}>{perfilDetalle.asociacion.telefono}</Text>
+                        </View>
+                      )}
+
+                      {perfilDetalle.asociacion?.email ? (
+                        <TouchableOpacity 
+                          onPress={() => Linking.openURL(`mailto:${perfilDetalle.asociacion.email}?subject=Deseo%20adoptar%20a%20${perfilDetalle.nombre_publico}&body=Hola%20${perfilDetalle.asociacion.nombre},%20me%20gustar%C3%ADa%20recibir%20m%C3%A1s%20informaci%C3%B3n%20sobre%20el%20proceso%20de%20adopci%C3%B3n%20de%20${perfilDetalle.nombre_publico}.%0A%0AGracias.`)} 
+                          style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 16, borderWidth: 1, borderColor: '#E5E7EB', width: '100%', justifyContent: 'center' }}
+                        >
+                          <Ionicons name="mail" size={20} color={C.primary} />
+                          <Text style={{ fontSize: 14, color: C.primary, marginLeft: 8, fontWeight: '700' }}>Enviar correo de adopción</Text>
+                        </TouchableOpacity>
+                      ) : (
+                         <Text style={{ fontSize: 13, color: C.textLight, marginTop: 4 }}>Sin correo registrado</Text>
+                      )}
+                    </View>
+                  )}
+                </ScrollView>
+              )}
+            </View>
+          </View>
+        </View>
+
+        {/* Sub-Modal para Imagen Expandida */}
+        <Modal visible={!!fotoExpandida} transparent={true} animationType="fade" onRequestClose={() => setFotoExpandida(null)}>
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', justifyContent: 'center', alignItems: 'center' }}>
+            <TouchableOpacity 
+              style={{ position: 'absolute', top: Platform.OS === 'ios' ? 50 : 20, right: 20, zIndex: 10, padding: 8, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 24 }} 
+              onPress={() => setFotoExpandida(null)}
+            >
+              <Feather name="x" size={28} color="#FFF" />
+            </TouchableOpacity>
+            {fotoExpandida && (
+              <Image source={{ uri: fotoExpandida }} style={{ width: '100%', height: '80%' }} resizeMode="contain" />
+            )}
+          </View>
+        </Modal>
+      </Modal>
+
     </View>
   );
 }
@@ -123,5 +291,19 @@ const styles = StyleSheet.create({
   columnWrapper: { justifyContent: 'flex-start', gap: isDesktop ? 20 : 10, paddingHorizontal: 24 },
   listContent: { paddingBottom: 40, paddingTop: 24 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  emptyText: { marginTop: 16, fontSize: 15, fontWeight: '600', color: C.textLight, textAlign: 'center' }
+  emptyText: { marginTop: 16, fontSize: 15, fontWeight: '600', color: C.textLight, textAlign: 'center' },
+
+  // Estilos del Modal
+  overlay: { flex: 1, backgroundColor: 'rgba(46,42,38,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  modalContent: { backgroundColor: C.bgSoft, width: '100%', maxWidth: 1024, maxHeight: height * 0.9, borderRadius: 24, overflow: 'hidden', ...Platform.select({ web: { boxShadow: '0 10px 40px rgba(0,0,0,0.2)' }, default: { elevation: 20 } }) },
+  headerModal: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 24, paddingVertical: 20, backgroundColor: C.bg, borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
+  titleModal: { fontSize: 22, fontWeight: '900', color: C.textDark },
+  subtitleModal: { fontSize: 11, fontWeight: '800', color: C.primary, textTransform: 'uppercase', marginBottom: 2 },
+  closeButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: C.bgSoft, alignItems: 'center', justifyContent: 'center' },
+  sectionTitle: { fontSize: 18, fontWeight: '800', color: C.textDark, marginBottom: 8 },
+  bodyText: { fontSize: 14, color: '#566573', lineHeight: 22 },
+  detailBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.bg, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB' },
+  detailBadgeText: { fontSize: 12, color: C.textDark, fontWeight: '700', marginLeft: 6, textTransform: 'capitalize' },
+  adoptButton: { flexDirection: 'row', backgroundColor: C.primary, paddingVertical: 16, borderRadius: 24, justifyContent: 'center', alignItems: 'center', marginTop: 10 },
+  adoptButtonText: { color: C.bg, fontSize: 15, fontWeight: '900' }
 });
