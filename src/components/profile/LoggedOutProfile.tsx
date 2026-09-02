@@ -433,8 +433,7 @@ export function LoggedOutProfile() {
                     await loginWithGoogle();
                     const intentStr = await consumeAuthIntent();
                     if (intentStr) {
-                      const intent = JSON.parse(intentStr);
-                      const dest = getPostAuthDestination(intent);
+                      const dest = getPostAuthDestination(intentStr);
                       router.replace(dest as any);
                     } else {
                       const returnTo = Array.isArray(params.returnTo) ? params.returnTo[0] : params.returnTo;
@@ -585,8 +584,7 @@ export function LoggedOutProfile() {
                     await loginWithGoogle();
                     const intentStr = await consumeAuthIntent();
                     if (intentStr) {
-                      const intent = JSON.parse(intentStr);
-                      const dest = getPostAuthDestination(intent);
+                      const dest = getPostAuthDestination(intentStr);
                       router.replace(dest as any);
                     } else {
                       const returnTo = Array.isArray(params.returnTo) ? params.returnTo[0] : params.returnTo;

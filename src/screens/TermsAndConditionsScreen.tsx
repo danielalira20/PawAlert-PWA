@@ -1,17 +1,18 @@
 import React from 'react';
 import { SafeAreaView, ScrollView, Text, TouchableOpacity, View, Platform, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFonts } from 'expo-font';
 import { Fraunces_800ExtraBold } from '@expo-google-fonts/fraunces';
 import { Poppins_400Regular, Poppins_500Medium, Poppins_600SemiBold } from '@expo-google-fonts/poppins';
 
 const C = {
-  primary:       '#F5842B',
-  primaryLight:  'rgba(245, 132, 43, 0.1)',
+  primary:       '#EC802B',
+  primaryLight:  'rgba(236, 128, 43, 0.1)',
   textDark:      '#2E2A26',
   textLight:     '#7A7571',
-  bg:            '#F4F6F8', // A slightly cooler gray for contrast
+  bg:            '#FAF3EA',
   cardBg:        '#FFFFFF',
   teal:          '#66BCB4',
   tealLight:     'rgba(102, 188, 180, 0.15)',
@@ -78,24 +79,19 @@ export default function TermsAndConditionsScreen() {
   });
 
   if (!fontsLoaded) return null;
+  const insets = useSafeAreaInsets();
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.headerBackground} />
-      
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#FFF" />
+          <Ionicons name="arrow-back" size={24} color={C.textDark} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Legal</Text>
       </View>
       
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
         <View style={styles.centeredContent}>
           <View style={styles.heroSection}>
-            <View style={styles.iconContainer}>
-              <Ionicons name="document-text" size={40} color={C.primary} />
-            </View>
             <Text style={styles.heroTitle}>Términos y Condiciones</Text>
             <Text style={styles.heroSubtitle}>Última actualización: Agosto 2026</Text>
           </View>
@@ -124,53 +120,96 @@ export default function TermsAndConditionsScreen() {
           </View>
         </View>
       </ScrollView>
+      
+      {/* Bottom Menu */}
+      <View style={[styles.bottomMenu, { paddingBottom: Math.max(8, insets.bottom) }]}>
+        <TouchableOpacity onPress={() => router.replace('/')} style={styles.menuItem}>
+          <Ionicons name="home-outline" size={22} color={C.textLight} />
+          <Text style={styles.menuText}>Inicio</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => router.replace('/map')} style={styles.menuItem}>
+          <Ionicons name="map-outline" size={22} color={C.textLight} />
+          <Text style={styles.menuText}>Mapa</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => router.replace('/events')} style={styles.menuItem}>
+          <Ionicons name="calendar-outline" size={22} color={C.textLight} />
+          <Text style={styles.menuText}>Eventos</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => router.replace('/nearby-cases')} style={styles.menuItem}>
+          <Ionicons name="navigate-circle-outline" size={23} color={C.textLight} />
+          <Text style={styles.menuText}>Cerca</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => router.replace('/adopciones')} style={styles.menuItem}>
+          <Ionicons name="paw-outline" size={22} color={C.textLight} />
+          <Text style={styles.menuText}>Adopta</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => router.replace('/profile')} style={styles.menuItem}>
+          <Ionicons name="person-outline" size={22} color={C.textLight} />
+          <Text style={styles.menuText}>Perfil</Text>
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  bottomMenu: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    backgroundColor: '#FFFFFF',
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F0E6D6',
+    ...Platform.select({
+      web: {
+        position: 'absolute', left: 16, right: 16, bottom: 18,
+        maxWidth: 480, marginHorizontal: 'auto',
+        borderRadius: 28, height: 68, elevation: 0,
+        backgroundColor: 'rgba(255, 255, 255, 0.9)'
+      } as any,
+      default: {
+        shadowColor: '#000', shadowOffset: { width: 0, height: -4 },
+        shadowOpacity: 0.06, shadowRadius: 16, elevation: 12,
+      }
+    })
+  },
+  menuItem: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuText: {
+    fontFamily: F.bodySemiBold,
+    fontSize: 10,
+    color: C.textLight,
+    marginTop: 2,
+  },
   safeArea: {
     flex: 1,
     backgroundColor: C.bg,
-  },
-  headerBackground: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 250,
-    backgroundColor: C.primary,
-    borderBottomLeftRadius: 40,
-    borderBottomRightRadius: 40,
-    zIndex: 0,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingTop: Platform.OS === 'ios' ? 10 : 30,
-    paddingBottom: 20,
+    paddingBottom: 10,
     zIndex: 1,
   },
   backButton: {
     padding: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: '#FFFFFF',
     borderRadius: 12,
-  },
-  headerTitle: {
-    fontFamily: F.bodySemiBold,
-    fontSize: 18,
-    color: '#FFF',
-    marginLeft: 16,
+    borderWidth: 1,
+    borderColor: '#E6DFD5',
   },
   scrollContainer: {
     paddingHorizontal: 20,
-    paddingBottom: 40,
+    paddingBottom: 100,
     zIndex: 1,
   },
   centeredContent: {
     width: '100%',
-    maxWidth: 800,
+    maxWidth: 600,
     alignSelf: 'center',
   },
   heroSection: {
@@ -178,30 +217,17 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     paddingBottom: 30,
   },
-  iconContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#FFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-    ...Platform.select({
-      web: { boxShadow: '0 8px 16px rgba(0,0,0,0.1)' } as any,
-      default: { elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 8 }
-    })
-  },
   heroTitle: {
     fontFamily: F.displayBold,
     fontSize: 28,
-    color: '#FFF',
+    color: C.textDark,
     textAlign: 'center',
     marginBottom: 8,
   },
   heroSubtitle: {
     fontFamily: F.bodyMedium,
     fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.9)',
+    color: C.textLight,
   },
   cardsContainer: {
     gap: 16,
