@@ -46,10 +46,21 @@ describe("externalNavigationService", () => {
     const destination = { latitude: 19.08, longitude: -98.24 };
 
     expect(buildExternalNavigationUrl("google", destination)).toBe(
-      "https://www.google.com/maps/dir/?api=1&destination=19.08,-98.24",
+      "https://www.google.com/maps/dir/?api=1&destination=19.08,-98.24&travelmode=driving",
     );
     expect(buildExternalNavigationUrl("waze", destination)).toBe(
       "https://www.waze.com/ul?ll=19.08,-98.24&navigate=yes",
+    );
+  });
+
+  it("translates internal modes to supported Google Maps travel modes", () => {
+    const destination = { latitude: 19.08, longitude: -98.24 };
+
+    expect(buildExternalNavigationUrl("google", destination, "cycling")).toBe(
+      "https://www.google.com/maps/dir/?api=1&destination=19.08,-98.24&travelmode=bicycling",
+    );
+    expect(buildExternalNavigationUrl("google", destination, "walking")).toBe(
+      "https://www.google.com/maps/dir/?api=1&destination=19.08,-98.24&travelmode=walking",
     );
   });
 });

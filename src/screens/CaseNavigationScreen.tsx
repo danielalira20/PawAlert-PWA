@@ -32,7 +32,7 @@ import {
   formatNavigationStepDistance,
   navigationStepDistanceMeters,
 } from "../utils/navigationPresentation";
-import type { NavigationGeometry } from "../types/navigation";
+import type { NavigationGeometry, NavigationMode } from "../types/navigation";
 
 interface Props {
   reportId: string | null;
@@ -40,6 +40,31 @@ interface Props {
 }
 
 const NAVIGATION_ACCESS_REFRESH_MS = 30_000;
+const NAVIGATION_MODES = [
+  {
+    value: "driving",
+    label: "Vehículo",
+    actionLabel: "Ir en vehículo",
+    icon: "car-outline",
+  },
+  {
+    value: "cycling",
+    label: "Bicicleta",
+    actionLabel: "Ir en bicicleta",
+    icon: "bicycle-outline",
+  },
+  {
+    value: "walking",
+    label: "A pie",
+    actionLabel: "Ir a pie",
+    icon: "walk-outline",
+  },
+] as const satisfies ReadonlyArray<{
+  value: NavigationMode;
+  label: string;
+  actionLabel: string;
+  icon: "car-outline" | "bicycle-outline" | "walk-outline";
+}>;
 
 export default function CaseNavigationScreen({ reportId, onClose }: Props) {
   const { width, height } = useWindowDimensions();
@@ -61,6 +86,7 @@ export default function CaseNavigationScreen({ reportId, onClose }: Props) {
     currentOrigin,
     liveOrigin,
     destination,
+    mode,
     permissionState,
     trackingState,
     isLoadingCapabilities,
@@ -73,7 +99,12 @@ export default function CaseNavigationScreen({ reportId, onClose }: Props) {
     recalculate,
     retryCapabilities,
     clearError,
+    setMode,
   } = useCaseNavigation(reportId);
+  const activeMode = mode ?? currentRoute?.mode ?? "driving";
+  const activeModeDefinition =
+    NAVIGATION_MODES.find((option) => option.value === activeMode) ??
+    NAVIGATION_MODES[0];
   const automaticRecalculation = useAutomaticRouteRecalculation({
     enabled:
       trackingState === "active" && !accessRevoked && !destinationChanged,
@@ -161,7 +192,9 @@ export default function CaseNavigationScreen({ reportId, onClose }: Props) {
   ) => {
     if (!destination) return;
     try {
-      await Linking.openURL(buildExternalNavigationUrl(provider, destination));
+      await Linking.openURL(
+        buildExternalNavigationUrl(provider, destination, activeMode),
+      );
     } catch {
       Alert.alert(
         "No pudimos abrir el mapa",
@@ -243,11 +276,19 @@ export default function CaseNavigationScreen({ reportId, onClose }: Props) {
           </Text>
         </View>
         <View
-          accessibilityLabel="Modo de navegación: vehículo"
+          accessibilityLabel={`Modo de navegación: ${activeModeDefinition.label.toLowerCase()}`}
           style={[styles.modeBadge, isNarrow && styles.modeBadgeNarrow]}
         >
-          <Ionicons name="car-outline" size={16} color={Brand.secondary} />
-          {!isNarrow && <Text style={styles.modeBadgeText}>Vehículo</Text>}
+          <Ionicons
+            name={activeModeDefinition.icon}
+            size={16}
+            color={Brand.secondary}
+          />
+          {!isNarrow && (
+            <Text style={styles.modeBadgeText}>
+              {activeModeDefinition.label}
+            </Text>
+          )}
         </View>
       </View>
 
@@ -308,6 +349,52 @@ export default function CaseNavigationScreen({ reportId, onClose }: Props) {
               isDesktop ? styles.detailsDesktop : styles.detailsMobile,
             ]}
           >
+            {(capabilities?.available_modes.length ?? 0) > 1 && (
+              <View
+                accessibilityLabel="Seleccionar modo de traslado"
+                style={styles.modeSelector}
+              >
+                {NAVIGATION_MODES.filter((option) =>
+                  capabilities?.available_modes.includes(option.value),
+                ).map((option) => {
+                  const selected = activeMode === option.value;
+                  return (
+                    <TouchableOpacity
+                      key={option.value}
+                      accessibilityLabel={`${option.actionLabel}${
+                        selected ? ", seleccionado" : ""
+                      }`}
+                      accessibilityRole="radio"
+                      accessibilityState={{
+                        checked: selected,
+                        disabled: isRefreshing || isCalculating,
+                      }}
+                      disabled={isRefreshing || isCalculating}
+                      onPress={() => void setMode(option.value)}
+                      style={[
+                        styles.modeOption,
+                        selected && styles.modeOptionSelected,
+                      ]}
+                    >
+                      <Ionicons
+                        name={option.icon}
+                        size={18}
+                        color={selected ? "#FFFFFF" : Brand.secondary}
+                      />
+                      <Text
+                        numberOfLines={1}
+                        style={[
+                          styles.modeOptionText,
+                          selected && styles.modeOptionTextSelected,
+                        ]}
+                      >
+                        {option.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
             {destinationChanged && (
               <StatusNotice
                 icon="location-outline"
@@ -516,17 +603,19 @@ export default function CaseNavigationScreen({ reportId, onClose }: Props) {
                   />
                   <Text style={styles.externalButtonText}>Google Maps</Text>
                 </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => void openExternalNavigation("waze")}
-                  style={styles.externalButton}
-                >
-                  <Ionicons
-                    name="navigate-outline"
-                    size={18}
-                    color={Brand.secondary}
-                  />
-                  <Text style={styles.externalButtonText}>Waze</Text>
-                </TouchableOpacity>
+                {activeMode === "driving" && (
+                  <TouchableOpacity
+                    onPress={() => void openExternalNavigation("waze")}
+                    style={styles.externalButton}
+                  >
+                    <Ionicons
+                      name="navigate-outline"
+                      size={18}
+                      color={Brand.secondary}
+                    />
+                    <Text style={styles.externalButtonText}>Waze</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
           </View>
@@ -587,17 +676,19 @@ export default function CaseNavigationScreen({ reportId, onClose }: Props) {
                   />
                   <Text style={styles.externalButtonText}>Google Maps</Text>
                 </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => void openExternalNavigation("waze")}
-                  style={styles.externalButton}
-                >
-                  <Ionicons
-                    name="navigate-outline"
-                    size={18}
-                    color={Brand.secondary}
-                  />
-                  <Text style={styles.externalButtonText}>Waze</Text>
-                </TouchableOpacity>
+                {activeMode === "driving" && (
+                  <TouchableOpacity
+                    onPress={() => void openExternalNavigation("waze")}
+                    style={styles.externalButton}
+                  >
+                    <Ionicons
+                      name="navigate-outline"
+                      size={18}
+                      color={Brand.secondary}
+                    />
+                    <Text style={styles.externalButtonText}>Waze</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
             <TouchableOpacity
@@ -792,6 +883,32 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   modeBadgeText: { color: "#2F7771", fontSize: 11, fontWeight: "800" },
+  modeSelector: {
+    minHeight: 48,
+    padding: 4,
+    flexDirection: "row",
+    gap: 4,
+    borderRadius: 8,
+    backgroundColor: "#E9E2DA",
+  },
+  modeOption: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 40,
+    paddingHorizontal: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    borderRadius: 6,
+  },
+  modeOptionSelected: { backgroundColor: Brand.secondary },
+  modeOptionText: {
+    color: Brand.textDark,
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  modeOptionTextSelected: { color: "#FFFFFF" },
   scrollContent: { flexGrow: 1, paddingBottom: 48 },
   mapBand: { position: "relative", width: "100%", backgroundColor: "#E9ECE8" },
   refreshingBadge: {

@@ -50,6 +50,7 @@ const corsHeaders = {
 };
 
 interface NavigationMockOptions {
+  availableModes?: Array<"driving" | "cycling" | "walking">;
   noRoute?: boolean;
   revokeAfterInitialRoute?: boolean;
   revocationCode?: "navigation_not_found" | "report_not_navigable";
@@ -205,6 +206,7 @@ async function prepareAuthenticatedNavigation(
   page: Page,
   options: NavigationMockOptions = {},
 ) {
+  const availableModes = options.availableModes ?? ["driving"];
   let capabilityCalls = 0;
   let routeCalls = 0;
   const routeBodies: unknown[] = [];
@@ -251,6 +253,7 @@ async function prepareAuthenticatedNavigation(
       }
       await json(route, 200, {
         ...capabilities,
+        available_modes: availableModes,
         destination_revision:
           options.updateDestinationAfterInitialRoute && capabilityCalls > 1
             ? updatedDestination.revision
@@ -278,8 +281,8 @@ async function prepareAuthenticatedNavigation(
       const common = {
         contract_version: 1,
         report_id: REPORT_ID,
-        mode: "driving",
-        available_modes: ["driving"],
+        mode: requestBody.mode,
+        available_modes: availableModes,
         origin,
         destination: responseDestination,
         calculated_at: "2026-09-01T15:01:00.000Z",
@@ -402,6 +405,30 @@ test("muestra, recalcula y retira una ruta de asignación confirmada", async ({
   await expect(
     page.getByLabel("Mapa de navegación del caso"),
   ).not.toBeVisible();
+});
+
+test("cambia entre los perfiles de traslado publicados", async ({ page }) => {
+  const mock = await prepareAuthenticatedNavigation(page, {
+    availableModes: ["driving", "cycling", "walking"],
+  });
+
+  await page.goto(`/navegacion-caso/${REPORT_ID}`);
+  await expect.poll(mock.routeCalls).toBe(1);
+  await expect(page.getByLabel("Ir en vehículo, seleccionado")).toBeVisible();
+
+  await page.getByLabel("Ir en bicicleta").click();
+  await expect.poll(mock.routeCalls).toBe(2);
+  expect(mock.routeBodies[1]).toMatchObject({ mode: "cycling" });
+  await expect(page.getByLabel("Modo de navegación: bicicleta")).toBeVisible();
+  await expect(page.getByLabel("Ir en bicicleta, seleccionado")).toBeVisible();
+  await expect(page.getByText("Google Maps")).toBeVisible();
+  await expect(page.getByText("Waze")).not.toBeVisible();
+
+  await page.getByLabel("Ir a pie").click();
+  await expect.poll(mock.routeCalls).toBe(3);
+  expect(mock.routeBodies[2]).toMatchObject({ mode: "walking" });
+  await expect(page.getByLabel("Modo de navegación: a pie")).toBeVisible();
+  await expect(page.getByLabel("Ir a pie, seleccionado")).toBeVisible();
 });
 
 test("degrada NoRoute sin presentar la línea como ruta vial", async ({

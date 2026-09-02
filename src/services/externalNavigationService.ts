@@ -1,4 +1,5 @@
 import type { ReporteStaff } from "../types/reportestaff";
+import type { NavigationMode } from "../types/navigation";
 
 export type ExternalNavigationProvider = "google" | "waze";
 
@@ -35,9 +36,12 @@ export function resolveExternalNavigationDestination(
 export function buildExternalNavigationUrl(
   provider: ExternalNavigationProvider,
   destination: ExternalNavigationDestination,
+  mode: NavigationMode = "driving",
 ): string {
   const coordinates = `${destination.latitude},${destination.longitude}`;
   return provider === "google"
-    ? `https://www.google.com/maps/dir/?api=1&destination=${coordinates}`
+    ? `https://www.google.com/maps/dir/?api=1&destination=${coordinates}&travelmode=${
+        mode === "cycling" ? "bicycling" : mode
+      }`
     : `https://www.waze.com/ul?ll=${coordinates}&navigate=yes`;
 }

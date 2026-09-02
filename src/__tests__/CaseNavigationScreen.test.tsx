@@ -172,6 +172,94 @@ describe("CaseNavigationScreen", () => {
     expect(recalculate).toHaveBeenCalledTimes(1);
   });
 
+  it("muestra únicamente modos disponibles y delega el cambio", async () => {
+    const setMode = jest.fn(() => Promise.resolve());
+    mockedUseCaseNavigation.mockReturnValue({
+      capabilities: {
+        contract_version: 1,
+        navigation_enabled: true,
+        available_modes: ["driving", "cycling"],
+        destination_revision: "sighting:sighting-1",
+        foreground_tracking: true,
+        background_tracking: false,
+        voice_guidance: false,
+        live_traffic: false,
+      },
+      currentRoute: route,
+      currentOrigin: route.origin,
+      liveOrigin: route.origin,
+      destination: route.destination,
+      mode: "driving",
+      permissionState: "granted",
+      trackingState: "active",
+      isLoadingCapabilities: false,
+      isCalculating: false,
+      isRefreshing: false,
+      destinationChanged: false,
+      accessRevoked: false,
+      error: null,
+      start: jest.fn(() => Promise.resolve()),
+      recalculate: jest.fn(() => Promise.resolve()),
+      retryCapabilities: jest.fn(() => Promise.resolve()),
+      clearError: jest.fn(),
+      setMode,
+    });
+
+    const view = await render(
+      <CaseNavigationScreen reportId="report-12345678" onClose={jest.fn()} />,
+    );
+
+    expect(
+      view.getByLabelText("Ir en vehículo, seleccionado"),
+    ).toBeTruthy();
+    expect(view.getByLabelText("Ir en bicicleta")).toBeTruthy();
+    expect(view.queryByLabelText("Ir a pie")).toBeNull();
+    await act(async () => {
+      fireEvent.press(view.getByLabelText("Ir en bicicleta"));
+    });
+    expect(setMode).toHaveBeenCalledWith("cycling");
+  });
+
+  it("no ofrece Waze como respaldo para una ruta de bicicleta", async () => {
+    mockedUseCaseNavigation.mockReturnValue({
+      capabilities: {
+        contract_version: 1,
+        navigation_enabled: true,
+        available_modes: ["driving", "cycling"],
+        destination_revision: "sighting:sighting-1",
+        foreground_tracking: true,
+        background_tracking: false,
+        voice_guidance: false,
+        live_traffic: false,
+      },
+      currentRoute: { ...route, mode: "cycling" },
+      currentOrigin: route.origin,
+      liveOrigin: route.origin,
+      destination: route.destination,
+      mode: "cycling",
+      permissionState: "granted",
+      trackingState: "active",
+      isLoadingCapabilities: false,
+      isCalculating: false,
+      isRefreshing: false,
+      destinationChanged: false,
+      accessRevoked: false,
+      error: null,
+      start: jest.fn(() => Promise.resolve()),
+      recalculate: jest.fn(() => Promise.resolve()),
+      retryCapabilities: jest.fn(() => Promise.resolve()),
+      clearError: jest.fn(),
+      setMode: jest.fn(() => Promise.resolve()),
+    });
+
+    const view = await render(
+      <CaseNavigationScreen reportId="report-12345678" onClose={jest.fn()} />,
+    );
+
+    expect(view.getByText("Google Maps")).toBeTruthy();
+    expect(view.queryByText("Waze")).toBeNull();
+  });
+
   it("revalida periódicamente y al volver a primer plano", async () => {
     const retryCapabilities = jest.fn(() => Promise.resolve());
     const intervalSpy = jest.spyOn(global, "setInterval");

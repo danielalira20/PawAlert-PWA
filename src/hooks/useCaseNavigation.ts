@@ -55,7 +55,7 @@ export interface UseCaseNavigationResult {
   destinationChanged: boolean;
   accessRevoked: boolean;
   error: CaseNavigationError | null;
-  setMode: (mode: NavigationMode) => void;
+  setMode: (mode: NavigationMode) => Promise<void>;
   start: () => Promise<void>;
   recalculate: () => Promise<void>;
   retryCapabilities: () => Promise<void>;
@@ -185,10 +185,12 @@ export function useCaseNavigation(
     };
   }, [loadCapabilities]);
 
-  const calculate = useCallback(async () => {
+  const calculateForMode = useCallback(async (
+    requestedMode: NavigationMode,
+  ): Promise<boolean> => {
     if (!reportId || !token) {
       setError(clientError(null, "Inicia sesión para abrir la ruta.", false));
-      return;
+      return false;
     }
     if (!capabilities?.navigation_enabled) {
       setError(
@@ -198,9 +200,9 @@ export function useCaseNavigation(
           false,
         ),
       );
-      return;
+      return false;
     }
-    if (!capabilities.available_modes.includes(mode)) {
+    if (!capabilities.available_modes.includes(requestedMode)) {
       setError(
         clientError(
           "mode_unavailable",
@@ -208,7 +210,7 @@ export function useCaseNavigation(
           false,
         ),
       );
-      return;
+      return false;
     }
 
     const requestId = ++routeRequestRef.current;
@@ -220,7 +222,7 @@ export function useCaseNavigation(
 
     try {
       const permission = await Location.requestForegroundPermissionsAsync();
-      if (requestId !== routeRequestRef.current) return;
+      if (requestId !== routeRequestRef.current) return false;
       if (permission.status !== "granted") {
         setPermissionState("denied");
         setError(
@@ -230,12 +232,12 @@ export function useCaseNavigation(
             true,
           ),
         );
-        return;
+        return false;
       }
 
       setPermissionState("granted");
       const position = await getFreshNavigationPosition();
-      if (requestId !== routeRequestRef.current) return;
+      if (requestId !== routeRequestRef.current) return false;
 
       const response = await calculateNavigationRoute(token, reportId, {
         origin: {
@@ -244,18 +246,19 @@ export function useCaseNavigation(
           accuracy_meters: position.accuracyMeters,
           captured_at: position.capturedAt,
         },
-        mode,
+        mode: requestedMode,
         ...(latestResult?.destination.revision
           ? { known_destination_revision: latestResult.destination.revision }
           : {}),
       });
-      if (requestId !== routeRequestRef.current) return;
+      if (requestId !== routeRequestRef.current) return false;
 
       setLatestResult(response);
       setAccessRevoked(false);
       if (response.status === "complete") {
         setCurrentRoute(response);
         setError(null);
+        return true;
       } else {
         setError({
           code: response.error_code,
@@ -263,9 +266,10 @@ export function useCaseNavigation(
           retryable: response.retryable,
           retryAfterSeconds: null,
         });
+        return false;
       }
     } catch (requestError) {
-      if (requestId !== routeRequestRef.current) return;
+      if (requestId !== routeRequestRef.current) return false;
       if (
         requestError instanceof Error &&
         !(requestError instanceof NavigationApiError)
@@ -278,7 +282,7 @@ export function useCaseNavigation(
             true,
           ),
         );
-        return;
+        return false;
       }
       const normalized = normalizeNavigationApiError(requestError);
       if (isAccessRevoked(normalized)) {
@@ -287,20 +291,45 @@ export function useCaseNavigation(
         setAccessRevoked(true);
       }
       setError(apiError(normalized));
+      return false;
     } finally {
       if (requestId === routeRequestRef.current) {
         setIsCalculating(false);
         setIsRefreshing(false);
       }
     }
-  }, [capabilities, currentRoute, latestResult, mode, reportId, token]);
+  }, [capabilities, currentRoute, latestResult, reportId, token]);
+
+  const calculate = useCallback(
+    async () => {
+      await calculateForMode(mode);
+    },
+    [calculateForMode, mode],
+  );
 
   const setMode = useCallback(
-    (nextMode: NavigationMode) => {
-      if (!capabilities?.available_modes.includes(nextMode)) return;
+    async (nextMode: NavigationMode) => {
+      if (
+        !capabilities?.available_modes.includes(nextMode) ||
+        nextMode === mode ||
+        isCalculating ||
+        isRefreshing
+      ) {
+        return;
+      }
+
+      const previousMode = mode;
       setModeState(nextMode);
+      const changed = await calculateForMode(nextMode);
+      if (!changed) setModeState(previousMode);
     },
-    [capabilities],
+    [
+      calculateForMode,
+      capabilities,
+      isCalculating,
+      isRefreshing,
+      mode,
+    ],
   );
 
   return {

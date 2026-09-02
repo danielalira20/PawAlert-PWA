@@ -179,6 +179,63 @@ describe("useCaseNavigation", () => {
     );
   });
 
+  it("cambia a un modo publicado y solicita su perfil sin perder la ruta", async () => {
+    mockedGetCapabilities.mockResolvedValueOnce({
+      ...capabilities,
+      available_modes: ["driving", "cycling", "walking"],
+    });
+    const cyclingRoute: NavigationRouteComplete = {
+      ...completeRoute,
+      mode: "cycling",
+      available_modes: ["driving", "cycling", "walking"],
+    };
+    const { result } = await renderHook(() => useCaseNavigation("report-1"));
+    await waitFor(() => expect(result.current.capabilities).not.toBeNull());
+    await act(async () => {
+      await result.current.start();
+    });
+    mockedCalculateRoute.mockResolvedValueOnce(cyclingRoute);
+
+    await act(async () => {
+      await result.current.setMode("cycling");
+    });
+
+    expect(result.current.mode).toBe("cycling");
+    expect(result.current.currentRoute).toEqual(cyclingRoute);
+    expect(mockedCalculateRoute).toHaveBeenLastCalledWith(
+      "token-voluntario",
+      "report-1",
+      expect.objectContaining({ mode: "cycling" }),
+    );
+  });
+
+  it("regresa al modo anterior si falla el proveedor seleccionado", async () => {
+    mockedGetCapabilities.mockResolvedValueOnce({
+      ...capabilities,
+      available_modes: ["driving", "cycling"],
+    });
+    const { result } = await renderHook(() => useCaseNavigation("report-1"));
+    await waitFor(() => expect(result.current.capabilities).not.toBeNull());
+    await act(async () => {
+      await result.current.start();
+    });
+    mockedCalculateRoute.mockRejectedValueOnce(
+      new NavigationApiError("No pudimos calcular la ruta.", {
+        status: 503,
+        code: "provider_error",
+        retryable: true,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.setMode("cycling");
+    });
+
+    expect(result.current.mode).toBe("driving");
+    expect(result.current.currentRoute).toEqual(completeRoute);
+    expect(result.current.error?.code).toBe("provider_error");
+  });
+
   it("expone la lectura en vivo sin solicitar otra ruta", async () => {
     mockedForegroundTracking.mockReturnValue({
       position: {

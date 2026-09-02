@@ -268,6 +268,12 @@ Durante la transicion, `OSRM_BASE_URL` se conserva como compatibilidad para
 `driving`. Un modo solo aparece habilitado cuando su proveedor responde al
 healthcheck y el backend lo publica en `available_modes`.
 
+La comprobacion operativa se ejecuta con
+`POST /internal/osrm/health`, protegida por `X-Cron-Secret`. La respuesta
+informa por modo si esta `complete`, `unavailable` o `disabled`, pero nunca
+expone las URLs privadas. Las variables de bicicleta y caminata solo se
+configuran despues de que sus instancias independientes pasan esta prueba.
+
 El frontend no debe mostrar opciones falsas ni cambiar localmente la
 velocidad de una ruta de automovil para simular bicicleta o caminata.
 
@@ -541,6 +547,9 @@ confirmada` y, cuando corresponda, indicar hace cuanto se confirmo.
 Los enlaces externos usan el destino autoritativo devuelto por navegacion. El
 frontend no reconstruye el destino con `reporte.latitud` si la revision
 vigente proviene de un avistamiento.
+Google Maps recibe el modo equivalente (`driving`, `bicycling` o `walking`).
+Waze se ofrece unicamente en `driving`, porque no representa rutas peatonales
+ni de bicicleta.
 
 ## 13. Llegada, GPS y resultados del rescate
 
@@ -727,6 +736,14 @@ recursos y limites de gasto. No cambia el contrato del frontend.
 - selector dinamico;
 - pruebas de rutas reales de Puebla por modo;
 - limites de recursos y costo observados.
+
+Estado de implementacion: el backend publica todos los perfiles configurados,
+el frontend permite cambiar entre ellos y conserva la ruta anterior si el
+nuevo perfil falla. El diagnostico interno por perfil y las pruebas
+automatizadas quedan incluidos. El despliegue de las instancias separadas y
+la prueba real sobre Railway son responsabilidades de infraestructura y se
+realizan antes de llenar `OSRM_CYCLING_BASE_URL` y
+`OSRM_WALKING_BASE_URL`.
 
 ### Fase N4: capacidades nativas avanzadas
 
