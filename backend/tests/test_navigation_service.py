@@ -69,6 +69,7 @@ def route_request(
     captured_at: datetime | None = None,
     accuracy_meters: float = 18,
     known_revision: str | None = None,
+    mode: NavigationMode = NavigationMode.driving,
 ) -> NavigationRouteRequest:
     return NavigationRouteRequest(
         origin=NavigationOriginRequest(
@@ -77,7 +78,7 @@ def route_request(
             accuracy_meters=accuracy_meters,
             captured_at=captured_at or datetime.now(timezone.utc),
         ),
-        mode=NavigationMode.driving,
+        mode=mode,
         known_destination_revision=known_revision,
     )
 
@@ -379,7 +380,7 @@ def test_repeated_recalculation_is_rate_limited(make_query):
     assert error.value.retry_after_seconds is not None
 
 
-def test_capabilities_only_publish_driving_during_n1(make_query):
+def test_capabilities_publish_every_configured_n3_mode(make_query):
     database, _tables = navigation_database(make_query)
     with (
         patch.object(navigation_service, "supabase_admin", database),
@@ -398,9 +399,74 @@ def test_capabilities_only_publish_driving_during_n1(make_query):
         )
 
     assert result.navigation_enabled is True
-    assert result.available_modes == [NavigationMode.driving]
+    assert result.available_modes == [
+        NavigationMode.driving,
+        NavigationMode.cycling,
+        NavigationMode.walking,
+    ]
     assert result.destination_revision == "sighting:sighting-1"
     assert result.background_tracking is False
     assert result.live_traffic is False
     assert "latitude" not in result.model_dump()
     assert "longitude" not in result.model_dump()
+
+
+@pytest.mark.parametrize(
+    "mode",
+    [NavigationMode.cycling, NavigationMode.walking],
+)
+def test_additional_mode_is_forwarded_to_its_osrm_profile(make_query, mode):
+    database, _tables = navigation_database(make_query)
+    with (
+        patch.object(navigation_service, "supabase_admin", database),
+        patch.object(
+            navigation_service,
+            "configured_route_modes",
+            return_value=[
+                RoutingMode.driving,
+                RoutingMode.cycling,
+                RoutingMode.walking,
+            ],
+        ),
+        patch.object(
+            navigation_service,
+            "get_route",
+            return_value=complete_route(),
+        ) as get_route,
+        patch.object(
+            navigation_service.settings,
+            "navigation_recalc_min_interval_seconds",
+            0,
+        ),
+    ):
+        result = navigation_service.calculate_navigation_route(
+            "report-1",
+            "user-1",
+            route_request(mode=mode),
+        )
+
+    assert result.mode == mode
+    assert get_route.call_args.args[0].mode == RoutingMode(mode.value)
+
+
+def test_rejects_a_mode_without_a_configured_provider(make_query):
+    database, _tables = navigation_database(make_query)
+    with (
+        patch.object(navigation_service, "supabase_admin", database),
+        patch.object(
+            navigation_service,
+            "configured_route_modes",
+            return_value=[RoutingMode.driving],
+        ),
+        patch.object(navigation_service, "get_route") as get_route,
+        pytest.raises(navigation_service.NavigationServiceError) as error,
+    ):
+        navigation_service.calculate_navigation_route(
+            "report-1",
+            "user-1",
+            route_request(mode=NavigationMode.cycling),
+        )
+
+    assert error.value.code == NavigationErrorCode.mode_unavailable
+    assert error.value.status_code == 400
+    get_route.assert_not_called()

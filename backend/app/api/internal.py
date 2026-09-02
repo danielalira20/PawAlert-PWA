@@ -199,3 +199,13 @@ def comprobar_clip(x_cron_secret: Optional[str] = Header(None)):
         "model": result.model,
         "error_code": result.error_code.value if result.error_code else None,
     }
+
+
+@router.post("/osrm/health")
+def comprobar_osrm(x_cron_secret: Optional[str] = Header(None)):
+    if not settings.cron_secret or x_cron_secret != settings.cron_secret:
+        raise HTTPException(status_code=401, detail="No autorizado")
+
+    from app.services.osrm_service import probe_route_modes
+
+    return probe_route_modes()

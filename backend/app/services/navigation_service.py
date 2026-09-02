@@ -94,12 +94,7 @@ _recalculation_limiter = _RecalculationLimiter()
 
 
 def _available_modes() -> list[NavigationMode]:
-    configured = configured_route_modes()
-    return (
-        [NavigationMode.driving]
-        if RoutingMode.driving in configured
-        else []
-    )
+    return [NavigationMode(mode.value) for mode in configured_route_modes()]
 
 
 def _load_navigation_context(

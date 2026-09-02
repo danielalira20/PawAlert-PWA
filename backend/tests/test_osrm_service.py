@@ -1,12 +1,16 @@
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
 
 from app.models.dispatch import (
+    RouteGeometryPoint,
     RouteMatrixRequest,
     RouteRequest,
+    RouteResult,
     RoutingErrorCode,
+    RoutingMode,
     RoutingPoint,
     RoutingStatus,
 )
@@ -293,3 +297,66 @@ def test_get_route_rejects_incomplete_geometry():
 
     assert result.status == RoutingStatus.unavailable
     assert result.error_code == RoutingErrorCode.invalid_response
+
+
+def test_configured_route_modes_requires_dedicated_non_driving_urls():
+    with (
+        patch.object(osrm_service.settings, "osrm_base_url", "https://car"),
+        patch.object(osrm_service.settings, "osrm_driving_base_url", ""),
+        patch.object(osrm_service.settings, "osrm_cycling_base_url", ""),
+        patch.object(osrm_service.settings, "osrm_walking_base_url", ""),
+    ):
+        assert osrm_service.configured_route_modes() == [RoutingMode.driving]
+
+
+def test_probe_route_modes_reports_each_profile_without_exposing_urls():
+    complete = RouteResult(
+        origin_id="health-origin",
+        destination_id="health-destination",
+        duration_seconds=120,
+        distance_meters=800,
+        geometry=[
+            RouteGeometryPoint(latitude=19.0414, longitude=-98.2063),
+            RouteGeometryPoint(latitude=19.0436, longitude=-98.2035),
+        ],
+        status=RoutingStatus.complete,
+        calculated_at=datetime.now(timezone.utc),
+    )
+    with (
+        patch.object(osrm_service.settings, "osrm_base_url", "https://car"),
+        patch.object(osrm_service.settings, "osrm_driving_base_url", ""),
+        patch.object(
+            osrm_service.settings,
+            "osrm_cycling_base_url",
+            "https://bike",
+        ),
+        patch.object(osrm_service.settings, "osrm_walking_base_url", ""),
+        patch.object(osrm_service, "get_route", return_value=complete) as route,
+    ):
+        result = osrm_service.probe_route_modes()
+
+    assert result == {
+        "status": "complete",
+        "modes": {
+            "driving": {
+                "configured": True,
+                "status": "complete",
+                "error_code": None,
+            },
+            "cycling": {
+                "configured": True,
+                "status": "complete",
+                "error_code": None,
+            },
+            "walking": {
+                "configured": False,
+                "status": "disabled",
+                "error_code": None,
+            },
+        },
+    }
+    assert [call.args[0].mode for call in route.call_args_list] == [
+        RoutingMode.driving,
+        RoutingMode.cycling,
+    ]
+    assert "https://" not in str(result)

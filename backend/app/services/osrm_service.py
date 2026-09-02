@@ -15,6 +15,7 @@ from app.models.dispatch import (
     RouteStep,
     RoutingErrorCode,
     RoutingMode,
+    RoutingPoint,
     RoutingStatus,
 )
 
@@ -114,6 +115,57 @@ def _route_base_url(mode: RoutingMode) -> str:
 def configured_route_modes() -> list[RoutingMode]:
     """Publica solo perfiles con una URL configurada en esta instancia."""
     return [mode for mode in RoutingMode if _route_base_url(mode)]
+
+
+def probe_route_modes() -> dict[str, object]:
+    """Comprueba cada perfil sin exponer URLs ni coordenadas operativas."""
+    modes: dict[str, dict[str, object]] = {}
+    for mode in RoutingMode:
+        configured = bool(_route_base_url(mode))
+        if not configured:
+            modes[mode.value] = {
+                "configured": False,
+                "status": "disabled",
+                "error_code": None,
+            }
+            continue
+
+        result = get_route(
+            RouteRequest(
+                origin=RoutingPoint(
+                    id="health-origin",
+                    latitude=19.0414,
+                    longitude=-98.2063,
+                ),
+                destination=RoutingPoint(
+                    id="health-destination",
+                    latitude=19.0436,
+                    longitude=-98.2035,
+                ),
+                mode=mode,
+            )
+        )
+        modes[mode.value] = {
+            "configured": True,
+            "status": result.status.value,
+            "error_code": (
+                result.error_code.value if result.error_code else None
+            ),
+        }
+
+    configured_results = [
+        result for result in modes.values() if result["configured"]
+    ]
+    if not configured_results:
+        status = "unavailable"
+    elif all(
+        result["status"] == RoutingStatus.complete.value
+        for result in configured_results
+    ):
+        status = "complete"
+    else:
+        status = "degraded"
+    return {"status": status, "modes": modes}
 
 
 def _normalize_matrix(payload: object) -> list[list[float | None]]:
