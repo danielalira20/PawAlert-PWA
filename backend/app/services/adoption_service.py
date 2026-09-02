@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import unicodedata
+import math
 from hashlib import sha256
 from typing import Callable
 
@@ -1834,7 +1835,7 @@ def _contexto_publico_perfiles(
         rows = _query(
             "resolver asociaciones de adopciones públicas",
             lambda: supabase_admin.table("asociaciones")
-            .select("id, nombre, acerca_de, logo_url, contacto_email, contacto_telefono, activo, verificado")
+            .select("id, nombre, acerca_de, logo_url, contacto_email, contacto_telefono, activo, verificado, latitud, longitud")
             .in_("id", sorted(association_ids))
             .eq("activo", True)
             .eq("verificado", True),
@@ -1847,6 +1848,8 @@ def _contexto_publico_perfiles(
                 "logo_url": row.get("logo_url"),
                 "email": row.get("contacto_email"),
                 "telefono": row.get("contacto_telefono"),
+                "latitud": row.get("latitud"),
+                "longitud": row.get("longitud"),
             }
             for row in rows
             if row.get("id")
@@ -2025,6 +2028,8 @@ def listar_adopciones_publicas(
     zona: str | None,
     compatible_con: str | None,
     asociacion_id: str | None = None,
+    lat: float | None = None,
+    lng: float | None = None,
     pagina: int,
     limite: int,
 ) -> dict:
@@ -2035,11 +2040,17 @@ def listar_adopciones_publicas(
     zone_filter = _normalizar_filtro_publico(zona)
     public_profiles: list[dict] = []
 
+    # Fórmula de Haversine para distancia en KM
+    def calcular_distancia(lat1, lon1, lat2, lon2):
+        if None in (lat1, lon1, lat2, lon2): return float('inf')
+        R = 6371.0
+        dlat = math.radians(float(lat2) - float(lat1))
+        dlon = math.radians(float(lon2) - float(lon1))
+        a = math.sin(dlat / 2)**2 + math.cos(math.radians(float(lat1))) * math.cos(math.radians(float(lat2))) * math.sin(dlon / 2)**2
+        return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
     for profile in profiles:
-        if (
-            profile.get("estado") != "publicado"
-            or profile.get("estado_moderacion") != "visible"
-        ):
+        if profile.get("estado") != "publicado" or profile.get("estado_moderacion") != "visible":
             continue
         association = associations.get(profile.get("asociacion_id"))
         if not association:
@@ -2047,38 +2058,33 @@ def listar_adopciones_publicas(
         shaped = _serializar_perfil_publico(profile, association, catalogs)
         if not shaped:
             continue
-        if species_filter and _normalizar_filtro_publico(
-            shaped["tipo_animal"]["clave"]
-        ) != species_filter:
-            continue
-        if size_filter and _normalizar_filtro_publico(
-            shaped["tamanio"]["clave"]
-        ) != size_filter:
-            continue
-        if edad and shaped["edad_aproximada"] != edad:
-            continue
-        if zone_filter and zone_filter not in _normalizar_filtro_publico(
-            shaped["zona_general"]
-        ):
-            continue
-        if not _perfil_coincide_compatibilidad(profile, compatible_con):
-            continue
+            
+        # Filtros
+        if species_filter and _normalizar_filtro_publico(shaped["tipo_animal"]["clave"]) != species_filter: continue
+        if size_filter and _normalizar_filtro_publico(shaped["tamanio"]["clave"]) != size_filter: continue
+        if edad and shaped["edad_aproximada"] != edad: continue
+        if zone_filter and zone_filter not in _normalizar_filtro_publico(shaped["zona_general"]): continue
+        if not _perfil_coincide_compatibilidad(profile, compatible_con): continue
+        
+        # Calcular distancia si se enviaron coordenadas
+        shaped["distancia_km"] = calcular_distancia(lat, lng, association.get("latitud"), association.get("longitud"))
         public_profiles.append(shaped)
 
-    public_profiles.sort(
-        key=lambda profile: (profile["publicado_at"], profile["id"]),
-        reverse=True,
-    )
+    # Ordenar primero por fecha (por defecto)
+    public_profiles.sort(key=lambda p: (p["publicado_at"], p["id"]), reverse=True)
+    
+    # Si hay coordenadas, ordenar por distancia (los más cercanos primero)
+    if lat is not None and lng is not None:
+        public_profiles.sort(key=lambda p: p.get("distancia_km", float('inf')))
+
     total = len(public_profiles)
     start = (pagina - 1) * limite
     page_items = public_profiles[start : start + limite]
-    photos = _fotos_publicas(
-        [profile["id"] for profile in page_items],
-        solo_portada=True,
-    )
+    photos = _fotos_publicas([profile["id"] for profile in page_items], solo_portada=True)
     for profile in page_items:
         profile_photos = photos.get(profile["id"], [])
         profile["foto_portada"] = profile_photos[0] if profile_photos else None
+        
     return {
         "items": page_items,
         "pagina": pagina,
@@ -2086,7 +2092,6 @@ def listar_adopciones_publicas(
         "total": total,
         "tiene_mas": start + len(page_items) < total,
     }
-
 
 def obtener_adopcion_publica(profile_id: str) -> dict:
     profiles = _consultar_perfiles_publicos(profile_id)
