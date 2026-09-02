@@ -109,6 +109,15 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="adopciones"
+        options={{
+          title: 'Adopciones',
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? 'heart' : 'heart-outline'} size={22} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="profile"
         options={{
           title: 'Mi perfil',

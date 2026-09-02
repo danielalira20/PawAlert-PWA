@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, FlatList, ActivityIndicator, TouchableOpacity, StyleSheet, Dimensions, Platform, Modal, ScrollView, Image, Linking } from 'react-native';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import axios from 'axios';
@@ -7,12 +7,17 @@ import { useFocusEffect } from 'expo-router';
 import { API_URL } from '../../constants/api';
 // IMPORTAMOS LA NUEVA TARJETA
 import { AdoptionCardGlobal } from '../../components/adopciones/AdoptionCardGlobal';
+import { CoachMarksTour } from '../../components/onboarding/CoachMarksTour';
+import { GuideHelpButton, SectionGuidePrompt } from '../../components/onboarding/SectionGuidePrompt';
+import { useSectionGuide } from '../../hooks/useSectionGuide';
+import { useAuth } from '../../context/AuthContext';
 
 const C = { primary: '#EC802B', bg: '#FFFFFF', bgSoft: '#F9F6F0', textDark: '#4A3728', textLight: '#8C7A6B' };
 const { width, height } = Dimensions.get('window');
 const isDesktop = width > 768;
 
 export default function AdopcionesGlobalScreen() {
+  const { user } = useAuth();
   const [perfiles, setPerfiles] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [filtroEspecie, setFiltroEspecie] = useState<string | null>(null);
@@ -30,6 +35,27 @@ export default function AdopcionesGlobalScreen() {
   const [isLoadingDetalle, setIsLoadingDetalle] = useState(false);
   const [fotoExpandida, setFotoExpandida] = useState<string | null>(null);
   const [mostrarContacto, setMostrarContacto] = useState(false);
+  const introTourRef = useRef<View>(null);
+  const filtersTourRef = useRef<View>(null);
+  const galleryTourRef = useRef<View>(null);
+  const adoptionGuide = useSectionGuide({ sectionKey: 'adopciones', userId: user?.id });
+  const adoptionGuideSteps = [
+    {
+      key: 'intro', title: 'Encuentra un nuevo compañero',
+      description: 'Explora animales publicados por asociaciones y conoce cuáles están disponibles para adopción.',
+      icon: 'heart-outline' as const, accent: C.primary, targetRef: introTourRef,
+    },
+    {
+      key: 'filters', title: 'Filtra por especie',
+      description: 'Muestra todos los perfiles o enfócate únicamente en perros o gatos.',
+      icon: 'options-outline' as const, accent: '#4FAFA7', targetRef: filtersTourRef,
+    },
+    {
+      key: 'profiles', title: 'Conoce cada historia',
+      description: 'Toca una tarjeta para revisar su personalidad, estado médico y los datos de la asociación.',
+      icon: 'paw-outline' as const, accent: '#E9A63A', targetRef: galleryTourRef,
+    },
+  ];
 
   useEffect(() => {
     (async () => {
@@ -142,12 +168,14 @@ export default function AdopcionesGlobalScreen() {
     <View style={styles.container}>
       {/* HEADER Y FILTROS */}
       <View style={styles.header}>
-        <Text style={styles.title}>Encuentra a tu mejor amigo</Text>
-        <Text style={styles.subtitle}>
-          {location ? "Ordenados por cercanía a ti" : "Mostrando todos los disponibles"}
-        </Text>
+        <View ref={introTourRef} collapsable={false}>
+          <Text style={styles.title}>Encuentra a tu mejor amigo</Text>
+          <Text style={styles.subtitle}>
+            {location ? "Ordenados por cercanía a ti" : "Mostrando todos los disponibles"}
+          </Text>
+        </View>
         
-        <View style={styles.filtrosRow}>
+        <View ref={filtersTourRef} collapsable={false} style={styles.filtrosRow}>
           <FiltroBoton label="Todos" valor={null} icon="paw" />
           <FiltroBoton label="Perros" valor="perro" icon="logo-octocat" />
           <FiltroBoton label="Gatos" valor="gato" icon="logo-octocat" />
@@ -155,6 +183,7 @@ export default function AdopcionesGlobalScreen() {
       </View>
 
       {/* GALERÍA */}
+      <View ref={galleryTourRef} collapsable={false} style={styles.galleryArea}>
       {isLoading && perfiles.length === 0 ? (
         <View style={styles.center}><ActivityIndicator size="large" color={C.primary} /></View>
       ) : perfiles.length === 0 ? (
@@ -182,6 +211,7 @@ export default function AdopcionesGlobalScreen() {
           )}
         />
       )}
+      </View>
 
       {/* MODAL DE DETALLE DEL PERRITO */}
       <Modal visible={!!perfilDetalle} animationType="fade" transparent={true} onRequestClose={() => setPerfilDetalle(null)}>
@@ -333,12 +363,26 @@ export default function AdopcionesGlobalScreen() {
         </Modal>
       </Modal>
 
+      <View style={styles.guideButton}>
+        <GuideHelpButton sectionName="Adopciones" onPress={adoptionGuide.startGuide} showUnreadDot={adoptionGuide.showPrompt} />
+      </View>
+      <CoachMarksTour visible={adoptionGuide.showGuide} steps={adoptionGuideSteps} onClose={adoptionGuide.closeGuide} />
+      <SectionGuidePrompt
+        visible={adoptionGuide.showPrompt}
+        sectionName="Adopciones"
+        description="Te mostramos cómo filtrar perfiles y consultar la historia de cada animal."
+        onStart={adoptionGuide.startGuide}
+        onDismiss={adoptionGuide.dismissPrompt}
+      />
+
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: C.bgSoft },
+  container: { flex: 1, backgroundColor: C.bgSoft, position: 'relative' },
+  galleryArea: { flex: 1 },
+  guideButton: { position: 'absolute', top: Platform.OS === 'ios' ? 54 : 18, right: 18, zIndex: 2400, elevation: 20 },
   header: { paddingHorizontal: 24, paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingBottom: 20, backgroundColor: C.bg, borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
   title: { fontSize: 24, fontWeight: '900', color: C.textDark, marginBottom: 4 },
   subtitle: { fontSize: 13, color: C.textLight, marginBottom: 16 },

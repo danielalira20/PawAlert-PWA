@@ -864,6 +864,9 @@ export default function LeafletMap({
           border-color:rgba(232,227,220,.8) !important;
         }
         .leaflet-control-zoom a:hover { background:#FFF1E7 !important; color:#D96317 !important; }
+        @media (max-width:767px) {
+          .leaflet-top.leaflet-left { top:190px; }
+        }
         .pawalert-pin-shell {
           position:relative;
           animation:pinArrive 460ms cubic-bezier(.25,.1,.25,1) both;

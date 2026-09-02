@@ -34,6 +34,9 @@ import {
 } from '../components/events/discovery/eventDiscoveryFilters';
 import { normalizeEventDeepLinkId } from '../utils/eventDeepLink';
 import { MapTheme } from '../constants/mapTheme';
+import { CoachMarksTour } from '../components/onboarding/CoachMarksTour';
+import { GuideHelpButton, SectionGuidePrompt } from '../components/onboarding/SectionGuidePrompt';
+import { useSectionGuide } from '../hooks/useSectionGuide';
 
 const LeafletMap = lazy(() => import('./LeafletMap'));
 
@@ -73,7 +76,7 @@ type SidebarView = 'list' | 'detail' | 'form' | 'asociacion';
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 export default function MapScreen() {
-  const { isLoggedIn, token } = useAuth();
+  const { isLoggedIn, token, user } = useAuth();
   const params = useLocalSearchParams<{ action?: string; event_id?: string | string[] }>();
   const deepLinkedEventId = normalizeEventDeepLinkId(params.event_id);
   const [windowWidth, setWindowWidth] = useState(Dimensions.get('window').width);
@@ -102,6 +105,49 @@ export default function MapScreen() {
   const [isAuthGateVisible, setIsAuthGateVisible] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [, setTick] = useState(0);
+  const mapTourRef = useRef<View>(null);
+  const sidebarTourRef = useRef<View>(null);
+  const filtersTourRef = useRef<View>(null);
+  const reportTourRef = useRef<any>(null);
+  const mapGuide = useSectionGuide({ sectionKey: 'mapa', userId: user?.id });
+  const mapGuideSteps = useMemo(() => [
+    {
+      key: 'sidebar', title: 'Revisa los casos activos',
+      description: 'La barra lateral reúne los reportes cercanos. Selecciona una tarjeta para localizar el caso y consultar sus datos.',
+      icon: 'list-outline' as const, accent: C.orange, targetRef: windowWidth < 768 ? mapTourRef : sidebarTourRef,
+    },
+    {
+      key: 'map', title: 'Explora los pines del mapa',
+      description: 'El color indica la condición del animal y el número señala cuántos animales incluye el reporte. Toca un pin para abrir su resumen.',
+      icon: 'location-outline' as const, accent: C.teal, targetRef: mapTourRef,
+    },
+    {
+      key: 'filters', title: 'Encuentra lo que necesitas',
+      description: 'Filtra por condición, especie o urgencia y consulta asociaciones y aliados en el mapa.',
+      icon: 'options-outline' as const, accent: '#E9A63A', targetRef: filtersTourRef,
+    },
+    {
+      key: 'report', title: 'Crea un reporte',
+      description: 'Usa este botón cuando encuentres un animal perdido, abandonado o en situación de riesgo.',
+      icon: 'add-circle-outline' as const, accent: C.orange, targetRef: reportTourRef,
+    },
+  ], [windowWidth]);
+
+  const renderMapGuide = () => (
+    <>
+      <View style={{ position: 'absolute', top: isMobile ? 200 : 126, right: 18, zIndex: 2400, elevation: 20 }}>
+        <GuideHelpButton sectionName="Mapa" onPress={mapGuide.startGuide} showUnreadDot={mapGuide.showPrompt} />
+      </View>
+      <CoachMarksTour visible={mapGuide.showGuide} steps={mapGuideSteps} onClose={mapGuide.closeGuide} />
+      <SectionGuidePrompt
+        visible={mapGuide.showPrompt}
+        sectionName="Mapa"
+        description="Conoce los marcadores, filtros y cómo crear un reporte desde el mapa."
+        onStart={mapGuide.startGuide}
+        onDismiss={mapGuide.dismissPrompt}
+      />
+    </>
+  );
 
   // "Estoy aquí" (ver src/hooks/useUbicacionEnVivo.ts): punto personal en el
   // mapa, puramente visual, no se comparte con nadie. Vive aquí (Mapa de
@@ -806,7 +852,7 @@ export default function MapScreen() {
   const masSeleccionado = showFiltersModal || filtrosExtraActivos;
 
   const renderFiltros = () => (
-    <View style={{ borderBottomWidth: 1, borderBottomColor: C.border, flexShrink: 0, flexDirection: 'row', backgroundColor: 'rgba(255,254,252,0.94)' }}>
+    <View ref={filtersTourRef} collapsable={false} style={{ borderBottomWidth: 1, borderBottomColor: C.border, flexShrink: 0, flexDirection: 'row', backgroundColor: 'rgba(255,254,252,0.94)' }}>
       {/* Columna 1: Gravedad */}
       <View style={{ flex: 1, padding: 12, borderRightWidth: 1, borderRightColor: C.border }}>
         <Text style={{ fontSize: 10, fontWeight: '800', color: C.light, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 8 }}>
@@ -980,7 +1026,7 @@ export default function MapScreen() {
 
   // ── Mapa ─────────────────────────────────────────────────────────────────────
   const renderMap = () => (
-    <View style={{ flex: 1, position: 'relative' }}>
+    <View ref={mapTourRef} collapsable={false} style={{ flex: 1, position: 'relative' }}>
       {contentMode === 'rescues' && renderFiltersDropdown()}
       {isClient ? (
         <Suspense fallback={<View style={{ flex: 1, backgroundColor: '#EAE0D0' }} />}>
@@ -1057,7 +1103,7 @@ export default function MapScreen() {
       )}
 
       {/* Leyenda */}
-      {contentMode === 'rescues' && <View style={{ position: 'absolute', top: isMobile ? 214 : 18, right: 18, backgroundColor: 'rgba(255,254,252,0.92)', borderRadius: 16, paddingVertical: 11, paddingHorizontal: 13, borderWidth: 1, borderColor: 'rgba(255,255,255,0.75)', shadowColor: '#32271D', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.12, shadowRadius: 20, zIndex: 999, elevation: 9, backdropFilter: 'blur(18px)' } as any}>
+      {contentMode === 'rescues' && <View style={{ position: 'absolute', top: isMobile ? 292 : 18, right: 18, backgroundColor: 'rgba(255,254,252,0.92)', borderRadius: 16, paddingVertical: 11, paddingHorizontal: 13, borderWidth: 1, borderColor: 'rgba(255,255,255,0.75)', shadowColor: '#32271D', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.12, shadowRadius: 20, zIndex: 999, elevation: 9, backdropFilter: 'blur(18px)' } as any}>
         <Text style={{ fontSize: 9, fontWeight: '800', color: C.dark, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>Condición</Text>
         {Object.entries(CONDICION).map(([key, cfg]) => (
           <View key={key} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4 }}>
@@ -1136,6 +1182,7 @@ export default function MapScreen() {
 
       {/* FAB */}
       {contentMode === 'rescues' && <TouchableOpacity
+        ref={reportTourRef}
         accessibilityLabel="Crear un nuevo reporte"
         onPress={handleCrearReporte}
         style={{ position: 'absolute', bottom: TAB_BAR_CLEARANCE, right: 20, width: 58, height: 58, borderRadius: 29, backgroundColor: C.orange, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: 'rgba(255,255,255,0.9)', shadowColor: C.orange, shadowOffset: { width: 0, height: 9 }, shadowOpacity: 0.34, shadowRadius: 20, zIndex: 1000, elevation: 10 }}
@@ -1146,7 +1193,7 @@ export default function MapScreen() {
 
       {/* Barra de filtros interactivos (solo mobile) */}
       {isMobile && contentMode === 'rescues' && (
-        <View style={{
+        <View ref={filtersTourRef} collapsable={false} style={{
           position: 'absolute', top: 64, left: 12, right: 12,
           backgroundColor: 'rgba(255,255,255,0.97)',
           borderRadius: 16,
@@ -1476,6 +1523,7 @@ export default function MapScreen() {
           onSavedChange={(saved) => Alert.alert(saved ? 'Evento guardado' : 'Evento eliminado', 'Tu agenda quedó actualizada.')}
         />
         <AuthGateModal visible={isAuthGateVisible} onClose={() => setIsAuthGateVisible(false)} onGuest={() => setSidebarView('form')} />
+        {renderMapGuide()}
       </View>
     );
   }
@@ -1485,7 +1533,7 @@ export default function MapScreen() {
     <View style={{ flex: 1, flexDirection: 'row', backgroundColor: C.bg }}>
 
       {/* Sidebar */}
-      <View style={{ width: 376, flexShrink: 0, flexDirection: 'column', backgroundColor: C.bg, borderRightWidth: 1, borderRightColor: C.border, display: 'flex' as any, shadowColor: '#32271D', shadowOffset: { width: 12, height: 0 }, shadowOpacity: 0.06, shadowRadius: 24, zIndex: 2 }}>
+      <View ref={sidebarTourRef} collapsable={false} style={{ width: 376, flexShrink: 0, flexDirection: 'column', backgroundColor: C.bg, borderRightWidth: 1, borderRightColor: C.border, display: 'flex' as any, shadowColor: '#32271D', shadowOffset: { width: 12, height: 0 }, shadowOpacity: 0.06, shadowRadius: 24, zIndex: 2 }}>
         {renderSidebarHeader()}
         <View style={{ flex: 1, overflow: 'hidden' as any }}>
           {contentMode === 'events' ? (
@@ -1530,6 +1578,7 @@ export default function MapScreen() {
 
       {renderImagenAmpliada()}
       <AuthGateModal visible={isAuthGateVisible} onClose={() => setIsAuthGateVisible(false)} onGuest={() => setSidebarView('form')} />
+      {renderMapGuide()}
       
       <AssociationAdoptionsModal
         visible={modalAdopcionesVisible}
