@@ -43,6 +43,7 @@ class RouteRequest(BaseModel):
     origin: RoutingPoint
     destination: RoutingPoint
     mode: RoutingMode = RoutingMode.driving
+    include_steps: bool = False
 
 
 class RoutingStatus(str, Enum):
@@ -115,12 +116,34 @@ class RouteGeometryPoint(BaseModel):
     longitude: float = Field(ge=-180, le=180)
 
 
+class RouteStep(BaseModel):
+    type: str = Field(min_length=1)
+    modifier: str | None = None
+    street_name: str | None = None
+    distance_meters: float = Field(ge=0)
+    duration_seconds: float = Field(ge=0)
+    location: tuple[float, float]
+
+    @model_validator(mode="after")
+    def validate_location(self):
+        longitude, latitude = self.location
+        if not (
+            math.isfinite(longitude)
+            and math.isfinite(latitude)
+            and -180 <= longitude <= 180
+            and -90 <= latitude <= 90
+        ):
+            raise ValueError("Route step requires a valid lon/lat location")
+        return self
+
+
 class RouteResult(BaseModel):
     origin_id: str = Field(min_length=1)
     destination_id: str = Field(min_length=1)
     duration_seconds: float | None = Field(default=None, ge=0)
     distance_meters: float | None = Field(default=None, ge=0)
     geometry: list[RouteGeometryPoint] = Field(default_factory=list)
+    steps: list[RouteStep] = Field(default_factory=list)
     status: RoutingStatus
     calculated_at: datetime
     source: Literal["osrm"] = "osrm"
@@ -135,6 +158,7 @@ class RouteResult(BaseModel):
                 self.duration_seconds is not None
                 or self.distance_meters is not None
                 or self.geometry
+                or self.steps
             ):
                 raise ValueError("Unavailable route cannot include route data")
             return self

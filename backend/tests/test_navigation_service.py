@@ -6,6 +6,7 @@ import pytest
 from app.models.dispatch import (
     RouteGeometryPoint,
     RouteResult,
+    RouteStep,
     RoutingErrorCode,
     RoutingMode,
     RoutingStatus,
@@ -91,6 +92,16 @@ def complete_route() -> RouteResult:
             RouteGeometryPoint(latitude=19.03, longitude=-98.19),
             RouteGeometryPoint(latitude=19.06, longitude=-98.22),
         ],
+        steps=[
+            RouteStep(
+                type="turn",
+                modifier="right",
+                street_name="Avenida 11 Sur",
+                distance_meters=320,
+                duration_seconds=44,
+                location=(-98.2081, 19.043),
+            )
+        ],
         status=RoutingStatus.complete,
         calculated_at=datetime.now(timezone.utc),
     )
@@ -140,11 +151,15 @@ def test_calculates_private_route_to_latest_validated_sighting(make_query):
         (-98.19, 19.03),
         (-98.22, 19.06),
     ]
+    assert result.route.steps[0].type == "turn"
+    assert result.route.steps[0].modifier == "right"
+    assert result.route.steps[0].location == (-98.2081, 19.043)
     assert result.expires_at > result.calculated_at
     provider_request = get_route.call_args.args[0]
     assert provider_request.destination.latitude == 19.06
     assert provider_request.destination.longitude == -98.22
     assert provider_request.mode == RoutingMode.driving
+    assert provider_request.include_steps is True
     tables["propuestas_asignacion"].order.assert_called_with(
         "enviada_at", desc=True
     )

@@ -24,6 +24,7 @@ from app.models.navigation import (
     NavigationRouteData,
     NavigationRouteRequest,
     NavigationRouteResponse,
+    NavigationStep,
     NavigationStatus,
 )
 from app.services.osrm_service import configured_route_modes, get_route
@@ -259,6 +260,7 @@ def calculate_navigation_route(
                 longitude=destination.longitude,
             ),
             mode=RoutingMode(request.mode.value),
+            include_steps=True,
         )
     )
 
@@ -296,6 +298,17 @@ def calculate_navigation_route(
                         for point in route_result.geometry
                     ]
                 ),
+                steps=[
+                    NavigationStep(
+                        type=step.type,
+                        modifier=step.modifier,
+                        street_name=step.street_name,
+                        distance_meters=step.distance_meters,
+                        duration_seconds=step.duration_seconds,
+                        location=step.location,
+                    )
+                    for step in route_result.steps
+                ],
             ),
             calculated_at=calculated_at,
             expires_at=calculated_at

@@ -32,6 +32,14 @@ def route_request() -> RouteRequest:
     )
 
 
+def guided_route_request() -> RouteRequest:
+    return RouteRequest(
+        origin=RoutingPoint(id="vol-1", latitude=19.04, longitude=-98.20),
+        destination=RoutingPoint(id="rep-1", latitude=19.06, longitude=-98.22),
+        include_steps=True,
+    )
+
+
 def response(status_code: int, payload: object | None = None) -> MagicMock:
     result = MagicMock()
     result.status_code = status_code
@@ -198,6 +206,61 @@ def test_get_route_returns_duration_distance_and_geojson_geometry():
     assert "/route/v1/driving/" in get.call_args.args[0]
     assert get.call_args.kwargs["params"]["geometries"] == "geojson"
     assert get.call_args.kwargs["params"]["overview"] == "full"
+    assert get.call_args.kwargs["params"]["steps"] == "false"
+
+
+def test_get_guided_route_requests_and_normalizes_steps():
+    payload = {
+        "code": "Ok",
+        "routes": [{
+            "duration": 420.5,
+            "distance": 3100.2,
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [[-98.20, 19.04], [-98.22, 19.06]],
+            },
+            "legs": [{
+                "steps": [
+                    {
+                        "distance": 320.0,
+                        "duration": 44.0,
+                        "name": "Avenida 11 Sur",
+                        "maneuver": {
+                            "type": "turn",
+                            "modifier": "right",
+                            "location": [-98.2081, 19.043],
+                        },
+                    },
+                    {
+                        "distance": 15,
+                        "duration": 4,
+                        "name": "",
+                        "maneuver": {
+                            "type": "unknown-provider-value",
+                            "location": [-98.22, 19.06],
+                        },
+                    },
+                    {"distance": "invalid", "maneuver": {}},
+                ],
+            }],
+        }],
+    }
+    with patch.object(
+        osrm_service.httpx,
+        "get",
+        return_value=response(200, payload),
+    ) as get:
+        result = osrm_service.get_route(guided_route_request())
+
+    assert result.status == RoutingStatus.complete
+    assert get.call_args.kwargs["params"]["steps"] == "true"
+    assert len(result.steps) == 2
+    assert result.steps[0].type == "turn"
+    assert result.steps[0].modifier == "right"
+    assert result.steps[0].street_name == "Avenida 11 Sur"
+    assert result.steps[0].location == (-98.2081, 19.043)
+    assert result.steps[1].type == "unknown-provider-value"
+    assert result.steps[1].modifier is None
 
 
 def test_get_route_preserves_no_route_as_controlled_result():

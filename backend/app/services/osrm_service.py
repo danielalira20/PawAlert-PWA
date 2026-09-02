@@ -12,6 +12,7 @@ from app.models.dispatch import (
     RouteMatrixResult,
     RouteRequest,
     RouteResult,
+    RouteStep,
     RoutingErrorCode,
     RoutingMode,
     RoutingStatus,
@@ -91,7 +92,7 @@ def _request_route(request: RouteRequest) -> httpx.Response:
         f"{base_url}/route/v1/{request.mode.value}/{coordinates}",
         params={
             "alternatives": "false",
-            "steps": "false",
+            "steps": "true" if request.include_steps else "false",
             "geometries": "geojson",
             "overview": "full",
         },
@@ -208,11 +209,74 @@ def _parse_route_payload(
             duration_seconds=float(route["duration"]),
             distance_meters=float(route["distance"]),
             geometry=geometry,
+            steps=(
+                _normalize_route_steps(route)
+                if request.include_steps
+                else []
+            ),
             status=RoutingStatus.complete,
             calculated_at=calculated_at,
         )
     except (IndexError, KeyError, TypeError, ValueError):
         raise _InvalidPayload from None
+
+
+def _normalize_route_steps(route: object) -> list[RouteStep]:
+    """Normaliza maniobras útiles e ignora pasos opcionales malformados."""
+    if not isinstance(route, dict):
+        return []
+    legs = route.get("legs")
+    if not isinstance(legs, list):
+        return []
+
+    normalized: list[RouteStep] = []
+    for leg in legs:
+        if not isinstance(leg, dict) or not isinstance(leg.get("steps"), list):
+            continue
+        for step in leg["steps"]:
+            if not isinstance(step, dict):
+                continue
+            maneuver = step.get("maneuver")
+            if not isinstance(maneuver, dict):
+                continue
+            location = maneuver.get("location")
+            if not isinstance(location, list) or len(location) < 2:
+                continue
+
+            raw_type = maneuver.get("type")
+            raw_modifier = maneuver.get("modifier")
+            raw_name = step.get("name")
+            try:
+                distance = float(step["distance"])
+                duration = float(step["duration"])
+                longitude = float(location[0])
+                latitude = float(location[1])
+                normalized.append(
+                    RouteStep(
+                        type=(
+                            raw_type.strip()
+                            if isinstance(raw_type, str) and raw_type.strip()
+                            else "continue"
+                        ),
+                        modifier=(
+                            raw_modifier.strip()
+                            if isinstance(raw_modifier, str)
+                            and raw_modifier.strip()
+                            else None
+                        ),
+                        street_name=(
+                            raw_name.strip()
+                            if isinstance(raw_name, str) and raw_name.strip()
+                            else None
+                        ),
+                        distance_meters=distance,
+                        duration_seconds=duration,
+                        location=(longitude, latitude),
+                    )
+                )
+            except (KeyError, TypeError, ValueError):
+                continue
+    return normalized
 
 
 def get_route_matrix(request: RouteMatrixRequest) -> RouteMatrixResult:
