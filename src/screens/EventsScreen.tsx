@@ -97,15 +97,17 @@ export default function EventsScreen() {
           </View>
         </View>
 
-        <View style={[styles.heroArtwork, isCompact && styles.heroArtworkCompact]}>
-          <View pointerEvents="none" style={styles.artworkHalo} />
-          <Image
-            accessibilityLabel="Ilustración de eventos PawAlert"
-            resizeMode="contain"
-            source={EVENT_HERO_IMAGE}
-            style={styles.heroImage}
-          />
-        </View>
+        {!isCompact && (
+          <View style={styles.heroArtwork}>
+            <View pointerEvents="none" style={styles.artworkHalo} />
+            <Image
+              accessibilityLabel="Ilustración de eventos PawAlert"
+              resizeMode="contain"
+              source={EVENT_HERO_IMAGE}
+              style={styles.heroImage}
+            />
+          </View>
+        )}
       </View>
     </Animated.View>
   );
@@ -190,7 +192,7 @@ const styles = StyleSheet.create({
     paddingTop: 34,
     width: '100%',
   },
-  heroCompact: { flexDirection: 'column', gap: 8, paddingBottom: 18, paddingHorizontal: 18, paddingTop: 20 },
+  heroCompact: { flexDirection: 'column', gap: 0, paddingBottom: 24, paddingHorizontal: 18, paddingTop: 20 },
   heroCopy: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 8, zIndex: 2 },
   heroCopyCompact: { width: '100%' },
   eyebrowRow: {
@@ -294,7 +296,6 @@ const styles = StyleSheet.create({
     position: 'relative',
     width: '44%',
   },
-  heroArtworkCompact: { minHeight: 172, width: '100%' },
   artworkHalo: {
     backgroundColor: 'rgba(255,255,255,0.12)',
     borderRadius: 180,

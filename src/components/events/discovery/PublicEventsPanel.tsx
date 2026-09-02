@@ -78,7 +78,8 @@ export function PublicEventsPanel({
   const twoColumnLayout = Boolean(asideContent) && width >= 980;
   const showInlineAside = Boolean(asideContent) && width >= 760 && !twoColumnLayout;
   const gridLayout = width >= 768;
-  const pageSize = compactFilters ? 1 : 2;
+  const paginateEvents = width >= 760;
+  const pageSize = 2;
   const filters = controlledFilters ?? internalFilters;
   const setFilters = onFiltersChange ?? setInternalFilters;
   const query = useMemo(() => buildPublicEventQuery(filters), [filters]);
@@ -97,12 +98,14 @@ export function PublicEventsPanel({
   const activeFilterCount = Object.values(filters).filter(
     (filter) => filter !== "todos",
   ).length;
-  const pageCount = Math.max(1, Math.ceil(total / pageSize));
-  const visibleEvents = events.slice(eventPage * pageSize, (eventPage + 1) * pageSize);
+  const pageCount = paginateEvents ? Math.max(1, Math.ceil(total / pageSize)) : 1;
+  const visibleEvents = paginateEvents
+    ? events.slice(eventPage * pageSize, (eventPage + 1) * pageSize)
+    : events;
 
   useEffect(() => {
     setEventPage(0);
-  }, [query, pageSize]);
+  }, [paginateEvents, query]);
 
   const goToNextPage = async () => {
     const nextPage = eventPage + 1;
@@ -247,7 +250,7 @@ export function PublicEventsPanel({
                 }
               />
             ))}
-            {pageCount > 1 && (
+            {paginateEvents && pageCount > 1 && (
               <View style={styles.pagination}>
                 <TouchableOpacity
                   accessibilityLabel="Ver eventos anteriores"
@@ -271,6 +274,20 @@ export function PublicEventsPanel({
                     : <Ionicons name="chevron-forward" size={18} color={EventTheme.colors.primary} />}
                 </TouchableOpacity>
               </View>
+            )}
+            {!paginateEvents && hasMore && (
+              <TouchableOpacity
+                accessibilityLabel="Cargar más eventos"
+                accessibilityRole="button"
+                disabled={isLoadingMore}
+                onPress={() => void loadMore()}
+                style={styles.moreButton}
+              >
+                {isLoadingMore
+                  ? <ActivityIndicator color={EventTheme.colors.primary} size="small" />
+                  : <Ionicons name="chevron-down-outline" size={17} color={EventTheme.colors.primary} />}
+                <Text style={styles.moreText}>{isLoadingMore ? "Cargando…" : "Mostrar más eventos"}</Text>
+              </TouchableOpacity>
             )}
           </View>
         )}
