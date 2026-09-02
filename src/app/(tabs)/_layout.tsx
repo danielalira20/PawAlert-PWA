@@ -99,6 +99,18 @@ export default function TabsLayout() {
           ),
         }}
       />
+      {/* 1. Insertamos adopciones antes de "Mi perfil" y le agregamos el emoji */}
+      <Tabs.Screen
+        name="adopciones"
+        options={{
+          title: 'Adopta', 
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? 'paw' : 'paw-outline'} size={22} color={color} />
+          ),
+        }}
+      />
+
+      {/* 2. Mi perfil queda como el último visible a la derecha */}
       <Tabs.Screen
         name="profile"
         options={{
@@ -108,6 +120,8 @@ export default function TabsLayout() {
           ),
         }}
       />
+      
+      {/* (join-association se queda oculto al final) */}
       <Tabs.Screen
         name="join-association"
         options={{
