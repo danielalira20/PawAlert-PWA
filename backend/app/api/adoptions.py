@@ -18,6 +18,7 @@ from app.models.adoption import (
     AdoptionIntakeCreate,
     AdoptionIntakeResolve,
     AdoptionProfilePause,
+    AdoptionProfileMarkAdopted,
     AdoptionProfilePhotoRemove,
     AdoptionProfilePhotoReview,
     AdoptionProfilePublish,
@@ -106,6 +107,9 @@ def get_public_adoptions(
     ] | None = Query(None),
     zona: str | None = Query(None, min_length=1, max_length=120),
     compatible_con: str | None = Query(None, min_length=1, max_length=80),
+    asociacion_id: UUID | None = Query(None),
+    lat: float | None = Query(None),
+    lng: float | None = Query(None),
     pagina: int = Query(1, ge=1),
     limite: int = Query(20, ge=1, le=50),
 ):
@@ -116,6 +120,9 @@ def get_public_adoptions(
             edad=edad,
             zona=zona,
             compatible_con=compatible_con,
+            asociacion_id=str(asociacion_id) if asociacion_id else None,
+            lat=lat,
+            lng=lng,
             pagina=pagina,
             limite=limite,
         )
@@ -664,6 +671,23 @@ def pause_adoption_profile(
     association_id = _association_context(user)
     return _call(
         lambda: adoption_service.pausar_perfil(
+            str(profile_id),
+            association_id,
+            user["id"],
+            body,
+        )
+    )
+
+@router.post("/associations/me/adoptions/{profile_id}/mark-adopted")
+def mark_profile_adopted(
+    profile_id: UUID,
+    body: AdoptionProfileMarkAdopted,
+    authorization: Optional[str] = Header(None),
+):
+    user = _authenticated_user(authorization)
+    association_id = _association_context(user)
+    return _call(
+        lambda: adoption_service.marcar_perfil_adoptado(
             str(profile_id),
             association_id,
             user["id"],

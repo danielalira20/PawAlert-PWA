@@ -6,7 +6,7 @@ router = APIRouter()
 @router.get("/tipos-animales", status_code=200)
 async def get_tipos_animales():
     resultado = supabase.table("tipo_animal_catalogo")\
-        .select("clave, descripcion")\
+        .select("id, clave, descripcion")\
         .eq("activo", True)\
         .execute()
     return resultado.data
@@ -14,7 +14,7 @@ async def get_tipos_animales():
 @router.get("/tipos-animal-otro", status_code=200)
 async def get_tipos_animal_otro():
     resultado = supabase.table("tipo_animal_otro")\
-        .select("clave, descripcion")\
+        .select("id, clave, descripcion")\
         .eq("activo", True)\
         .execute()
     return resultado.data
@@ -30,7 +30,7 @@ async def get_condiciones():
 @router.get("/tamanios", status_code=200)
 async def get_tamanios():
     resultado = supabase.table("tamanio_catalogo")\
-        .select("clave, descripcion")\
+        .select("id, clave, descripcion")\
         .eq("activo", True)\
         .execute()
     return resultado.data
@@ -76,4 +76,4 @@ async def get_all_subcategorias_recurso():
             "descripcion": row["descripcion"],
             "categoria_clave": cat_clave
         })
-    return datos
+    return datos

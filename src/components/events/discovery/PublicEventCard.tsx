@@ -15,6 +15,7 @@ import { SavedEventButton } from "../saved/SavedEventButton";
 
 interface PublicEventCardProps {
   event: EventPublicSummary;
+  layout?: "list" | "grid";
   onError: (message: string) => void;
   onOpenDetail?: (event: EventPublicSummary) => void;
   onLocate?: (event: EventPublicSummary) => void;
@@ -23,6 +24,7 @@ interface PublicEventCardProps {
 
 export function PublicEventCard({
   event,
+  layout = "list",
   onError,
   onOpenDetail,
   onLocate,
@@ -34,7 +36,7 @@ export function PublicEventCard({
   const capacity = EVENT_CAPACITY_META[event.cupo_estado];
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, layout === "grid" && styles.gridCard]}>
       <View style={styles.imageArea}>
         {imageAvailable ? (
           <Image
@@ -59,7 +61,7 @@ export function PublicEventCard({
         )}
       </View>
 
-      <View style={styles.body}>
+      <View style={[styles.body, layout === "grid" && styles.gridBody]}>
         <EventTypeChip
           customCategory={event.categoria_otro}
           type={event.tipo}
@@ -143,7 +145,7 @@ export function PublicEventCard({
           </View>
         </View>
 
-        <View style={styles.actions}>
+        <View style={[styles.actions, layout === "grid" && styles.gridActions]}>
           {onOpenDetail && (
             <TouchableOpacity
               accessibilityRole="button"
@@ -200,6 +202,12 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     width: "100%",
   },
+  gridCard: {
+    alignSelf: "stretch",
+    flexBasis: 300,
+    flexGrow: 1,
+    maxWidth: 350,
+  },
   imageArea: {
     backgroundColor: EventTheme.colors.surfaceWarm,
     height: 142,
@@ -225,6 +233,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
   },
   body: { padding: 14 },
+  gridBody: { flex: 1 },
   title: {
     color: EventTheme.colors.text,
     fontFamily: EventTheme.typography.bold,
@@ -278,6 +287,7 @@ const styles = StyleSheet.create({
     gap: 7,
     marginTop: 13,
   },
+  gridActions: { marginTop: "auto", paddingTop: 13 },
   locateButton: {
     alignItems: "center",
     borderColor: EventTheme.colors.primary,

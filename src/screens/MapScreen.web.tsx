@@ -14,13 +14,13 @@ import { AnimalCarousel } from '../components/common/AnimalCarousel';
 import ReportFormScreen from './ReportFormScreen';
 import type { AsociacionMapa } from './LeafletMap';
 import { ReportContentMenu } from '../components/reports/ReportContentMenu';
+import { AssociationAdoptionsModal } from '../components/adopciones/AssociationAdoptionsModal';
 import { AvistamientoEntryButton } from '../components/avistamientos/AvistamientoEntryButton';
 import { Brand } from '../constants/theme';
 import { useUbicacionEnVivo } from '../hooks/useUbicacionEnVivo';
 import { PublicEventsPanel } from '../components/events/discovery/PublicEventsPanel';
 import { PublicEventDetailModal } from '../components/events/discovery/PublicEventDetailModal';
 import {
-  EventMapModeSwitch,
   type EventDiscoveryView,
   type MapContentMode,
 } from '../components/events/discovery/EventMapModeSwitch';
@@ -127,6 +127,8 @@ export default function MapScreen() {
 
   // Imagen ampliada (modal con soporte de carrusel) — DEBE vivir dentro del componente
   const [imagenAmpliada, setImagenAmpliada] = useState<{ fotos: string[]; index: number } | null>(null);
+  const [modalAdopcionesVisible, setModalAdopcionesVisible] = useState(false);
+  const [asocAdopciones, setAsocAdopciones] = useState<{ id: string | null; nombre: string }>({ id: null, nombre: '' });
 
   // Bottom sheet para mobile web
   const sheetY = useRef(new Animated.Value(300)).current;
@@ -271,12 +273,7 @@ export default function MapScreen() {
 
   useEffect(() => {
     if (!deepLinkedEventId) return;
-    setContentMode('events');
-    setSelectedEventId(deepLinkedEventId);
-    setDetailEventId(deepLinkedEventId);
-    setMostrarAsociaciones(false);
-    setMostrarAliados(false);
-    setSidebarView('list');
+    router.replace({ pathname: '/events', params: { event_id: deepLinkedEventId } });
   }, [deepLinkedEventId]);
 
   const handleEventFiltersChange = (filters: PublicEventFilterState) => {
@@ -755,6 +752,15 @@ export default function MapScreen() {
             <Text style={{ fontSize: 12, color: C.mid, lineHeight: 18 }}>{a.acerca_de}</Text>
           </View>
         )}
+        <TouchableOpacity
+          onPress={() => {
+            setAsocAdopciones({ id: a.id, nombre: a.nombre });
+            setModalAdopcionesVisible(true);
+          }}
+          style={{ backgroundColor: '#FDF8F4', paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderColor: C.orange, alignItems: 'center', marginTop: 8 }}
+        >
+          <Text style={{ color: C.orange, fontSize: 13, fontWeight: '800' }}>🐾 Ver peluditos en adopción</Text>
+        </TouchableOpacity>
       </ScrollView>
     );
   };
@@ -999,6 +1005,10 @@ export default function MapScreen() {
               }
             }}
             onSelectAsociacion={handleSelectAsociacion}
+            onSelectAdopciones={(asoc: any) => {
+              setAsocAdopciones({ id: asoc.id, nombre: asoc.nombre });
+              setModalAdopcionesVisible(true);
+            }}
             onSelectEvent={(event) => handleOpenMapEvent(event.id)}
             onEventBoundsChange={setPendingEventMapBounds}
             onMapClick={handleMapClick}
@@ -1442,14 +1452,6 @@ export default function MapScreen() {
             onOpenDetail={handleOpenMapEvent}
             topInset={62}
           />
-          <EventMapModeSwitch
-            contentMode={contentMode}
-            eventView={eventView}
-            floating
-            showEventView
-            onContentModeChange={handleContentModeChange}
-            onEventViewChange={setEventView}
-          />
           <PublicEventDetailModal
             eventId={detailEventId}
             onClose={handleCloseEventDetail}
@@ -1463,14 +1465,6 @@ export default function MapScreen() {
     return (
       <View style={{ flex: 1 }}>
         {renderMap()}
-        <EventMapModeSwitch
-          contentMode={contentMode}
-          eventView={eventView}
-          floating
-          showEventView
-          onContentModeChange={handleContentModeChange}
-          onEventViewChange={setEventView}
-        />
         {renderMobileBottomSheet()}
         {renderFormModal()}
         {renderImagenAmpliada()}
@@ -1493,13 +1487,6 @@ export default function MapScreen() {
       {/* Sidebar */}
       <View style={{ width: 376, flexShrink: 0, flexDirection: 'column', backgroundColor: C.bg, borderRightWidth: 1, borderRightColor: C.border, display: 'flex' as any, shadowColor: '#32271D', shadowOffset: { width: 12, height: 0 }, shadowOpacity: 0.06, shadowRadius: 24, zIndex: 2 }}>
         {renderSidebarHeader()}
-        <EventMapModeSwitch
-          contentMode={contentMode}
-          eventView={eventView}
-          onContentModeChange={handleContentModeChange}
-          onEventViewChange={setEventView}
-        />
-
         <View style={{ flex: 1, overflow: 'hidden' as any }}>
           {contentMode === 'events' ? (
             <PublicEventsPanel
@@ -1543,7 +1530,13 @@ export default function MapScreen() {
 
       {renderImagenAmpliada()}
       <AuthGateModal visible={isAuthGateVisible} onClose={() => setIsAuthGateVisible(false)} onGuest={() => setSidebarView('form')} />
-
+      
+      <AssociationAdoptionsModal
+        visible={modalAdopcionesVisible}
+        asociacionId={asocAdopciones.id}
+        asociacionNombre={asocAdopciones.nombre}
+        onClose={() => setModalAdopcionesVisible(false)}
+      />
     </View>
   );
 }
