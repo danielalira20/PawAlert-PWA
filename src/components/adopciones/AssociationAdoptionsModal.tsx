@@ -1,13 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Modal, View, Text, TouchableOpacity, ActivityIndicator, FlatList, StyleSheet, Dimensions, Platform, ScrollView, Image, Linking } from 'react-native';
+import { Modal, View, Text, TouchableOpacity, ActivityIndicator, FlatList, StyleSheet, Platform, ScrollView, Image, Linking, useWindowDimensions } from 'react-native';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import axios from 'axios';
 import { API_URL } from '../../constants/api';
-import { AdoptionCard } from './AdoptionCard';
+import { AdoptionCardGlobal } from './AdoptionCardGlobal'; // <-- Usamos la tarjeta responsiva
 
 const C = { primary: '#EC802B', bg: '#FFFFFF', bgSoft: '#F9F6F0', textDark: '#4A3728', textLight: '#8C7A6B', neutralLight: '#E5E7EB' };
-const { width, height } = Dimensions.get('window');
-const isDesktop = width > 768;
 
 interface Props {
   visible: boolean;
@@ -17,6 +15,9 @@ interface Props {
 }
 
 export function AssociationAdoptionsModal({ visible, asociacionId, asociacionNombre, onClose }: Props) {
+  const { width } = useWindowDimensions();
+  const isDesktop = width > 768;
+
   const [perfiles, setPerfiles] = useState<any[]>([]);
   const [isLoadingList, setIsLoadingList] = useState(false);
   
@@ -166,11 +167,18 @@ export function AssociationAdoptionsModal({ visible, asociacionId, asociacionNom
                   keyExtractor={(item) => item.id}
                   numColumns={isDesktop ? 3 : 2}
                   key={isDesktop ? 'desktop-3' : 'mobile-2'}
-                  columnWrapperStyle={{ justifyContent: 'flex-start', gap: isDesktop ? 20 : 10, paddingHorizontal: 24 }}
+                  columnWrapperStyle={{ 
+                    justifyContent: isDesktop ? 'flex-start' : 'space-between', 
+                    gap: isDesktop ? 20 : 0, 
+                    paddingHorizontal: 24, 
+                    marginBottom: 16 
+                  }}
                   contentContainerStyle={{ paddingBottom: 24, paddingTop: 24 }}
                   showsVerticalScrollIndicator={false}
                   renderItem={({ item }) => (
-                    <AdoptionCard perfil={item} onPress={() => verDetallePerrito(item.id)} />
+                    <View style={{ width: isDesktop ? '31%' : '48%' }}>
+                      <AdoptionCardGlobal perfil={item} onPress={() => verDetallePerrito(item.id)} />
+                    </View>
                   )}
                   ListFooterComponent={renderPaginacion()}
                 />
@@ -316,7 +324,7 @@ const styles = StyleSheet.create({
   // Se cambió justifyContent a 'center' para centrar el modal y se agregó padding
   overlay: { flex: 1, backgroundColor: 'rgba(46,42,38,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 },
   // Se quitó el borderRadius asimétrico y se le dio borderRadius a todo, limitando la altura
-  modalContent: { backgroundColor: C.bgSoft, width: '100%', maxWidth: 1024, maxHeight: height * 0.9, borderRadius: 24, overflow: 'hidden', ...Platform.select({ web: { boxShadow: '0 10px 40px rgba(0,0,0,0.2)' }, default: { elevation: 20 } }) },
+  modalContent: { backgroundColor: C.bgSoft, width: '100%', maxWidth: 1024, maxHeight: '90%', borderRadius: 24, overflow: 'hidden', ...Platform.select({ web: { boxShadow: '0 10px 40px rgba(0,0,0,0.2)' }, default: { elevation: 20 } }) },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 24, paddingVertical: 20, backgroundColor: C.bg, borderBottomWidth: 1, borderBottomColor: C.neutralLight },
   title: { fontSize: 22, fontWeight: '900', color: C.textDark },
   subtitle: { fontSize: 11, fontWeight: '800', color: C.primary, textTransform: 'uppercase', marginBottom: 2 },

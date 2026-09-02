@@ -35,6 +35,8 @@ CONFIG_ASIGNACION = {
     "dias_recepcion": [1, 2, 3, 4, 5, 6, 7],
     "hora_inicio_recepcion": "00:00:00",
     "hora_fin_recepcion": "23:59:59",
+    "participa_rescates": True,
+    "participa_adopciones": True,
 }
 
 
@@ -63,6 +65,8 @@ def test_get_config_asignacion_incluye_capacidad_y_horario(make_query):
     assert resultado["capacidad_reportes_criticos"] == 3
     assert resultado["recepcion_reportes_24h"] is True
     assert resultado["dias_recepcion"] == [1, 2, 3, 4, 5, 6, 7]
+    assert resultado["participa_rescates"] is True
+    assert resultado["participa_adopciones"] is True
 
 
 def test_patch_config_asignacion_conserva_clientes_anteriores(make_query):
@@ -134,6 +138,31 @@ def test_patch_config_asignacion_guarda_operacion_estructurada(make_query):
     assert resultado["capacidad_reportes_simultaneos"] == 6
 
 
+def test_patch_config_asignacion_permite_apagar_un_solo_eje(make_query):
+    actualizado = {**CONFIG_ASIGNACION, "participa_rescates": False}
+    query = make_query(execute_results=[[CONFIG_ASIGNACION], [actualizado]])
+    supabase = MagicMock()
+    supabase.table.return_value = query
+
+    with (
+        patch.object(associations, "supabase", supabase),
+        patch.object(
+            associations,
+            "_obtener_usuario_autenticado",
+            return_value=_usuario_asociacion(),
+        ),
+    ):
+        resultado = asyncio.run(
+            associations.patch_config_asignacion(
+                associations.ConfigAsignacionUpdate(participa_rescates=False),
+                "Bearer token",
+            )
+        )
+
+    assert resultado["participa_rescates"] is False
+    query.update.assert_called_once_with({"participa_rescates": False})
+
+
 @pytest.mark.parametrize(
     ("body", "detail"),
     [
@@ -144,6 +173,10 @@ def test_patch_config_asignacion_guarda_operacion_estructurada(make_query):
         ({"dias_recepcion": [1, 1, 8]}, "dias_recepcion"),
         ({"hora_inicio_recepcion": "25:00"}, "hora_inicio_recepcion"),
         ({"hora_inicio_recepcion": "09:00 texto"}, "hora_inicio_recepcion"),
+        (
+            {"participa_rescates": False, "participa_adopciones": False},
+            "eje",
+        ),
     ],
 )
 def test_patch_config_asignacion_rechaza_configuracion_incoherente(

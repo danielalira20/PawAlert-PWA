@@ -1524,6 +1524,14 @@ export default function MapScreen() {
         />
         <AuthGateModal visible={isAuthGateVisible} onClose={() => setIsAuthGateVisible(false)} onGuest={() => setSidebarView('form')} />
         {renderMapGuide()}
+
+        {/* AQUÍ AGREGAMOS EL MODAL PARA LA VISTA DE CELULAR */}
+        <AssociationAdoptionsModal
+          visible={modalAdopcionesVisible}
+          asociacionId={asocAdopciones.id}
+          asociacionNombre={asocAdopciones.nombre}
+          onClose={() => setModalAdopcionesVisible(false)}
+        />
       </View>
     );
   }

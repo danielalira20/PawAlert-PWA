@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Image, Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -8,6 +8,7 @@ import { API_URL } from '../../constants/api';
 import { useAuth } from '../../context/AuthContext';
 import { Toast, useToast } from '../../components/Toast';
 import { Input } from '../../components/ui/Input';
+import { downloadAdoptionPoster, getAdoptionPosterAssets, shareAdoptionPoster } from '../../utils/adoptionPoster';
 
 const COLORS = {
   bgTeal: '#66BCB4',
@@ -84,6 +85,27 @@ export default function AdoptionProfileEditorScreen() {
   const [isSaving, setIsSaving] = useState(false);
   const [revisionMedicaConfirmada, setRevisionMedicaConfirmada] = useState(false);
   const [revisionJuridicaConfirmada, setRevisionJuridicaConfirmada] = useState(false);
+  const [perfilPublicado, setPerfilPublicado] = useState<any>(null);
+  const [posterAction, setPosterAction] = useState<'share' | 'download' | null>(null);
+
+  const handlePosterPublicado = async (action: 'share' | 'download') => {
+    if (!perfilPublicado) return;
+    setPosterAction(action);
+    try {
+      const assets = getAdoptionPosterAssets();
+      if (action === 'share') {
+        const result = await shareAdoptionPoster(perfilPublicado, assets);
+        showToast({ type: 'success', title: result === 'shared' ? 'Ficha compartida' : 'Ficha descargada', message: result === 'shared' ? 'Gracias por ayudarle a encontrar hogar.' : 'La imagen quedó lista en tus descargas.' });
+      } else {
+        await downloadAdoptionPoster(perfilPublicado, assets);
+        showToast({ type: 'success', title: 'Ficha descargada', message: 'Ya puedes publicarla en tus redes sociales.' });
+      }
+    } catch (error: any) {
+      if (error?.name !== 'AbortError') showToast({ type: 'error', title: 'No pudimos crear la ficha', message: error?.message || 'Intenta nuevamente.' });
+    } finally {
+      setPosterAction(null);
+    }
+  };
 
   const captureFoto = async () => {
     if (fotos.length >= 8) {
@@ -281,10 +303,28 @@ export default function AdoptionProfileEditorScreen() {
           revision_juridica_confirmada: true,
           idempotency_key: `publish_${id}_${Date.now()}`
         }, { headers: { Authorization: `Bearer ${token}` } });
+        try {
+          const publishedResponse = await axios.get(`${API_URL}/adoptions/${id}`);
+          setPerfilPublicado(publishedResponse.data);
+        } catch {
+          setPerfilPublicado({
+            ...perfil,
+            id,
+            nombre_publico: nombrePublico,
+            zona_general: zonaGeneral,
+            sexo,
+            edad_aproximada: edad,
+            descripcion,
+            personalidad,
+            salud_conocida: salud,
+            fotos,
+            tamanio: { descripcion: tamanios.find(item => item.id === selectedTamanio)?.descripcion },
+          });
+        }
       }
 
       showToast({ type: 'success', title: '¡Éxito!', message: publicar ? 'El perfil ha sido publicado.' : 'Borrador guardado.' });
-      setTimeout(() => { if (router.canGoBack()) router.back(); }, 1500);
+      if (!publicar) setTimeout(() => { if (router.canGoBack()) router.back(); }, 1500);
       
     } catch (error: any) {
       const detail = error.response?.data?.detail;
@@ -506,6 +546,27 @@ export default function AdoptionProfileEditorScreen() {
   return (
     <View style={[styles.outerContainer, { backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' } as any]}>
       <Toast toast={toast} translateY={translateY} />
+
+      <Modal visible={!!perfilPublicado} transparent animationType="fade" onRequestClose={() => setPerfilPublicado(null)}>
+        <View style={styles.successOverlay}>
+          <View style={styles.successCard}>
+            <View style={styles.successIcon}><Ionicons name="checkmark" size={34} color="#FFFFFF" /></View>
+            <Text style={styles.successTitle}>¡Perfil publicado!</Text>
+            <Text style={styles.successText}>La adopción ya es visible. Aprovecha este momento para difundir una ficha vertical lista para historias y redes sociales.</Text>
+            <View style={styles.successActions}>
+              <TouchableOpacity style={styles.successPrimary} onPress={() => handlePosterPublicado('share')} disabled={!!posterAction}>
+                {posterAction === 'share' ? <ActivityIndicator color="#FFFFFF" /> : <><Ionicons name="share-social-outline" size={19} color="#FFFFFF" /><Text style={styles.successPrimaryText}>Compartir ficha</Text></>}
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.successSecondary} onPress={() => handlePosterPublicado('download')} disabled={!!posterAction}>
+                {posterAction === 'download' ? <ActivityIndicator color={COLORS.primary} /> : <><Ionicons name="download-outline" size={19} color={COLORS.primary} /><Text style={styles.successSecondaryText}>Descargar</Text></>}
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity onPress={() => { setPerfilPublicado(null); if (router.canGoBack()) router.back(); }} style={{ padding: 12 }}>
+              <Text style={{ color: COLORS.textLight, fontWeight: '700' }}>Volver al panel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
       
       <View style={styles.centeredContent}>
         <View style={styles.cardContainer}>
@@ -546,5 +607,15 @@ const styles = StyleSheet.create({
   formSectionTitle: { fontSize: 20, fontWeight: '800', color: COLORS.textDark, marginBottom: 4 },
   formSectionSubtitle: { fontSize: 13, color: COLORS.textLight, marginBottom: 16 },
   submitButton: { backgroundColor: COLORS.primary, paddingVertical: 18, borderRadius: 24, alignItems: 'center', marginTop: 16 },
-  submitButtonText: { color: COLORS.bgWhite, fontWeight: '900', fontSize: 16 }
+  submitButtonText: { color: COLORS.bgWhite, fontWeight: '900', fontSize: 16 },
+  successOverlay: { flex: 1, backgroundColor: 'rgba(38,30,24,.72)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  successCard: { width: '100%', maxWidth: 470, backgroundColor: COLORS.bgWhite, borderRadius: 28, padding: 28, alignItems: 'center' },
+  successIcon: { width: 68, height: 68, borderRadius: 34, backgroundColor: COLORS.bgTeal, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
+  successTitle: { fontSize: 25, fontWeight: '900', color: COLORS.textDark, marginBottom: 8 },
+  successText: { fontSize: 14, color: COLORS.textLight, textAlign: 'center', lineHeight: 21, marginBottom: 22 },
+  successActions: { flexDirection: 'row', gap: 10, width: '100%', marginBottom: 8 },
+  successPrimary: { flex: 1, minHeight: 52, backgroundColor: COLORS.primary, borderRadius: 16, flexDirection: 'row', gap: 7, alignItems: 'center', justifyContent: 'center' },
+  successPrimaryText: { color: '#FFFFFF', fontWeight: '800' },
+  successSecondary: { flex: 1, minHeight: 52, borderWidth: 1.5, borderColor: COLORS.primary, borderRadius: 16, flexDirection: 'row', gap: 7, alignItems: 'center', justifyContent: 'center' },
+  successSecondaryText: { color: COLORS.primary, fontWeight: '800' }
 });

@@ -1226,13 +1226,16 @@ class ConfigAsignacionUpdate(BaseModel):
     dias_recepcion: list[int] | None = None
     hora_inicio_recepcion: str | None = None
     hora_fin_recepcion: str | None = None
+    participa_rescates: bool | None = None
+    participa_adopciones: bool | None = None
 
 
 CAMPOS_CONFIG_ASIGNACION = (
     "modo_asignacion, timeout_grave, timeout_herido, timeout_estable, "
     "capacidad_reportes_simultaneos, capacidad_reportes_criticos, "
     "recepcion_reportes_activa, recepcion_reportes_24h, dias_recepcion, "
-    "hora_inicio_recepcion, hora_fin_recepcion"
+    "hora_inicio_recepcion, hora_fin_recepcion, "
+    "participa_rescates, participa_adopciones"
 )
 
 
@@ -1304,6 +1307,15 @@ async def patch_config_asignacion(body: ConfigAsignacionUpdate, authorization: s
         raise HTTPException(status_code=404, detail="Asociación no encontrada")
 
     combinada = {**actual.data[0], **actualizacion}
+
+    if not (combinada["participa_rescates"] or combinada["participa_adopciones"]):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Debes dejar al menos un eje activo: rescates o adopciones"
+            ),
+        )
+
     capacidad_total = combinada["capacidad_reportes_simultaneos"]
     capacidad_critica = combinada["capacidad_reportes_criticos"]
     if not (1 <= capacidad_total <= 100):
