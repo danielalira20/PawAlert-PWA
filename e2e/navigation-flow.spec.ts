@@ -199,7 +199,7 @@ async function prepareAuthenticatedNavigation(
             },
           ],
         },
-        expires_at: '2026-09-01T15:06:00.000Z',
+        expires_at: new Date(Date.now() + 5 * 60_000).toISOString(),
         error_code: null,
         retryable: null,
       });
@@ -296,4 +296,88 @@ test('degrada NoRoute sin presentar la línea como ruta vial', async ({ page }) 
   await expect(page.getByText('Google Maps')).toBeVisible();
   await expect(page.getByText('Waze')).toBeVisible();
   await expect(page.getByText('Tiempo estimado')).not.toBeVisible();
+});
+
+test('recalcula una sola vez después de confirmar un desvío GPS', async ({
+  page,
+}) => {
+  const mock = await prepareAuthenticatedNavigation(page);
+  await page.addInitScript(() => {
+    let current = {
+      latitude: 19.0433,
+      longitude: -98.2019,
+      accuracy: 8,
+    };
+    let nextWatchId = 1;
+    const watchers = new Map<number, PositionCallback>();
+    const position = (): GeolocationPosition => ({
+      coords: {
+        ...current,
+        altitude: null,
+        altitudeAccuracy: null,
+        heading: null,
+        speed: null,
+        toJSON: () => current,
+      },
+      timestamp: Date.now(),
+      toJSON: () => current,
+    });
+    Object.defineProperty(navigator, 'geolocation', {
+      configurable: true,
+      value: {
+        clearWatch: (watchId: number) => watchers.delete(watchId),
+        getCurrentPosition: (success: PositionCallback) => success(position()),
+        watchPosition: (success: PositionCallback) => {
+          const watchId = nextWatchId;
+          nextWatchId += 1;
+          watchers.set(watchId, success);
+          setTimeout(() => success(position()), 0);
+          return watchId;
+        },
+      },
+    });
+    Object.defineProperty(window, '__emitNavigationPosition', {
+      configurable: true,
+      value: (latitude: number, longitude: number) => {
+        current = { latitude, longitude, accuracy: 8 };
+        watchers.forEach((listener) => listener(position()));
+      },
+    });
+  });
+  await page.goto(`/navegacion-caso/${REPORT_ID}`);
+  await expect.poll(mock.routeCalls).toBe(1);
+  await expect(
+    page.getByText(
+      'Ubicación en vivo activa mientras mantengas PawAlert abierta.',
+    ),
+  ).toBeVisible();
+
+  await page.evaluate(() => {
+    const currentTime = Date.now();
+    Date.now = () => currentTime + 40_000;
+  });
+  for (const latitude of [19.06, 19.0601, 19.0602]) {
+    await page.evaluate((nextLatitude) => {
+      const emit = (
+        window as typeof window & {
+          __emitNavigationPosition: (
+            latitude: number,
+            longitude: number,
+          ) => void;
+        }
+      ).__emitNavigationPosition;
+      emit(nextLatitude, -98.2019);
+    }, latitude);
+  }
+
+  await expect.poll(mock.routeCalls).toBe(2);
+  expect(mock.routeBodies[1]).toMatchObject({
+    mode: 'driving',
+    origin: {
+      latitude: 19.0602,
+      longitude: -98.2019,
+    },
+  });
+  await page.waitForTimeout(1_000);
+  expect(mock.routeCalls()).toBe(2);
 });

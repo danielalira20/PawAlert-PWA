@@ -2,34 +2,10 @@ import { formatDistanceToNow } from "date-fns";
 import { es } from "date-fns/locale";
 
 import type { NavigationOrigin, NavigationStep } from "../types/navigation";
+import { navigationDistanceBetweenMeters } from "./navigationGeometry";
 
-const EARTH_RADIUS_METERS = 6_371_000;
+export { navigationDistanceBetweenMeters } from "./navigationGeometry";
 const MANEUVER_REACHED_RADIUS_METERS = 45;
-
-function toRadians(value: number): number {
-  return (value * Math.PI) / 180;
-}
-
-export function navigationDistanceBetweenMeters(
-  origin: Pick<NavigationOrigin, "latitude" | "longitude">,
-  destination: Pick<NavigationOrigin, "latitude" | "longitude">,
-): number {
-  const latitudeDelta = toRadians(destination.latitude - origin.latitude);
-  const longitudeDelta = toRadians(destination.longitude - origin.longitude);
-  const originLatitude = toRadians(origin.latitude);
-  const destinationLatitude = toRadians(destination.latitude);
-  const haversine =
-    Math.sin(latitudeDelta / 2) ** 2 +
-    Math.cos(originLatitude) *
-      Math.cos(destinationLatitude) *
-      Math.sin(longitudeDelta / 2) ** 2;
-
-  return (
-    2 *
-    EARTH_RADIUS_METERS *
-    Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine))
-  );
-}
 
 export function navigationStepDistanceMeters(
   step: NavigationStep,

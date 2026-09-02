@@ -18,6 +18,7 @@ import CaseNavigationMap from "../components/navigation/CaseNavigationMap";
 import { Brand } from "../constants/theme";
 import { useAuth } from "../context/AuthContext";
 import { useCaseNavigation } from "../hooks/useCaseNavigation";
+import { useAutomaticRouteRecalculation } from "../hooks/useAutomaticRouteRecalculation";
 import {
   buildExternalNavigationUrl,
   type ExternalNavigationProvider,
@@ -71,6 +72,19 @@ export default function CaseNavigationScreen({ reportId, onClose }: Props) {
     retryCapabilities,
     clearError,
   } = useCaseNavigation(reportId);
+  const automaticRecalculation = useAutomaticRouteRecalculation({
+    enabled:
+      trackingState === "active" &&
+      !accessRevoked &&
+      !destinationChanged,
+    origin: liveOrigin,
+    routeOrigin: currentRoute?.origin ?? null,
+    geometry: currentRoute?.route.geometry ?? null,
+    routeCalculatedAt: currentRoute?.calculated_at ?? null,
+    routeExpiresAt: currentRoute?.expires_at ?? null,
+    isRefreshing,
+    onRecalculate: recalculate,
+  });
 
   useEffect(() => {
     if (
@@ -308,6 +322,23 @@ export default function CaseNavigationScreen({ reportId, onClose }: Props) {
                 icon="warning-outline"
                 tone="error"
                 text={`${error.message} La ruta anterior permanece visible.`}
+              />
+            )}
+            {(automaticRecalculation.state === "off_route" ||
+              automaticRecalculation.state === "stale_route" ||
+              automaticRecalculation.state === "recalculating") && (
+              <StatusNotice
+                icon="navigate-outline"
+                tone="warning"
+                text={
+                  automaticRecalculation.state === "recalculating"
+                    ? automaticRecalculation.trigger === "stale_route"
+                      ? "La ruta venció mientras avanzabas. Estamos actualizándola desde tu ubicación."
+                      : "Detectamos un desvío. Estamos actualizando la ruta desde tu ubicación."
+                    : automaticRecalculation.state === "stale_route"
+                      ? "La ruta venció mientras avanzabas. Se actualizará cuando termine el intervalo de seguridad."
+                    : "Detectamos un desvío. La ruta se actualizará cuando termine el intervalo de seguridad."
+                }
               />
             )}
 
