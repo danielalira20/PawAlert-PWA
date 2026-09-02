@@ -209,11 +209,13 @@ def get_navigation_capabilities(
     report_id: str,
     user_id: str,
 ) -> NavigationCapabilitiesResponse:
-    _load_navigation_context(report_id, user_id)
+    _proposal, report = _load_navigation_context(report_id, user_id)
+    destination = _resolve_destination(report)
     modes = _available_modes()
     return NavigationCapabilitiesResponse(
         navigation_enabled=bool(modes),
         available_modes=modes,
+        destination_revision=destination.revision,
     )
 
 

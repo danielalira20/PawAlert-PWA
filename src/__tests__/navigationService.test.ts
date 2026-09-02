@@ -24,6 +24,7 @@ describe("navigationService", () => {
         contract_version: 1,
         navigation_enabled: true,
         available_modes: ["driving"],
+        destination_revision: "sighting:sighting-1",
         foreground_tracking: true,
         background_tracking: false,
         voice_guidance: false,
@@ -93,4 +94,21 @@ describe("navigationService", () => {
     expect(normalized.retryAfterSeconds).toBe(17);
     expect(normalized.message).toContain("Espera un momento");
   });
+
+  it.each(["invalid_origin", "stale_origin", "low_accuracy_origin"] as const)(
+    "permite repetir una lectura GPS rechazada por %s",
+    (code) => {
+      mockedAxios.isAxiosError.mockReturnValueOnce(true);
+
+      const normalized = normalizeNavigationApiError({
+        response: {
+          status: 422,
+          data: { detail: { code } },
+        },
+      });
+
+      expect(normalized.code).toBe(code);
+      expect(normalized.retryable).toBe(true);
+    },
+  );
 });

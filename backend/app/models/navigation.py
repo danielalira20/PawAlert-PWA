@@ -91,6 +91,7 @@ class NavigationCapabilitiesResponse(BaseModel):
     contract_version: Literal[1] = 1
     navigation_enabled: bool
     available_modes: list[NavigationMode]
+    destination_revision: str = Field(min_length=1, max_length=160)
     foreground_tracking: Literal[True] = True
     background_tracking: Literal[False] = False
     voice_guidance: Literal[False] = False

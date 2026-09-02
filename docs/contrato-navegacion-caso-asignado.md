@@ -412,6 +412,7 @@ Devuelve solamente despues de validar acceso:
   "contract_version": 1,
   "navigation_enabled": true,
   "available_modes": ["driving"],
+  "destination_revision": "sighting:8b17...",
   "foreground_tracking": true,
   "background_tracking": false,
   "voice_guidance": false,
@@ -420,7 +421,9 @@ Devuelve solamente despues de validar acceso:
 ```
 
 Este endpoint evita que el frontend deduzca capacidades a partir de
-variables publicas o del sistema operativo.
+variables publicas o del sistema operativo. `destination_revision` permite
+detectar un avistamiento validado nuevo sin publicar coordenadas en esta
+consulta; si cambia, el cliente solicita otra ruta al endpoint protegido.
 
 ## 9. Instrucciones de maniobra
 

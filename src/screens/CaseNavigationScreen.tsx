@@ -28,6 +28,7 @@ import {
   formatNavigationDistance,
   formatNavigationDuration,
 } from "../utils/navigationPresentation";
+import type { NavigationGeometry } from "../types/navigation";
 
 interface Props {
   reportId: string | null;
@@ -42,9 +43,11 @@ export default function CaseNavigationScreen({ reportId, onClose }: Props) {
   const isDesktop = width >= 900;
   const [fitRequestId, setFitRequestId] = useState(0);
   const startedForReportRef = useRef<string | null>(null);
+  const attemptedDestinationRevisionRef = useRef<string | null>(null);
   const {
     capabilities,
     currentRoute,
+    currentOrigin,
     destination,
     permissionState,
     isLoadingCapabilities,
@@ -88,6 +91,32 @@ export default function CaseNavigationScreen({ reportId, onClose }: Props) {
     };
   }, [accessRevoked, currentRoute, retryCapabilities]);
 
+  useEffect(() => {
+    const latestRevision = capabilities?.destination_revision;
+    if (
+      !latestRevision ||
+      !currentRoute ||
+      currentRoute.destination.revision === latestRevision
+    ) {
+      attemptedDestinationRevisionRef.current = null;
+      return;
+    }
+    if (
+      isRefreshing ||
+      attemptedDestinationRevisionRef.current === latestRevision
+    ) {
+      return;
+    }
+
+    attemptedDestinationRevisionRef.current = latestRevision;
+    void recalculate();
+  }, [
+    capabilities?.destination_revision,
+    currentRoute,
+    isRefreshing,
+    recalculate,
+  ]);
+
   const openExternalNavigation = async (
     provider: ExternalNavigationProvider,
   ) => {
@@ -115,6 +144,37 @@ export default function CaseNavigationScreen({ reportId, onClose }: Props) {
     isLoadingSession ||
     (isLoadingCapabilities && !currentRoute) ||
     (isCalculating && !currentRoute);
+  const showExternalFallback =
+    Boolean(destination) &&
+    !accessRevoked &&
+    (error?.code === "provider_timeout" ||
+      error?.code === "provider_error" ||
+      error?.code === "no_route" ||
+      error?.code === "network_unavailable");
+  const noRouteGeometry: NavigationGeometry | null =
+    error?.code === "no_route" && currentOrigin && destination
+      ? {
+          type: "LineString",
+          coordinates: [
+            [currentOrigin.longitude, currentOrigin.latitude],
+            [destination.longitude, destination.latitude],
+          ],
+        }
+      : null;
+  const routeUsesLatestDestination =
+    !capabilities?.destination_revision ||
+    currentRoute?.destination.revision === capabilities.destination_revision;
+  const emptyStateTitle = accessRevoked
+    ? "La navegación ya no está disponible"
+    : error?.code === "no_route"
+      ? "No encontramos una ruta vial"
+      : error?.code === "gps_denied"
+        ? "Necesitamos acceso a tu ubicación"
+        : error?.code === "low_accuracy_origin"
+          ? "La señal GPS es imprecisa"
+          : error?.code === "network_unavailable"
+            ? "Sin conexión para calcular la ruta"
+            : "No pudimos preparar la ruta";
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -192,7 +252,11 @@ export default function CaseNavigationScreen({ reportId, onClose }: Props) {
               <StatusNotice
                 icon="location-outline"
                 tone="warning"
-                text="La ubicación confirmada cambió. La ruta ya usa el destino más reciente."
+                text={
+                  routeUsesLatestDestination
+                    ? "La ubicación confirmada cambió. La ruta ya usa el destino más reciente."
+                    : "La ubicación confirmada cambió, pero la ruta dibujada todavía apunta al destino anterior. Usa el respaldo externo o vuelve a calcular."
+                }
               />
             )}
             {error && (
@@ -306,20 +370,91 @@ export default function CaseNavigationScreen({ reportId, onClose }: Props) {
             </View>
           </View>
         </ScrollView>
+      ) : noRouteGeometry && currentOrigin && destination ? (
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.mapBand}>
+            <CaseNavigationMap
+              origin={currentOrigin}
+              destination={destination}
+              geometry={noRouteGeometry}
+              lineStyle="fallback"
+              height={isDesktop ? 500 : 380}
+              fitRequestId={fitRequestId}
+            />
+          </View>
+          <View style={[styles.details, isDesktop && styles.detailsDesktop]}>
+            <StatusNotice
+              icon="warning-outline"
+              tone="warning"
+              text="La línea punteada solo orienta hacia el destino. No representa una calle ni permite confirmar la llegada."
+            />
+            <View style={styles.destinationRow}>
+              <View style={styles.destinationIcon}>
+                <Ionicons name="paw" size={20} color="#FFFFFF" />
+              </View>
+              <View style={styles.destinationCopy}>
+                <Text style={styles.sectionLabel}>Destino</Text>
+                <Text style={styles.destinationTitle}>
+                  Última ubicación confirmada
+                </Text>
+                <Text style={styles.destinationMeta}>
+                  Tiempo y distancia vial no disponibles
+                </Text>
+              </View>
+            </View>
+            <View style={styles.externalSection}>
+              <Text style={styles.externalLabel}>
+                Continuar con otra aplicación
+              </Text>
+              <View style={styles.externalActions}>
+                <TouchableOpacity
+                  onPress={() => void openExternalNavigation("google")}
+                  style={styles.externalButton}
+                >
+                  <Ionicons
+                    name="map-outline"
+                    size={18}
+                    color={Brand.secondary}
+                  />
+                  <Text style={styles.externalButtonText}>Google Maps</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => void openExternalNavigation("waze")}
+                  style={styles.externalButton}
+                >
+                  <Ionicons
+                    name="navigate-outline"
+                    size={18}
+                    color={Brand.secondary}
+                  />
+                  <Text style={styles.externalButtonText}>Waze</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+            <TouchableOpacity
+              onPress={onClose}
+              style={styles.outlineCloseButton}
+            >
+              <Text style={styles.outlineCloseButtonText}>Volver al caso</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
       ) : (
         <NavigationMessage
           icon={accessRevoked ? "lock-closed-outline" : "navigate-outline"}
-          title={
-            accessRevoked
-              ? "La navegación ya no está disponible"
-              : "No pudimos preparar la ruta"
-          }
+          title={emptyStateTitle}
           message={
             error?.message ??
             "Comprueba tu GPS y vuelve a intentarlo. Tu asignación no se modificó."
           }
           actionLabel={error?.retryable ? "Intentar nuevamente" : "Volver"}
           onAction={error?.retryable ? retry : onClose}
+          showExternalFallback={showExternalFallback}
+          onOpenGoogle={() => void openExternalNavigation("google")}
+          onOpenWaze={() => void openExternalNavigation("waze")}
         />
       )}
     </SafeAreaView>
@@ -385,12 +520,18 @@ function NavigationMessage({
   message,
   actionLabel,
   onAction,
+  showExternalFallback = false,
+  onOpenGoogle,
+  onOpenWaze,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   title: string;
   message: string;
   actionLabel: string;
   onAction: () => void;
+  showExternalFallback?: boolean;
+  onOpenGoogle?: () => void;
+  onOpenWaze?: () => void;
 }) {
   return (
     <View style={styles.messageState}>
@@ -402,6 +543,33 @@ function NavigationMessage({
       <TouchableOpacity onPress={onAction} style={styles.messageButton}>
         <Text style={styles.messageButtonText}>{actionLabel}</Text>
       </TouchableOpacity>
+      {showExternalFallback && onOpenGoogle && onOpenWaze && (
+        <View style={styles.messageFallback}>
+          <Text style={styles.messageFallbackLabel}>
+            Continuar con otra aplicación
+          </Text>
+          <View style={styles.externalActions}>
+            <TouchableOpacity
+              onPress={onOpenGoogle}
+              style={styles.externalButton}
+            >
+              <Ionicons name="map-outline" size={18} color={Brand.secondary} />
+              <Text style={styles.externalButtonText}>Google Maps</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={onOpenWaze}
+              style={styles.externalButton}
+            >
+              <Ionicons
+                name="navigate-outline"
+                size={18}
+                color={Brand.secondary}
+              />
+              <Text style={styles.externalButtonText}>Waze</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -627,6 +795,28 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
   },
   messageButtonText: { color: "#FFFFFF", fontSize: 12, fontWeight: "800" },
+  messageFallback: { width: "100%", maxWidth: 430, marginTop: 4 },
+  messageFallbackLabel: {
+    color: Brand.textFaint,
+    fontSize: 10,
+    fontWeight: "700",
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  outlineCloseButton: {
+    minHeight: 46,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#CFC3B7",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFFFFF",
+  },
+  outlineCloseButtonText: {
+    color: Brand.textDark,
+    fontSize: 12,
+    fontWeight: "800",
+  },
   statusNotice: {
     minHeight: 44,
     paddingHorizontal: 12,

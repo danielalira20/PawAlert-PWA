@@ -41,6 +41,7 @@ const capabilities: NavigationCapabilities = {
   contract_version: 1,
   navigation_enabled: true,
   available_modes: ["driving"],
+  destination_revision: "sighting:sighting-1",
   foreground_tracking: true,
   background_tracking: false,
   voice_guidance: false,
@@ -191,6 +192,28 @@ describe("useCaseNavigation", () => {
 
     expect(result.current.currentRoute).toEqual(completeRoute);
     expect(result.current.error?.code).toBe("provider_error");
+    expect(result.current.error?.retryable).toBe(true);
+  });
+
+  it("distingue una caída de red y conserva la ruta anterior", async () => {
+    const { result } = await renderHook(() => useCaseNavigation("report-1"));
+    await waitFor(() => expect(result.current.capabilities).not.toBeNull());
+    await act(async () => {
+      await result.current.start();
+    });
+    mockedCalculateRoute.mockRejectedValueOnce(
+      new NavigationApiError("Revisa tu conexión.", {
+        status: null,
+        retryable: true,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.recalculate();
+    });
+
+    expect(result.current.currentRoute).toEqual(completeRoute);
+    expect(result.current.error?.code).toBe("network_unavailable");
     expect(result.current.error?.retryable).toBe(true);
   });
 

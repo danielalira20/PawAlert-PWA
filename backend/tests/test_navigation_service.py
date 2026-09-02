@@ -381,5 +381,8 @@ def test_capabilities_only_publish_driving_during_n1(make_query):
 
     assert result.navigation_enabled is True
     assert result.available_modes == [NavigationMode.driving]
+    assert result.destination_revision == "sighting:sighting-1"
     assert result.background_tracking is False
     assert result.live_traffic is False
+    assert "latitude" not in result.model_dump()
+    assert "longitude" not in result.model_dump()

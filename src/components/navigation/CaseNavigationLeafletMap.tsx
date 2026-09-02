@@ -63,6 +63,7 @@ export default function CaseNavigationLeafletMap({
   origin,
   destination,
   geometry,
+  lineStyle = "route",
   width,
   height = 360,
   fitRequestId = 0,
@@ -121,7 +122,12 @@ export default function CaseNavigationLeafletMap({
       {routePositions.length >= 2 && (
         <Polyline
           positions={routePositions}
-          pathOptions={{ color: "#2F8F87", weight: 6, opacity: 0.9 }}
+          pathOptions={{
+            color: lineStyle === "fallback" ? "#9A6700" : "#2F8F87",
+            weight: lineStyle === "fallback" ? 4 : 6,
+            opacity: 0.9,
+            dashArray: lineStyle === "fallback" ? "8 10" : undefined,
+          }}
         />
       )}
       <Marker position={[origin.latitude, origin.longitude]} icon={originIcon}>

@@ -23,7 +23,12 @@ export type NavigationPermissionState =
   "idle" | "requesting" | "granted" | "denied" | "error";
 
 export interface CaseNavigationError {
-  code: NavigationErrorCode | "gps_denied" | "gps_unavailable" | null;
+  code:
+    | NavigationErrorCode
+    | "gps_denied"
+    | "gps_unavailable"
+    | "network_unavailable"
+    | null;
   message: string;
   retryable: boolean;
   retryAfterSeconds: number | null;
@@ -66,7 +71,9 @@ function clientError(
 function apiError(error: unknown): CaseNavigationError {
   const normalized = normalizeNavigationApiError(error);
   return {
-    code: normalized.code,
+    code:
+      normalized.code ??
+      (normalized.status === null ? "network_unavailable" : null),
     message: normalized.message,
     retryable: normalized.retryable,
     retryAfterSeconds: normalized.retryAfterSeconds,

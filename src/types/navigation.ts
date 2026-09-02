@@ -101,6 +101,7 @@ export interface NavigationCapabilities {
   contract_version: 1;
   navigation_enabled: boolean;
   available_modes: NavigationMode[];
+  destination_revision: string;
   foreground_tracking: true;
   background_tracking: false;
   voice_guidance: false;

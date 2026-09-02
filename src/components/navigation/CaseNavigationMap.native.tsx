@@ -14,6 +14,7 @@ export default function CaseNavigationMap({
   origin,
   destination,
   geometry,
+  lineStyle = "route",
   height = 360,
   fitRequestId = 0,
 }: CaseNavigationMapProps) {
@@ -72,8 +73,9 @@ export default function CaseNavigationMap({
         {routeCoordinates.length >= 2 && (
           <Polyline
             coordinates={routeCoordinates}
-            strokeColor="#2F8F87"
-            strokeWidth={6}
+            strokeColor={lineStyle === "fallback" ? "#9A6700" : "#2F8F87"}
+            strokeWidth={lineStyle === "fallback" ? 4 : 6}
+            lineDashPattern={lineStyle === "fallback" ? [8, 8] : undefined}
           />
         )}
         <Marker coordinate={originCoordinate} title="Tu ubicación">

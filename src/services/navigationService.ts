@@ -66,6 +66,12 @@ function isNavigationErrorCode(value: unknown): value is NavigationErrorCode {
   );
 }
 
+const RETRYABLE_VALIDATION_CODES = new Set<NavigationErrorCode>([
+  "invalid_origin",
+  "stale_origin",
+  "low_accuracy_origin",
+]);
+
 export function navigationErrorMessage(
   code: NavigationErrorCode | null,
   fallback?: string,
@@ -136,7 +142,10 @@ export function normalizeNavigationApiError(
         ? detail
         : undefined;
   const retryable =
-    status === null || status === 429 || (status !== null && status >= 500);
+    status === null ||
+    status === 429 ||
+    (status !== null && status >= 500) ||
+    (code !== null && RETRYABLE_VALIDATION_CODES.has(code));
 
   return new NavigationApiError(
     navigationErrorMessage(
