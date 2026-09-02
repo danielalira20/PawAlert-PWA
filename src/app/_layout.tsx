@@ -79,6 +79,7 @@ export default function RootLayout() {
         <Stack.Screen name="aportacion" options={{ presentation: 'transparentModal', animation: 'fade', headerShown: false }} />
         <Stack.Screen name="evento-editor" options={{ presentation: 'modal', animation: 'slide_from_bottom', headerShown: false }} />
         <Stack.Screen name="editor-adopcion/[id]" options={{ presentation: 'transparentModal', animation: 'fade', headerShown: false }} />
+        <Stack.Screen name="navegacion-caso/[id]" />
       </Stack>
       </SavedEventsProvider>
     </AuthProvider>
