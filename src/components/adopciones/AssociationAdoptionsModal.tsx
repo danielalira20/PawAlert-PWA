@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Modal, View, Text, TouchableOpacity, ActivityIndicator, FlatList, StyleSheet, Dimensions, Platform, ScrollView, Image } from 'react-native';
+import { Modal, View, Text, TouchableOpacity, ActivityIndicator, FlatList, StyleSheet, Dimensions, Platform, ScrollView, Image, Linking } from 'react-native';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import axios from 'axios';
 import { API_URL } from '../../constants/api';
@@ -29,6 +29,7 @@ export function AssociationAdoptionsModal({ visible, asociacionId, asociacionNom
   const [perfilDetalle, setPerfilDetalle] = useState<any>(null);
   const [isLoadingDetalle, setIsLoadingDetalle] = useState(false);
   const [fotoExpandida, setFotoExpandida] = useState<string | null>(null);
+  const [mostrarContacto, setMostrarContacto] = useState(false);
 
   // Reiniciar la vista y cargar página 1 al abrir el modal
   useEffect(() => {
@@ -64,6 +65,7 @@ export function AssociationAdoptionsModal({ visible, asociacionId, asociacionNom
 
   const verDetallePerrito = async (id: string) => {
     setVista('detalle');
+    setMostrarContacto(false);
     setIsLoadingDetalle(true);
     try {
       const res = await axios.get(`${API_URL}/adoptions/${id}`);
@@ -254,11 +256,36 @@ export function AssociationAdoptionsModal({ visible, asociacionId, asociacionNom
                     </View>
                   </View>
 
-                  {/* Botón de Adopción */}
-                  <TouchableOpacity style={styles.adoptButton} onPress={() => alert('Próximamente: Flujo de solicitud')}>
-                    <Ionicons name="heart" size={20} color={C.bg} style={{ marginRight: 8 }} />
-                    <Text style={styles.adoptButtonText}>¡Quiero Adoptarlo!</Text>
-                  </TouchableOpacity>
+                  {/* Botón de Adopción o Datos de Contacto */}
+                  {!mostrarContacto ? (
+                    <TouchableOpacity style={styles.adoptButton} onPress={() => setMostrarContacto(true)}>
+                      <Ionicons name="heart" size={20} color={C.bg} style={{ marginRight: 8 }} />
+                      <Text style={styles.adoptButtonText}>¡Quiero Adoptarlo!</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <View style={{ backgroundColor: '#FDF8F4', borderRadius: 16, padding: 20, marginTop: 10, borderWidth: 1, borderColor: '#E5E7EB', alignItems: 'center' }}>
+                      <Text style={{ fontSize: 15, fontWeight: '800', color: C.textDark, marginBottom: 16 }}>Contacta a la Asociación</Text>
+                      
+                      {perfilDetalle.asociacion?.telefono && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+                          <Ionicons name="logo-whatsapp" size={20} color="#25D366" />
+                          <Text style={{ fontSize: 15, color: C.textDark, marginLeft: 8, fontWeight: '600' }}>{perfilDetalle.asociacion.telefono}</Text>
+                        </View>
+                      )}
+
+                      {perfilDetalle.asociacion?.email ? (
+                        <TouchableOpacity 
+                          onPress={() => Linking.openURL(`mailto:${perfilDetalle.asociacion.email}?subject=Deseo%20adoptar%20a%20${perfilDetalle.nombre_publico}&body=Hola%20${perfilDetalle.asociacion.nombre},%20me%20gustar%C3%ADa%20recibir%20m%C3%A1s%20informaci%C3%B3n%20sobre%20el%20proceso%20de%20adopci%C3%B3n%20de%20${perfilDetalle.nombre_publico}.%0A%0AGracias.`)} 
+                          style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 16, borderWidth: 1, borderColor: '#E5E7EB', width: '100%', justifyContent: 'center' }}
+                        >
+                          <Ionicons name="mail" size={20} color={C.primary} />
+                          <Text style={{ fontSize: 14, color: C.primary, marginLeft: 8, fontWeight: '700' }}>Enviar correo de adopción</Text>
+                        </TouchableOpacity>
+                      ) : (
+                         <Text style={{ fontSize: 13, color: C.textLight, marginTop: 4 }}>Sin correo registrado</Text>
+                      )}
+                    </View>
+                  )}
                 </ScrollView>
               )}
             </View>

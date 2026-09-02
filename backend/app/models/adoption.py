@@ -260,6 +260,8 @@ class AdoptionPublicAssociation(BaseModel):
     nombre: str
     acerca_de: str | None = None
     logo_url: str | None = None
+    email: str | None = None
+    telefono: str | None = None
 
 
 class AdoptionPublicPhoto(BaseModel):

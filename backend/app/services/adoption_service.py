@@ -1794,7 +1794,7 @@ def _contexto_publico_perfiles(
         rows = _query(
             "resolver asociaciones de adopciones públicas",
             lambda: supabase_admin.table("asociaciones")
-            .select("id, nombre, acerca_de, logo_url, activo, verificado")
+            .select("id, nombre, acerca_de, logo_url, contacto_email, contacto_telefono, activo, verificado")
             .in_("id", sorted(association_ids))
             .eq("activo", True)
             .eq("verificado", True),
@@ -1805,6 +1805,8 @@ def _contexto_publico_perfiles(
                 "nombre": row["nombre"],
                 "acerca_de": row.get("acerca_de"),
                 "logo_url": row.get("logo_url"),
+                "email": row.get("contacto_email"),
+                "telefono": row.get("contacto_telefono"),
             }
             for row in rows
             if row.get("id")
