@@ -167,7 +167,12 @@ export function AssociationAdoptionsModal({ visible, asociacionId, asociacionNom
                   keyExtractor={(item) => item.id}
                   numColumns={isDesktop ? 3 : 2}
                   key={isDesktop ? 'desktop-3' : 'mobile-2'}
-                  columnWrapperStyle={{ justifyContent: 'space-between', paddingHorizontal: 24, marginBottom: 16 }}
+                  columnWrapperStyle={{ 
+                    justifyContent: isDesktop ? 'flex-start' : 'space-between', 
+                    gap: isDesktop ? 20 : 0, 
+                    paddingHorizontal: 24, 
+                    marginBottom: 16 
+                  }}
                   contentContainerStyle={{ paddingBottom: 24, paddingTop: 24 }}
                   showsVerticalScrollIndicator={false}
                   renderItem={({ item }) => (
