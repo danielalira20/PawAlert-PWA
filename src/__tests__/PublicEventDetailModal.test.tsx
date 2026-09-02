@@ -230,7 +230,7 @@ describe("PublicEventDetailModal", () => {
       expect.stringContaining("Jornada de vacunación"),
     );
     expect(Clipboard.setStringAsync).toHaveBeenCalledWith(
-      expect.stringContaining("/map?event_id=event-1"),
+      expect.stringContaining("/events?event_id=event-1"),
     );
     expect(Alert.alert).toHaveBeenCalledWith(
       "Información copiada",
