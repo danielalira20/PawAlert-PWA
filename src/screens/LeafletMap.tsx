@@ -98,7 +98,7 @@ const createPin = (condicion: string, tipoAnimal: string, selected = false, coun
       ">${count}</div>` : '';
 
   const html = `
-    <div style="
+    <div class="pawalert-pin-shell${selected ? ' is-selected' : ''}" style="
       display:flex; flex-direction:column; align-items:center;
       transform-origin:bottom center;
     ">
@@ -835,18 +835,48 @@ export default function LeafletMap({
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <style>{`
         .pawalert-marker { background:none !important; border:none !important; }
-        .leaflet-container { font-family:'Segoe UI',Arial,sans-serif; }
+        .leaflet-container {
+          font-family:'Poppins',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+          background:#EAE7E1;
+        }
+        .leaflet-tile-pane { filter:saturate(.76) contrast(.94) brightness(1.035); }
+        .leaflet-control-container a:focus-visible,
+        .colonias-toggle:focus-visible,
+        .pp-close:focus-visible,
+        .pp-btn:focus-visible {
+          outline:3px solid rgba(240,124,43,.42) !important;
+          outline-offset:3px;
+        }
         .leaflet-control-zoom {
           border:none !important;
-          box-shadow:0 2px 12px rgba(0,0,0,0.1) !important;
-          border-radius:10px !important;
+          box-shadow:0 12px 32px rgba(50,39,29,.14) !important;
+          border-radius:14px !important;
           overflow:hidden;
+          backdrop-filter:blur(18px);
         }
         .leaflet-control-zoom a {
-          color:#5C4A3A !important;
-          font-weight:700 !important;
+          width:38px !important; height:38px !important; line-height:38px !important;
+          color:#4B443D !important;
+          background:rgba(255,254,252,.92) !important;
+          font-weight:600 !important;
+          border-color:rgba(232,227,220,.8) !important;
         }
-        .leaflet-control-zoom a:hover { background:#FFF5EE !important; }
+        .leaflet-control-zoom a:hover { background:#FFF1E7 !important; color:#D96317 !important; }
+        .pawalert-pin-shell {
+          position:relative;
+          animation:pinArrive 460ms cubic-bezier(.25,.1,.25,1) both;
+          transition:filter 280ms cubic-bezier(.25,.1,.25,1), transform 280ms cubic-bezier(.25,.1,.25,1);
+        }
+        .pawalert-marker:hover .pawalert-pin-shell { transform:translateY(-3px) scale(1.035); filter:drop-shadow(0 10px 12px rgba(50,39,29,.2)); }
+        .pawalert-pin-shell.is-selected { animation:selectedPinArrive 460ms cubic-bezier(.25,.1,.25,1) both; }
+        .pawalert-pin-shell.is-selected::before {
+          content:''; position:absolute; width:60px; height:60px; top:-7px; left:-7px;
+          border-radius:50%; border:2px solid rgba(240,124,43,.62); opacity:.24;
+          animation:rescuePulse 2.4s ease-in-out infinite;
+        }
+        @keyframes pinArrive { from { opacity:0; transform:translateY(8px) scale(.92); } to { opacity:1; transform:none; } }
+        @keyframes selectedPinArrive { from { transform:translateY(5px) scale(.92); } to { transform:translateY(-2px) scale(1.06); } }
+        @keyframes rescuePulse { 0%,100% { transform:scale(.82); opacity:.34; } 50% { transform:scale(1.22); opacity:0; } }
         /* ── Popup redesign ───────────────────────────── */
         .pp-wrap .leaflet-popup-content-wrapper {
           border-radius:16px !important;
@@ -880,17 +910,18 @@ export default function LeafletMap({
         .colonias-toggle {
           position:absolute; right: 20px; z-index:1000;
           display:flex; align-items:center; justify-content:center;
-          width: 52px; height: 52px; border-radius: 26px; border:none;
+          width: 52px; height: 52px; border-radius: 26px; border:1px solid rgba(255,255,255,.82);
           cursor:pointer;
-          transition:all 0.25s cubic-bezier(0.4,0,0.2,1);
-          box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+          transition:transform 280ms cubic-bezier(.25,.1,.25,1), box-shadow 280ms cubic-bezier(.25,.1,.25,1), background-color 140ms ease, color 140ms ease;
+          box-shadow: 0 12px 30px rgba(50,39,29,.16);
+          backdrop-filter:blur(18px);
         }
         .colonias-toggle.active {
-          background: linear-gradient(135deg,#8C6B4D,#5C4A3A);
+          background:#3F3933;
           color:#fff;
         }
         .colonias-toggle.inactive {
-          background:#FFFFFF;
+          background:rgba(255,254,252,.92);
           color:#5C4A3A;
         }
         .colonias-toggle:hover {
@@ -920,8 +951,10 @@ export default function LeafletMap({
         .colonia-info-panel {
           position:fixed; left:0; right:0; margin:0 auto; z-index:1000;
           box-sizing:border-box;
-          background:#FFFAF6;
-          border-radius:16px;
+          background:rgba(255,254,252,.96);
+          border:1px solid rgba(255,255,255,.8);
+          backdrop-filter:blur(22px);
+          border-radius:24px;
           padding:16px 18px;
           width:calc(100% - 32px); max-width:480px;
           box-shadow:0 8px 32px rgba(0,0,0,0.16), 0 2px 8px rgba(0,0,0,0.08);
@@ -938,7 +971,7 @@ export default function LeafletMap({
           background:#F2F0EC; color:#5C4A3A;
           font-size:16px; font-weight:700; line-height:1;
           display:flex; align-items:center; justify-content:center;
-          cursor:pointer; transition:all 0.2s;
+          cursor:pointer; transition:background-color 140ms ease,color 140ms ease,transform 140ms ease;
         }
         .colonia-info-close:hover { background:#E0D8C8; color:#3A2E24; }
         .colonia-info-header {
@@ -976,9 +1009,18 @@ export default function LeafletMap({
           color:#9B8B7A; text-transform:uppercase;
           letter-spacing:0.4px; margin-top:3px;
         }
+        @media (prefers-reduced-motion: reduce) {
+          .pawalert-pin-shell, .pawalert-pin-shell.is-selected,
+          .pawalert-pin-shell.is-selected::before, .colonia-info-panel {
+            animation:none !important;
+          }
+          .pawalert-marker:hover .pawalert-pin-shell { transform:none; }
+          *, *::before, *::after { scroll-behavior:auto !important; }
+        }
       `}</style>
       {/* Botón toggle de colonias */}
       <button
+        aria-label={mostrarColonias ? 'Ocultar límites de colonias' : 'Mostrar límites de colonias'}
         className={`colonias-toggle ${mostrarColonias ? 'active' : 'inactive'}`}
         style={{ bottom: coloniasToggleBottom ?? bottomOffset + 68 }}
         onClick={() => {
