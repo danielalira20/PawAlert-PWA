@@ -8,6 +8,8 @@ from app.models.adoption import (
     AdoptionApplicationAction,
     AdoptionApplicationReject,
     AdoptionApplicationRequestInformation,
+    FormalAdoptionProfileCreate,
+    FormalAdoptionProfileData,
 )
 from app.services import adoption_service
 
@@ -325,3 +327,33 @@ def test_servicios_de_decision_respetan_contrato_rpc():
     assert reject_params["p_asociacion_id"] == ASSOCIATION_ID
     assert reject_params["p_motivo_interno"].startswith("No cumple")
     assert reject_params["p_categoria_publica"] == "requisitos_no_cumplidos"
+
+
+def test_crear_perfil_formal_respeta_eje_de_adopciones_apagado():
+    rpc = MagicMock()
+    rpc.execute.side_effect = Exception(
+        "duplicate key value violates... asociacion_eje_adopciones_inactivo"
+    )
+    admin = MagicMock()
+    admin.rpc.return_value = rpc
+    with patch.object(adoption_service, "supabase_admin", admin):
+        try:
+            adoption_service.crear_perfil_formal(
+                ASSOCIATION_ID,
+                USER_ID,
+                FormalAdoptionProfileCreate(
+                    datos=FormalAdoptionProfileData(),
+                    idempotency_key="perfil-eje-apagado-001",
+                ),
+            )
+        except adoption_service.AdoptionServiceError as error:
+            assert error.code == "asociacion_eje_adopciones_inactivo"
+            assert error.status_code == 403
+        else:
+            raise AssertionError(
+                "Se esperaba bloquear la creación con el eje de adopciones apagado"
+            )
+
+    operation, params = admin.rpc.call_args.args
+    assert operation == "crear_perfil_adopcion_formal"
+    assert params["p_asociacion_id"] == ASSOCIATION_ID
