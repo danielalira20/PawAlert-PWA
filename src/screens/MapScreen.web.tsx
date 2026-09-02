@@ -20,7 +20,6 @@ import { useUbicacionEnVivo } from '../hooks/useUbicacionEnVivo';
 import { PublicEventsPanel } from '../components/events/discovery/PublicEventsPanel';
 import { PublicEventDetailModal } from '../components/events/discovery/PublicEventDetailModal';
 import {
-  EventMapModeSwitch,
   type EventDiscoveryView,
   type MapContentMode,
 } from '../components/events/discovery/EventMapModeSwitch';
@@ -1436,14 +1435,6 @@ export default function MapScreen() {
             onOpenDetail={handleOpenMapEvent}
             topInset={62}
           />
-          <EventMapModeSwitch
-            contentMode={contentMode}
-            eventView={eventView}
-            floating
-            showEventView
-            onContentModeChange={handleContentModeChange}
-            onEventViewChange={setEventView}
-          />
           <PublicEventDetailModal
             eventId={detailEventId}
             onClose={handleCloseEventDetail}
@@ -1457,14 +1448,6 @@ export default function MapScreen() {
     return (
       <View style={{ flex: 1 }}>
         {renderMap()}
-        <EventMapModeSwitch
-          contentMode={contentMode}
-          eventView={eventView}
-          floating
-          showEventView
-          onContentModeChange={handleContentModeChange}
-          onEventViewChange={setEventView}
-        />
         {renderMobileBottomSheet()}
         {renderFormModal()}
         {renderImagenAmpliada()}
@@ -1487,13 +1470,6 @@ export default function MapScreen() {
       {/* Sidebar */}
       <View style={{ width: 340, flexShrink: 0, flexDirection: 'column', backgroundColor: C.bg, borderRightWidth: 1, borderRightColor: C.border, display: 'flex' as any }}>
         {renderSidebarHeader()}
-        <EventMapModeSwitch
-          contentMode={contentMode}
-          eventView={eventView}
-          onContentModeChange={handleContentModeChange}
-          onEventViewChange={setEventView}
-        />
-
         <View style={{ flex: 1, overflow: 'hidden' as any }}>
           {contentMode === 'events' ? (
             <PublicEventsPanel
