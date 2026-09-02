@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   RefreshControl,
@@ -33,6 +33,7 @@ interface PublicEventsPanelProps {
   onLocate?: (event: EventPublicSummary) => void;
   onOpenDetail?: (eventId: string) => void;
   topInset?: number;
+  headerContent?: ReactNode;
 }
 
 function LoadingCards() {
@@ -58,6 +59,7 @@ export function PublicEventsPanel({
   onLocate,
   onOpenDetail,
   topInset = 0,
+  headerContent,
 }: PublicEventsPanelProps) {
   const [internalFilters, setInternalFilters] = useState(
     INITIAL_PUBLIC_EVENT_FILTERS,
@@ -82,8 +84,6 @@ export function PublicEventsPanel({
     <View style={[styles.panel, topInset > 0 && { paddingTop: topInset }]}>
       <Toast toast={toast} translateY={translateY} />
 
-      <PublicEventFilters value={filters} onChange={setFilters} />
-
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         refreshControl={
@@ -96,6 +96,9 @@ export function PublicEventsPanel({
         }
         showsVerticalScrollIndicator={false}
       >
+        {headerContent}
+        <PublicEventFilters value={filters} onChange={setFilters} />
+
         {isLoading ? (
           <LoadingCards />
         ) : error ? (
@@ -221,13 +224,15 @@ const styles = StyleSheet.create({
     flex: 1,
     width: "100%",
   },
-  scrollContent: { flexGrow: 1, padding: 10, paddingBottom: 104 },
+  scrollContent: { flexGrow: 1, paddingBottom: 104 },
   cards: {
     alignItems: "center",
     alignSelf: "center",
     gap: 10,
     maxWidth: 440,
     width: "100%",
+    marginTop: 12,
+    paddingHorizontal: 10,
   },
   messageState: {
     alignItems: "center",
