@@ -22,6 +22,7 @@ import {
   resolveExternalNavigationDestination,
   type ExternalNavigationProvider,
 } from '../../services/externalNavigationService';
+import { canOpenCaseNavigation } from '../../utils/caseNavigationAccess';
 
 const DESKTOP_BREAKPOINT = 900;
 
@@ -36,6 +37,7 @@ interface Props {
   onBajoResguardo: () => void;
   onRefugio: () => void;
   onVeterinaria: () => void;
+  onOpenNavigation: () => void;
   // Se conserva como permiso explícito para no exponer acciones de campo a
   // otros roles que también pueden consultar el detalle.
   puedeRegistrarHitos?: boolean;
@@ -54,6 +56,7 @@ export function ReportDetailModal({
   onBajoResguardo,
   onRefugio,
   onVeterinaria,
+  onOpenNavigation,
   puedeRegistrarHitos = true,
   esHogarTemporal = false,
   esVoluntarioInterno = false,
@@ -65,6 +68,9 @@ export function ReportDetailModal({
   const { width } = useWindowDimensions();
   const isDesktop = width >= DESKTOP_BREAKPOINT;
   const requiereLlegadaZona = esHogarTemporal || esVoluntarioInterno;
+  const puedeAbrirNavegacion = reporte
+    ? canOpenCaseNavigation(reporte, puedeRegistrarHitos)
+    : false;
 
   const destinoNavegacion = reporte ? resolveExternalNavigationDestination(reporte) : null;
   const tieneRuta =
@@ -174,6 +180,25 @@ export function ReportDetailModal({
                   </View>
                 )}
               </View>
+
+              {puedeAbrirNavegacion && (
+                <TouchableOpacity
+                  accessibilityLabel="Ver ruta del caso en PawAlert"
+                  onPress={onOpenNavigation}
+                  style={styles.pawAlertNavigationButton}
+                >
+                  <View style={styles.pawAlertNavigationIcon}>
+                    <Ionicons name="navigate" size={19} color="#FFFFFF" />
+                  </View>
+                  <View style={styles.pawAlertNavigationCopy}>
+                    <Text style={styles.pawAlertNavigationTitle}>Ver ruta en PawAlert</Text>
+                    <Text style={styles.pawAlertNavigationText}>
+                      Calculada desde tu ubicación actual
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={19} color={Brand.secondary} />
+                </TouchableOpacity>
+              )}
 
               {puedeRegistrarHitos &&
                 requiereLlegadaZona &&
@@ -359,6 +384,30 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   mapaButtonText: { color: Brand.secondary, fontWeight: '700', fontSize: 13 },
+  pawAlertNavigationButton: {
+    minHeight: 64,
+    paddingHorizontal: 13,
+    paddingVertical: 10,
+    marginBottom: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: `${Brand.secondary}55`,
+    backgroundColor: '#FFFFFF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+  },
+  pawAlertNavigationIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 8,
+    backgroundColor: Brand.secondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pawAlertNavigationCopy: { flex: 1, minWidth: 0 },
+  pawAlertNavigationTitle: { color: Brand.textDark, fontSize: 14, fontWeight: '800' },
+  pawAlertNavigationText: { color: Brand.textMuted, fontSize: 10, lineHeight: 15, marginTop: 1 },
   actionButton: {
     paddingVertical: 14,
     borderRadius: 14,

@@ -1,4 +1,9 @@
-import { fireEvent, render, waitFor } from "@testing-library/react-native";
+import {
+  act,
+  fireEvent,
+  render,
+  waitFor,
+} from "@testing-library/react-native";
 
 import CaseNavigationScreen from "../screens/CaseNavigationScreen";
 import { useAuth } from "../context/AuthContext";
@@ -107,5 +112,46 @@ describe("CaseNavigationScreen", () => {
 
     fireEvent.press(view.getByText("Recalcular"));
     expect(recalculate).toHaveBeenCalledTimes(1);
+  });
+
+  it("revalida periódicamente que la asignación continúe vigente", async () => {
+    jest.useFakeTimers();
+    const retryCapabilities = jest.fn(() => Promise.resolve());
+    mockedUseCaseNavigation.mockReturnValue({
+      capabilities: {
+        contract_version: 1,
+        navigation_enabled: true,
+        available_modes: ["driving"],
+        foreground_tracking: true,
+        background_tracking: false,
+        voice_guidance: false,
+        live_traffic: false,
+      },
+      currentRoute: route,
+      destination: route.destination,
+      permissionState: "granted",
+      isLoadingCapabilities: false,
+      isCalculating: false,
+      isRefreshing: false,
+      destinationChanged: false,
+      accessRevoked: false,
+      error: null,
+      start: jest.fn(() => Promise.resolve()),
+      recalculate: jest.fn(() => Promise.resolve()),
+      retryCapabilities,
+      clearError: jest.fn(),
+    });
+
+    const view = await render(
+      <CaseNavigationScreen reportId="report-12345678" onClose={jest.fn()} />,
+    );
+
+    act(() => {
+      jest.advanceTimersByTime(30_000);
+    });
+
+    expect(retryCapabilities).toHaveBeenCalledTimes(1);
+    await view.unmount();
+    jest.useRealTimers();
   });
 });

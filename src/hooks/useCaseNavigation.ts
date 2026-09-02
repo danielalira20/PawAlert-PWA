@@ -75,10 +75,11 @@ function apiError(error: unknown): CaseNavigationError {
 
 function isAccessRevoked(error: NavigationApiError): boolean {
   return (
-    error.status === 409 &&
-    (error.code === "report_not_navigable" ||
-      error.code === "navigation_access_revoked" ||
-      error.code === "assignment_not_confirmed")
+    (error.status === 409 &&
+      (error.code === "report_not_navigable" ||
+        error.code === "navigation_access_revoked" ||
+        error.code === "assignment_not_confirmed")) ||
+    (error.status === 404 && error.code === "navigation_not_found")
   );
 }
 
@@ -126,8 +127,12 @@ export function useCaseNavigation(
     } catch (requestError) {
       if (requestId !== capabilityRequestRef.current) return;
       const normalized = normalizeNavigationApiError(requestError);
+      if (isAccessRevoked(normalized)) {
+        setCurrentRoute(null);
+        setLatestResult(null);
+        setAccessRevoked(true);
+      }
       setError(apiError(normalized));
-      setAccessRevoked(isAccessRevoked(normalized));
     } finally {
       if (requestId === capabilityRequestRef.current) {
         setIsLoadingCapabilities(false);

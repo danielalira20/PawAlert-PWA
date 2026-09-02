@@ -9,6 +9,7 @@ import {
 } from "../services/navigationService";
 import type {
   NavigationCapabilities,
+  NavigationErrorCode,
   NavigationRouteComplete,
 } from "../types/navigation";
 
@@ -215,4 +216,33 @@ describe("useCaseNavigation", () => {
     expect(result.current.accessRevoked).toBe(true);
     expect(result.current.error?.code).toBe("report_not_navigable");
   });
+
+  it.each<[number, NavigationErrorCode]>([
+    [409, "assignment_not_confirmed"],
+    [404, "navigation_not_found"],
+  ])(
+    "retira una ruta abierta al revalidar el acceso (%s %s)",
+    async (status, code) => {
+      const { result } = await renderHook(() => useCaseNavigation("report-1"));
+      await waitFor(() => expect(result.current.capabilities).not.toBeNull());
+      await act(async () => {
+        await result.current.start();
+      });
+      mockedGetCapabilities.mockRejectedValueOnce(
+        new NavigationApiError("La asignación ya no está disponible.", {
+          status,
+          code,
+          retryable: false,
+        }),
+      );
+
+      await act(async () => {
+        await result.current.retryCapabilities();
+      });
+
+      expect(result.current.currentRoute).toBeNull();
+      expect(result.current.accessRevoked).toBe(true);
+      expect(result.current.error?.code).toBe(code);
+    },
+  );
 });

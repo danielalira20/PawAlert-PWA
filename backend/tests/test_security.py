@@ -504,6 +504,7 @@ def test_reportes_voluntario_conservan_coordenadas_exactas(make_query):
 
     assert resultado["en_accion"][0]["latitud"] == 19.0432167
     assert resultado["en_accion"][0]["longitud"] == -98.1987654
+    assert resultado["en_accion"][0]["confirmacion_voluntario"] == "confirmado"
     assert resultado["en_accion"][0]["distancia_linea_recta_km"] == 21.4
 
 

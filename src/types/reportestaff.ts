@@ -3,6 +3,7 @@ import { Animal } from './reporte';
 export interface ReporteStaff {
   id: string;
   estado_reporte: string;
+  confirmacion_voluntario: 'esperando' | 'confirmado' | 'rechazado' | null;
   municipio: string | null;
   colonia: string | null;
   calle: string | null;

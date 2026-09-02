@@ -1173,6 +1173,7 @@ async def obtener_reportes_voluntario(usuario_id: str, rol: str = None) -> dict:
         reporte = {
             "id": r["id"],
             "estado_reporte": r.get("estado_reporte"),
+            "confirmacion_voluntario": r.get("confirmacion_voluntario"),
             "municipio": r.get("municipio"),
             "colonia": r.get("colonia"),
             "calle": r.get("calle"),

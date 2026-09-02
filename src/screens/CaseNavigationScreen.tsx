@@ -9,6 +9,7 @@ import {
   useWindowDimensions,
   ActivityIndicator,
   Alert,
+  AppState,
   Linking,
 } from "react-native";
 import { useEffect, useRef, useState } from "react";
@@ -32,6 +33,8 @@ interface Props {
   reportId: string | null;
   onClose: () => void;
 }
+
+const NAVIGATION_ACCESS_REFRESH_MS = 30_000;
 
 export default function CaseNavigationScreen({ reportId, onClose }: Props) {
   const { width } = useWindowDimensions();
@@ -68,6 +71,23 @@ export default function CaseNavigationScreen({ reportId, onClose }: Props) {
     void start();
   }, [capabilities?.navigation_enabled, reportId, start]);
 
+  useEffect(() => {
+    if (!currentRoute || accessRevoked) return;
+
+    const refreshAccess = () => {
+      void retryCapabilities();
+    };
+    const interval = setInterval(refreshAccess, NAVIGATION_ACCESS_REFRESH_MS);
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") refreshAccess();
+    });
+
+    return () => {
+      clearInterval(interval);
+      subscription.remove();
+    };
+  }, [accessRevoked, currentRoute, retryCapabilities]);
+
   const openExternalNavigation = async (
     provider: ExternalNavigationProvider,
   ) => {
@@ -93,7 +113,7 @@ export default function CaseNavigationScreen({ reportId, onClose }: Props) {
 
   const loadingInitialRoute =
     isLoadingSession ||
-    isLoadingCapabilities ||
+    (isLoadingCapabilities && !currentRoute) ||
     (isCalculating && !currentRoute);
 
   return (
