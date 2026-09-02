@@ -36,8 +36,15 @@ class Settings(BaseSettings):
     gemini_file_timeout_seconds: int = 180
     openweather_api_key: str = ""
     osrm_base_url: str = "https://router.project-osrm.org"
+    osrm_driving_base_url: str = ""
+    osrm_cycling_base_url: str = ""
+    osrm_walking_base_url: str = ""
     osrm_timeout_seconds: float = Field(default=8.0, gt=0)
     osrm_max_coordinates: int = Field(default=100, ge=2)
+    navigation_route_ttl_seconds: int = Field(default=120, gt=0)
+    navigation_recalc_min_interval_seconds: int = Field(default=30, ge=0)
+    navigation_gps_max_age_seconds: int = Field(default=60, gt=0)
+    navigation_gps_max_accuracy_meters: float = Field(default=100, gt=0)
     vroom_base_url: str = ""
     vroom_timeout_seconds: int = 10
     vroom_candidate_window_minutes: int = Field(default=5, ge=0)

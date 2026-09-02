@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, Linking, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { router, type Href } from 'expo-router';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { API_URL } from '../constants/api';
@@ -159,6 +160,12 @@ export default function StaffDashboardScreen({ onClose }: Props) {
   const abrirDetalle = (reporte: ReporteStaff) => {
     setReporteSeleccionado(reporte);
     setShowDetalles(true);
+  };
+
+  const abrirNavegacionPawAlert = (reporte: ReporteStaff) => {
+    setShowDetalles(false);
+    onClose?.();
+    router.push(`/navegacion-caso/${encodeURIComponent(reporte.id)}` as Href);
   };
 
   const abrirEncontre = (reporte: ReporteStaff) => {
@@ -679,6 +686,9 @@ export default function StaffDashboardScreen({ onClose }: Props) {
         onBajoResguardo={() => reporteSeleccionado && abrirResguardo(reporteSeleccionado)}
         onRefugio={() => reporteSeleccionado && abrirRefugio(reporteSeleccionado)}
         onVeterinaria={() => reporteSeleccionado && abrirVeterinaria(reporteSeleccionado)}
+        onOpenNavigation={() =>
+          reporteSeleccionado && abrirNavegacionPawAlert(reporteSeleccionado)
+        }
         puedeRegistrarHitos={puedeRegistrarHitos}
         esHogarTemporal={esHogarTemporal}
         esVoluntarioInterno={esVoluntarioInterno}
