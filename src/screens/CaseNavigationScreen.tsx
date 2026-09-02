@@ -1,6 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
 import {
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -309,9 +308,7 @@ export default function CaseNavigationScreen({ reportId, onClose }: Props) {
             </View>
 
             <Text style={styles.foregroundNotice}>
-              {Platform.OS === "web"
-                ? "Mantén PawAlert abierta para actualizar tu ubicación."
-                : "La ubicación se actualiza solamente mientras usas esta pantalla."}
+              Pulsa Recalcular para actualizar tu ubicación.
             </Text>
 
             <View style={styles.primaryActions}>

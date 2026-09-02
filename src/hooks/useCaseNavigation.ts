@@ -9,6 +9,7 @@ import {
   navigationErrorMessage,
   normalizeNavigationApiError,
 } from "../services/navigationService";
+import { getFreshNavigationPosition } from "../services/navigationLocationService";
 import type {
   NavigationCapabilities,
   NavigationDestination,
@@ -210,17 +211,15 @@ export function useCaseNavigation(
       }
 
       setPermissionState("granted");
-      const position = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-      });
+      const position = await getFreshNavigationPosition();
       if (requestId !== routeRequestRef.current) return;
 
       const response = await calculateNavigationRoute(token, reportId, {
         origin: {
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          accuracy_meters: position.coords.accuracy ?? null,
-          captured_at: new Date(position.timestamp).toISOString(),
+          latitude: position.latitude,
+          longitude: position.longitude,
+          accuracy_meters: position.accuracyMeters,
+          captured_at: position.capturedAt,
         },
         mode,
         ...(latestResult?.destination.revision

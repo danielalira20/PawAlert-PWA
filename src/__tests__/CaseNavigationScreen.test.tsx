@@ -127,6 +127,9 @@ describe("CaseNavigationScreen", () => {
     expect(view.getByText("12 min")).toBeTruthy();
     expect(view.getByText("5.4 km")).toBeTruthy();
     expect(view.getByText("Última ubicación confirmada")).toBeTruthy();
+    expect(
+      view.getByText("Pulsa Recalcular para actualizar tu ubicación."),
+    ).toBeTruthy();
 
     fireEvent.press(view.getByText("Recalcular"));
     expect(recalculate).toHaveBeenCalledTimes(1);

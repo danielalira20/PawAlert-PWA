@@ -164,6 +164,7 @@ export default function StaffDashboardScreen({ onClose }: Props) {
 
   const abrirNavegacionPawAlert = (reporte: ReporteStaff) => {
     setShowDetalles(false);
+    onClose?.();
     router.push(`/navegacion-caso/${encodeURIComponent(reporte.id)}` as Href);
   };
 
