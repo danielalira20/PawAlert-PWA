@@ -34,6 +34,7 @@ import type { PostAuthFlow } from '../utils/postAuthNavigation';
 import { getBlockingIdentity, type TargetAction } from '../utils/roleGuard';
 
 const heroImage = require('../assets/images/imagen_hero.png');
+const brandLogo = require('../assets/logo/logo_pawAlert.png');
 
 // IMPORTANTE: Importamos el formulario de forma "perezosa" (Lazy Load)
 const AssociationFormScreen = lazy(() => import('./AssociationFormScreen'));
@@ -546,15 +547,11 @@ export default function LandingScreen() {
         } as any}>
           {/* Logo */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: isCompactHeader ? 7 : 10, flexShrink: 1 }}>
-            <View style={{
-              width: isCompactHeader ? 34 : 38,
-              height: isCompactHeader ? 34 : 38,
-              borderRadius: isCompactHeader ? 10 : 12,
-              backgroundColor: C.primary,
-              alignItems: 'center', justifyContent: 'center',
-            }}>
-              <Ionicons name="paw" size={isCompactHeader ? 18 : 20} color="#FFF" />
-            </View>
+            <Image
+              source={brandLogo}
+              style={{ width: isCompactHeader ? 48 : 56, height: isCompactHeader ? 48 : 56 }}
+              resizeMode="cover"
+            />
             <Text
               numberOfLines={1}
               style={{ fontSize: isCompactHeader ? 18 : 22, fontFamily: F.displayBold, color: C.text, letterSpacing: -0.5 }}
@@ -1663,13 +1660,7 @@ export default function LandingScreen() {
 
           {/* Logo */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-            <View style={{
-              width: 34, height: 34, borderRadius: 10,
-              backgroundColor: C.primary,
-              alignItems: 'center', justifyContent: 'center',
-            }}>
-              <Ionicons name="paw" size={18} color="#FFF" />
-            </View>
+            <Image source={brandLogo} style={{ width: 52, height: 52 }} resizeMode="cover" />
             <Text style={{ fontSize: 20, fontFamily: F.displayBold, color: '#FFF', letterSpacing: -0.4 }}>
               Paw<Text style={{ color: C.primary }}>Alert</Text>
             </Text>

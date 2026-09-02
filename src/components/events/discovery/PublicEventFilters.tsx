@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import {
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -25,6 +26,7 @@ export interface PublicEventFilterState {
 }
 
 interface PublicEventFiltersProps {
+  embedded?: boolean;
   value: PublicEventFilterState;
   onChange: (value: PublicEventFilterState) => void;
 }
@@ -61,13 +63,14 @@ function FilterChip({
 }
 
 export function PublicEventFilters({
+  embedded = false,
   value,
   onChange,
 }: PublicEventFiltersProps) {
   const hasFilters = Object.values(value).some((filter) => filter !== "todos");
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, embedded && styles.containerEmbedded]}>
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionLabel}>Categoría</Text>
         {hasFilters && (
@@ -189,12 +192,30 @@ export function PublicEventFilters({
 
 const styles = StyleSheet.create({
   container: {
+    alignSelf: "center",
     backgroundColor: EventTheme.colors.surface,
-    borderBottomColor: EventTheme.colors.border,
-    borderBottomWidth: 1,
+    borderColor: EventTheme.colors.border,
+    borderRadius: 20,
+    borderWidth: 1,
+    marginHorizontal: 14,
+    marginTop: -22,
+    maxWidth: 1120,
     paddingBottom: 12,
-    paddingHorizontal: 12,
-    paddingTop: 11,
+    paddingHorizontal: 18,
+    paddingTop: 14,
+    width: "95%",
+    zIndex: 5,
+    ...Platform.select({
+      web: { boxShadow: "0 10px 26px rgba(74, 55, 40, 0.10)" } as any,
+      default: { elevation: 4 },
+    }),
+  },
+  containerEmbedded: {
+    borderRadius: 0,
+    borderWidth: 0,
+    marginHorizontal: 0,
+    marginTop: 0,
+    width: "100%",
   },
   sectionHeader: {
     alignItems: "center",

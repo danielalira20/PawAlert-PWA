@@ -21,7 +21,6 @@ import { RADIO_METROS_ESTOY_AQUI } from '../hooks/useUbicacionEnVivo';
 import { PublicEventsPanel } from '../components/events/discovery/PublicEventsPanel';
 import { PublicEventDetailModal } from '../components/events/discovery/PublicEventDetailModal';
 import {
-  EventMapModeSwitch,
   type EventDiscoveryView,
   type MapContentMode,
 } from '../components/events/discovery/EventMapModeSwitch';
@@ -418,11 +417,7 @@ export default function MapScreen() {
 
   useEffect(() => {
     if (!deepLinkedEventId) return;
-    setContentMode('events');
-    setSelectedEventId(deepLinkedEventId);
-    setDetailEventId(deepLinkedEventId);
-    setMostrarAsociaciones(false);
-    setEventView('list');
+    router.replace({ pathname: '/events', params: { event_id: deepLinkedEventId } });
   }, [deepLinkedEventId]);
 
   const handleEventFiltersChange = (filters: PublicEventFilterState) => {
@@ -556,14 +551,6 @@ export default function MapScreen() {
           onLocate={handleLocatePublicEvent}
           onOpenDetail={handleOpenMapEvent}
           topInset={62}
-        />
-        <EventMapModeSwitch
-          contentMode={contentMode}
-          eventView={eventView}
-          floating
-          showEventView
-          onContentModeChange={handleContentModeChange}
-          onEventViewChange={setEventView}
         />
         <PublicEventDetailModal
           eventId={detailEventId}
@@ -752,15 +739,6 @@ export default function MapScreen() {
           );
         })()}
       </MapView>
-
-      <EventMapModeSwitch
-        contentMode={contentMode}
-        eventView={eventView}
-        floating
-        showEventView
-        onContentModeChange={handleContentModeChange}
-        onEventViewChange={setEventView}
-      />
 
       <PublicEventDetailModal
         eventId={detailEventId}

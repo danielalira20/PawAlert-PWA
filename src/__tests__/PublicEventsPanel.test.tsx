@@ -192,4 +192,59 @@ describe("PublicEventsPanel", () => {
     expect(onOpenDetail).toHaveBeenCalledWith("event-1");
     expect(view.queryByText("Detalle abierto: event-1")).toBeNull();
   });
+
+  it("pagina las tarjetas para que la agenda no crezca indefinidamente", async () => {
+    const dimensionsSpy = jest
+      .spyOn(require("react-native"), "useWindowDimensions")
+      .mockReturnValue({ width: 1200, height: 800, scale: 1, fontScale: 1 });
+    mockedUsePublicEvents.mockReturnValue({
+      events: [
+        { id: "event-1", titulo: "Primera jornada" },
+        { id: "event-2", titulo: "Segunda jornada" },
+        { id: "event-3", titulo: "Tercera jornada" },
+      ],
+      total: 3,
+      hasMore: false,
+      isLoading: false,
+      isLoadingMore: false,
+      isRefreshing: false,
+      error: null,
+      refresh: jest.fn(),
+      loadMore: jest.fn(),
+    });
+    const view = await render(<PublicEventsPanel />);
+
+    expect(view.getByText("Primera jornada")).toBeTruthy();
+    expect(view.queryByText("Tercera jornada")).toBeNull();
+
+    await fireEvent.press(view.getByLabelText("Ver más eventos"));
+
+    expect(view.getByText("Tercera jornada")).toBeTruthy();
+    expect(view.queryByText("Primera jornada")).toBeNull();
+    dimensionsSpy.mockRestore();
+  });
+
+  it("lista todos los eventos cargados sin paginación en móvil", async () => {
+    mockedUsePublicEvents.mockReturnValue({
+      events: [
+        { id: "event-1", titulo: "Primera jornada" },
+        { id: "event-2", titulo: "Segunda jornada" },
+        { id: "event-3", titulo: "Tercera jornada" },
+      ],
+      total: 3,
+      hasMore: false,
+      isLoading: false,
+      isLoadingMore: false,
+      isRefreshing: false,
+      error: null,
+      refresh: jest.fn(),
+      loadMore: jest.fn(),
+    });
+    const view = await render(<PublicEventsPanel />);
+
+    expect(view.getByText("Primera jornada")).toBeTruthy();
+    expect(view.getByText("Segunda jornada")).toBeTruthy();
+    expect(view.getByText("Tercera jornada")).toBeTruthy();
+    expect(view.queryByLabelText("Ver más eventos")).toBeNull();
+  });
 });
