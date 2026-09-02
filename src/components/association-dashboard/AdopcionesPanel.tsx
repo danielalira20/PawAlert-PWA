@@ -9,6 +9,7 @@ import { router } from 'expo-router';
 import { API_URL } from '../../constants/api';
 import { useAuth } from '../../context/AuthContext';
 import { ImageLightbox } from '../common/ImageLightbox';
+import { downloadAdoptionPoster, getAdoptionPosterAssets, shareAdoptionPoster } from '../../utils/adoptionPoster';
 
 const COLORS = {
   bg: '#E8CCAD',
@@ -103,6 +104,26 @@ export function AdopcionesPanel({ visible, showToast, onClose }: Props) {
   const [directErrors, setDirectErrors] = useState<Record<string, string>>({});
   
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [posterLoading, setPosterLoading] = useState<string | null>(null);
+
+  const handlePoster = async (perfil: AdopcionProfile, action: 'share' | 'download') => {
+    setPosterLoading(`${action}-${perfil.id}`);
+    try {
+      const response = await axios.get(`${API_URL}/adoptions/${perfil.id}`);
+      const assets = getAdoptionPosterAssets();
+      if (action === 'share') {
+        const result = await shareAdoptionPoster(response.data, assets);
+        showToast({ type: 'success', title: result === 'shared' ? 'Ficha compartida' : 'Ficha descargada', message: result === 'shared' ? 'Gracias por ayudar a difundir su historia.' : 'Tu navegador guardó la imagen lista para compartir.' });
+      } else {
+        await downloadAdoptionPoster(response.data, assets);
+        showToast({ type: 'success', title: 'Ficha descargada', message: 'La imagen vertical está lista para tus redes sociales.' });
+      }
+    } catch (error: any) {
+      if (error?.name !== 'AbortError') showToast({ type: 'error', title: 'No pudimos crear la ficha', message: error?.message || 'Intenta nuevamente.' });
+    } finally {
+      setPosterLoading(null);
+    }
+  };
 
   const pausarPerfil = async (id: string) => {
     setActionLoading(id);
@@ -421,9 +442,26 @@ export function AdopcionesPanel({ visible, showToast, onClose }: Props) {
 
                   {/* NUEVO: Botones de Acción si está publicado */}
                   {perfil.estado === 'publicado' && (
-                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderColor: '#F0E6D2' }}>
+                    <View style={{ marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderColor: '#F0E6D2', gap: 8 }}>
+                      <View style={{ flexDirection: 'row', gap: 8 }}>
+                        <TouchableOpacity
+                          onPress={(event) => { event.stopPropagation?.(); handlePoster(perfil, 'share'); }}
+                          disabled={!!posterLoading}
+                          style={{ flex: 1, backgroundColor: 'rgba(236,128,43,0.1)', paddingVertical: 10, borderRadius: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}
+                        >
+                          {posterLoading === `share-${perfil.id}` ? <ActivityIndicator size="small" color={COLORS.primary} /> : <><Ionicons name="share-social-outline" size={15} color={COLORS.primary} style={{ marginRight: 4 }} /><Text style={{ color: COLORS.primary, fontWeight: '800', fontSize: 12 }}>Compartir ficha</Text></>}
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={(event) => { event.stopPropagation?.(); handlePoster(perfil, 'download'); }}
+                          disabled={!!posterLoading}
+                          style={{ flex: 1, backgroundColor: 'rgba(102,188,180,0.13)', paddingVertical: 10, borderRadius: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}
+                        >
+                          {posterLoading === `download-${perfil.id}` ? <ActivityIndicator size="small" color={COLORS.accent} /> : <><Ionicons name="download-outline" size={15} color={COLORS.accent} style={{ marginRight: 4 }} /><Text style={{ color: COLORS.textDark, fontWeight: '800', fontSize: 12 }}>Descargar</Text></>}
+                        </TouchableOpacity>
+                      </View>
+                      <View style={{ flexDirection: 'row', gap: 8 }}>
                       <TouchableOpacity 
-                        onPress={() => pausarPerfil(perfil.id)}
+                        onPress={(event) => { event.stopPropagation?.(); pausarPerfil(perfil.id); }}
                         disabled={actionLoading === perfil.id}
                         style={{ flex: 1, backgroundColor: '#F3F4F6', paddingVertical: 10, borderRadius: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}
                       >
@@ -436,7 +474,7 @@ export function AdopcionesPanel({ visible, showToast, onClose }: Props) {
                       </TouchableOpacity>
                       
                       <TouchableOpacity 
-                        onPress={() => marcarAdoptado(perfil.id)}
+                        onPress={(event) => { event.stopPropagation?.(); marcarAdoptado(perfil.id); }}
                         disabled={actionLoading === perfil.id}
                         style={{ flex: 1, backgroundColor: 'rgba(32,150,83,0.1)', paddingVertical: 10, borderRadius: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}
                       >
@@ -447,6 +485,7 @@ export function AdopcionesPanel({ visible, showToast, onClose }: Props) {
                           </>
                         )}
                       </TouchableOpacity>
+                      </View>
                     </View>
                   )}
                 </TouchableOpacity>

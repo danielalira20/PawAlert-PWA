@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, FlatList, ActivityIndicator, TouchableOpacity, StyleSheet, Dimensions, Platform, Modal, ScrollView, Image, Linking } from 'react-native';
+import { View, Text, FlatList, ActivityIndicator, TouchableOpacity, StyleSheet, Dimensions, Platform, Modal, ScrollView, Image, Linking, Alert } from 'react-native';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import axios from 'axios';
 import { useWindowDimensions } from 'react-native';
 import * as Location from 'expo-location';
 import { useFocusEffect } from 'expo-router';
 import { API_URL } from '../../constants/api';
+import { createAdoptionPoster, downloadAdoptionPosterBlob, getAdoptionPosterAssets, shareAdoptionPosterBlob } from '../../utils/adoptionPoster';
 // IMPORTAMOS LA NUEVA TARJETA
 import { AdoptionCardGlobal } from '../../components/adopciones/AdoptionCardGlobal';
 
@@ -32,6 +33,45 @@ export default function AdopcionesGlobalScreen() {
   const [isLoadingDetalle, setIsLoadingDetalle] = useState(false);
   const [fotoExpandida, setFotoExpandida] = useState<string | null>(null);
   const [mostrarContacto, setMostrarContacto] = useState(false);
+  const [posterAction, setPosterAction] = useState<'share' | 'download' | null>(null);
+  const [posterBlob, setPosterBlob] = useState<Blob | null>(null);
+  const [posterError, setPosterError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!perfilDetalle || perfilDetalle === true) {
+      setPosterBlob(null);
+      setPosterError(null);
+      return;
+    }
+    setPosterBlob(null);
+    setPosterError(null);
+    (async () => {
+      try {
+        const assets = getAdoptionPosterAssets();
+        const blob = await createAdoptionPoster(perfilDetalle, assets);
+        if (!cancelled) setPosterBlob(blob);
+      } catch (error: any) {
+        if (!cancelled) setPosterError(error?.message || 'No se pudo preparar la ficha.');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [perfilDetalle]);
+
+  const handlePoster = async (action: 'share' | 'download') => {
+    if (!perfilDetalle || perfilDetalle === true || !posterBlob) return;
+    setPosterAction(action);
+    try {
+      if (action === 'share') {
+        const result = await shareAdoptionPosterBlob(posterBlob, perfilDetalle);
+        if (result === 'downloaded' && Platform.OS !== 'web') Alert.alert('Ficha descargada', 'Tu dispositivo guardó la imagen lista para compartir.');
+      } else downloadAdoptionPosterBlob(posterBlob, perfilDetalle);
+    } catch (error: any) {
+      if (error?.name !== 'AbortError') setPosterError(error?.message || 'No pudimos completar la acción.');
+    } finally {
+      setPosterAction(null);
+    }
+  };
 
   useEffect(() => {
     (async () => {
@@ -291,6 +331,22 @@ export default function AdopcionesGlobalScreen() {
                     </View>
                   </View>
 
+                  <View style={styles.posterActions}>
+                    <View style={{ flex: 1, minWidth: 180, paddingRight: 8 }}>
+                      <Text style={styles.posterTitle}>Ayúdale a encontrar hogar</Text>
+                      <Text style={styles.posterSubtitle}>Ficha vertical lista para historias y redes sociales.</Text>
+                    </View>
+                    <TouchableOpacity style={[styles.posterIconButton, !posterBlob && { opacity: 0.55 }]} onPress={() => handlePoster('share')} disabled={!!posterAction || !posterBlob}>
+                      {posterAction === 'share' || (!posterBlob && !posterError) ? <ActivityIndicator size="small" color={C.primary} /> : <Ionicons name="share-social-outline" size={21} color={C.primary} />}
+                      <Text style={styles.posterIconText}>Compartir</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.posterIconButton, !posterBlob && { opacity: 0.55 }]} onPress={() => handlePoster('download')} disabled={!!posterAction || !posterBlob}>
+                      {posterAction === 'download' || (!posterBlob && !posterError) ? <ActivityIndicator size="small" color={C.primary} /> : <Ionicons name="download-outline" size={21} color={C.primary} />}
+                      <Text style={styles.posterIconText}>Descargar</Text>
+                    </TouchableOpacity>
+                    {!!posterError && <Text style={styles.posterError}>{posterError}</Text>}
+                  </View>
+
                   {/* Botón de Adopción o Datos de Contacto */}
                   {!mostrarContacto ? (
                     <TouchableOpacity style={styles.adoptButton} onPress={() => setMostrarContacto(true)}>
@@ -369,6 +425,12 @@ const styles = StyleSheet.create({
   closeButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: C.bgSoft, alignItems: 'center', justifyContent: 'center' },
   sectionTitle: { fontSize: 18, fontWeight: '800', color: C.textDark, marginBottom: 8 },
   bodyText: { fontSize: 14, color: '#566573', lineHeight: 22 },
+  posterActions: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, backgroundColor: '#FFF8EF', borderWidth: 1, borderColor: '#F2DCC2', borderRadius: 18, padding: 14, marginBottom: 20 },
+  posterTitle: { fontSize: 14, fontWeight: '800', color: C.textDark },
+  posterSubtitle: { fontSize: 11, color: C.textLight, lineHeight: 16, marginTop: 2 },
+  posterIconButton: { minWidth: 78, height: 58, borderRadius: 14, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#F2DCC2', alignItems: 'center', justifyContent: 'center' },
+  posterIconText: { color: C.primary, fontSize: 10, fontWeight: '800', marginTop: 2 },
+  posterError: { width: '100%', color: '#B42318', fontSize: 11, fontWeight: '700', marginTop: 4 },
   detailBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.bg, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB' },
   detailBadgeText: { fontSize: 12, color: C.textDark, fontWeight: '700', marginLeft: 6, textTransform: 'capitalize' },
   adoptButton: { flexDirection: 'row', backgroundColor: C.primary, paddingVertical: 16, borderRadius: 24, justifyContent: 'center', alignItems: 'center', marginTop: 10 },
