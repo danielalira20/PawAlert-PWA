@@ -145,6 +145,9 @@ def test_calculates_private_route_to_latest_validated_sighting(make_query):
     assert provider_request.destination.latitude == 19.06
     assert provider_request.destination.longitude == -98.22
     assert provider_request.mode == RoutingMode.driving
+    tables["propuestas_asignacion"].order.assert_called_with(
+        "enviada_at", desc=True
+    )
     tables["propuestas_asignacion"].update.assert_not_called()
     tables["reportes"].update.assert_not_called()
 

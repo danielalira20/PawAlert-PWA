@@ -110,7 +110,7 @@ def _load_navigation_context(
         .select("id, reporte_id, usuario_asignado_id, estado")
         .eq("reporte_id", report_id)
         .eq("usuario_asignado_id", user_id)
-        .order("created_at", desc=True)
+        .order("enviada_at", desc=True)
         .limit(1)
         .execute()
     )
