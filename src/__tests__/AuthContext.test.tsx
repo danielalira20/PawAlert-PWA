@@ -3,6 +3,7 @@ import axios from 'axios';
 import {
   fetchCurrentUser,
   shouldAttemptTokenRefresh,
+  shouldSyncGoogleSession,
 } from '../context/AuthContext';
 
 jest.mock('axios');
@@ -90,5 +91,20 @@ describe('AuthContext — comportamiento de login/logout', () => {
       expect.stringContaining('/users/me'),
       { headers: { Authorization: 'Bearer token-abc' } },
     );
+  });
+
+  it('sincroniza Google al restaurar la sesión después del redirect', () => {
+    expect(
+      shouldSyncGoogleSession('INITIAL_SESSION', 'google-token', null, null),
+    ).toBe(true);
+  });
+
+  it('no duplica la sincronización si Supabase repite el evento', () => {
+    expect(
+      shouldSyncGoogleSession('SIGNED_IN', 'google-token', null, 'google-token'),
+    ).toBe(false);
+    expect(
+      shouldSyncGoogleSession('SIGNED_IN', 'google-token', 'google-token', null),
+    ).toBe(false);
   });
 });

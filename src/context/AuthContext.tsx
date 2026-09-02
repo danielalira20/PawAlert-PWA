@@ -76,6 +76,21 @@ export function shouldAttemptTokenRefresh(
   return status === 401 && !alreadyRetried && !isAuthEndpoint;
 }
 
+export function shouldSyncGoogleSession(
+  event: string,
+  sessionToken: string | undefined,
+  currentToken: string | null,
+  tokenBeingSynced: string | null,
+) {
+  const isGoogleSessionEvent = event === 'SIGNED_IN' || event === 'INITIAL_SESSION';
+  return Boolean(
+    isGoogleSessionEvent
+    && sessionToken
+    && sessionToken !== currentToken
+    && sessionToken !== tokenBeingSynced,
+  );
+}
+
 export async function fetchCurrentUser(accessToken: string): Promise<Usuario> {
   const res = await axios.get(`${API_URL}/users/me`, {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -86,7 +101,8 @@ export async function fetchCurrentUser(accessToken: string): Promise<Usuario> {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<Usuario | null>(null);
   const [token, setToken] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isInitializing, setIsInitializing] = useState(true);
+  const [isGoogleSyncing, setIsGoogleSyncing] = useState(false);
 
   // Refs para que el interceptor de axios (que vive fuera del ciclo de render)
   // siempre lea el valor más reciente sin tener que re-registrarse en cada cambio.
@@ -94,6 +110,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refreshTokenRef = useRef<string | null>(null);
   const isRefreshingRef = useRef(false);
   const refreshSubscribersRef = useRef<RefreshSubscriber[]>([]);
+  const googleSyncTokenRef = useRef<string | null>(null);
+
+  const setSession = useCallback(async (
+    usuario: Usuario,
+    accessToken: string,
+    refreshTokenValue?: string,
+  ) => {
+    setUser(usuario);
+    setToken(accessToken);
+    tokenRef.current = accessToken;
+    if (refreshTokenValue) {
+      refreshTokenRef.current = refreshTokenValue;
+    }
+    try {
+      await AsyncStorage.setItem(STORAGE_KEY_TOKEN, accessToken);
+      await AsyncStorage.setItem(STORAGE_KEY_USER, JSON.stringify(usuario));
+      if (refreshTokenValue) {
+        await AsyncStorage.setItem(STORAGE_KEY_REFRESH, refreshTokenValue);
+      }
+    } catch {
+      // Si falla el storage local, la sesión sigue activa en memoria
+    }
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -103,10 +142,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           AsyncStorage.getItem(STORAGE_KEY_REFRESH),
           AsyncStorage.getItem(STORAGE_KEY_USER),
         ]);
-        if (storedRefresh) {
+        if (storedRefresh && !refreshTokenRef.current) {
           refreshTokenRef.current = storedRefresh;
         }
-        if (storedToken && storedUser) {
+        // Una respuesta nueva de Google siempre tiene prioridad sobre una copia
+        // anterior que todavía estuviera terminando de leerse del almacenamiento.
+        if (storedToken && storedUser && !tokenRef.current) {
           setToken(storedToken);
           setUser(JSON.parse(storedUser));
           tokenRef.current = storedToken;
@@ -129,56 +170,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch {
         // Si falla la lectura, simplemente no se restaura sesión automática.
       } finally {
-        setIsLoading(false);
+        setIsInitializing(false);
       }
     })();
   }, []);
 
   useEffect(() => {
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_IN' && session) {
-        // Si el token actual ya coincide con la sesión de Supabase, no hacemos nada 
-        // (ocurre al restaurar sesión o hacer login normal).
-        if (tokenRef.current === session.access_token) return;
-        
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!session) return;
+
+      const googleToken = session.access_token;
+
+      // Supabase puede emitir INITIAL_SESSION y SIGNED_IN para el mismo retorno.
+      // La ref evita dos sincronizaciones paralelas y dos navegaciones tardías.
+      if (!shouldSyncGoogleSession(
+        event,
+        googleToken,
+        tokenRef.current,
+        googleSyncTokenRef.current,
+      )) return;
+
+      googleSyncTokenRef.current = googleToken;
+      setIsGoogleSyncing(true);
+
+      void (async () => {
         try {
-          setIsLoading(true);
-          // Si es un token nuevo (ej. viene del redirect de Google OAuth), sincronizamos con backend
           const res = await axios.post(`${API_URL}/auth/google-sync`, {
-            access_token: session.access_token,
-            refresh_token: session.refresh_token
+            access_token: googleToken,
+            refresh_token: session.refresh_token,
           });
           await setSession(res.data.usuario, res.data.access_token, res.data.refresh_token);
         } catch (e) {
-          console.error("Error al sincronizar con Google", e);
+          console.error('Error al sincronizar con Google', e);
         } finally {
-          setIsLoading(false);
+          if (googleSyncTokenRef.current === googleToken) {
+            googleSyncTokenRef.current = null;
+            setIsGoogleSyncing(false);
+          }
         }
-      }
+      })();
     });
 
     return () => {
       authListener.subscription.unsubscribe();
     };
-  }, []);
-
-  const setSession = async (usuario: Usuario, accessToken: string, refreshTokenValue?: string) => {
-    setUser(usuario);
-    setToken(accessToken);
-    tokenRef.current = accessToken;
-    if (refreshTokenValue) {
-      refreshTokenRef.current = refreshTokenValue;
-    }
-    try {
-      await AsyncStorage.setItem(STORAGE_KEY_TOKEN, accessToken);
-      await AsyncStorage.setItem(STORAGE_KEY_USER, JSON.stringify(usuario));
-      if (refreshTokenValue) {
-        await AsyncStorage.setItem(STORAGE_KEY_REFRESH, refreshTokenValue);
-      }
-    } catch {
-      // Si falla el storage local, la sesión sigue activa en memoria
-    }
-  };
+  }, [setSession]);
 
   const login = async (email: string, password: string) => {
     const res = await axios.post(`${API_URL}/auth/login`, { email, password });
@@ -187,13 +223,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const loginWithGoogle = async () => {
-    console.log("Iniciando flujo de Google...");
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: {
-        // En un entorno de desarrollo Expo Go, a veces se requiere un deep link personalizado:
-        // redirectTo: 'pawalert://login-callback'
-      }
     });
     if (error) {
       console.error("Error al iniciar sesión con Google:", error.message);
@@ -361,7 +392,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, token, isLoggedIn: !!user, isLoading, login, loginWithGoogle, register, setSession, refreshUser, logout }}
+      value={{
+        user,
+        token,
+        isLoggedIn: !!user,
+        isLoading: isInitializing || isGoogleSyncing,
+        login,
+        loginWithGoogle,
+        register,
+        setSession,
+        refreshUser,
+        logout,
+      }}
     >
       {children}
     </AuthContext.Provider>

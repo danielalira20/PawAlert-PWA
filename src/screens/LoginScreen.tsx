@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, SafeAreaView, ScrollView, Text, TextInput, TouchableOpacity, View, Platform, KeyboardAvoidingView } from 'react-native';
 import { Toast, useToast } from '../components/Toast';
 import { useAuth } from '../context/AuthContext';
@@ -12,6 +12,7 @@ import { Fraunces_800ExtraBold } from '@expo-google-fonts/fraunces';
 import { Poppins_400Regular, Poppins_500Medium, Poppins_600SemiBold } from '@expo-google-fonts/poppins';
 import { Ionicons } from '@expo/vector-icons';
 import { isNetworkUnavailable } from '../utils/networkError';
+import { AuthSessionLoading } from '../components/auth/AuthSessionLoading';
 
 const C = {
   primary:       '#F5842B',
@@ -37,7 +38,13 @@ const F = {
 type Tab = 'login' | 'register';
 
 export default function LoginScreen() {
-  const { login, register, loginWithGoogle } = useAuth();
+  const {
+    login,
+    register,
+    loginWithGoogle,
+    isLoggedIn,
+    isLoading: isAuthLoading,
+  } = useAuth();
   const { toast, translateY, showToast } = useToast();
   const params = useLocalSearchParams<{ tab?: string; returnTo?: string }>();
   const [tab, setTab] = useState<Tab>(params.tab === 'register' ? 'register' : 'login');
@@ -64,6 +71,16 @@ export default function LoginScreen() {
   const [regPassword, setRegPassword] = useState('');
   const [regPassword2, setRegPassword2] = useState('');
   const postAuthExplanation = getPostAuthExplanation(params.returnTo);
+  const wasAuthLoading = useRef(isAuthLoading);
+
+  useEffect(() => {
+    const finishedRestoringSession = wasAuthLoading.current && !isAuthLoading;
+    wasAuthLoading.current = isAuthLoading;
+
+    if (finishedRestoringSession && isLoggedIn) {
+      router.replace(getPostAuthDestination(params.returnTo, '/profile') as any);
+    }
+  }, [isAuthLoading, isLoggedIn, params.returnTo]);
 
   // ─── Real-time validation handlers ──────────────────────────────────────
   const handleLoginEmailChange = (val: string) => {
@@ -255,6 +272,21 @@ export default function LoginScreen() {
     }
   };
 
+  const handleGoogleAuth = async () => {
+    setIsLoading(true);
+    try {
+      await loginWithGoogle();
+    } catch (error: any) {
+      showToast({
+        type: 'error',
+        title: 'No pudimos conectar con Google',
+        message: error?.message || 'Inténtalo nuevamente en unos momentos.',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const inputStyle = {
     borderWidth: 1.5, borderColor: `${C.neutralLight}60`, borderRadius: 16,
     padding: 16, marginBottom: 12, color: C.text, fontSize: 15, fontFamily: F.bodyMedium,
@@ -262,6 +294,8 @@ export default function LoginScreen() {
   };
   const labelStyle = { fontSize: 13, color: C.text, marginBottom: 6, fontFamily: F.bodySemiBold, letterSpacing: 0.3 };
   const errorStyle = { color: '#E74C3C', fontSize: 12, fontFamily: F.bodyRegular, marginBottom: 16, marginTop: -8 };
+
+  if (isAuthLoading) return <AuthSessionLoading />;
 
   if (!fontsLoaded) return <View style={{ flex: 1, backgroundColor: C.bgSoft, justifyContent: 'center' }}><ActivityIndicator color={C.primary} size="large" /></View>;
 
@@ -411,13 +445,12 @@ export default function LoginScreen() {
             </View>
 
             <TouchableOpacity
-              onPress={() => {
-                loginWithGoogle();
-              }}
+              onPress={handleGoogleAuth}
+              disabled={isLoading}
               style={{
                 flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
                 backgroundColor: C.bg, paddingVertical: 14, borderRadius: 30,
-                borderWidth: 1.5, borderColor: `${C.neutralLight}60`,
+                borderWidth: 1.5, borderColor: `${C.neutralLight}60`, opacity: isLoading ? 0.7 : 1,
                 ...(Platform.OS === 'web' ? { boxShadow: '0 2px 8px rgba(46,42,38,0.04)' } : { elevation: 1 })
               }}
             >
