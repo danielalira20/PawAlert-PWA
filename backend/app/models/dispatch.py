@@ -33,9 +33,16 @@ class RouteMatrixRequest(BaseModel):
     destinations: list[RoutingPoint] = Field(min_length=1)
 
 
+class RoutingMode(str, Enum):
+    driving = "driving"
+    cycling = "cycling"
+    walking = "walking"
+
+
 class RouteRequest(BaseModel):
     origin: RoutingPoint
     destination: RoutingPoint
+    mode: RoutingMode = RoutingMode.driving
 
 
 class RoutingStatus(str, Enum):

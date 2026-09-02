@@ -13,6 +13,7 @@ from app.models.dispatch import (
     RouteRequest,
     RouteResult,
     RoutingErrorCode,
+    RoutingMode,
     RoutingStatus,
 )
 
@@ -81,13 +82,13 @@ def _request_matrix(request: RouteMatrixRequest) -> httpx.Response:
 
 
 def _request_route(request: RouteRequest) -> httpx.Response:
-    base_url = settings.osrm_base_url.rstrip("/")
+    base_url = _route_base_url(request.mode).rstrip("/")
     coordinates = (
         f"{request.origin.longitude},{request.origin.latitude};"
         f"{request.destination.longitude},{request.destination.latitude}"
     )
     return httpx.get(
-        f"{base_url}/route/v1/{_PROFILE}/{coordinates}",
+        f"{base_url}/route/v1/{request.mode.value}/{coordinates}",
         params={
             "alternatives": "false",
             "steps": "false",
@@ -96,6 +97,24 @@ def _request_route(request: RouteRequest) -> httpx.Response:
         },
         timeout=settings.osrm_timeout_seconds,
     )
+
+
+def _route_base_url(mode: RoutingMode) -> str:
+    configured = {
+        RoutingMode.driving: settings.osrm_driving_base_url,
+        RoutingMode.cycling: settings.osrm_cycling_base_url,
+        RoutingMode.walking: settings.osrm_walking_base_url,
+    }[mode].strip()
+    if mode == RoutingMode.driving and not configured:
+        return settings.osrm_base_url.strip()
+    return configured
+
+
+def configured_route_modes() -> list[RoutingMode]:
+    """Publica solo perfiles con una URL configurada en esta instancia."""
+    return [mode for mode in RoutingMode if _route_base_url(mode)]
+
+
 def _normalize_matrix(payload: object) -> list[list[float | None]]:
     if not isinstance(payload, list):
         raise _InvalidPayload
@@ -236,7 +255,7 @@ def get_route_matrix(request: RouteMatrixRequest) -> RouteMatrixResult:
 def get_route(request: RouteRequest) -> RouteResult:
     """Obtiene la ruta exacta tras confirmar cobertura, sin propagar fallos."""
     calculated_at = datetime.now(timezone.utc)
-    if not settings.osrm_base_url.strip():
+    if not _route_base_url(request.mode):
         return _unavailable_route(
             request, RoutingErrorCode.not_configured, calculated_at
         )

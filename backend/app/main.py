@@ -15,6 +15,7 @@ from app.api import (
     events,
     incidentes,
     internal,
+    navigation,
     perfiles_apoyo,
     red_aliados,
     report_acceptance,
@@ -67,6 +68,7 @@ app.include_router(staff.router, prefix="/staff", tags=["Staff"])
 app.include_router(stats.router, prefix="/stats", tags=["Estadísticas"])
 app.include_router(asignaciones.router, prefix="/reports", tags=["Asignaciones"])
 app.include_router(voluntarios.router, prefix="/voluntarios", tags=["Voluntarios"])
+app.include_router(navigation.router, prefix="/voluntarios", tags=["Navegación"])
 app.include_router(internal.router, prefix="/internal", tags=["Interno"])
 app.include_router(red_aliados.router, prefix="/red-aliados", tags=["Red de Aliados"])
 app.include_router(webhooks.router, prefix="/webhooks", tags=["Webhooks"])
