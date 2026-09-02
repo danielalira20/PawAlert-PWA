@@ -11,6 +11,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import '../../global.css';
 import { AuthProvider } from '../context/AuthContext';
+import { SavedEventsProvider } from '../context/events/SavedEventsContext';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import NetworkStatusBanner from '../components/NetworkStatusBanner';
 
@@ -49,6 +50,7 @@ export default function RootLayout() {
   return (
      <GestureHandlerRootView style={{ flex: 1 }}>
     <AuthProvider>
+      <SavedEventsProvider>
       <NetworkStatusBanner />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" />
@@ -65,6 +67,7 @@ export default function RootLayout() {
         <Stack.Screen name="forgot-password" options={{ presentation: 'modal' }} />
         <Stack.Screen name="completar-cuenta" options={{ presentation: 'modal' }} />
         <Stack.Screen name="confirmacion-permanencia" />
+        <Stack.Screen name="registrar-avistamiento" options={{ presentation: 'transparentModal', animation: 'fade', headerShown: false }} />
         <Stack.Screen name="capacidades" options={{ presentation: 'transparentModal', headerShown: false }} />
         <Stack.Screen name="crear-necesidad" options={{ presentation: 'transparentModal', animation: 'fade' }} />
         <Stack.Screen name="como-ayudar" options={{ presentation: 'transparentModal', animation: 'fade', headerShown: false }} />
@@ -74,7 +77,11 @@ export default function RootLayout() {
         <Stack.Screen name="ofertas-asociacion" options={{ presentation: 'transparentModal', animation: 'fade', headerShown: false }} />
         <Stack.Screen name="registro-comunitario" options={{ presentation: 'transparentModal', animation: 'fade', headerShown: false }} />
         <Stack.Screen name="aportacion" options={{ presentation: 'transparentModal', animation: 'fade', headerShown: false }} />
+        <Stack.Screen name="evento-editor" options={{ presentation: 'modal', animation: 'slide_from_bottom', headerShown: false }} />
+        <Stack.Screen name="editor-adopcion/[id]" options={{ presentation: 'transparentModal', animation: 'fade', headerShown: false }} />
+        <Stack.Screen name="navegacion-caso/[id]" />
       </Stack>
+      </SavedEventsProvider>
     </AuthProvider>
     </GestureHandlerRootView>
   );

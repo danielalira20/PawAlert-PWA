@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 
 import { Toast, useToast } from '../components/Toast';
+import { AvistamientoEntryButton } from '../components/avistamientos/AvistamientoEntryButton';
 import { NearbyCasesMap } from '../components/nearby-cases/NearbyCasesMap';
 import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
@@ -78,6 +79,8 @@ function CaseCard({
   onOffer: () => void;
   onWithdraw: () => void;
 }) {
+  // El voluntario externo verificado puede aportar un avistamiento aunque el
+  // caso no sea suyo — el filtro real de cercanía lo aplica el backend.
   const animal = animalMasGrave(caso.animales);
   const foto = animal?.foto_url || animal?.fotos?.[0];
   const ofrecido = Boolean(caso.ofrecimiento);
@@ -208,6 +211,14 @@ function CaseCard({
           </Pressable>
         </>
       )}
+
+      {/* Lista de exclusión (no de inclusión): `estado_reporte` es opcional en
+          CasoCercano y no queremos esconder el botón solo porque el campo no
+          venga. Un caso ya cerrado sí deja de aceptar avistamientos. Sin
+          onBeforeNavigate: esta tarjeta vive en un tab, no en un modal. */}
+      {!['cerrado', 'cancelado_por_reportante', 'rechazado', 'rescatado'].includes(
+        caso.estado_reporte ?? '',
+      ) && <AvistamientoEntryButton reporte={{ id: caso.id }} compacto />}
     </View>
   );
 }

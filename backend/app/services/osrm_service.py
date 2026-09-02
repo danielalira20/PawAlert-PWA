@@ -12,7 +12,10 @@ from app.models.dispatch import (
     RouteMatrixResult,
     RouteRequest,
     RouteResult,
+    RouteStep,
     RoutingErrorCode,
+    RoutingMode,
+    RoutingPoint,
     RoutingStatus,
 )
 
@@ -81,21 +84,90 @@ def _request_matrix(request: RouteMatrixRequest) -> httpx.Response:
 
 
 def _request_route(request: RouteRequest) -> httpx.Response:
-    base_url = settings.osrm_base_url.rstrip("/")
+    base_url = _route_base_url(request.mode).rstrip("/")
     coordinates = (
         f"{request.origin.longitude},{request.origin.latitude};"
         f"{request.destination.longitude},{request.destination.latitude}"
     )
     return httpx.get(
-        f"{base_url}/route/v1/{_PROFILE}/{coordinates}",
+        f"{base_url}/route/v1/{request.mode.value}/{coordinates}",
         params={
             "alternatives": "false",
-            "steps": "false",
+            "steps": "true" if request.include_steps else "false",
             "geometries": "geojson",
             "overview": "full",
         },
         timeout=settings.osrm_timeout_seconds,
     )
+
+
+def _route_base_url(mode: RoutingMode) -> str:
+    configured = {
+        RoutingMode.driving: settings.osrm_driving_base_url,
+        RoutingMode.cycling: settings.osrm_cycling_base_url,
+        RoutingMode.walking: settings.osrm_walking_base_url,
+    }[mode].strip()
+    if mode == RoutingMode.driving and not configured:
+        return settings.osrm_base_url.strip()
+    return configured
+
+
+def configured_route_modes() -> list[RoutingMode]:
+    """Publica solo perfiles con una URL configurada en esta instancia."""
+    return [mode for mode in RoutingMode if _route_base_url(mode)]
+
+
+def probe_route_modes() -> dict[str, object]:
+    """Comprueba cada perfil sin exponer URLs ni coordenadas operativas."""
+    modes: dict[str, dict[str, object]] = {}
+    for mode in RoutingMode:
+        configured = bool(_route_base_url(mode))
+        if not configured:
+            modes[mode.value] = {
+                "configured": False,
+                "status": "disabled",
+                "error_code": None,
+            }
+            continue
+
+        result = get_route(
+            RouteRequest(
+                origin=RoutingPoint(
+                    id="health-origin",
+                    latitude=19.0414,
+                    longitude=-98.2063,
+                ),
+                destination=RoutingPoint(
+                    id="health-destination",
+                    latitude=19.0436,
+                    longitude=-98.2035,
+                ),
+                mode=mode,
+            )
+        )
+        modes[mode.value] = {
+            "configured": True,
+            "status": result.status.value,
+            "error_code": (
+                result.error_code.value if result.error_code else None
+            ),
+        }
+
+    configured_results = [
+        result for result in modes.values() if result["configured"]
+    ]
+    if not configured_results:
+        status = "unavailable"
+    elif all(
+        result["status"] == RoutingStatus.complete.value
+        for result in configured_results
+    ):
+        status = "complete"
+    else:
+        status = "degraded"
+    return {"status": status, "modes": modes}
+
+
 def _normalize_matrix(payload: object) -> list[list[float | None]]:
     if not isinstance(payload, list):
         raise _InvalidPayload
@@ -189,11 +261,74 @@ def _parse_route_payload(
             duration_seconds=float(route["duration"]),
             distance_meters=float(route["distance"]),
             geometry=geometry,
+            steps=(
+                _normalize_route_steps(route)
+                if request.include_steps
+                else []
+            ),
             status=RoutingStatus.complete,
             calculated_at=calculated_at,
         )
     except (IndexError, KeyError, TypeError, ValueError):
         raise _InvalidPayload from None
+
+
+def _normalize_route_steps(route: object) -> list[RouteStep]:
+    """Normaliza maniobras útiles e ignora pasos opcionales malformados."""
+    if not isinstance(route, dict):
+        return []
+    legs = route.get("legs")
+    if not isinstance(legs, list):
+        return []
+
+    normalized: list[RouteStep] = []
+    for leg in legs:
+        if not isinstance(leg, dict) or not isinstance(leg.get("steps"), list):
+            continue
+        for step in leg["steps"]:
+            if not isinstance(step, dict):
+                continue
+            maneuver = step.get("maneuver")
+            if not isinstance(maneuver, dict):
+                continue
+            location = maneuver.get("location")
+            if not isinstance(location, list) or len(location) < 2:
+                continue
+
+            raw_type = maneuver.get("type")
+            raw_modifier = maneuver.get("modifier")
+            raw_name = step.get("name")
+            try:
+                distance = float(step["distance"])
+                duration = float(step["duration"])
+                longitude = float(location[0])
+                latitude = float(location[1])
+                normalized.append(
+                    RouteStep(
+                        type=(
+                            raw_type.strip()
+                            if isinstance(raw_type, str) and raw_type.strip()
+                            else "continue"
+                        ),
+                        modifier=(
+                            raw_modifier.strip()
+                            if isinstance(raw_modifier, str)
+                            and raw_modifier.strip()
+                            else None
+                        ),
+                        street_name=(
+                            raw_name.strip()
+                            if isinstance(raw_name, str) and raw_name.strip()
+                            else None
+                        ),
+                        distance_meters=distance,
+                        duration_seconds=duration,
+                        location=(longitude, latitude),
+                    )
+                )
+            except (KeyError, TypeError, ValueError):
+                continue
+    return normalized
 
 
 def get_route_matrix(request: RouteMatrixRequest) -> RouteMatrixResult:
@@ -236,7 +371,7 @@ def get_route_matrix(request: RouteMatrixRequest) -> RouteMatrixResult:
 def get_route(request: RouteRequest) -> RouteResult:
     """Obtiene la ruta exacta tras confirmar cobertura, sin propagar fallos."""
     calculated_at = datetime.now(timezone.utc)
-    if not settings.osrm_base_url.strip():
+    if not _route_base_url(request.mode):
         return _unavailable_route(
             request, RoutingErrorCode.not_configured, calculated_at
         )

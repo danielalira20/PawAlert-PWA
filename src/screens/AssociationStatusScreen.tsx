@@ -10,6 +10,9 @@ import { ActivityIndicator, Dimensions, Image, Linking, Modal, Platform, ScrollV
 import { Ionicons } from '@expo/vector-icons';
 import { Toast, useToast } from '../components/Toast';
 import { BusquedaNoLocalizadoPanel } from '../components/association-dashboard/BusquedaNoLocalizadoPanel';
+import { AvistamientosPendientesPanel } from '../components/association-dashboard/AvistamientosPendientesPanel';
+import RecorridoAvistamientosMap from '../components/association-dashboard/RecorridoAvistamientosMap';
+import type { PuntoRecorrido } from '../components/association-dashboard/recorridoAvistamientos.types';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
@@ -18,6 +21,7 @@ import { useAuth } from '../context/AuthContext';
 import { validarNombre } from '../utils/validators';
 import { useWindowDimensions } from 'react-native';
 import { PostulacionesPanel } from '../components/association-dashboard/PostulacionesPanel';
+import { AdopcionesPanel } from '../components/association-dashboard/AdopcionesPanel';
 import { LotesInvitacionesPanel } from '../components/association-dashboard/LotesInvitacionesPanel';
 import { DeceasedFollowupPanel } from '../components/association-dashboard/DeceasedFollowupPanel';
 import { Animated } from 'react-native';
@@ -26,6 +30,7 @@ import { Animal, getAnimales, totalAnimales, animalMasGrave, ReportUrgencySnapsh
 import { AnimalCarousel } from '../components/common/AnimalCarousel';
 import { ImageLightbox } from '../components/common/ImageLightbox';
 import { getPaginationWindow, getReportsPerPage } from '../utils/reportPagination';
+import { AssociationEventsPanel } from '../components/events/association/AssociationEventsPanel';
 
 // ─── PALETA DE COLORES PETZEN ───
 const COLORS = {
@@ -75,6 +80,7 @@ interface ReporteAsignado extends ReportUrgencySnapshot {
   asignacion_id: string;
   reporte_id: string;
   estado_asignacion_clave: string;
+  asociacion_asignada_id?: string | null;
   estado_reporte: string;
   confirmacion_voluntario?: string | null;
   ultimo_rechazo?: { nombre_voluntario: string; creado_at: string } | null;
@@ -100,10 +106,12 @@ interface HistorialEvento {
   reportante_nombre?: string;
   usuario_nombre?: string | null;
   nota?: string | null;
+  latitud?: number | null;
+  longitud?: number | null;
 }
 
 type FiltroAsignacion = 'todas' | 'pendientes' | 'aceptadas' | 'rechazadas';
-type ActiveTab = 'reportes' | 'seguimientos' | 'postulaciones' | 'voluntarios' | 'lotes' | 'configuracion';
+type ActiveTab = 'reportes' | 'avistamientos' | 'eventos' | 'seguimientos' | 'postulaciones' | 'adopciones' | 'voluntarios' | 'lotes' | 'configuracion';
 
 type TabAsignacion = 'staff' | 'voluntarios';
 type EstadoVoluntarios = 'cargando' | 'candidatos' | 'esperando_confirmacion' | 'confirmado' | 'rechazado_mostrando_siguiente' | 'sin_candidatos';
@@ -254,6 +262,8 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
   const [diasRecepcion, setDiasRecepcion] = useState<number[]>([1, 2, 3, 4, 5, 6, 7]);
   const [horaInicioRecepcion, setHoraInicioRecepcion] = useState('00:00');
   const [horaFinRecepcion, setHoraFinRecepcion] = useState('23:59');
+  const [participaRescates, setParticipaRescates] = useState(true);
+  const [participaAdopciones, setParticipaAdopciones] = useState(true);
   const [isSavingConfig, setIsSavingConfig] = useState(false);
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
 
@@ -323,6 +333,7 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
     cancelacion_reportante_avisada: { label: 'Solicitud de cancelación del reportante', icon: 'information-circle-outline' },
     hito_llegue_refugio: { label: 'Llegada al refugio', icon: 'home-outline' },
     caso_cerrado: { label: 'Caso cerrado', icon: 'checkmark-done-circle-outline' },
+    ubicacion_confirmada: { label: 'Avistamiento validado', icon: 'eye-outline' },
   };
 
 
@@ -454,6 +465,8 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
         setDiasRecepcion(res.data.dias_recepcion || [1, 2, 3, 4, 5, 6, 7]);
         setHoraInicioRecepcion(String(res.data.hora_inicio_recepcion || '00:00').slice(0, 5));
         setHoraFinRecepcion(String(res.data.hora_fin_recepcion || '23:59').slice(0, 5));
+        setParticipaRescates(res.data.participa_rescates ?? true);
+        setParticipaAdopciones(res.data.participa_adopciones ?? true);
       }
     } catch (error) {
       console.error(error);
@@ -483,6 +496,10 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
       showToast({ type: 'warning', title: 'Capacidad inválida', message: 'Los casos críticos no pueden superar la capacidad total.' });
       return;
     }
+    if (!participaRescates && !participaAdopciones) {
+      showToast({ type: 'warning', title: 'Elige al menos un eje', message: 'Debes dejar activo rescates, adopciones, o ambos.' });
+      return;
+    }
     if (!recepcionReportes24h) {
       const horaValida = /^([01]\d|2[0-3]):[0-5]\d$/;
       if (!diasRecepcion.length) {
@@ -509,6 +526,8 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
         dias_recepcion: diasRecepcion,
         hora_inicio_recepcion: horaInicioRecepcion,
         hora_fin_recepcion: horaFinRecepcion,
+        participa_rescates: participaRescates,
+        participa_adopciones: participaAdopciones,
       }, { headers: { Authorization: `Bearer ${token}` } });
       showToast({ type: 'success', title: '¡Listo!', message: 'Configuración guardada.' });
     } catch (error: any) {
@@ -585,6 +604,19 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
       verificarApelacion();
     }
   }, [info]);
+
+  // Si la pestaña activa queda oculta porque se apagó su eje, se mueve a
+  // una pestaña visible en vez de dejar la pantalla en un tab fantasma.
+  // Nunca se disparan las dos ramas a la vez: al menos un eje siempre
+  // queda activo (bloqueado en el backend en config-asignacion).
+  useEffect(() => {
+    const pestanasDeRescate: ActiveTab[] = ['reportes', 'avistamientos', 'seguimientos', 'postulaciones', 'voluntarios'];
+    if (!participaRescates && pestanasDeRescate.includes(activeTab)) {
+      setActiveTab(participaAdopciones ? 'adopciones' : 'configuracion');
+    } else if (!participaAdopciones && activeTab === 'adopciones') {
+      setActiveTab(participaRescates ? 'reportes' : 'configuracion');
+    }
+  }, [participaRescates, participaAdopciones, activeTab]);
 
   useEffect(() => {
     if (info?.estado !== 'aprobada') return;
@@ -1290,64 +1322,131 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                   borderBottomColor: '#E5E7EB',
                 }}
               >
+                {participaRescates && (
+                  <TouchableOpacity
+                    onPress={() => setActiveTab('reportes')}
+                    style={{
+                      paddingBottom: 12,
+                      marginRight: 24,
+                      flexShrink: 0,
+                      borderBottomWidth: activeTab === 'reportes' ? 3 : 0,
+                      borderBottomColor: COLORS.primary
+                    }}
+                  >
+                    <Text style={{
+                      fontSize: 16,
+                      fontWeight: activeTab === 'reportes' ? '800' : '600',
+                      color: activeTab === 'reportes' ? COLORS.primary : COLORS.textLight
+                    }}>
+                      Reportes
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                {participaRescates && (
+                  <TouchableOpacity
+                    onPress={() => setActiveTab('avistamientos')}
+                    style={{
+                      paddingBottom: 12,
+                      marginRight: 24,
+                      flexShrink: 0,
+                      borderBottomWidth: activeTab === 'avistamientos' ? 3 : 0,
+                      borderBottomColor: COLORS.primary
+                    }}
+                  >
+                    <Text style={{
+                      fontSize: 16,
+                      fontWeight: activeTab === 'avistamientos' ? '800' : '600',
+                      color: activeTab === 'avistamientos' ? COLORS.primary : COLORS.textLight
+                    }}>
+                      Avistamientos
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
                 <TouchableOpacity
-                  onPress={() => setActiveTab('reportes')}
+                  onPress={() => setActiveTab('eventos')}
                   style={{
                     paddingBottom: 12,
                     marginRight: 24,
                     flexShrink: 0,
-                    borderBottomWidth: activeTab === 'reportes' ? 3 : 0,
+                    borderBottomWidth: activeTab === 'eventos' ? 3 : 0,
                     borderBottomColor: COLORS.primary
                   }}
                 >
                   <Text style={{
                     fontSize: 16,
-                    fontWeight: activeTab === 'reportes' ? '800' : '600',
-                    color: activeTab === 'reportes' ? COLORS.primary : COLORS.textLight
+                    fontWeight: activeTab === 'eventos' ? '800' : '600',
+                    color: activeTab === 'eventos' ? COLORS.primary : COLORS.textLight
                   }}>
-                    Reportes
+                    Eventos
                   </Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity
-                  onPress={() => setActiveTab('seguimientos')}
-                  style={{
-                    paddingBottom: 12,
-                    marginRight: 24,
-                    flexShrink: 0,
-                    borderBottomWidth: activeTab === 'seguimientos' ? 3 : 0,
-                    borderBottomColor: COLORS.primary
-                  }}
-                >
-                  <Text style={{
-                    fontSize: 16,
-                    fontWeight: activeTab === 'seguimientos' ? '800' : '600',
-                    color: activeTab === 'seguimientos' ? COLORS.primary : COLORS.textLight
-                  }}>
-                    Seguimientos
-                  </Text>
-                </TouchableOpacity>
+                {participaRescates && (
+                  <TouchableOpacity
+                    onPress={() => setActiveTab('seguimientos')}
+                    style={{
+                      paddingBottom: 12,
+                      marginRight: 24,
+                      flexShrink: 0,
+                      borderBottomWidth: activeTab === 'seguimientos' ? 3 : 0,
+                      borderBottomColor: COLORS.primary
+                    }}
+                  >
+                    <Text style={{
+                      fontSize: 16,
+                      fontWeight: activeTab === 'seguimientos' ? '800' : '600',
+                      color: activeTab === 'seguimientos' ? COLORS.primary : COLORS.textLight
+                    }}>
+                      Seguimientos
+                    </Text>
+                  </TouchableOpacity>
+                )}
 
-                <TouchableOpacity
-                  onPress={() => setActiveTab('postulaciones')}
-                  style={{
-                    paddingBottom: 12,
-                    marginRight: 24,
-                    flexShrink: 0,
-                    borderBottomWidth: activeTab === 'postulaciones' ? 3 : 0,
-                    borderBottomColor: COLORS.primary
-                  }}
-                >
-                  <Text style={{
-                    fontSize: 16,
-                    fontWeight: activeTab === 'postulaciones' ? '800' : '600',
-                    color: activeTab === 'postulaciones' ? COLORS.primary : COLORS.textLight
-                  }}>
-                    Postulaciones
-                  </Text>
-                </TouchableOpacity>
+                {participaRescates && (
+                  <TouchableOpacity
+                    onPress={() => setActiveTab('postulaciones')}
+                    style={{
+                      paddingBottom: 12,
+                      marginRight: 24,
+                      flexShrink: 0,
+                      borderBottomWidth: activeTab === 'postulaciones' ? 3 : 0,
+                      borderBottomColor: COLORS.primary
+                    }}
+                  >
+                    <Text style={{
+                      fontSize: 16,
+                      fontWeight: activeTab === 'postulaciones' ? '800' : '600',
+                      color: activeTab === 'postulaciones' ? COLORS.primary : COLORS.textLight
+                    }}>
+                      Postulaciones
+                    </Text>
+                  </TouchableOpacity>
+                )}
 
-                {user?.rol !== 'staff' && (
+                {participaAdopciones && (
+                  <TouchableOpacity
+                    onPress={() => setActiveTab('adopciones')}
+                    style={{
+                      paddingBottom: 12,
+                      marginRight: 24,
+                      flexShrink: 0,
+                      borderBottomWidth: activeTab === 'adopciones' ? 3 : 0,
+                      borderBottomColor: COLORS.primary
+                    }}
+                  >
+                    <Text style={{
+                      fontSize: 16,
+                      fontWeight: activeTab === 'adopciones' ? '800' : '600',
+                      color: activeTab === 'adopciones' ? COLORS.primary : COLORS.textLight
+                    }}>
+                      Adopciones
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                {user?.rol !== 'staff' && participaRescates && (
                   <TouchableOpacity
                     onPress={() => setActiveTab('voluntarios')}
                     style={{
@@ -1413,10 +1512,16 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                 <Text style={{ fontSize: 22, fontWeight: 'bold', color: COLORS.textDark }}>
                   {activeTab === 'reportes'
                     ? 'Reportes asignados'
+                    : activeTab === 'avistamientos'
+                      ? 'Avistamientos por validar'
+                    : activeTab === 'eventos'
+                      ? 'Eventos de la asociación'
                     : activeTab === 'seguimientos'
                       ? 'Seguimientos sensibles'
                     : activeTab === 'postulaciones'
                       ? 'Postulaciones de voluntarios'
+                    : activeTab === 'adopciones'
+                      ? 'Propuestas de adopción'
                       : activeTab === 'lotes'
                         ? 'Lotes de aliados'
                         : activeTab === 'configuracion'
@@ -1709,10 +1814,16 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                   )}
                 </>
 
+              ) : activeTab === 'avistamientos' ? (
+                <AvistamientosPendientesPanel visible={activeTab === 'avistamientos'} />
+              ) : activeTab === 'eventos' ? (
+                <AssociationEventsPanel />
               ) : activeTab === 'seguimientos' ? (
                 <DeceasedFollowupPanel visible={activeTab === 'seguimientos'} />
               ) : activeTab === 'postulaciones' ? (
                 <PostulacionesPanel visible={activeTab === 'postulaciones'} />
+              ) : activeTab === 'adopciones' ? (
+                <AdopcionesPanel visible={activeTab === 'adopciones'} showToast={showToast} onClose={onClose} />
               ) : activeTab === 'lotes' ? (
                 <LotesInvitacionesPanel visible={activeTab === 'lotes'} />
               ) : activeTab === 'voluntarios' ? (
@@ -1818,6 +1929,47 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
               {activeTab === 'configuracion' && user?.rol !== 'staff' && (
               <>
               <View style={{ backgroundColor: COLORS.cardBg, padding: 28, borderRadius: 32, ...SHADOW_MD }}>
+                <Text style={{ fontSize: 22, fontWeight: '800', color: COLORS.textDark, marginBottom: 6 }}>Ejes de participación</Text>
+                <Text style={{ fontSize: 13, color: COLORS.textLight, marginBottom: 20 }}>Elige en qué parte de PawAlert quiere participar tu asociación. Se guarda junto con el resto de esta pantalla.</Text>
+
+                {isLoadingConfig ? (
+                  <ActivityIndicator color={COLORS.primary} />
+                ) : (
+                  <View style={{ gap: 18 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <View style={{ flex: 1, marginRight: 12 }}>
+                        <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.textDark }}>Rescates</Text>
+                        <Text style={{ fontSize: 12, color: COLORS.textLight, marginTop: 2 }}>Recibir reportes nuevos y coordinar su atención.</Text>
+                      </View>
+                      <Switch
+                        value={participaRescates}
+                        onValueChange={setParticipaRescates}
+                        trackColor={{ false: '#D7CEC5', true: COLORS.accent }}
+                        thumbColor={COLORS.white}
+                      />
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <View style={{ flex: 1, marginRight: 12 }}>
+                        <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.textDark }}>Adopciones</Text>
+                        <Text style={{ fontSize: 12, color: COLORS.textLight, marginTop: 2 }}>Publicar animales y gestionar solicitudes de adopción.</Text>
+                      </View>
+                      <Switch
+                        value={participaAdopciones}
+                        onValueChange={setParticipaAdopciones}
+                        trackColor={{ false: '#D7CEC5', true: COLORS.accent }}
+                        thumbColor={COLORS.white}
+                      />
+                    </View>
+                    {!participaRescates && !participaAdopciones && (
+                      <Text style={{ fontSize: 12, color: COLORS.danger, fontWeight: '700' }}>
+                        Debes dejar al menos un eje activo.
+                      </Text>
+                    )}
+                  </View>
+                )}
+              </View>
+
+              <View style={{ backgroundColor: COLORS.cardBg, padding: 28, borderRadius: 32, marginTop: 32, ...SHADOW_MD }}>
                 <Text style={{ fontSize: 22, fontWeight: '800', color: COLORS.textDark, marginBottom: 6 }}>Modo de asignación de casos</Text>
                 <Text style={{ fontSize: 13, color: COLORS.textLight, marginBottom: 20 }}>Define cómo se le asigna un voluntario a cada reporte que reciben.</Text>
 
@@ -2129,6 +2281,48 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                 {/* ── Línea de tiempo: sub-filtros "Por cerrar" y "Completados" ── */}
                 {(subFiltroAceptadas === 'por_cerrar' || subFiltroAceptadas === 'completados') && (
                   <View style={{ marginTop: 24 }}>
+                    {(() => {
+                      // Recorrido del caso: reporte original + avistamientos validados,
+                      // en orden cronológico (historialTimeline ya viene ASC por created_at).
+                      // Solo se listan aquí los eventos con coordenadas conocidas.
+                      const eventosConUbicacion = (historialTimeline || []).filter(
+                        (evento) => evento.latitud != null && evento.longitud != null,
+                      );
+                      if (eventosConUbicacion.length < 2) {
+                        return null;
+                      }
+                      const puntosRecorrido: PuntoRecorrido[] = eventosConUbicacion.map((evento, idx) => ({
+                        latitud: Number(evento.latitud),
+                        longitud: Number(evento.longitud),
+                        esOrigen: evento.tipo_evento === 'reporte_creado',
+                        esMasReciente: idx === eventosConUbicacion.length - 1,
+                        etiqueta: (TIMELINE_LABELS[evento.tipo_evento] || { label: evento.tipo_evento }).label,
+                      }));
+                      return (
+                        <View style={{ marginBottom: 20 }}>
+                          <Text style={{ fontSize: 18, fontWeight: '800', color: COLORS.textDark, marginBottom: 4 }}>Recorrido del caso</Text>
+                          <Text style={{ fontSize: 12, color: COLORS.textLight, marginBottom: 10 }}>
+                            Línea recta entre el reporte y cada avistamiento validado. El punto más grande es el más reciente.
+                          </Text>
+                          <RecorridoAvistamientosMap puntos={puntosRecorrido} height={220} />
+                          <View style={{ flexDirection: 'row', gap: 16, marginTop: 10, flexWrap: 'wrap' }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              <View style={{ width: 12, height: 12, borderRadius: 3, backgroundColor: '#8C7A6B' }} />
+                              <Text style={{ fontSize: 11, color: COLORS.textLight }}>Reporte original</Text>
+                            </View>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#66BCB4' }} />
+                              <Text style={{ fontSize: 11, color: COLORS.textLight }}>Avistamiento validado</Text>
+                            </View>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              <View style={{ width: 14, height: 14, borderRadius: 7, backgroundColor: '#EC802B' }} />
+                              <Text style={{ fontSize: 11, color: COLORS.textLight }}>Última ubicación conocida</Text>
+                            </View>
+                          </View>
+                        </View>
+                      );
+                    })()}
+
                     <Text style={{ fontSize: 18, fontWeight: '800', color: COLORS.textDark, marginBottom: 12 }}>Línea de tiempo</Text>
 
                     {isLoadingHistorial ? (

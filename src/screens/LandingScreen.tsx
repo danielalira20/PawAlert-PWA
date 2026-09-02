@@ -32,8 +32,12 @@ import { useAuth } from '../context/AuthContext';
 import NotificationBell from '../components/red-aliados/NotificationBell';
 import type { PostAuthFlow } from '../utils/postAuthNavigation';
 import { getBlockingIdentity, type TargetAction } from '../utils/roleGuard';
+import { CoachMarksTour } from '../components/onboarding/CoachMarksTour';
+import { GuideHelpButton, SectionGuidePrompt } from '../components/onboarding/SectionGuidePrompt';
+import { useSectionGuide } from '../hooks/useSectionGuide';
 
 const heroImage = require('../assets/images/imagen_hero.png');
+const brandLogo = require('../assets/logo/logo_pawAlert.png');
 
 // IMPORTANTE: Importamos el formulario de forma "perezosa" (Lazy Load)
 const AssociationFormScreen = lazy(() => import('./AssociationFormScreen'));
@@ -299,6 +303,36 @@ export default function LandingScreen() {
   const [isMuralVisible, setIsMuralVisible] = useState(false);
   const [recentPhotos, setRecentPhotos] = useState<string[]>([]);
   const [showFullMissionVision, setShowFullMissionVision] = useState(false);
+  const landingScrollRef = useRef<ScrollView>(null);
+  const heroTourRef = useRef<View>(null);
+  const processTourRef = useRef<View>(null);
+  const rolesTourRef = useRef<View>(null);
+  const homeGuide = useSectionGuide({ sectionKey: 'inicio', userId: user?.id });
+  const homeGuideSteps = [
+    {
+      key: 'welcome', title: 'Bienvenido a PawAlert',
+      description: 'Desde Inicio puedes crear rápidamente un reporte y conocer las distintas formas de ayudar a la comunidad.',
+      icon: 'home-outline' as const, accent: C.primary, targetRef: heroTourRef,
+    },
+    {
+      key: 'process', title: 'Así funciona cada reporte',
+      description: 'Conoce cómo una alerta pasa de la fotografía y ubicación inicial al contacto con asociaciones y seguimiento del rescate.',
+      icon: 'git-branch-outline' as const, accent: C.secondary, targetRef: processTourRef,
+    },
+    {
+      key: 'participate', title: 'Elige cómo quieres ayudar',
+      description: 'Consulta los perfiles disponibles para participar como reportante, voluntario, asociación, donante o aliado.',
+      icon: 'people-outline' as const, accent: C.accent, targetRef: rolesTourRef,
+    },
+  ];
+  const prepareHomeGuideStep = (index: number) => {
+    const desktopOffsets = [0, 650, 1120];
+    const mobileOffsets = [0, 820, 1500];
+    landingScrollRef.current?.scrollTo({
+      y: (isDesktop ? desktopOffsets : mobileOffsets)[index] ?? 0,
+      animated: true,
+    });
+  };
 
   const [isAuthRequiredModalVisible, setIsAuthRequiredModalVisible] = useState(false);
   const [isRegistroAliadoModalVisible, setIsRegistroAliadoModalVisible] = useState(false);
@@ -530,7 +564,7 @@ export default function LandingScreen() {
     return (
       <View style={{ flex: 1, backgroundColor: C.bgSoft }}>
         <PawPatternBackground />
-        <ScrollView style={{ flex: 1, zIndex: 1 }} showsVerticalScrollIndicator={false}>
+        <ScrollView ref={landingScrollRef} style={{ flex: 1, zIndex: 1 }} showsVerticalScrollIndicator={false}>
 
         {/* ══════════════════════════════════════════════════════════════════
             SECCIÓN 1 — NAVBAR  (sticky-like header)
@@ -546,15 +580,11 @@ export default function LandingScreen() {
         } as any}>
           {/* Logo */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: isCompactHeader ? 7 : 10, flexShrink: 1 }}>
-            <View style={{
-              width: isCompactHeader ? 34 : 38,
-              height: isCompactHeader ? 34 : 38,
-              borderRadius: isCompactHeader ? 10 : 12,
-              backgroundColor: C.primary,
-              alignItems: 'center', justifyContent: 'center',
-            }}>
-              <Ionicons name="paw" size={isCompactHeader ? 18 : 20} color="#FFF" />
-            </View>
+            <Image
+              source={brandLogo}
+              style={{ width: isCompactHeader ? 48 : 56, height: isCompactHeader ? 48 : 56 }}
+              resizeMode="cover"
+            />
             <Text
               numberOfLines={1}
               style={{ fontSize: isCompactHeader ? 18 : 22, fontFamily: F.displayBold, color: C.text, letterSpacing: -0.5 }}
@@ -609,7 +639,7 @@ export default function LandingScreen() {
         {/* ══════════════════════════════════════════════════════════════════
             SECCIÓN 2 — HERO (Rediseñado)
         ══════════════════════════════════════════════════════════════════ */}
-        <View style={{
+        <View ref={heroTourRef} collapsable={false} style={{
           backgroundColor: 'transparent',
           paddingTop: 56,
           paddingBottom: 40,
@@ -778,7 +808,7 @@ export default function LandingScreen() {
         {/* ══════════════════════════════════════════════════════════════════
             NUEVA SECCIÓN: TIMELINE (3 pasos de un reporte)
         ══════════════════════════════════════════════════════════════════ */}
-        <View style={{
+        <View ref={processTourRef} collapsable={false} style={{
           paddingHorizontal: 24, paddingTop: 40, paddingBottom: 60,
           maxWidth: 960, alignSelf: 'center', width: '100%',
         }}>
@@ -855,7 +885,7 @@ export default function LandingScreen() {
         {/* ══════════════════════════════════════════════════════════════════
             NUEVA SECCIÓN: ROLES (Cómo participar)
         ══════════════════════════════════════════════════════════════════ */}
-        <View style={{
+        <View ref={rolesTourRef} collapsable={false} style={{
           paddingHorizontal: 24, paddingTop: 40, paddingBottom: 60,
           maxWidth: 960, alignSelf: 'center', width: '100%',
         }}>
@@ -1663,13 +1693,7 @@ export default function LandingScreen() {
 
           {/* Logo */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-            <View style={{
-              width: 34, height: 34, borderRadius: 10,
-              backgroundColor: C.primary,
-              alignItems: 'center', justifyContent: 'center',
-            }}>
-              <Ionicons name="paw" size={18} color="#FFF" />
-            </View>
+            <Image source={brandLogo} style={{ width: 52, height: 52 }} resizeMode="cover" />
             <Text style={{ fontSize: 20, fontFamily: F.displayBold, color: '#FFF', letterSpacing: -0.4 }}>
               Paw<Text style={{ color: C.primary }}>Alert</Text>
             </Text>
@@ -1905,6 +1929,23 @@ export default function LandingScreen() {
           />
         </Suspense>
       )}
+
+      <View style={{ position: 'absolute', top: isCompactHeader ? 74 : 86, left: 18, zIndex: 2400, elevation: 20 }}>
+        <GuideHelpButton sectionName="Inicio" onPress={homeGuide.startGuide} showUnreadDot={homeGuide.showPrompt} />
+      </View>
+      <CoachMarksTour
+        visible={homeGuide.showGuide}
+        steps={homeGuideSteps}
+        onStepChange={prepareHomeGuideStep}
+        onClose={homeGuide.closeGuide}
+      />
+      <SectionGuidePrompt
+        visible={homeGuide.showPrompt}
+        sectionName="Inicio"
+        description="Conoce cómo reportar, seguir el proceso y elegir una forma de ayudar."
+        onStart={homeGuide.startGuide}
+        onDismiss={homeGuide.dismissPrompt}
+      />
 
     </View>
   );

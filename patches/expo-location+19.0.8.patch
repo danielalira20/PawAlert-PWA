@@ -1,0 +1,22 @@
+diff --git a/node_modules/expo-location/build/LocationSubscribers.js b/node_modules/expo-location/build/LocationSubscribers.js
+index e528ff3..06c43b6 100644
+--- a/node_modules/expo-location/build/LocationSubscribers.js
++++ b/node_modules/expo-location/build/LocationSubscribers.js
+@@ -47,7 +47,16 @@ class Subscriber {
+         delete this.callbacks[id];
+         ExpoLocation.removeWatchAsync(id);
+         if (Object.keys(this.callbacks).length === 0 && this.eventSubscription) {
+-            LocationEventEmitter.removeSubscription(this.eventSubscription);
++            // patch: en web LocationEventEmitter es el EventEmitter moderno de
++            // expo-modules-core y no tiene removeSubscription; la suscripcion se
++            // quita con su propio .remove(). En nativo (LegacyEventEmitter) ambas
++            // rutas existen y remove() delega en removeSubscription.
++            if (typeof LocationEventEmitter.removeSubscription === 'function') {
++                LocationEventEmitter.removeSubscription(this.eventSubscription);
++            }
++            else {
++                this.eventSubscription.remove();
++            }
+             this.eventSubscription = null;
+         }
+     }

@@ -2,8 +2,8 @@ import { Feather, Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Dimensions, Image, Modal, Text, TouchableOpacity, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Animated, Dimensions, Image, Modal, Text, TouchableOpacity, View } from 'react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import MapView, { Callout, Circle, Region } from 'react-native-maps';
 import { TrackedMarker } from './TrackedMarker';
@@ -15,6 +15,32 @@ import { useAuth } from '../context/AuthContext';
 import { Reporte, ZonaAgregada, getAnimales, condicionMasGrave, especieMasGrave, totalAnimales, animalMasGrave } from '../types/reporte';
 import { AnimalCarousel } from '../components/common/AnimalCarousel';
 import ReportFormScreen from './ReportFormScreen';
+import { AvistamientoEntryButton } from '../components/avistamientos/AvistamientoEntryButton';
+import { Brand } from '../constants/theme';
+import { RADIO_METROS_ESTOY_AQUI } from '../hooks/useUbicacionEnVivo';
+import { PublicEventsPanel } from '../components/events/discovery/PublicEventsPanel';
+import { PublicEventDetailModal } from '../components/events/discovery/PublicEventDetailModal';
+import {
+  type EventDiscoveryView,
+  type MapContentMode,
+} from '../components/events/discovery/EventMapModeSwitch';
+import { usePublicEventMap } from '../hooks/events/usePublicEventMap';
+import type { EventMapItem, EventPublicSummary } from '../types/event';
+import {
+  EVENT_CAPACITY_META,
+  EVENT_TYPE_META,
+  formatEventSchedule,
+} from '../utils/eventFormatters';
+import type { PublicEventFilterState } from '../components/events/discovery/PublicEventFilters';
+import {
+  buildEventMapQuery,
+  INITIAL_PUBLIC_EVENT_FILTERS,
+  type EventMapBounds,
+} from '../components/events/discovery/eventDiscoveryFilters';
+import { normalizeEventDeepLinkId } from '../utils/eventDeepLink';
+import { CoachMarksTour } from '../components/onboarding/CoachMarksTour';
+import { GuideHelpButton, SectionGuidePrompt } from '../components/onboarding/SectionGuidePrompt';
+import { useSectionGuide } from '../hooks/useSectionGuide';
 
 const { width, height } = Dimensions.get('window');
 
@@ -226,10 +252,43 @@ function AssocMarker({ selected }: { selected: boolean }) {
   );
 }
 
+function EventMarker({ event, selected }: { event: EventMapItem; selected: boolean }) {
+  const meta = EVENT_TYPE_META[event.tipo];
+  const size = selected ? 50 : 42;
+
+  return (
+    <View style={{ alignItems: 'center' }}>
+      <View style={{
+        width: size, height: size, borderRadius: size / 2,
+        backgroundColor: meta.backgroundColor,
+        borderWidth: selected ? 3.5 : 2.5,
+        borderColor: meta.color,
+        alignItems: 'center', justifyContent: 'center',
+        shadowColor: selected ? meta.color : '#000',
+        shadowOffset: { width: 0, height: selected ? 5 : 2 },
+        shadowOpacity: selected ? 0.42 : 0.2,
+        shadowRadius: selected ? 10 : 5,
+        elevation: selected ? 10 : 4,
+      }}>
+        <Ionicons name="calendar-outline" size={size * 0.5} color={meta.color} />
+      </View>
+      <View style={{
+        width: 0, height: 0,
+        borderLeftWidth: 5, borderRightWidth: 5, borderTopWidth: 8,
+        borderStyle: 'solid',
+        borderLeftColor: 'transparent', borderRightColor: 'transparent',
+        borderTopColor: meta.color,
+        marginTop: -1,
+      }} />
+    </View>
+  );
+}
+
 // ─── Componente principal ─────────────────────────────────────────────────────
 export default function MapScreen() {
-  const { isLoggedIn, token } = useAuth();
-  const params = useLocalSearchParams<{ action?: string }>();
+  const { isLoggedIn, token, user } = useAuth();
+  const params = useLocalSearchParams<{ action?: string; event_id?: string | string[] }>();
+  const deepLinkedEventId = normalizeEventDeepLinkId(params.event_id);
   const [reportes, setReportes] = useState<Reporte[]>([]);
   const [zonasAgregadas, setZonasAgregadas] = useState<ZonaAgregada[]>([]);
   // Zona seleccionada (visitantes sin sesión): al tocar un pin de zona se
@@ -237,11 +296,92 @@ export default function MapScreen() {
   const [zonaSeleccionada, setZonaSeleccionada] = useState<string | null>(null);
   const [asociaciones, setAsociaciones] = useState<AsociacionMapa[]>([]);
   const [mostrarAsociaciones, setMostrarAsociaciones] = useState(false);
+  const [contentMode, setContentMode] = useState<MapContentMode>('rescues');
+  const [eventView, setEventView] = useState<EventDiscoveryView>('list');
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [detailEventId, setDetailEventId] = useState<string | null>(null);
+  const [eventFilters, setEventFilters] = useState<PublicEventFilterState>(INITIAL_PUBLIC_EVENT_FILTERS);
+  const [eventMapBounds, setEventMapBounds] = useState<EventMapBounds | null>(null);
+  const [pendingEventMapBounds, setPendingEventMapBounds] = useState<EventMapBounds | null>(null);
   const [selectedReport, setSelectedReport] = useState<Reporte | null>(null);
   const [isFormVisible, setIsFormVisible] = useState(false);
   const [isAuthGateVisible, setIsAuthGateVisible] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [, setTick] = useState(0);
+  const mapRef = useRef<MapView | null>(null);
+  const eventMapGestureRef = useRef(false);
+  const mapTourRef = useRef<View>(null);
+  const filtersTourRef = useRef<View>(null);
+  const reportTourRef = useRef<any>(null);
+  const mapGuide = useSectionGuide({ sectionKey: 'mapa', userId: user?.id });
+  const mapGuideSteps = useMemo(() => [
+    {
+      key: 'map', title: 'Explora los reportes cercanos',
+      description: 'Cada marcador representa un animal o una zona con reportes. Tócalo para consultar la información disponible.',
+      icon: 'map-outline' as const, accent: COLORS.teal, targetRef: mapTourRef,
+    },
+    {
+      key: 'filters', title: 'Encuentra lo que necesitas',
+      description: 'Filtra los reportes por condición, especie, urgencia o asociación.',
+      icon: 'options-outline' as const, accent: '#E9A63A', targetRef: filtersTourRef,
+    },
+    {
+      key: 'report', title: 'Crea un reporte',
+      description: 'Usa este botón cuando encuentres un animal perdido, abandonado o en situación de riesgo.',
+      icon: 'add-circle-outline' as const, accent: COLORS.orange, targetRef: reportTourRef,
+    },
+  ], []);
+  const eventMapQuery = useMemo(
+    () => buildEventMapQuery(eventFilters, eventMapBounds),
+    [eventFilters, eventMapBounds],
+  );
+  const {
+    events: mapEvents,
+    isLoading: isEventMapLoading,
+    error: eventMapError,
+    refresh: refreshEventMap,
+  } = usePublicEventMap(
+    contentMode === 'events' && eventView === 'map',
+    eventMapQuery,
+  );
+
+  useEffect(() => {
+    if (!selectedEventId || eventView !== 'map') return;
+    const event = mapEvents.find((item) => item.id === selectedEventId);
+    if (!event) return;
+    mapRef.current?.animateToRegion(
+      {
+        latitude: event.latitud,
+        longitude: event.longitud,
+        latitudeDelta: 0.015,
+        longitudeDelta: 0.015,
+      },
+      350,
+    );
+  }, [eventView, mapEvents, selectedEventId]);
+
+  // "Estoy aquí": círculo de 500m sobre el punto azul que MapView ya
+  // dibuja solo (showsUserLocation, preexistente). No se comparte con
+  // nadie ni se guarda en el backend -- puramente visual.
+  const [posicionUsuario, setPosicionUsuario] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [ubicacionDesactualizada, setUbicacionDesactualizada] = useState(false);
+  const ultimaUbicacionRef = useRef<number | null>(null);
+  const handleUserLocationChange = useCallback((event: any) => {
+    const coordenada = event?.nativeEvent?.coordinate;
+    if (!coordenada) return;
+    ultimaUbicacionRef.current = Date.now();
+    setUbicacionDesactualizada(false);
+    setPosicionUsuario({ latitude: coordenada.latitude, longitude: coordenada.longitude });
+  }, []);
+  useEffect(() => {
+    const intervalo = setInterval(() => {
+      const ultima = ultimaUbicacionRef.current;
+      if (ultima && Date.now() - ultima > 60_000) {
+        setUbicacionDesactualizada(true);
+      }
+    }, 5_000);
+    return () => clearInterval(intervalo);
+  }, []);
 
   // ── Filtros — portados de MapScreen.web.tsx ──────────────────────────────
   const [filtro, setFiltro] = useState('todos');
@@ -270,6 +410,55 @@ export default function MapScreen() {
         setFiltroEspecie('todos');
       }
       return next;
+    });
+  };
+
+  const handleContentModeChange = (mode: MapContentMode) => {
+    setContentMode(mode);
+    hideSheetImmediate();
+    setZonaSeleccionada(null);
+    setSelectedEventId(null);
+    if (mode === 'events') setMostrarAsociaciones(false);
+  };
+
+  const handleLocatePublicEvent = (event: EventPublicSummary) => {
+    setEventMapBounds(null);
+    setPendingEventMapBounds(null);
+    setSelectedEventId(event.id);
+    setEventView('map');
+  };
+
+  const handleOpenMapEvent = (eventId: string) => {
+    setSelectedEventId(eventId);
+    setDetailEventId(eventId);
+    router.setParams({ event_id: eventId });
+  };
+
+  const handleCloseEventDetail = () => {
+    setDetailEventId(null);
+    router.setParams({ event_id: undefined });
+  };
+
+  useEffect(() => {
+    if (!deepLinkedEventId) return;
+    router.replace({ pathname: '/events', params: { event_id: deepLinkedEventId } });
+  }, [deepLinkedEventId]);
+
+  const handleEventFiltersChange = (filters: PublicEventFilterState) => {
+    setEventFilters(filters);
+    setEventMapBounds(null);
+    setPendingEventMapBounds(null);
+    setSelectedEventId(null);
+  };
+
+  const handleEventRegionChange = (region: Region) => {
+    if (contentMode !== 'events' || eventView !== 'map' || !eventMapGestureRef.current) return;
+    eventMapGestureRef.current = false;
+    setPendingEventMapBounds({
+      latitudeMin: region.latitude - region.latitudeDelta / 2,
+      latitudeMax: region.latitude + region.latitudeDelta / 2,
+      longitudeMin: region.longitude - region.longitudeDelta / 2,
+      longitudeMax: region.longitude + region.longitudeDelta / 2,
     });
   };
 
@@ -377,16 +566,52 @@ export default function MapScreen() {
       return 0;
     });
 
+  if (contentMode === 'events' && eventView === 'list') {
+    return (
+      <View style={{ flex: 1 }}>
+        <PublicEventsPanel
+          filters={eventFilters}
+          onFiltersChange={handleEventFiltersChange}
+          onLocate={handleLocatePublicEvent}
+          onOpenDetail={handleOpenMapEvent}
+          topInset={62}
+        />
+        <PublicEventDetailModal
+          eventId={detailEventId}
+          onClose={handleCloseEventDetail}
+          onError={(message) => Alert.alert('No pudimos actualizar el evento', message)}
+          onLocate={handleLocatePublicEvent}
+          onSavedChange={(saved) => Alert.alert(saved ? 'Evento guardado' : 'Evento eliminado', 'Tu agenda quedó actualizada.')}
+        />
+      </View>
+    );
+  }
+
   return (
-    <View style={{ flex: 1 }}>
+    <View ref={mapTourRef} collapsable={false} style={{ flex: 1 }}>
       <MapView
+        ref={mapRef}
         style={{ width, height }}
         initialRegion={INITIAL_REGION}
         onPress={() => { if (selectedReport) hideSheet(); }}
+        onPanDrag={() => {
+          if (contentMode === 'events') eventMapGestureRef.current = true;
+        }}
+        onRegionChangeComplete={handleEventRegionChange}
         showsUserLocation
         showsMyLocationButton={false}
+        onUserLocationChange={handleUserLocationChange}
       >
-        {(mostrarAsociaciones ? [] : reportesFiltrados).map(reporte => {
+        {posicionUsuario && (
+          <Circle
+            center={posicionUsuario}
+            radius={RADIO_METROS_ESTOY_AQUI}
+            strokeWidth={1.5}
+            strokeColor={ubicacionDesactualizada ? '#9AA5B155' : `${Brand.info}55`}
+            fillColor={ubicacionDesactualizada ? '#9AA5B11A' : `${Brand.info}1A`}
+          />
+        )}
+        {(contentMode === 'rescues' && !mostrarAsociaciones ? reportesFiltrados : []).map(reporte => {
           const animales = getAnimales(reporte);
           const total = totalAnimales(animales);
           const tipo = especieMasGrave(animales) ?? '';
@@ -441,7 +666,7 @@ export default function MapScreen() {
             </TrackedMarker>
           );
         })}
-        {mostrarAsociaciones && asociaciones.map(asociacion => (
+        {contentMode === 'rescues' && mostrarAsociaciones && asociaciones.map(asociacion => (
           <TrackedMarker
             key={`asoc-${asociacion.id}`}
             coordinate={{ latitude: asociacion.latitud, longitude: asociacion.longitud }}
@@ -464,8 +689,46 @@ export default function MapScreen() {
             </Callout>
           </TrackedMarker>
         ))}
+        {contentMode === 'events' && mapEvents.map(event => {
+          const typeMeta = EVENT_TYPE_META[event.tipo];
+          const capacityMeta = EVENT_CAPACITY_META[event.cupo_estado];
+          return (
+            <TrackedMarker
+              key={`event-${event.id}`}
+              coordinate={{ latitude: event.latitud, longitude: event.longitud }}
+              onPress={() => handleOpenMapEvent(event.id)}
+            >
+              <EventMarker event={event} selected={selectedEventId === event.id} />
+              <Callout tooltip={false}>
+                <View style={{ minWidth: 210, maxWidth: 260, padding: 12, borderRadius: 12 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '900', color: COLORS.textDark, marginBottom: 7 }}>
+                    {event.titulo}
+                  </Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                    <View style={{ backgroundColor: typeMeta.backgroundColor, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 }}>
+                      <Text style={{ fontSize: 9, fontWeight: '800', color: typeMeta.color }}>
+                        {typeMeta.label}
+                      </Text>
+                    </View>
+                    <View style={{ backgroundColor: capacityMeta.backgroundColor, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 }}>
+                      <Text style={{ fontSize: 9, fontWeight: '800', color: capacityMeta.color }}>
+                        {capacityMeta.label}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={{ fontSize: 10, color: COLORS.textMid, marginBottom: 6 }}>
+                    {formatEventSchedule(event.inicia_at, event.termina_at, event.zona_horaria)}
+                  </Text>
+                  <Text style={{ fontSize: 10, color: COLORS.textLight }}>
+                    {event.asociacion.nombre}
+                  </Text>
+                </View>
+              </Callout>
+            </TrackedMarker>
+          );
+        })}
         {(() => {
-          const zonasVisibles = mostrarAsociaciones ? [] : zonasAgregadas;
+          const zonasVisibles = contentMode === 'rescues' && !mostrarAsociaciones ? zonasAgregadas : [];
           const zonaActiva = zonasVisibles.find(
             (z) => `${z.latitud}-${z.longitud}` === zonaSeleccionada,
           );
@@ -501,11 +764,83 @@ export default function MapScreen() {
         })()}
       </MapView>
 
+      <PublicEventDetailModal
+        eventId={detailEventId}
+        onClose={handleCloseEventDetail}
+        onError={(message) => Alert.alert('No pudimos actualizar el evento', message)}
+        onLocate={handleLocatePublicEvent}
+        onSavedChange={(saved) => Alert.alert(saved ? 'Evento guardado' : 'Evento eliminado', 'Tu agenda quedó actualizada.')}
+      />
+
+      {contentMode === 'events' && eventView === 'map' && isEventMapLoading && (
+        <View style={{
+          position: 'absolute', top: 72, alignSelf: 'center', zIndex: 1400,
+          backgroundColor: 'rgba(255,255,255,0.96)', borderRadius: 18,
+          paddingHorizontal: 14, paddingVertical: 8, elevation: 6,
+        }}>
+          <Text style={{ color: COLORS.textMid, fontSize: 12, fontWeight: '700' }}>
+            Cargando eventos…
+          </Text>
+        </View>
+      )}
+
+      {contentMode === 'events' && eventView === 'map' && !!eventMapError && !isEventMapLoading && (
+        <TouchableOpacity
+          onPress={() => void refreshEventMap()}
+          style={{
+            position: 'absolute', top: 72, left: 18, right: 18, zIndex: 1400,
+            backgroundColor: '#FFF4EE', borderColor: COLORS.orange,
+            borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10,
+            elevation: 6,
+          }}
+        >
+          <Text style={{ color: COLORS.orangeDark, fontSize: 12, fontWeight: '800', textAlign: 'center' }}>
+            No se pudo cargar la capa de eventos. Toca para reintentar.
+          </Text>
+        </TouchableOpacity>
+      )}
+
+      {contentMode === 'events' && eventView === 'map' && pendingEventMapBounds && !isEventMapLoading && (
+        <TouchableOpacity
+          accessibilityRole="button"
+          onPress={() => {
+            setEventMapBounds(pendingEventMapBounds);
+            setPendingEventMapBounds(null);
+            setSelectedEventId(null);
+          }}
+          style={{
+            position: 'absolute', top: 72, alignSelf: 'center', zIndex: 1400,
+            backgroundColor: COLORS.orange, borderRadius: 18,
+            paddingHorizontal: 16, paddingVertical: 10, elevation: 7,
+          }}
+        >
+          <Text style={{ color: '#FFF', fontSize: 11, fontWeight: '800' }}>
+            Buscar en esta zona
+          </Text>
+        </TouchableOpacity>
+      )}
+
+      {contentMode === 'events' && eventView === 'map' && eventMapBounds && !pendingEventMapBounds && !isEventMapLoading && (
+        <TouchableOpacity
+          accessibilityRole="button"
+          onPress={() => setEventMapBounds(null)}
+          style={{
+            position: 'absolute', top: 72, alignSelf: 'center', zIndex: 1400,
+            backgroundColor: '#FFF', borderColor: COLORS.orange, borderWidth: 1,
+            borderRadius: 18, paddingHorizontal: 16, paddingVertical: 9, elevation: 7,
+          }}
+        >
+          <Text style={{ color: COLORS.orangeDark, fontSize: 11, fontWeight: '800' }}>
+            Ver todos los eventos
+          </Text>
+        </TouchableOpacity>
+      )}
+
       {/* Barra de filtros interactivos — portada de MapScreen.web.tsx.
           Reemplaza al chip simple de "X reportes activos" que había antes
           (ese conteo ya lo muestra el pill "Todos" de aquí abajo). */}
-      <View style={{
-        position: 'absolute', top: 50, left: 12, right: 12,
+      {contentMode === 'rescues' && <View ref={filtersTourRef} collapsable={false} style={{
+        position: 'absolute', top: 64, left: 12, right: 12,
         backgroundColor: 'rgba(255,255,255,0.97)',
         borderRadius: 16,
         shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
@@ -585,11 +920,12 @@ export default function MapScreen() {
           </TouchableOpacity>
         </View>
       </View>
+      }
 
       {/* Leyenda — bajada de top:50 a top:145 para no chocar con la nueva
           barra de filtros (que ahora ocupa esa esquina superior) */}
-      <View style={{
-        position: 'absolute', top: 145, right: 16,
+      {contentMode === 'rescues' && <View style={{
+        position: 'absolute', top: 214, right: 16,
         backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: 12, padding: 10,
         shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 6,
       }}>
@@ -603,9 +939,10 @@ export default function MapScreen() {
           </View>
         ))}
       </View>
+      }
 
       {/* Clock badge */}
-      {lastUpdated && (
+      {contentMode === 'rescues' && lastUpdated && (
         <View style={{
           position: 'absolute', bottom: selectedReport ? 230 : 110, left: 16,
           backgroundColor: 'rgba(30,20,10,0.6)', borderRadius: 20,
@@ -620,7 +957,8 @@ export default function MapScreen() {
       )}
 
       {/* FAB */}
-      <TouchableOpacity
+      {contentMode === 'rescues' && <TouchableOpacity
+        ref={reportTourRef}
         onPress={handleCrearReporte}
         style={{
           position: 'absolute', bottom: selectedReport ? 230 : 100, right: 20,
@@ -632,9 +970,22 @@ export default function MapScreen() {
       >
         <Ionicons name="add" size={28} color="#FFFFFF" />
       </TouchableOpacity>
+      }
+
+      <View style={{ position: 'absolute', top: 16, right: 18, zIndex: 2400, elevation: 20 }}>
+        <GuideHelpButton sectionName="Mapa" onPress={mapGuide.startGuide} showUnreadDot={mapGuide.showPrompt} />
+      </View>
+      <CoachMarksTour visible={mapGuide.showGuide} steps={mapGuideSteps} onClose={mapGuide.closeGuide} />
+      <SectionGuidePrompt
+        visible={mapGuide.showPrompt}
+        sectionName="Mapa"
+        description="Conoce los marcadores, filtros y cómo crear un reporte desde el mapa."
+        onStart={mapGuide.startGuide}
+        onDismiss={mapGuide.dismissPrompt}
+      />
 
       {/* Bottom Sheet */}
-      {selectedReport && (() => {
+      {contentMode === 'rescues' && selectedReport && (() => {
         const r = selectedReport;
         const animalesSel = getAnimales(r);
         const totalSel = totalAnimales(animalesSel);
@@ -716,6 +1067,9 @@ export default function MapScreen() {
                 <View style={{ marginTop: 12 }}>
                   <AnimalCarousel key={r.id} animales={animalesSel} compact />
                 </View>
+              )}
+              {!['cerrado', 'cancelado_por_reportante', 'rechazado', 'rescatado'].includes(r.estado_reporte ?? '') && (
+                <AvistamientoEntryButton reporte={{ id: r.id }} onBeforeNavigate={hideSheet} />
               )}
               <View style={{ backgroundColor: '#FFF5EE', borderRadius: 10, padding: 8, marginTop: 12 }}>
                 <Text style={{ fontSize: 10, color: COLORS.orange, fontStyle: 'italic' }}>

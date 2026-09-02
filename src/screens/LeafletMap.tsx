@@ -7,6 +7,12 @@ import { CARTO_LIGHT_TILE_URL } from '@/constants/mapTiles';
 import { ReportContentMenu } from '../components/reports/ReportContentMenu';
 import { Reporte, ZonaAgregada, getAnimales, condicionMasGrave, especieMasGrave, totalAnimales } from '../types/reporte';
 import { ICON_MULTIPLE } from '../constants/mapIcons';
+import { Brand } from '@/constants/theme';
+import { RADIO_METROS_ESTOY_AQUI } from '../hooks/useUbicacionEnVivo';
+import type { EventMapItem } from '../types/event';
+import { EVENT_CAPACITY_META, EVENT_TYPE_META, formatEventSchedule } from '../utils/eventFormatters';
+import type { EventMapBounds } from '../components/events/discovery/eventDiscoveryFilters';
+import coloniasPueblaData from '../../public/data/colonias-puebla.json';
 
 const INITIAL_CENTER: [number, number] = [19.0414, -98.2063];
 const INITIAL_ZOOM = 13;
@@ -93,7 +99,7 @@ const createPin = (condicion: string, tipoAnimal: string, selected = false, coun
       ">${count}</div>` : '';
 
   const html = `
-    <div style="
+    <div class="pawalert-pin-shell${selected ? ' is-selected' : ''}" style="
       display:flex; flex-direction:column; align-items:center;
       transform-origin:bottom center;
     ">
@@ -220,6 +226,56 @@ function ZonaGlow({ zona }: { zona: { latitud: number; longitud: number; cantida
   );
 }
 
+// ─── Punto "estoy aquí" (ver src/hooks/useUbicacionEnVivo.ts) ────────────────
+// Personal y puramente visual: el punto azul de quien ve el mapa, más el
+// mismo radio de entrada de 500 m que usa el backend para el registro de
+// avistamientos. No representa a nadie más ni se sincroniza con nada.
+function createUbicacionEnVivoIcon(desactualizado: boolean) {
+  const color = desactualizado ? '#9AA5B1' : Brand.info;
+  const html = `
+    <div style="
+      width:34px; height:34px; border-radius:50%;
+      background:${color}2E;
+      display:flex; align-items:center; justify-content:center;
+    ">
+      <div style="
+        width:16px; height:16px; border-radius:50%;
+        background:${color};
+        border:3px solid #FFFFFF;
+        box-shadow:0 1px 4px rgba(0,0,0,0.35);
+      "></div>
+    </div>`;
+  return L.divIcon({
+    className: 'pawalert-ubicacion-en-vivo',
+    html,
+    iconSize: [34, 34],
+    iconAnchor: [17, 17],
+  });
+}
+
+function UbicacionEnVivoOverlay({
+  ubicacion,
+}: {
+  ubicacion: { latitud: number; longitud: number; desactualizado: boolean };
+}) {
+  const color = ubicacion.desactualizado ? '#9AA5B1' : Brand.info;
+  return (
+    <>
+      <Circle
+        center={[ubicacion.latitud, ubicacion.longitud]}
+        radius={RADIO_METROS_ESTOY_AQUI}
+        interactive={false}
+        pathOptions={{ color, weight: 1.5, opacity: 0.35, fillColor: color, fillOpacity: 0.1 }}
+      />
+      <Marker
+        position={[ubicacion.latitud, ubicacion.longitud]}
+        icon={createUbicacionEnVivoIcon(ubicacion.desactualizado)}
+        interactive={false}
+      />
+    </>
+  );
+}
+
 // ─── Config por estado del reporte ───────────────────────────────────────────
 const ESTADO: Record<string, { color: string; bg: string; label: string }> = {
   pendiente: { color: '#7B68EE', bg: '#F0EEFF', label: 'Pendiente' },
@@ -270,6 +326,32 @@ const createAssocPin = (selected = false) => {
       <div style="width:3px;height:3px;border-radius:50%;background:${ASOC_DARK};opacity:0.8;"></div>
     </div>`;
 
+  const totalH = size + 14;
+  return L.divIcon({
+    className: 'pawalert-marker',
+    html,
+    iconSize: [size + 8, totalH],
+    iconAnchor: [(size + 8) / 2, totalH],
+  });
+};
+
+// ─── Pin de evento (calendario por categoría) ────────────────────────────────
+const createEventPin = (event: EventMapItem, selected = false) => {
+  const meta = EVENT_TYPE_META[event.tipo];
+  const size = selected ? 50 : 42;
+  const shadow = selected
+    ? `0 6px 24px ${meta.color}99, 0 0 0 3px white, 0 0 0 5px ${meta.color}55`
+    : `0 3px 12px ${meta.color}77`;
+  const html = `
+    <div style="display:flex;flex-direction:column;align-items:center;transform:scale(${selected ? 1.1 : 1});transform-origin:bottom center;">
+      <div style="width:${size}px;height:${size}px;border-radius:50%;border:3px solid ${meta.color};background:${meta.backgroundColor};box-shadow:${shadow};display:flex;align-items:center;justify-content:center;">
+        <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='21' height='21'>
+          <path fill='${meta.color}' d='M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V9h14v11zM7 11h5v5H7z'/>
+        </svg>
+      </div>
+      <div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:9px solid ${meta.color};margin-top:-1px;"></div>
+      <div style="width:3px;height:3px;border-radius:50%;background:${meta.color};opacity:.8;"></div>
+    </div>`;
   const totalH = size + 14;
   return L.divIcon({
     className: 'pawalert-marker',
@@ -402,6 +484,35 @@ function FitToMarkers({
 
   return null;
 }
+// Zoom automático al activar "Estoy aquí": una sola vez, en el instante en
+// que el tracking pasa a activo con su primer fix (null -> no-null). Los
+// updates de GPS posteriores solo mueven el punto/círculo — no vuelven a
+// hacer zoom para no pelear con el paneo manual del usuario. Volver a
+// picar el botón (apagar y encender) sí dispara otro zoom.
+const ZOOM_ESTOY_AQUI = 16;
+
+function CentrarEnUbicacionEnVivo({
+  ubicacion,
+}: {
+  ubicacion: { latitud: number; longitud: number } | null;
+}) {
+  const map = useMap();
+  const estabaActivaRef = useRef(false);
+
+  useEffect(() => {
+    const activaAhora = ubicacion !== null;
+    if (activaAhora && !estabaActivaRef.current) {
+      map.flyTo(
+        [ubicacion!.latitud, ubicacion!.longitud],
+        Math.max(map.getZoom(), ZOOM_ESTOY_AQUI),
+        { duration: 0.75 },
+      );
+    }
+    estabaActivaRef.current = activaAhora;
+  }, [ubicacion, map]);
+
+  return null;
+}
 
 // ─── Capa de colonias (división por código postal del municipio de Puebla) ────
 const COLONIA_COLORS = {
@@ -478,7 +589,11 @@ function ColoniasLayer({
 
   const onEachFeature = useCallback((feature: any, layer: L.Layer) => {
     const cp = feature.properties?.cp;
-    const nombre = feature.properties?.nombre ?? `CP ${cp}`;
+    // Attempt to use 'd_asenta' (standard SEPOMEX name) if 'nombre' is missing or just 'CP xxxxx'
+    let nombre = feature.properties?.nombre;
+    if (!nombre || nombre.startsWith('CP ')) {
+      nombre = feature.properties?.d_asenta || nombre || `CP ${cp}`;
+    }
 
     layer.bindTooltip(nombre, {
       sticky: true,
@@ -493,12 +608,16 @@ function ColoniasLayer({
           target.setStyle(COLONIA_COLORS.hover);
         }
         target.bringToFront();
+        if (target.isTooltipOpen && !target.isTooltipOpen()) {
+          target.openTooltip(e.latlng);
+        }
       },
       mouseout: (e: L.LeafletMouseEvent) => {
         const target = e.target as L.Path;
         if (cp !== coloniaSeleccionada) {
           target.setStyle({ ...COLONIA_COLORS.default, dashArray: '6 3' });
         }
+        target.closeTooltip();
       },
       click: () => {
         onSelectColonia(cp === coloniaSeleccionada ? null : cp);
@@ -519,6 +638,85 @@ function ColoniasLayer({
   );
 }
 
+// Buscador de colonias
+function ColoniaSearchBar({
+  data,
+  onSelectColonia,
+}: {
+  data: GeoJSON.FeatureCollection | null;
+  onSelectColonia: (cp: number) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [showResults, setShowResults] = useState(false);
+
+  const results = useMemo(() => {
+    if (!query || !data) return [];
+    const lower = query.toLowerCase();
+    return data.features
+      .map(f => {
+        let n = f.properties?.nombre;
+        if (!n || (typeof n === 'string' && n.startsWith('CP '))) {
+          n = f.properties?.d_asenta || n || `CP ${f.properties?.cp}`;
+        }
+        return {
+          nombre: n,
+          cp: f.properties?.cp
+        };
+      })
+      .filter(c => c.nombre.toLowerCase().includes(lower) || String(c.cp).includes(lower))
+      .slice(0, 5);
+  }, [query, data]);
+
+  return (
+    <div style={{ position: 'absolute', top: 20, left: 20, right: 20, zIndex: 1000, maxWidth: 400, margin: '0 auto' }}>
+      <input
+        type="text"
+        placeholder="Buscar colonia o CP..."
+        value={query}
+        onChange={e => { setQuery(e.target.value); setShowResults(true); }}
+        onFocus={() => setShowResults(true)}
+        style={{ width: '100%', boxSizing: 'border-box', padding: '12px 16px', borderRadius: 24, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontFamily: "'Segoe UI',Arial,sans-serif", fontSize: 14, outline: 'none' }}
+      />
+      {showResults && results.length > 0 && (
+        <div style={{ marginTop: 8, backgroundColor: '#FFF', borderRadius: 16, boxShadow: '0 4px 12px rgba(0,0,0,0.1)', overflow: 'hidden', fontFamily: "'Segoe UI',Arial,sans-serif" }}>
+          {results.map(r => (
+            <div
+              key={r.cp}
+              onClick={() => {
+                onSelectColonia(r.cp);
+                setQuery(r.nombre);
+                setShowResults(false);
+              }}
+              style={{ padding: '12px 16px', cursor: 'pointer', borderBottom: '1px solid #F0E6D6' }}
+            >
+              <div style={{ fontWeight: 600, color: '#1A1A1A', fontSize: 14 }}>{r.nombre}</div>
+              <div style={{ fontSize: 11, color: '#9B8B7A' }}>CP {r.cp}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Hace zoom a la colonia seleccionada
+function ColoniaZoomer({ cp, data }: { cp: number | null, data: GeoJSON.FeatureCollection | null }) {
+  const map = useMap();
+  useEffect(() => {
+    if (cp && data) {
+      const feature = data.features.find(f => f.properties?.cp === cp);
+      if (feature) {
+        const layer = L.geoJSON(feature);
+        const bounds = layer.getBounds();
+        if (bounds.isValid()) {
+          map.fitBounds(bounds, { padding: [20, 20], maxZoom: 15, animate: true });
+        }
+      }
+    }
+  }, [cp, data, map]);
+  return null;
+}
+
 // Panel de información de la colonia seleccionada
 function ColoniaInfoPanel({
   cp,
@@ -533,8 +731,11 @@ function ColoniaInfoPanel({
   data: GeoJSON.FeatureCollection | null;
   bottomOffset?: number;
 }) {
-  // Encontrar el feature de esta colonia para el filtro geográfico
   const feature = useMemo(() => data?.features.find(f => f.properties?.cp === cp), [data, cp]);
+  let nombre = feature?.properties?.nombre;
+  if (!nombre || (typeof nombre === 'string' && nombre.startsWith('CP '))) {
+    nombre = feature?.properties?.d_asenta || nombre || `CP ${cp}`;
+  }
 
   // Contar reportes que geográficamente caen dentro del polígono
   const reportesEnZona = useMemo(() => {
@@ -559,8 +760,8 @@ function ColoniaInfoPanel({
           <Ionicons name="location" size={24} color="#FF7F50" />
         </div>
         <div>
-          <div className="colonia-info-title">CP {cp}</div>
-          <div className="colonia-info-subtitle">Municipio de Puebla</div>
+          <div className="colonia-info-title">{nombre}</div>
+          <div className="colonia-info-subtitle">CP {cp} · Puebla</div>
         </div>
       </div>
       <div className="colonia-info-stats">
@@ -581,24 +782,76 @@ function ColoniaInfoPanel({
   );
 }
 
+function FocusSelectedEvent({
+  event,
+}: {
+  event: EventMapItem | undefined;
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!event) return;
+    map.setView(
+      [event.latitud, event.longitud],
+      Math.max(map.getZoom(), 15),
+      { animate: true },
+    );
+  }, [event, map]);
+
+  return null;
+}
+
+function EventBoundsListener({
+  enabled,
+  onBoundsChange,
+}: {
+  enabled: boolean;
+  onBoundsChange?: (bounds: EventMapBounds) => void;
+}) {
+  useMapEvents({
+    dragend: (event) => {
+      if (!enabled || !onBoundsChange) return;
+      const bounds = event.target.getBounds();
+      onBoundsChange({
+        latitudeMin: bounds.getSouth(),
+        latitudeMax: bounds.getNorth(),
+        longitudeMin: bounds.getWest(),
+        longitudeMax: bounds.getEast(),
+      });
+    },
+  });
+  return null;
+}
+
 // ─── Props ────────────────────────────────────────────────────────────────────
 interface LeafletMapProps {
   reportes: Reporte[];
   zonas?: ZonaAgregada[];
   asociaciones?: AsociacionMapa[];
   aliados?: AliadoMapa[];
+  eventos?: EventMapItem[];
   selectedReportId?: string | null;
+  selectedEventId?: string | null;
   getMarkerColor?: (reporte: Reporte) => string;
   width?: string | number;
   height?: string | number;
   fitToMarkers?: boolean;
+  trackEventBounds?: boolean;
   showReportMenuInPopup?: boolean;
   onSelectReport: (reporte: Reporte) => void;
   onHighlightReport?: (reporte: Reporte) => void;
   onReportModerated?: (reporteId: string) => void;
   onSelectAsociacion?: (asociacion: AsociacionMapa) => void;
+  onSelectAdopciones?: (asociacion: AsociacionMapa) => void;
+  onSelectEvent?: (event: EventMapItem) => void;
+  onEventBoundsChange?: (bounds: EventMapBounds) => void;
   onMapClick: () => void;
   bottomOffset?: number;
+  coloniasToggleBottom?: number;
+  // "Estoy aquí" (ver src/hooks/useUbicacionEnVivo.ts): punto personal del
+  // usuario en el mapa, puramente visual. No se comparte con nadie ni se
+  // guarda en el backend -- si viene null/undefined no se dibuja nada.
+  ubicacionEnVivo?: { latitud: number; longitud: number; desactualizado: boolean } | null;
 }
 
 // ─── Componente ───────────────────────────────────────────────────────────────
@@ -607,18 +860,26 @@ export default function LeafletMap({
   zonas = [],
   asociaciones = [],
   aliados = [],
+  eventos = [],
   getMarkerColor,
   selectedReportId,
+  selectedEventId,
   onSelectReport,
   onHighlightReport,
   onReportModerated,
   onSelectAsociacion,
+  onSelectAdopciones,
+  onSelectEvent,
+  onEventBoundsChange,
   onMapClick,
   width,
   height,
   fitToMarkers = false,
+  trackEventBounds = false,
   showReportMenuInPopup = true,
   bottomOffset = 20,
+  coloniasToggleBottom,
+  ubicacionEnVivo = null,
 }: LeafletMapProps) {
   // Zona seleccionada (visitantes sin sesión): al hacer click en un pin de
   // zona se muestra un círculo difuminado alrededor, solo esa — no todas a
@@ -644,11 +905,12 @@ export default function LeafletMap({
         ...zonas.map((zona) => [zona.latitud, zona.longitud]),
         ...asociaciones.map((asociacion) => [asociacion.latitud, asociacion.longitud]),
         ...aliados.map((aliado) => [aliado.latitud, aliado.longitud]),
+        ...eventos.map((event) => [event.latitud, event.longitud]),
       ].filter(
         (position): position is [number, number] =>
           typeof position[0] === 'number' && typeof position[1] === 'number',
       ),
-    [aliados, asociaciones, reportes, zonas],
+    [aliados, asociaciones, eventos, reportes, zonas],
   );
 
   useEffect(() => {
@@ -666,18 +928,51 @@ export default function LeafletMap({
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <style>{`
         .pawalert-marker { background:none !important; border:none !important; }
-        .leaflet-container { font-family:'Segoe UI',Arial,sans-serif; }
+        .leaflet-container {
+          font-family:'Poppins',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+          background:#EAE7E1;
+        }
+        .leaflet-tile-pane { filter:saturate(.76) contrast(.94) brightness(1.035); }
+        .leaflet-control-container a:focus-visible,
+        .colonias-toggle:focus-visible,
+        .pp-close:focus-visible,
+        .pp-btn:focus-visible {
+          outline:3px solid rgba(240,124,43,.42) !important;
+          outline-offset:3px;
+        }
         .leaflet-control-zoom {
           border:none !important;
-          box-shadow:0 2px 12px rgba(0,0,0,0.1) !important;
-          border-radius:10px !important;
+          box-shadow:0 12px 32px rgba(50,39,29,.14) !important;
+          border-radius:14px !important;
           overflow:hidden;
+          backdrop-filter:blur(18px);
         }
         .leaflet-control-zoom a {
-          color:#5C4A3A !important;
-          font-weight:700 !important;
+          width:38px !important; height:38px !important; line-height:38px !important;
+          color:#4B443D !important;
+          background:rgba(255,254,252,.92) !important;
+          font-weight:600 !important;
+          border-color:rgba(232,227,220,.8) !important;
         }
-        .leaflet-control-zoom a:hover { background:#FFF5EE !important; }
+        .leaflet-control-zoom a:hover { background:#FFF1E7 !important; color:#D96317 !important; }
+        @media (max-width:767px) {
+          .leaflet-top.leaflet-left { top:190px; }
+        }
+        .pawalert-pin-shell {
+          position:relative;
+          animation:pinArrive 460ms cubic-bezier(.25,.1,.25,1) both;
+          transition:filter 280ms cubic-bezier(.25,.1,.25,1), transform 280ms cubic-bezier(.25,.1,.25,1);
+        }
+        .pawalert-marker:hover .pawalert-pin-shell { transform:translateY(-3px) scale(1.035); filter:drop-shadow(0 10px 12px rgba(50,39,29,.2)); }
+        .pawalert-pin-shell.is-selected { animation:selectedPinArrive 460ms cubic-bezier(.25,.1,.25,1) both; }
+        .pawalert-pin-shell.is-selected::before {
+          content:''; position:absolute; width:60px; height:60px; top:-7px; left:-7px;
+          border-radius:50%; border:2px solid rgba(240,124,43,.62); opacity:.24;
+          animation:rescuePulse 2.4s ease-in-out infinite;
+        }
+        @keyframes pinArrive { from { opacity:0; transform:translateY(8px) scale(.92); } to { opacity:1; transform:none; } }
+        @keyframes selectedPinArrive { from { transform:translateY(5px) scale(.92); } to { transform:translateY(-2px) scale(1.06); } }
+        @keyframes rescuePulse { 0%,100% { transform:scale(.82); opacity:.34; } 50% { transform:scale(1.22); opacity:0; } }
         /* ── Popup redesign ───────────────────────────── */
         .pp-wrap .leaflet-popup-content-wrapper {
           border-radius:16px !important;
@@ -711,17 +1006,18 @@ export default function LeafletMap({
         .colonias-toggle {
           position:absolute; right: 20px; z-index:1000;
           display:flex; align-items:center; justify-content:center;
-          width: 52px; height: 52px; border-radius: 26px; border:none;
+          width: 52px; height: 52px; border-radius: 26px; border:1px solid rgba(255,255,255,.82);
           cursor:pointer;
-          transition:all 0.25s cubic-bezier(0.4,0,0.2,1);
-          box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+          transition:transform 280ms cubic-bezier(.25,.1,.25,1), box-shadow 280ms cubic-bezier(.25,.1,.25,1), background-color 140ms ease, color 140ms ease;
+          box-shadow: 0 12px 30px rgba(50,39,29,.16);
+          backdrop-filter:blur(18px);
         }
         .colonias-toggle.active {
-          background: linear-gradient(135deg,#8C6B4D,#5C4A3A);
+          background:#3F3933;
           color:#fff;
         }
         .colonias-toggle.inactive {
-          background:#FFFFFF;
+          background:rgba(255,254,252,.92);
           color:#5C4A3A;
         }
         .colonias-toggle:hover {
@@ -751,8 +1047,10 @@ export default function LeafletMap({
         .colonia-info-panel {
           position:fixed; left:0; right:0; margin:0 auto; z-index:1000;
           box-sizing:border-box;
-          background:#FFFAF6;
-          border-radius:16px;
+          background:rgba(255,254,252,.96);
+          border:1px solid rgba(255,255,255,.8);
+          backdrop-filter:blur(22px);
+          border-radius:24px;
           padding:16px 18px;
           width:calc(100% - 32px); max-width:480px;
           box-shadow:0 8px 32px rgba(0,0,0,0.16), 0 2px 8px rgba(0,0,0,0.08);
@@ -769,7 +1067,7 @@ export default function LeafletMap({
           background:#F2F0EC; color:#5C4A3A;
           font-size:16px; font-weight:700; line-height:1;
           display:flex; align-items:center; justify-content:center;
-          cursor:pointer; transition:all 0.2s;
+          cursor:pointer; transition:background-color 140ms ease,color 140ms ease,transform 140ms ease;
         }
         .colonia-info-close:hover { background:#E0D8C8; color:#3A2E24; }
         .colonia-info-header {
@@ -807,11 +1105,20 @@ export default function LeafletMap({
           color:#9B8B7A; text-transform:uppercase;
           letter-spacing:0.4px; margin-top:3px;
         }
+        @media (prefers-reduced-motion: reduce) {
+          .pawalert-pin-shell, .pawalert-pin-shell.is-selected,
+          .pawalert-pin-shell.is-selected::before, .colonia-info-panel {
+            animation:none !important;
+          }
+          .pawalert-marker:hover .pawalert-pin-shell { transform:none; }
+          *, *::before, *::after { scroll-behavior:auto !important; }
+        }
       `}</style>
       {/* Botón toggle de colonias */}
       <button
+        aria-label={mostrarColonias ? 'Ocultar límites de colonias' : 'Mostrar límites de colonias'}
         className={`colonias-toggle ${mostrarColonias ? 'active' : 'inactive'}`}
-        style={{ bottom: bottomOffset + 68 }}
+        style={{ bottom: coloniasToggleBottom ?? bottomOffset + 68 }}
         onClick={() => {
           setMostrarColonias(v => !v);
           if (mostrarColonias) setColoniaSeleccionada(null);
@@ -823,13 +1130,21 @@ export default function LeafletMap({
         </span>
       </button>
 
+      {/* Buscador de colonias */}
+      {mostrarColonias && (
+        <ColoniaSearchBar
+          data={coloniasPueblaData as any}
+          onSelectColonia={setColoniaSeleccionada}
+        />
+      )}
+
       {/* Panel de info de colonia seleccionada */}
       {coloniaSeleccionada !== null && mostrarColonias && (
         <ColoniaInfoPanel
           cp={coloniaSeleccionada}
           reportes={reportes}
           onClose={() => setColoniaSeleccionada(null)}
-          data={coloniasData}
+          data={coloniasPueblaData as any}
           bottomOffset={bottomOffset}
         />
       )}
@@ -850,7 +1165,15 @@ export default function LeafletMap({
           visible={mostrarColonias}
           coloniaSeleccionada={coloniaSeleccionada}
           onSelectColonia={setColoniaSeleccionada}
-          data={coloniasData}
+          data={coloniasPueblaData as any}
+        />
+        <ColoniaZoomer cp={coloniaSeleccionada} data={coloniasPueblaData as any} />
+        <FocusSelectedEvent
+          event={eventos.find((event) => event.id === selectedEventId)}
+        />
+        <EventBoundsListener
+          enabled={trackEventBounds}
+          onBoundsChange={onEventBoundsChange}
         />
         {(() => {
           const reporteSeleccionado = reportes.find(
@@ -861,6 +1184,8 @@ export default function LeafletMap({
           );
           return reporteSeleccionado ? <ReportCoverageGlow reporte={reporteSeleccionado} /> : null;
         })()}
+        <CentrarEnUbicacionEnVivo ubicacion={ubicacionEnVivo} />
+        {ubicacionEnVivo && <UbicacionEnVivoOverlay ubicacion={ubicacionEnVivo} />}
         {reportes
           .filter((r): r is typeof r & { latitud: number; longitud: number } =>
             r.latitud !== null && r.longitud !== null)
@@ -930,6 +1255,40 @@ export default function LeafletMap({
               </Marker>
             );
           })}
+        {eventos.map((event) => {
+          const typeMeta = EVENT_TYPE_META[event.tipo];
+          const capacityMeta = EVENT_CAPACITY_META[event.cupo_estado];
+          return (
+            <Marker
+              key={`event-${event.id}`}
+              position={[event.latitud, event.longitud]}
+              icon={createEventPin(event, selectedEventId === event.id)}
+              eventHandlers={{ click: () => onSelectEvent?.(event) }}
+            >
+              <Popup closeButton={false} className="pp-wrap" offset={[0, -6]}>
+                <div className="pp-accent" style={{ background: typeMeta.color }} />
+                <div className="pp-body">
+                  <PopupCloseButton />
+                  <div className="pp-title" style={{ paddingRight: 32 }}>
+                    {event.titulo}
+                  </div>
+                  <div className="pp-badges">
+                    <span className="pp-badge" style={{ background: typeMeta.backgroundColor, color: typeMeta.color }}>
+                      {typeMeta.label}
+                    </span>
+                    <span className="pp-badge" style={{ background: capacityMeta.backgroundColor, color: capacityMeta.color }}>
+                      {capacityMeta.label}
+                    </span>
+                  </div>
+                  <div className="pp-loc">
+                    {formatEventSchedule(event.inicia_at, event.termina_at, event.zona_horaria)}
+                  </div>
+                  <div className="pp-loc">{event.asociacion.nombre}</div>
+                </div>
+              </Popup>
+            </Marker>
+          );
+        })}
         {asociaciones
           .filter((a): a is AsociacionMapa & { latitud: number; longitud: number } =>
             a.latitud !== null && a.longitud !== null)
@@ -957,10 +1316,22 @@ export default function LeafletMap({
                   {onSelectAsociacion && (
                     <button
                       className="pp-btn"
-                      style={{ background: ASOC_COLOR, color: '#FFF' }}
+                      style={{ background: ASOC_COLOR, color: '#FFF', marginBottom: 8 }}
                       onClick={() => onSelectAsociacion(asociacion)}
                     >
                       Ver más →
+                    </button>
+                  )}
+                  {onSelectAdopciones && (
+                    <button
+                      className="pp-btn"
+                      style={{ background: '#FDF8F4', color: '#EC802B', border: '1px solid #EC802B', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelectAdopciones(asociacion);
+                      }}
+                    >
+                      🐾 Peluditos en adopción
                     </button>
                   )}
                 </div>

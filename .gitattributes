@@ -1,0 +1,17 @@
+# Normaliza los finales de línea a LF para todo el repo, sin importar el
+# sistema operativo o editor de quien hace checkout. Evita que Windows/CRLF
+# genere diffs masivos de "todo el archivo cambió" cuando en realidad no
+# cambió ni una línea de contenido (visto en refactor/ui el 2 sep 2026).
+* text=auto eol=lf
+
+# Binarios explícitos, por si acaso, para que git nunca intente tocar su
+# fin de línea.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.plist binary

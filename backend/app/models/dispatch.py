@@ -33,9 +33,17 @@ class RouteMatrixRequest(BaseModel):
     destinations: list[RoutingPoint] = Field(min_length=1)
 
 
+class RoutingMode(str, Enum):
+    driving = "driving"
+    cycling = "cycling"
+    walking = "walking"
+
+
 class RouteRequest(BaseModel):
     origin: RoutingPoint
     destination: RoutingPoint
+    mode: RoutingMode = RoutingMode.driving
+    include_steps: bool = False
 
 
 class RoutingStatus(str, Enum):
@@ -108,12 +116,34 @@ class RouteGeometryPoint(BaseModel):
     longitude: float = Field(ge=-180, le=180)
 
 
+class RouteStep(BaseModel):
+    type: str = Field(min_length=1)
+    modifier: str | None = None
+    street_name: str | None = None
+    distance_meters: float = Field(ge=0)
+    duration_seconds: float = Field(ge=0)
+    location: tuple[float, float]
+
+    @model_validator(mode="after")
+    def validate_location(self):
+        longitude, latitude = self.location
+        if not (
+            math.isfinite(longitude)
+            and math.isfinite(latitude)
+            and -180 <= longitude <= 180
+            and -90 <= latitude <= 90
+        ):
+            raise ValueError("Route step requires a valid lon/lat location")
+        return self
+
+
 class RouteResult(BaseModel):
     origin_id: str = Field(min_length=1)
     destination_id: str = Field(min_length=1)
     duration_seconds: float | None = Field(default=None, ge=0)
     distance_meters: float | None = Field(default=None, ge=0)
     geometry: list[RouteGeometryPoint] = Field(default_factory=list)
+    steps: list[RouteStep] = Field(default_factory=list)
     status: RoutingStatus
     calculated_at: datetime
     source: Literal["osrm"] = "osrm"
@@ -128,6 +158,7 @@ class RouteResult(BaseModel):
                 self.duration_seconds is not None
                 or self.distance_meters is not None
                 or self.geometry
+                or self.steps
             ):
                 raise ValueError("Unavailable route cannot include route data")
             return self
@@ -497,6 +528,13 @@ class LocationSource(str, Enum):
     confirmacion_reportante = "confirmacion_reportante"
     voluntario_asignado = "voluntario_asignado"
     voluntario_verificado = "voluntario_verificado"
+    # Entrega C: testigo cercano al caso que no tiene ya un camino propio
+    # arriba (voluntario_interno, donante_comunitario, patrocinador_
+    # institucional, o el reportante viendo un caso que no es el suyo).
+    # A diferencia de voluntario_verificado, se gana por trust_score en vez
+    # de una ubicacion declarada, y nunca se auto-valida -- ver
+    # avistamiento_service._resolver_fuente / _validar_condiciones_auto_validacion.
+    testigo_cercano = "testigo_cercano"
     asociacion = "asociacion"
     administracion = "administracion"
 
@@ -540,6 +578,10 @@ class AvistamientoCreate(BaseModel):
     movilidad_observada: ObservedMobility | None = None
     direccion_observada: str | None = None
     comentario: str | None = None
+    # Evidencia fotografica opcional, subida antes via
+    # POST /reports/{id}/avistamientos/foto. El body sigue siendo JSON: solo
+    # viaja la referencia, no el archivo.
+    evidencia_id: str | None = None
 
 
 class AvistamientoResult(BaseModel):
@@ -547,5 +589,7 @@ class AvistamientoResult(BaseModel):
     reporte_id: str
     animal_id: str
     fuente: LocationSource
-    estado_validacion: Literal["pendiente", "validado", "rechazado"]
+    estado_validacion: Literal[
+        "pendiente", "validado", "rechazado", "superado_por_otro"
+    ]
     registrado_at: datetime

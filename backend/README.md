@@ -148,6 +148,59 @@ POST /internal/push/run
 X-Cron-Secret: <CRON_SECRET>
 ```
 
+### Ciclo de vida y recordatorios de eventos
+
+Configura en Railway o en el scheduler externo una llamada cada 15 minutos:
+
+```text
+POST /internal/events/lifecycle/run
+X-Cron-Secret: <CRON_SECRET>
+```
+
+El job finaliza eventos al terminar, los archiva 30 dias despues y encola un
+recordatorio unico dentro de las 24 horas previas para cada usuario que los
+guardo. No envia push directamente: `/internal/push/run` debe conservar su
+propia programacion frecuente. Ejecutar varias instancias es seguro gracias a
+claims con expiracion e idempotencia en el outbox.
+
+#### Servicios Railway Cron
+
+El ejecutor `scripts/run_internal_job.py` permite que un servicio programado
+haga la llamada protegida y termine inmediatamente. Cada servicio cron usa el
+mismo repositorio con root directory `/backend` y comparte `CRON_SECRET` con
+el backend. Configura ademas:
+
+```env
+BACKEND_URL=https://tu-backend-publico.example
+```
+
+Servicio `event-lifecycle-cron`:
+
+```text
+Start Command: python scripts/run_internal_job.py events-lifecycle
+Cron Schedule: */15 * * * *
+```
+
+Servicio `push-dispatch-cron`:
+
+```text
+Start Command: python scripts/run_internal_job.py push
+Cron Schedule: */5 * * * *
+```
+
+El ejecutor devuelve un codigo distinto de cero ante errores HTTP, problemas
+de red, JSON invalido, `estado: error` o un campo `error`. Nunca registra el
+valor de `CRON_SECRET`.
+
+#### Smoke test funcional de eventos
+
+En un proyecto Supabase de pruebas, ejecuta completo
+`scripts/smoke_event_lifecycle.sql` desde SQL Editor. El script usa una
+asociacion activa y verificada existente, crea tres fixtures efimeros y valida
+claims, recordatorio de 24 horas, finalizacion, archivado e idempotencia. Todo
+se ejecuta dentro de una transaccion que termina con `ROLLBACK`, por lo que no
+conserva eventos, historial, claims ni notificaciones de prueba.
+
 ### Escalamiento de resultados sensibles
 
 Los seguimientos por animales encontrados sin vida se escalan a la asociación

@@ -15,13 +15,27 @@ interface Props {
   // se mandó al backend pero cuyo formulario de seguimiento aún no se
   // guardó).
   dismissable?: boolean;
+  // Los avisos y confirmaciones breves deben medir solo lo que ocupa su
+  // contenido. Las pantallas y formularios conservan, por defecto, toda la
+  // altura disponible para mantener su propio scroll.
+  fitContent?: boolean;
+  // Algunas pantallas ya incluyen su propio botón de cierre en el encabezado.
+  showCloseButton?: boolean;
 }
 
 // Modal genérico con fondo difuminado (no solo oscurecido), que deja ver la
 // pantalla de atrás, con margen responsivo (más grande en web/desktop que en
 // móvil) y que se cierra al tocar fuera del contenido — sin cerrar por
 // accidente al tocar adentro, gracias al Pressable "absorbente" del contenido.
-export function AppModal({ visible, onClose, children, maxWidth = 900, dismissable = true }: Props) {
+export function AppModal({
+  visible,
+  onClose,
+  children,
+  maxWidth = 900,
+  dismissable = true,
+  fitContent = false,
+  showCloseButton = true,
+}: Props) {
   const { width } = useWindowDimensions();
   const isDesktop = width >= 900;
 
@@ -51,11 +65,24 @@ export function AppModal({ visible, onClose, children, maxWidth = 900, dismissab
           },
         ]}
       >
-        <Pressable onPress={() => {}} style={[styles.contentBox, { maxWidth, width: '100%' }]}>
+        <Pressable
+          onPress={() => {}}
+          style={[
+            styles.contentBox,
+            fitContent ? styles.contentBoxFit : styles.contentBoxFill,
+            { maxWidth, width: '100%' },
+          ]}
+        >
           {children}
 
-          {dismissable && (
-            <Pressable onPress={onClose} hitSlop={10} style={styles.closeButton}>
+          {dismissable && showCloseButton && (
+            <Pressable
+              accessibilityLabel="Cerrar modal"
+              accessibilityRole="button"
+              onPress={onClose}
+              hitSlop={10}
+              style={styles.closeButton}
+            >
               <Ionicons name="close" size={20} color="#fff" />
             </Pressable>
           )}
@@ -72,7 +99,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   contentBox: {
-    flex: 1,
     backgroundColor: '#F5F5F5',
     borderRadius: 24,
     overflow: 'hidden',
@@ -82,6 +108,8 @@ const styles = StyleSheet.create({
     shadowRadius: 30,
     elevation: 12,
   },
+  contentBoxFill: { flex: 1 },
+  contentBoxFit: { maxHeight: '100%' },
   closeButton: {
     position: 'absolute',
     top: 14,

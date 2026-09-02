@@ -3,7 +3,31 @@ import logging
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from app.api import ( reports, associations, catalogos, auth, users, report_acceptance, admin, staff, stats, asignaciones, voluntarios, internal, red_aliados, webhooks, perfiles_apoyo, coverage, custody, recompensas, incidentes, reputacion)
+from app.api import (
+    admin,
+    adoptions,
+    asignaciones,
+    associations,
+    auth,
+    catalogos,
+    coverage,
+    custody,
+    events,
+    incidentes,
+    internal,
+    navigation,
+    perfiles_apoyo,
+    red_aliados,
+    report_acceptance,
+    reports,
+    reputacion,
+    recompensas,
+    staff,
+    stats,
+    users,
+    voluntarios,
+    webhooks,
+)
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -44,6 +68,7 @@ app.include_router(staff.router, prefix="/staff", tags=["Staff"])
 app.include_router(stats.router, prefix="/stats", tags=["Estadísticas"])
 app.include_router(asignaciones.router, prefix="/reports", tags=["Asignaciones"])
 app.include_router(voluntarios.router, prefix="/voluntarios", tags=["Voluntarios"])
+app.include_router(navigation.router, prefix="/voluntarios", tags=["Navegación"])
 app.include_router(internal.router, prefix="/internal", tags=["Interno"])
 app.include_router(red_aliados.router, prefix="/red-aliados", tags=["Red de Aliados"])
 app.include_router(webhooks.router, prefix="/webhooks", tags=["Webhooks"])
@@ -53,6 +78,8 @@ app.include_router(custody.router, prefix="/custody", tags=["Custodia temporal"]
 app.include_router(recompensas.router, prefix="/recompensas", tags=["Recompensas"])
 app.include_router(incidentes.router, prefix="/incidentes", tags=["Incidentes"])
 app.include_router(reputacion.router, prefix="/reputacion", tags=["Reputación"])
+app.include_router(adoptions.router, tags=["Adopciones"])
+app.include_router(events.router, tags=["Eventos"])
 from app.api import permanencia
 app.include_router(permanencia.router, prefix="/reports", tags=["Permanencia"])
 from app.api import avistamientos

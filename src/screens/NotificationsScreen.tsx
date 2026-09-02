@@ -19,6 +19,7 @@ import {
   disablePushNotifications,
   enablePushNotifications,
   getPushPermissionState,
+  getPushSetupMessage,
   PushPermissionState,
 } from '../services/pushRegistration';
 
@@ -57,6 +58,7 @@ const TYPE_STYLE: Record<string, { icon: keyof typeof Ionicons.glyphMap; color: 
   insignia_mejorada: { icon: 'trophy-outline', color: '#C9971C', bg: '#FBF3DC', label: 'Insignia mejorada' },
   restriccion_activada: { icon: 'warning-outline', color: '#D6453D', bg: '#FDEDEC', label: 'Restricción activa' },
   restriccion_levantada: { icon: 'checkmark-done-outline', color: '#209653', bg: '#EAF8F0', label: 'Restricción levantada' },
+  aclaracion_adopcion: { icon: 'chatbox-ellipses-outline', color: '#8B5CF6', bg: '#F3EEFF', label: 'Información requerida' }, 
 };
 
 function notificationDate(value: string) {
@@ -70,6 +72,7 @@ export default function NotificationsScreen() {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(true);
   const [pushPermission, setPushPermission] = useState<PushPermissionState>('default');
+  const [pushSetupMessage, setPushSetupMessage] = useState<string | null>(null);
   const [updatingPush, setUpdatingPush] = useState(false);
 
   const loadNotifications = useCallback(async () => {
@@ -135,9 +138,12 @@ export default function NotificationsScreen() {
   }, [loadNotifications]);
 
   useEffect(() => {
-    getPushPermissionState().then(setPushPermission).catch(() => {
-      setPushPermission('unsupported');
-    });
+    Promise.all([getPushPermissionState(), getPushSetupMessage()])
+      .then(([permission, setupMessage]) => {
+        setPushPermission(permission);
+        setPushSetupMessage(setupMessage);
+      })
+      .catch(() => setPushPermission('unsupported'));
   }, []);
 
   const togglePush = async (enabled: boolean) => {
@@ -210,7 +216,17 @@ export default function NotificationsScreen() {
           </TouchableOpacity>
         </View>
 
-        {token && pushPermission !== 'unsupported' && (
+        {pushSetupMessage && (
+          <View style={{ backgroundColor: '#FFF6DA', paddingHorizontal: 24, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F0D99A', flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
+            <Ionicons name="phone-portrait-outline" size={21} color="#C77A00" />
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: C.dark, fontSize: 13, fontWeight: '800' }}>Activa PawAlert como aplicación</Text>
+              <Text style={{ color: C.muted, fontSize: 11, lineHeight: 17, marginTop: 2 }}>{pushSetupMessage}</Text>
+            </View>
+          </View>
+        )}
+
+        {token && pushPermission !== 'unsupported' && !pushSetupMessage && (
           <View style={{ backgroundColor: '#FFFFFF', paddingHorizontal: 24, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: C.border, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
             <Ionicons name="phone-portrait-outline" size={21} color={C.teal} />
             <View style={{ flex: 1 }}>

@@ -11,6 +11,9 @@ from app.models.dispatch import (
     RoutingStatus,
 )
 from app.services.osrm_service import get_route
+from app.services.report_location_service import (
+    resolve_authoritative_report_destination,
+)
 
 
 def _unavailable(
@@ -56,12 +59,15 @@ def _load_coordinates(
     )
     report_row = report.data[0]
     capacity_row = capacity.data[0] if capacity.data else {}
-    destination_values = _report_destination_coordinates(report_row)
+    destination = resolve_authoritative_report_destination(
+        report_row,
+        supabase_admin,
+    )
     values = (
         capacity_row.get("latitud"),
         capacity_row.get("longitud"),
-        destination_values[0],
-        destination_values[1],
+        destination.latitude if destination else None,
+        destination.longitude if destination else None,
     )
     if any(value is None for value in values):
         return None, None
@@ -71,44 +77,12 @@ def _load_coordinates(
         latitude=float(values[0]),
         longitude=float(values[1]),
     )
-    destination = RoutingPoint(
+    destination_point = RoutingPoint(
         id=reporte_id,
         latitude=float(values[2]),
         longitude=float(values[3]),
     )
-    return origin, destination
-
-
-def _report_destination_coordinates(
-    report_row: dict,
-) -> tuple[float | None, float | None]:
-    latest_location_id = report_row.get("ultima_ubicacion_confirmada_id")
-    if latest_location_id:
-        latest_location = (
-            supabase_admin.table("avistamientos_animal")
-            .select("latitud, longitud")
-            .eq("id", latest_location_id)
-            .eq("estado_validacion", "validado")
-            .limit(1)
-            .execute()
-        )
-        if latest_location.data:
-            location_row = latest_location.data[0]
-            if (
-                location_row.get("latitud") is not None
-                and location_row.get("longitud") is not None
-            ):
-                return (
-                    float(location_row["latitud"]),
-                    float(location_row["longitud"]),
-                )
-
-    latitude = report_row.get("latitud")
-    longitude = report_row.get("longitud")
-    return (
-        float(latitude) if latitude is not None else None,
-        float(longitude) if longitude is not None else None,
-    )
+    return origin, destination_point
 
 
 def _persistence_payload(

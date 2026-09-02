@@ -1122,7 +1122,8 @@ async def obtener_reportes_voluntario(usuario_id: str, rol: str = None) -> dict:
             .select(
                 "reporte_id, ruta_status, ruta_duracion_segundos, "
                 "ruta_distancia_metros, ruta_geometria, ruta_error_codigo, "
-                "ruta_calculada_at"
+                "ruta_calculada_at, ruta_destino_latitud, "
+                "ruta_destino_longitud"
             )
             .eq("usuario_asignado_id", usuario_id)
             .eq("estado", "confirmada")
@@ -1144,6 +1145,15 @@ async def obtener_reportes_voluntario(usuario_id: str, rol: str = None) -> dict:
                         if ruta.get("ruta_calculada_at")
                         else None
                     ),
+                    "destination": (
+                        {
+                            "latitude": float(ruta["ruta_destino_latitud"]),
+                            "longitude": float(ruta["ruta_destino_longitud"]),
+                        }
+                        if ruta.get("ruta_destino_latitud") is not None
+                        and ruta.get("ruta_destino_longitud") is not None
+                        else None
+                    ),
                 }
 
     esperando_confirmacion = []
@@ -1163,6 +1173,7 @@ async def obtener_reportes_voluntario(usuario_id: str, rol: str = None) -> dict:
         reporte = {
             "id": r["id"],
             "estado_reporte": r.get("estado_reporte"),
+            "confirmacion_voluntario": r.get("confirmacion_voluntario"),
             "municipio": r.get("municipio"),
             "colonia": r.get("colonia"),
             "calle": r.get("calle"),
@@ -1181,6 +1192,7 @@ async def obtener_reportes_voluntario(usuario_id: str, rol: str = None) -> dict:
             "llegada_zona_registrada": r["id"] in reportes_con_llegada_zona,
             "animal_no_localizado_registrado": r["id"] in reportes_con_busqueda_sin_resultado,
             "animal_bajo_resguardo_registrado": r["id"] in reportes_con_animal_bajo_resguardo,
+            "navegacion_disponible": r["id"] in rutas_confirmadas,
             "ruta": rutas_confirmadas.get(r["id"]),
             "distancia_linea_recta_km": (
                 _distancia_km(

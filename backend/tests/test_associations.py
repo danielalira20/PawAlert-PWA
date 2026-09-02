@@ -35,6 +35,8 @@ CONFIG_ASIGNACION = {
     "dias_recepcion": [1, 2, 3, 4, 5, 6, 7],
     "hora_inicio_recepcion": "00:00:00",
     "hora_fin_recepcion": "23:59:59",
+    "participa_rescates": True,
+    "participa_adopciones": True,
 }
 
 
@@ -63,6 +65,8 @@ def test_get_config_asignacion_incluye_capacidad_y_horario(make_query):
     assert resultado["capacidad_reportes_criticos"] == 3
     assert resultado["recepcion_reportes_24h"] is True
     assert resultado["dias_recepcion"] == [1, 2, 3, 4, 5, 6, 7]
+    assert resultado["participa_rescates"] is True
+    assert resultado["participa_adopciones"] is True
 
 
 def test_patch_config_asignacion_conserva_clientes_anteriores(make_query):
@@ -134,6 +138,31 @@ def test_patch_config_asignacion_guarda_operacion_estructurada(make_query):
     assert resultado["capacidad_reportes_simultaneos"] == 6
 
 
+def test_patch_config_asignacion_permite_apagar_un_solo_eje(make_query):
+    actualizado = {**CONFIG_ASIGNACION, "participa_rescates": False}
+    query = make_query(execute_results=[[CONFIG_ASIGNACION], [actualizado]])
+    supabase = MagicMock()
+    supabase.table.return_value = query
+
+    with (
+        patch.object(associations, "supabase", supabase),
+        patch.object(
+            associations,
+            "_obtener_usuario_autenticado",
+            return_value=_usuario_asociacion(),
+        ),
+    ):
+        resultado = asyncio.run(
+            associations.patch_config_asignacion(
+                associations.ConfigAsignacionUpdate(participa_rescates=False),
+                "Bearer token",
+            )
+        )
+
+    assert resultado["participa_rescates"] is False
+    query.update.assert_called_once_with({"participa_rescates": False})
+
+
 @pytest.mark.parametrize(
     ("body", "detail"),
     [
@@ -144,6 +173,10 @@ def test_patch_config_asignacion_guarda_operacion_estructurada(make_query):
         ({"dias_recepcion": [1, 1, 8]}, "dias_recepcion"),
         ({"hora_inicio_recepcion": "25:00"}, "hora_inicio_recepcion"),
         ({"hora_inicio_recepcion": "09:00 texto"}, "hora_inicio_recepcion"),
+        (
+            {"participa_rescates": False, "participa_adopciones": False},
+            "eje",
+        ),
     ],
 )
 def test_patch_config_asignacion_rechaza_configuracion_incoherente(
@@ -376,6 +409,7 @@ def _mock_reporte_asignado(make_query, *, fotos: list[dict]) -> dict:
                 "id": "reporte-1",
                 "estado_reporte": "asignado",
                 "confirmacion_voluntario": None,
+                "asociacion_asignada_id": "aso-1",
                 "municipio": "Puebla",
                 "colonia": "Centro",
                 "calle": None,
@@ -445,6 +479,33 @@ def test_me_reportes_requiere_revision_false_si_ninguna_foto_lo_tiene(make_query
 
     assert response.status_code == 200
     assert response.json()[0]["requiere_revision"] is False
+
+
+def test_me_reportes_expone_coordinadora_vigente_del_reporte(make_query):
+    """El frontend necesita `asociacion_asignada_id` real para no ofrecer
+    acciones (p. ej. registrar avistamiento) sobre casos que ya se
+    reasignaron a otra asociación y siguen apareciendo aquí por una fila
+    histórica de reporte_asignaciones."""
+    tablas = _mock_reporte_asignado(make_query, fotos=[])
+    # El caso ya no lo coordina esta asociación (aso-1): pasó a aso-2.
+    tablas["reporte_asignaciones"].execute.return_value.data[0]["reportes"][
+        "asociacion_asignada_id"
+    ] = "aso-2"
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    supabase.auth.get_user.return_value = SimpleNamespace(
+        user=SimpleNamespace(id="auth-user-1")
+    )
+
+    with patch("app.api.associations.supabase", supabase):
+        response = client.get(
+            "/associations/me/reportes",
+            headers={"Authorization": "Bearer token-valido"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()[0]["asociacion_asignada_id"] == "aso-2"
+    assert "asociacion_asignada_id" in tablas["reporte_asignaciones"].select.call_args.args[0]
 
 
 def test_me_reportes_expone_urgencia_operativa(make_query):
@@ -884,3 +945,92 @@ def test_verificar_aliado_con_solo_contribucion_de_lote_confirmada(make_query):
 
     assert response.status_code == 200
     assert response.json()["perfil"]["aliado_verificado_por"] == "aso-1"
+
+
+# ---------------------------------------------------------------------------
+# GET /associations/me/avistamientos-pendientes (Capa 8, Pantalla B)
+# ---------------------------------------------------------------------------
+
+
+def _mock_supabase_asociacion(make_query, rol: str = "asociacion"):
+    tablas = {
+        "usuarios": make_query(
+            data=[{"id": "user-1", "asociacion_id": "aso-1", "roles": {"nombre": rol}}]
+        ),
+        "asociaciones": make_query(data=[{"verificado": True, "nombre": "Huellitas"}]),
+    }
+    supabase = MagicMock()
+    supabase.table.side_effect = lambda nombre: tablas[nombre]
+    supabase.auth.get_user.return_value = SimpleNamespace(
+        user=SimpleNamespace(id="auth-user-1")
+    )
+    return supabase
+
+
+def test_avistamientos_pendientes_delega_con_la_asociacion_del_usuario(make_query):
+    supabase = _mock_supabase_asociacion(make_query)
+    grupos = [{"reporte_id": "rep-1", "en_conflicto": False, "avistamientos": []}]
+
+    with (
+        patch("app.api.associations.supabase", supabase),
+        patch.object(
+            associations.avistamiento_service,
+            "listar_pendientes_asociacion",
+            return_value=grupos,
+        ) as listar,
+    ):
+        response = client.get(
+            "/associations/me/avistamientos-pendientes",
+            headers={"Authorization": "Bearer token-valido"},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == grupos
+    listar.assert_called_once_with("aso-1")
+
+
+def test_avistamientos_pendientes_permite_staff(make_query):
+    supabase = _mock_supabase_asociacion(make_query, rol="staff")
+
+    with (
+        patch("app.api.associations.supabase", supabase),
+        patch.object(
+            associations.avistamiento_service,
+            "listar_pendientes_asociacion",
+            return_value=[],
+        ),
+    ):
+        response = client.get(
+            "/associations/me/avistamientos-pendientes",
+            headers={"Authorization": "Bearer token-valido"},
+        )
+
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize(
+    "rol", ["reportante", "voluntario_interno", "voluntario_externo", "aliado_local"]
+)
+def test_avistamientos_pendientes_rechaza_roles_ajenos(rol, make_query):
+    supabase = _mock_supabase_asociacion(make_query, rol=rol)
+
+    with (
+        patch("app.api.associations.supabase", supabase),
+        patch.object(
+            associations.avistamiento_service,
+            "listar_pendientes_asociacion",
+            return_value=[],
+        ) as listar,
+    ):
+        response = client.get(
+            "/associations/me/avistamientos-pendientes",
+            headers={"Authorization": "Bearer token-valido"},
+        )
+
+    assert response.status_code == 403
+    listar.assert_not_called()
+
+
+def test_avistamientos_pendientes_sin_token():
+    response = client.get("/associations/me/avistamientos-pendientes")
+    assert response.status_code == 401

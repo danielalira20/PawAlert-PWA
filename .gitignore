@@ -55,6 +55,7 @@ backend/htmlcov/
 # Test coverage
 coverage/
 playwright-report/
+playwright-report-navigation/
 test-results/
 .env.e2e
 #produccion

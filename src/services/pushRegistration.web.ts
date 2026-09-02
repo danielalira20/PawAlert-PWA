@@ -9,6 +9,7 @@ import {
 } from 'firebase/messaging';
 
 import { API_URL } from '../constants/api';
+import { pwaPushSetupMessage } from '../utils/pwaPush';
 
 export type PushPermissionState =
   | 'unsupported'
@@ -17,6 +18,16 @@ export type PushPermissionState =
   | 'granted';
 
 const STORAGE_KEY = '@pawalert_push_token';
+
+export async function getPushSetupMessage(): Promise<string | null> {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return null;
+  const navigatorWithStandalone = navigator as Navigator & { standalone?: boolean };
+  return pwaPushSetupMessage({
+    userAgent: navigator.userAgent,
+    navigatorStandalone: navigatorWithStandalone.standalone,
+    displayModeStandalone: window.matchMedia?.('(display-mode: standalone)').matches,
+  });
+}
 
 const firebaseConfig = {
   apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
