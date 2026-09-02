@@ -6,10 +6,10 @@ import {
 
 describe("eventDeepLink", () => {
   it("construye una URL pública estable para un evento", () => {
-    expect(buildEventDeepLinkPath("event 1")).toBe("/map?event_id=event%201");
+    expect(buildEventDeepLinkPath("event 1")).toBe("/events?event_id=event%201");
     expect(
       buildEventDeepLinkUrl("event-1", "https://paw-alert-pwa.vercel.app/"),
-    ).toBe("https://paw-alert-pwa.vercel.app/map?event_id=event-1");
+    ).toBe("https://paw-alert-pwa.vercel.app/events?event_id=event-1");
   });
 
   it("normaliza parámetros simples o repetidos y descarta valores vacíos", () => {
