@@ -10,6 +10,10 @@ import {
   normalizeNavigationApiError,
 } from "../services/navigationService";
 import { getFreshNavigationPosition } from "../services/navigationLocationService";
+import {
+  type ForegroundNavigationTrackingState,
+  useForegroundNavigationTracking,
+} from "./useForegroundNavigationTracking";
 import type {
   NavigationCapabilities,
   NavigationDestination,
@@ -40,9 +44,11 @@ export interface UseCaseNavigationResult {
   currentRoute: NavigationRouteComplete | null;
   latestResult: NavigationRouteResponse | null;
   currentOrigin: NavigationOrigin | null;
+  liveOrigin: NavigationOrigin | null;
   destination: NavigationDestination | null;
   mode: NavigationMode;
   permissionState: NavigationPermissionState;
+  trackingState: ForegroundNavigationTrackingState;
   isLoadingCapabilities: boolean;
   isCalculating: boolean;
   isRefreshing: boolean;
@@ -111,6 +117,23 @@ export function useCaseNavigation(
   const [error, setError] = useState<CaseNavigationError | null>(null);
   const capabilityRequestRef = useRef(0);
   const routeRequestRef = useRef(0);
+  const tracking = useForegroundNavigationTracking(
+    Boolean(
+      currentRoute &&
+        capabilities?.foreground_tracking &&
+        permissionState === "granted" &&
+        !accessRevoked,
+    ),
+  );
+  const liveOrigin: NavigationOrigin | null = tracking.position
+    ? {
+        source: "device_gps",
+        latitude: tracking.position.latitude,
+        longitude: tracking.position.longitude,
+        accuracy_meters: tracking.position.accuracyMeters,
+        captured_at: tracking.position.capturedAt,
+      }
+    : null;
 
   const loadCapabilities = useCallback(async () => {
     const requestId = ++capabilityRequestRef.current;
@@ -285,9 +308,11 @@ export function useCaseNavigation(
     currentRoute,
     latestResult,
     currentOrigin: latestResult?.origin ?? null,
+    liveOrigin,
     destination: latestResult?.destination ?? null,
     mode,
     permissionState,
+    trackingState: tracking.state,
     isLoadingCapabilities,
     isCalculating,
     isRefreshing,

@@ -2,6 +2,7 @@ import { act, renderHook, waitFor } from "@testing-library/react-native";
 import * as Location from "expo-location";
 
 import { useCaseNavigation } from "../hooks/useCaseNavigation";
+import { useForegroundNavigationTracking } from "../hooks/useForegroundNavigationTracking";
 import {
   calculateNavigationRoute,
   getNavigationCapabilities,
@@ -24,6 +25,10 @@ jest.mock("../context/AuthContext", () => ({
   useAuth: () => ({ token: "token-voluntario" }),
 }));
 
+jest.mock("../hooks/useForegroundNavigationTracking", () => ({
+  useForegroundNavigationTracking: jest.fn(),
+}));
+
 jest.mock("../services/navigationService", () => {
   const actual = jest.requireActual("../services/navigationService");
   return {
@@ -36,6 +41,7 @@ jest.mock("../services/navigationService", () => {
 const mockedLocation = Location as jest.Mocked<typeof Location>;
 const mockedGetCapabilities = getNavigationCapabilities as jest.Mock;
 const mockedCalculateRoute = calculateNavigationRoute as jest.Mock;
+const mockedForegroundTracking = useForegroundNavigationTracking as jest.Mock;
 
 const capabilities: NavigationCapabilities = {
   contract_version: 1,
@@ -91,6 +97,7 @@ const completeRoute: NavigationRouteComplete = {
 describe("useCaseNavigation", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockedForegroundTracking.mockReturnValue({ position: null, state: "idle" });
     mockedGetCapabilities.mockResolvedValue(capabilities);
     mockedLocation.requestForegroundPermissionsAsync.mockResolvedValue({
       status: Location.PermissionStatus.GRANTED,
@@ -170,6 +177,34 @@ describe("useCaseNavigation", () => {
         mode: "driving",
       },
     );
+  });
+
+  it("expone la lectura en vivo sin solicitar otra ruta", async () => {
+    mockedForegroundTracking.mockReturnValue({
+      position: {
+        latitude: 19.031,
+        longitude: -98.191,
+        accuracyMeters: 8,
+        capturedAt: "2026-09-02T12:00:00.000Z",
+      },
+      state: "active",
+    });
+    const { result } = await renderHook(() => useCaseNavigation("report-1"));
+    await waitFor(() => expect(result.current.capabilities).not.toBeNull());
+
+    await act(async () => {
+      await result.current.start();
+    });
+
+    expect(result.current.liveOrigin).toEqual({
+      source: "device_gps",
+      latitude: 19.031,
+      longitude: -98.191,
+      accuracy_meters: 8,
+      captured_at: "2026-09-02T12:00:00.000Z",
+    });
+    expect(result.current.trackingState).toBe("active");
+    expect(mockedCalculateRoute).toHaveBeenCalledTimes(1);
   });
 
   it("conserva la última ruta válida cuando falla un recálculo", async () => {

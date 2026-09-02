@@ -107,16 +107,17 @@ export default function CaseNavigationLeafletMap({
     () => geoJsonLineStringToMapCoordinates(geometry),
     [geometry],
   );
+  const fitOriginCoordinate = routeCoordinates[0] ?? originCoordinate;
   const bounds = useMemo(
     () =>
       navigationMapBounds(
-        originCoordinate,
+        fitOriginCoordinate,
         destinationCoordinate,
         routeCoordinates,
       ).map(
         ({ latitude, longitude }) => [latitude, longitude] as [number, number],
       ),
-    [destinationCoordinate, originCoordinate, routeCoordinates],
+    [destinationCoordinate, fitOriginCoordinate, routeCoordinates],
   );
   const routePositions = useMemo(
     () =>

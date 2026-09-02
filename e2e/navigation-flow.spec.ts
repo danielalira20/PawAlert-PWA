@@ -232,7 +232,7 @@ test('muestra, recalcula y retira una ruta de asignación confirmada', async ({
   await expect(
     page.getByText('Gira a la derecha en Avenida 11 Sur'),
   ).toBeVisible();
-  await expect(page.getByText('En 320 m')).toBeVisible();
+  await expect(page.getByText(/^En \d+(?:\.\d+)? (?:m|km)$/)).toBeVisible();
   await expect(
     page.getByLabel('Mapa de navegación del caso'),
   ).toBeVisible();
@@ -241,7 +241,9 @@ test('muestra, recalcula y retira una ruta de asignación confirmada', async ({
     'Leaflet',
   );
   await expect(
-    page.getByText('Pulsa Recalcular para actualizar tu ubicación.'),
+    page.getByText(
+      'Ubicación en vivo activa mientras mantengas PawAlert abierta.',
+    ),
   ).toBeVisible();
   await expectNavigationMapFitsViewport(page);
 

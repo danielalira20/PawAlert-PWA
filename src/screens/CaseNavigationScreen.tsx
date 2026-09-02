@@ -23,11 +23,13 @@ import {
   type ExternalNavigationProvider,
 } from "../services/externalNavigationService";
 import {
+  advanceNavigationStepIndex,
   formatNavigationAge,
   formatNavigationDistance,
   formatNavigationDuration,
   formatNavigationInstruction,
   formatNavigationStepDistance,
+  navigationStepDistanceMeters,
 } from "../utils/navigationPresentation";
 import type { NavigationGeometry } from "../types/navigation";
 
@@ -47,14 +49,17 @@ export default function CaseNavigationScreen({ reportId, onClose }: Props) {
     ? 500
     : Math.max(260, Math.min(320, Math.round(height * 0.42)));
   const [fitRequestId, setFitRequestId] = useState(0);
+  const [activeStepIndex, setActiveStepIndex] = useState(0);
   const startedForReportRef = useRef<string | null>(null);
   const attemptedDestinationRevisionRef = useRef<string | null>(null);
   const {
     capabilities,
     currentRoute,
     currentOrigin,
+    liveOrigin,
     destination,
     permissionState,
+    trackingState,
     isLoadingCapabilities,
     isCalculating,
     isRefreshing,
@@ -122,6 +127,21 @@ export default function CaseNavigationScreen({ reportId, onClose }: Props) {
     recalculate,
   ]);
 
+  useEffect(() => {
+    setActiveStepIndex(0);
+  }, [currentRoute?.calculated_at]);
+
+  useEffect(() => {
+    if (!currentRoute || !liveOrigin) return;
+    setActiveStepIndex((currentIndex) =>
+      advanceNavigationStepIndex(
+        currentRoute.route.steps,
+        liveOrigin,
+        currentIndex,
+      ),
+    );
+  }, [currentRoute, liveOrigin]);
+
   const openExternalNavigation = async (
     provider: ExternalNavigationProvider,
   ) => {
@@ -169,7 +189,11 @@ export default function CaseNavigationScreen({ reportId, onClose }: Props) {
   const routeUsesLatestDestination =
     !capabilities?.destination_revision ||
     currentRoute?.destination.revision === capabilities.destination_revision;
-  const nextStep = currentRoute?.route.steps[0] ?? null;
+  const nextStep = currentRoute?.route.steps[activeStepIndex] ?? null;
+  const nextStepDistance =
+    nextStep && liveOrigin
+      ? navigationStepDistanceMeters(nextStep, liveOrigin)
+      : undefined;
   const emptyStateTitle = accessRevoked
     ? "La navegación ya no está disponible"
     : error?.code === "no_route"
@@ -248,7 +272,7 @@ export default function CaseNavigationScreen({ reportId, onClose }: Props) {
         >
           <View style={styles.mapBand}>
             <CaseNavigationMap
-              origin={currentRoute.origin}
+              origin={liveOrigin ?? currentRoute.origin}
               destination={currentRoute.destination}
               geometry={currentRoute.route.geometry}
               height={mapHeight}
@@ -300,10 +324,10 @@ export default function CaseNavigationScreen({ reportId, onClose }: Props) {
                     Siguiente indicación
                   </Text>
                   <Text style={styles.nextInstructionTitle}>
-                    {formatNavigationInstruction(nextStep)}
+                    {formatNavigationInstruction(nextStep, nextStepDistance)}
                   </Text>
                   <Text style={styles.nextInstructionDistance}>
-                    {formatNavigationStepDistance(nextStep)}
+                    {formatNavigationStepDistance(nextStep, nextStepDistance)}
                   </Text>
                 </View>
               </View>
@@ -354,7 +378,13 @@ export default function CaseNavigationScreen({ reportId, onClose }: Props) {
             </View>
 
             <Text style={styles.foregroundNotice}>
-              Pulsa Recalcular para actualizar tu ubicación.
+              {trackingState === "active"
+                ? "Ubicación en vivo activa mientras mantengas PawAlert abierta."
+                : trackingState === "paused"
+                  ? "Seguimiento pausado mientras PawAlert está en segundo plano."
+                  : trackingState === "error"
+                    ? "La ruta sigue disponible, pero no pudimos actualizar tu ubicación."
+                    : "Activando seguimiento de ubicación en primer plano…"}
             </Text>
 
             <View

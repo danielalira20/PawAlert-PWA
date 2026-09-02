@@ -114,8 +114,10 @@ describe("CaseNavigationScreen", () => {
       },
       currentRoute: route,
       currentOrigin: route.origin,
+      liveOrigin: route.origin,
       destination: route.destination,
       permissionState: "granted",
+      trackingState: "active",
       isLoadingCapabilities: false,
       isCalculating: false,
       isRefreshing: false,
@@ -140,9 +142,11 @@ describe("CaseNavigationScreen", () => {
     expect(
       view.getByText("Gira a la derecha en Avenida 11 Sur"),
     ).toBeTruthy();
-    expect(view.getByText("En 320 m")).toBeTruthy();
+    expect(view.getByText("En 2.4 km")).toBeTruthy();
     expect(
-      view.getByText("Pulsa Recalcular para actualizar tu ubicación."),
+      view.getByText(
+        "Ubicación en vivo activa mientras mantengas PawAlert abierta.",
+      ),
     ).toBeTruthy();
 
     fireEvent.press(view.getByText("Recalcular"));
@@ -165,8 +169,10 @@ describe("CaseNavigationScreen", () => {
       },
       currentRoute: route,
       currentOrigin: route.origin,
+      liveOrigin: route.origin,
       destination: route.destination,
       permissionState: "granted",
+      trackingState: "active",
       isLoadingCapabilities: false,
       isCalculating: false,
       isRefreshing: false,
@@ -209,8 +215,10 @@ describe("CaseNavigationScreen", () => {
       },
       currentRoute: route,
       currentOrigin: route.origin,
+      liveOrigin: route.origin,
       destination: route.destination,
       permissionState: "granted",
+      trackingState: "active",
       isLoadingCapabilities: false,
       isCalculating: false,
       isRefreshing: false,
@@ -244,8 +252,10 @@ describe("CaseNavigationScreen", () => {
       },
       currentRoute: null,
       currentOrigin: route.origin,
+      liveOrigin: null,
       destination: route.destination,
       permissionState: "granted",
+      trackingState: "idle",
       isLoadingCapabilities: false,
       isCalculating: false,
       isRefreshing: false,

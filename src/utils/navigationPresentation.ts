@@ -1,7 +1,65 @@
 import { formatDistanceToNow } from "date-fns";
 import { es } from "date-fns/locale";
 
-import type { NavigationStep } from "../types/navigation";
+import type { NavigationOrigin, NavigationStep } from "../types/navigation";
+
+const EARTH_RADIUS_METERS = 6_371_000;
+const MANEUVER_REACHED_RADIUS_METERS = 45;
+
+function toRadians(value: number): number {
+  return (value * Math.PI) / 180;
+}
+
+export function navigationDistanceBetweenMeters(
+  origin: Pick<NavigationOrigin, "latitude" | "longitude">,
+  destination: Pick<NavigationOrigin, "latitude" | "longitude">,
+): number {
+  const latitudeDelta = toRadians(destination.latitude - origin.latitude);
+  const longitudeDelta = toRadians(destination.longitude - origin.longitude);
+  const originLatitude = toRadians(origin.latitude);
+  const destinationLatitude = toRadians(destination.latitude);
+  const haversine =
+    Math.sin(latitudeDelta / 2) ** 2 +
+    Math.cos(originLatitude) *
+      Math.cos(destinationLatitude) *
+      Math.sin(longitudeDelta / 2) ** 2;
+
+  return (
+    2 *
+    EARTH_RADIUS_METERS *
+    Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine))
+  );
+}
+
+export function navigationStepDistanceMeters(
+  step: NavigationStep,
+  origin: Pick<NavigationOrigin, "latitude" | "longitude">,
+): number {
+  return navigationDistanceBetweenMeters(origin, {
+    longitude: step.location[0],
+    latitude: step.location[1],
+  });
+}
+
+export function advanceNavigationStepIndex(
+  steps: NavigationStep[],
+  origin: Pick<NavigationOrigin, "latitude" | "longitude">,
+  currentIndex: number,
+): number {
+  if (steps.length === 0) return -1;
+
+  let nextIndex = Math.min(Math.max(currentIndex, 0), steps.length - 1);
+  for (let index = nextIndex; index < steps.length - 1; index += 1) {
+    if (
+      navigationStepDistanceMeters(steps[index], origin) >
+      MANEUVER_REACHED_RADIUS_METERS
+    ) {
+      break;
+    }
+    nextIndex = index + 1;
+  }
+  return nextIndex;
+}
 
 export function formatNavigationDuration(seconds: number): string {
   const totalMinutes = Math.max(1, Math.round(seconds / 60));
@@ -46,7 +104,10 @@ function directionInstruction(
   return (modifier && TURN_INSTRUCTIONS[modifier]) || fallback;
 }
 
-export function formatNavigationInstruction(step: NavigationStep): string {
+export function formatNavigationInstruction(
+  step: NavigationStep,
+  remainingMeters?: number,
+): string {
   const modifier = step.modifier?.toLowerCase() ?? null;
   const type = step.type.toLowerCase();
 
@@ -54,7 +115,9 @@ export function formatNavigationInstruction(step: NavigationStep): string {
     case "depart":
       return appendStreet("Inicia el recorrido", step.street_name);
     case "arrive":
-      return "Llegaste al destino";
+      return remainingMeters !== undefined && remainingMeters >= 20
+        ? "Continúa hasta el destino"
+        : "Llegaste al destino";
     case "turn":
     case "end of road":
       return appendStreet(
@@ -94,9 +157,13 @@ export function formatNavigationInstruction(step: NavigationStep): string {
   }
 }
 
-export function formatNavigationStepDistance(step: NavigationStep): string {
-  if (step.type.toLowerCase() === "depart" || step.distance_meters < 20) {
+export function formatNavigationStepDistance(
+  step: NavigationStep,
+  remainingMeters?: number,
+): string {
+  const distance = remainingMeters ?? step.distance_meters;
+  if (step.type.toLowerCase() === "depart" || distance < 20) {
     return "Ahora";
   }
-  return `En ${formatNavigationDistance(step.distance_meters)}`;
+  return `En ${formatNavigationDistance(distance)}`;
 }

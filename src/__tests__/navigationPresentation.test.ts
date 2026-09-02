@@ -1,9 +1,12 @@
 import {
+  advanceNavigationStepIndex,
   formatNavigationAge,
   formatNavigationDistance,
   formatNavigationDuration,
   formatNavigationInstruction,
   formatNavigationStepDistance,
+  navigationDistanceBetweenMeters,
+  navigationStepDistanceMeters,
 } from "../utils/navigationPresentation";
 import type { NavigationStep } from "../types/navigation";
 
@@ -65,5 +68,51 @@ describe("navigationPresentation", () => {
         step({ type: "depart", distance_meters: 900 }),
       ),
     ).toBe("Ahora");
+  });
+
+  it("advances maneuvers only after reaching them and never moves backward", () => {
+    const steps = [
+      step({ type: "depart", location: [-98.19, 19.03] }),
+      step({ type: "turn", location: [-98.191, 19.031] }),
+      step({ type: "arrive", location: [-98.2, 19.04] }),
+    ];
+
+    expect(
+      advanceNavigationStepIndex(
+        steps,
+        { latitude: 19.03, longitude: -98.19 },
+        0,
+      ),
+    ).toBe(1);
+    expect(
+      advanceNavigationStepIndex(
+        steps,
+        { latitude: 19.03, longitude: -98.19 },
+        1,
+      ),
+    ).toBe(1);
+  });
+
+  it("calculates live distance to an OSRM maneuver", () => {
+    const meters = navigationStepDistanceMeters(
+      step({ location: [-98.19, 19.031] }),
+      { latitude: 19.03, longitude: -98.19 },
+    );
+
+    expect(meters).toBeCloseTo(111, 0);
+    expect(
+      navigationDistanceBetweenMeters(
+        { latitude: 19.03, longitude: -98.19 },
+        { latitude: 19.03, longitude: -98.19 },
+      ),
+    ).toBe(0);
+  });
+
+  it("does not announce arrival before reaching the destination", () => {
+    const arrive = step({ type: "arrive" });
+    expect(formatNavigationInstruction(arrive, 500)).toBe(
+      "Continúa hasta el destino",
+    );
+    expect(formatNavigationStepDistance(arrive, 500)).toBe("En 500 m");
   });
 });

@@ -34,14 +34,15 @@ export default function CaseNavigationMap({
     () => geoJsonLineStringToMapCoordinates(geometry),
     [geometry],
   );
+  const fitOriginCoordinate = routeCoordinates[0] ?? originCoordinate;
   const bounds = useMemo(
     () =>
       navigationMapBounds(
-        originCoordinate,
+        fitOriginCoordinate,
         destinationCoordinate,
         routeCoordinates,
       ),
-    [destinationCoordinate, originCoordinate, routeCoordinates],
+    [destinationCoordinate, fitOriginCoordinate, routeCoordinates],
   );
   const initialRegion = useMemo(
     () => regionForNavigationPoints(bounds),
