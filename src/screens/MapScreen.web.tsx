@@ -1492,6 +1492,14 @@ export default function MapScreen() {
           onSavedChange={(saved) => Alert.alert(saved ? 'Evento guardado' : 'Evento eliminado', 'Tu agenda quedó actualizada.')}
         />
         <AuthGateModal visible={isAuthGateVisible} onClose={() => setIsAuthGateVisible(false)} onGuest={() => setSidebarView('form')} />
+        
+        {/* AQUÍ AGREGAMOS EL MODAL PARA LA VISTA DE CELULAR */}
+        <AssociationAdoptionsModal
+          visible={modalAdopcionesVisible}
+          asociacionId={asocAdopciones.id}
+          asociacionNombre={asocAdopciones.nombre}
+          onClose={() => setModalAdopcionesVisible(false)}
+        />
       </View>
     );
   }
