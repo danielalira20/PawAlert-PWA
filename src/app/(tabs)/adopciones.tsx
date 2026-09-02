@@ -1,10 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, FlatList, ActivityIndicator, TouchableOpacity, StyleSheet, Dimensions, Platform, Modal, ScrollView, Image, Linking } from 'react-native';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import axios from 'axios';
 import * as Location from 'expo-location';
+import { useFocusEffect } from 'expo-router';
 import { API_URL } from '../../constants/api';
-import { AdoptionCard } from '../../components/adopciones/AdoptionCard';
+// IMPORTAMOS LA NUEVA TARJETA
+import { AdoptionCardGlobal } from '../../components/adopciones/AdoptionCardGlobal';
 
 const C = { primary: '#EC802B', bg: '#FFFFFF', bgSoft: '#F9F6F0', textDark: '#4A3728', textLight: '#8C7A6B' };
 const { width, height } = Dimensions.get('window');
@@ -14,7 +16,14 @@ export default function AdopcionesGlobalScreen() {
   const [perfiles, setPerfiles] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [filtroEspecie, setFiltroEspecie] = useState<string | null>(null);
+  
+  // Ubicación y bandera
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [locationResolved, setLocationResolved] = useState(false);
+
+  // Estados de Paginación
+  const [pagina, setPagina] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
 
   // Estados para el Modal de Detalle
   const [perfilDetalle, setPerfilDetalle] = useState<any>(null);
@@ -29,26 +38,30 @@ export default function AdopcionesGlobalScreen() {
         let loc = await Location.getCurrentPositionAsync({});
         setLocation({ lat: loc.coords.latitude, lng: loc.coords.longitude });
       } else {
-        cargarGaleria(null, null);
+        setLocation(null);
       }
+      setLocationResolved(true);
     })();
   }, []);
 
-  useEffect(() => {
-    if (location !== undefined) {
-      cargarGaleria(location?.lat, location?.lng, filtroEspecie);
-    }
-  }, [location, filtroEspecie]);
+  useFocusEffect(
+    useCallback(() => {
+      if (locationResolved) {
+        cargarGaleria(location?.lat, location?.lng, filtroEspecie, pagina);
+      }
+    }, [locationResolved, location, filtroEspecie, pagina])
+  );
 
-  const cargarGaleria = async (lat?: number | null, lng?: number | null, especie?: string | null) => {
+  const cargarGaleria = async (lat?: number | null, lng?: number | null, especie?: string | null, page: number = 1) => {
     setIsLoading(true);
     try {
-      let url = `${API_URL}/adoptions?limite=30&pagina=1`;
+      let url = `${API_URL}/adoptions?limite=8&pagina=${page}`;
       if (lat && lng) url += `&lat=${lat}&lng=${lng}`;
       if (especie) url += `&especie=${especie}`;
 
       const res = await axios.get(url);
       setPerfiles(res.data.items || []);
+      setTotalItems(res.data.total || 0);
     } catch (error) {
       console.log('Error cargando galería:', error);
     } finally {
@@ -56,8 +69,13 @@ export default function AdopcionesGlobalScreen() {
     }
   };
 
+  const manejarFiltro = (valor: string | null) => {
+    setFiltroEspecie(valor);
+    setPagina(1);
+  };
+
   const verDetallePerrito = async (id: string) => {
-    setPerfilDetalle(true); // true momentáneo para abrir el modal y mostrar el loading
+    setPerfilDetalle(true); 
     setMostrarContacto(false);
     setIsLoadingDetalle(true);
     try {
@@ -75,12 +93,48 @@ export default function AdopcionesGlobalScreen() {
     const activo = filtroEspecie === valor;
     return (
       <TouchableOpacity 
-        onPress={() => setFiltroEspecie(valor)}
+        onPress={() => manejarFiltro(valor)}
         style={[styles.filtroBoton, activo && styles.filtroActivo]}
       >
         <Ionicons name={icon} size={16} color={activo ? C.bg : C.textDark} style={{ marginRight: 6 }} />
         <Text style={{ color: activo ? C.bg : C.textDark, fontWeight: activo ? '800' : '600', fontSize: 13 }}>{label}</Text>
       </TouchableOpacity>
+    );
+  };
+
+  const renderPaginacion = () => {
+    if (totalItems === 0) return null;
+    const totalPages = Math.max(1, Math.ceil(totalItems / 8));
+    const inicio = (pagina - 1) * 8 + 1;
+    const fin = Math.min(pagina * 8, totalItems);
+
+    return (
+      <View style={{ backgroundColor: '#FDF8F4', borderRadius: 16, padding: 16, marginTop: 16, alignItems: 'center', width: '100%' }}>
+        <Text style={{ fontSize: 13, color: '#8C7A6B', fontWeight: '600', marginBottom: 12 }}>
+          Mostrando {inicio}–{fin} de {totalItems} peluditos
+        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 24 }}>
+          <TouchableOpacity
+            disabled={pagina === 1}
+            onPress={() => setPagina(p => p - 1)}
+            style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: pagina === 1 ? 'transparent' : '#F0E8DC', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20, opacity: pagina === 1 ? 0.5 : 1 }}
+          >
+            <Feather name="chevron-left" size={16} color="#4A3728" />
+            <Text style={{ color: '#4A3728', fontWeight: '700', marginLeft: 4 }}>Anterior</Text>
+          </TouchableOpacity>
+
+          <Text style={{ fontSize: 13, fontWeight: '800', color: '#2E2A26' }}>Página {pagina} de {totalPages}</Text>
+
+          <TouchableOpacity
+            disabled={pagina >= totalPages}
+            onPress={() => setPagina(p => p + 1)}
+            style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: pagina >= totalPages ? '#F0E8DC' : C.primary, paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20, opacity: pagina >= totalPages ? 0.5 : 1 }}
+          >
+            <Text style={{ color: pagina >= totalPages ? '#4A3728' : '#FFF', fontWeight: '700', marginRight: 4 }}>Siguiente</Text>
+            <Feather name="chevron-right" size={16} color={pagina >= totalPages ? '#4A3728' : '#FFF'} />
+          </TouchableOpacity>
+        </View>
+      </View>
     );
   };
 
@@ -101,7 +155,7 @@ export default function AdopcionesGlobalScreen() {
       </View>
 
       {/* GALERÍA */}
-      {isLoading ? (
+      {isLoading && perfiles.length === 0 ? (
         <View style={styles.center}><ActivityIndicator size="large" color={C.primary} /></View>
       ) : perfiles.length === 0 ? (
         <View style={styles.center}>
@@ -112,16 +166,19 @@ export default function AdopcionesGlobalScreen() {
         <FlatList
           data={perfiles}
           keyExtractor={(item) => item.id}
-          numColumns={isDesktop ? 3 : 2}
-          key={isDesktop ? 'desktop-3' : 'mobile-2'}
+          numColumns={isDesktop ? 4 : 2}
+          key={isDesktop ? 'desktop-4' : 'mobile-2'}
           columnWrapperStyle={styles.columnWrapper}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
+          ListFooterComponent={renderPaginacion()}
           renderItem={({ item }) => (
-            <AdoptionCard 
-              perfil={item} 
-              onPress={() => verDetallePerrito(item.id)} 
-            />
+            <View style={styles.cardContainer}>
+              <AdoptionCardGlobal 
+                perfil={item} 
+                onPress={() => verDetallePerrito(item.id)} 
+              />
+            </View>
           )}
         />
       )}
@@ -288,7 +345,11 @@ const styles = StyleSheet.create({
   filtrosRow: { flexDirection: 'row', gap: 12 },
   filtroBoton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F3F4F6', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20 },
   filtroActivo: { backgroundColor: C.primary },
-  columnWrapper: { justifyContent: 'flex-start', gap: isDesktop ? 20 : 10, paddingHorizontal: 24 },
+  
+  // Estilos de cuadrícula para que abarquen el 25% completo de la pantalla c/u
+  columnWrapper: { justifyContent: 'flex-start', paddingHorizontal: 16, gap: 16 },
+  cardContainer: { flex: 1, maxWidth: isDesktop ? '23.5%' : '48%', minWidth: 200 },
+  
   listContent: { paddingBottom: 40, paddingTop: 24 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   emptyText: { marginTop: 16, fontSize: 15, fontWeight: '600', color: C.textLight, textAlign: 'center' },
