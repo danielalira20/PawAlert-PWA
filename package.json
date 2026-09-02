@@ -93,6 +93,7 @@
     "test": "jest",
     "test:coverage": "jest --coverage --runInBand",
     "test:e2e": "playwright test",
+    "test:e2e:navigation": "playwright test --config playwright.navigation.config.ts",
     "test:e2e:report": "playwright show-report"
   },
   "private": true

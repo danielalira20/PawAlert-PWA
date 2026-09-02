@@ -801,8 +801,16 @@ E2E:
 3. conceder ubicacion simulada;
 4. comprobar linea, ETA y distancia;
 5. simular fallo del proveedor y comprobar degradacion;
-6. comprobar que otro usuario recibe `403`;
+6. comprobar que otro usuario recibe `404` para no revelar la existencia de
+   una asignacion privada;
 7. registrar llegada mediante el endpoint existente, no desde la ruta.
+
+La suite web aislada se ejecuta con `npm run test:e2e:navigation`. Levanta el
+frontend, simula sesion, GPS y respuestas del backend, y recorre escritorio y
+movil sin escribir en Supabase. Cubre la ruta confirmada, el recalculo manual,
+la revocacion privada de acceso y la degradacion `NoRoute`. La prueba integrada
+contra Railway se conserva como una validacion previa al merge y requiere una
+asignacion de prueba controlada.
 
 ## 21. Decisiones cerradas y pendientes
 
