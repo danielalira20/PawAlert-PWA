@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, FlatList, ActivityIndicator, TouchableOpacity, StyleSheet, Dimensions, Platform, Modal, ScrollView, Image, Linking } from 'react-native';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import axios from 'axios';
+import { useWindowDimensions } from 'react-native';
 import * as Location from 'expo-location';
 import { useFocusEffect } from 'expo-router';
 import { API_URL } from '../../constants/api';
@@ -9,10 +10,11 @@ import { API_URL } from '../../constants/api';
 import { AdoptionCardGlobal } from '../../components/adopciones/AdoptionCardGlobal';
 
 const C = { primary: '#EC802B', bg: '#FFFFFF', bgSoft: '#F9F6F0', textDark: '#4A3728', textLight: '#8C7A6B' };
-const { width, height } = Dimensions.get('window');
-const isDesktop = width > 768;
 
 export default function AdopcionesGlobalScreen() {
+  const { width } = useWindowDimensions();
+  const isDesktop = width > 768;
+
   const [perfiles, setPerfiles] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [filtroEspecie, setFiltroEspecie] = useState<string | null>(null);
@@ -168,12 +170,20 @@ export default function AdopcionesGlobalScreen() {
           keyExtractor={(item) => item.id}
           numColumns={isDesktop ? 4 : 2}
           key={isDesktop ? 'desktop-4' : 'mobile-2'}
-          columnWrapperStyle={styles.columnWrapper}
+          columnWrapperStyle={{
+            paddingHorizontal: 16,
+            marginBottom: 24
+          }}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
           ListFooterComponent={renderPaginacion()}
           renderItem={({ item }) => (
-            <View style={styles.cardContainer}>
+          
+            <View style={{ 
+              flex: 1, 
+              maxWidth: isDesktop ? '25%' : '50%',
+              paddingHorizontal: 8 
+            }}>
               <AdoptionCardGlobal 
                 perfil={item} 
                 onPress={() => verDetallePerrito(item.id)} 
@@ -346,17 +356,13 @@ const styles = StyleSheet.create({
   filtroBoton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F3F4F6', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20 },
   filtroActivo: { backgroundColor: C.primary },
   
-  // Estilos de cuadrícula para que abarquen el 25% completo de la pantalla c/u
-  columnWrapper: { justifyContent: 'flex-start', paddingHorizontal: 16, gap: 16 },
-  cardContainer: { flex: 1, maxWidth: isDesktop ? '23.5%' : '48%', minWidth: 200 },
-  
   listContent: { paddingBottom: 40, paddingTop: 24 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   emptyText: { marginTop: 16, fontSize: 15, fontWeight: '600', color: C.textLight, textAlign: 'center' },
 
   // Estilos del Modal
   overlay: { flex: 1, backgroundColor: 'rgba(46,42,38,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-  modalContent: { backgroundColor: C.bgSoft, width: '100%', maxWidth: 1024, maxHeight: height * 0.9, borderRadius: 24, overflow: 'hidden', ...Platform.select({ web: { boxShadow: '0 10px 40px rgba(0,0,0,0.2)' }, default: { elevation: 20 } }) },
+  modalContent: { backgroundColor: C.bgSoft, width: '100%', maxWidth: 1024, maxHeight: '90%', borderRadius: 24, overflow: 'hidden', ...Platform.select({ web: { boxShadow: '0 10px 40px rgba(0,0,0,0.2)' }, default: { elevation: 20 } }) },
   headerModal: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 24, paddingVertical: 20, backgroundColor: C.bg, borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
   titleModal: { fontSize: 22, fontWeight: '900', color: C.textDark },
   subtitleModal: { fontSize: 11, fontWeight: '800', color: C.primary, textTransform: 'uppercase', marginBottom: 2 },

@@ -1,17 +1,19 @@
 import React from 'react';
-import { View, Text, Image, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
+import { View, Text, Image, TouchableOpacity, StyleSheet, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-const { width } = Dimensions.get('window');
-const isDesktop = width > 768;
-
 export function AdoptionCardGlobal({ perfil, onPress }: { perfil: any, onPress: () => void }) {
+  // Metemos el hook ADENTRO para que siempre reaccione en tiempo real
+  const { width } = useWindowDimensions();
+  const isDesktop = width > 768;
+
   const fotoUrl = perfil.foto_portada?.foto_url;
   const esMacho = perfil.sexo === 'macho';
 
   return (
     <TouchableOpacity activeOpacity={0.9} onPress={onPress} style={styles.card}>
-      <View style={styles.imageContainer}>
+      {/* Controlamos la altura aquí directamente */}
+      <View style={[styles.imageContainer, { height: isDesktop ? 280 : 150 }]}>
         {fotoUrl ? (
           <Image source={{ uri: fotoUrl }} style={styles.image} resizeMode="cover" />
         ) : (
@@ -66,7 +68,6 @@ const styles = StyleSheet.create({
   },
   imageContainer: {
     width: '100%',
-    height: isDesktop ? 280 : 200, // Altura más grande y vistosa para la galería
     position: 'relative',
   },
   image: {
