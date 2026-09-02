@@ -605,6 +605,19 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
     }
   }, [info]);
 
+  // Si la pestaña activa queda oculta porque se apagó su eje, se mueve a
+  // una pestaña visible en vez de dejar la pantalla en un tab fantasma.
+  // Nunca se disparan las dos ramas a la vez: al menos un eje siempre
+  // queda activo (bloqueado en el backend en config-asignacion).
+  useEffect(() => {
+    const pestanasDeRescate: ActiveTab[] = ['reportes', 'avistamientos', 'seguimientos', 'postulaciones', 'voluntarios'];
+    if (!participaRescates && pestanasDeRescate.includes(activeTab)) {
+      setActiveTab(participaAdopciones ? 'adopciones' : 'configuracion');
+    } else if (!participaAdopciones && activeTab === 'adopciones') {
+      setActiveTab(participaRescates ? 'reportes' : 'configuracion');
+    }
+  }, [participaRescates, participaAdopciones, activeTab]);
+
   useEffect(() => {
     if (info?.estado !== 'aprobada') return;
     const interval = setInterval(() => {
@@ -1309,43 +1322,47 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                   borderBottomColor: '#E5E7EB',
                 }}
               >
-                <TouchableOpacity
-                  onPress={() => setActiveTab('reportes')}
-                  style={{
-                    paddingBottom: 12,
-                    marginRight: 24,
-                    flexShrink: 0,
-                    borderBottomWidth: activeTab === 'reportes' ? 3 : 0,
-                    borderBottomColor: COLORS.primary
-                  }}
-                >
-                  <Text style={{
-                    fontSize: 16,
-                    fontWeight: activeTab === 'reportes' ? '800' : '600',
-                    color: activeTab === 'reportes' ? COLORS.primary : COLORS.textLight
-                  }}>
-                    Reportes
-                  </Text>
-                </TouchableOpacity>
+                {participaRescates && (
+                  <TouchableOpacity
+                    onPress={() => setActiveTab('reportes')}
+                    style={{
+                      paddingBottom: 12,
+                      marginRight: 24,
+                      flexShrink: 0,
+                      borderBottomWidth: activeTab === 'reportes' ? 3 : 0,
+                      borderBottomColor: COLORS.primary
+                    }}
+                  >
+                    <Text style={{
+                      fontSize: 16,
+                      fontWeight: activeTab === 'reportes' ? '800' : '600',
+                      color: activeTab === 'reportes' ? COLORS.primary : COLORS.textLight
+                    }}>
+                      Reportes
+                    </Text>
+                  </TouchableOpacity>
+                )}
 
-                <TouchableOpacity
-                  onPress={() => setActiveTab('avistamientos')}
-                  style={{
-                    paddingBottom: 12,
-                    marginRight: 24,
-                    flexShrink: 0,
-                    borderBottomWidth: activeTab === 'avistamientos' ? 3 : 0,
-                    borderBottomColor: COLORS.primary
-                  }}
-                >
-                  <Text style={{
-                    fontSize: 16,
-                    fontWeight: activeTab === 'avistamientos' ? '800' : '600',
-                    color: activeTab === 'avistamientos' ? COLORS.primary : COLORS.textLight
-                  }}>
-                    Avistamientos
-                  </Text>
-                </TouchableOpacity>
+                {participaRescates && (
+                  <TouchableOpacity
+                    onPress={() => setActiveTab('avistamientos')}
+                    style={{
+                      paddingBottom: 12,
+                      marginRight: 24,
+                      flexShrink: 0,
+                      borderBottomWidth: activeTab === 'avistamientos' ? 3 : 0,
+                      borderBottomColor: COLORS.primary
+                    }}
+                  >
+                    <Text style={{
+                      fontSize: 16,
+                      fontWeight: activeTab === 'avistamientos' ? '800' : '600',
+                      color: activeTab === 'avistamientos' ? COLORS.primary : COLORS.textLight
+                    }}>
+                      Avistamientos
+                    </Text>
+                  </TouchableOpacity>
+                )}
 
                 <TouchableOpacity
                   onPress={() => setActiveTab('eventos')}
@@ -1366,64 +1383,70 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                   </Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity
-                  onPress={() => setActiveTab('seguimientos')}
-                  style={{
-                    paddingBottom: 12,
-                    marginRight: 24,
-                    flexShrink: 0,
-                    borderBottomWidth: activeTab === 'seguimientos' ? 3 : 0,
-                    borderBottomColor: COLORS.primary
-                  }}
-                >
-                  <Text style={{
-                    fontSize: 16,
-                    fontWeight: activeTab === 'seguimientos' ? '800' : '600',
-                    color: activeTab === 'seguimientos' ? COLORS.primary : COLORS.textLight
-                  }}>
-                    Seguimientos
-                  </Text>
-                </TouchableOpacity>
+                {participaRescates && (
+                  <TouchableOpacity
+                    onPress={() => setActiveTab('seguimientos')}
+                    style={{
+                      paddingBottom: 12,
+                      marginRight: 24,
+                      flexShrink: 0,
+                      borderBottomWidth: activeTab === 'seguimientos' ? 3 : 0,
+                      borderBottomColor: COLORS.primary
+                    }}
+                  >
+                    <Text style={{
+                      fontSize: 16,
+                      fontWeight: activeTab === 'seguimientos' ? '800' : '600',
+                      color: activeTab === 'seguimientos' ? COLORS.primary : COLORS.textLight
+                    }}>
+                      Seguimientos
+                    </Text>
+                  </TouchableOpacity>
+                )}
 
-                <TouchableOpacity
-                  onPress={() => setActiveTab('postulaciones')}
-                  style={{
-                    paddingBottom: 12,
-                    marginRight: 24,
-                    flexShrink: 0,
-                    borderBottomWidth: activeTab === 'postulaciones' ? 3 : 0,
-                    borderBottomColor: COLORS.primary
-                  }}
-                >
-                  <Text style={{
-                    fontSize: 16,
-                    fontWeight: activeTab === 'postulaciones' ? '800' : '600',
-                    color: activeTab === 'postulaciones' ? COLORS.primary : COLORS.textLight
-                  }}>
-                    Postulaciones
-                  </Text>
-                </TouchableOpacity>
+                {participaRescates && (
+                  <TouchableOpacity
+                    onPress={() => setActiveTab('postulaciones')}
+                    style={{
+                      paddingBottom: 12,
+                      marginRight: 24,
+                      flexShrink: 0,
+                      borderBottomWidth: activeTab === 'postulaciones' ? 3 : 0,
+                      borderBottomColor: COLORS.primary
+                    }}
+                  >
+                    <Text style={{
+                      fontSize: 16,
+                      fontWeight: activeTab === 'postulaciones' ? '800' : '600',
+                      color: activeTab === 'postulaciones' ? COLORS.primary : COLORS.textLight
+                    }}>
+                      Postulaciones
+                    </Text>
+                  </TouchableOpacity>
+                )}
 
-                <TouchableOpacity
-                  onPress={() => setActiveTab('adopciones')}
-                  style={{
-                    paddingBottom: 12,
-                    marginRight: 24,
-                    flexShrink: 0,
-                    borderBottomWidth: activeTab === 'adopciones' ? 3 : 0,
-                    borderBottomColor: COLORS.primary
-                  }}
-                >
-                  <Text style={{
-                    fontSize: 16,
-                    fontWeight: activeTab === 'adopciones' ? '800' : '600',
-                    color: activeTab === 'adopciones' ? COLORS.primary : COLORS.textLight
-                  }}>
-                    Adopciones
-                  </Text>
-                </TouchableOpacity>
+                {participaAdopciones && (
+                  <TouchableOpacity
+                    onPress={() => setActiveTab('adopciones')}
+                    style={{
+                      paddingBottom: 12,
+                      marginRight: 24,
+                      flexShrink: 0,
+                      borderBottomWidth: activeTab === 'adopciones' ? 3 : 0,
+                      borderBottomColor: COLORS.primary
+                    }}
+                  >
+                    <Text style={{
+                      fontSize: 16,
+                      fontWeight: activeTab === 'adopciones' ? '800' : '600',
+                      color: activeTab === 'adopciones' ? COLORS.primary : COLORS.textLight
+                    }}>
+                      Adopciones
+                    </Text>
+                  </TouchableOpacity>
+                )}
 
-                {user?.rol !== 'staff' && (
+                {user?.rol !== 'staff' && participaRescates && (
                   <TouchableOpacity
                     onPress={() => setActiveTab('voluntarios')}
                     style={{
