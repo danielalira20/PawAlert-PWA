@@ -474,8 +474,9 @@ No se recalcula en cada lectura del GPS. El intervalo minimo protege bateria,
 datos y proveedor. Una ruta que supera el TTL puede seguir dibujada con una
 marca de `Actualizando`; no debe desaparecer mientras llega la respuesta.
 
-La deteccion automatica de desvio pertenece a la segunda fase. El MVP debe
-incluir como minimo recarga inicial, cambio de destino y recalculo manual.
+La deteccion automatica de desvio se implementa en N2. Exige tres lecturas
+consecutivas fuera del corredor, descarta senales con precision insuficiente y
+respeta tanto la edad minima de la ruta como el intervalo entre recalculos.
 
 ## 11. Persistencia y privacidad
 
@@ -528,7 +529,7 @@ La pantalla incluye:
 - selector segmentado para modos realmente disponibles;
 - resumen estable de ETA y distancia;
 - indicador de cuando se calculo;
-- boton de centrar ubicacion;
+- controles separados para seguir la ubicacion y ver la ruta completa;
 - boton de recalculo;
 - acceso secundario a Google Maps y Waze;
 - estado de carga sin eliminar el mapa anterior;
@@ -716,6 +717,7 @@ recursos y limites de gasto. No cambia el contrato del frontend.
 - seguimiento de GPS mientras la pantalla esta abierta;
 - deteccion de desvio;
 - recalculo automatico con limites;
+- camara centrada en el usuario con opcion para recuperar la vista completa;
 - metricas operativas sin coordenadas.
 
 ### Fase N3: modos adicionales
@@ -807,10 +809,21 @@ E2E:
 
 La suite web aislada se ejecuta con `npm run test:e2e:navigation`. Levanta el
 frontend, simula sesion, GPS y respuestas del backend, y recorre escritorio y
-movil sin escribir en Supabase. Cubre la ruta confirmada, el recalculo manual,
-la revocacion privada de acceso y la degradacion `NoRoute`. La prueba integrada
-contra Railway se conserva como una validacion previa al merge y requiere una
-asignacion de prueba controlada.
+movil sin escribir en Supabase. Cubre la ruta confirmada, los modos de camara,
+el recalculo manual, el desvio confirmado, el GPS impreciso, la perdida de red,
+el cambio de destino, la revocacion privada de acceso y la degradacion
+`NoRoute`. La prueba integrada contra Railway se conserva como una validacion
+previa al merge y requiere una asignacion de prueba controlada.
+
+### Estado de cierre N2
+
+- N2.5 conserva la ruta anterior y limita los recalculos automaticos;
+- N2.6 inicia siguiendo al usuario y permite alternar a la ruta completa;
+- N2.7 automatiza los escenarios criticos en escritorio y vista movil web;
+- el seguimiento se detiene al salir del primer plano y no persiste un
+  historial de coordenadas;
+- `Silenciar` se incorpora junto con la guia por voz en N4.1. Antes de esa fase
+  no se muestra un control sin efecto.
 
 ## 21. Decisiones cerradas y pendientes
 
