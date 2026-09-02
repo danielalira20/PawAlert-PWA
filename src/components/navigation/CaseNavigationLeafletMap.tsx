@@ -17,9 +17,7 @@ import {
   navigationMapBounds,
 } from "./caseNavigationMap.utils";
 
-interface LeafletProps extends CaseNavigationMapProps {
-  width: number;
-}
+type LeafletProps = CaseNavigationMapProps;
 
 const originIcon = L.divIcon({
   className: "pawalert-navigation-origin",
@@ -38,23 +36,50 @@ const destinationIcon = L.divIcon({
 function FitNavigationBounds({
   coordinates,
   fitRequestId,
-  width,
 }: {
   coordinates: [number, number][];
   fitRequestId: number;
-  width: number;
 }) {
   const map = useMap();
 
   useEffect(() => {
-    map.invalidateSize();
-    if (coordinates.length === 0) return;
-    if (coordinates.length === 1) {
-      map.setView(coordinates[0], 16);
-      return;
-    }
-    map.fitBounds(coordinates, { padding: [36, 36], maxZoom: 17 });
-  }, [coordinates, fitRequestId, map, width]);
+    let frame = 0;
+
+    const fitRoute = () => {
+      const container = map.getContainer();
+      if (container.clientWidth === 0 || container.clientHeight === 0) return;
+
+      map.stop();
+      map.invalidateSize({ animate: false, pan: false });
+      if (coordinates.length === 0) return;
+      if (coordinates.length === 1) {
+        map.setView(coordinates[0], 16, { animate: false });
+        return;
+      }
+
+      map.fitBounds(L.latLngBounds(coordinates), {
+        animate: false,
+        padding: [36, 36],
+        maxZoom: 17,
+      });
+    };
+
+    const scheduleFit = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        frame = window.requestAnimationFrame(fitRoute);
+      });
+    };
+
+    const observer = new ResizeObserver(scheduleFit);
+    observer.observe(map.getContainer());
+    map.whenReady(scheduleFit);
+
+    return () => {
+      observer.disconnect();
+      window.cancelAnimationFrame(frame);
+    };
+  }, [coordinates, fitRequestId, map]);
 
   return null;
 }
@@ -64,7 +89,6 @@ export default function CaseNavigationLeafletMap({
   destination,
   geometry,
   lineStyle = "route",
-  width,
   height = 360,
   fitRequestId = 0,
 }: LeafletProps) {
@@ -106,14 +130,13 @@ export default function CaseNavigationLeafletMap({
     <MapContainer
       center={[origin.latitude, origin.longitude]}
       zoom={15}
-      style={{ width, height }}
+      style={{ width: "100%", height }}
       zoomControl
       scrollWheelZoom
     >
       <FitNavigationBounds
         coordinates={bounds}
         fitRequestId={fitRequestId}
-        width={width}
       />
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'

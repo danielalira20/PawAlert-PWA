@@ -18,7 +18,7 @@ const volunteer = {
 const destination = {
   source: 'validated_sighting',
   latitude: 19.0474,
-  longitude: -98.1982,
+  longitude: -98.2582,
   confirmed_at: '2026-09-01T15:00:00.000Z',
   revision: 'sighting:e2e-1',
 };
@@ -52,6 +52,44 @@ async function json(route: Route, status: number, body: unknown) {
     headers: corsHeaders,
     body: JSON.stringify(body),
   });
+}
+
+async function expectNavigationMapFitsViewport(page: Page) {
+  const map = page.getByLabel('Mapa de navegación del caso');
+  const viewport = page.viewportSize();
+  await expect
+    .poll(async () => {
+      const mapBox = await map.boundingBox();
+      if (!mapBox) return false;
+      if (viewport && viewport.width < 900 && mapBox.height > 320) return false;
+
+      for (const selector of [
+        '.pawalert-navigation-origin',
+        '.pawalert-navigation-destination',
+      ]) {
+        const markerBox = await page.locator(selector).boundingBox();
+        if (!markerBox) return false;
+        if (
+          markerBox.x < mapBox.x ||
+          markerBox.y < mapBox.y ||
+          markerBox.x + markerBox.width > mapBox.x + mapBox.width ||
+          markerBox.y + markerBox.height > mapBox.y + mapBox.height
+        ) {
+          return false;
+        }
+      }
+
+      return true;
+    })
+    .toBe(true);
+
+  expect(
+    await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth <=
+        document.documentElement.clientWidth,
+    ),
+  ).toBe(true);
 }
 
 async function prepareAuthenticatedNavigation(
@@ -146,8 +184,8 @@ async function prepareAuthenticatedNavigation(
             type: 'LineString',
             coordinates: [
               [-98.2019, 19.0433],
-              [-98.2005, 19.045],
-              [-98.1982, 19.0474],
+              [-98.2295, 19.045],
+              [-98.2582, 19.0474],
             ],
           },
           steps: [],
@@ -189,6 +227,14 @@ test('muestra, recalcula y retira una ruta de asignación confirmada', async ({
   await expect(page.locator('.leaflet-control-attribution')).toContainText(
     'Leaflet',
   );
+  await expect(
+    page.getByText('Pulsa Recalcular para actualizar tu ubicación.'),
+  ).toBeVisible();
+  await expectNavigationMapFitsViewport(page);
+
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.getByLabel('Centrar toda la ruta').click();
+  await expectNavigationMapFitsViewport(page);
 
   expect(mock.routeCalls()).toBe(1);
   expect(mock.routeBodies[0]).toMatchObject({

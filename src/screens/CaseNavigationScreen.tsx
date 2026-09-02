@@ -37,9 +37,13 @@ interface Props {
 const NAVIGATION_ACCESS_REFRESH_MS = 30_000;
 
 export default function CaseNavigationScreen({ reportId, onClose }: Props) {
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const { isLoggedIn, isLoading: isLoadingSession } = useAuth();
   const isDesktop = width >= 900;
+  const isNarrow = width < 390;
+  const mapHeight = isDesktop
+    ? 500
+    : Math.max(260, Math.min(320, Math.round(height * 0.42)));
   const [fitRequestId, setFitRequestId] = useState(0);
   const startedForReportRef = useRef<string | null>(null);
   const attemptedDestinationRevisionRef = useRef<string | null>(null);
@@ -177,7 +181,13 @@ export default function CaseNavigationScreen({ reportId, onClose }: Props) {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.header}>
+      <View
+        style={[
+          styles.header,
+          !isDesktop && styles.headerMobile,
+          isNarrow && styles.headerNarrow,
+        ]}
+      >
         <TouchableOpacity
           accessibilityLabel="Volver"
           onPress={onClose}
@@ -191,9 +201,12 @@ export default function CaseNavigationScreen({ reportId, onClose }: Props) {
             {reportId ? `Caso ${reportId.slice(0, 8)}` : "Caso no disponible"}
           </Text>
         </View>
-        <View style={styles.modeBadge}>
+        <View
+          accessibilityLabel="Modo de navegación: vehículo"
+          style={[styles.modeBadge, isNarrow && styles.modeBadgeNarrow]}
+        >
           <Ionicons name="car-outline" size={16} color={Brand.secondary} />
-          <Text style={styles.modeBadgeText}>Vehículo</Text>
+          {!isNarrow && <Text style={styles.modeBadgeText}>Vehículo</Text>}
         </View>
       </View>
 
@@ -235,7 +248,7 @@ export default function CaseNavigationScreen({ reportId, onClose }: Props) {
               origin={currentRoute.origin}
               destination={currentRoute.destination}
               geometry={currentRoute.route.geometry}
-              height={isDesktop ? 500 : 380}
+              height={mapHeight}
               fitRequestId={fitRequestId}
             />
             {isRefreshing && (
@@ -246,7 +259,12 @@ export default function CaseNavigationScreen({ reportId, onClose }: Props) {
             )}
           </View>
 
-          <View style={[styles.details, isDesktop && styles.detailsDesktop]}>
+          <View
+            style={[
+              styles.details,
+              isDesktop ? styles.detailsDesktop : styles.detailsMobile,
+            ]}
+          >
             {destinationChanged && (
               <StatusNotice
                 icon="location-outline"
@@ -283,13 +301,14 @@ export default function CaseNavigationScreen({ reportId, onClose }: Props) {
               </View>
             </View>
 
-            <View style={styles.metrics}>
+            <View style={[styles.metrics, !isDesktop && styles.metricsMobile]}>
               <Metric
                 icon="time-outline"
                 label="Tiempo estimado"
                 value={formatNavigationDuration(
                   currentRoute.route.duration_seconds,
                 )}
+                compact={!isDesktop}
               />
               <View style={styles.metricDivider} />
               <Metric
@@ -298,12 +317,14 @@ export default function CaseNavigationScreen({ reportId, onClose }: Props) {
                 value={formatNavigationDistance(
                   currentRoute.route.distance_meters,
                 )}
+                compact={!isDesktop}
               />
               <View style={styles.metricDivider} />
               <Metric
                 icon="refresh-outline"
                 label="Calculada"
                 value={formatNavigationAge(currentRoute.calculated_at)}
+                compact={!isDesktop}
               />
             </View>
 
@@ -311,11 +332,19 @@ export default function CaseNavigationScreen({ reportId, onClose }: Props) {
               Pulsa Recalcular para actualizar tu ubicación.
             </Text>
 
-            <View style={styles.primaryActions}>
+            <View
+              style={[
+                styles.primaryActions,
+                isNarrow && styles.primaryActionsNarrow,
+              ]}
+            >
               <TouchableOpacity
                 accessibilityLabel="Centrar toda la ruta"
                 onPress={() => setFitRequestId((value) => value + 1)}
-                style={styles.secondaryButton}
+                style={[
+                  styles.secondaryButton,
+                  isNarrow && styles.fullWidthButton,
+                ]}
               >
                 <Ionicons
                   name="scan-outline"
@@ -330,6 +359,7 @@ export default function CaseNavigationScreen({ reportId, onClose }: Props) {
                 onPress={() => void recalculate()}
                 style={[
                   styles.primaryButton,
+                  isNarrow && styles.fullWidthButton,
                   isRefreshing && styles.buttonDisabled,
                 ]}
               >
@@ -378,11 +408,16 @@ export default function CaseNavigationScreen({ reportId, onClose }: Props) {
               destination={destination}
               geometry={noRouteGeometry}
               lineStyle="fallback"
-              height={isDesktop ? 500 : 380}
+              height={mapHeight}
               fitRequestId={fitRequestId}
             />
           </View>
-          <View style={[styles.details, isDesktop && styles.detailsDesktop]}>
+          <View
+            style={[
+              styles.details,
+              isDesktop ? styles.detailsDesktop : styles.detailsMobile,
+            ]}
+          >
             <StatusNotice
               icon="warning-outline"
               tone="warning"
@@ -462,15 +497,21 @@ function Metric({
   icon,
   label,
   value,
+  compact = false,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   value: string;
+  compact?: boolean;
 }) {
   return (
     <View style={styles.metric}>
       <Ionicons name={icon} size={18} color={Brand.secondary} />
-      <Text style={styles.metricValue} numberOfLines={1} adjustsFontSizeToFit>
+      <Text
+        style={[styles.metricValue, compact && styles.metricValueCompact]}
+        numberOfLines={compact ? 2 : 1}
+        adjustsFontSizeToFit={!compact}
+      >
         {value}
       </Text>
       <Text style={styles.metricLabel}>{label}</Text>
@@ -584,6 +625,13 @@ const styles = StyleSheet.create({
     borderBottomColor: "#E7DED4",
     backgroundColor: "#FFFFFF",
   },
+  headerMobile: {
+    minHeight: 64,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    gap: 10,
+  },
+  headerNarrow: { paddingHorizontal: 10, gap: 8 },
   iconButton: {
     width: 42,
     height: 42,
@@ -604,6 +652,11 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: "#EAF7F5",
   },
+  modeBadgeNarrow: {
+    width: 36,
+    paddingHorizontal: 0,
+    justifyContent: "center",
+  },
   modeBadgeText: { color: "#2F7771", fontSize: 11, fontWeight: "800" },
   scrollContent: { flexGrow: 1, paddingBottom: 48 },
   mapBand: { position: "relative", width: "100%", backgroundColor: "#E9ECE8" },
@@ -622,6 +675,7 @@ const styles = StyleSheet.create({
   refreshingText: { color: "#FFFFFF", fontSize: 11, fontWeight: "700" },
   details: { width: "100%", paddingHorizontal: 18, paddingTop: 20, gap: 18 },
   detailsDesktop: { maxWidth: 900, alignSelf: "center", paddingHorizontal: 24 },
+  detailsMobile: { paddingHorizontal: 16, paddingTop: 16, gap: 16 },
   destinationRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   destinationIcon: {
     width: 42,
@@ -653,6 +707,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderColor: "#DED4C8",
   },
+  metricsMobile: { minHeight: 98 },
   metric: {
     flex: 1,
     minWidth: 0,
@@ -669,6 +724,12 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 4,
   },
+  metricValueCompact: {
+    minHeight: 36,
+    fontSize: 14,
+    lineHeight: 17,
+    textAlignVertical: "center",
+  },
   metricLabel: {
     color: Brand.textMuted,
     fontSize: 9,
@@ -682,6 +743,8 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   primaryActions: { flexDirection: "row", gap: 10 },
+  primaryActionsNarrow: { flexDirection: "column" },
+  fullWidthButton: { flex: 0, width: "100%" },
   secondaryButton: {
     flex: 1,
     minHeight: 48,
