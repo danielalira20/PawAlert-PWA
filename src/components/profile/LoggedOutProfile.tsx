@@ -261,6 +261,21 @@ export function LoggedOutProfile() {
     }
   };
 
+  const handleGoogleAuth = async () => {
+    setIsLoading(true);
+    try {
+      await loginWithGoogle();
+    } catch (error: any) {
+      showToast({
+        type: 'error',
+        title: 'No pudimos conectar con Google',
+        message: error?.message || 'Inténtalo nuevamente en unos momentos.',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // ─── Estilos de inputs (idénticos a LoginScreen) ──────────────────────────
   const inputStyle = {
     borderWidth: 1.5,
@@ -427,31 +442,13 @@ export function LoggedOutProfile() {
               </View>
 
               <TouchableOpacity 
-                onPress={async () => {
-                  try {
-                    setIsLoading(true);
-                    await loginWithGoogle();
-                    const intentStr = await consumeAuthIntent();
-                    if (intentStr) {
-                      const intent = JSON.parse(intentStr);
-                      const dest = getPostAuthDestination(intent);
-                      router.replace(dest as any);
-                    } else {
-                      const returnTo = Array.isArray(params.returnTo) ? params.returnTo[0] : params.returnTo;
-                      if (returnTo) {
-                        router.replace(decodeURIComponent(returnTo) as any);
-                      }
-                    }
-                  } catch (e: any) {
-                    setErrors({ email: e.message || 'Error al conectar con Google' });
-                  } finally {
-                    setIsLoading(false);
-                  }
-                }}
+                onPress={handleGoogleAuth}
+                disabled={isLoading}
                 style={{
                   flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
                   backgroundColor: '#FFF', paddingVertical: 14, borderRadius: 30,
-                  borderWidth: 1, borderColor: '#DDD', marginBottom: 20
+                  borderWidth: 1, borderColor: '#DDD', marginBottom: 20,
+                  opacity: isLoading ? 0.7 : 1,
                 }}
               >
                 <Ionicons name="logo-google" size={20} color="#DB4437" style={{ marginRight: 10 }} />
@@ -579,31 +576,13 @@ export function LoggedOutProfile() {
               </View>
 
               <TouchableOpacity 
-                onPress={async () => {
-                  try {
-                    setIsLoading(true);
-                    await loginWithGoogle();
-                    const intentStr = await consumeAuthIntent();
-                    if (intentStr) {
-                      const intent = JSON.parse(intentStr);
-                      const dest = getPostAuthDestination(intent);
-                      router.replace(dest as any);
-                    } else {
-                      const returnTo = Array.isArray(params.returnTo) ? params.returnTo[0] : params.returnTo;
-                      if (returnTo) {
-                        router.replace(decodeURIComponent(returnTo) as any);
-                      }
-                    }
-                  } catch (e: any) {
-                    setErrors({ email: e.message || 'Error al conectar con Google' });
-                  } finally {
-                    setIsLoading(false);
-                  }
-                }}
+                onPress={handleGoogleAuth}
+                disabled={isLoading}
                 style={{
                   flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
                   backgroundColor: '#FFF', paddingVertical: 14, borderRadius: 30,
-                  borderWidth: 1, borderColor: '#DDD', marginBottom: 20
+                  borderWidth: 1, borderColor: '#DDD', marginBottom: 20,
+                  opacity: isLoading ? 0.7 : 1,
                 }}
               >
                 <Ionicons name="logo-google" size={20} color="#DB4437" style={{ marginRight: 10 }} />
@@ -835,4 +814,3 @@ const styles = StyleSheet.create({
   newHereText: { fontSize: 13, color: Brand.textMuted },
   newHereLink: { color: Brand.primary, fontWeight: '700' },
 });
-

@@ -38,6 +38,8 @@ import { useSectionGuide } from '../hooks/useSectionGuide';
 
 const heroImage = require('../assets/images/imagen_hero.png');
 const brandLogo = require('../assets/logo/logo_pawAlert.png');
+const ursvaLogo = require('../assets/images/ursva-logo.png');
+const evolucionAnimalLogo = require('../assets/images/evolucion-animal-logo.png');
 
 // IMPORTANTE: Importamos el formulario de forma "perezosa" (Lazy Load)
 const AssociationFormScreen = lazy(() => import('./AssociationFormScreen'));
@@ -1459,65 +1461,122 @@ export default function LandingScreen() {
           <PawDecor top={80} left={'45%' as any} size={24} opacity={0.07} color={C.accent} rotate={20} />
 
           <View style={{ paddingHorizontal: 24, maxWidth: 960, alignSelf: 'center', width: '100%', marginBottom: 32 }}>
-            <SectionLabel text="Aliados" color={C.primary} />
+            <SectionLabel text="Nuestra red" color={C.primary} />
             <Text style={{ fontSize: isDesktop ? 36 : 28, fontFamily: F.displayBold, color: C.text, textAlign: 'center', letterSpacing: -0.8 }}>
-              Red de Asociaciones
+              Asociaciones que ya caminan con PawAlert
             </Text>
-            <Text style={{ fontSize: 14, color: C.muted, fontFamily: F.bodyMedium, textAlign: 'center', marginTop: 8 }}>
-              Los héroes locales que hacen esto posible.
+            <Text style={{ fontSize: 14, lineHeight: 22, color: C.muted, fontFamily: F.bodyMedium, textAlign: 'center', marginTop: 8, maxWidth: 620, alignSelf: 'center' }}>
+              Organizaciones con experiencia real que fortalecen una red de atención más cercana, coordinada y humana.
             </Text>
           </View>
 
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 32, flexGrow: 1, justifyContent: 'center' }}>
+          <View style={{
+            paddingHorizontal: 24,
+            maxWidth: 860,
+            width: '100%',
+            alignSelf: 'center',
+            flexDirection: isDesktop ? 'row' : 'column',
+            gap: 18,
+          }}>
             {[
-              { name: 'Huellitas de Amor', color: C.primary, image: null },
-              { name: 'Patitas Felices', color: C.secondary, image: null },
-              { name: 'Refugio Esperanza', color: C.accent, image: null },
-              { name: 'Amigos Peludos', color: '#E74C3C', image: null },
-              { name: 'SOS Animal', color: '#9B59B6', image: null },
-              { name: 'Vida Animal', color: '#27AE60', image: null },
-            ].map((item, i) => (
-              <View key={i} style={{
+              {
+                name: 'URSVA Puebla',
+                fullName: 'Unidad de Rescate y Soporte Vital Animal A.C.',
+                image: ursvaLogo,
+                color: '#D92924',
+                soft: '#FFF1EF',
+              },
+              {
+                name: 'Evolución Animal A.C.',
+                fullName: 'Respeto a la vida, protección y bienestar animal',
+                image: evolucionAnimalLogo,
+                color: '#D6A900',
+                soft: '#FFF9D9',
+              },
+            ].map((item) => (
+              <View key={item.name} style={{
+                flex: 1,
+                minHeight: 178,
                 backgroundColor: C.bg,
-                padding: 24,
+                padding: isDesktop ? 24 : 20,
                 borderRadius: 28,
-                marginRight: 16,
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: 160, height: 190,
                 borderWidth: 1,
-                borderColor: `${item.color}25`,
-                ...(isWeb ? { boxShadow: `0 4px 20px ${item.color}15` } : {}),
+                borderColor: `${item.color}30`,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 18,
+                overflow: 'hidden',
+                ...(isWeb
+                  ? { boxShadow: `0 12px 34px ${item.color}18` }
+                  : { elevation: 3 }),
               } as any}>
                 <View style={{
-                  width: 68, height: 68, borderRadius: 34,
-                  backgroundColor: item.color + '15',
-                  alignItems: 'center', justifyContent: 'center',
-                  marginBottom: 14,
-                  borderWidth: 2, borderColor: item.color + '30',
+                  position: 'absolute',
+                  width: 124,
+                  height: 124,
+                  borderRadius: 62,
+                  backgroundColor: item.soft,
+                  right: -44,
+                  top: -50,
+                }} />
+
+                <View style={{
+                  width: isDesktop ? 104 : 88,
+                  height: isDesktop ? 104 : 88,
+                  borderRadius: 24,
+                  backgroundColor: item.soft,
+                  borderWidth: 1,
+                  borderColor: `${item.color}26`,
+                  alignItems: 'center',
+                  justifyContent: 'center',
                   overflow: 'hidden',
                 }}>
-                  {item.image ? (
-                    <Image source={{ uri: item.image }} style={{ width: 68, height: 68, borderRadius: 34 }} />
-                  ) : (
-                    <Ionicons name="paw" size={30} color={item.color} />
-                  )}
+                  <Image
+                    source={item.image}
+                    style={{ width: '88%', height: '88%' }}
+                    resizeMode="contain"
+                    accessibilityLabel={`Logotipo de ${item.name}`}
+                  />
                 </View>
-                <Text style={{ fontSize: 12, fontFamily: F.bodySemiBold, color: C.text, textAlign: 'center', marginBottom: 10 }}>
-                  {item.name}
-                </Text>
-                <View style={{
-                  backgroundColor: item.color + '18',
-                  paddingHorizontal: 10, paddingVertical: 4,
-                  borderRadius: 100,
-                }}>
-                  <Text style={{ fontSize: 9, fontFamily: F.bodySemiBold, color: item.color, textTransform: 'uppercase', letterSpacing: 1.2 }}>
-                    Activa
+
+                <View style={{ flex: 1, alignSelf: 'stretch', justifyContent: 'center' }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 9 }}>
+                    <View style={{
+                      backgroundColor: item.soft,
+                      borderRadius: 100,
+                      paddingHorizontal: 10,
+                      paddingVertical: 5,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 5,
+                    }}>
+                      <Ionicons name="checkmark-circle" size={13} color={item.color} />
+                      <Text style={{ fontSize: 9, fontFamily: F.bodySemiBold, color: item.color, letterSpacing: 0.8, textTransform: 'uppercase' }}>
+                        Parte de la red
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={{ fontSize: isDesktop ? 20 : 17, lineHeight: isDesktop ? 26 : 23, fontFamily: F.displayBold, color: C.text }}>
+                    {item.name}
+                  </Text>
+                  <Text style={{ fontSize: 11, lineHeight: 17, fontFamily: F.bodyMedium, color: C.muted, marginTop: 5 }}>
+                    {item.fullName}
                   </Text>
                 </View>
               </View>
             ))}
-          </ScrollView>
+          </View>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 30, paddingHorizontal: 24 }}>
+            <View style={{ height: 1, width: 52, backgroundColor: `${C.primary}35` }} />
+            <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: `${C.primary}12`, alignItems: 'center', justifyContent: 'center', marginHorizontal: 10 }}>
+              <Ionicons name="paw" size={16} color={C.primary} />
+            </View>
+            <Text style={{ fontSize: 11, fontFamily: F.bodySemiBold, color: C.muted, letterSpacing: 0.5 }}>
+              Sumamos experiencia para multiplicar rescates
+            </Text>
+            <View style={{ height: 1, width: 52, backgroundColor: `${C.primary}35`, marginLeft: 10 }} />
+          </View>
         </View>
 
         {/* ══════════════════════════════════════════════════════════════════

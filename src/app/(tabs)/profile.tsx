@@ -24,16 +24,19 @@ import { CatalogoRecompensasScreen } from '../../screens/CatalogoRecompensasScre
 import { MisCanjesScreen } from '../../screens/MisCanjesScreen';
 import { EscanerCanjeScreen } from '../../screens/EscanerCanjeScreen';
 import { SavedEventsPanel } from '../../components/events/saved/SavedEventsPanel';
+import { AuthSessionLoading } from '../../components/auth/AuthSessionLoading';
+import { getPostAuthDestination } from '../../utils/postAuthNavigation';
 
 const { width } = Dimensions.get('window');
 const isWeb = Platform.OS === 'web';
 
 export default function ProfileScreen() {
-  const { user, isLoggedIn, logout, refreshUser } = useAuth();
+  const { user, isLoggedIn, isLoading, logout, refreshUser } = useAuth();
   const params = useLocalSearchParams<{
     abrirFormularioAliado?: string;
     abrirPanelAliado?: string;
     abrirMisCasos?: string;
+    returnTo?: string;
   }>();
 
   const [isAdminVisible, setIsAdminVisible] = useState(false);
@@ -82,6 +85,12 @@ export default function ProfileScreen() {
     }, [isLoggedIn, refreshUser]),
   );
 
+  useEffect(() => {
+    if (!isLoading && isLoggedIn && params.returnTo) {
+      router.replace(getPostAuthDestination(params.returnTo, '/profile') as any);
+    }
+  }, [isLoading, isLoggedIn, params.returnTo]);
+
   // Mismo patrón que MapScreen para action=create: AyudaScreen manda acá
   // con ?abrirFormularioAliado=true cuando el usuario con sesión elige
   // "Aliado comunitario" — se abre el modal y se limpia el param para no
@@ -127,6 +136,10 @@ export default function ProfileScreen() {
       setIsMisCanjesVisible(false);
     }
   }, [isLoggedIn]);
+
+  if (isLoading) {
+    return <AuthSessionLoading />;
+  }
 
   if (!isLoggedIn || !user) {
     return <LoggedOutProfile />;
