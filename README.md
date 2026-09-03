@@ -57,7 +57,7 @@ Los permisos sensibles se validan en el backend; ocultar una acción en la inter
 
 ```mermaid
 flowchart LR
-    U[Web · iOS · Android] --> F[Expo + React Native]
+    U[Web ] --> F[Expo + React Native]
     F --> A[API REST · FastAPI]
     A --> S[(Supabase<br/>PostgreSQL · Auth · Storage)]
     A -. opcional .-> N[Firebase · Brevo · WhatsApp]
@@ -129,8 +129,6 @@ Inicia la plataforma que quieras probar:
 
 ```bash
 npm run web
-npm run android
-npm run ios
 ```
 
 Para abrir la app desde un teléfono conectado a la misma red, actualiza `LOCAL_IP` en `src/constants/api.ts` con la dirección de la computadora que ejecuta el backend. En web, el entorno de desarrollo utiliza `http://localhost:8000`.
