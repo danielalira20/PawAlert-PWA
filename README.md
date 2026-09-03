@@ -216,5 +216,4 @@ Las pruebas E2E que escriben datos solo deben apuntar a un entorno local, de pru
 - Los archivos `.env`, tokens y credenciales privadas no deben subirse al repositorio.
 
 ---
-
 PawAlert nace de una idea sencilla: que pedir ayuda para un animal no termine en una publicación olvidada, sino en una red capaz de responder y dar seguimiento.
