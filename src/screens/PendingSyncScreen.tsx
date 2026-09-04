@@ -20,7 +20,11 @@ import {
   watchPendingReports,
 } from '../services/offlineReportQueue';
 
-export default function PendingSyncScreen() {
+interface PendingSyncScreenProps {
+  onClose?: () => void;
+}
+
+export default function PendingSyncScreen({ onClose }: PendingSyncScreenProps) {
   const [reports, setReports] = useState<PendingReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -60,10 +64,18 @@ export default function PendingSyncScreen() {
     setSyncing(false);
   };
 
+  const close = () => {
+    if (onClose) {
+      onClose();
+      return;
+    }
+    router.back();
+  };
+
   return (
     <View style={styles.screen}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} accessibilityLabel="Volver" style={styles.backButton}>
+        <TouchableOpacity onPress={close} accessibilityLabel={onClose ? 'Cerrar pendientes de sincronización' : 'Volver'} style={styles.backButton}>
           <Ionicons name="arrow-back" size={22} color="#5C4B3A" />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
