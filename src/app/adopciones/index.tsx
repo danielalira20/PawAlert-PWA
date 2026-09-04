@@ -71,6 +71,7 @@ export default function AdopcionesGalleryScreen() {
             placeholder="Buscar por zona (Ej. Puebla)"
             value={zonaBuscada}
             onChangeText={setZonaBuscada}
+            maxLength={120}
             placeholderTextColor="#8C7A6B"
           />
         </View>

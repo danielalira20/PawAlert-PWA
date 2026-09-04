@@ -2,7 +2,8 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException,Header
 from app.db.supabase import supabase, supabase_admin
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from app.utils.validators import validar_nombre, validar_telefono, normalizar_nombre
 from typing import Literal
 
 router = APIRouter()
@@ -80,10 +81,10 @@ async def get_usuario_actual(authorization: str = Header(None)):
 
 
 class UpdateProfileRequest(BaseModel):
-    nombre: str
-    apellido_paterno: str
-    apellido_materno: str | None = None
-    telefono: str
+    nombre: str = Field(min_length=3, max_length=30)
+    apellido_paterno: str = Field(min_length=3, max_length=30)
+    apellido_materno: str | None = Field(default=None, max_length=30)
+    telefono: str = Field(min_length=10, max_length=14)
 
 @router.patch("/me", status_code=200)
 async def update_usuario_actual(body: UpdateProfileRequest, authorization: str = Header(None)):
@@ -98,11 +99,21 @@ async def update_usuario_actual(body: UpdateProfileRequest, authorization: str =
         raise HTTPException(status_code=401, detail="Token inválido o expirado")
 
     telefono_limpio = body.telefono.replace(" ", "").replace("-", "")
+    for valor, requerido, campo in (
+        (body.nombre, True, "nombre"),
+        (body.apellido_paterno, True, "apellido paterno"),
+        (body.apellido_materno or "", False, "apellido materno"),
+    ):
+        valido, mensaje = validar_nombre(valor, requerido=requerido, campo=campo)
+        if not valido:
+            raise HTTPException(status_code=422, detail=mensaje)
+    if not validar_telefono(telefono_limpio):
+        raise HTTPException(status_code=422, detail="El teléfono debe tener exactamente 10 dígitos numéricos.")
 
     update_data = {
-        "nombre": body.nombre.strip(),
-        "apellido_paterno": body.apellido_paterno.strip(),
-        "apellido_materno": body.apellido_materno.strip() if body.apellido_materno else None,
+        "nombre": normalizar_nombre(body.nombre),
+        "apellido_paterno": normalizar_nombre(body.apellido_paterno),
+        "apellido_materno": normalizar_nombre(body.apellido_materno) if body.apellido_materno else None,
         "telefono": telefono_limpio
     }
 

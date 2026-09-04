@@ -333,7 +333,8 @@ export default function MisRecompensasScreen({ onClose, embedded }: Props) {
                     <Text style={styles.dataLabel}>Confirmar código de canje</Text>
                     <TextInput
                       value={codigoCanje}
-                      onChangeText={setCodigoCanje}
+                      onChangeText={(value) => setCodigoCanje(value.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 12))}
+                      maxLength={12}
                       autoCapitalize="characters"
                       placeholder="Ej. A1B2C3D4E5F6"
                       style={{ borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, padding: 10, marginTop: 8 }}

@@ -27,9 +27,15 @@ def validar_nombre(valor: str, requerido: bool = True, campo: str = "nombre") ->
         return False, f"El {campo} debe tener al menos 3 caracteres."
     if len(val) > 30:
         return False, f"El {campo} no puede tener más de 30 caracteres."
-    if not re.fullmatch(r"[A-Za-zÁÉÍÓÚÜáéíóúüÑñ\s]+", val):
-        return False, f"El {campo} solo puede contener letras y espacios."
+    patron = r"[A-Za-zÁÉÍÓÚÜáéíóúüÑñ]+(?:[ '\-’][A-Za-zÁÉÍÓÚÜáéíóúüÑñ]+)*"
+    if not re.fullmatch(patron, val):
+        return False, f"El {campo} solo puede contener letras y separadores simples."
     return True, ""
+
+
+def normalizar_nombre(valor: str) -> str:
+    """Normalización canónica antes de persistir un nombre validado."""
+    return re.sub(r"\s+", " ", valor).strip()
 
 
 def validar_password(password: str) -> tuple[bool, str]:
@@ -43,4 +49,6 @@ def validar_password(password: str) -> tuple[bool, str]:
         return False, "La contraseña debe incluir al menos una letra minúscula."
     if not re.search(r"\d", password):
         return False, "La contraseña debe incluir al menos un número."
+    if len(password) > 128:
+        return False, "La contraseña no puede tener más de 128 caracteres."
     return True, ""

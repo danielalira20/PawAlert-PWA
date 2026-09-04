@@ -14,6 +14,7 @@ import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
 import { useToast, Toast } from '../components/Toast';
 import { EscanearQrModal } from '../components/red-aliados/EscanearQrModal';
+import { normalizarDecimal } from '../utils/validators';
 
 // ─── DESIGN TOKENS ───
 const C = {
@@ -415,7 +416,8 @@ export default function OfertasAsociacionScreen() {
                 keyboardType="numeric"
                 placeholder="Ej. 5"
                 value={nuevaCantidad}
-                onChangeText={(val) => setNuevaCantidad(val.replace(/[^0-9.]/g, ''))}
+                onChangeText={(val) => setNuevaCantidad(normalizarDecimal(val))}
+                maxLength={12}
               />
               <Text style={{ fontFamily: F.bodySemiBold, color: C.muted, marginLeft: 8 }}>
                 {ofertaParaAjustar?.cantidad_unidad}

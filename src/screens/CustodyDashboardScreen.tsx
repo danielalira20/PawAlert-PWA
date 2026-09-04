@@ -718,7 +718,8 @@ export default function CustodyDashboardScreen({ onClose }: Props) {
   const fecha = (valor?: string | null) =>
     valor ? new Date(valor).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' }) : 'Por definir';
 
-  const animal = (custodia: Custodia) => custodia.reporte.animales?.[0] || {};
+  const animal = (custodia: Custodia): { tipo_animal?: string; tamanio?: string } =>
+    custodia.reporte.animales?.[0] ?? {};
   const avisoActivo = notificaciones.find((n) => !n.leida);
 
   const cerrarAviso = async () => {
@@ -1291,7 +1292,7 @@ function Action({ icon, label, onPress, primary, danger }: { icon: keyof typeof 
   );
 }
 
-function Field(props: { label: string; value: string; onChangeText: (v: string) => void; placeholder: string; multiline?: boolean; error?: string }) {
+function Field(props: { label: string; value: string; onChangeText: (v: string) => void; placeholder: string; multiline?: boolean; error?: string; maxLength?: number }) {
   return (
     <View style={{ marginBottom: 12 }}>
       <Text style={styles.label}>{props.label}</Text>
@@ -1303,6 +1304,7 @@ function Field(props: { label: string; value: string; onChangeText: (v: string) 
           props.error ? { borderColor: '#B84A3A', borderWidth: 1.5 } : null
         ]} 
         placeholderTextColor={Brand.textFaint} 
+        maxLength={props.maxLength ?? (props.multiline ? 4000 : 254)}
       />
       {props.error ? <Text style={{ color: '#B84A3A', fontSize: 11, fontWeight: '700', marginTop: 4 }}>{props.error}</Text> : null}
     </View>

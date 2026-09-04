@@ -47,7 +47,7 @@ class RecompensaCreate(BaseModel):
     nombre: str = Field(max_length=150)
     descripcion: str = Field(max_length=1000)
     nivel: NivelRecompensaEnum
-    unidades_totales: int = Field(gt=0)
+    unidades_totales: int = Field(gt=0, le=9_999_999)
     inicio: date
     vencimiento: date
     sucursal_lugar: Optional[str] = Field(default=None, max_length=250)

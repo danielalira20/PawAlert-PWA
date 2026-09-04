@@ -22,7 +22,7 @@ import {
   createFormDraftEnvelope,
   parseFormDraftEnvelope,
 } from '../utils/formDraft';
-import { validarNombre } from '../utils/validators';
+import { normalizarTelefonoMX, validarNombre } from '../utils/validators';
 import { getDeviceToken } from '../utils/deviceToken';
 import {
   construirResultadoRevision,
@@ -1918,6 +1918,7 @@ export default function ReportFormScreen({ onClose }: ReportFormScreenProps) {
         ) : (
           <>
             <Input label="Teléfono de contacto" placeholder="Ej. 2221234567" value={telefono} onChangeText={(val) => {
+              val = normalizarTelefonoMX(val);
               setTelefono(val);
               setGuestFound(false);
               if (!val.trim()) setErrors(prev => ({ ...prev, telefono: 'El teléfono es obligatorio.' }));

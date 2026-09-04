@@ -655,8 +655,9 @@ const fetchStatus = async () => {
                 />
                 <TextInput
                   placeholder="Buscar asociación por nombre"
-                  value={searchQuery}
-                  onChangeText={setSearchQuery}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            maxLength={120}
                   style={{
                     flex: 1,
                     paddingVertical: 14,

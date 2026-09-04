@@ -119,7 +119,8 @@ export default function ApelacionAliadoModal({ visible, onClose, onSuccess }: Pr
               placeholderTextColor="#B0A090"
               multiline
               numberOfLines={4}
-              value={mensaje}
+          value={mensaje}
+          maxLength={2000}
               onChangeText={(text) => {
                 setMensaje(text);
                 if (error) setError('');

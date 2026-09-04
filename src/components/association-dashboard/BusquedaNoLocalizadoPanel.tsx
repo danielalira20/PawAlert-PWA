@@ -168,6 +168,7 @@ export function BusquedaNoLocalizadoPanel({
         <TextInput
           value={instrucciones}
           onChangeText={setInstrucciones}
+          maxLength={1000}
           placeholder="Indica zona, horario o apoyo necesario"
           multiline
           style={{ marginTop: 12, minHeight: 74, borderRadius: 14, borderWidth: 1, borderColor: '#E8D9C7', backgroundColor: '#FFFFFF', padding: 12, color: '#4A3728', textAlignVertical: 'top' }}
@@ -177,6 +178,7 @@ export function BusquedaNoLocalizadoPanel({
         <TextInput
           value={fecha}
           onChangeText={setFecha}
+          maxLength={16}
           placeholder="AAAA-MM-DD HH:mm"
           style={{ marginTop: 8, borderRadius: 14, borderWidth: 1, borderColor: '#E8D9C7', backgroundColor: '#FFFFFF', padding: 12, color: '#4A3728' }}
         />

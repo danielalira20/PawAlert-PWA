@@ -9,6 +9,7 @@ import { EscanearQrModal } from '../red-aliados/EscanearQrModal';
 import { AppModal } from '../AppModal';
 import { AssocAvatar } from '../admin-dashboard/AssocAvatar';
 import LocationPickerMap from '../../screens/LocationPickerMap';
+import { normalizarDecimal } from '../../utils/validators';
 
 // Misma paleta que PostulacionesPanel.tsx.
 const COLORS = {
@@ -619,7 +620,8 @@ export function LotesInvitacionesPanel({ visible }: Props) {
               style={{ borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, padding: 12, fontSize: 14, color: COLORS.textDark, marginBottom: 16 }}
               keyboardType="numeric"
               value={cantidadAsignada}
-              onChangeText={(v) => setCantidadAsignada(v.replace(/[^0-9.]/g, ''))}
+              onChangeText={(v) => setCantidadAsignada(normalizarDecimal(v))}
+              maxLength={12}
               placeholder="Cantidad"
               placeholderTextColor={COLORS.textLight}
             />

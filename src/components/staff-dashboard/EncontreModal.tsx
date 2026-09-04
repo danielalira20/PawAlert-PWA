@@ -107,7 +107,8 @@ export function EncontreModal({
                 multiline
                 placeholder="Notas adicionales (opcional)"
                 placeholderTextColor={Brand.textFaint}
-                value={notas}
+          value={notas}
+          maxLength={500}
                 onChangeText={onChangeNotas}
               />
 

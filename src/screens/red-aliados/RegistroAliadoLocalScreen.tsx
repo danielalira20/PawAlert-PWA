@@ -10,7 +10,7 @@ import LocationPickerMap from '../LocationPickerMap';
 import * as Location from 'expo-location';
 import * as DocumentPicker from 'expo-document-picker';
 import { useRouter } from 'expo-router';
-import { validarNombre } from '../../utils/validators';
+import { normalizarTelefonoMX, validarNombre, validarPassword } from '../../utils/validators';
 import { separarNombreCompleto } from '../../utils/nombreCompleto';
 import { getFormDraft, removeFormDraft, setFormDraft } from '../../services/formDraftStorage';
 import { createFormDraftEnvelope, parseFormDraftEnvelope } from '../../utils/formDraft';
@@ -569,12 +569,9 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
 
   const handlePasswordChange = (val: string) => {
     setPassword(val);
-    if (!val) {
-      setErrors(prev => ({ ...prev, password: 'La contraseña es obligatoria.' }));
-    } else if (val.length < 6) {
-      setErrors(prev => ({ ...prev, password: 'Mínimo 6 caracteres.' }));
-    } else if (!/[a-z]/.test(val) || !/[A-Z]/.test(val)) {
-      setErrors(prev => ({ ...prev, password: 'Debe contener al menos 1 minúscula y 1 mayúscula.' }));
+    const resultado = validarPassword(val);
+    if (!resultado.valido) {
+      setErrors(prev => ({ ...prev, password: resultado.mensaje }));
     } else {
       setErrors(prev => ({ ...prev, password: '' }));
       if (passwordConfirm && val !== passwordConfirm) {
@@ -595,6 +592,7 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
   };
 
   const handleTelefonoChange = (val: string) => {
+    val = normalizarTelefonoMX(val);
     setTelefono(val);
     if (!val.trim()) {
       setErrors(prev => ({ ...prev, telefono: 'El teléfono es obligatorio.' }));
@@ -710,7 +708,8 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
   const validarPaso1 = () => {
     const newErrors: any = {};
     if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) newErrors.email = 'Obligatorio. Correo válido.';
-    if (!password.trim() || password.length < 6) newErrors.password = 'Mínimo 6 caracteres.';
+    const passwordCheck = validarPassword(password);
+    if (!passwordCheck.valido) newErrors.password = passwordCheck.mensaje;
     if (password !== passwordConfirm) newErrors.passwordConfirm = 'Las contraseñas no coinciden.';
     if (!telefono.trim() || telefono.length !== 10 || /[a-zA-Z]/.test(telefono)) newErrors.telefono = 'Debe tener 10 dígitos numéricos.';
     const nombreContactoCheck = validarNombre(nombreContacto, { etiqueta: 'nombre de contacto' });
@@ -1017,7 +1016,7 @@ export default function RegistroAliadoLocalScreen({ onClose, initialTipoAliado }
                       {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
                     </View>
                     <View style={{ marginBottom: 12 }}>
-                      <Input label="Contraseña *" placeholder="Mínimo 6 caracteres" value={password} onChangeText={handlePasswordChange} secureTextEntry={true} />
+                      <Input label="Contraseña *" placeholder="Mínimo 8 caracteres" value={password} onChangeText={handlePasswordChange} maxLength={128} secureTextEntry={true} />
                       {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
                     </View>
                     <View style={{ marginBottom: 12 }}>

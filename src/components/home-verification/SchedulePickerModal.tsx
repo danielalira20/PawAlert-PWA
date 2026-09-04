@@ -229,6 +229,7 @@ export default function SchedulePickerModal({
                   <Text style={{ color: COLORS.textLight, fontSize: 11 }}>Fecha</Text>
                   <TextInput
                     value={date}
+                    maxLength={10}
                     onChangeText={(value) => {
                       setDate(value);
                       setError('');
@@ -249,6 +250,7 @@ export default function SchedulePickerModal({
                   <Text style={{ color: COLORS.textLight, fontSize: 11 }}>Hora</Text>
                   <TextInput
                     value={time}
+                    maxLength={5}
                     onChangeText={(value) => {
                       setTime(value);
                       setError('');

@@ -13,7 +13,7 @@ import { Input } from '../components/ui/Input';
 import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
 import LocationPickerMap from './LocationPickerMap';
-import { validarPassword, validarNombre } from '../utils/validators';
+import { normalizarDecimal, normalizarEmailEntrada, normalizarNombreEntrada, normalizarTelefonoMX, validarPassword, validarNombre } from '../utils/validators';
 
 const COLORS = {
   bgTeal: '#66BCB4',
@@ -127,6 +127,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
   };
 
   const handleNombreResponsableChange = (val: string) => {
+    val = normalizarNombreEntrada(val);
     setNombreResponsable(val);
     setErrors(prev => ({
       ...prev,
@@ -135,6 +136,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
   };
 
   const handleApellidoResponsableChange = (val: string) => {
+    val = normalizarNombreEntrada(val);
     setApellidoResponsable(val);
     setErrors(prev => ({
       ...prev,
@@ -143,6 +145,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
   };
 
   const handleTelefonoChange = (val: string) => {
+    val = normalizarTelefonoMX(val);
     setTelefono(val);
     if (!val.trim()) {
       setErrors(prev => ({ ...prev, telefono: 'El teléfono de contacto es obligatorio.' }));
@@ -156,6 +159,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
   };
 
   const handleEmailChange = (val: string) => {
+    val = normalizarEmailEntrada(val);
     setEmail(val);
     if (!val.trim()) {
       setErrors(prev => ({ ...prev, email: 'El correo electrónico es obligatorio.' }));
@@ -195,6 +199,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
   };
 
   const handleRadioKmChange = (val: string) => {
+    val = normalizarDecimal(val, 3, 1);
     setRadioKm(val);
     const radVal = parseInt(val, 10);
     if (!val.trim()) {
@@ -517,7 +522,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 60 }}>
             <View style={{ marginBottom: 24 }}>
               <Text style={{ fontSize: 20, fontWeight: '800', color: COLORS.textDark, marginBottom: 16 }}>Datos de la Asociación</Text>
-              <Input label="Nombre de la Asociación" placeholder="Ej. Huellitas de Amor A.C." value={nombre} onChangeText={handleNombreChange} error={errors.nombre} required />
+              <Input label="Nombre de la Asociación" placeholder="Ej. Huellitas de Amor A.C." value={nombre} onChangeText={handleNombreChange} error={errors.nombre} maxLength={120} required />
               <View style={{ flexDirection: 'column' }}>
                  <View style={{ flex: 1 }}><Input label="Nombre(s) del Responsable" placeholder="Ej. Juan" value={nombreResponsable} onChangeText={handleNombreResponsableChange} error={errors.nombreResponsable} required /></View>
                  <View style={{ flex: 1 }}><Input label="Apellido del Responsable" placeholder="Ej. Pérez" value={apellidoResponsable} onChangeText={handleApellidoResponsableChange} error={errors.apellidoResponsable} required /></View>
@@ -547,7 +552,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
               <Text style={{ fontSize: 20, fontWeight: '800', color: COLORS.textDark, marginBottom: 4 }}>Datos de Contacto</Text>
               <Text style={{ fontSize: 13, color: COLORS.textLight, marginBottom: 16 }}>Con este correo y contraseña iniciarás sesión.</Text>
               <Input label="Teléfono" placeholder="Ej. 2221234567" value={telefono} onChangeText={handleTelefonoChange} error={errors.telefono} keyboardType="numeric" maxLength={10} required />
-              <Input label="Correo Electrónico" placeholder="Ej. contacto@asociacion.org" value={email} onChangeText={handleEmailChange} error={errors.email} keyboardType="email-address" autoCapitalize="none" required />
+              <Input label="Correo Electrónico" placeholder="Ej. contacto@asociacion.org" value={email} onChangeText={handleEmailChange} error={errors.email} keyboardType="email-address" autoCapitalize="none" maxLength={254} required />
               <View style={{ flexDirection: 'column' }}>
                  <View style={{ flex: 1 }}><Input label="Contraseña" placeholder="8+ caracteres" value={password} onChangeText={handlePasswordChange} error={errors.password} secureTextEntry required /></View>
                  <View style={{ flex: 1 }}><Input label="Confirmar Contraseña" placeholder="Repite tu contraseña" value={password2} onChangeText={handlePassword2Change} error={errors.password2} secureTextEntry required /></View>
@@ -710,7 +715,7 @@ export default function AssociationFormScreen({ onClose }: Props) {
                 <View key={f.id} style={{ flexDirection: 'row', gap: 16, backgroundColor: COLORS.grayLight, padding: 12, borderRadius: 20, marginBottom: 12, alignItems: 'center' }}>
                   <Image source={{ uri: f.foto_url }} style={{ width: 70, height: 70, borderRadius: 12 }} />
                   <View style={{ flex: 1, justifyContent: 'center' }}>
-                    <TextInput placeholder="Añade una descripción..." value={f.descripcion} onChangeText={(text) => handleUpdateFotoDesc(f.id, text)} style={{ fontSize: 13, color: COLORS.textDark, borderBottomWidth: 1, borderBottomColor: COLORS.border, paddingBottom: 4, marginBottom: 8 }} />
+                    <TextInput placeholder="Añade una descripción..." value={f.descripcion} onChangeText={(text) => handleUpdateFotoDesc(f.id, text)} maxLength={100} style={{ fontSize: 13, color: COLORS.textDark, borderBottomWidth: 1, borderBottomColor: COLORS.border, paddingBottom: 4, marginBottom: 8 }} />
                     <TouchableOpacity onPress={() => handleDeleteFoto(f.id)}><Text style={{ color: COLORS.danger, fontWeight: '700', fontSize: 12 }}>Eliminar foto</Text></TouchableOpacity>
                   </View>
                 </View>

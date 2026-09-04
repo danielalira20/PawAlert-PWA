@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useFocusEffect } from 'expo-router';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, useWindowDimensions, Modal, TextInput, ActivityIndicator, Platform, Image } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { validarNombre } from '../../utils/validators';
+import { normalizarNombreEntrada, normalizarTelefonoMX, validarNombre } from '../../utils/validators';
 import { Ionicons } from '@expo/vector-icons';
 import { Toast, useToast } from '../Toast';import { LinearGradient } from 'expo-linear-gradient';
 import axios from 'axios';
@@ -361,21 +361,25 @@ export function LoggedInProfile({
   };
 
   const handleNombreChange = (val: string) => {
+    val = normalizarNombreEntrada(val);
     setEditNombre(val);
     setErrors(prev => ({ ...prev, nombre: validarNombre(val, { etiqueta: 'nombre' }).mensaje }));
   };
   
   const handlePaternoChange = (val: string) => {
+    val = normalizarNombreEntrada(val);
     setEditPaterno(val);
     setErrors(prev => ({ ...prev, paterno: validarNombre(val, { etiqueta: 'apellido paterno' }).mensaje }));
   };
   
   const handleMaternoChange = (val: string) => {
+    val = normalizarNombreEntrada(val);
     setEditMaterno(val);
     setErrors(prev => ({ ...prev, materno: validarNombre(val, { requerido: false, etiqueta: 'apellido materno' }).mensaje }));
   };
   
   const handleTelefonoChange = (val: string) => {
+    val = normalizarTelefonoMX(val);
     setEditTelefono(val);
     if (!val.trim()) setErrors(prev => ({ ...prev, telefono: 'El teléfono es obligatorio.' }));
     else if (/[a-zA-Z]/.test(val)) setErrors(prev => ({ ...prev, telefono: 'El teléfono no puede contener letras.' }));
@@ -434,19 +438,19 @@ export function LoggedInProfile({
           <Text style={{ fontSize: 20, fontWeight: '800', color: Brand.textDark, marginBottom: 20 }}>Editar Perfil</Text>
           
           <Text style={{ fontSize: 12, fontWeight: '700', color: '#9E8C7E', marginBottom: 6 }}>Nombre (s)</Text>
-          <TextInput value={editNombre} onChangeText={handleNombreChange} style={[styles.editInput, errors.nombre && { borderColor: '#E74C3C', backgroundColor: '#FDEDEC' }]} />
+          <TextInput value={editNombre} onChangeText={handleNombreChange} maxLength={30} style={[styles.editInput, errors.nombre && { borderColor: '#E74C3C', backgroundColor: '#FDEDEC' }]} />
           {errors.nombre && <Text style={{ color: '#E74C3C', fontSize: 11, marginBottom: 12, marginTop: -12 }}>{errors.nombre}</Text>}
 
           <Text style={{ fontSize: 12, fontWeight: '700', color: '#9E8C7E', marginBottom: 6 }}>Apellido Paterno</Text>
-          <TextInput value={editPaterno} onChangeText={handlePaternoChange} style={[styles.editInput, errors.paterno && { borderColor: '#E74C3C', backgroundColor: '#FDEDEC' }]} />
+          <TextInput value={editPaterno} onChangeText={handlePaternoChange} maxLength={30} style={[styles.editInput, errors.paterno && { borderColor: '#E74C3C', backgroundColor: '#FDEDEC' }]} />
           {errors.paterno && <Text style={{ color: '#E74C3C', fontSize: 11, marginBottom: 12, marginTop: -12 }}>{errors.paterno}</Text>}
 
           <Text style={{ fontSize: 12, fontWeight: '700', color: '#9E8C7E', marginBottom: 6 }}>Apellido Materno</Text>
-          <TextInput value={editMaterno} onChangeText={handleMaternoChange} style={[styles.editInput, errors.materno && { borderColor: '#E74C3C', backgroundColor: '#FDEDEC' }]} />
+          <TextInput value={editMaterno} onChangeText={handleMaternoChange} maxLength={30} style={[styles.editInput, errors.materno && { borderColor: '#E74C3C', backgroundColor: '#FDEDEC' }]} />
           {errors.materno && <Text style={{ color: '#E74C3C', fontSize: 11, marginBottom: 12, marginTop: -12 }}>{errors.materno}</Text>}
 
           <Text style={{ fontSize: 12, fontWeight: '700', color: '#9E8C7E', marginBottom: 6 }}>Teléfono (10 dígitos)</Text>
-          <TextInput value={editTelefono} onChangeText={handleTelefonoChange} keyboardType="phone-pad" style={[styles.editInput, errors.telefono && { borderColor: '#E74C3C', backgroundColor: '#FDEDEC' }]} />
+          <TextInput value={editTelefono} onChangeText={handleTelefonoChange} keyboardType="phone-pad" maxLength={10} style={[styles.editInput, errors.telefono && { borderColor: '#E74C3C', backgroundColor: '#FDEDEC' }]} />
           {errors.telefono && <Text style={{ color: '#E74C3C', fontSize: 11, marginBottom: 12, marginTop: -12 }}>{errors.telefono}</Text>}
 
           <View style={{ flexDirection: 'row', gap: 12, marginTop: 12 }}>
