@@ -109,15 +109,15 @@ class AnimalInput(BaseModel):
     esta_prenada: Optional[bool] = None
     es_agresivo: Optional[bool] = None
     es_domestico_probable: Optional[bool] = None
-    raza_clave: Optional[str] = None
-    tipo_animal_otro_clave: Optional[str] = None
-    especie_descripcion: Optional[str] = None
+    raza_clave: Optional[str] = Field(default=None, max_length=80)
+    tipo_animal_otro_clave: Optional[str] = Field(default=None, max_length=80)
+    especie_descripcion: Optional[str] = Field(default=None, max_length=100)
     descripcion: Optional[str] = Field(default=None, max_length=300)
     orden: int = 1
     es_grupo: bool = False
-    cantidad: int = Field(default=1, ge=1)
+    cantidad: int = Field(default=1, ge=1, le=99)
     trae_crias_nacidas: Optional[bool] = None
-    numero_crias_nacidas: Optional[int] = None
+    numero_crias_nacidas: Optional[int] = Field(default=None, ge=0, le=99)
 
 class ReportResponse(BaseModel):
     id: str

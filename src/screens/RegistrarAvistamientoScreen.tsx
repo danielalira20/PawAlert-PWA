@@ -661,10 +661,11 @@ export default function RegistrarAvistamientoScreen() {
       <Text style={{ color: C.text, fontSize: 13, fontWeight: '900', marginBottom: 8 }}>
         Dirección aproximada <Text style={{ color: C.muted, fontWeight: '600' }}>(opcional)</Text>
       </Text>
-      <TextInput
+        <TextInput
         accessibilityLabel="Dirección aproximada"
-        value={direccion}
-        onChangeText={setDireccion}
+          value={direccion}
+          onChangeText={setDireccion}
+          maxLength={250}
         placeholder="Ej. Calle Reforma esquina con 5 de Mayo"
         placeholderTextColor={C.muted}
         style={{
@@ -681,10 +682,11 @@ export default function RegistrarAvistamientoScreen() {
       <Text style={{ color: C.text, fontSize: 13, fontWeight: '900', marginBottom: 8 }}>
         Comentario <Text style={{ color: C.muted, fontWeight: '600' }}>(opcional)</Text>
       </Text>
-      <TextInput
+        <TextInput
         accessibilityLabel="Comentario del avistamiento"
-        value={comentario}
-        onChangeText={setComentario}
+          value={comentario}
+          onChangeText={setComentario}
+          maxLength={1000}
         placeholder="Cómo se veía, hacia dónde iba, cualquier detalle útil"
         placeholderTextColor={C.muted}
         multiline

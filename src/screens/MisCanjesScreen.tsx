@@ -257,6 +257,7 @@ export function MisCanjesScreen({ onClose }: { onClose: () => void }) {
               numberOfLines={4}
               placeholder="Ej. Fui al local y me dijeron que ya no quedaban unidades disponibles..."
               value={problemaMotivo}
+              maxLength={1000}
               onChangeText={setProblemaMotivo}
             />
             

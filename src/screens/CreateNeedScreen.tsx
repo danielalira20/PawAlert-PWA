@@ -9,6 +9,7 @@ import axios from 'axios';
 import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
 import { getAnimales, animalMasGrave } from '../types/reporte';
+import { normalizarDecimal } from '../utils/validators';
 
 // ─── PALETA DE COLORES PETZEN ───
 const COLORS = {
@@ -748,7 +749,7 @@ export default function CreateNeedScreen() {
                 <Input
                   placeholder="Ej. 15"
                   value={cantidadValor}
-                  onChangeText={(val) => { setCantidadValor(val.replace(/[^0-9.]/g, '')); setErrors(p => ({ ...p, cantidad_valor: '' })); }}
+                  onChangeText={(val) => { setCantidadValor(normalizarDecimal(val)); setErrors(p => ({ ...p, cantidad_valor: '' })); }}
                   keyboardType="numeric"
                   error={errors.cantidad_valor}
                 />

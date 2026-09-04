@@ -2525,7 +2525,7 @@ export default function AssociationStatusScreen({ onClose, standalone = true }: 
                 </TouchableOpacity>
               )
             })}
-            <TextInput style={{ backgroundColor: COLORS.white, borderRadius: 16, padding: 16, fontSize: 14, marginTop: 12, minHeight: 80, textAlignVertical: 'top' }} multiline placeholder="Comentarios (Opcional)" value={notasHito} onChangeText={setNotasHito} />
+            <TextInput style={{ backgroundColor: COLORS.white, borderRadius: 16, padding: 16, fontSize: 14, marginTop: 12, minHeight: 80, textAlignVertical: 'top' }} multiline placeholder="Comentarios (Opcional)" value={notasHito} onChangeText={setNotasHito} maxLength={500} />
             <TouchableOpacity onPress={handlePickFoto} style={{ padding: 16, backgroundColor: COLORS.white, borderRadius: 16, marginTop: 12, alignItems: 'center', borderWidth: 2, borderColor: '#E5E7EB', borderStyle: 'dashed' }}>
               <Text style={{ color: COLORS.textLight, fontWeight: 'bold' }}><Ionicons name="camera" size={16} /> {fotoHito ? 'Foto adjuntada ✓' : 'Subir foto (Opcional)'}</Text>
             </TouchableOpacity>

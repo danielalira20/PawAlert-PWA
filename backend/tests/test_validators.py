@@ -1,6 +1,6 @@
 import pytest
 
-from app.utils.validators import validar_nombre
+from app.utils.validators import normalizar_nombre, validar_nombre
 
 
 def test_rechaza_vacio_requerido_default():
@@ -53,26 +53,30 @@ def test_rechaza_treintayuno_caracteres():
 def test_rechaza_digitos():
     valido, mensaje = validar_nombre("Ana2")
     assert valido is False
-    assert "solo puede contener letras y espacios" in mensaje
+    assert "solo puede contener letras y separadores simples" in mensaje
 
 
 @pytest.mark.parametrize("simbolo", ["%", "#", "@"])
 def test_rechaza_simbolos(simbolo):
     valido, mensaje = validar_nombre(f"An{simbolo}a")
     assert valido is False
-    assert "solo puede contener letras y espacios" in mensaje
+    assert "solo puede contener letras y separadores simples" in mensaje
 
 
-def test_rechaza_guion():
+def test_acepta_guion_simple():
     valido, mensaje = validar_nombre("Ana-Luz")
-    assert valido is False
-    assert "solo puede contener letras y espacios" in mensaje
+    assert valido is True
 
 
-def test_rechaza_apostrofe():
+def test_acepta_apostrofe_simple():
     valido, mensaje = validar_nombre("O'Brian")
+    assert valido is True
+
+
+def test_rechaza_espacios_consecutivos_y_normaliza_para_guardar():
+    valido, _ = validar_nombre("María  José")
     assert valido is False
-    assert "solo puede contener letras y espacios" in mensaje
+    assert normalizar_nombre("  María   José ") == "María José"
 
 
 @pytest.mark.parametrize("nombre", ["áéíóú", "ÁÉÍÓÚ", "Muñoz", "Ñoño", "Güemes"])

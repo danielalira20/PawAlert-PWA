@@ -41,6 +41,7 @@ export function ActionBar({ onAprobar, onRechazar, isSubmitting }: Props) {
             placeholderTextColor={Brand.textFaint}
             value={motivo}
             onChangeText={setMotivo}
+            maxLength={1000}
             autoFocus
           />
         </View>

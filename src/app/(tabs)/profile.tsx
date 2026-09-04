@@ -26,6 +26,7 @@ import { EscanerCanjeScreen } from '../../screens/EscanerCanjeScreen';
 import { SavedEventsPanel } from '../../components/events/saved/SavedEventsPanel';
 import { AuthSessionLoading } from '../../components/auth/AuthSessionLoading';
 import { getPostAuthDestination } from '../../utils/postAuthNavigation';
+import PendingSyncScreen from '../../screens/PendingSyncScreen';
 
 const { width } = Dimensions.get('window');
 const isWeb = Platform.OS === 'web';
@@ -61,6 +62,7 @@ export default function ProfileScreen() {
   const [isCatalogoVisible, setIsCatalogoVisible] = useState(false);
   const [isMisCanjesVisible, setIsMisCanjesVisible] = useState(false);
   const [isEscanerVisible, setIsEscanerVisible] = useState(false);
+  const [isPendingSyncVisible, setIsPendingSyncVisible] = useState(false);
   const [reputacionRefreshKey, setReputacionRefreshKey] = useState(0);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -134,6 +136,7 @@ export default function ProfileScreen() {
       setIsCustodyVisible(false);
       setIsCatalogoVisible(false);
       setIsMisCanjesVisible(false);
+      setIsPendingSyncVisible(false);
     }
   }, [isLoggedIn]);
 
@@ -167,7 +170,7 @@ export default function ProfileScreen() {
         onOpenAliadoForm={() => setIsAliadoFormVisible(true)}
         onOpenAliadoDashboard={() => setIsAliadoDashboardVisible(true)}
         onOpenCustodyDashboard={() => setIsCustodyVisible(true)}
-        onOpenPendingSync={() => router.push('/pendientes-sincronizacion')}
+        onOpenPendingSync={() => setIsPendingSyncVisible(true)}
         onLogout={logout}
         capacidadesRefreshKey={capacidadesRefreshKey}
         reputacionRefreshKey={reputacionRefreshKey}
@@ -190,6 +193,16 @@ export default function ProfileScreen() {
 
       <AppModal visible={isCatalogoVisible} onClose={() => setIsCatalogoVisible(false)} maxWidth={1000}>
         {isCatalogoVisible && <CatalogoRecompensasScreen onClose={() => setIsCatalogoVisible(false)} onCanjeExitoso={() => setReputacionRefreshKey(k => k + 1)} />}
+      </AppModal>
+
+      <AppModal
+        visible={isPendingSyncVisible}
+        onClose={() => setIsPendingSyncVisible(false)}
+        maxWidth={820}
+      >
+        {isPendingSyncVisible && (
+          <PendingSyncScreen onClose={() => setIsPendingSyncVisible(false)} />
+        )}
       </AppModal>
 
       <AppModal visible={isMisCanjesVisible} onClose={() => setIsMisCanjesVisible(false)} maxWidth={850}>

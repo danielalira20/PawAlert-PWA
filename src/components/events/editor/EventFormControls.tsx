@@ -45,6 +45,7 @@ export function EventTextField({
       </Text>
       <TextInput
         placeholderTextColor={EventTheme.colors.textFaint}
+        maxLength={props.maxLength ?? (props.multiline ? 4000 : 254)}
         {...props}
         style={[
           styles.input,

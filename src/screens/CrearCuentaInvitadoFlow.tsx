@@ -6,6 +6,7 @@ import { API_URL } from '../constants/api';
 import { useAuth } from '../context/AuthContext';
 import { Toast, useToast } from '../components/Toast';
 import { router } from 'expo-router';
+import { normalizarEmailEntrada } from '../utils/validators';
 
 interface Props {
   telefono: string;
@@ -23,7 +24,7 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function evaluarFortaleza(password: string) {
   return {
-    longitud: password.length >= 6,
+    longitud: password.length >= 8 && password.length <= 128,
     mayuscula: /[A-Z]/.test(password),
     numero: /[0-9]/.test(password),
   };
@@ -266,6 +267,7 @@ export default function CrearCuentaInvitadoFlow({
                 <TextInput
                   value={emailCuenta}
                   onChangeText={(v) => {
+                    v = normalizarEmailEntrada(v);
                     setEmailCuenta(v);
                     if (v.trim() && !EMAIL_REGEX.test(v.trim())) {
                       setErroresCuenta((prev) => ({ ...prev, email: 'Ingresa un correo electrónico válido.' }));
@@ -276,6 +278,7 @@ export default function CrearCuentaInvitadoFlow({
                   placeholder="Tu correo electrónico"
                   keyboardType="email-address"
                   autoCapitalize="none"
+                  maxLength={254}
                   style={{
                     borderWidth: 1,
                     borderColor: erroresCuenta.email ? '#E74C3C' : '#E5E7EB',
@@ -302,6 +305,7 @@ export default function CrearCuentaInvitadoFlow({
                 }}
                 placeholder="Crea una contraseña"
                 secureTextEntry={!mostrarPassword}
+                maxLength={128}
                 style={{
                   borderWidth: 1,
                   borderColor: erroresCuenta.password ? '#E74C3C' : '#E5E7EB',

@@ -1,8 +1,8 @@
 import re
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from app.db.supabase import supabase, supabase_admin, get_fresh_client
-from app.utils.validators import validar_telefono, validar_password, validar_email, validar_nombre
+from app.utils.validators import validar_telefono, validar_password, validar_email, validar_nombre, normalizar_nombre
 from app.config import settings
 import random
 from datetime import datetime, timedelta, timezone
@@ -20,17 +20,17 @@ class VerificarCodigoTelefonoRequest(BaseModel):
 
 class RegisterRequest(BaseModel):
     email: EmailStr
-    password: str
-    nombre: str
-    apellido_paterno: str
-    apellido_materno: str | None = None
-    telefono: str
+    password: str = Field(min_length=8, max_length=128)
+    nombre: str = Field(min_length=3, max_length=30)
+    apellido_paterno: str = Field(min_length=3, max_length=30)
+    apellido_materno: str | None = Field(default=None, max_length=30)
+    telefono: str = Field(min_length=10, max_length=14)
     rol_esperado: str | None = None
 
 
 class LoginRequest(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(min_length=1, max_length=128)
 
 
 class RefreshRequest(BaseModel):
@@ -66,6 +66,9 @@ def _cliente_twilio() -> TwilioClient:
 @router.post("/register", status_code=201)
 async def register(body: RegisterRequest):
     telefono_limpio = body.telefono.replace(" ", "").replace("-", "")
+    nombre_limpio = normalizar_nombre(body.nombre)
+    apellido_paterno_limpio = normalizar_nombre(body.apellido_paterno)
+    apellido_materno_limpio = normalizar_nombre(body.apellido_materno) if body.apellido_materno else None
     verificacion = supabase.table("verificaciones_telefono").select("id").eq(
         "telefono", telefono_limpio
     ).eq("verificado", True).eq("consumido", False).gte(
@@ -153,9 +156,9 @@ async def register(body: RegisterRequest):
 
             update_data = {
                 "auth_user_id": auth_user_id,
-                "nombre": body.nombre,
-                "apellido_paterno": body.apellido_paterno,
-                "apellido_materno": body.apellido_materno,
+                "nombre": nombre_limpio,
+                "apellido_paterno": apellido_paterno_limpio,
+                "apellido_materno": apellido_materno_limpio,
                 "email": body.email,
             }
 
@@ -167,9 +170,9 @@ async def register(body: RegisterRequest):
         else:
             usuario = supabase.table("usuarios").insert({
                 "auth_user_id": auth_user_id,
-                "nombre": body.nombre,
-                "apellido_paterno": body.apellido_paterno,
-                "apellido_materno": body.apellido_materno,
+                "nombre": nombre_limpio,
+                "apellido_paterno": apellido_paterno_limpio,
+                "apellido_materno": apellido_materno_limpio,
                 "email": body.email,
                 "telefono": telefono_limpio,
                 "rol_id": rol_id_asignar,
@@ -226,8 +229,8 @@ async def register(body: RegisterRequest):
         "token_type": "bearer",
         "usuario": {
             "id": usuario.data[0]["id"],
-            "nombre": body.nombre,
-            "apellido_paterno": body.apellido_paterno,
+            "nombre": nombre_limpio,
+            "apellido_paterno": apellido_paterno_limpio,
             "email": body.email,
             "telefono": telefono_limpio,
             "asociacion_id": usuario.data[0].get("asociacion_id"),

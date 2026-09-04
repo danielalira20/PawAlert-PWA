@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, SafeAreaView, ScrollView, Text, TextInput, TouchableOpacity, View, Platform, KeyboardAvoidingView } from 'react-native';
 import { Toast, useToast } from '../components/Toast';
 import { useAuth } from '../context/AuthContext';
-import { validarPassword, validarNombre } from '../utils/validators';
+import { normalizarEmailEntrada, normalizarNombreEntrada, normalizarTelefonoMX, validarPassword, validarNombre } from '../utils/validators';
 import { getPostAuthDestination, getPostAuthExplanation } from '../utils/postAuthNavigation';
 
 // ─── FONTS & TOKENS ───────────────────────────────────────────────────────────
@@ -84,6 +84,7 @@ export default function LoginScreen() {
 
   // ─── Real-time validation handlers ──────────────────────────────────────
   const handleLoginEmailChange = (val: string) => {
+    val = normalizarEmailEntrada(val);
     setEmail(val);
     if (!val.trim()) {
       setErrors(prev => ({ ...prev, email: 'El correo es obligatorio' }));
@@ -104,16 +105,19 @@ export default function LoginScreen() {
   };
 
   const handleNombreChange = (val: string) => {
+    val = normalizarNombreEntrada(val);
     setNombre(val);
     setErrors(prev => ({ ...prev, nombre: validarNombre(val, { etiqueta: 'nombre' }).mensaje }));
   };
 
   const handleApellidoPaternoChange = (val: string) => {
+    val = normalizarNombreEntrada(val);
     setApellidoPaterno(val);
     setErrors(prev => ({ ...prev, apellidoPaterno: validarNombre(val, { etiqueta: 'apellido paterno' }).mensaje }));
   };
 
   const handleApellidoMaternoChange = (val: string) => {
+    val = normalizarNombreEntrada(val);
     setApellidoMaterno(val);
     setErrors(prev => ({
       ...prev,
@@ -122,6 +126,7 @@ export default function LoginScreen() {
   };
 
   const handleTelefonoChange = (val: string) => {
+    val = normalizarTelefonoMX(val);
     setTelefono(val);
     if (!val.trim()) {
       setErrors(prev => ({ ...prev, telefono: 'El teléfono es obligatorio.' }));
@@ -135,6 +140,7 @@ export default function LoginScreen() {
   };
 
   const handleRegEmailChange = (val: string) => {
+    val = normalizarEmailEntrada(val);
     setRegEmail(val);
     if (!val.trim()) {
       setErrors(prev => ({ ...prev, regEmail: 'El correo es obligatorio' }));
@@ -367,35 +373,35 @@ export default function LoginScreen() {
             {tab === 'login' ? (
               <View>
                 <Text style={labelStyle}>Correo electrónico *</Text>
-                <TextInput placeholder="correo@ejemplo.com" placeholderTextColor={C.muted} keyboardType="email-address" autoCapitalize="none"
+                <TextInput placeholder="correo@ejemplo.com" placeholderTextColor={C.muted} keyboardType="email-address" autoCapitalize="none" maxLength={254}
                   value={email} onChangeText={handleLoginEmailChange} style={errors.email ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC' } : inputStyle} />
                 {errors.email ? <Text style={errorStyle}>{errors.email}</Text> : null}
 
                 <Text style={labelStyle}>Contraseña *</Text>
-                <TextInput placeholder="••••••••" placeholderTextColor={C.muted} secureTextEntry value={password} onChangeText={handleLoginPasswordChange}
+                <TextInput placeholder="••••••••" placeholderTextColor={C.muted} secureTextEntry value={password} onChangeText={handleLoginPasswordChange} maxLength={128}
                   style={errors.password ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC', marginBottom: 24 } : { ...inputStyle, marginBottom: 32 }} />
                 {errors.password ? <Text style={errorStyle}>{errors.password}</Text> : null}
               </View>
             ) : (
               <View>
                 <Text style={labelStyle}>Nombre(s) *</Text>
-                <TextInput placeholder="Ej. Ana" placeholderTextColor={C.muted} value={nombre} onChangeText={handleNombreChange} style={errors.nombre ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC' } : inputStyle} />
+                <TextInput placeholder="Ej. Ana" placeholderTextColor={C.muted} value={nombre} onChangeText={handleNombreChange} maxLength={30} style={errors.nombre ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC' } : inputStyle} />
                 {errors.nombre ? <Text style={errorStyle}>{errors.nombre}</Text> : null}
 
                 <Text style={labelStyle}>Apellido Paterno *</Text>
-                <TextInput placeholder="Ej. Pérez" placeholderTextColor={C.muted} value={apellidoPaterno} onChangeText={handleApellidoPaternoChange} style={errors.apellidoPaterno ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC' } : inputStyle} />
+                <TextInput placeholder="Ej. Pérez" placeholderTextColor={C.muted} value={apellidoPaterno} onChangeText={handleApellidoPaternoChange} maxLength={30} style={errors.apellidoPaterno ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC' } : inputStyle} />
                 {errors.apellidoPaterno ? <Text style={errorStyle}>{errors.apellidoPaterno}</Text> : null}
 
                 <Text style={labelStyle}>Apellido Materno (Opcional)</Text>
-                <TextInput placeholder="Ej. López" placeholderTextColor={C.muted} value={apellidoMaterno} onChangeText={handleApellidoMaternoChange} style={errors.apellidoMaterno ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC' } : inputStyle} />
+                <TextInput placeholder="Ej. López" placeholderTextColor={C.muted} value={apellidoMaterno} onChangeText={handleApellidoMaternoChange} maxLength={30} style={errors.apellidoMaterno ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC' } : inputStyle} />
                 {errors.apellidoMaterno ? <Text style={errorStyle}>{errors.apellidoMaterno}</Text> : null}
 
                 <Text style={labelStyle}>Teléfono *</Text>
-                <TextInput placeholder="10 dígitos" placeholderTextColor={C.muted} keyboardType="phone-pad" value={telefono} onChangeText={handleTelefonoChange} style={errors.telefono ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC' } : inputStyle} />
+                <TextInput placeholder="10 dígitos" placeholderTextColor={C.muted} keyboardType="phone-pad" value={telefono} onChangeText={handleTelefonoChange} maxLength={10} style={errors.telefono ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC' } : inputStyle} />
                 {errors.telefono ? <Text style={errorStyle}>{errors.telefono}</Text> : null}
 
                 <Text style={labelStyle}>Correo electrónico *</Text>
-                <TextInput placeholder="correo@ejemplo.com" placeholderTextColor={C.muted} keyboardType="email-address" autoCapitalize="none"
+                <TextInput placeholder="correo@ejemplo.com" placeholderTextColor={C.muted} keyboardType="email-address" autoCapitalize="none" maxLength={254}
                   value={regEmail} onChangeText={handleRegEmailChange} style={errors.regEmail ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC' } : inputStyle} />
                 {errors.regEmail ? <Text style={errorStyle}>{errors.regEmail}</Text> : null}
 
@@ -403,11 +409,11 @@ export default function LoginScreen() {
                 <Text style={{ fontSize: 11, color: C.muted, fontFamily: F.bodyRegular, marginBottom: 6, marginTop: -2 }}>
                   Mínimo 8 caracteres, incluye una mayúscula, una minúscula y un número.
                 </Text>
-                <TextInput placeholder="8+ caracteres, mayúscula, minúscula y número" placeholderTextColor={C.muted} secureTextEntry value={regPassword} onChangeText={handleRegPasswordChange} style={errors.regPassword ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC' } : inputStyle} />
+                <TextInput placeholder="8+ caracteres, mayúscula, minúscula y número" placeholderTextColor={C.muted} secureTextEntry value={regPassword} onChangeText={handleRegPasswordChange} maxLength={128} style={errors.regPassword ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC' } : inputStyle} />
                 {errors.regPassword ? <Text style={errorStyle}>{errors.regPassword}</Text> : null}
 
                 <Text style={labelStyle}>Confirmar Contraseña *</Text>
-                <TextInput placeholder="Repite tu contraseña" placeholderTextColor={C.muted} secureTextEntry value={regPassword2} onChangeText={handleRegPassword2Change}
+                <TextInput placeholder="Repite tu contraseña" placeholderTextColor={C.muted} secureTextEntry value={regPassword2} onChangeText={handleRegPassword2Change} maxLength={128}
                   style={errors.regPassword2 ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC', marginBottom: 12 } : { ...inputStyle, marginBottom: 12 }} />
                 {errors.regPassword2 ? <Text style={errorStyle}>{errors.regPassword2}</Text> : null}
                 

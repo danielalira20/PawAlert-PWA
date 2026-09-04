@@ -516,6 +516,7 @@ export function AdopcionesPanel({ visible, showToast, onClose }: Props) {
               <TextInput
                 style={{ backgroundColor: COLORS.white, borderRadius: 12, padding: 12, borderWidth: 1, borderColor: directErrors.nombre_publico ? COLORS.danger : '#D1D5DB', marginBottom: directErrors.nombre_publico ? 4 : 12 }}
                 value={directForm.nombre_publico}
+                maxLength={120}
                 onChangeText={(val) => {
                   setDirectForm({ ...directForm, nombre_publico: val });
                   setDirectErrors({ ...directErrors, nombre_publico: val.trim().length < 2 ? 'Debe tener al menos 2 caracteres' : '' });
@@ -546,6 +547,7 @@ export function AdopcionesPanel({ visible, showToast, onClose }: Props) {
               <TextInput
                 style={{ backgroundColor: COLORS.white, borderRadius: 12, padding: 12, minHeight: 80, textAlignVertical: 'top', borderWidth: 1, borderColor: directErrors.descripcion ? COLORS.danger : '#D1D5DB', marginBottom: directErrors.descripcion ? 4 : 12 }}
                 value={directForm.descripcion}
+                maxLength={4000}
                 onChangeText={(val) => {
                   setDirectForm({ ...directForm, descripcion: val });
                   setDirectErrors({ ...directErrors, descripcion: val.trim().length < 10 ? 'Escribe al menos una breve descripción' : '' });
@@ -559,6 +561,7 @@ export function AdopcionesPanel({ visible, showToast, onClose }: Props) {
               <TextInput
                 style={{ backgroundColor: COLORS.white, borderRadius: 12, padding: 12, minHeight: 70, textAlignVertical: 'top', borderWidth: 1, borderColor: directErrors.personalidad ? COLORS.danger : '#D1D5DB', marginBottom: directErrors.personalidad ? 4 : 12 }}
                 value={directForm.personalidad}
+                maxLength={4000}
                 onChangeText={(val) => {
                   setDirectForm({ ...directForm, personalidad: val });
                   setDirectErrors({ ...directErrors, personalidad: val.trim().length < 5 ? 'Describe brevemente su temperamento' : '' });
@@ -572,6 +575,7 @@ export function AdopcionesPanel({ visible, showToast, onClose }: Props) {
               <TextInput
                 style={{ backgroundColor: COLORS.white, borderRadius: 12, padding: 12, minHeight: 70, textAlignVertical: 'top', borderWidth: 1, borderColor: directErrors.salud_conocida ? COLORS.danger : '#D1D5DB', marginBottom: directErrors.salud_conocida ? 4 : 12 }}
                 value={directForm.salud_conocida}
+                maxLength={4000}
                 onChangeText={(val) => {
                   setDirectForm({ ...directForm, salud_conocida: val });
                   setDirectErrors({ ...directErrors, salud_conocida: val.trim().length < 5 ? 'Indica el estado de salud general' : '' });
@@ -691,7 +695,8 @@ export function AdopcionesPanel({ visible, showToast, onClose }: Props) {
                       style={{ backgroundColor: COLORS.white, borderRadius: 12, padding: 12, minHeight: 80, textAlignVertical: 'top', borderWidth: 1, borderColor: '#D1D5DB', marginBottom: 12 }}
                       placeholder={accionActiva === 'solicitar_informacion' ? "Ej. Necesito que le tomes una foto de cuerpo completo..." : "Ej. El animal aún necesita tratamiento médico..."}
                       multiline
-                      value={motivoResolucion}
+                value={motivoResolucion}
+                maxLength={2000}
                       onChangeText={setMotivoResolucion}
                     />
                   )}

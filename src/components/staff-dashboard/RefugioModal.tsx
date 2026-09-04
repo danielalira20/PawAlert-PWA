@@ -108,6 +108,7 @@ export function RefugioModal({
               placeholder={esHogarTemporal ? 'Condición y observaciones al llegar' : 'Notas del cierre (opcional)'}
               placeholderTextColor={Brand.textFaint}
               value={notas}
+              maxLength={500}
               onChangeText={onChangeNotas}
             />
 

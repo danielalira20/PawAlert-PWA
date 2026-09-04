@@ -16,7 +16,7 @@ import { useAuth } from '../../context/AuthContext';
 import { Toast, useToast } from '../Toast';
 import { consumeAuthIntent } from '../../utils/authIntent';
 import { getPostAuthDestination, getPostAuthExplanation } from '../../utils/postAuthNavigation';
-import { validarNombre } from '../../utils/validators';
+import { normalizarEmailEntrada, normalizarNombreEntrada, normalizarTelefonoMX, validarNombre } from '../../utils/validators';
 import ForgotPasswordFlowScreen from '../../screens/ForgotPasswordFlowScreen';
 import { isNetworkUnavailable } from '../../utils/networkError';
 
@@ -112,6 +112,7 @@ export function LoggedOutProfile() {
 
   // ─── Validadores en tiempo real (idénticos a LoginScreen) ─────────────────
   const handleLoginEmailChange = (val: string) => {
+    val = normalizarEmailEntrada(val);
     setEmail(val);
     if (!val.trim()) setErrors(prev => ({ ...prev, email: 'El correo es obligatorio' }));
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val.trim())) setErrors(prev => ({ ...prev, email: 'Ingresa un correo electrónico válido' }));
@@ -125,16 +126,19 @@ export function LoggedOutProfile() {
   };
 
   const handleNombreChange = (val: string) => {
+    val = normalizarNombreEntrada(val);
     setNombre(val);
     setErrors(prev => ({ ...prev, nombre: validarNombre(val, { etiqueta: 'nombre' }).mensaje }));
   };
 
   const handleApellidoPaternoChange = (val: string) => {
+    val = normalizarNombreEntrada(val);
     setApellidoPaterno(val);
     setErrors(prev => ({ ...prev, apellidoPaterno: validarNombre(val, { etiqueta: 'apellido paterno' }).mensaje }));
   };
 
   const handleApellidoMaternoChange = (val: string) => {
+    val = normalizarNombreEntrada(val);
     setApellidoMaterno(val);
     setErrors(prev => ({
       ...prev,
@@ -143,6 +147,7 @@ export function LoggedOutProfile() {
   };
 
   const handleTelefonoChange = (val: string) => {
+    val = normalizarTelefonoMX(val);
     setTelefono(val);
     if (!val.trim()) setErrors(prev => ({ ...prev, telefono: 'El teléfono es obligatorio.' }));
     else if (/[a-zA-Z]/.test(val)) setErrors(prev => ({ ...prev, telefono: 'El teléfono no puede contener letras.' }));
@@ -151,6 +156,7 @@ export function LoggedOutProfile() {
   };
 
   const handleRegEmailChange = (val: string) => {
+    val = normalizarEmailEntrada(val);
     setRegEmail(val);
     if (!val.trim()) setErrors(prev => ({ ...prev, regEmail: 'El correo es obligatorio' }));
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val.trim())) setErrors(prev => ({ ...prev, regEmail: 'Correo inválido' }));
@@ -400,6 +406,7 @@ export function LoggedOutProfile() {
                 autoCapitalize="none"
                 value={email}
                 onChangeText={handleLoginEmailChange}
+                maxLength={254}
                 style={errors.email ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC' } : inputStyle}
               />
               {errors.email ? <Text style={errorStyle}>{errors.email}</Text> : null}
@@ -412,6 +419,7 @@ export function LoggedOutProfile() {
                   secureTextEntry={!showPassword}
                   value={password}
                   onChangeText={handleLoginPasswordChange}
+                  maxLength={128}
                   style={[
                     errors.password
                       ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC', marginBottom: 0 }
@@ -467,6 +475,7 @@ export function LoggedOutProfile() {
                 placeholderTextColor={C.muted}
                 value={nombre}
                 onChangeText={handleNombreChange}
+                maxLength={30}
                 style={errors.nombre ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC' } : inputStyle}
               />
               {errors.nombre ? <Text style={errorStyle}>{errors.nombre}</Text> : null}
@@ -477,6 +486,7 @@ export function LoggedOutProfile() {
                 placeholderTextColor={C.muted}
                 value={apellidoPaterno}
                 onChangeText={handleApellidoPaternoChange}
+                maxLength={30}
                 style={errors.apellidoPaterno ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC' } : inputStyle}
               />
               {errors.apellidoPaterno ? <Text style={errorStyle}>{errors.apellidoPaterno}</Text> : null}
@@ -487,6 +497,7 @@ export function LoggedOutProfile() {
                 placeholderTextColor={C.muted}
                 value={apellidoMaterno}
                 onChangeText={handleApellidoMaternoChange}
+                maxLength={30}
                 style={errors.apellidoMaterno ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC' } : inputStyle}
               />
               {errors.apellidoMaterno ? <Text style={errorStyle}>{errors.apellidoMaterno}</Text> : null}
@@ -498,6 +509,7 @@ export function LoggedOutProfile() {
                 keyboardType="phone-pad"
                 value={telefono}
                 onChangeText={handleTelefonoChange}
+                maxLength={10}
                 style={errors.telefono ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC' } : inputStyle}
               />
               {errors.telefono ? <Text style={errorStyle}>{errors.telefono}</Text> : null}
@@ -510,6 +522,7 @@ export function LoggedOutProfile() {
                 autoCapitalize="none"
                 value={regEmail}
                 onChangeText={handleRegEmailChange}
+                maxLength={254}
                 style={errors.regEmail ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC' } : inputStyle}
               />
               {errors.regEmail ? <Text style={errorStyle}>{errors.regEmail}</Text> : null}
@@ -522,6 +535,7 @@ export function LoggedOutProfile() {
                   secureTextEntry={!showRegPassword}
                   value={regPassword}
                   onChangeText={handleRegPasswordChange}
+                  maxLength={128}
                   style={[
                     errors.regPassword ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC', marginBottom: 0 } : { ...inputStyle, marginBottom: 0 },
                     { paddingRight: 48 },
@@ -545,6 +559,7 @@ export function LoggedOutProfile() {
                   secureTextEntry={!showRegPassword2}
                   value={regPassword2}
                   onChangeText={handleRegPassword2Change}
+                  maxLength={128}
                   style={[
                     errors.regPassword2
                       ? { ...inputStyle, borderColor: '#E74C3C', backgroundColor: '#FDEDEC', marginBottom: 0 }

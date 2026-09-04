@@ -327,6 +327,7 @@ export default function ForgotPasswordFlowScreen({ visible = true, onClose }: Pr
                   placeholderTextColor={COLORS.textLight}
                   autoCapitalize="none"
                   keyboardType="email-address"
+                  maxLength={254}
                   style={{
                     borderWidth: 1,
                     borderColor: errors.email ? COLORS.danger : COLORS.border,
@@ -432,7 +433,8 @@ export default function ForgotPasswordFlowScreen({ visible = true, onClose }: Pr
                 </Text>
                 <View style={{ position: 'relative', marginBottom: 12 }}>
                   <TextInput
-                    value={nuevaPassword}
+                  value={nuevaPassword}
+                  maxLength={128}
                     onChangeText={(v) => {
                       setNuevaPassword(v);
                       setErrors((prev) => ({
@@ -493,7 +495,8 @@ export default function ForgotPasswordFlowScreen({ visible = true, onClose }: Pr
                 </Text>
                 <View style={{ position: 'relative', marginBottom: errors.confirmarPassword ? 6 : 8 }}>
                   <TextInput
-                    value={confirmarPassword}
+                  value={confirmarPassword}
+                  maxLength={128}
                     onChangeText={(v) => {
                       setConfirmarPassword(v);
                       setErrors((prev) => ({

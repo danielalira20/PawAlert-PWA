@@ -680,6 +680,7 @@ function AsociacionSelector({
                 style={styles.casoModalSearchInput}
                 value={query}
                 onChangeText={setQuery}
+                maxLength={120}
                 placeholder="Buscar asociación…"
                 placeholderTextColor={Brand.textFaint}
                 autoFocus={Platform.OS === 'web'}
@@ -821,6 +822,7 @@ function CasosOperativosPanel({
                   style={styles.adminTextArea}
                   value={resoluciones[caso.id] || ''}
                   onChangeText={(valor) => setResoluciones((actual) => ({ ...actual, [caso.id]: valor }))}
+                  maxLength={1000}
                   placeholder="Ej. Se asignó por cercanía y disponibilidad de la asociación…"
                   placeholderTextColor={Brand.textFaint}
                   multiline
@@ -1035,6 +1037,7 @@ function ApelacionResolverBar({
         placeholderTextColor={Brand.textFaint}
         value={respuesta}
         onChangeText={onChangeRespuesta}
+        maxLength={2000}
       />
       <View style={styles.buttonsRow}>
         <AdminActionButton
@@ -1886,6 +1889,7 @@ function AliadoDetailScreen({
           placeholderTextColor={Brand.textFaint}
           value={respuesta}
           onChangeText={onChangeRespuesta}
+          maxLength={2000}
           multiline
         />
         <View style={styles.buttonsRow}>

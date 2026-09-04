@@ -1,4 +1,4 @@
-import { validarPassword, validarTelefono, validarEmail, validarNombre } from '../utils/validators';
+import { normalizarDecimal, normalizarEmailEntrada, normalizarEntero, normalizarNombreEntrada, normalizarTelefonoMX, validarPassword, validarTelefono, validarEmail, validarNombre } from '../utils/validators';
 
 describe('validarPassword', () => {
   it('rechaza contraseña menor a 8 caracteres', () => {
@@ -103,7 +103,7 @@ describe('validarNombre', () => {
   it('rechaza dígitos', () => {
     const result = validarNombre('Ana2');
     expect(result.valido).toBe(false);
-    expect(result.mensaje).toContain('solo puede contener letras y espacios');
+    expect(result.mensaje).toContain('solo puede contener letras y separadores simples');
   });
 
   it('rechaza símbolos (%, #, @)', () => {
@@ -112,16 +112,14 @@ describe('validarNombre', () => {
     expect(validarNombre('An@a').valido).toBe(false);
   });
 
-  it('rechaza guion', () => {
+  it('acepta guion simple', () => {
     const result = validarNombre('Ana-Luz');
-    expect(result.valido).toBe(false);
-    expect(result.mensaje).toContain('solo puede contener letras y espacios');
+    expect(result.valido).toBe(true);
   });
 
-  it('rechaza apóstrofe', () => {
+  it('acepta apóstrofe simple', () => {
     const result = validarNombre("O'Brian");
-    expect(result.valido).toBe(false);
-    expect(result.mensaje).toContain('solo puede contener letras y espacios');
+    expect(result.valido).toBe(true);
   });
 
   it('acepta acentos y ñ/Ñ válidos', () => {
@@ -146,6 +144,28 @@ describe('validarNombre', () => {
   it('usa "nombre" como etiqueta por defecto', () => {
     const result = validarNombre('');
     expect(result.mensaje).toBe('El nombre es obligatorio.');
+  });
+});
+
+describe('normalizadores de entrada', () => {
+  it('evita espacios iniciales y consecutivos en nombres', () => {
+    expect(normalizarNombreEntrada('  María   José')).toBe('María José');
+  });
+  it('no agrega más de un espacio aunque se pulse repetidamente', () => {
+    let valor = 'Marco';
+    valor = normalizarNombreEntrada(`${valor} `);
+    valor = normalizarNombreEntrada(`${valor} `);
+    valor = normalizarNombreEntrada(`${valor} `);
+    expect(valor).toBe('Marco ');
+    expect(valor.length).toBe(6);
+  });
+  it('limita el teléfono a 10 dígitos', () => {
+    expect(normalizarTelefonoMX('22a2-123 456789')).toBe('2221234567');
+  });
+  it('normaliza enteros, decimales y correo', () => {
+    expect(normalizarEntero('12a34', 3)).toBe('123');
+    expect(normalizarDecimal('12..345')).toBe('12.34');
+    expect(normalizarEmailEntrada(' USUARIO @correo.com ')).toBe('USUARIO@correo.com');
   });
 });
 

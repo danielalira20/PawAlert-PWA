@@ -2562,6 +2562,7 @@ function TextInputField(props: {
       placeholder={props.placeholder}
       placeholderTextColor={props.placeholderTextColor || COLORS.textLight}
       keyboardType={props.keyboardType}
+      maxLength={254}
     />
   );
 }

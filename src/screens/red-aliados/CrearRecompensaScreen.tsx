@@ -15,6 +15,7 @@ import { API_URL } from '../../constants/api';
 import { useAuth } from '../../context/AuthContext';
 import { Toast, useToast } from '../../components/Toast';
 import { DateRangePickerChip } from '../../components/red-aliados/DateRangePickerChip';
+import { normalizarEntero } from '../../utils/validators';
 
 // Misma paleta que AportacionFormScreen.tsx / CapacidadesFormScreen.tsx
 const COLORS = {
@@ -214,6 +215,7 @@ export default function CrearRecompensaScreen({ onClose }: Props) {
                   style={[styles.input, styles.textArea]}
                   value={descripcion}
                   onChangeText={setDescripcion}
+                  maxLength={1000}
                   placeholder="Descripción para quien la va a canjear"
                   placeholderTextColor={COLORS.textLight}
                   multiline
@@ -230,7 +232,7 @@ export default function CrearRecompensaScreen({ onClose }: Props) {
             <FormSection title="Unidades disponibles">
               <TextInputField
                 value={unidadesTotales}
-                onChangeText={setUnidadesTotales}
+                onChangeText={(value) => setUnidadesTotales(normalizarEntero(value, 7))}
                 placeholder="Ej. 20"
                 keyboardType="numeric"
               />
@@ -265,6 +267,7 @@ export default function CrearRecompensaScreen({ onClose }: Props) {
                 style={[styles.input, styles.textArea]}
                 value={condiciones}
                 onChangeText={setCondiciones}
+                maxLength={1000}
                 placeholder="Restricciones o condiciones (opcional)"
                 placeholderTextColor={COLORS.textLight}
                 multiline
@@ -390,6 +393,7 @@ function TextInputField(props: {
       placeholder={props.placeholder}
       placeholderTextColor={COLORS.textLight}
       keyboardType={props.keyboardType}
+      maxLength={254}
     />
   );
 }

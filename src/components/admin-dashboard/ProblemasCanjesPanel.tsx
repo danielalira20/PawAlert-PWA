@@ -141,6 +141,7 @@ export function ProblemasCanjesPanel({ problemas, isLoading, token, onRefresh, s
                 placeholder="Ej. Local cerrado, confirmado por admin"
                 value={motivoReembolso}
                 onChangeText={setMotivoReembolso}
+                maxLength={1000}
                 multiline
               />
               <View style={styles.actionRow}>
